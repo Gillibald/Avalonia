@@ -33,6 +33,11 @@ namespace Avalonia.Markup.Xaml.PortableXaml
             {
                 result = GetContentPropertyAttribute(inherit);
             }
+            else if (attributeType == typeof(pm.ContentWrapperAttribute))
+            {
+                result = ti.GetCustomAttribute<avm.ContentWrapperAttribute>(inherit)
+                                                    .ToPortableXaml();
+            }
             else if (attributeType == typeof(pm.RuntimeNamePropertyAttribute))
             {
                 if (_namedType.IsAssignableFrom(ti))

@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui">
+  <StackPanel Orientation="Vertical" Gap="4">
+    <TextBlock Classes="h1">TextBlock</TextBlock>
+    <TextBlock Classes="h2">A control that displays a block of text</TextBlock>
+
+    <StackPanel Orientation="Horizontal"
+              Margin="0,16,0,0"
+              HorizontalAlignment="Center"
+              Gap="16">
+      <StackPanel Orientation="Vertical" Gap="8">
+        <TextBlock Text="Lorem ipsum dolor sit amet, consectetur adipiscing elit."/>
+        <TextBlock>
+          Lorem ipsum dolor sit amet, <Run FontWeight="Bold">consectetur adipiscing elit.</Run>
+        </TextBlock>
+      </StackPanel>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

@@ -26,6 +26,16 @@ namespace Avalonia.Markup.Xaml.PortableXaml
             return new pm.AmbientAttribute();
         }
 
+        public static pm.ContentWrapperAttribute ToPortableXaml(this avm.ContentWrapperAttribute attrib)
+        {
+            if (attrib == null)
+            {
+                return null;
+            }
+
+            return new pm.ContentWrapperAttribute(attrib.ContentWrapper);
+        }
+
         public static pm.DependsOnAttribute ToPortableXaml(this avm.DependsOnAttribute attrib)
         {
             if (attrib == null)

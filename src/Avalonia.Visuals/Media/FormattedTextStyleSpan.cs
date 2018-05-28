@@ -13,14 +13,17 @@ namespace Avalonia.Media
         /// <param name="startIndex">The index of the first character in the span.</param>
         /// <param name="length">The length of the span.</param>
         /// <param name="foregroundBrush">The span's foreground brush.</param>
+        /// <param name="typeface">The span's typeface.</param>
         public FormattedTextStyleSpan(
             int startIndex,
             int length,
-            IBrush foregroundBrush = null)
+            IBrush foregroundBrush = null,
+            Typeface typeface = null)
         {
             StartIndex = startIndex;
             Length = length;
             ForegroundBrush = foregroundBrush;
+            Typeface = typeface;
         }
 
         /// <summary>
@@ -37,5 +40,10 @@ namespace Avalonia.Media
         /// Gets the span's foreground brush.
         /// </summary>
         public IBrush ForegroundBrush { get; }
+
+        /// <summary>
+        /// Gets the span's typeface.
+        /// </summary>
+        public Typeface Typeface { get; }
     }
 }
