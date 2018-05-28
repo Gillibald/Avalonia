@@ -14,26 +14,31 @@ namespace Avalonia.Documents
 
         protected FormattedTextStyleSpan GetStyleSpan(int startIndex, int length)
         {
+            var fontFamily = IsSet(FontFamilyProperty) ? FontFamily : null;
+            var fontSize = IsSet(FontSizeProperty) ? (double?)FontSize : null;
+            var fontStyle = IsSet(FontStyleProperty) ? (FontStyle?)FontStyle : null;
+            var fontWeight = IsSet(FontWeightProperty) ? (FontWeight?)FontWeight : null;
             var brush = IsSet(ForegroundProperty) ? Foreground : null;
-            Typeface typeface = null;
 
-            if (IsSet(FontFamilyProperty) ||
-                IsSet(FontSizeProperty) ||
-                IsSet(FontStyleProperty) ||
-                IsSet(FontWeightProperty))
+            if (fontFamily != null ||
+                fontSize != null ||
+                fontStyle != null ||
+                fontWeight != null ||
+                brush != null)
             {
-                typeface = new Typeface(
-                    FontFamily,
-                    FontSize,
-                    FontStyle,
-                    FontWeight);
+                return new FormattedTextStyleSpan(
+                    startIndex,
+                    length,
+                    fontFamily: fontFamily,
+                    fontSize: fontSize,
+                    fontStyle: fontStyle,
+                    fontWeight: fontWeight,
+                    foregroundBrush: brush);
             }
-
-            return new FormattedTextStyleSpan(
-                startIndex,
-                length,
-                foregroundBrush: brush,
-                typeface: typeface);
+            else
+            {
+                return null;
+            }
         }
     }
 }

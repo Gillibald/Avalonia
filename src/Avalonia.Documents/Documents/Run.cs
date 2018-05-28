@@ -41,7 +41,7 @@ namespace Avalonia.Documents
 
         public override void BuildFormattedText(FormattedTextBuilder builder)
         {
-            if (Text.Length > 0)
+            if (Text?.Length > 0)
             {
                 builder.Add(Text, GetStyleSpan(builder.StartIndex, Text.Length));
             }

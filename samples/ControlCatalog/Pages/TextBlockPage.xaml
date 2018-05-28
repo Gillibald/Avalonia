@@ -1,4 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui">
+  <UserControl.Styles>
+    <Style Selector="Run.code">
+      <Setter Property="FontFamily" Value="Courier New"/>
+    </Style>
+  </UserControl.Styles>
+    
   <StackPanel Orientation="Vertical" Gap="4">
     <TextBlock Classes="h1">TextBlock</TextBlock>
     <TextBlock Classes="h2">A control that displays a block of text</TextBlock>
@@ -8,9 +14,10 @@
               HorizontalAlignment="Center"
               Gap="16">
       <StackPanel Orientation="Vertical" Gap="8">
-        <TextBlock Text="Lorem ipsum dolor sit amet, consectetur adipiscing elit."/>
+        <TextBlock>A simple TextBlock with unformatted text.</TextBlock>
         <TextBlock>
-          Lorem ipsum dolor sit amet, <Run FontWeight="Bold">consectetur adipiscing elit.</Run>
+          A <Run Style="code">TextBlock</Run> with <Run FontWeight="Bold">differing</Run>
+          <Run FontStyle="Italic">styles</Run> <Run FontSize="24">and fonts</Run>.
         </TextBlock>
       </StackPanel>
     </StackPanel>

@@ -104,7 +104,7 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
-        public void Should_Create_FormattedText_With_Spans()
+        public void Should_Create_FormattedText_With_Span()
         {
             var textBlock = new TextBlock
             {
@@ -118,9 +118,8 @@ namespace Avalonia.Controls.UnitTests
             var formattedText = textBlock.FormattedText;
 
             Assert.NotNull(formattedText.Spans);
-            Assert.Equal(2, formattedText.Spans.Count);
-            Assert.Null(formattedText.Spans[0].Typeface);
-            Assert.Equal(FontWeight.Bold, formattedText.Spans[1].Typeface.Weight);
+            Assert.Equal(1, formattedText.Spans.Count);
+            Assert.Equal(FontWeight.Bold, formattedText.Spans[0].FontWeight);
         }
     }
 }

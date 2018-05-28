@@ -107,12 +107,24 @@ namespace Avalonia.Direct2D1.Media
                         range);
                 }
 
-                if (span.Typeface != null)
+                if (span.FontFamily != null)
                 {
-                    TextLayout.SetFontFamilyName(span.Typeface.FontFamily.Name, range);
-                    TextLayout.SetFontSize((float)span.Typeface.FontSize, range);
-                    TextLayout.SetFontStyle((DWrite.FontStyle)span.Typeface.Style, range);
-                    TextLayout.SetFontWeight((DWrite.FontWeight)span.Typeface.Weight, range);
+                    TextLayout.SetFontFamilyName(span.FontFamily.Name, range);
+                }
+
+                if (span.FontSize != null)
+                {
+                    TextLayout.SetFontSize((float)span.FontSize, range);
+                }
+
+                if (span.FontStyle != null)
+                {
+                    TextLayout.SetFontStyle((DWrite.FontStyle)span.FontStyle, range);
+                }
+
+                if (span.FontWeight != null)
+                {
+                    TextLayout.SetFontWeight((DWrite.FontWeight)span.FontWeight, range);
                 }
             }
         }
