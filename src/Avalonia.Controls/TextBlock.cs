@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
+using Avalonia.Collections;
 using Avalonia.Documents;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
@@ -98,6 +99,10 @@ namespace Avalonia.Controls
         /// </summary>
         public TextBlock()
         {
+            Inlines.ForEachItem(
+                x => LogicalChildren.Add(x),
+                x => LogicalChildren.Remove(x),
+                () => throw new NotSupportedException());
             Inlines.Invalidated += InlinesChanged;
             AffectsFormattedText<TextBlock>(
                 TextProperty,

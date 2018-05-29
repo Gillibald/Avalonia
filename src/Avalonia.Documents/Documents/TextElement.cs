@@ -12,7 +12,7 @@ namespace Avalonia.Documents
     /// <summary>
     /// Base class for <see cref="Inline"/> text elements.
     /// </summary>
-    public abstract class TextElement : AvaloniaObject, ILogical, ISetLogicalParent
+    public abstract class TextElement : StyledElement
     {
         /// <summary>
         /// Defines the <see cref="FontFamily"/> property.
@@ -132,83 +132,7 @@ namespace Avalonia.Documents
             set => SetValue(TextDecorationsProperty, value);
         }
 
-        /// <inheritdoc/>
-        bool ILogical.IsAttachedToLogicalTree => _isAttachedToLogicalTree;
-
-        /// <inheritdoc/>
-        ILogical ILogical.LogicalParent => _parent;
-
-        IAvaloniaReadOnlyList<ILogical> ILogical.LogicalChildren => throw new NotImplementedException();
-
-        /// <summary>
-        /// Raised when the element is attached to a rooted logical tree.
-        /// </summary>
-        public event EventHandler<LogicalTreeAttachmentEventArgs> AttachedToLogicalTree;
-
-        /// <summary>
-        /// Raised when the element is detached from a rooted logical tree.
-        /// </summary>
-        public event EventHandler<LogicalTreeAttachmentEventArgs> DetachedFromLogicalTree;
-
         public event EventHandler Invalidated;
-
-        /// <inheritdoc/>
-        void ILogical.NotifyAttachedToLogicalTree(LogicalTreeAttachmentEventArgs e) => OnAttachedToLogicalTree(e);
-
-        /// <inheritdoc/>
-        void ILogical.NotifyDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e) => OnDetachedFromLogicalTree(e);
-
-        /// <inheritdoc/>
-        void ILogical.NotifyResourcesChanged(ResourcesChangedEventArgs e)
-        {
-        }
-
-        /// <inheritdoc/>
-        void ISetLogicalParent.SetParent(ILogical parent)
-        {
-            var old = _parent;
-
-            if (parent != old)
-            {
-                if (old != null && parent != null)
-                {
-                    throw new InvalidOperationException("The Control already has a parent.");
-                }
-
-                if (_isAttachedToLogicalTree)
-                {
-                    var oldRoot = FindStyleRoot(old) ?? this as IStyleRoot;
-
-                    if (oldRoot == null)
-                    {
-                        throw new AvaloniaInternalException("Was attached to logical tree but cannot find root.");
-                    }
-
-                    var e = new LogicalTreeAttachmentEventArgs(oldRoot);
-                    OnDetachedFromLogicalTree(e);
-                }
-
-                if (InheritanceParent == null || parent == null)
-                {
-                    InheritanceParent = parent as AvaloniaObject;
-                }
-
-                _parent = parent;
-
-                if (_parent is IStyleRoot || _parent?.IsAttachedToLogicalTree == true)
-                {
-                    var newRoot = FindStyleRoot(this);
-
-                    if (newRoot == null)
-                    {
-                        throw new AvaloniaInternalException("Parent is atttached to logical tree but cannot find root.");
-                    }
-
-                    var e = new LogicalTreeAttachmentEventArgs(newRoot);
-                    OnAttachedToLogicalTree(e);
-                }
-            }
-        }
 
         protected static void InvalidatesTextElement<T>(params AvaloniaProperty[] properties)
             where T : TextElement
@@ -228,41 +152,5 @@ namespace Avalonia.Documents
         }
 
         protected void Invalidate() => Invalidated?.Invoke(this, EventArgs.Empty);
-
-        protected virtual void OnAttachedToLogicalTree(LogicalTreeAttachmentEventArgs e)
-        {
-            AttachedToLogicalTree?.Invoke(this, e);
-        }
-
-        protected virtual void OnDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e)
-        {
-            DetachedFromLogicalTree?.Invoke(this, e);
-        }
-
-        private static IStyleRoot FindStyleRoot(object e)
-        {
-            while (e != null)
-            {
-                if (e is IRenderRoot root)
-                {
-                    return root as IStyleRoot;
-                }
-
-                if (e is IStyleHost styleHost)
-                {
-                    e = styleHost.StylingParent;
-                }
-                else if (e is ILogical logical)
-                {
-                    e = logical.LogicalParent;
-                }
-                else
-                {
-                    return null;
-                }
-            }
-
-            return null;
-        }
     }
 }

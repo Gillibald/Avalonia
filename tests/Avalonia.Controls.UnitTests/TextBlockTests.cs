@@ -1,9 +1,13 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
+using System.Linq;
 using Avalonia.Data;
 using Avalonia.Documents;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Controls.UnitTests
@@ -104,6 +108,21 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
+        public void Inlines_Should_Be_LogicalChildren()
+        {
+            var textBlock = new TextBlock
+            {
+                Inlines =
+                {
+                    new Run("Hello "),
+                    new Run("World") { FontWeight = FontWeight.Bold },
+                },
+            };
+
+            Assert.Equal(2, textBlock.GetLogicalChildren().Count());
+        }
+
+        [Fact]
         public void Should_Create_FormattedText_With_Span()
         {
             var textBlock = new TextBlock
@@ -120,6 +139,43 @@ namespace Avalonia.Controls.UnitTests
             Assert.NotNull(formattedText.Spans);
             Assert.Equal(1, formattedText.Spans.Count);
             Assert.Equal(FontWeight.Bold, formattedText.Spans[0].FontWeight);
+        }
+
+        [Fact]
+        public void Style_Is_Applied_To_Run()
+        {
+            using (UnitTestApplication.Start(TestServices.RealStyler))
+            {
+                var textBlock = new TextBlock
+                {
+                    Styles =
+                {
+                    new Style(x => x.OfType<Run>().Class("bold"))
+                    {
+                        Setters =
+                        {
+                            new Setter(TextElement.FontWeightProperty, FontWeight.Bold),
+                        },
+                    }
+                },
+                    Inlines =
+                {
+                    new Run("Hello "),
+                    new Run("World") { Classes = { "bold" } },
+                },
+                };
+
+                var root = new TestRoot
+                {
+                    Child = textBlock,
+                };
+
+                var formattedText = textBlock.FormattedText;
+
+                Assert.NotNull(formattedText.Spans);
+                Assert.Equal(1, formattedText.Spans.Count);
+                Assert.Equal(FontWeight.Bold, formattedText.Spans[0].FontWeight);
+            }
         }
     }
 }
