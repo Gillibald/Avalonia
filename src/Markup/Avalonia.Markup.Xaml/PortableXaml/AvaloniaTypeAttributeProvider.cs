@@ -64,6 +64,11 @@ namespace Avalonia.Markup.Xaml.PortableXaml
                 result = ti.GetCustomAttribute<avm.AmbientAttribute>(inherit)
                                                     .ToPortableXaml();
             }
+            else if (attributeType == typeof(pm.WhitespaceSignificantCollectionAttribute))
+            {
+                result = ti.GetCustomAttribute<avm.WhitespaceSignificantCollectionAttribute>(inherit)
+                                .ToPortableXaml();
+            }
 
             if (result == null)
             {

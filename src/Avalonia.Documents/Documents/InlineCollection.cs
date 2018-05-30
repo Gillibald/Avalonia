@@ -2,9 +2,11 @@
 using System.Collections;
 using System.Text;
 using Avalonia.Collections;
+using Avalonia.Metadata;
 
 namespace Avalonia.Documents
 {
+    [WhitespaceSignificantCollection]
     public class InlineCollection : AvaloniaList<Inline>, IList
     {
         bool _isNull;
