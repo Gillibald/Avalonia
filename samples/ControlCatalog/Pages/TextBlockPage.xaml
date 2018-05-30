@@ -19,6 +19,13 @@
           A <Run Classes="code">TextBlock</Run> with <Run FontWeight="Bold">differing</Run>
           <Run FontStyle="Italic">styles</Run> <Run FontSize="24">and fonts</Run>.
         </TextBlock>
+        <TextBlock>
+          A <Run Classes="code">TextBlock</Run> with <Run Foreground="Red">differing</Run>
+          <Run Foreground="Green">colors</Run> and <Run Foreground="Blue">backgrounds</Run>.
+        </TextBlock>
+        <TextBlock>
+          A <Run Classes="code">TextBlock</Run> with <Run Foreground="Orange" FontStyle="Italic" Text="{Binding}"/>.
+        </TextBlock>
       </StackPanel>
     </StackPanel>
   </StackPanel>

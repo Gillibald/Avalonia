@@ -8,6 +8,7 @@ namespace ControlCatalog.Pages
         public TextBlockPage()
         {
             this.InitializeComponent();
+            DataContext = "a databound run";
         }
 
         private void InitializeComponent()
