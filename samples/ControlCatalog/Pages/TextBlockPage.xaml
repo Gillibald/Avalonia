@@ -26,6 +26,9 @@
         <TextBlock>
           A <Run Classes="code">TextBlock</Run> with <Run Foreground="Orange" FontStyle="Italic" Text="{Binding}"/>.
         </TextBlock>
+        <TextBlock>
+          A <Run Classes="code">TextBlock</Run> with a <LineBreak/> line break.
+        </TextBlock>
       </StackPanel>
     </StackPanel>
   </StackPanel>

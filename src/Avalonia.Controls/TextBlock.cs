@@ -380,7 +380,6 @@ namespace Avalonia.Controls
 
             var result = builder.ToFormattedText();
             result.Constraint = constraint;
-            result.Text = Text ?? string.Empty;
             result.TextAlignment = TextAlignment;
             result.Typeface = new Typeface(FontFamily, FontSize, FontStyle, FontWeight);
             result.Wrapping = TextWrapping;

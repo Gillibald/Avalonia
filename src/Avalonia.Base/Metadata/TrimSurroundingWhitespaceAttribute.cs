@@ -5,8 +5,8 @@ using System;
 
 namespace Avalonia.Metadata
 {
-	[AttributeUsage(AttributeTargets.Class)]
-    public class WhitespaceSignificantCollectionAttribute : Attribute
+    [AttributeUsage(AttributeTargets.Class)]
+    public class TrimSurroundingWhitespaceAttribute : Attribute
     {
     }
 }

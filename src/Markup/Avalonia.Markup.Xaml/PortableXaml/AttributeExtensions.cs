@@ -46,6 +46,16 @@ namespace Avalonia.Markup.Xaml.PortableXaml
             return new pm.DependsOnAttribute(attrib.Name);
         }
 
+        public static pm.TrimSurroundingWhitespaceAttribute ToPortableXaml(this avm.TrimSurroundingWhitespaceAttribute attrib)
+        {
+            if (attrib == null)
+            {
+                return null;
+            }
+
+            return new pm.TrimSurroundingWhitespaceAttribute();
+        }
+
         public static pm.WhitespaceSignificantCollectionAttribute ToPortableXaml(this avm.WhitespaceSignificantCollectionAttribute attrib)
         {
             if (attrib == null)
