@@ -252,7 +252,7 @@ namespace Avalonia.Win32
                 return;
             }
 
-            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);            
+            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);
 
             style |= UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW;
 
@@ -295,7 +295,7 @@ namespace Avalonia.Win32
 
             _decorated = value;
 
-            if(_decorated)
+            if (_decorated)
             {
                 if (_resizable)
                 {
@@ -425,7 +425,7 @@ namespace Avalonia.Win32
         protected virtual IntPtr CreateWindowOverride(ushort atom)
         {
             return UnmanagedMethods.CreateWindowEx(
-                0,
+                (int)UnmanagedMethods.WindowStyles.WS_EX_LAYERED,
                 atom,
                 null,
                 (int)UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,
@@ -620,15 +620,15 @@ namespace Avalonia.Win32
                     break;
 
                 case UnmanagedMethods.WindowsMessage.WM_PAINT:
-                    UnmanagedMethods.PAINTSTRUCT ps;
+                    //UnmanagedMethods.PAINTSTRUCT ps;
 
-                    if (UnmanagedMethods.BeginPaint(_hwnd, out ps) != IntPtr.Zero)
-                    {
-                        var f = Scaling;
-                        var r = ps.rcPaint;
-                        Paint?.Invoke(new Rect(r.left / f, r.top / f, (r.right - r.left) / f, (r.bottom - r.top) / f));
-                        UnmanagedMethods.EndPaint(_hwnd, ref ps);
-                    }
+                    //if (UnmanagedMethods.BeginPaint(_hwnd, out ps) != IntPtr.Zero)
+                    //{
+                    //    var f = Scaling;
+                    //    var r = ps.rcPaint;
+                    //    Paint?.Invoke(new Rect(r.left / f, r.top / f, (r.right - r.left) / f, (r.bottom - r.top) / f));
+                    //    UnmanagedMethods.EndPaint(_hwnd, ref ps);
+                    //}
 
                     return IntPtr.Zero;
 
@@ -662,7 +662,7 @@ namespace Avalonia.Win32
 
                     MINMAXINFO mmi = Marshal.PtrToStructure<UnmanagedMethods.MINMAXINFO>(lParam);
 
-                    if  (_minSize.Width > 0)
+                    if (_minSize.Width > 0)
                         mmi.ptMinTrackSize.X = (int)((_minSize.Width * Scaling) + BorderThickness.Left + BorderThickness.Right);
 
                     if (_minSize.Height > 0)
@@ -739,7 +739,7 @@ namespace Avalonia.Win32
                 throw new Win32Exception();
             }
 
-            _hwnd = CreateWindowOverride(atom);
+            _hwnd = CreateWindowOverride(atom);          
 
             if (_hwnd == IntPtr.Zero)
             {

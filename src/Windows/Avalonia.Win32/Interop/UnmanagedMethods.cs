@@ -709,6 +709,63 @@ namespace Avalonia.Win32.Interop
            IntPtr hInstance,
            IntPtr lpParam);
 
+        public const int ULW_COLORKEY = 1;
+        public const int ULW_ALPHA = 2;
+        public const int ULW_OPAQUE = 4;
+
+        public const int AC_SRC_OVER = 0x00;
+        public const int AC_SRC_ALPHA = 0x01;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct BLENDFUNCTION
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+
+            public BLENDFUNCTION(byte op, byte flags, byte alpha, byte format)
+            {
+                BlendOp = op;
+                BlendFlags = flags;
+                SourceConstantAlpha = alpha;
+                AlphaFormat = format;
+            }
+        }
+
+        public struct Point
+        {
+            public int x;
+
+            public int y;
+
+
+            public Point(int x, int y)
+            {
+                this.x = x;
+                this.y = y;
+            }
+        }
+
+        public struct Size
+        {
+            public int cx;
+
+            public int cy;
+
+
+            public Size(int cx, int cy)
+            {
+                this.cx = cx;
+                this.cy = cy;
+            }
+        }
+
+        [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+        public static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
+                                               ref Point pptDst, ref Size psize, IntPtr hdcSrc, ref Point pptSrc, uint crKey,
+                                               [In] ref BLENDFUNCTION pblend, uint dwFlags);
+
         [DllImport("user32.dll", EntryPoint = "DefWindowProcW")]
         public static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
@@ -989,7 +1046,7 @@ namespace Avalonia.Win32.Interop
         [DllImport("gdi32.dll")]
         public static extern int DeleteObject(IntPtr hObject);
         [DllImport("gdi32.dll", SetLastError = true)]
-        public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+        public static extern IntPtr CreateCompatibleDC(IntPtr hdc);      
         [DllImport("gdi32.dll")]
         public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hObject);
 

@@ -13,5 +13,10 @@
     <ProjectReference Include="..\..\Avalonia.Styling\Avalonia.Styling.csproj" />
     <ProjectReference Include="..\..\Avalonia.Visuals\Avalonia.Visuals.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="SharpDX.Direct3D9">
+      <HintPath>..\..\..\..\..\..\.nuget\packages\sharpdx.direct3d9\4.0.1\lib\net45\SharpDX.Direct3D9.dll</HintPath>
+    </Reference>
+  </ItemGroup>
   <Import Project="$(MSBuildThisFileDirectory)\..\..\..\build\System.Drawing.Common.props" />
 </Project>

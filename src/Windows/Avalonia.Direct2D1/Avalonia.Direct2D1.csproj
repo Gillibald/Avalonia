@@ -8,6 +8,9 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="SharpDX.Direct3D9" Version="4.0.1" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Animation\Avalonia.Animation.csproj" />
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
     <ProjectReference Include="..\..\Avalonia.Controls\Avalonia.Controls.csproj" />
