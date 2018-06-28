@@ -425,7 +425,7 @@ namespace Avalonia.Win32
         protected virtual IntPtr CreateWindowOverride(ushort atom)
         {
             return UnmanagedMethods.CreateWindowEx(
-                (int)UnmanagedMethods.WindowStyles.WS_EX_LAYERED,
+                (int)UnmanagedMethods.ExtendedWindowStyles.WS_EX_COMPOSITED,
                 atom,
                 null,
                 (int)UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,
@@ -864,22 +864,29 @@ namespace Avalonia.Win32
 
         public void ShowTaskbarIcon(bool value)
         {
-            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE);
+            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);
 
-            style &= ~(UnmanagedMethods.WindowStyles.WS_VISIBLE);
+            var exStyle = (UnmanagedMethods.ExtendedWindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE);
 
-            style |= UnmanagedMethods.WindowStyles.WS_EX_TOOLWINDOW;
+            style &= ~UnmanagedMethods.WindowStyles.WS_VISIBLE;
+
+            exStyle |= UnmanagedMethods.ExtendedWindowStyles.WS_EX_TOOLWINDOW;
             if (value)
-                style |= UnmanagedMethods.WindowStyles.WS_EX_APPWINDOW;
+            {
+                exStyle |= UnmanagedMethods.ExtendedWindowStyles.WS_EX_APPWINDOW;
+            }
             else
-                style &= ~(UnmanagedMethods.WindowStyles.WS_EX_APPWINDOW);
+            {
+                exStyle &= ~UnmanagedMethods.ExtendedWindowStyles.WS_EX_APPWINDOW;
+            }
 
             WINDOWPLACEMENT windowPlacement = UnmanagedMethods.WINDOWPLACEMENT.Default;
             if (UnmanagedMethods.GetWindowPlacement(_hwnd, ref windowPlacement))
             {
                 //Toggle to make the styles stick
                 UnmanagedMethods.ShowWindow(_hwnd, ShowWindowCommand.Hide);
-                UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE, (uint)style);
+                UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE, (uint)style);
+                UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE, (uint)exStyle);
                 UnmanagedMethods.ShowWindow(_hwnd, windowPlacement.ShowCmd);
             }
         }
@@ -896,9 +903,9 @@ namespace Avalonia.Win32
                 var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);
 
                 if (value)
-                    style |= UnmanagedMethods.WindowStyles.WS_SIZEFRAME;
+                    style |= UnmanagedMethods.WindowStyles.WS_SIZEBOX;
                 else
-                    style &= ~(UnmanagedMethods.WindowStyles.WS_SIZEFRAME);
+                    style &= ~(UnmanagedMethods.WindowStyles.WS_SIZEBOX);
 
                 UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE, (uint)style);
             }

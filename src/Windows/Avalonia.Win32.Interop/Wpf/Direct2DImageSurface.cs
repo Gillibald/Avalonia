@@ -65,7 +65,6 @@ namespace Avalonia.Win32.Interop.Wpf
                             DpiY = (float) dpi.Y,
                             MinLevel = FeatureLevel.Level_10,
                             PixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, AlphaMode.Premultiplied),
-
                         });
                 }
                 using (var texture = new Texture2D(s_dxDevice, new Texture2DDescription

@@ -35,7 +35,7 @@ namespace Avalonia.Direct2D1
         public SharpDX.WIC.ImagingFactory WicImagingFactory { get; }
 
         protected SharpDX.DXGI.Device DxgiDevice { get; }
-        
+
         public Device D2DDevice { get; }
 
         /// <summary>
@@ -89,7 +89,7 @@ namespace Avalonia.Direct2D1
             using (var dxgiFactory = dxgiAdaptor.GetParent<Factory2>())
             {
                 _deviceContext?.Dispose();
-                _deviceContext = new DeviceContext(D2DDevice, DeviceContextOptions.None) {DotsPerInch = _savedDpi};
+                _deviceContext = new DeviceContext(D2DDevice, DeviceContextOptions.None) { DotsPerInch = _savedDpi };
 
                 var swapChainDesc = new SwapChainDescription1
                 {
@@ -112,14 +112,14 @@ namespace Avalonia.Direct2D1
                 _swapChain?.Dispose();
                 _swapChain = CreateSwapChain(dxgiFactory, swapChainDesc);
 
-                using (var dxgiBackBuffer = _swapChain.GetBackBuffer<Surface>(0))
+                using (var dxgiBackBuffer = _swapChain.GetBackBuffer<Surface1>(0))
                 using (var d2dBackBuffer = new Bitmap1(
                     _deviceContext,
                     dxgiBackBuffer,
                     new BitmapProperties1(
                         new PixelFormat
                         {
-                            AlphaMode = AlphaMode.Ignore,
+                            AlphaMode = AlphaMode.Premultiplied,
                             Format = Format.B8G8R8A8_UNorm
                         },
                         _savedDpi.Width,

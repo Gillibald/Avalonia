@@ -269,56 +269,66 @@ namespace Avalonia.Win32.Interop
         }
 
         [Flags]
-        public enum WindowStyles : uint
+        public enum ExtendedWindowStyles : long
         {
-            WS_BORDER = 0x800000,
-            WS_CAPTION = 0xc00000,
-            WS_CHILD = 0x40000000,
-            WS_CLIPCHILDREN = 0x2000000,
-            WS_CLIPSIBLINGS = 0x4000000,
-            WS_DISABLED = 0x8000000,
-            WS_DLGFRAME = 0x400000,
-            WS_GROUP = 0x20000,
-            WS_HSCROLL = 0x100000,
-            WS_MAXIMIZE = 0x1000000,
-            WS_MAXIMIZEBOX = 0x10000,
-            WS_MINIMIZE = 0x20000000,
-            WS_MINIMIZEBOX = 0x20000,
-            WS_OVERLAPPED = 0x0,
-            WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_SIZEFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-            WS_POPUP = 0x80000000u,
-            WS_POPUPWINDOW = WS_POPUP | WS_BORDER | WS_SYSMENU,
-            WS_SIZEFRAME = 0x40000,
-            WS_SYSMENU = 0x80000,
-            WS_TABSTOP = 0x10000,
-            WS_VISIBLE = 0x10000000,
-            WS_VSCROLL = 0x200000,
-            WS_EX_DLGMODALFRAME = 0x00000001,
-            WS_EX_NOPARENTNOTIFY = 0x00000004,
-            WS_EX_TOPMOST = 0x00000008,
-            WS_EX_ACCEPTFILES = 0x00000010,
-            WS_EX_TRANSPARENT = 0x00000020,
-            WS_EX_MDICHILD = 0x00000040,
-            WS_EX_TOOLWINDOW = 0x00000080,
-            WS_EX_WINDOWEDGE = 0x00000100,
-            WS_EX_CLIENTEDGE = 0x00000200,
-            WS_EX_CONTEXTHELP = 0x00000400,
-            WS_EX_RIGHT = 0x00001000,
-            WS_EX_LEFT = 0x00000000,
-            WS_EX_RTLREADING = 0x00002000,
-            WS_EX_LTRREADING = 0x00000000,
-            WS_EX_LEFTSCROLLBAR = 0x00004000,
-            WS_EX_RIGHTSCROLLBAR = 0x00000000,
-            WS_EX_CONTROLPARENT = 0x00010000,
-            WS_EX_STATICEDGE = 0x00020000,
-            WS_EX_APPWINDOW = 0x00040000,
+            WS_EX_ACCEPTFILES = 0x00000010L,
+            WS_EX_APPWINDOW = 0x00040000L,
+            WS_EX_CLIENTEDGE = 0x00000200L,
+            WS_EX_COMPOSITED = 0x02000000L,
+            WS_EX_CONTEXTHELP = 0x00000400L,
+            WS_EX_CONTROLPARENT = 0x00010000L,
+            WS_EX_DLGMODALFRAME = 0x00000001L,
+            WS_EX_LAYERED = 0x00080000,
+            WS_EX_LAYOUTRTL = 0x00400000L,
+            WS_EX_LEFT = 0x00000000L,
+            WS_EX_LEFTSCROLLBAR = 0x00004000L,
+            WS_EX_LTRREADING = 0x00000000L,
+            WS_EX_MDICHILD = 0x00000040L,
+            WS_EX_NOACTIVATE = 0x08000000L,
+            WS_EX_NOINHERITLAYOUT = 0x00100000L,
+            WS_EX_NOPARENTNOTIFY = 0x00000004L,
+            WS_EX_NOREDIRECTIONBITMAP = 0x00200000L,
             WS_EX_OVERLAPPEDWINDOW = WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE,
             WS_EX_PALETTEWINDOW = WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-            WS_EX_LAYERED = 0x00080000,
-            WS_EX_NOINHERITLAYOUT = 0x00100000,
-            WS_EX_LAYOUTRTL = 0x00400000,
-            WS_EX_COMPOSITED = 0x02000000,
-            WS_EX_NOACTIVATE = 0x08000000
+            WS_EX_RIGHT = 0x00001000L,
+            WS_EX_RIGHTSCROLLBAR = 0x00000000L,
+            WS_EX_RTLREADING = 0x00002000L,
+            WS_EX_STATICEDGE = 0x00020000L,
+            WS_EX_TOOLWINDOW = 0x00000080L,
+            WS_EX_TOPMOST = 0x00000008L,
+            WS_EX_TRANSPARENT = 0x00000020L,
+            WS_EX_WINDOWEDGE = 0x00000100L
+        }
+
+        [Flags]
+        public enum WindowStyles : long
+        {
+            WS_BORDER = 0x00800000L,
+            WS_CAPTION = 0x00C00000L,
+            WS_CHILD = 0x40000000L,
+            WS_CHILDWINDOW = 0x40000000L,
+            WS_CLIPCHILDREN = 0x02000000L,
+            WS_DISABLED = 0x08000000L,
+            WS_DLGFRAME = 0x00400000L,
+            WS_GROUP = 0x00020000L,
+            WS_HSCROLL = 0x00100000L,
+            WS_ICONIC = 0x20000000L,
+            WS_MAXIMIZE = 0x01000000L,
+            WS_MAXIMIZEBOX = 0x00010000L,
+            WS_MINIMIZE = 0x20000000L,
+            WS_MINIMIZEBOX = 0x00020000L,
+            WS_OVERLAPPED = 0x00000000L,
+            WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+            WS_POPUP = 0x80000000L,
+            WS_POPUPWINDOW = WS_POPUP | WS_BORDER | WS_SYSMENU,
+            WS_SIZEBOX = 0x00040000L,
+            WS_SYSMENU = 0x00080000L,
+            WS_TABSTOP = 0x00010000L,
+            WS_THICKFRAME = 0x00040000L,
+            WS_TILED = 0x00000000L,
+            WS_TILEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+            WS_VISIBLE = 0x10000000L,
+            WS_VSCROLL = 0x00200000L,
         }
 
         [Flags]
@@ -709,62 +719,73 @@ namespace Avalonia.Win32.Interop
            IntPtr hInstance,
            IntPtr lpParam);
 
-        public const int ULW_COLORKEY = 1;
-        public const int ULW_ALPHA = 2;
-        public const int ULW_OPAQUE = 4;
-
         public const int AC_SRC_OVER = 0x00;
         public const int AC_SRC_ALPHA = 0x01;
 
-        [StructLayout(LayoutKind.Sequential)]
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct BLENDFUNCTION
         {
             public byte BlendOp;
             public byte BlendFlags;
             public byte SourceConstantAlpha;
             public byte AlphaFormat;
-
-            public BLENDFUNCTION(byte op, byte flags, byte alpha, byte format)
-            {
-                BlendOp = op;
-                BlendFlags = flags;
-                SourceConstantAlpha = alpha;
-                AlphaFormat = format;
-            }
         }
 
-        public struct Point
+        public enum BlendFlags : uint
         {
-            public int x;
-
-            public int y;
-
-
-            public Point(int x, int y)
-            {
-                this.x = x;
-                this.y = y;
-            }
-        }
-
-        public struct Size
-        {
-            public int cx;
-
-            public int cy;
-
-
-            public Size(int cx, int cy)
-            {
-                this.cx = cx;
-                this.cy = cy;
-            }
+            None = 0x00,
+            ULW_COLORKEY = 0x01,
+            ULW_ALPHA = 0x02,
+            ULW_OPAQUE = 0x04
         }
 
         [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
-        public static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst,
-                                               ref Point pptDst, ref Size psize, IntPtr hdcSrc, ref Point pptSrc, uint crKey,
-                                               [In] ref BLENDFUNCTION pblend, uint dwFlags);
+        public static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst,
+                                                      ref SIZE psize, IntPtr hdcSrc, ref POINT pprSrc, int crKey,
+                                                      ref BLENDFUNCTION pblend, BlendFlags dwFlags);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+
+            public POINT(int x, int y)
+            {
+                this.X = x;
+                this.Y = y;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SIZE
+        {
+            public long cx;
+            public long cy;
+
+            public SIZE(long width, long height)
+            {
+                cx = width;
+                cy = height;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT
+        {
+            public int left;
+            public int top;
+            public int right;
+            public int bottom;
+
+            public RECT(int left, int top, int width, int height)
+            {
+                this.left = left;
+                this.top = top;
+                right = left + width;
+                bottom = top + height;
+            }
+        }
 
         [DllImport("user32.dll", EntryPoint = "DefWindowProcW")]
         public static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
@@ -1170,28 +1191,6 @@ namespace Avalonia.Win32.Interop
             public bool fIncUpdate;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
             public byte[] rgbReserved;
-        }
-
-        public struct POINT
-        {
-            public int X;
-            public int Y;
-        }
-
-        public struct RECT
-        {
-            public int left;
-            public int top;
-            public int right;
-            public int bottom;
-
-            public RECT(Rect rect)
-            {
-                left = (int)rect.X;
-                top = (int)rect.Y;
-                right = (int)(rect.X + rect.Width);
-                bottom = (int)(rect.Y + rect.Height);
-            }
         }
 
         public struct TRACKMOUSEEVENT

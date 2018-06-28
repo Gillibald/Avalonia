@@ -18,11 +18,11 @@ namespace Avalonia.Win32
         {
             UnmanagedMethods.WindowStyles style =
                 UnmanagedMethods.WindowStyles.WS_POPUP |
-                UnmanagedMethods.WindowStyles.WS_CLIPSIBLINGS;
+                UnmanagedMethods.WindowStyles.WS_CLIPCHILDREN;
 
-            UnmanagedMethods.WindowStyles exStyle =
-                UnmanagedMethods.WindowStyles.WS_EX_TOOLWINDOW |
-                UnmanagedMethods.WindowStyles.WS_EX_TOPMOST;
+            UnmanagedMethods.ExtendedWindowStyles exStyle =
+                UnmanagedMethods.ExtendedWindowStyles.WS_EX_TOOLWINDOW |
+                UnmanagedMethods.ExtendedWindowStyles.WS_EX_TOPMOST;
 
             return UnmanagedMethods.CreateWindowEx(
                 (int)exStyle,
