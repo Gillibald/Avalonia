@@ -1,4 +1,7 @@
-﻿using Avalonia.Direct2D1.Media;
+﻿// Copyright (c) The Avalonia Project. All rights reserved.
+// Licensed under the MIT license. See licence.md file in the project root for full license information.
+
+using Avalonia.Direct2D1.Media;
 using Avalonia.Direct2D1.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Rendering;
@@ -12,24 +15,12 @@ using SharpDX.WIC;
 
 namespace Avalonia.Direct2D1
 {
-    using System;
-
-    using AlphaMode = SharpDX.DXGI.AlphaMode;
-
     public class LayeredWindowRenderTarget : IRenderTarget, ILayerFactory
     {
+        private readonly IPlatformHandle _window;
         private Size2 _savedSize;
-
         private Size2F _savedDpi;
-
-        private IPlatformHandle _window;
-
-        private Texture2D _backBuffer;
-
-        private Surface _surface;
-
         private SwapChain _swapChain;
-
         private SharpDX.Direct2D1.RenderTarget _renderTarget;
 
         public LayeredWindowRenderTarget(IPlatformHandle window)
@@ -46,7 +37,7 @@ namespace Avalonia.Direct2D1
             DxgiDevice = AvaloniaLocator.Current.GetService<SharpDX.DXGI.Device>();
             D2D1Factory = AvaloniaLocator.Current.GetService<SharpDX.Direct2D1.Factory>();
             DirectWriteFactory = AvaloniaLocator.Current.GetService<SharpDX.DirectWrite.Factory>();
-            WicImagingFactory = AvaloniaLocator.Current.GetService<SharpDX.WIC.ImagingFactory>();
+            WicImagingFactory = AvaloniaLocator.Current.GetService<ImagingFactory>();
         }
 
         public ImagingFactory WicImagingFactory { get; }
@@ -59,10 +50,51 @@ namespace Avalonia.Direct2D1
 
         public SharpDX.Direct2D1.Factory D2D1Factory { get; }
 
+        public void Dispose()
+        {
+            this._renderTarget?.Dispose();
+
+            this._swapChain?.Dispose();
+        }
+
+        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
+        {
+            var size = GetWindowSize();
+            var dpi = GetWindowDpi();
+
+            if (size != _savedSize || dpi != _savedDpi)
+            {
+                _savedSize = size;
+                _savedDpi = dpi;
+
+                this.CreateSwapChain();
+            }
+
+            return new DrawingContextImpl(
+                visualBrushRenderer,
+                this,
+                _renderTarget,
+                DirectWriteFactory,
+                WicImagingFactory,
+                _swapChain);
+        }
+
+        public IRenderTargetBitmapImpl CreateLayer(Size size)
+        {
+            if (this._renderTarget == null)
+            {
+                CreateSwapChain();
+            }
+
+            return D2DRenderTargetBitmapImpl.CreateCompatible(
+                WicImagingFactory,
+                DirectWriteFactory,
+                _renderTarget,
+                size);
+        }
+
         private void CreateSwapChain()
         {
-            var handle = this._window.Handle;           
-
             var swapChainDescription = new SwapChainDescription1
             {
                 Width = _savedSize.Width,
@@ -81,15 +113,11 @@ namespace Avalonia.Direct2D1
                 Flags = SwapChainFlags.GdiCompatible,
             };
 
-            // Create Device and SwapChain
             using (var dxgiAdapter = DxgiDevice.Adapter)
             using (var dxgiFactory = dxgiAdapter.GetParent<SharpDX.DXGI.Factory2>())
             {
-                //// Ignore all windows events
-                //dxgiFactory.MakeWindowAssociation(handle, WindowAssociationFlags.IgnoreAll);
-
                 _swapChain?.Dispose();
-                _swapChain = new SharpDX.DXGI.SwapChain1(dxgiFactory, DxgiDevice, _window.Handle, ref swapChainDescription);              
+                _swapChain = new SwapChain1(dxgiFactory, DxgiDevice, _window.Handle, ref swapChainDescription);
 
                 using (var backBuffer = SharpDX.Direct3D11.Resource.FromSwapChain<Texture2D>(_swapChain, 0))
                 using (var surface = backBuffer.QueryInterface<Surface>())
@@ -141,54 +169,6 @@ namespace Avalonia.Direct2D1
         {
             UnmanagedMethods.GetClientRect(_window.Handle, out var rc);
             return new Size2(rc.right - rc.left, rc.bottom - rc.top);
-        }
-
-        public void Dispose()
-        {
-            this._renderTarget?.Dispose();
-
-            this._swapChain?.Dispose();
-        }
-
-        public IDrawingContextImpl CreateDrawingContext(IVisualBrushRenderer visualBrushRenderer)
-        {
-            var size = GetWindowSize();
-            var dpi = GetWindowDpi();
-
-            if (size != _savedSize || dpi != _savedDpi)
-            {
-                _savedSize = size;
-                _savedDpi = dpi;
-
-                this.CreateSwapChain();
-            }
-
-            return new DrawingContextImpl(
-                visualBrushRenderer,
-                this,
-                _renderTarget,
-                DirectWriteFactory,
-                WicImagingFactory,
-                _swapChain);
-        }
-
-        private void OnFinished()
-        {
-            
-        }
-
-        public IRenderTargetBitmapImpl CreateLayer(Size size)
-        {
-            if (this._renderTarget == null)
-            {
-                CreateSwapChain();
-            }
-
-            return D2DRenderTargetBitmapImpl.CreateCompatible(
-                WicImagingFactory,
-                DirectWriteFactory,
-                _renderTarget,
-                size);
         }
     }
 }

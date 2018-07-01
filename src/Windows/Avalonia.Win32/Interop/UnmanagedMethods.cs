@@ -719,6 +719,18 @@ namespace Avalonia.Win32.Interop
            IntPtr hInstance,
            IntPtr lpParam);
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MARGINS
+        {
+            public int leftWidth;
+            public int rightWidth;
+            public int topHeight;
+            public int bottomHeight;
+        }
+
+        [DllImport("Dwmapi.dll")]
+        public static extern uint DwmExtendFrameIntoClientArea(IntPtr hWnd, ref MARGINS margins);
+
         public const int AC_SRC_OVER = 0x00;
         public const int AC_SRC_ALPHA = 0x01;
 
