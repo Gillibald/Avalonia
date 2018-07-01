@@ -13,11 +13,7 @@ using SharpDX.Mathematics.Interop;
 
 namespace Avalonia.Direct2D1.Media
 {
-    using Avalonia.Win32.Interop;
-
-    using SharpDX.Direct3D9;
-
-    using Device = SharpDX.Direct2D1.Device;
+    using Color = Avalonia.Media.Color;
 
     /// <summary>
     /// Draws using Direct2D1.
@@ -27,7 +23,7 @@ namespace Avalonia.Direct2D1.Media
         private readonly IVisualBrushRenderer _visualBrushRenderer;
         private readonly ILayerFactory _layerFactory;
         private readonly SharpDX.Direct2D1.RenderTarget _renderTarget;
-        private readonly SharpDX.DXGI.SwapChain1 _swapChain;
+        private readonly SharpDX.DXGI.SwapChain _swapChain;
         private readonly Action _finishedCallback;
         private readonly SharpDX.WIC.ImagingFactory _imagingFactory;
         private SharpDX.DirectWrite.Factory _directWriteFactory;
@@ -51,7 +47,7 @@ namespace Avalonia.Direct2D1.Media
             SharpDX.Direct2D1.RenderTarget renderTarget,
             SharpDX.DirectWrite.Factory directWriteFactory,
             SharpDX.WIC.ImagingFactory imagingFactory,
-            SharpDX.DXGI.SwapChain1 swapChain = null,
+            SharpDX.DXGI.SwapChain swapChain = null,
             Action finishedCallback = null)
         {
             _visualBrushRenderer = visualBrushRenderer;
@@ -62,78 +58,7 @@ namespace Avalonia.Direct2D1.Media
             _directWriteFactory = directWriteFactory;
             _imagingFactory = imagingFactory;
             _renderTarget.BeginDraw();
-        }
-
-        //Surface renderTarget = null;
-        //Surface offscreenPlainSurface = null;
-        //SharpDX.Direct3D9.Device d3dDevice = AvaloniaLocator.Current.GetService<SharpDX.Direct3D9.Device>();
-
-        //private void Render(IntPtr hWnd)
-        //{
-        //    UnmanagedMethods.GetWindowRect(hWnd, out var rect);
-
-        //    var windowWidth = rect.right - rect.left;
-        //    var windowHeight = rect.bottom - rect.top;
-
-        //    if (offscreenPlainSurface == null)
-        //    {
-        //        offscreenPlainSurface = Surface.CreateOffscreenPlain(d3dDevice, windowWidth, windowHeight, Format.X8R8G8B8, Pool.SystemMemory);
-        //        renderTarget = Surface.CreateRenderTarget(d3dDevice, windowWidth, windowHeight, Format.X8R8G8B8, MultisampleType.None, 0, false);
-        //    }
-        //    else
-        //    {
-        //        var surfaceDescription = offscreenPlainSurface.Description;
-
-        //        if (surfaceDescription.Width != windowWidth || surfaceDescription.Width != windowHeight)
-        //        {
-        //            offscreenPlainSurface.Dispose();
-        //            renderTarget.Dispose();
-        //            offscreenPlainSurface = Surface.CreateOffscreenPlain(d3dDevice, windowWidth, windowHeight, Format.X8R8G8B8, Pool.SystemMemory);
-        //            renderTarget = Surface.CreateRenderTarget(d3dDevice, windowWidth, windowHeight, Format.X8R8G8B8, MultisampleType.None, 0, false);
-        //        }
-        //    }
-
-        //    if (offscreenPlainSurface == null || renderTarget == null)
-        //    {
-        //        return;
-        //    }
-
-        //    d3dDevice.SetRenderTarget(0, renderTarget);
-        //    d3dDevice.Clear(ClearFlags.Target, new RawColorBGRA(), 0, 0);
-
-        //    d3dDevice.BeginScene();
-
-        //    //Draw stuff
-
-        //    d3dDevice.EndScene();
-
-        //    d3dDevice.Present();
-
-        //    d3dDevice.GetRenderTargetData(renderTarget, offscreenPlainSurface);
-
-        //    IntPtr deviceContext = offscreenPlainSurface.GetDC();
-        //    UnmanagedMethods.POINT point = new UnmanagedMethods.POINT(0, 0);
-        //    UnmanagedMethods.SIZE size = new UnmanagedMethods.SIZE(windowWidth, windowHeight);
-
-        //    UnmanagedMethods.BLENDFUNCTION blend;
-        //    blend.AlphaFormat = UnmanagedMethods.AC_SRC_ALPHA;
-        //    blend.SourceConstantAlpha = 0;
-        //    blend.BlendFlags = 0;
-        //    blend.BlendOp = UnmanagedMethods.AC_SRC_OVER;
-
-        //    UnmanagedMethods.UpdateLayeredWindow(
-        //        hWnd,
-        //        IntPtr.Zero,
-        //        ref point,
-        //        ref size,
-        //        deviceContext,
-        //        ref point,
-        //        0,
-        //        ref blend,
-        //        UnmanagedMethods.BlendFlags.ULW_ALPHA);
-
-        //    offscreenPlainSurface.ReleaseDC(deviceContext);
-        //}
+        }      
 
         /// <summary>
         /// Gets the current transform of the drawing context.

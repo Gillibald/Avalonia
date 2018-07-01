@@ -147,7 +147,7 @@ namespace Avalonia.Direct2D1
                     if (nativeWindow.HandleDescriptor != "HWND")
                         throw new NotSupportedException("Don't know how to create a Direct2D1 renderer from " +
                                                         nativeWindow.HandleDescriptor);
-                    return new HwndRenderTarget(nativeWindow);
+                    return new LayeredWindowRenderTarget(nativeWindow);
                 }
                 if (s is IExternalDirect2DRenderTargetSurface external)
                     return new ExternalRenderTarget(external, s_dwfactory, s_imagingFactory);

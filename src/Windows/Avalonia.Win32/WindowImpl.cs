@@ -425,7 +425,7 @@ namespace Avalonia.Win32
         protected virtual IntPtr CreateWindowOverride(ushort atom)
         {
             return UnmanagedMethods.CreateWindowEx(
-                (int)UnmanagedMethods.ExtendedWindowStyles.WS_EX_COMPOSITED,
+                (int)UnmanagedMethods.ExtendedWindowStyles.WS_EX_LAYERED,
                 atom,
                 null,
                 (int)UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,

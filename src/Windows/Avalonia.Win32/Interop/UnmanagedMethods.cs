@@ -739,6 +739,9 @@ namespace Avalonia.Win32.Interop
             ULW_OPAQUE = 0x04
         }
 
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, BlendFlags dwFlags);
+
         [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
         public static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst,
                                                       ref SIZE psize, IntPtr hdcSrc, ref POINT pprSrc, int crKey,
