@@ -20,7 +20,7 @@ namespace Avalonia.Win32
                 0,
                 atom,
                 null,
-                (int)UnmanagedMethods.WindowStyles.WS_CHILD,
+                UnmanagedMethods.WindowStyles.WS_CHILD,
                 0,
                 0,
                 640,
@@ -64,7 +64,7 @@ namespace Avalonia.Win32
                 0,
                 atom,
                 null,
-                (int)UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,
+                UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,
                 UnmanagedMethods.CW_USEDEFAULT,
                 UnmanagedMethods.CW_USEDEFAULT,
                 UnmanagedMethods.CW_USEDEFAULT,
@@ -84,7 +84,7 @@ namespace Avalonia.Win32
 
         private static IntPtr ParentWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
-            return UnmanagedMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+            return UnmanagedMethods.DefWindowProc(hWnd, (UnmanagedMethods.WindowsMessage)msg, wParam, lParam);
         }
     }
 }

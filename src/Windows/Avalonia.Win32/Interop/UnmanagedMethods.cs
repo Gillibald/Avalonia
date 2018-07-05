@@ -269,73 +269,391 @@ namespace Avalonia.Win32.Interop
         }
 
         [Flags]
-        public enum WindowStyles : uint
+        public enum ExtendedWindowStyles : uint
         {
-            WS_BORDER = 0x800000,
-            WS_CAPTION = 0xc00000,
-            WS_CHILD = 0x40000000,
-            WS_CLIPCHILDREN = 0x2000000,
-            WS_CLIPSIBLINGS = 0x4000000,
-            WS_DISABLED = 0x8000000,
-            WS_DLGFRAME = 0x400000,
-            WS_GROUP = 0x20000,
-            WS_HSCROLL = 0x100000,
-            WS_MAXIMIZE = 0x1000000,
-            WS_MAXIMIZEBOX = 0x10000,
-            WS_MINIMIZE = 0x20000000,
-            WS_MINIMIZEBOX = 0x20000,
-            WS_OVERLAPPED = 0x0,
-            WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_SIZEFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
-            WS_POPUP = 0x80000000u,
-            WS_POPUPWINDOW = WS_POPUP | WS_BORDER | WS_SYSMENU,
-            WS_SIZEFRAME = 0x40000,
-            WS_SYSMENU = 0x80000,
-            WS_TABSTOP = 0x10000,
-            WS_VISIBLE = 0x10000000,
-            WS_VSCROLL = 0x200000,
-            WS_EX_DLGMODALFRAME = 0x00000001,
-            WS_EX_NOPARENTNOTIFY = 0x00000004,
-            WS_EX_TOPMOST = 0x00000008,
+            /// <summary>
+            /// The window accepts drag-drop files.
+            /// </summary>
             WS_EX_ACCEPTFILES = 0x00000010,
-            WS_EX_TRANSPARENT = 0x00000020,
-            WS_EX_MDICHILD = 0x00000040,
-            WS_EX_TOOLWINDOW = 0x00000080,
-            WS_EX_WINDOWEDGE = 0x00000100,
-            WS_EX_CLIENTEDGE = 0x00000200,
-            WS_EX_CONTEXTHELP = 0x00000400,
-            WS_EX_RIGHT = 0x00001000,
-            WS_EX_LEFT = 0x00000000,
-            WS_EX_RTLREADING = 0x00002000,
-            WS_EX_LTRREADING = 0x00000000,
-            WS_EX_LEFTSCROLLBAR = 0x00004000,
-            WS_EX_RIGHTSCROLLBAR = 0x00000000,
-            WS_EX_CONTROLPARENT = 0x00010000,
-            WS_EX_STATICEDGE = 0x00020000,
+            /// <summary>
+            /// Forces a top-level window onto the taskbar when the window is visible. 
+            /// </summary>
             WS_EX_APPWINDOW = 0x00040000,
-            WS_EX_OVERLAPPEDWINDOW = WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE,
-            WS_EX_PALETTEWINDOW = WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
-            WS_EX_LAYERED = 0x00080000,
-            WS_EX_NOINHERITLAYOUT = 0x00100000,
-            WS_EX_LAYOUTRTL = 0x00400000,
+            /// <summary>
+            /// The window has a border with a sunken edge.
+            /// </summary>
+            WS_EX_CLIENTEDGE = 0x00000200,
+
+            /// <summary>
+            /// Paints all descendants of a window in bottom-to-top painting order using double-buffering. This cannot be used if the window has a class style of either CS_OWNDC or CS_CLASSDC. 
+            /// </summary>
             WS_EX_COMPOSITED = 0x02000000,
-            WS_EX_NOACTIVATE = 0x08000000
+
+            /// <summary>
+            /// The title bar of the window includes a question mark. When the user clicks the question mark, the cursor changes to a question mark with a pointer.
+            /// If the user then clicks a child window, the child receives a WM_HELP message.<para/>
+            /// The child window should pass the message to the parent window procedure, which should call the WinHelp function using the HELP_WM_HELP command.<para/>
+            /// The Help application displays a pop-up window that typically contains help for the child window.
+            /// WS_EX_CONTEXTHELP cannot be used with the WS_MAXIMIZEBOX or WS_MINIMIZEBOX styles.
+            /// </summary>
+            WS_EX_CONTEXTHELP = 0x00000400,
+
+            /// <summary>
+            /// The window itself contains child windows that should take part in dialog box navigation.<para/> 
+            /// If this style is specified, the dialog manager recurses into children of this window when performing navigation operations such as handling the TAB key, 
+            /// an arrow key, or a keyboard mnemonic.
+            /// </summary>
+            WS_EX_CONTROLPARENT = 0x00010000,
+
+            /// <summary>
+            /// The window has a double border; the window can, optionally, be created with a title bar by specifying the WS_CAPTION style in the dwStyle parameter.
+            /// </summary>
+            WS_EX_DLGMODALFRAME = 0x00000001,
+
+            /// <summary>
+            /// The window is a layered window. This style cannot be used if the window has a class style of either CS_OWNDC or CS_CLASSDC.<para/> 
+            /// Windows 8: The WS_EX_LAYERED style is supported for top-level windows and child windows. Previous Windows versions support WS_EX_LAYERED only for top-level windows.
+            /// </summary>
+            WS_EX_LAYERED = 0x00080000,
+
+            /// <summary>
+            /// If the shell language is Hebrew, Arabic, or another language that supports reading order alignment, 
+            /// the horizontal origin of the window is on the right edge. Increasing horizontal values advance to the left. 
+            /// </summary>
+            WS_EX_LAYOUTRTL = 0x00400000,
+
+            /// <summary>
+            /// The window has generic left-aligned properties. This is the default.
+            /// </summary>
+            WS_EX_LEFT = 0x00000000,
+
+            /// <summary>
+            /// If the shell language is Hebrew, Arabic, or another language that supports reading order alignment, 
+            /// the vertical scroll bar (if present) is to the left of the client area. For other languages, the style is ignored.
+            /// </summary>
+            WS_EX_LEFTSCROLLBAR = 0x00004000,
+
+            /// <summary>
+            /// The window text is displayed using left-to-right reading-order properties. This is the default.
+            /// </summary>
+            WS_EX_LTRREADING = 0x00000000,
+
+            /// <summary>
+            /// The window is a MDI child window.
+            /// </summary>
+            WS_EX_MDICHILD = 0x00000040,
+
+            /// <summary>
+            /// A top-level window created with this style does not become the foreground window when the user clicks it. 
+            /// The system does not bring this window to the foreground when the user minimizes or closes the foreground window.<para/> 
+            /// The window should not be activated through programmatic access or via keyboard navigation by accessible technology, such as Narrator.<para/> 
+            /// To activate the window, use the SetActiveWindow or SetForegroundWindow function.<para/> 
+            /// The window does not appear on the taskbar by default. To force the window to appear on the taskbar, use the WS_EX_APPWINDOW style.
+            /// </summary>
+            WS_EX_NOACTIVATE = 0x08000000,
+
+            /// <summary>
+            /// The window does not pass its window layout to its child windows.
+            /// </summary>
+            WS_EX_NOINHERITLAYOUT = 0x00100000,
+
+            /// <summary>
+            /// The child window created with this style does not send the WM_PARENTNOTIFY message to its parent window when it is created or destroyed.
+            /// </summary>
+            WS_EX_NOPARENTNOTIFY = 0x00000004,
+
+            /// <summary>
+            /// The window does not render to a redirection surface. This is for windows that do not have visible content or that use mechanisms other than surfaces to provide their visual.
+            /// </summary>
+            WS_EX_NOREDIRECTIONBITMAP = 0x00200000,
+
+            /// <summary>
+            /// The window is an overlapped window.
+            /// </summary>
+            WS_EX_OVERLAPPEDWINDOW = WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE,
+
+            /// <summary>
+            /// The window is palette window, which is a modeless dialog box that presents an array of commands. 
+            /// </summary>
+            WS_EX_PALETTEWINDOW = WS_EX_WINDOWEDGE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+
+            /// <summary>
+            /// The window has generic "right-aligned" properties.<para/> 
+            /// This depends on the window class. This style has an effect only if the shell language is Hebrew, Arabic, 
+            /// or another language that supports reading-order alignment; otherwise, the style is ignored.<para/> 
+            /// Using the WS_EX_RIGHT style for static or edit controls has the same effect as using the SS_RIGHT or ES_RIGHT style, respectively.<para/> 
+            /// Using this style with button controls has the same effect as using BS_RIGHT and BS_RIGHTBUTTON styles
+            /// </summary>
+            WS_EX_RIGHT = 0x00001000,
+
+            /// <summary>
+            /// The vertical scroll bar (if present) is to the right of the client area. This is the default.
+            /// </summary>
+            WS_EX_RIGHTSCROLLBAR = 0x00000000,
+
+            /// <summary>
+            /// If the shell language is Hebrew, Arabic, or another language that supports reading-order alignment, 
+            /// the window text is displayed using right-to-left reading-order properties. For other languages, the style is ignored.
+            /// </summary>
+            WS_EX_RTLREADING = 0x00002000,
+
+            /// <summary>
+            /// The window has a three-dimensional border style intended to be used for items that do not accept user input.
+            /// </summary>
+            WS_EX_STATICEDGE = 0x00020000,
+
+            /// <summary>
+            /// The window is intended to be used as a floating toolbar.<para/> 
+            /// A tool window has a title bar that is shorter than a normal title bar, and the window title is drawn using a smaller font.<para/> 
+            /// A tool window does not appear in the taskbar or in the dialog that appears when the user presses ALT+TAB.<para/> 
+            /// If a tool window has a system menu, its icon is not displayed on the title bar. However, you can display the system menu by right-clicking or by typing ALT+SPACE. 
+            /// </summary>
+            WS_EX_TOOLWINDOW = 0x00000080,
+
+            /// <summary>
+            /// The window should be placed above all non-topmost windows and should stay above them, even when the window is deactivated. 
+            /// To add or remove this style, use the SetWindowPos function.
+            /// </summary>
+            WS_EX_TOPMOST = 0x00000008,
+
+            /// <summary>
+            /// The window should not be painted until siblings beneath the window (that were created by the same thread) have been painted.<para/> 
+            /// The window appears transparent because the bits of underlying sibling windows have already been painted.
+            /// To achieve transparency without these restrictions, use the SetWindowRgn function.
+            /// </summary>
+            WS_EX_TRANSPARENT = 0x00000020,
+
+            /// <summary>
+            /// The window has a border with a raised edge.
+            /// </summary>
+            WS_EX_WINDOWEDGE = 0x00000100
         }
 
         [Flags]
-        public enum ClassStyles : uint
+        public enum WindowStyles : uint
         {
+            /// <summary>
+            /// The window has a thin-line border.
+            /// </summary>
+            WS_BORDER = 0x00800000,
+
+            /// <summary>
+            /// The window has a title bar (includes the WS_BORDER style).
+            /// </summary>
+            WS_CAPTION = 0x00C00000,
+
+            /// <summary>
+            /// The window is a child window. A window with this style cannot have a menu bar.<para /> This style cannot be used with the WS_POPUP style.
+            /// </summary>
+            WS_CHILD = 0x40000000,
+
+            /// <summary>
+            /// Same as the WS_CHILD style.
+            /// </summary>
+            WS_CHILDWINDOW = 0x40000000,
+
+            /// <summary>
+            /// Excludes the area occupied by child windows when drawing occurs within the parent window.<para /> This style is used when creating the parent window.
+            /// </summary>
+            WS_CLIPCHILDREN = 0x02000000,
+
+            /// <summary>
+            /// Clips child windows relative to each other; that is, when a particular child window receives a WM_PAINT message, 
+            /// the WS_CLIPSIBLINGS style clips all other overlapping child windows out of the region of the child window to be updated.<para />
+            /// If WS_CLIPSIBLINGS is not specified and child windows overlap, it is possible, when drawing within the client area of a child window, 
+            /// to draw within the client area of a neighboring child window.
+            /// </summary>
+            WS_CLIPSIBLINGS = 0x04000000,
+
+            /// <summary>
+            /// The window is initially disabled. <para />A disabled window cannot receive input from the user.
+            /// <para /> To change this after a window has been created, use the EnableWindow function.
+            /// </summary>
+            WS_DISABLED = 0x08000000,
+
+            /// <summary>
+            /// The window has a border of a style typically used with dialog boxes.<para /> A window with this style cannot have a title bar.
+            /// </summary>
+            WS_DLGFRAME = 0x00400000,
+
+            /// <summary>
+            /// The window is the first control of a group of controls.<para />
+            /// The group consists of this first control and all controls defined after it, up to the next control with the WS_GROUP style. <para />
+            /// The first control in each group usually has the WS_TABSTOP style so that the user can move from group to group.<para />
+            /// The user can subsequently change the keyboard focus from one control in the group to the next control in the group by using the direction keys.<para />
+            /// You can turn this style on and off to change dialog box navigation. To change this style after a window has been created, use the SetWindowLong function.
+            /// </summary>
+            WS_GROUP = 0x00020000,
+
+            /// <summary>
+            /// The window has a horizontal scroll bar.
+            /// </summary>
+            /// 
+            WS_HSCROLL = 0x00100000,
+            /// <summary>
+            /// The window is initially minimized. Same as the WS_MINIMIZE style.
+            /// </summary>
+            WS_ICONIC = 0x20000000,
+
+            /// <summary>
+            /// The window is initially maximized.
+            /// </summary>
+            WS_MAXIMIZE = 0x01000000,
+
+            /// <summary>
+            /// The window has a maximize button.<para /> Cannot be combined with the WS_EX_CONTEXTHELP style.<para /> The WS_SYSMENU style must also be specified. 
+            /// </summary>
+            WS_MAXIMIZEBOX = 0x00010000,
+
+            /// <summary>
+            /// The window is initially minimized. Same as the WS_ICONIC style.
+            /// </summary>
+            WS_MINIMIZE = 0x20000000,
+
+            /// <summary>
+            /// The window has a minimize button.<para /> Cannot be combined with the WS_EX_CONTEXTHELP style.<para /> The WS_SYSMENU style must also be specified. 
+            /// </summary>
+            WS_MINIMIZEBOX = 0x00020000,
+
+            /// <summary>
+            /// The window is an overlapped window. An overlapped window has a title bar and a border. Same as the WS_TILED style.
+            /// </summary>
+            WS_OVERLAPPED = 0x00000000,
+
+            /// <summary>
+            /// The window is an overlapped window. Same as the WS_TILEDWINDOW style. 
+            /// </summary>
+            WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+
+            /// <summary>
+            /// The windows is a pop-up window. This style cannot be used with the WS_CHILD style.
+            /// </summary>
+            WS_POPUP = 0x80000000,
+
+            /// <summary>
+            /// The window is a pop-up window. The WS_CAPTION and WS_POPUPWINDOW styles must be combined to make the window menu visible.
+            /// </summary>
+            WS_POPUPWINDOW = WS_POPUP | WS_BORDER | WS_SYSMENU,
+
+            /// <summary>
+            /// The window has a sizing border. Same as the WS_THICKFRAME style.
+            /// </summary>
+            WS_SIZEBOX = 0x00040000,
+
+            /// <summary>
+            /// The window has a window menu on its title bar. The WS_CAPTION style must also be specified.
+            /// </summary>
+            WS_SYSMENU = 0x00080000,
+
+            /// <summary>
+            /// The window is a control that can receive the keyboard focus when the user presses the TAB key.<para />
+            /// Pressing the TAB key changes the keyboard focus to the next control with the WS_TABSTOP style.
+            /// You can turn this style on and off to change dialog box navigation. To change this style after a window has been created, use the SetWindowLong function.<para />
+            /// For user-created windows and modeless dialogs to work with tab stops, alter the message loop to call the IsDialogMessage function.
+            /// </summary>
+            WS_TABSTOP = 0x00010000,
+
+            /// <summary>
+            /// The window has a sizing border. Same as the WS_SIZEBOX style.
+            /// </summary>
+            WS_THICKFRAME = 0x00040000,
+
+            /// <summary>
+            /// The window is an overlapped window. An overlapped window has a title bar and a border. Same as the WS_OVERLAPPED style. 
+            /// </summary>
+            WS_TILED = 0x00000000,
+
+            /// <summary>
+            /// The window is an overlapped window. Same as the WS_OVERLAPPEDWINDOW style. 
+            /// </summary>
+            WS_TILEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX,
+
+            /// <summary>
+            /// The window is initially visible.
+            /// This style can be turned on and off by using the ShowWindow or SetWindowPos function.
+            /// </summary>
+            WS_VISIBLE = 0x10000000,
+
+            /// <summary>
+            /// The window has a vertical scroll bar.
+            /// </summary>
+            WS_VSCROLL = 0x00200000,
+        }
+
+        [Flags]
+        public enum WindowClassStyle : uint
+        {
+            /// <summary>
+            /// Redraws the entire window if a movement or size adjustment changes the height of the client area.
+            /// </summary>
             CS_VREDRAW = 0x0001,
+
+            /// <summary>
+            /// Redraws the entire window if a movement or size adjustment changes the width of the client area.
+            /// </summary>
             CS_HREDRAW = 0x0002,
+            /// <summary>
+            /// Sends a double-click message to the window procedure when the user double-clicks the mouse while the cursor is within a window belonging to the class. 
+            /// </summary>
             CS_DBLCLKS = 0x0008,
+
+            /// <summary>
+            /// Allocates a unique device context for each window in the class. 
+            /// </summary>
             CS_OWNDC = 0x0020,
+
+            /// <summary>
+            /// Allocates one device context to be shared by all windows in the class.<para/>
+            /// Because window classes are process specific, it is possible for multiple threads of an application to create a window of the same class.<para/>
+            /// It is also possible for the threads to attempt to use the device context simultaneously.<para/>
+            /// When this happens, the system allows only one thread to successfully finish its drawing operation. 
+            /// </summary>
             CS_CLASSDC = 0x0040,
+
+            /// <summary>
+            /// Sets the clipping rectangle of the child window to that of the parent window so that the child can draw on the parent.<para/> 
+            /// A window with the CS_PARENTDC style bit receives a regular device context from the system's cache of device contexts.<para/>
+            /// It does not give the child the parent's device context or device context settings. Specifying CS_PARENTDC enhances an application's performance. 
+            /// </summary>
             CS_PARENTDC = 0x0080,
+
+            /// <summary>
+            /// Disables Close on the window menu.
+            /// </summary>
             CS_NOCLOSE = 0x0200,
+
+            /// <summary>
+            /// Saves, as a bitmap, the portion of the screen image obscured by a window of this class.<para/> 
+            /// When the window is removed, the system uses the saved bitmap to restore the screen image, including other windows that were obscured.<para/> 
+            /// Therefore, the system does not send WM_PAINT messages to windows that were obscured if the memory used by 
+            /// the bitmap has not been discarded and if other screen actions have not invalidated the stored image.<para/>  
+            /// This style is useful for small windows (for example, menus or dialog boxes) that are displayed briefly and then removed before other screen activity takes place.<para/> 
+            /// This style increases the time required to display the window, because the system must first allocate memory to store the bitmap.
+            /// </summary>
             CS_SAVEBITS = 0x0800,
+
+            /// <summary>
+            /// Aligns the window's client area on a byte boundary (in the x direction). This style affects the width of the window and its horizontal placement on the display.
+            /// </summary>
+            /// 
             CS_BYTEALIGNCLIENT = 0x1000,
+            /// <summary>
+            /// Aligns the window on a byte boundary (in the x direction). This style affects the width of the window and its horizontal placement on the display.
+            /// </summary>
             CS_BYTEALIGNWINDOW = 0x2000,
+
+            /// <summary>
+            /// Indicates that the window class is an application global class. For more information, see the "Application Global Classes" section of About Window Classes.
+            /// </summary>
             CS_GLOBALCLASS = 0x4000,
+
             CS_IME = 0x00010000,
+
+            /// <summary>
+            /// Enables the drop shadow effect on a window. The effect is turned on and off through SPI_SETDROPSHADOW.<para/>
+            /// Typically, this is enabled for small, short-lived windows such as menus to emphasize their Z-order relationship to other windows.<para/>
+            /// Windows created from a class with this style must be top-level windows; they may not be child windows.
+            /// </summary>
             CS_DROPSHADOW = 0x00020000
         }
 
@@ -696,10 +1014,10 @@ namespace Avalonia.Win32.Interop
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr CreateWindowEx(
-           int dwExStyle,
+           ExtendedWindowStyles dwExStyle,
            uint lpClassName,
            string lpWindowName,
-           uint dwStyle,
+           WindowStyles dwStyle,
            int x,
            int y,
            int nWidth,
@@ -710,7 +1028,7 @@ namespace Avalonia.Win32.Interop
            IntPtr lpParam);
 
         [DllImport("user32.dll", EntryPoint = "DefWindowProcW")]
-        public static extern IntPtr DefWindowProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+        public static extern IntPtr DefWindowProc(IntPtr hWnd, WindowsMessage msg, IntPtr wParam, IntPtr lParam);
 
         [DllImport("user32.dll", EntryPoint = "DispatchMessageW")]
         public static extern IntPtr DispatchMessage(ref MSG lpmsg);
@@ -755,12 +1073,12 @@ namespace Avalonia.Win32.Interop
         public static extern int GetSystemMetrics(SystemMetric smIndex);
 
         [DllImport("user32.dll", SetLastError = true)]
-        public static extern uint GetWindowLongPtr(IntPtr hWnd, int nIndex);
+        public static extern uint GetWindowLongPtr(IntPtr hWnd, WindowLongParam nIndex);
 
         [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLong")]
-        public static extern uint GetWindowLong32b(IntPtr hWnd, int nIndex);
+        public static extern uint GetWindowLong32b(IntPtr hWnd, WindowLongParam nIndex);
 
-        public static uint GetWindowLong(IntPtr hWnd, int nIndex)
+        public static uint GetWindowLong(IntPtr hWnd, WindowLongParam nIndex)
         {
             if(IntPtr.Size == 4)
             {

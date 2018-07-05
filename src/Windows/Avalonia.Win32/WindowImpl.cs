@@ -85,8 +85,8 @@ namespace Avalonia.Win32
         {
             get
             {
-                var style = UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);
-                var exStyle = UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE);
+                var style = UnmanagedMethods.GetWindowLong(_hwnd, UnmanagedMethods.WindowLongParam.GWL_STYLE);
+                var exStyle = UnmanagedMethods.GetWindowLong(_hwnd, UnmanagedMethods.WindowLongParam.GWL_EXSTYLE);
                 var padding = new UnmanagedMethods.RECT();
 
                 if (UnmanagedMethods.AdjustWindowRectEx(ref padding, style, false, exStyle))
@@ -252,7 +252,7 @@ namespace Avalonia.Win32
                 return;
             }
 
-            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);            
+            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, UnmanagedMethods.WindowLongParam.GWL_STYLE);            
 
             style |= UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW;
 
@@ -358,7 +358,7 @@ namespace Avalonia.Win32
 
         public void BeginMoveDrag()
         {
-            UnmanagedMethods.DefWindowProc(_hwnd, (int)UnmanagedMethods.WindowsMessage.WM_NCLBUTTONDOWN,
+            UnmanagedMethods.DefWindowProc(_hwnd, UnmanagedMethods.WindowsMessage.WM_NCLBUTTONDOWN,
                 new IntPtr((int)UnmanagedMethods.HitTestValues.HTCAPTION), IntPtr.Zero);
         }
 
@@ -379,7 +379,7 @@ namespace Avalonia.Win32
 #if USE_MANAGED_DRAG
             _managedDrag.BeginResizeDrag(edge, ScreenToClient(MouseDevice.Position));
 #else
-            UnmanagedMethods.DefWindowProc(_hwnd, (int)UnmanagedMethods.WindowsMessage.WM_NCLBUTTONDOWN,
+            UnmanagedMethods.DefWindowProc(_hwnd, UnmanagedMethods.WindowsMessage.WM_NCLBUTTONDOWN,
                 new IntPtr((int)EdgeDic[edge]), IntPtr.Zero);
 #endif
         }
@@ -425,10 +425,10 @@ namespace Avalonia.Win32
         protected virtual IntPtr CreateWindowOverride(ushort atom)
         {
             return UnmanagedMethods.CreateWindowEx(
-                0,
+                UnmanagedMethods.ExtendedWindowStyles.WS_EX_LEFT,
                 atom,
                 null,
-                (int)UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,
+                UnmanagedMethods.WindowStyles.WS_OVERLAPPEDWINDOW,
                 UnmanagedMethods.CW_USEDEFAULT,
                 UnmanagedMethods.CW_USEDEFAULT,
                 UnmanagedMethods.CW_USEDEFAULT,
@@ -451,7 +451,9 @@ namespace Avalonia.Win32
 
             WindowsMouseDevice.Instance.CurrentWindow = this;
 
-            switch ((UnmanagedMethods.WindowsMessage)msg)
+            var windowsMessage = (UnmanagedMethods.WindowsMessage)msg;
+
+            switch (windowsMessage)
             {
                 case UnmanagedMethods.WindowsMessage.WM_ACTIVATE:
                     var wa = (UnmanagedMethods.WindowActivate)(ToInt32(wParam) & 0xffff);
@@ -530,9 +532,9 @@ namespace Avalonia.Win32
                         WindowsMouseDevice.Instance,
                         timestamp,
                         _owner,
-                        msg == (int)UnmanagedMethods.WindowsMessage.WM_LBUTTONDOWN
+                        windowsMessage == UnmanagedMethods.WindowsMessage.WM_LBUTTONDOWN
                             ? RawMouseEventType.LeftButtonDown
-                            : msg == (int)UnmanagedMethods.WindowsMessage.WM_RBUTTONDOWN
+                            : windowsMessage == UnmanagedMethods.WindowsMessage.WM_RBUTTONDOWN
                                 ? RawMouseEventType.RightButtonDown
                                 : RawMouseEventType.MiddleButtonDown,
                         DipFromLParam(lParam), GetMouseModifiers(wParam));
@@ -545,9 +547,9 @@ namespace Avalonia.Win32
                         WindowsMouseDevice.Instance,
                         timestamp,
                         _owner,
-                        msg == (int)UnmanagedMethods.WindowsMessage.WM_LBUTTONUP
+                        windowsMessage == UnmanagedMethods.WindowsMessage.WM_LBUTTONUP
                             ? RawMouseEventType.LeftButtonUp
-                            : msg == (int)UnmanagedMethods.WindowsMessage.WM_RBUTTONUP
+                            : windowsMessage == UnmanagedMethods.WindowsMessage.WM_RBUTTONUP
                                 ? RawMouseEventType.RightButtonUp
                                 : RawMouseEventType.MiddleButtonUp,
                         DipFromLParam(lParam), GetMouseModifiers(wParam));
@@ -611,9 +613,9 @@ namespace Avalonia.Win32
                         WindowsMouseDevice.Instance,
                         timestamp,
                         _owner,
-                        msg == (int)UnmanagedMethods.WindowsMessage.WM_NCLBUTTONDOWN
+                        windowsMessage == UnmanagedMethods.WindowsMessage.WM_NCLBUTTONDOWN
                             ? RawMouseEventType.NonClientLeftButtonDown
-                            : msg == (int)UnmanagedMethods.WindowsMessage.WM_NCRBUTTONDOWN
+                            : windowsMessage == UnmanagedMethods.WindowsMessage.WM_NCRBUTTONDOWN
                                 ? RawMouseEventType.RightButtonDown
                                 : RawMouseEventType.MiddleButtonDown,
                         new Point(0, 0), GetMouseModifiers(wParam));
@@ -698,7 +700,7 @@ namespace Avalonia.Win32
                 }
             }
 
-            return UnmanagedMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+            return UnmanagedMethods.DefWindowProc(hWnd, (UnmanagedMethods.WindowsMessage)msg, wParam, lParam);
         }
 
         static InputModifiers GetMouseModifiers(IntPtr wParam)
@@ -724,7 +726,7 @@ namespace Avalonia.Win32
             UnmanagedMethods.WNDCLASSEX wndClassEx = new UnmanagedMethods.WNDCLASSEX
             {
                 cbSize = Marshal.SizeOf<UnmanagedMethods.WNDCLASSEX>(),
-                style = (int)(ClassStyles.CS_OWNDC | ClassStyles.CS_HREDRAW | ClassStyles.CS_VREDRAW), // Unique DC helps with performance when using Gpu based rendering
+                style = (int)(WindowClassStyle.CS_OWNDC | WindowClassStyle.CS_HREDRAW | WindowClassStyle.CS_VREDRAW), // Unique DC helps with performance when using Gpu based rendering
                 lpfnWndProc = _wndProcDelegate,
                 hInstance = UnmanagedMethods.GetModuleHandle(null),
                 hCursor = DefaultCursor,
@@ -835,8 +837,6 @@ namespace Avalonia.Win32
 
                 if (GetMonitorInfo(monitor, monitorInfo))
                 {
-                    RECT rcMonitorArea = monitorInfo.rcMonitor;
-
                     var x = monitorInfo.rcWork.left;
                     var y = monitorInfo.rcWork.top;
                     var cx = Math.Abs(monitorInfo.rcWork.right - x);
@@ -864,22 +864,24 @@ namespace Avalonia.Win32
 
         public void ShowTaskbarIcon(bool value)
         {
-            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE);
+            var styleEx = (UnmanagedMethods.ExtendedWindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, UnmanagedMethods.WindowLongParam.GWL_EXSTYLE);
+            var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, UnmanagedMethods.WindowLongParam.GWL_STYLE);
 
             style &= ~(UnmanagedMethods.WindowStyles.WS_VISIBLE);
 
-            style |= UnmanagedMethods.WindowStyles.WS_EX_TOOLWINDOW;
+            styleEx |= UnmanagedMethods.ExtendedWindowStyles.WS_EX_TOOLWINDOW;
             if (value)
-                style |= UnmanagedMethods.WindowStyles.WS_EX_APPWINDOW;
+                styleEx |= UnmanagedMethods.ExtendedWindowStyles.WS_EX_APPWINDOW;
             else
-                style &= ~(UnmanagedMethods.WindowStyles.WS_EX_APPWINDOW);
+                styleEx &= ~(UnmanagedMethods.ExtendedWindowStyles.WS_EX_APPWINDOW);
 
             WINDOWPLACEMENT windowPlacement = UnmanagedMethods.WINDOWPLACEMENT.Default;
             if (UnmanagedMethods.GetWindowPlacement(_hwnd, ref windowPlacement))
             {
                 //Toggle to make the styles stick
                 UnmanagedMethods.ShowWindow(_hwnd, ShowWindowCommand.Hide);
-                UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE, (uint)style);
+                UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_EXSTYLE, (uint)styleEx);
+                UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE, (uint)style);
                 UnmanagedMethods.ShowWindow(_hwnd, windowPlacement.ShowCmd);
             }
         }
@@ -893,12 +895,12 @@ namespace Avalonia.Win32
 
             if (_decorated)
             {
-                var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE);
+                var style = (UnmanagedMethods.WindowStyles)UnmanagedMethods.GetWindowLong(_hwnd, UnmanagedMethods.WindowLongParam.GWL_STYLE);
 
                 if (value)
-                    style |= UnmanagedMethods.WindowStyles.WS_SIZEFRAME;
+                    style |= UnmanagedMethods.WindowStyles.WS_SIZEBOX;
                 else
-                    style &= ~(UnmanagedMethods.WindowStyles.WS_SIZEFRAME);
+                    style &= ~(UnmanagedMethods.WindowStyles.WS_SIZEBOX);
 
                 UnmanagedMethods.SetWindowLong(_hwnd, (int)UnmanagedMethods.WindowLongParam.GWL_STYLE, (uint)style);
             }

@@ -20,15 +20,15 @@ namespace Avalonia.Win32
                 UnmanagedMethods.WindowStyles.WS_POPUP |
                 UnmanagedMethods.WindowStyles.WS_CLIPSIBLINGS;
 
-            UnmanagedMethods.WindowStyles exStyle =
-                UnmanagedMethods.WindowStyles.WS_EX_TOOLWINDOW |
-                UnmanagedMethods.WindowStyles.WS_EX_TOPMOST;
+            UnmanagedMethods.ExtendedWindowStyles exStyle =
+                UnmanagedMethods.ExtendedWindowStyles.WS_EX_TOOLWINDOW |
+                UnmanagedMethods.ExtendedWindowStyles.WS_EX_TOPMOST;
 
             return UnmanagedMethods.CreateWindowEx(
-                (int)exStyle,
+                exStyle,
                 atom,
                 null,
-                (uint)style,
+                style,
                 UnmanagedMethods.CW_USEDEFAULT,
                 UnmanagedMethods.CW_USEDEFAULT,
                 UnmanagedMethods.CW_USEDEFAULT,
@@ -41,7 +41,9 @@ namespace Avalonia.Win32
 
         protected override IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
         {
-            switch ((UnmanagedMethods.WindowsMessage)msg)
+            var windowsMessage = (UnmanagedMethods.WindowsMessage)msg;
+
+            switch (windowsMessage)
             {
                 case UnmanagedMethods.WindowsMessage.WM_MOUSEACTIVATE:
                     return (IntPtr)UnmanagedMethods.MouseActivate.MA_NOACTIVATE;
