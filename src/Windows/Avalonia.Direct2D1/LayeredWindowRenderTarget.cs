@@ -31,7 +31,7 @@ namespace Avalonia.Direct2D1
                 _window.Handle,
                 0,
                 byte.MaxValue,
-                UnmanagedMethods.BlendFlags.ULW_COLORKEY);
+                UnmanagedMethods.BlendFlags.ULW_COLORKEY);          
 
             D2D1Device = AvaloniaLocator.Current.GetService<SharpDX.Direct2D1.Device>();
             DxgiDevice = AvaloniaLocator.Current.GetService<SharpDX.DXGI.Device>();
@@ -65,7 +65,7 @@ namespace Avalonia.Direct2D1
             if (size != _savedSize || dpi != _savedDpi)
             {
                 _savedSize = size;
-                _savedDpi = dpi;
+                _savedDpi = dpi;             
 
                 this.CreateSwapChain();
             }
@@ -95,6 +95,10 @@ namespace Avalonia.Direct2D1
 
         private void CreateSwapChain()
         {
+            //var margins = new UnmanagedMethods.MARGINS(-1, -1, -1, -1);
+
+            //UnmanagedMethods.DwmExtendFrameIntoClientArea(this._window.Handle, ref margins);
+
             var swapChainDescription = new SwapChainDescription1
             {
                 Width = _savedSize.Width,

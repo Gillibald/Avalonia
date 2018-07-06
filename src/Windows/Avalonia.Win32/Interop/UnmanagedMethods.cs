@@ -717,15 +717,23 @@ namespace Avalonia.Win32.Interop
            IntPtr hWndParent,
            IntPtr hMenu,
            IntPtr hInstance,
-           IntPtr lpParam);
+           IntPtr lpParam);      
 
         [StructLayout(LayoutKind.Sequential)]
         public struct MARGINS
         {
-            public int leftWidth;
-            public int rightWidth;
-            public int topHeight;
-            public int bottomHeight;
+            public int Left;
+            public int Right;
+            public int Top;
+            public int Bottom;
+
+            public MARGINS(int left, int right, int top, int bottom)
+            {
+                Left = left;
+                Right = right;
+                Top = top;
+                Bottom = bottom;
+            }
         }
 
         [DllImport("Dwmapi.dll")]

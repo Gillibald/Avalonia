@@ -18,6 +18,12 @@ namespace Avalonia.Direct2D1
         public HwndRenderTarget(IPlatformHandle window)
         {
             _window = window;
+
+            UnmanagedMethods.SetLayeredWindowAttributes(
+                _window.Handle,
+                0,
+                byte.MaxValue,
+                UnmanagedMethods.BlendFlags.ULW_COLORKEY);
         }
 
         protected override SwapChain1 CreateSwapChain(Factory2 dxgiFactory, SwapChainDescription1 swapChainDesc)
