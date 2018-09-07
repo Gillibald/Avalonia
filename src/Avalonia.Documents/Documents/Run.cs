@@ -1,5 +1,6 @@
-﻿using System;
-using Avalonia.Media;
+﻿// Copyright (c) The Avalonia Project. All rights reserved.
+// Licensed under the MIT license. See licence.md file in the project root for full license information.
+
 using Avalonia.Metadata;
 
 namespace Avalonia.Documents
@@ -18,7 +19,7 @@ namespace Avalonia.Documents
                 o => o.Text,
                 (o, v) => o.Text = v);
 
-        string _text;
+        private string _text;
 
         public Run()
         {

@@ -1,10 +1,10 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System.Collections.Generic;
-using System.Linq;
 using Avalonia.Media;
 using Avalonia.Platform;
+using System.Collections.Generic;
+using System.Linq;
 using DWrite = SharpDX.DirectWrite;
 
 namespace Avalonia.Direct2D1.Media
@@ -23,22 +23,21 @@ namespace Avalonia.Direct2D1.Media
 
             var factory = AvaloniaLocator.Current.GetService<DWrite.Factory>();
 
-            var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface);
-
-            textFormat.WordWrapping =
-                wrapping == TextWrapping.Wrap ? DWrite.WordWrapping.Wrap : DWrite.WordWrapping.NoWrap;
-
-            TextLayout = new DWrite.TextLayout(
-                             factory,
-                             Text ?? string.Empty,
-                             textFormat,
-                             (float)constraint.Width,
-                             (float)constraint.Height)
+            using (var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface))
             {
-                TextAlignment = textAlignment.ToDirect2D()
-            };
+                textFormat.WordWrapping =
+                    wrapping == TextWrapping.Wrap ? DWrite.WordWrapping.Wrap : DWrite.WordWrapping.NoWrap;
 
-            textFormat.Dispose();
+                TextLayout = new DWrite.TextLayout(
+                                 factory,
+                                 Text ?? string.Empty,
+                                 textFormat,
+                                 (float)constraint.Width,
+                                 (float)constraint.Height)
+                {
+                    TextAlignment = textAlignment.ToDirect2D()
+                };
+            }
 
             if (spans != null)
             {
@@ -107,25 +106,30 @@ namespace Avalonia.Direct2D1.Media
                         range);
                 }
 
-                if (span.FontFamily != null)
+                var typeface = span.GeTypeface();
+
+                using (var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface))
                 {
-                    TextLayout.SetFontFamilyName(span.FontFamily.Name, range);
+                    TextLayout.SetFontCollection(textFormat.FontCollection, range);
+
+                    TextLayout.SetFontFamilyName(textFormat.FontFamilyName, range);
                 }
 
-                if (span.FontSize != null)
+                TextLayout.SetFontSize((float)typeface.FontSize, range);
+
+                TextLayout.SetFontStyle((DWrite.FontStyle)typeface.Style, range);
+
+                TextLayout.SetFontWeight((DWrite.FontWeight)typeface.Weight, range);          
+
+                if (span.TextDecorations.HasFlag(TextDecorations.Strikethrough))
                 {
-                    TextLayout.SetFontSize((float)span.FontSize, range);
+                    TextLayout.SetStrikethrough(true, range);
                 }
 
-                if (span.FontStyle != null)
+                if (span.TextDecorations.HasFlag(TextDecorations.Underline))
                 {
-                    TextLayout.SetFontStyle((DWrite.FontStyle)span.FontStyle, range);
-                }
-
-                if (span.FontWeight != null)
-                {
-                    TextLayout.SetFontWeight((DWrite.FontWeight)span.FontWeight, range);
-                }
+                    TextLayout.SetUnderline(true, range);
+                }               
             }
         }
 

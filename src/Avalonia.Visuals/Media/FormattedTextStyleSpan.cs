@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Copyright (c) The Avalonia Project. All rights reserved.
+// Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 namespace Avalonia.Media
 {
@@ -15,7 +16,8 @@ namespace Avalonia.Media
         /// <param name="fontFamily">The span's font family.</param>
         /// <param name="fontSize">The span's font size.</param>
         /// <param name="fontStyle">The span's font style.</param>
-        /// <param name="fontWeight">The span's font weight</param>
+        /// <param name="fontWeight">The span's font weight.</param>
+        /// <param name="textDecorations">The span's text decorations.</param>
         /// <param name="foregroundBrush">The span's foreground brush.</param>
         public FormattedTextStyleSpan(
             int startIndex,
@@ -24,6 +26,7 @@ namespace Avalonia.Media
             double? fontSize = null,
             FontStyle? fontStyle = null,
             FontWeight? fontWeight = null,
+            TextDecorations textDecorations = TextDecorations.None,
             IBrush foregroundBrush = null)
         {
             StartIndex = startIndex;
@@ -32,6 +35,7 @@ namespace Avalonia.Media
             FontSize = fontSize;
             FontStyle = fontStyle;
             FontWeight = fontWeight;
+            TextDecorations = textDecorations;
             ForegroundBrush = foregroundBrush;
         }
 
@@ -58,7 +62,7 @@ namespace Avalonia.Media
         /// <summary>
         /// Gets the font style.
         /// </summary>
-        public FontStyle? FontStyle{ get; }
+        public FontStyle? FontStyle { get; }
 
         /// <summary>
         /// Gets the font weight.
@@ -66,8 +70,22 @@ namespace Avalonia.Media
         public FontWeight? FontWeight { get; }
 
         /// <summary>
+        /// Gets the text decorations.
+        /// </summary>
+        public TextDecorations TextDecorations { get; }
+
+        /// <summary>
         /// Gets the span's foreground brush.
         /// </summary>
         public IBrush ForegroundBrush { get; }
+
+        public Typeface GeTypeface()
+        {
+            return new Typeface(
+                FontFamily ?? FontFamily.Default,
+                FontSize ?? 12,
+                FontStyle ?? Media.FontStyle.Normal,
+                FontWeight ?? Media.FontWeight.Normal);
+        }
     }
 }

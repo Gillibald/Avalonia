@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 using System;
+
 using SharpDX;
 using SharpDX.Direct2D1;
 using SharpDX.DirectWrite;
@@ -27,16 +28,7 @@ namespace Avalonia.Direct2D1.Media
             _foreground = foreground;
         }
 
-        public IDisposable Shadow
-        {
-            get;
-            set;
-        }
-
-        public void Dispose()
-        {
-            Shadow?.Dispose();
-        }
+        public IDisposable Shadow { get; set; }
 
         public Result DrawGlyphRun(
             object clientDrawingContext,
@@ -47,22 +39,13 @@ namespace Avalonia.Direct2D1.Media
             GlyphRunDescription glyphRunDescription,
             ComObject clientDrawingEffect)
         {
-            var wrapper = clientDrawingEffect as BrushWrapper;
-
-            // TODO: Work out how to get the size below rather than passing new Size().
-            var brush = (wrapper == null) ?
-                _foreground :
-                _context.CreateBrush(wrapper.Brush, new Size()).PlatformBrush;
-
-            _renderTarget.DrawGlyphRun(
-                new RawVector2 { X = baselineOriginX, Y = baselineOriginY },
-                glyphRun,
-                brush,
-                measuringMode);
-
-            if (wrapper != null)
+            using (var brush = CreateEffectBrush(clientDrawingEffect))
             {
-                brush.Dispose();
+                _renderTarget.DrawGlyphRun(
+                    new RawVector2 { X = baselineOriginX, Y = baselineOriginY },
+                    glyphRun,
+                    brush ?? _foreground,
+                    measuringMode);
             }
 
             return Result.Ok;
@@ -75,12 +58,24 @@ namespace Avalonia.Direct2D1.Media
 
         public Result DrawStrikethrough(object clientDrawingContext, float baselineOriginX, float baselineOriginY, ref Strikethrough strikethrough, ComObject clientDrawingEffect)
         {
-            throw new NotImplementedException();
+            return DrawTextDecoration(
+                baselineOriginX,
+                baselineOriginY,
+                strikethrough.Offset,
+                strikethrough.Width,
+                strikethrough.Thickness,
+                clientDrawingEffect);
         }
 
         public Result DrawUnderline(object clientDrawingContext, float baselineOriginX, float baselineOriginY, ref Underline underline, ComObject clientDrawingEffect)
         {
-            throw new NotImplementedException();
+            return DrawTextDecoration(
+                baselineOriginX,
+                baselineOriginY,
+                underline.Offset,
+                underline.Width,
+                underline.Thickness,
+                clientDrawingEffect);
         }
 
         public RawMatrix3x2 GetCurrentTransform(object clientDrawingContext)
@@ -96,6 +91,54 @@ namespace Avalonia.Direct2D1.Media
         public bool IsPixelSnappingDisabled(object clientDrawingContext)
         {
             return false;
+        }
+
+        public void Dispose()
+        {
+            Shadow?.Dispose();
+        }
+
+        private Brush CreateEffectBrush(ComObject clientDrawingEffect)
+        {
+            if (clientDrawingEffect is BrushWrapper brushWrapper)
+            {
+                return _context.CreateBrush(brushWrapper.Brush, new Size()).PlatformBrush;
+            }
+
+            return null;
+        }
+
+        private Result DrawTextDecoration(float baselineOriginX, float baselineOriginY, float offset, float width, float thickness, ComObject clientDrawingEffect)
+        {
+            try
+            {
+                var rect = new RawRectangleF(0, offset, width, offset + thickness);
+
+                var factory = AvaloniaLocator.Current.GetService<SharpDX.Direct2D1.Factory>();
+
+                var transform = new Matrix(
+                    1.0f,
+                    0.0f,
+                    0.0f,
+                    1.0f,
+                    baselineOriginX,
+                    baselineOriginY);
+
+                using (var rectangleGeometry = new RectangleGeometry(factory, rect))
+                using (var transformedGeometry = new TransformedGeometry(factory, rectangleGeometry, transform.ToDirect2D()))
+                using (var brush = CreateEffectBrush(clientDrawingEffect))
+                {
+                    _renderTarget.DrawGeometry(transformedGeometry, brush);
+
+                    _renderTarget.FillGeometry(transformedGeometry, brush);
+                }
+            }
+            catch
+            {
+                return Result.Fail;
+            }
+
+            return Result.Ok;
         }
     }
 }

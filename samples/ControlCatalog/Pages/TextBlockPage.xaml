@@ -24,6 +24,12 @@
           <Run Foreground="Green">colors</Run>.
         </TextBlock>
         <TextBlock>
+          A <Run Classes="code" Foreground="Gray">TextBlock</Run> with <Run TextDecorations="Strikethrough">strikethrough</Run>
+        </TextBlock>
+        <TextBlock>
+          A <Run Classes="code" Foreground="Gray">TextBlock</Run> with <Run TextDecorations="Underline">underline</Run>
+        </TextBlock>
+        <TextBlock>
           A <Run Classes="code">TextBlock</Run> with <Run Foreground="Orange" FontStyle="Italic" Text="{Binding}"/>.
         </TextBlock>
         <TextBlock>
