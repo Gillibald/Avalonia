@@ -1,10 +1,10 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using Avalonia.Utilities;
 using System;
 using System.Globalization;
-using System.Linq;
+using Avalonia.Animation.Animators;
+using Avalonia.Utilities;
 
 namespace Avalonia
 {
@@ -13,6 +13,11 @@ namespace Avalonia
     /// </summary>
     public readonly struct Rect
     {
+        static Rect()
+        {
+            Animation.Animation.RegisterAnimator<RectAnimator>(prop => typeof(Rect).IsAssignableFrom(prop.PropertyType));
+        }
+
         /// <summary>
         /// An empty rectangle.
         /// </summary>
@@ -173,7 +178,7 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Checks for unequality between two <see cref="Rect"/>s.
+        /// Checks for inequality between two <see cref="Rect"/>s.
         /// </summary>
         /// <param name="left">The first rect.</param>
         /// <param name="right">The second rect.</param>

@@ -4,10 +4,10 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
-using System.Reactive;
-using System.Reactive.Linq;
 using System.Reflection;
 using System.Text;
+using Avalonia.Collections;
+using Avalonia.Reactive;
 
 namespace Avalonia.Styling
 {
@@ -68,6 +68,9 @@ namespace Avalonia.Styling
         /// <inheritdoc/>
         public override Type TargetType => _targetType ?? _previous?.TargetType;
 
+        /// <inheritdoc/>
+        public override bool IsCombinator => false;
+
         /// <summary>
         /// Whether the selector matches the concrete <see cref="TargetType"/> or any object which
         /// implements <see cref="TargetType"/>.
@@ -101,45 +104,42 @@ namespace Avalonia.Styling
                 {
                     if (controlType != TargetType)
                     {
-                        return SelectorMatch.False;
+                        return SelectorMatch.NeverThisType;
                     }
                 }
                 else
                 {
                     if (!TargetType.GetTypeInfo().IsAssignableFrom(controlType.GetTypeInfo()))
                     {
-                        return SelectorMatch.False;
+                        return SelectorMatch.NeverThisType;
                     }
                 }
             }
 
-            if (Name != null && control.Name != Name)
+            if (Name != null)
             {
-                return SelectorMatch.False;
+                return control.Name == Name ? 
+                    SelectorMatch.AlwaysThisInstance :
+                    SelectorMatch.NeverThisInstance;
             }
 
             if (_classes.IsValueCreated && _classes.Value.Count > 0)
             {
                 if (subscribe)
                 {
-                    var observable = Observable.FromEventPattern<
-                            NotifyCollectionChangedEventHandler,
-                            NotifyCollectionChangedEventArgs>(
-                        x => control.Classes.CollectionChanged += x,
-                        x => control.Classes.CollectionChanged -= x)
-                        .StartWith((EventPattern<NotifyCollectionChangedEventArgs>)null)
-                        .Select(_ => Matches(control.Classes))
-                        .DistinctUntilChanged();
+                    var observable = new ClassObserver(control.Classes, _classes.Value);
                     return new SelectorMatch(observable);
                 }
                 else
                 {
-                    return new SelectorMatch(Matches(control.Classes));
+                    return Matches(control.Classes) ?
+                        SelectorMatch.AlwaysThisInstance :
+                        SelectorMatch.NeverThisInstance;
                 }
             }
             else
             {
-                return SelectorMatch.True;
+                return SelectorMatch.AlwaysThisType;
             }
         }
 
@@ -203,6 +203,61 @@ namespace Avalonia.Styling
             }
 
             return builder.ToString();
+        }
+
+        private class ClassObserver : LightweightObservableBase<bool>
+        {
+            readonly IList<string> _match;
+            IAvaloniaReadOnlyList<string> _classes;
+            bool _value;
+
+            public ClassObserver(IAvaloniaReadOnlyList<string> classes, IList<string> match)
+            {
+                _classes = classes;
+                _match = match;
+            }
+
+            protected override void Deinitialize() => _classes.CollectionChanged -= ClassesChanged;
+
+            protected override void Initialize()
+            {
+                _value = GetResult();
+                _classes.CollectionChanged += ClassesChanged;
+            }
+
+            protected override void Subscribed(IObserver<bool> observer, bool first)
+            {
+                observer.OnNext(_value);
+            }
+
+            private void ClassesChanged(object sender, NotifyCollectionChangedEventArgs e)
+            {
+                if (e.Action != NotifyCollectionChangedAction.Move)
+                {
+                    var value = GetResult();
+
+                    if (value != _value)
+                    {
+                        PublishNext(GetResult());
+                        _value = value;
+                    }
+                }
+            }
+
+            private bool GetResult()
+            {
+                int remaining = _match.Count;
+
+                foreach (var c in _classes)
+                {
+                    if (_match.Contains(c))
+                    {
+                        --remaining;
+                    }
+                }
+
+                return remaining == 0;
+            }
         }
     }
 }

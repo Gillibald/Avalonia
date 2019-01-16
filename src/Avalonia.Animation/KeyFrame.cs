@@ -1,20 +1,25 @@
-﻿using System;
+﻿// Copyright (c) The Avalonia Project. All rights reserved.
+// Licensed under the MIT license. See licence.md file in the project root for full license information.
+
+using System;
 using System.Collections.Generic;
-using System.Text;
-using System.ComponentModel;
-using Avalonia.Metadata;
 using Avalonia.Collections;
+using Avalonia.Metadata;
 
 namespace Avalonia.Animation
 {
+    internal enum KeyFrameTimingMode
+    {
+        TimeSpan = 1,
+        Cue
+    }
 
     /// <summary>
     /// Stores data regarding a specific key
     /// point and value in an animation.
     /// </summary>
-    public class KeyFrame : AvaloniaList<IAnimationSetter>
+    public class KeyFrame : AvaloniaObject
     {
-        internal bool timeSpanSet, cueSet;
         private TimeSpan _ktimeSpan;
         private Cue _kCue;
 
@@ -22,13 +27,13 @@ namespace Avalonia.Animation
         {
         }
 
-        public KeyFrame(IEnumerable<IAnimationSetter> items) : base(items)
-        {
-        }
+        /// <summary>
+        /// Gets the setters of <see cref="KeyFrame"/>.
+        /// </summary>
+        [Content]
+        public AvaloniaList<IAnimationSetter> Setters { get; } = new AvaloniaList<IAnimationSetter>();
 
-        public KeyFrame(params IAnimationSetter[] items) : base(items)
-        {
-        }
+        internal KeyFrameTimingMode TimingMode { get; private set; }
 
         /// <summary>
         /// Gets or sets the key time of this <see cref="KeyFrame"/>.
@@ -42,11 +47,11 @@ namespace Avalonia.Animation
             }
             set
             {
-                if (cueSet)
+                if (TimingMode == KeyFrameTimingMode.Cue)
                 {
                     throw new InvalidOperationException($"You can only set either {nameof(KeyTime)} or {nameof(Cue)}.");
                 }
-                timeSpanSet = true;
+                TimingMode = KeyFrameTimingMode.TimeSpan;
                 _ktimeSpan = value;
             }
         }
@@ -63,11 +68,11 @@ namespace Avalonia.Animation
             }
             set
             {
-                if (timeSpanSet)
+                if (TimingMode == KeyFrameTimingMode.TimeSpan)
                 {
                     throw new InvalidOperationException($"You can only set either {nameof(KeyTime)} or {nameof(Cue)}.");
                 }
-                cueSet = true;
+                TimingMode = KeyFrameTimingMode.Cue;
                 _kCue = value;
             }
         }

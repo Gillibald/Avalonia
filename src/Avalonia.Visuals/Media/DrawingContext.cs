@@ -2,22 +2,26 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Threading;
+using Avalonia.Visuals.Media.Imaging;
 
 namespace Avalonia.Media
 {
     public sealed class DrawingContext : IDisposable
     {
+        private readonly bool _ownsImpl;
         private int _currentLevel;
 
 
-        static readonly Stack<Stack<PushedState>> StateStackPool = new Stack<Stack<PushedState>>();
-        static readonly Stack<Stack<TransformContainer>> TransformStackPool = new Stack<Stack<TransformContainer>>();
+        private static ThreadSafeObjectPool<Stack<PushedState>> StateStackPool { get; } =
+            ThreadSafeObjectPool<Stack<PushedState>>.Default;
 
-        private Stack<PushedState> _states = StateStackPool.Count == 0 ? new Stack<PushedState>() : StateStackPool.Pop();
+        private static ThreadSafeObjectPool<Stack<TransformContainer>> TransformStackPool { get; } =
+            ThreadSafeObjectPool<Stack<TransformContainer>>.Default;
 
-        private Stack<TransformContainer> _transformContainers = TransformStackPool.Count == 0
-            ? new Stack<TransformContainer>()
-            : TransformStackPool.Pop();
+        private Stack<PushedState> _states = StateStackPool.Get();
+
+        private Stack<TransformContainer> _transformContainers = TransformStackPool.Get();
 
         readonly struct TransformContainer
         {
@@ -33,6 +37,13 @@ namespace Avalonia.Media
 
         public DrawingContext(IDrawingContextImpl impl)
         {
+            PlatformImpl = impl;
+            _ownsImpl = true;
+        }
+        
+        public DrawingContext(IDrawingContextImpl impl, bool ownsImpl)
+        {
+            _ownsImpl = ownsImpl;
             PlatformImpl = impl;
         }
 
@@ -59,7 +70,7 @@ namespace Avalonia.Media
         //HACK: This is a temporary hack that is used in the render loop 
         //to update TransformedBounds property
         [Obsolete("HACK for render loop, don't use")]
-        internal Matrix CurrentContainerTransform => _currentContainerTransform;
+        public Matrix CurrentContainerTransform => _currentContainerTransform;
 
         /// <summary>
         /// Draws a bitmap image.
@@ -68,11 +79,12 @@ namespace Avalonia.Media
         /// <param name="opacity">The opacity to draw with.</param>
         /// <param name="sourceRect">The rect in the image to draw.</param>
         /// <param name="destRect">The rect in the output to draw to.</param>
-        public void DrawImage(IBitmap source, double opacity, Rect sourceRect, Rect destRect)
+        /// <param name="bitmapInterpolationMode">The bitmap interpolation mode.</param>
+        public void DrawImage(IBitmap source, double opacity, Rect sourceRect, Rect destRect, BitmapInterpolationMode bitmapInterpolationMode = default)
         {
             Contract.Requires<ArgumentNullException>(source != null);
 
-            PlatformImpl.DrawImage(source.PlatformImpl, opacity, sourceRect, destRect);
+            PlatformImpl.DrawImage(source.PlatformImpl, opacity, sourceRect, destRect, bitmapInterpolationMode);
         }
 
         /// <summary>
@@ -203,7 +215,7 @@ namespace Avalonia.Media
 
 
         /// <summary>
-        /// Pushes a clip rectange.
+        /// Pushes a clip rectangle.
         /// </summary>
         /// <param name="clip">The clip rectangle.</param>
         /// <returns>A disposable used to undo the clip rectangle.</returns>
@@ -297,11 +309,14 @@ namespace Avalonia.Media
         {
             while (_states.Count != 0)
                 _states.Peek().Dispose();
-            StateStackPool.Push(_states);
+            StateStackPool.Return(_states);
             _states = null;
-            TransformStackPool.Push(_transformContainers);
+            if (_transformContainers.Count != 0)
+                throw new InvalidOperationException("Transform container stack is non-empty");
+            TransformStackPool.Return(_transformContainers);
             _transformContainers = null;
-            PlatformImpl.Dispose();
+            if (_ownsImpl)
+                PlatformImpl.Dispose();
         }
 
         private static bool PenIsVisible(Pen pen)

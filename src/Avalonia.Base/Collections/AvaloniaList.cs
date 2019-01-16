@@ -8,7 +8,6 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using Avalonia.Diagnostics;
-using Avalonia.Platform;
 
 namespace Avalonia.Collections
 {
@@ -512,7 +511,7 @@ namespace Avalonia.Collections
         /// </summary>
         private void NotifyCountChanged()
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Count"));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
         }
 
         /// <summary>

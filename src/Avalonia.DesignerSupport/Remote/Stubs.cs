@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reactive.Disposables;
@@ -20,7 +20,7 @@ namespace Avalonia.DesignerSupport.Remote
         public IPlatformHandle Handle { get; }
         public Size MaxClientSize { get; }
         public Size ClientSize { get; }
-        public double Scaling { get; }
+        public double Scaling { get; } = 1.0;
         public IEnumerable<object> Surfaces { get; }
         public Action<RawInputEventArgs> Input { get; set; }
         public Action<Rect> Paint { get; set; }
@@ -87,7 +87,9 @@ namespace Avalonia.DesignerSupport.Remote
         {
         }
 
-        public IDisposable ShowDialog() => Disposable.Empty;
+        public void ShowDialog(IWindowImpl parent)
+        {
+        }
 
         public void SetSystemDecorations(bool enabled)
         {
@@ -102,6 +104,10 @@ namespace Avalonia.DesignerSupport.Remote
         }
 
         public void CanResize(bool value)
+        {
+        }
+
+        public void SetTopmost(bool value)
         {
         }
     }

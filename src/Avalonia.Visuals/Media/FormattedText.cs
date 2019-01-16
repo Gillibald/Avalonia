@@ -1,7 +1,6 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
 using System.Collections.Generic;
 using Avalonia.Platform;
 
@@ -17,6 +16,7 @@ namespace Avalonia.Media
         private IFormattedTextImpl _platformImpl;
         private IReadOnlyList<FormattedTextStyleSpan> _spans;
         private Typeface _typeface;
+        private double _fontSize;
         private string _text;
         private TextAlignment _textAlignment;
         private TextWrapping _wrapping;
@@ -57,6 +57,15 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Gets or sets the font size.
+        /// </summary>
+        public double FontSize
+        {
+            get => _fontSize;
+            set => Set(ref _fontSize, value);
+        }
+
+        /// <summary>
         /// Gets or sets a collection of spans that describe the formatting of subsections of the
         /// text.
         /// </summary>
@@ -76,7 +85,7 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Gets or sets the aligment of the text.
+        /// Gets or sets the alignment of the text.
         /// </summary>
         public TextAlignment TextAlignment
         {
@@ -105,6 +114,7 @@ namespace Avalonia.Media
                     _platformImpl = _platform.CreateFormattedText(
                         _text,
                         _typeface,
+                        _fontSize,
                         _textAlignment,
                         _wrapping,
                         _constraint,

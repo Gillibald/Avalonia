@@ -1,7 +1,4 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
-
-namespace Avalonia.Media
+﻿namespace Avalonia.Media
 {
     /// <summary>
     /// Describes the formatting for a span of text in a <see cref="FormattedText"/> object.
@@ -16,9 +13,8 @@ namespace Avalonia.Media
         /// <param name="fontFamily">The span's font family.</param>
         /// <param name="fontSize">The span's font size.</param>
         /// <param name="fontStyle">The span's font style.</param>
-        /// <param name="fontWeight">The span's font weight.</param>
-        /// <param name="textDecorations">The span's text decorations.</param>
-        /// <param name="foregroundBrush">The span's foreground brush.</param>
+        /// <param name="fontWeight">The span's font weight</param>
+        /// <param name="foreground">The span's foreground brush.</param>
         public FormattedTextStyleSpan(
             int startIndex,
             int length,
@@ -26,17 +22,13 @@ namespace Avalonia.Media
             double? fontSize = null,
             FontStyle? fontStyle = null,
             FontWeight? fontWeight = null,
-            TextDecorations textDecorations = TextDecorations.None,
-            IBrush foregroundBrush = null)
+            IBrush foreground = null)
         {
             StartIndex = startIndex;
             Length = length;
-            FontFamily = fontFamily;
+            Typeface = GetTypeface(fontFamily, fontWeight, fontStyle);
             FontSize = fontSize;
-            FontStyle = fontStyle;
-            FontWeight = fontWeight;
-            TextDecorations = textDecorations;
-            ForegroundBrush = foregroundBrush;
+            Foreground = foreground;
         }
 
         /// <summary>
@@ -50,9 +42,9 @@ namespace Avalonia.Media
         public int Length { get; }
 
         /// <summary>
-        /// Gets the font family.
+        /// Gets the typeface of the span.
         /// </summary>
-        public FontFamily FontFamily { get; }
+        public Typeface Typeface { get; }
 
         /// <summary>
         /// Gets the font size, in device independent pixels.
@@ -60,32 +52,33 @@ namespace Avalonia.Media
         public double? FontSize { get; }
 
         /// <summary>
-        /// Gets the font style.
-        /// </summary>
-        public FontStyle? FontStyle { get; }
-
-        /// <summary>
-        /// Gets the font weight.
-        /// </summary>
-        public FontWeight? FontWeight { get; }
-
-        /// <summary>
-        /// Gets the text decorations.
-        /// </summary>
-        public TextDecorations TextDecorations { get; }
-
-        /// <summary>
         /// Gets the span's foreground brush.
         /// </summary>
-        public IBrush ForegroundBrush { get; }
+        public IBrush Foreground { get; }
 
-        public Typeface GeTypeface()
+        private static Typeface GetTypeface(FontFamily fontFamily, FontWeight? fontWeight, FontStyle? fontStyle)
         {
-            return new Typeface(
-                FontFamily ?? FontFamily.Default,
-                FontSize ?? 12,
-                FontStyle ?? Media.FontStyle.Normal,
-                FontWeight ?? Media.FontWeight.Normal);
+            if (fontFamily == null && fontWeight == null && fontStyle == null)
+            {
+                return null;
+            }
+
+            if (fontFamily == null)
+            {
+                fontFamily = FontFamily.Default;
+            }
+
+            if (fontWeight == null)
+            {
+                fontWeight = FontWeight.Normal;
+            }
+
+            if (fontStyle == null)
+            {
+                fontStyle = FontStyle.Normal;
+            }
+
+            return new Typeface(fontFamily, fontStyle.Value, fontWeight.Value);
         }
     }
 }

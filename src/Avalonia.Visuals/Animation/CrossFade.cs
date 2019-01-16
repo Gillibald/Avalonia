@@ -3,8 +3,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.Reactive.Threading.Tasks;
 using System.Threading.Tasks;
+using Avalonia.Styling;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Animation
@@ -14,10 +14,14 @@ namespace Avalonia.Animation
     /// </summary>
     public class CrossFade : IPageTransition
     {
+        private Animation _fadeOutAnimation;
+        private Animation _fadeInAnimation;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="CrossFade"/> class.
         /// </summary>
         public CrossFade()
+            : this(TimeSpan.Zero)
         {
         }
 
@@ -27,13 +31,61 @@ namespace Avalonia.Animation
         /// <param name="duration">The duration of the animation.</param>
         public CrossFade(TimeSpan duration)
         {
-            Duration = duration;
+            _fadeOutAnimation = new Animation
+            {
+                Children =
+                {
+                    new KeyFrame()
+                    {
+                        Setters =
+                        {
+                            new Setter
+                            {
+                                Property = Visual.OpacityProperty,
+                                Value = 0d
+                            }
+                        },
+                        Cue = new Cue(1d)
+                    }
+
+                }
+            };
+            _fadeInAnimation = new Animation
+            {
+                Children =
+                {
+                    new KeyFrame()
+                    {
+                        Setters =
+                        {
+                            new Setter
+                            {
+                                Property = Visual.OpacityProperty,
+                                Value = 0d
+                            }
+                        },
+                        Cue = new Cue(0d)
+                    }
+
+                }
+            };
+            _fadeOutAnimation.Duration = _fadeInAnimation.Duration = duration;
         }
 
         /// <summary>
         /// Gets the duration of the animation.
         /// </summary>
-        public TimeSpan Duration { get; set; }
+        public TimeSpan Duration
+        {
+            get
+            {
+                return _fadeOutAnimation.Duration;
+            }
+            set
+            {
+                _fadeOutAnimation.Duration = _fadeInAnimation.Duration = value;
+            }
+        }
 
         /// <summary>
         /// Starts the animation.
@@ -47,12 +99,10 @@ namespace Avalonia.Animation
         /// <returns>
         /// A <see cref="Task"/> that tracks the progress of the animation.
         /// </returns>
-        public async Task Start(IVisual from, IVisual to)
+        public async Task Start(Visual from, Visual to)
         {
             var tasks = new List<Task>();
 
-            // TODO: Implement relevant transition logic here (or discard this class)
-            // in favor of XAML based transition for pages
             if (to != null)
             {
                 to.Opacity = 0;
@@ -60,22 +110,21 @@ namespace Avalonia.Animation
 
             if (from != null)
             {
+                tasks.Add(_fadeOutAnimation.RunAsync(from));
             }
 
             if (to != null)
             {
-                to.Opacity = 0;
                 to.IsVisible = true;
+                tasks.Add(_fadeInAnimation.RunAsync(to));
 
             }
 
-            // FIXME: This is temporary until animations are fixed.
-            await Task.Delay(1);
+            await Task.WhenAll(tasks);
 
             if (from != null)
             {
                 from.IsVisible = false;
-                from.Opacity = 1;
             }
 
             if (to != null)
@@ -99,7 +148,7 @@ namespace Avalonia.Animation
         /// <returns>
         /// A <see cref="Task"/> that tracks the progress of the animation.
         /// </returns>
-        Task IPageTransition.Start(IVisual from, IVisual to, bool forward)
+        Task IPageTransition.Start(Visual from, Visual to, bool forward)
         {
             return Start(from, to);
         }

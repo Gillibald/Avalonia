@@ -1,7 +1,6 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using System;
 using Avalonia.Media;
 using Avalonia.Rendering.Utilities;
 using Avalonia.Utilities;
@@ -11,7 +10,9 @@ namespace Avalonia.Direct2D1.Media
 {
     public sealed class ImageBrushImpl : BrushImpl
     {
-        OptionalDispose<Bitmap> _bitmap;
+        private readonly OptionalDispose<Bitmap> _bitmap;
+
+        private readonly Visuals.Media.Imaging.BitmapInterpolationMode _bitmapInterpolationMode;
 
         public ImageBrushImpl(
             ITileBrush brush,
@@ -19,7 +20,8 @@ namespace Avalonia.Direct2D1.Media
             BitmapImpl bitmap,
             Size targetSize)
         {
-            var calc = new TileBrushCalculator(brush, new Size(bitmap.PixelWidth, bitmap.PixelHeight), targetSize);
+            var dpi = new Vector(target.DotsPerInch.Width, target.DotsPerInch.Height);
+            var calc = new TileBrushCalculator(brush, bitmap.PixelSize.ToSize(dpi), targetSize);
 
             if (!calc.NeedsIntermediate)
             {
@@ -41,6 +43,8 @@ namespace Avalonia.Direct2D1.Media
                         GetBrushProperties(brush, calc.DestinationRect));
                 }
             }
+
+            _bitmapInterpolationMode = brush.BitmapInterpolationMode;
         }
 
         public override void Dispose()
@@ -96,13 +100,14 @@ namespace Avalonia.Direct2D1.Media
 
             using (var context = new RenderTarget(result).CreateDrawingContext(null))
             {
-                var rect = new Rect(0, 0, bitmap.PixelWidth, bitmap.PixelHeight);
+                var dpi = new Vector(target.DotsPerInch.Width, target.DotsPerInch.Height);
+                var rect = new Rect(bitmap.PixelSize.ToSize(dpi));
 
                 context.Clear(Colors.Transparent);
                 context.PushClip(calc.IntermediateClip);
                 context.Transform = calc.IntermediateTransform;
                 
-                context.DrawImage(RefCountable.CreateUnownedNotClonable(bitmap), 1, rect, rect);
+                context.DrawImage(RefCountable.CreateUnownedNotClonable(bitmap), 1, rect, rect, _bitmapInterpolationMode);
                 context.PopClip();
             }
 

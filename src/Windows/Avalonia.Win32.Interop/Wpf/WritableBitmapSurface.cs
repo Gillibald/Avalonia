@@ -1,9 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -63,8 +58,7 @@ namespace Avalonia.Win32.Interop.Wpf
             }
 
             public IntPtr Address => _bitmap.BackBuffer;
-            public int Width => _bitmap.PixelWidth;
-            public int Height => _bitmap.PixelHeight;
+            public PixelSize Size => new PixelSize(_bitmap.PixelWidth, _bitmap.PixelHeight);
             public int RowBytes => _bitmap.BackBufferStride;
             public Vector Dpi { get; }
             public PixelFormat Format => PixelFormat.Bgra8888;

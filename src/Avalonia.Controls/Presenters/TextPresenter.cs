@@ -4,7 +4,6 @@
 using System;
 using System.Reactive.Linq;
 using Avalonia.Media;
-using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
@@ -36,6 +35,11 @@ namespace Avalonia.Controls.Presenters
         private int _selectionEnd;
         private bool _caretBlink;
         private IBrush _highlightBrush;
+        
+        static TextPresenter()
+        {
+            AffectsRender<TextPresenter>(PasswordCharProperty);
+        }
 
         public TextPresenter()
         {
@@ -50,6 +54,9 @@ namespace Avalonia.Controls.Presenters
 
             this.GetObservable(CaretIndexProperty)
                 .Subscribe(CaretIndexChanged);
+
+            this.GetObservable(PasswordCharProperty)
+                .Subscribe(_ => InvalidateFormattedText());
         }
 
         public int CaretIndex
@@ -116,7 +123,7 @@ namespace Avalonia.Controls.Presenters
                 var start = Math.Min(selectionStart, selectionEnd);
                 var length = Math.Max(selectionStart, selectionEnd) - start;
 
-                // issue #600: set constaint before any FormattedText manipulation
+                // issue #600: set constraint before any FormattedText manipulation
                 //             see base.Render(...) implementation
                 FormattedText.Constraint = Bounds.Size;
 
@@ -189,6 +196,12 @@ namespace Avalonia.Controls.Presenters
                     _caretTimer.Start();
                     InvalidateVisual();
                 }
+                else
+                {
+                    _caretTimer.Start();
+                    InvalidateVisual();
+                    _caretTimer.Stop();
+                }
 
                 if (IsMeasureValid)
                 {
@@ -239,7 +252,7 @@ namespace Avalonia.Controls.Presenters
             {
                 result.Spans = new[]
                 {
-                    new FormattedTextStyleSpan(start, length, foregroundBrush: Brushes.White),
+                    new FormattedTextStyleSpan(start, length, foreground: Brushes.White),
                 };
             }
 
@@ -259,7 +272,8 @@ namespace Avalonia.Controls.Presenters
                 return new FormattedText
                 {
                     Text = "X",
-                    Typeface = new Typeface(FontFamily, FontSize, FontStyle, FontWeight),
+                    Typeface = new Typeface(FontFamily, FontStyle, FontWeight),
+                    FontSize = FontSize,
                     TextAlignment = TextAlignment,
                     Constraint = availableSize,
                 }.Measure();

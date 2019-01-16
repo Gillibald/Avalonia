@@ -62,9 +62,11 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
+                var parent = new Window();
+                parent.Show();
                 var window = new Window();
 
-                var task = window.ShowDialog();
+                var task = window.ShowDialog(parent);
 
                 Assert.True(window.IsVisible);
             }
@@ -129,7 +131,7 @@ namespace Avalonia.Controls.UnitTests
 
                 window.Show();
 
-                Assert.Equal(new[] { window }, Window.OpenWindows);
+                Assert.Equal(new[] { window }, Application.Current.Windows);
             }
         }
 
@@ -145,7 +147,7 @@ namespace Avalonia.Controls.UnitTests
                 window.Show();
                 window.IsVisible = true;
 
-                Assert.Equal(new[] { window }, Window.OpenWindows);
+                Assert.Equal(new[] { window }, Application.Current.Windows);
 
                 window.Close();
             }
@@ -162,7 +164,7 @@ namespace Avalonia.Controls.UnitTests
                 window.Show();
                 window.Close();
 
-                Assert.Empty(Window.OpenWindows);
+                Assert.Empty(Application.Current.Windows);
             }
         }
 
@@ -184,7 +186,28 @@ namespace Avalonia.Controls.UnitTests
                 window.Show();
                 windowImpl.Object.Closed();
 
-                Assert.Empty(Window.OpenWindows);
+                Assert.Empty(Application.Current.Windows);
+            }
+        }
+
+        [Fact]
+        public void Closing_Should_Only_Be_Invoked_Once()
+        {
+            using (UnitTestApplication.Start(TestServices.StyledWindow))
+            {
+                var window = new Window();
+                var count = 0;
+
+                window.Closing +=
+                    (sender, e) =>
+                    {
+                        count++;
+                    };
+
+                window.Show();
+                window.Close();
+
+                Assert.Equal(1, count);
             }
         }
 
@@ -237,12 +260,13 @@ namespace Avalonia.Controls.UnitTests
         {
             using (UnitTestApplication.Start(TestServices.StyledWindow))
             {
+                var parent = new Mock<IWindowImpl>();
                 var windowImpl = new Mock<IWindowImpl>();
                 windowImpl.SetupProperty(x => x.Closed);
                 windowImpl.Setup(x => x.Scaling).Returns(1);
 
                 var target = new Window(windowImpl.Object);
-                var task = target.ShowDialog<bool>();
+                var task = target.ShowDialog<bool>(parent.Object);
 
                 windowImpl.Object.Closed();
 
@@ -339,7 +363,7 @@ namespace Avalonia.Controls.UnitTests
         {
             // HACK: We really need a decent way to have "statics" that can be scoped to
             // AvaloniaLocator scopes.
-            ((IList<Window>)Window.OpenWindows).Clear();
+            Application.Current.Windows.Clear();
         }
     }
 }

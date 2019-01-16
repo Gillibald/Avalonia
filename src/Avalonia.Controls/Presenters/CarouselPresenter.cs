@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Avalonia.Animation;
-using Avalonia.Controls.Generators;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Utils;
 using Avalonia.Data;
@@ -106,7 +105,6 @@ namespace Avalonia.Controls.Presenters
         /// <inheritdoc/>
         protected override void ItemsChanged(NotifyCollectionChangedEventArgs e)
         {
-            // TODO: Handle items changing.           
             switch (e.Action)
             {
                 case NotifyCollectionChangedAction.Remove:
@@ -115,9 +113,39 @@ namespace Avalonia.Controls.Presenters
                         var generator = ItemContainerGenerator;
                         var containers = generator.RemoveRange(e.OldStartingIndex, e.OldItems.Count);
                         Panel.Children.RemoveAll(containers.Select(x => x.ContainerControl));
+
+#pragma warning disable 4014
+                        MoveToPage(-1, SelectedIndex);
+#pragma warning restore 4014
                     }
                     break;
 
+                case NotifyCollectionChangedAction.Reset:
+                    {
+                        var generator = ItemContainerGenerator;
+                        var containers = generator.Containers.ToList();
+                        generator.Clear();
+                        Panel.Children.RemoveAll(containers.Select(x => x.ContainerControl));
+
+#pragma warning disable 4014
+                        var newIndex = SelectedIndex;
+
+                        if(SelectedIndex < 0)
+                        {
+                            if(Items != null && Items.Count() > 0)
+                            {
+                                newIndex = 0;
+                            }
+                            else
+                            {
+                                newIndex = -1;
+                            }
+                        }
+                        
+                        MoveToPage(-1, newIndex);
+#pragma warning restore 4014
+                    }
+                    break;     
             }
         }
 

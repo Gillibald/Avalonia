@@ -1,10 +1,10 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using Avalonia.Utilities;
 using System;
 using System.Globalization;
-using System.Linq;
+using Avalonia.Animation.Animators;
+using Avalonia.Utilities;
 
 namespace Avalonia
 {
@@ -13,6 +13,11 @@ namespace Avalonia
     /// </summary>
     public readonly struct Size
     {
+        static Size()
+        {
+            Animation.Animation.RegisterAnimator<SizeAnimator>(prop => typeof(Size).IsAssignableFrom(prop.PropertyType));
+        }
+
         /// <summary>
         /// A size representing infinity.
         /// </summary>
@@ -71,7 +76,7 @@ namespace Avalonia
         }
 
         /// <summary>
-        /// Checks for unequality between two <see cref="Size"/>s.
+        /// Checks for inequality between two <see cref="Size"/>s.
         /// </summary>
         /// <param name="left">The first size.</param>
         /// <param name="right">The second size.</param>
@@ -141,9 +146,9 @@ namespace Avalonia
             return new Size(size._width + toAdd._width, size._height + toAdd._height);
         }
 
-        public static Size operator -(Size size, Size toSubstract)
+        public static Size operator -(Size size, Size toSubtract)
         {
-            return new Size(size._width - toSubstract._width, size._height - toSubstract._height);
+            return new Size(size._width - toSubtract._width, size._height - toSubtract._height);
         }
 
         /// <summary>

@@ -2,13 +2,12 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
 using Avalonia.Gtk3.Interop;
-using Avalonia.Input.Platform;
 using Avalonia.Platform;
+using Avalonia.Platform.Interop;
 
 namespace Avalonia.Gtk3
 {

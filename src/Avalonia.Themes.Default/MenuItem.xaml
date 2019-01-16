@@ -45,11 +45,11 @@
             <Popup Name="PART_Popup"
                    PlacementMode="Right"
                    StaysOpen="True"
-                   IsOpen="{TemplateBinding Path=IsSubMenuOpen, Mode=TwoWay}"
+                   IsOpen="{TemplateBinding IsSubMenuOpen, Mode=TwoWay}"
                    ObeyScreenEdges="True">
               <Border Background="{TemplateBinding Background}"
                       BorderBrush="{DynamicResource ThemeBorderMidBrush}"
-                      BorderThickness="1">
+                      BorderThickness="{TemplateBinding BorderThickness}">
                 <ScrollViewer>
                   <Panel>
                     <ItemsPresenter Name="PART_ItemsPresenter"
@@ -73,7 +73,17 @@
       </ControlTemplate>
     </Setter>
   </Style>
-  
+
+  <Style Selector="MenuItem:separator">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Separator Background="{DynamicResource ThemeControlMidBrush}"
+                   Margin="29,1,0,1"
+                   Height="1"/>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
   <Style Selector="Menu > MenuItem">
     <Setter Property="Template">
       <ControlTemplate>
@@ -92,12 +102,12 @@
               </ContentPresenter.DataTemplates>
             </ContentPresenter>
             <Popup Name="PART_Popup"
-                   IsOpen="{TemplateBinding Path=IsSubMenuOpen, Mode=TwoWay}"
+                   IsOpen="{TemplateBinding IsSubMenuOpen, Mode=TwoWay}"
                    StaysOpen="True" 
                    ObeyScreenEdges="True">
               <Border Background="{TemplateBinding Background}"
                       BorderBrush="{DynamicResource ThemeBorderMidBrush}"
-                      BorderThickness="1">
+                      BorderThickness="{TemplateBinding BorderThickness}">
                 <ScrollViewer>
                   <Panel>
                     <ItemsPresenter Name="PART_ItemsPresenter"
@@ -123,11 +133,6 @@
   </Style>
 
   <Style Selector="MenuItem:selected /template/ Border#root">
-    <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush4}"/>
-    <Setter Property="BorderBrush" Value="{DynamicResource ThemeAccentBrush}"/>
-  </Style>
-
-  <Style Selector="MenuItem:pointerover /template/ Border#root">
     <Setter Property="Background" Value="{DynamicResource ThemeAccentBrush4}"/>
     <Setter Property="BorderBrush" Value="{DynamicResource ThemeAccentBrush}"/>
   </Style>

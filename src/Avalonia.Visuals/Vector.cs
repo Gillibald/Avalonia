@@ -3,7 +3,8 @@
 
 using System;
 using System.Globalization;
-using System.Xml.Linq;
+using Avalonia.Animation.Animators;
+using JetBrains.Annotations;
 
 namespace Avalonia
 {
@@ -12,6 +13,11 @@ namespace Avalonia
     /// </summary>
     public readonly struct Vector
     {
+        static Vector()
+        {
+            Animation.Animation.RegisterAnimator<VectorAnimator>(prop => typeof(Vector).IsAssignableFrom(prop.PropertyType));
+        }
+
         /// <summary>
         /// The X vector.
         /// </summary>
@@ -60,7 +66,7 @@ namespace Avalonia
         /// <returns>The dot product</returns>
         public static double operator *(Vector a, Vector b)
         {
-            return a.X*b.X + a.Y*b.Y;
+            return a.X * b.X + a.Y * b.Y;
         }
 
         /// <summary>
@@ -88,7 +94,7 @@ namespace Avalonia
         /// <summary>
         /// Length of the vector
         /// </summary>
-        public double Length => Math.Sqrt(X*X + Y*Y);
+        public double Length => Math.Sqrt(X * X + Y * Y);
 
         /// <summary>
         /// Negates a vector.
@@ -120,6 +126,56 @@ namespace Avalonia
         public static Vector operator -(Vector a, Vector b)
         {
             return new Vector(a._x - b._x, a._y - b._y);
+        }
+
+        /// <summary>
+        /// Check if two vectors are equal (bitwise).
+        /// </summary>
+        /// <param name="other"></param>
+        /// <returns></returns>
+        public bool Equals(Vector other)
+        {
+            // ReSharper disable CompareOfFloatsByEqualityOperator
+            return _x == other._x && _y == other._y;
+            // ReSharper restore CompareOfFloatsByEqualityOperator
+        }
+
+        /// <summary>
+        /// Check if two vectors are nearly equal (numerically).
+        /// </summary>
+        /// <param name="other">The other vector.</param>
+        /// <returns>True if vectors are nearly equal.</returns>
+        [Pure]
+        public bool NearlyEquals(Vector other)
+        {
+            const float tolerance = float.Epsilon;
+
+            return Math.Abs(_x - other._x) < tolerance && Math.Abs(_y - other._y) < tolerance;
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (ReferenceEquals(null, obj)) return false;
+
+            return obj is Vector vector && Equals(vector);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return (_x.GetHashCode() * 397) ^ _y.GetHashCode();
+            }
+        }
+
+        public static bool operator ==(Vector left, Vector right)
+        {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(Vector left, Vector right)
+        {
+            return !left.Equals(right);
         }
 
         /// <summary>

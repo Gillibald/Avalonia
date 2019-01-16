@@ -6,7 +6,7 @@ namespace Avalonia.Platform
     public interface IWindowBaseImpl : ITopLevelImpl
     {
         /// <summary>
-        /// Shows the toplevel.
+        /// Shows the top level.
         /// </summary>
         void Show();
 
@@ -62,7 +62,7 @@ namespace Avalonia.Platform
         Size MaxClientSize { get; }
 
         /// <summary>
-        /// Sets the client size of the toplevel.
+        /// Sets the client size of the top level.
         /// </summary>
         void Resize(Size clientSize);
 
@@ -71,6 +71,11 @@ namespace Avalonia.Platform
         /// </summary>
         /// 
         void SetMinMaxSize(Size minSize, Size maxSize);
+
+        /// <summary>
+        /// Sets whether this window appears on top of all other windows
+        /// </summary>
+        void SetTopmost(bool value);
 
         /// <summary>
         /// Gets platform specific display information

@@ -7,15 +7,11 @@ using System.Linq;
 using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Data;
-using Avalonia.Markup.Data;
-using Avalonia.Documents;
 using Avalonia.Markup.Xaml.Templates;
 using Avalonia.Media;
 using Avalonia.Metadata;
 using Avalonia.Platform;
 using Avalonia.Styling;
-using System.Reactive.Linq;
-using Avalonia.Data.Converters;
 
 namespace Avalonia.Markup.Xaml.Context
 {
@@ -36,13 +32,12 @@ namespace Avalonia.Markup.Xaml.Context
         private static readonly IEnumerable<Assembly> ForcedAssemblies = new[]
         {
             typeof(AvaloniaObject).GetTypeInfo().Assembly,
+            typeof(Animation.Animation).GetTypeInfo().Assembly,
             typeof(Control).GetTypeInfo().Assembly,
             typeof(Style).GetTypeInfo().Assembly,
             typeof(DataTemplate).GetTypeInfo().Assembly,
             typeof(SolidColorBrush).GetTypeInfo().Assembly,
             typeof(Binding).GetTypeInfo().Assembly,
-            typeof(IValueConverter).GetTypeInfo().Assembly,
-            typeof(Run).GetTypeInfo().Assembly,
         };
 
         private Dictionary<string, HashSet<ClrNamespaceInfo>> _namespaces = new Dictionary<string, HashSet<ClrNamespaceInfo>>();
@@ -96,9 +91,7 @@ namespace Avalonia.Markup.Xaml.Context
 
         private void ScanNewAssemblies()
         {
-            IEnumerable<Assembly> assemblies = AvaloniaLocator.Current
-                .GetService<IRuntimePlatform>()
-                ?.GetLoadedAssemblies();
+            IEnumerable<Assembly> assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
             if (assemblies != null)
             {

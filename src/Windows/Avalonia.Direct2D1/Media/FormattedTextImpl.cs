@@ -1,10 +1,10 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using Avalonia.Media;
-using Avalonia.Platform;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia.Media;
+using Avalonia.Platform;
 using DWrite = SharpDX.DirectWrite;
 
 namespace Avalonia.Direct2D1.Media
@@ -14,6 +14,7 @@ namespace Avalonia.Direct2D1.Media
         public FormattedTextImpl(
             string text,
             Typeface typeface,
+            double fontSize,
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
@@ -21,15 +22,13 @@ namespace Avalonia.Direct2D1.Media
         {
             Text = text;
 
-            var factory = AvaloniaLocator.Current.GetService<DWrite.Factory>();
-
-            using (var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface))
+            using (var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface, fontSize))
             {
                 textFormat.WordWrapping =
                     wrapping == TextWrapping.Wrap ? DWrite.WordWrapping.Wrap : DWrite.WordWrapping.NoWrap;
 
                 TextLayout = new DWrite.TextLayout(
-                                 factory,
+                                 Direct2D1Platform.DirectWriteFactory,
                                  Text ?? string.Empty,
                                  textFormat,
                                  (float)constraint.Width,
@@ -76,6 +75,8 @@ namespace Avalonia.Direct2D1.Media
             {
                 IsInside = isInside,
                 TextPosition = result.TextPosition,
+                Length = result.Length,
+                Bounds = new Rect(result.Left, result.Top, result.Width, result.Height),
                 IsTrailing = isTrailingHit,
             };
         }
@@ -97,45 +98,19 @@ namespace Avalonia.Direct2D1.Media
         {
             if (span.Length > 0)
             {
-                var range = new DWrite.TextRange(span.StartIndex, span.Length);
-
-                if (span.ForegroundBrush != null)
+                if (span.Foreground != null)
                 {
                     TextLayout.SetDrawingEffect(
-                        new BrushWrapper(span.ForegroundBrush.ToImmutable()),
-                        range);
+                        new BrushWrapper(span.Foreground.ToImmutable()),
+                        new DWrite.TextRange(span.StartIndex, span.Length));
                 }
-
-                var typeface = span.GeTypeface();
-
-                using (var textFormat = Direct2D1FontCollectionCache.GetTextFormat(typeface))
-                {
-                    TextLayout.SetFontCollection(textFormat.FontCollection, range);
-
-                    TextLayout.SetFontFamilyName(textFormat.FontFamilyName, range);
-                }
-
-                TextLayout.SetFontSize((float)typeface.FontSize, range);
-
-                TextLayout.SetFontStyle((DWrite.FontStyle)typeface.Style, range);
-
-                TextLayout.SetFontWeight((DWrite.FontWeight)typeface.Weight, range);          
-
-                if (span.TextDecorations.HasFlag(TextDecorations.Strikethrough))
-                {
-                    TextLayout.SetStrikethrough(true, range);
-                }
-
-                if (span.TextDecorations.HasFlag(TextDecorations.Underline))
-                {
-                    TextLayout.SetUnderline(true, range);
-                }               
             }
         }
 
         private Size Measure()
         {
             var metrics = TextLayout.Metrics;
+
             var width = metrics.WidthIncludingTrailingWhitespace;
 
             if (float.IsNaN(width))

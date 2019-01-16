@@ -1,16 +1,14 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
-using System.Text;
 
 namespace Avalonia.Animation
 {
     /// <summary>
-    /// A Cue object for <see cref="KeyFrame"/>. 
+    /// Determines the time index for a <see cref="KeyFrame"/>. 
     /// </summary>
     [TypeConverter(typeof(CueTypeConverter))]
-    public struct Cue : IEquatable<Cue>, IEquatable<double>
+    public readonly struct Cue : IEquatable<Cue>, IEquatable<double>
     {
         /// <summary>
         /// The normalized percent value, ranging from 0.0 to 1.0
@@ -84,5 +82,4 @@ namespace Avalonia.Animation
             return Cue.Parse((string)value, culture);
         }
     }
-
 }

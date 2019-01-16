@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
 using Avalonia;
+using Avalonia.Skia;
 
 namespace ControlCatalog.NetCore
 {
@@ -23,6 +23,7 @@ namespace ControlCatalog.NetCore
                         break;
                 }
             }
+
             if (args.Contains("--fbdev"))
                 AppBuilder.Configure<App>().InitializeWithLinuxFramebuffer(tl =>
                 {
@@ -30,14 +31,19 @@ namespace ControlCatalog.NetCore
                     System.Threading.ThreadPool.QueueUserWorkItem(_ => ConsoleSilencer());
                 });
             else
-                BuildAvaloniaApp().Start<MainWindow>();
+                BuildAvaloniaApp().Start(AppMain, args);
+        }
+
+        static void AppMain(Application app, string[] args)
+        {
+            app.Run(new MainWindow());
         }
 
         /// <summary>
         /// This method is needed for IDE previewer infrastructure
         /// </summary>
         public static AppBuilder BuildAvaloniaApp()
-            => AppBuilder.Configure<App>().UsePlatformDetect().UseReactiveUI();
+            => AppBuilder.Configure<App>().UsePlatformDetect().UseSkia().UseReactiveUI();
 
         static void ConsoleSilencer()
         {

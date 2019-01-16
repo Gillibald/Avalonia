@@ -21,6 +21,8 @@ using Xunit;
 using Avalonia.Media;
 using System;
 using System.Collections.Generic;
+using Avalonia.Controls.UnitTests;
+using Avalonia.UnitTests;
 
 namespace Avalonia.Layout.UnitTests
 {
@@ -56,11 +58,11 @@ namespace Avalonia.Layout.UnitTests
                 };
 
                 window.Show();
-                LayoutManager.Instance.ExecuteInitialLayoutPass(window);
+                window.LayoutManager.ExecuteInitialLayoutPass(window);
 
                 Assert.Equal(new Size(400, 400), border.Bounds.Size);
                 textBlock.Width = 200;
-                LayoutManager.Instance.ExecuteLayoutPass();
+                window.LayoutManager.ExecuteLayoutPass();
 
                 Assert.Equal(new Size(200, 400), border.Bounds.Size);
             }
@@ -97,8 +99,10 @@ namespace Avalonia.Layout.UnitTests
                     }
                 };
 
+                window.Resources["ScrollBarThickness"] = 10.0;
+
                 window.Show();
-                LayoutManager.Instance.ExecuteInitialLayoutPass(window);
+                window.LayoutManager.ExecuteInitialLayoutPass(window);
 
                 Assert.Equal(new Size(800, 600), window.Bounds.Size);
                 Assert.Equal(new Size(200, 200), scrollViewer.Bounds.Size);
@@ -171,6 +175,7 @@ namespace Avalonia.Layout.UnitTests
                 x.CreateFormattedText(
                     It.IsAny<string>(),
                     It.IsAny<Typeface>(),
+                    It.IsAny<double>(),
                     It.IsAny<TextAlignment>(),
                     It.IsAny<TextWrapping>(),
                     It.IsAny<Size>(),
@@ -196,10 +201,10 @@ namespace Avalonia.Layout.UnitTests
             windowImpl.SetupGet(x => x.Scaling).Returns(1);
 
             AvaloniaLocator.CurrentMutable
+                .Bind<IStandardCursorFactory>().ToConstant(new CursorFactoryMock())
                 .Bind<IAssetLoader>().ToConstant(new AssetLoader())
                 .Bind<IInputManager>().ToConstant(new Mock<IInputManager>().Object)
                 .Bind<IGlobalStyles>().ToConstant(globalStyles.Object)
-                .Bind<ILayoutManager>().ToConstant(new LayoutManager())
                 .Bind<IRuntimePlatform>().ToConstant(new AppBuilder().RuntimePlatform)
                 .Bind<IPlatformRenderInterface>().ToConstant(renderInterface.Object)
                 .Bind<IStyler>().ToConstant(new Styler())

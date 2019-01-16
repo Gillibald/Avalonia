@@ -1,10 +1,11 @@
 // Copyright (c) The Avalonia Project. All rights reserved.
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
-using Avalonia.Utilities;
 using System;
 using System.Globalization;
-using System.Linq;
+using Avalonia.Animation;
+using Avalonia.Animation.Animators;
+using Avalonia.Utilities;
 
 namespace Avalonia
 {
@@ -13,6 +14,11 @@ namespace Avalonia
     /// </summary>
     public readonly struct Thickness
     {
+        static Thickness()
+        {
+            Animation.Animation.RegisterAnimator<ThicknessAnimator>(prop => typeof(Thickness).IsAssignableFrom(prop.PropertyType));
+        }
+
         /// <summary>
         /// The thickness on the left.
         /// </summary>
@@ -114,7 +120,7 @@ namespace Avalonia
         /// </summary>
         /// <param name="a">The first thickness.</param>
         /// <param name="b">The second thickness.</param>
-        /// <returns>The unequality.</returns>
+        /// <returns>The inequality.</returns>
         public static bool operator !=(Thickness a, Thickness b)
         {
             return !a.Equals(b);
@@ -133,6 +139,36 @@ namespace Avalonia
                 a.Top + b.Top,
                 a.Right + b.Right,
                 a.Bottom + b.Bottom);
+        }
+
+        /// <summary>
+        /// Subtracts two Thicknesses.
+        /// </summary>
+        /// <param name="a">The first thickness.</param>
+        /// <param name="b">The second thickness.</param>
+        /// <returns>The equality.</returns>
+        public static Thickness operator -(Thickness a, Thickness b)
+        {
+            return new Thickness(
+                a.Left - b.Left,
+                a.Top - b.Top,
+                a.Right - b.Right,
+                a.Bottom - b.Bottom);
+        }
+
+        /// <summary>
+        /// Multiplies a Thickness to a scalar.
+        /// </summary>
+        /// <param name="a">The thickness.</param>
+        /// <param name="b">The scalar.</param>
+        /// <returns>The equality.</returns>
+        public static Thickness operator *(Thickness a, double b)
+        {
+            return new Thickness(
+                a.Left * b,
+                a.Top * b,
+                a.Right * b,
+                a.Bottom * b);
         }
 
         /// <summary>
@@ -170,7 +206,7 @@ namespace Avalonia
         {
             using (var tokenizer = new StringTokenizer(s, CultureInfo.InvariantCulture, exceptionMessage: "Invalid Thickness"))
             {
-                if(tokenizer.TryReadDouble(out var a))
+                if (tokenizer.TryReadDouble(out var a))
                 {
                     if (tokenizer.TryReadDouble(out var b))
                     {

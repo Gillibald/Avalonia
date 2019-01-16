@@ -1,18 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿#pragma warning disable 649
+using System;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 using Avalonia.Controls;
-using gint8 = System.Byte;
-using gint16 = System.Int16;
-using gint32 = System.Int32;
+using Avalonia.Platform.Interop;
+using gdouble = System.Double;
 using gint = System.Int32;
+using gint16 = System.Int16;
+using gint8 = System.Byte;
+using guint = System.UInt32;
 using guint16 = System.UInt16;
 using guint32 = System.UInt32;
-using guint = System.UInt32;
-using gdouble = System.Double;
 
 namespace Avalonia.Gtk3.Interop
 {
@@ -70,6 +67,9 @@ namespace Avalonia.Gtk3.Interop
 
             [UnmanagedFunctionPointer(CallingConvention.Cdecl), GtkImport(GtkDll.Gtk)]
             public delegate void gtk_window_set_modal(GtkWindow window, bool modal);
+            
+            [UnmanagedFunctionPointer(CallingConvention.Cdecl), GtkImport(GtkDll.Gtk)]
+            public delegate void gtk_window_set_transient_for(GtkWindow window, IntPtr parent);
 
             [UnmanagedFunctionPointer(CallingConvention.Cdecl)] //No manual import
             public delegate IntPtr gdk_get_native_handle(IntPtr gdkWindow);
@@ -261,9 +261,12 @@ namespace Avalonia.Gtk3.Interop
 
             [UnmanagedFunctionPointer(CallingConvention.Cdecl), GtkImport(GtkDll.Gtk)]
             public delegate void gtk_window_unmaximize(GtkWindow window);
-            
+
             [UnmanagedFunctionPointer(CallingConvention.Cdecl), GtkImport(GtkDll.Gtk)]
             public delegate void gtk_window_close(GtkWindow window);
+
+            [UnmanagedFunctionPointer(CallingConvention.Cdecl), GtkImport(GtkDll.Gtk)]
+            public delegate void gtk_window_set_keep_above(GtkWindow gtkWindow, bool setting);
 
             [UnmanagedFunctionPointer(CallingConvention.Cdecl), GtkImport(GtkDll.Gtk)]
             public delegate void gtk_window_set_geometry_hints(GtkWindow window, IntPtr geometry_widget, ref GdkGeometry geometry, GdkWindowHints geom_mask);
@@ -408,6 +411,7 @@ namespace Avalonia.Gtk3.Interop
         public static D.gtk_window_new GtkWindowNew;
         public static D.gtk_window_set_icon GtkWindowSetIcon;
         public static D.gtk_window_set_modal GtkWindowSetModal;
+        public static D.gtk_window_set_transient_for GtkWindowSetTransientFor;
         public static D.gdk_set_allowed_backends GdkSetAllowedBackends;
         public static D.gtk_init GtkInit;
         public static D.gtk_window_present GtkWindowPresent;
@@ -472,6 +476,7 @@ namespace Avalonia.Gtk3.Interop
         public static D.gtk_window_maximize GtkWindowMaximize;
         public static D.gtk_window_unmaximize GtkWindowUnmaximize;
         public static D.gtk_window_close GtkWindowClose;
+        public static D.gtk_window_set_keep_above GtkWindowSetKeepAbove;
         public static D.gdk_window_begin_move_drag GdkWindowBeginMoveDrag;
         public static D.gdk_window_begin_resize_drag GdkWindowBeginResizeDrag;
         public static D.gdk_event_request_motions GdkEventRequestMotions;

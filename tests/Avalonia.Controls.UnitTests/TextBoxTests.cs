@@ -8,7 +8,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Input;
-using Avalonia.Markup.Data;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
@@ -247,6 +246,59 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
+        [Fact]
+        public void Press_Enter_Does_Not_Accept_Return()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    AcceptsReturn = false,
+                    Text = "1234"
+                };
+
+                RaiseKeyEvent(target, Key.Enter, 0);
+
+                Assert.Equal("1234", target.Text);
+            }
+        }
+
+        [Fact]
+        public void Press_Enter_Add_Default_Newline()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    AcceptsReturn = true
+                };
+
+                RaiseKeyEvent(target, Key.Enter, 0);
+
+                Assert.Equal(Environment.NewLine, target.Text);
+            }
+        }
+
+        [Fact]
+        public void Press_Enter_Add_Custom_Newline()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    AcceptsReturn = true,
+                    NewLine = "Test"
+                };
+
+                RaiseKeyEvent(target, Key.Enter, 0);
+
+                Assert.Equal("Test", target.Text);
+            }
+        }
+
         [Theory]
         [InlineData(new object[] { false, TextWrapping.NoWrap, ScrollBarVisibility.Hidden })]
         [InlineData(new object[] { false, TextWrapping.Wrap, ScrollBarVisibility.Hidden })]
@@ -266,6 +318,71 @@ namespace Avalonia.Controls.UnitTests
                 };
 
                 Assert.Equal(expected, ScrollViewer.GetHorizontalScrollBarVisibility(target));
+            }
+        }
+
+        [Fact]
+        public void SelectionEnd_Doesnt_Cause_Exception()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123456789"
+                };
+
+                target.SelectionStart = 0;
+                target.SelectionEnd = 9;
+
+                target.Text = "123";
+
+                RaiseTextEvent(target, "456");
+
+                Assert.True(true);
+            }
+        }
+
+        [Fact]
+        public void SelectionStart_Doesnt_Cause_Exception()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123456789"
+                };
+
+                target.SelectionStart = 8;
+                target.SelectionEnd = 9;
+
+                target.Text = "123";
+
+                RaiseTextEvent(target, "456");
+
+                Assert.True(true);
+            }
+        }
+
+        [Fact]
+        public void SelectionStartEnd_Are_Valid_AterTextChange()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = "0123456789"
+                };
+
+                target.SelectionStart = 8;
+                target.SelectionEnd = 9;
+
+                target.Text = "123";
+
+                Assert.True(target.SelectionStart <= "123".Length);
+                Assert.True(target.SelectionEnd <= "123".Length);
             }
         }
 
@@ -295,6 +412,15 @@ namespace Avalonia.Controls.UnitTests
                 RoutedEvent = InputElement.KeyDownEvent,
                 Modifiers = inputModifiers,
                 Key = key
+            });
+        }
+
+        private void RaiseTextEvent(TextBox textBox, string text)
+        {
+            textBox.RaiseEvent(new TextInputEventArgs
+            {
+                RoutedEvent = InputElement.TextInputEvent,
+                Text = text
             });
         }
 

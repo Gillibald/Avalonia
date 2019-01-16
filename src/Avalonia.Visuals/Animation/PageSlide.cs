@@ -3,9 +3,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Reactive.Threading.Tasks;
 using System.Threading.Tasks;
 using Avalonia.Media;
+using Avalonia.Styling;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Animation
@@ -67,28 +67,88 @@ namespace Avalonia.Animation
         /// <returns>
         /// A <see cref="Task"/> that tracks the progress of the animation.
         /// </returns>
-        public async Task Start(IVisual from, IVisual to, bool forward)
+        public async Task Start(Visual from, Visual to, bool forward)
         {
             var tasks = new List<Task>();
             var parent = GetVisualParent(from, to);
             var distance = Orientation == SlideAxis.Horizontal ? parent.Bounds.Width : parent.Bounds.Height;
             var translateProperty = Orientation == SlideAxis.Horizontal ? TranslateTransform.XProperty : TranslateTransform.YProperty;
 
-
-            // TODO: Implement relevant transition logic here (or discard this class)
-            // in favor of XAML based transition for pages
             if (from != null)
             {
-
+                var animation = new Animation
+                {
+                    Children = 
+                    {
+                        new KeyFrame
+                        {
+                            Setters =
+                            {
+                                new Setter
+                                {
+                                    Property = translateProperty,
+                                Value = 0d
+                                }
+                            },
+                            Cue = new Cue(0d)
+                        },
+                        new KeyFrame
+                        {
+                            Setters =
+                            {
+                                new Setter
+                                {
+                                    Property = translateProperty,
+                                    Value = forward ? -distance : distance
+                                }
+                            },
+                            Cue = new Cue(1d)
+                        }                       
+                    }
+                };
+                animation.Duration = Duration;
+                tasks.Add(animation.RunAsync(from));
             }
 
             if (to != null)
             {
+                to.IsVisible = true;
+                var animation = new Animation
+                {
+                    Children =
+                    {
 
+                        new KeyFrame
+                        {
+                            Setters =
+                            {
+                                new Setter
+                                {
+                                    Property = translateProperty,
+                                    Value = forward ? distance : -distance
+                                }
+                            },
+                            Cue = new Cue(0d)
+                        },
+                        new KeyFrame
+                        {
+                            Setters =
+                            {
+                                new Setter
+                                {
+                                    Property = translateProperty,
+                                    Value = 0d
+                                }
+                            },
+                            Cue = new Cue(1d)
+                        }
+                    }
+                };
+                animation.Duration = Duration;
+                tasks.Add(animation.RunAsync(to));
             }
 
-            // FIXME: This is temporary until animations are fixed.
-            await Task.Delay(1);
+            await Task.WhenAll(tasks);
 
             if (from != null)
             {

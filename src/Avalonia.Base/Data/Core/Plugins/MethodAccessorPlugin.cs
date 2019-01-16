@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Avalonia.Data;
-using System.Reflection;
 using System.Linq;
+using System.Reflection;
 
 namespace Avalonia.Data.Core.Plugins
 {
@@ -74,13 +71,17 @@ namespace Avalonia.Data.Core.Plugins
 
             public override bool SetValue(object value, BindingPriority priority) => false;
 
-            protected override void SubscribeCore(IObserver<object> observer)
+            protected override void SubscribeCore()
             {
                 try
                 {
-                    Observer.OnNext(Value);
+                    PublishValue(Value);
                 }
                 catch { }
+            }
+
+            protected override void UnsubscribeCore()
+            {
             }
         }
     }
