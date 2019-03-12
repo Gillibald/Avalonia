@@ -1,26 +1,51 @@
-﻿using System;
+﻿// Copyright (c) The Avalonia Project. All rights reserved.
+// Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 namespace Avalonia.Media
-{
-    /// <summary>
-    /// Defines the decorations that can be applied to text.
-    /// </summary>
-    [Flags]
-    public enum TextDecorations
+{   
+    public static class TextDecorations
     {
-        /// <summary>
-        /// No text decorations are applied.
-        /// </summary>
-        None,
+        static TextDecorations()
+        {
+            Underline = new TextDecorationCollection
+                        {
+                            new TextDecoration
+                            {
+                                Location = TextDecorationLocation.Underline
+                            }
+                        };
 
-        /// <summary>
-        /// Strikethrough is applied.
-        /// </summary>
-        Strikethrough,
+            Strikethrough = new TextDecorationCollection
+                            {
+                                new TextDecoration
+                                {
+                                    Location = TextDecorationLocation.Strikethrough
+                                }
+                            };
 
-        /// <summary>
-        /// Underline is applied.
-        /// </summary>
-        Underline,
+            Overline = new TextDecorationCollection
+                       {
+                           new TextDecoration
+                           {
+                               Location = TextDecorationLocation.Overline
+                           }
+                       };
+
+            Baseline = new TextDecorationCollection
+                       {
+                           new TextDecoration
+                           {
+                               Location = TextDecorationLocation.Baseline
+                           }
+                       };
+        }
+
+        public static TextDecorationCollection Underline { get; }
+
+        public static TextDecorationCollection Strikethrough { get; }
+
+        public static TextDecorationCollection Overline { get; }
+
+        public static TextDecorationCollection Baseline { get; }
     }
 }

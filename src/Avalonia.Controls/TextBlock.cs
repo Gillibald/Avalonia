@@ -28,10 +28,7 @@ namespace Avalonia.Controls
         /// Defines the <see cref="FontFamily"/> property.
         /// </summary>
         public static readonly AttachedProperty<FontFamily> FontFamilyProperty =
-            AvaloniaProperty.RegisterAttached<TextBlock, Control, FontFamily>(
-                nameof(FontFamily),
-                defaultValue: FontFamily.Default,
-                inherits: true);
+            TextElement.FontFamilyProperty.AddOwner<TextBlock>();
 
         /// <summary>
         /// Defines the <see cref="FontSize"/> property.
@@ -78,6 +75,12 @@ namespace Avalonia.Controls
         public static readonly StyledProperty<TextWrapping> TextWrappingProperty =
             AvaloniaProperty.Register<TextBlock, TextWrapping>(nameof(TextWrapping));
 
+        /// <summary>
+        /// Defines the <see cref="TextDecorations"/> property.
+        /// </summary>
+        public static readonly StyledProperty<TextDecorationCollection> TextDecorationsProperty =
+            TextElement.TextDecorationsProperty.AddOwner<TextBlock>();
+
         private FormattedText _formattedText;
         private Size _constraint;
 
@@ -92,7 +95,8 @@ namespace Avalonia.Controls
                 ForegroundProperty,
                 FontWeightProperty,
                 FontSizeProperty,
-                FontStyleProperty);
+                FontStyleProperty,
+                TextDecorationsProperty);
         }
 
         /// <summary>
@@ -110,7 +114,8 @@ namespace Avalonia.Controls
                 TextAlignmentProperty,
                 FontSizeProperty,
                 FontStyleProperty,
-                FontWeightProperty);
+                FontWeightProperty,
+                TextDecorationsProperty);
         }
 
         /// <summary>
@@ -223,6 +228,15 @@ namespace Avalonia.Controls
         {
             get { return GetValue(TextAlignmentProperty); }
             set { SetValue(TextAlignmentProperty, value); }
+        }
+
+        /// <summary>
+        /// Gets or sets the text decorations.
+        /// </summary>
+        public TextDecorationCollection TextDecorations
+        {
+            get { return GetValue(TextDecorationsProperty); }
+            set { SetValue(TextDecorationsProperty, value); }
         }
 
         /// <summary>

@@ -19,6 +19,8 @@ using Avalonia.Utilities;
 
 namespace Avalonia.Controls
 {
+    using Avalonia.Documents;
+
     public class TextBox : TemplatedControl, UndoRedoHelper<TextBox.UndoRedoState>.IUndoRedoHost
     {
         private static readonly string[] InvalidCharacters = { "\u007f" };
@@ -64,6 +66,12 @@ namespace Avalonia.Controls
 
         public static readonly StyledProperty<TextWrapping> TextWrappingProperty =
             TextBlock.TextWrappingProperty.AddOwner<TextBox>();
+
+        /// <summary>
+        /// Defines the <see cref="TextDecorations"/> property.
+        /// </summary>
+        public static readonly StyledProperty<TextDecorationCollection> TextDecorationsProperty =
+            TextElement.TextDecorationsProperty.AddOwner<TextBox>();
 
         public static readonly StyledProperty<string> WatermarkProperty =
             AvaloniaProperty.Register<TextBox, string>(nameof(Watermark));
@@ -124,18 +132,36 @@ namespace Avalonia.Controls
             _undoRedoHelper = new UndoRedoHelper<UndoRedoState>(this);
         }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether [accepts return].
+        /// </summary>
+        /// <value>
+        ///   <c>true</c> if [accepts return]; otherwise, <c>false</c>.
+        /// </value>
         public bool AcceptsReturn
         {
             get => GetValue(AcceptsReturnProperty);
             set => SetValue(AcceptsReturnProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether [accepts tab].
+        /// </summary>
+        /// <value>
+        ///   <c>true</c> if [accepts tab]; otherwise, <c>false</c>.
+        /// </value>
         public bool AcceptsTab
         {
             get => GetValue(AcceptsTabProperty);
             set => SetValue(AcceptsTabProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets the index of the caret.
+        /// </summary>
+        /// <value>
+        /// The index of the caret.
+        /// </value>
         public int CaretIndex
         {
             get => _caretIndex;
@@ -153,18 +179,36 @@ namespace Avalonia.Controls
             }
         }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether this instance is read only.
+        /// </summary>
+        /// <value>
+        ///   <c>true</c> if this instance is read only; otherwise, <c>false</c>.
+        /// </value>
         public bool IsReadOnly
         {
             get => GetValue(IsReadOnlyProperty);
             set => SetValue(IsReadOnlyProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets the password character.
+        /// </summary>
+        /// <value>
+        /// The password character.
+        /// </value>
         public char PasswordChar
         {
             get => GetValue(PasswordCharProperty);
             set => SetValue(PasswordCharProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets the selection start.
+        /// </summary>
+        /// <value>
+        /// The selection start.
+        /// </value>
         public int SelectionStart
         {
             get => _selectionStart;
@@ -182,6 +226,12 @@ namespace Avalonia.Controls
             }
         }
 
+        /// <summary>
+        /// Gets or sets the selection end.
+        /// </summary>
+        /// <value>
+        /// The selection end.
+        /// </value>
         public int SelectionEnd
         {
             get => _selectionEnd;
@@ -223,32 +273,61 @@ namespace Avalonia.Controls
             }
         }
 
+        /// <summary>
+        /// Gets or sets the text alignment.
+        /// </summary>
+        /// <value>
+        /// The text alignment.
+        /// </value>
         public TextAlignment TextAlignment
         {
             get => GetValue(TextAlignmentProperty);
-
             set => SetValue(TextAlignmentProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets the watermark.
+        /// </summary>
+        /// <value>
+        /// The watermark.
+        /// </value>
         public string Watermark
         {
             get => GetValue(WatermarkProperty);
-
             set => SetValue(WatermarkProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets a value indicating whether [use floating watermark].
+        /// </summary>
+        /// <value>
+        ///   <c>true</c> if [use floating watermark]; otherwise, <c>false</c>.
+        /// </value>
         public bool UseFloatingWatermark
         {
             get => GetValue(UseFloatingWatermarkProperty);
-
             set => SetValue(UseFloatingWatermarkProperty, value);
         }
 
+        /// <summary>
+        /// Gets or sets the text wrapping.
+        /// </summary>
+        /// <value>
+        /// The text wrapping.
+        /// </value>
         public TextWrapping TextWrapping
         {
             get => GetValue(TextWrappingProperty);
-
             set => SetValue(TextWrappingProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the text decorations.
+        /// </summary>
+        public TextDecorationCollection TextDecorations
+        {
+            get => GetValue(TextDecorationsProperty);
+            set => SetValue(TextDecorationsProperty, value);
         }
 
         /// <summary>

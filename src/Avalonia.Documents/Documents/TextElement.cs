@@ -58,8 +58,8 @@ namespace Avalonia.Documents
         /// <summary>
         /// Defines the <see cref="TextDecorations"/> property.
         /// </summary>
-        public static readonly AttachedProperty<TextDecorations> TextDecorationsProperty =
-            AvaloniaProperty.RegisterAttached<TextElement, AvaloniaObject, TextDecorations>(
+        public static readonly StyledProperty<TextDecorationCollection> TextDecorationsProperty =
+            AvaloniaProperty.Register<Inline, TextDecorationCollection>(
                 nameof(TextDecorations));
 
         static TextElement()
@@ -125,7 +125,7 @@ namespace Avalonia.Documents
         /// <summary>
         /// Gets or sets the decorations applied to the element.
         /// </summary>
-        public TextDecorations TextDecorations
+        public TextDecorationCollection TextDecorations
         {
             get => GetValue(TextDecorationsProperty);
             set => SetValue(TextDecorationsProperty, value);
