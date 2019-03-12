@@ -9,6 +9,8 @@ using Avalonia.Skia.Text;
 
 namespace Avalonia.Skia
 {
+    using Avalonia.Media.Immutable;
+
     /// <summary>
     /// Skia formatted text implementation.
     /// </summary>
@@ -23,6 +25,7 @@ namespace Avalonia.Skia
             TextAlignment textAlignment,
             TextWrapping textWrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
             Constraint = constraint;

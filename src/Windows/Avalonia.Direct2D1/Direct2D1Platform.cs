@@ -25,6 +25,8 @@ namespace Avalonia
 
 namespace Avalonia.Direct2D1
 {
+    using Avalonia.Media.Immutable;
+
     public class Direct2D1Platform : IPlatformRenderInterface
     {
         private static readonly Direct2D1Platform s_instance = new Direct2D1Platform();
@@ -135,6 +137,7 @@ namespace Avalonia.Direct2D1
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
             return new FormattedTextImpl(
@@ -144,6 +147,7 @@ namespace Avalonia.Direct2D1
                 textAlignment,
                 wrapping,
                 constraint,
+                textDecorations,
                 spans);
         }
 

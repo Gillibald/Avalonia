@@ -26,6 +26,8 @@ using Avalonia.UnitTests;
 
 namespace Avalonia.Layout.UnitTests
 {
+    using Avalonia.Media.Immutable;
+
     public class FullLayoutTests
     {
         [Fact]
@@ -179,6 +181,7 @@ namespace Avalonia.Layout.UnitTests
                     It.IsAny<TextAlignment>(),
                     It.IsAny<TextWrapping>(),
                     It.IsAny<Size>(),
+                    It.IsAny<IReadOnlyList<ImmutableTextDecoration>>(),
                     It.IsAny<IReadOnlyList<FormattedTextStyleSpan>>()))
                 .Returns(new FormattedTextMock("TEST"));
 

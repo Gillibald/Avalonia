@@ -6,6 +6,8 @@ using Avalonia.Platform;
 
 namespace Avalonia.Visuals.UnitTests.VisualTree
 {
+    using Avalonia.Media.Immutable;
+
     class MockRenderInterface : IPlatformRenderInterface
     {
         public IEnumerable<string> InstalledFontNames => new string[0];
@@ -17,6 +19,7 @@ namespace Avalonia.Visuals.UnitTests.VisualTree
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
             throw new NotImplementedException();

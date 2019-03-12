@@ -62,6 +62,7 @@ namespace Avalonia.Direct2D1.RenderTests.Media
                 textAlignment,
                 wrapping,
                 widthConstraint == -1 ? Size.Infinity : new Size(widthConstraint, double.PositiveInfinity),
+                null,
                 null);
         }
 

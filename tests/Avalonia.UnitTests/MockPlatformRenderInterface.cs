@@ -7,6 +7,8 @@ using Moq;
 
 namespace Avalonia.UnitTests
 {
+    using Avalonia.Media.Immutable;
+
     public class MockPlatformRenderInterface : IPlatformRenderInterface
     {
         public IEnumerable<string> InstalledFontNames => new string[0];
@@ -18,6 +20,7 @@ namespace Avalonia.UnitTests
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
             return Mock.Of<IFormattedTextImpl>();

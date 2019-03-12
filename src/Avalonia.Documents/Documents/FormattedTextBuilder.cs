@@ -53,6 +53,14 @@ namespace Avalonia.Documents
         public TextWrapping TextWrapping { get; set; }
 
         /// <summary>
+        /// Gets or sets the text decorations.
+        /// </summary>
+        /// <value>
+        /// The text decorations.
+        /// </value>
+        public TextDecorationCollection TextDecorations { get; set; }
+
+        /// <summary>
         /// Gets or sets the constraint.
         /// </summary>
         /// <value>
@@ -81,8 +89,8 @@ namespace Avalonia.Documents
         /// <returns>A <see cref="FormattedText"/> instance.</returns>
         public FormattedText Build()
         {
-            return new FormattedText
-            {               
+            var formattedText = new FormattedText
+            {
                 Text = _builder.ToString(),
                 Typeface = Typeface,
                 FontSize = FontSize,
@@ -91,6 +99,10 @@ namespace Avalonia.Documents
                 Constraint = Constraint,
                 Spans = _spans
             };
+
+            formattedText.SetTextDecorations(TextDecorations);
+
+            return formattedText;
         }
     }
 }

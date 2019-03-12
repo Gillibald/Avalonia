@@ -6,6 +6,10 @@ using Avalonia.Platform;
 
 namespace Avalonia.Media
 {
+    using System.Linq;
+
+    using Avalonia.Media.Immutable;
+
     /// <summary>
     /// Represents a piece of text with formatting.
     /// </summary>
@@ -20,6 +24,7 @@ namespace Avalonia.Media
         private string _text;
         private TextAlignment _textAlignment;
         private TextWrapping _textWrapping;
+        private IReadOnlyList<ImmutableTextDecoration> _textDecorations;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FormattedText"/> class.
@@ -103,6 +108,15 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Sets the text decorations.
+        /// </summary>
+        /// <param name="textDecorations">The text decorations.</param>
+        public void SetTextDecorations(TextDecorationCollection textDecorations)
+        {
+            Set(ref _textDecorations, textDecorations?.ToImmutable());
+        }
+
+        /// <summary>
         /// Gets platform-specific platform implementation.
         /// </summary>
         public IFormattedTextImpl PlatformImpl
@@ -118,6 +132,7 @@ namespace Avalonia.Media
                         _textAlignment,
                         _textWrapping,
                         _constraint,
+                        _textDecorations,
                         _spans);
                 }
 

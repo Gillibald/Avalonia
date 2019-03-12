@@ -3,6 +3,10 @@
 
 namespace Avalonia.Media
 {
+    using System.Collections.Generic;
+
+    using Avalonia.Media.Immutable;
+
     /// <summary>
     /// Describes the formatting for a span of text in a <see cref="FormattedText"/> object.
     /// </summary>
@@ -17,6 +21,7 @@ namespace Avalonia.Media
         /// <param name="fontSize">The span's font size.</param>
         /// <param name="fontStyle">The span's font style.</param>
         /// <param name="fontWeight">The span's font weight</param>
+        /// <param name="textDecorations">The span's text decorations.</param>
         /// <param name="foreground">The span's foreground brush.</param>
         public FormattedTextStyleSpan(
             int startIndex,
@@ -25,12 +30,14 @@ namespace Avalonia.Media
             double? fontSize = null,
             FontStyle? fontStyle = null,
             FontWeight? fontWeight = null,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations = null,
             IBrush foreground = null)
         {
             StartIndex = startIndex;
             Length = length;
             Typeface = GetTypeface(fontFamily, fontWeight, fontStyle);
             FontSize = fontSize;
+            TextDecorations = textDecorations;
             Foreground = foreground;
         }
 
@@ -58,6 +65,14 @@ namespace Avalonia.Media
         /// Gets the span's foreground brush.
         /// </summary>
         public IBrush Foreground { get; }
+
+        /// <summary>
+        /// Gets the text decorations.
+        /// </summary>
+        /// <value>
+        /// The text decorations.
+        /// </value>
+        public IReadOnlyList<ImmutableTextDecoration> TextDecorations { get; }
 
         private static Typeface GetTypeface(FontFamily fontFamily, FontWeight? fontWeight, FontStyle? fontStyle)
         {

@@ -9,6 +9,8 @@ using DWrite = SharpDX.DirectWrite;
 
 namespace Avalonia.Direct2D1.Media
 {
+    using Avalonia.Media.Immutable;
+
     public class FormattedTextImpl : IFormattedTextImpl
     {
         public FormattedTextImpl(
@@ -18,6 +20,7 @@ namespace Avalonia.Direct2D1.Media
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
             Text = text;

@@ -8,6 +8,8 @@ using Avalonia.Media;
 
 namespace Avalonia.Platform
 {
+    using Avalonia.Media.Immutable;
+
     /// <summary>
     /// Defines the main platform-specific interface for the rendering subsystem.
     /// </summary>
@@ -27,6 +29,7 @@ namespace Avalonia.Platform
         /// <param name="textAlignment">The text alignment.</param>
         /// <param name="wrapping">The text wrapping mode.</param>
         /// <param name="constraint">The text layout constraints.</param>
+        /// <param name="textDecorations"></param>
         /// <param name="spans">The style spans.</param>
         /// <returns>An <see cref="IFormattedTextImpl"/>.</returns>
         IFormattedTextImpl CreateFormattedText(
@@ -36,6 +39,7 @@ namespace Avalonia.Platform
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans);
 
         /// <summary>

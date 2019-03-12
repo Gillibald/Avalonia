@@ -17,7 +17,7 @@ namespace Avalonia.Documents
         public static readonly AttachedProperty<FontFamily> FontFamilyProperty =
             AvaloniaProperty.RegisterAttached<TextElement, AvaloniaObject, FontFamily>(
                 nameof(FontFamily),
-                defaultValue: Media.FontFamily.Default,
+                defaultValue: FontFamily.Default,
                 inherits: true);
 
         /// <summary>

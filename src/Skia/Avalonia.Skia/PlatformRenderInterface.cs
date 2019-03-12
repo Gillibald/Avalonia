@@ -12,6 +12,8 @@ using SkiaSharp;
 
 namespace Avalonia.Skia
 {
+    using Avalonia.Media.Immutable;
+
     /// <summary>
     /// Skia platform render interface.
     /// </summary>
@@ -32,7 +34,7 @@ namespace Avalonia.Skia
                     ? GRGlInterface.AssembleGlInterface((_, proc) => display.GlInterface.GetProcAddress(proc))
                     : GRGlInterface.AssembleGlesInterface((_, proc) => display.GlInterface.GetProcAddress(proc)))
                 {
-                    
+
                     GrContext = GRContext.Create(GRBackend.OpenGL, iface);
                 }
             }
@@ -46,9 +48,10 @@ namespace Avalonia.Skia
             TextAlignment textAlignment,
             TextWrapping wrapping,
             Size constraint,
+            IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
-            return new FormattedTextImpl(text, typeface, fontSize, textAlignment, wrapping, constraint, spans);
+            return new FormattedTextImpl(text, typeface, fontSize, textAlignment, wrapping, constraint, textDecorations, spans);
         }
 
         /// <inheritdoc />

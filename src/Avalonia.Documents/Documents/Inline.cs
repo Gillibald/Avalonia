@@ -39,12 +39,14 @@ namespace Avalonia.Documents
             var fontSize = IsSet(FontSizeProperty) ? (double?)FontSize : null;
             var fontStyle = IsSet(FontStyleProperty) ? (FontStyle?)FontStyle : null;
             var fontWeight = IsSet(FontWeightProperty) ? (FontWeight?)FontWeight : null;
+            var textDecorations = IsSet(TextDecorationsProperty) ? TextDecorations : null;
             var foreground = IsSet(ForegroundProperty) ? Foreground : null;
 
             if (fontFamily != null ||
                 fontSize != null ||
                 fontStyle != null ||
                 fontWeight != null ||
+                textDecorations != null ||
                 foreground != null)
             {
                 return new FormattedTextStyleSpan(
@@ -54,6 +56,7 @@ namespace Avalonia.Documents
                     fontSize: fontSize,
                     fontStyle: fontStyle,
                     fontWeight: fontWeight,
+                    textDecorations: textDecorations?.ToImmutable(),
                     foreground: foreground);
             }
             else

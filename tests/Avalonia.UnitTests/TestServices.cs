@@ -19,6 +19,8 @@ using System.Reflection;
 
 namespace Avalonia.UnitTests
 {
+    using Avalonia.Media.Immutable;
+
     public class TestServices
     {
         public static readonly TestServices StyledWindow = new TestServices(
@@ -167,6 +169,7 @@ namespace Avalonia.UnitTests
                     It.IsAny<TextAlignment>(),
                     It.IsAny<TextWrapping>(),
                     It.IsAny<Size>(),
+                    It.IsAny<IReadOnlyList<ImmutableTextDecoration>>(),
                     It.IsAny<IReadOnlyList<FormattedTextStyleSpan>>()) == Mock.Of<IFormattedTextImpl>() &&
                 x.CreateStreamGeometry() == Mock.Of<IStreamGeometryImpl>(
                     y => y.Open() == Mock.Of<IStreamGeometryContextImpl>()));
