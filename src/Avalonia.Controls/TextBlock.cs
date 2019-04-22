@@ -121,7 +121,7 @@ namespace Avalonia.Controls
                 FontSizeProperty,
                 FontStyleProperty,
                 FontWeightProperty,
-                TextTrimmingProperty);
+                TextTrimmingProperty,
                 TextDecorationsProperty);
         }
 
