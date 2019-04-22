@@ -76,6 +76,12 @@ namespace Avalonia.Controls
             AvaloniaProperty.Register<TextBlock, TextWrapping>(nameof(TextWrapping));
 
         /// <summary>
+        /// Defines the <see cref="TextTrimming"/> property.
+        /// </summary>
+        public static readonly StyledProperty<TextTrimming> TextTrimmingProperty =
+            AvaloniaProperty.Register<TextBlock, TextTrimming>(nameof(TextTrimming));
+
+        /// <summary>
         /// Defines the <see cref="TextDecorations"/> property.
         /// </summary>
         public static readonly StyledProperty<TextDecorationCollection> TextDecorationsProperty =
@@ -115,6 +121,7 @@ namespace Avalonia.Controls
                 FontSizeProperty,
                 FontStyleProperty,
                 FontWeightProperty,
+                TextTrimmingProperty);
                 TextDecorationsProperty);
         }
 
@@ -228,6 +235,15 @@ namespace Avalonia.Controls
         {
             get { return GetValue(TextAlignmentProperty); }
             set { SetValue(TextAlignmentProperty, value); }
+        }
+
+        /// <summary>
+        /// Gets or sets the text trimming.
+        /// </summary>
+        public TextTrimming TextTrimming
+        {
+            get { return GetValue(TextTrimmingProperty); }
+            set { SetValue(TextTrimmingProperty, value); }
         }
 
         /// <summary>
@@ -420,6 +436,7 @@ namespace Avalonia.Controls
                 Text = text ?? string.Empty,
                 TextAlignment = TextAlignment,
                 TextWrapping = TextWrapping,
+                TextTrimming = TextTrimming
             };
         }
 
@@ -453,7 +470,7 @@ namespace Avalonia.Controls
                     FormattedText.Constraint = Size.Infinity;
                 }
 
-                return FormattedText.Measure();
+                return FormattedText.Bounds.Size;
             }
 
             return new Size();
