@@ -5,17 +5,24 @@ namespace Avalonia.Media.Immutable
 {
     public class ImmutableTextDecoration
     {
-        public ImmutableTextDecoration(TextDecorationLocation location, Pen pen, double penOffset)
+        public ImmutableTextDecoration(TextDecorationLocation location, Pen pen, TextDecorationUnit penThicknessUnit,
+            double penOffset, TextDecorationUnit penOffsetUnit)
         {
             Location = location;
             Pen = pen;
+            PenThicknessUnit = penThicknessUnit;
             PenOffset = penOffset;
+            PenOffsetUnit = penOffsetUnit;
         }
 
         public TextDecorationLocation Location { get; }
 
         public Pen Pen { get; }
 
+        public TextDecorationUnit PenThicknessUnit { get; }
+
         public double PenOffset { get; }
+
+        public TextDecorationUnit PenOffsetUnit { get; }
     }
 }
