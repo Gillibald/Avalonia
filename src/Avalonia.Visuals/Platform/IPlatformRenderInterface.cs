@@ -27,8 +27,8 @@ namespace Avalonia.Platform
         /// <param name="typeface">The base typeface.</param>
         /// <param name="fontSize">The base font size.</param>
         /// <param name="textAlignment">The text alignment.</param>
-        /// <param name="wrapping">The text wrapping mode.</param>
-        /// <param name="trimming">The text trimming mode.</param>
+        /// <param name="textWrapping">The text wrapping mode.</param>
+        /// <param name="textTrimming">The text trimming mode.</param>
         /// <param name="constraint">The text layout constraints.</param>
         /// <param name="textDecorations"></param>
         /// <param name="spans">The style spans.</param>
@@ -38,8 +38,8 @@ namespace Avalonia.Platform
             Typeface typeface,
             double fontSize,
             TextAlignment textAlignment,
-            TextWrapping wrapping,
-            TextTrimming trimming,
+            TextWrapping textWrapping,
+            TextTrimming textTrimming,
             Size constraint,
             IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans);

@@ -18,7 +18,8 @@ namespace Avalonia.UnitTests
             Typeface typeface,
             double fontSize,
             TextAlignment textAlignment,
-            TextWrapping wrapping,
+            TextWrapping textWrapping,
+            TextTrimming textTrimming,
             Size constraint,
             IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)

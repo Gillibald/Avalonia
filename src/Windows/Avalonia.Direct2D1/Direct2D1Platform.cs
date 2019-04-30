@@ -135,8 +135,8 @@ namespace Avalonia.Direct2D1
             Typeface typeface,
             double fontSize,
             TextAlignment textAlignment,
-            TextWrapping wrapping,
-            TextTrimming trimming,
+            TextWrapping textWrapping,
+            TextTrimming textTrimming,
             Size constraint,
             IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
@@ -146,8 +146,8 @@ namespace Avalonia.Direct2D1
                 typeface,
                 fontSize,
                 textAlignment,
-                wrapping,
-                trimming,
+                textWrapping,
+                textTrimming,
                 constraint,
                 textDecorations,
                 spans);

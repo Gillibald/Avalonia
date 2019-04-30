@@ -56,13 +56,13 @@ namespace Avalonia.Skia
             Typeface typeface,
             double fontSize,
             TextAlignment textAlignment,
-            TextWrapping wrapping,
-            TextTrimming trimming,
+            TextWrapping textWrapping,
+            TextTrimming textTrimming,
             Size constraint,
             IReadOnlyList<ImmutableTextDecoration> textDecorations,
             IReadOnlyList<FormattedTextStyleSpan> spans)
         {
-            return new FormattedTextImpl(text, typeface, fontSize, textAlignment, wrapping, trimming, constraint, textDecorations, spans);
+            return new FormattedTextImpl(text, typeface, fontSize, textAlignment, textWrapping, textTrimming, constraint, textDecorations, spans);
         }
 
         public IGeometryImpl CreateEllipseGeometry(Rect rect) => new EllipseGeometryImpl(rect);
