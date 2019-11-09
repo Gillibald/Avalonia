@@ -16,7 +16,7 @@ namespace Avalonia.Visuals.UnitTests.Media
 
                 var fontManager = new MockFontManagerImpl();
 
-                AvaloniaLocator.CurrentMutable.Bind<IFontManagerImpl>().ToConstant(fontManager);
+                AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(new FontManager(fontManager));
 
                 Assert.NotEqual(current, FontManager.Current);
             }

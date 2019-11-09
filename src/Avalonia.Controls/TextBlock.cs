@@ -352,7 +352,7 @@ namespace Avalonia.Controls
             return new FormattedText
             {
                 Constraint = constraint,
-                Typeface = FontManager.Current.GetOrAddTypeface(FontFamily, FontWeight, FontStyle),
+                Typeface = FontManager.Current?.GetOrAddTypeface(FontFamily, FontWeight, FontStyle),
                 FontSize = FontSize,
                 Text = text ?? string.Empty,
                 TextAlignment = TextAlignment,

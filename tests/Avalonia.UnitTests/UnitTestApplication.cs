@@ -13,6 +13,7 @@ using System.Reactive.Disposables;
 using System.Reactive.Concurrency;
 using Avalonia.Input.Platform;
 using Avalonia.Animation;
+using Avalonia.Media;
 
 namespace Avalonia.UnitTests
 {
@@ -61,6 +62,7 @@ namespace Avalonia.UnitTests
                 .Bind<IMouseDevice>().ToConstant(Services.MouseDevice?.Invoke())
                 .Bind<IRuntimePlatform>().ToConstant(Services.Platform)
                 .Bind<IPlatformRenderInterface>().ToConstant(Services.RenderInterface)
+                .Bind<FontManager>().ToConstant(Services.FontManager)
                 .Bind<IPlatformThreadingInterface>().ToConstant(Services.ThreadingInterface)
                 .Bind<IScheduler>().ToConstant(Services.Scheduler)
                 .Bind<IStandardCursorFactory>().ToConstant(Services.StandardCursorFactory)

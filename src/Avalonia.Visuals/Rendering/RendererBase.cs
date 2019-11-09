@@ -18,7 +18,7 @@ namespace Avalonia.Rendering
         {
             _fpsText = new FormattedText
             {
-                Typeface = FontManager.Current.GetOrAddTypeface(FontFamily.Default),
+                Typeface = FontManager.Current?.GetOrAddTypeface(FontFamily.Default),
                 FontSize = s_fontSize
             };
         }

@@ -52,7 +52,7 @@ namespace Avalonia.UnitTests
             keyboardDevice: () => new KeyboardDevice(),
             keyboardNavigation: new KeyboardNavigationHandler(),
             inputManager: new InputManager());
-        
+
         public static readonly TestServices RealStyler = new TestServices(
             styler: new Styler());
 
@@ -66,6 +66,7 @@ namespace Avalonia.UnitTests
             Func<IMouseDevice> mouseDevice = null,
             IRuntimePlatform platform = null,
             IPlatformRenderInterface renderInterface = null,
+            FontManager fontManager = null,
             IRenderTimer renderLoop = null,
             IScheduler scheduler = null,
             IStandardCursorFactory standardCursorFactory = null,
@@ -84,6 +85,7 @@ namespace Avalonia.UnitTests
             MouseDevice = mouseDevice;
             Platform = platform;
             RenderInterface = renderInterface;
+            FontManager = fontManager;
             Scheduler = scheduler;
             StandardCursorFactory = standardCursorFactory;
             Styler = styler;
@@ -102,6 +104,7 @@ namespace Avalonia.UnitTests
         public Func<IMouseDevice> MouseDevice { get; }
         public IRuntimePlatform Platform { get; }
         public IPlatformRenderInterface RenderInterface { get; }
+        public FontManager FontManager { get; }
         public IScheduler Scheduler { get; }
         public IStandardCursorFactory StandardCursorFactory { get; }
         public IStyler Styler { get; }
@@ -120,6 +123,7 @@ namespace Avalonia.UnitTests
             Func<IMouseDevice> mouseDevice = null,
             IRuntimePlatform platform = null,
             IPlatformRenderInterface renderInterface = null,
+            FontManager fontManager = null,
             IRenderTimer renderLoop = null,
             IScheduler scheduler = null,
             IStandardCursorFactory standardCursorFactory = null,
@@ -139,6 +143,7 @@ namespace Avalonia.UnitTests
                 mouseDevice: mouseDevice ?? MouseDevice,
                 platform: platform ?? Platform,
                 renderInterface: renderInterface ?? RenderInterface,
+                fontManager: fontManager ?? FontManager,
                 scheduler: scheduler ?? Scheduler,
                 standardCursorFactory: standardCursorFactory ?? StandardCursorFactory,
                 styler: styler ?? Styler,
@@ -165,7 +170,7 @@ namespace Avalonia.UnitTests
 
         private static IPlatformRenderInterface CreateRenderInterfaceMock()
         {
-            return Mock.Of<IPlatformRenderInterface>(x => 
+            return Mock.Of<IPlatformRenderInterface>(x =>
                 x.CreateFormattedText(
                     It.IsAny<string>(),
                     It.IsAny<Typeface>(),
