@@ -24,7 +24,8 @@
               ContentTemplate="{TemplateBinding HeaderTemplate}"
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
-              Padding="0" 
+              Padding="0"
+              BorderThickness="1"
               IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}">
             </ToggleButton>
             <ContentPresenter
@@ -53,6 +54,7 @@
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
               Padding="0"
+              BorderThickness="1"
               IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}">
             </ToggleButton>
             <ContentPresenter
@@ -83,6 +85,7 @@
               HorizontalContentAlignment="Stretch"
               VerticalContentAlignment="Stretch"
               Padding="0"
+              BorderThickness="1"
               IsChecked="{TemplateBinding IsExpanded, Mode=TwoWay}">
             </ToggleButton>
             <ContentPresenter
@@ -101,64 +104,72 @@
     </Setter>
   </Style>
   <Style Selector="Expander[ExpandDirection=Right] /template/ ToggleButton#PART_toggle">
+    <Setter Property="BorderBrush" Value="Transparent"/>
     <Setter Property="Template">
       <ControlTemplate>
-        <Grid RowDefinitions="Auto,*">
-          <Border Width="20" Height="20" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <Path Fill="{DynamicResource ThemeForegroundBrush}"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Data="M 0 2 L 4 6 L 0 10 Z" />
-          </Border>
-          <LayoutTransformControl Grid.Row="1">
-            <ContentPresenter
-              Name="PART_ContentPresenter"
-              Background="Transparent" 
-              Content="{TemplateBinding Content}"
-              ContentTemplate="{TemplateBinding ContentTemplate}"
-              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-              Padding="{TemplateBinding Padding}">
-            </ContentPresenter>
-            <LayoutTransformControl.LayoutTransform>
-              <RotateTransform Angle="-90"/>
-            </LayoutTransformControl.LayoutTransform>
-          </LayoutTransformControl>
-        </Grid>
+        <Border BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}">
+          <Grid RowDefinitions="Auto,*">
+            <Border Width="20" Height="20" HorizontalAlignment="Right" VerticalAlignment="Center">
+              <Path Fill="{DynamicResource ThemeForegroundBrush}"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Data="M 0 2 L 4 6 L 0 10 Z" />
+            </Border>
+            <LayoutTransformControl Grid.Row="1">
+              <ContentPresenter
+                Name="PART_ContentPresenter"
+                Background="Transparent"
+                Content="{TemplateBinding Content}"
+                ContentTemplate="{TemplateBinding ContentTemplate}"
+                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                Padding="{TemplateBinding Padding}">
+              </ContentPresenter>
+              <LayoutTransformControl.LayoutTransform>
+                <RotateTransform Angle="-90"/>
+              </LayoutTransformControl.LayoutTransform>
+            </LayoutTransformControl>
+          </Grid>
+        </Border>
       </ControlTemplate>
     </Setter>
   </Style>
   <Style Selector="Expander[ExpandDirection=Left] /template/ ToggleButton#PART_toggle">
+    <Setter Property="BorderBrush" Value="Transparent"/>
     <Setter Property="Template">
       <ControlTemplate>
-        <Grid RowDefinitions="Auto,*">
-          <Border Width="20" Height="20" HorizontalAlignment="Right" VerticalAlignment="Center">
-            <Path Fill="{DynamicResource ThemeForegroundBrush}"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Data="M 0 2 L 4 6 L 0 10 Z" />
-          </Border>
-          <LayoutTransformControl Grid.Row="1">
-            <ContentPresenter
-              Name="PART_ContentPresenter"
-              Background="Transparent" 
-              Content="{TemplateBinding Content}"
-              ContentTemplate="{TemplateBinding ContentTemplate}"
-              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-              Padding="{TemplateBinding Padding}">
-            </ContentPresenter>
-            <LayoutTransformControl.LayoutTransform>
-              <RotateTransform Angle="90"/>
-            </LayoutTransformControl.LayoutTransform>
-          </LayoutTransformControl>
-        </Grid>
+        <Border BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}">
+          <Grid RowDefinitions="Auto,*">
+            <Border Width="20" Height="20" HorizontalAlignment="Right" VerticalAlignment="Center">
+              <Path Fill="{DynamicResource ThemeForegroundBrush}"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      Data="M 0 2 L 4 6 L 0 10 Z" />
+            </Border>
+            <LayoutTransformControl Grid.Row="1">
+              <ContentPresenter
+                Name="PART_ContentPresenter"
+                Background="Transparent"
+                Content="{TemplateBinding Content}"
+                ContentTemplate="{TemplateBinding ContentTemplate}"
+                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                Padding="{TemplateBinding Padding}">
+              </ContentPresenter>
+              <LayoutTransformControl.LayoutTransform>
+                <RotateTransform Angle="90"/>
+              </LayoutTransformControl.LayoutTransform>
+            </LayoutTransformControl>
+          </Grid>
+        </Border>
       </ControlTemplate>
     </Setter>
   </Style>
   <Style Selector="Expander /template/ ToggleButton#PART_toggle">
+    <Setter Property="BorderBrush" Value="Transparent"/>
     <Setter Property="Template">
       <ControlTemplate>
+        <Border BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}">
           <Grid ColumnDefinitions="Auto,*">
             <Border Grid.Column="0" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
               <Path Fill="{DynamicResource ThemeForegroundBrush}"
@@ -168,17 +179,18 @@
             </Border>
             <ContentPresenter Name="PART_ContentPresenter"
                               Grid.Column="1"
-                              Background="Transparent" 
+                              Background="Transparent"
                               Content="{TemplateBinding Content}"
                               ContentTemplate="{TemplateBinding ContentTemplate}"
                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
                               Padding="{TemplateBinding Padding}"/>
           </Grid>
+        </Border>
       </ControlTemplate>
     </Setter>
   </Style>
-  <Style Selector="Expander /template/ ToggleButton#PART_toggle:pointerover /template/ Border">
+  <Style Selector="Expander /template/ ToggleButton#PART_toggle:pointerover">
     <Setter Property="BorderBrush" Value="{DynamicResource ThemeBorderLowBrush}" />
   </Style>
   <Style Selector="Expander:down /template/ ContentPresenter#PART_ContentPresenter">
