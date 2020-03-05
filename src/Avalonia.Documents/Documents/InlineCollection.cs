@@ -2,17 +2,14 @@
 // Licensed under the MIT license. See licence.md file in the project root for full license information.
 
 using System;
-using System.Collections;
 using System.Text;
 using Avalonia.Collections;
-using Avalonia.Metadata;
 
 namespace Avalonia.Documents
 {
     /// <summary>
     /// A collection of <see cref="Inline"/>s.
     /// </summary>
-    [WhitespaceSignificantCollection]
     public class InlineCollection : AvaloniaList<Inline>
     {
         private bool _isNull;
