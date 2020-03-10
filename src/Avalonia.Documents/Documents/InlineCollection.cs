@@ -1,107 +1,260 @@
-﻿// Copyright (c) The Avalonia Project. All rights reserved.
-// Licensed under the MIT license. See licence.md file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+// 
+// Description: Collection of Inline elements
+//
 
 using System;
-using System.Text;
-using Avalonia.Collections;
+using System.Collections;
 
 namespace Avalonia.Documents
 {
     /// <summary>
-    /// A collection of <see cref="Inline"/>s.
+    /// Collection of Inline elements - elements allowed as children
+    /// of Paragraph, Span and TextBlock elements.
     /// </summary>
-    public class InlineCollection : AvaloniaList<Inline>
+    public class InlineCollection : TextElementCollection<Inline>, IList
     {
-        private bool _isNull;
+        //-------------------------------------------------------------------
+        //
+        //  Constructors
+        //
+        //-------------------------------------------------------------------
+
+        #region Constructors
+
+        // Constructor is internal. We allow InlineCollection creation only from inside owning elements such as TextBlock or TextElement.
+        // Note that when a SiblingInlines collection is created for an Inline, the owner of collection is that member Inline object.
+        // Flag isOwnerParent indicates whether owner is a parent or a member of the collection.
+        internal InlineCollection(IAvaloniaObject owner, bool isOwnerParent)
+            : base(owner, isOwnerParent)
+        {
+        }
+
+        #endregion Constructors
+
+        //-------------------------------------------------------------------
+        //
+        //  Public Methods
+        //
+        //-------------------------------------------------------------------
+
+        #region Public Methods
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="InlineCollection"/> class.
+        /// Implementation of Add method from IList
         /// </summary>
-        public InlineCollection()
+        internal override int OnAdd(object value)
         {
-            ResetBehavior = ResetBehavior.Remove;
-            this.ForEachItem(
-                x =>
+            int index;
+
+            string text = value as string;
+
+            if (text != null)
+            {
+                index = AddText(text, true /* returnIndex */);
+            }
+            else
+            {
+                TextContainer.BeginChange();
+                try
                 {
-                    x.Invalidated += Invalidate;
-                    Invalidate();
-                },
-                x =>
+                    Control uiElement = value as Control;
+
+                    if (uiElement != null)
+                    {
+                        index = AddUIElement(uiElement, true /* returnIndex */);
+                    }
+                    else
+                    {
+                        index = base.OnAdd(value);
+                    }
+                }
+                finally
                 {
-                    x.Invalidated -= Invalidate;
-                    Invalidate();
-                },
-                () => throw new NotSupportedException());
+                    TextContainer.EndChange();
+                }
+            }
+            return index;
         }
 
         /// <summary>
-        /// Gets a string representation of the inlines.
+        /// Adds an implicit Run element with a given text
         /// </summary>
-        public string Text
+        /// <param name="text">
+        /// Text set as a Text property for implicit Run.
+        /// </param>
+        public void Add(string text)
+        {
+            AddText(text, false /* returnIndex */);
+        }
+
+        /// <summary>
+        /// Adds an implicit InlineUIContainer with a given UIElement in it.
+        /// </summary>
+        /// <param name="uiElement">
+        /// UIElement set as a Child property for the implicit InlineUIContainer.
+        /// </param>
+        public void Add(Control uiElement)
+        {
+            AddUIElement(uiElement, false /* returnIndex */);
+        }
+
+        #endregion Public Methods
+
+        //-------------------------------------------------------------------
+        //
+        //  Public Properties
+        //
+        //-------------------------------------------------------------------
+
+        #region Public Properties
+
+        /// <value>
+        /// Returns a first Inline element of this collection
+        /// </value>
+        public Inline FirstInline
         {
             get
             {
-                if (Count == 0)
+                return FirstChild;
+            }
+        }
+
+        /// <value>
+        /// Returns a last Inline element of this collection
+        /// </value>
+        public Inline LastInline
+        {
+            get
+            {
+                return LastChild;
+            }
+        }
+
+        #endregion Public Properties
+
+        //-------------------------------------------------------------------
+        //
+        //  Internal Methods
+        //
+        //-------------------------------------------------------------------
+
+        #region Internal Methods
+
+        /// <summary>
+        /// This method performs schema validation for inline collections. 
+        /// (1) We want to disallow nested Hyperlink elements. 
+        /// (2) Also, a Hyperlink element allows only these child types: Run, InlineUIContainer and Span elements other than Hyperlink.
+        /// </summary>
+        internal override void ValidateChild(Inline child)
+        {
+            base.ValidateChild(child);
+
+            if (Parent is TextElement)
+            {
+                TextSchema.ValidateChild((TextElement)Parent, child, true /* throwIfIllegalChild */, true /* throwIfIllegalHyperlinkDescendent */);
+            }
+            else
+            {
+                if (!TextSchema.IsValidChildOfContainer(Parent.GetType(), child.GetType()))
                 {
-                    return _isNull ? null : string.Empty;
+                    throw new InvalidOperationException(/*SR.Get(SRID.TextSchema_ChildTypeIsInvalid, Parent.GetType().Name, child.GetType().Name)*/);
                 }
-                else if (Count == 1)
+            }
+        }
+
+        #endregion Internal Methods
+
+        //-------------------------------------------------------------------
+        //
+        //  Private Methods
+        //
+        //-------------------------------------------------------------------
+
+        #region Private Methods
+
+        // Worker for OnAdd and Add(string).
+        // If returnIndex == true, uses the more costly IList.Add
+        // to calculate and return the index of the newly inserted
+        // Run, otherwise returns -1.
+        private int AddText(string text, bool returnIndex)
+        {
+            if (text == null)
+            {
+                throw new ArgumentNullException("text");
+            }
+
+            // Special case for TextBlock - to keep its simple content in simple state
+            if (Parent is TextBlock)
+            {
+                TextBlock textBlock = (TextBlock)Parent;
+                if (!textBlock.HasComplexContent)
                 {
-                    return (this[0] as IHasText).Text ?? string.Empty;
+                    textBlock.Text = textBlock.Text + text;
+                    return 0; // There's always one implicit Run with simple content, at index 0.
+                }
+            }
+
+            TextContainer.BeginChange();
+            try
+            {
+                Run implicitRun = Run.CreateImplicitRun(Parent);
+                int index;
+
+                if (returnIndex)
+                {
+                    index = base.OnAdd(implicitRun);
                 }
                 else
                 {
-                    var result = new StringBuilder();
-
-                    foreach (var i in this)
-                    {
-                        if (i is IHasText t)
-                        {
-                            result.Append(t.Text);
-                        }
-                    }
-
-                    return result.ToString();
+                    Add(implicitRun);
+                    index = -1;
                 }
-            }
 
-            set
+                // Set the Text property after inserting the Run to avoid allocating
+                // a temporary TextContainer.
+                implicitRun.Text = text;
+
+                return index;
+            }
+            finally
             {
-                if (Count == 1 && this[0] is Run r)
-                {
-                    if (r.Text == value)
-                    {
-                        return;
-                    }
-                }
-
-                Clear();
-
-                if (!string.IsNullOrEmpty(value))
-                {
-                    Add(new Run(value));
-                }
-
-                _isNull = value == null;
+                TextContainer.EndChange();
             }
         }
 
-        /// <summary>
-        /// Raised when an inline in the collection changes.
-        /// </summary>
-        public event EventHandler Invalidated;
-
-        /// <inheirtdoc/>
-        public void Add(string s)
+        // Worker for OnAdd and Add(UIElement).
+        // If returnIndex == true, uses the more costly IList.Add
+        // to calculate and return the index of the newly inserted
+        // Run, otherwise returns -1.
+        private int AddUIElement(Control uiElement, bool returnIndex)
         {
-            Add(new Run(s));
+            if (uiElement == null)
+            {
+                throw new ArgumentNullException("uiElement");
+            }
+
+            InlineUIContainer implicitInlineUIContainer = Run.CreateImplicitInlineUIContainer(Parent);
+            int index;
+
+            if (returnIndex)
+            {
+                index = base.OnAdd(implicitInlineUIContainer);
+            }
+            else
+            {
+                this.Add(implicitInlineUIContainer);
+                index = -1;
+            }
+
+            implicitInlineUIContainer.Child = uiElement;
+
+            return index;
         }
 
-        /// <summary>
-        /// Raises the <see cref="Invalidated"/> event.
-        /// </summary>
-        protected void Invalidate() => Invalidated?.Invoke(this, EventArgs.Empty);
-
-        private void Invalidate(object sender, EventArgs e) => Invalidate();
+        #endregion Private Methods
     }
 }
