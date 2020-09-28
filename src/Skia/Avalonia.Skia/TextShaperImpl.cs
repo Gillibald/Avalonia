@@ -1,6 +1,9 @@
 ﻿using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 using Avalonia.Utilities;
@@ -140,6 +143,94 @@ namespace Avalonia.Skia
             // Depends on direction of layout
             // advanceBuffer[index] = buffer.GlyphPositions[index].YAdvance * textScale;
             advanceBuffer[index] = glyphPositions[index].XAdvance * textScale;
+        }
+    }
+
+    public class TextBuffer : IEnumerable<GlyphRun>
+    {
+        private readonly List<ShapeableTextCharacters> _textCharacters = new List<ShapeableTextCharacters>(1);
+
+        private ShapeableTextCharacters _currentTextCharacters;
+
+        public bool IsShaped { get; private set; }
+
+        public bool TryAdd(ShapeableTextCharacters textCharacters)
+        {
+            if (_currentTextCharacters != null && !textCharacters.CanShapeTogether(_currentTextCharacters))
+            {
+                return false;
+            }
+
+            _textCharacters.Add(textCharacters);
+
+            _currentTextCharacters = textCharacters;
+
+            return true;
+        }
+
+        public void Shape()
+        {
+            IsShaped = true;
+        }
+
+        public IEnumerator<GlyphRun> GetEnumerator()
+        {
+            return new GlyphRunEnumerator(this);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+
+        private struct GlyphRunEnumerator : IEnumerator, IEnumerator<GlyphRun>
+        {
+            private readonly TextBuffer _buffer;
+
+            private int _currentPosition;
+
+            public GlyphRunEnumerator(TextBuffer buffer)
+            {
+                _buffer = buffer;
+
+                _currentPosition = 0;
+
+                Current = null;
+            }
+
+            public GlyphRun Current { get; private set; }
+
+            object IEnumerator.Current => Current;
+
+            public void Dispose() { }
+
+            public bool MoveNext()
+            {
+                if (_currentPosition >= _buffer._textCharacters.Count)
+                {
+                    return false;
+                }
+
+                var textCharacters = _buffer._textCharacters[_currentPosition];
+
+                Current = CreateGlyphRun(textCharacters);
+
+                _currentPosition++;
+
+                return true;
+            }
+
+            public void Reset()
+            {
+                _currentPosition = 0;
+
+                Current = null;
+            }
+
+            private GlyphRun CreateGlyphRun(ShapeableTextCharacters textCharacters)
+            {
+                return null;
+            }
         }
     }
 }

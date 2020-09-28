@@ -1,4 +1,5 @@
-﻿using Avalonia.Utilities;
+﻿using System;
+using Avalonia.Utilities;
 
 namespace Avalonia.Media.TextFormatting
 {
@@ -19,5 +20,10 @@ namespace Avalonia.Media.TextFormatting
         public override ReadOnlySlice<char> Text { get; }
 
         public override TextRunProperties Properties { get; }
+
+        public bool CanShapeTogether(ShapeableTextCharacters currenTextCharacters)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
