@@ -9,11 +9,15 @@ namespace Avalonia.Media.TextFormatting
     /// </summary>
     public readonly struct TextLineMetrics
     {
-        public TextLineMetrics(Size size, double textBaseline, TextRange textRange, bool hasOverflowed)
+        public TextLineMetrics(TextRange textRange, double start, double height, double width, double widthIncludingTrailingWhitespace,
+            double textBaseline, bool hasOverflowed)
         {
-            Size = size;
-            TextBaseline = textBaseline;
             TextRange = textRange;
+            Start = start;
+            Height = height;
+            Width = width;
+            WidthIncludingTrailingWhitespace = widthIncludingTrailingWhitespace;
+            TextBaseline = textBaseline;
             HasOverflowed = hasOverflowed;
         }
 
@@ -25,13 +29,15 @@ namespace Avalonia.Media.TextFormatting
         /// </value>
         public TextRange TextRange { get; }
 
-        /// <summary>
-        /// Gets the size of the text line.
-        /// </summary>
-        /// <value>
-        /// The size.
-        /// </value>
-        public Size Size { get; }
+        public double Start { get; }
+
+        public double Height { get; }
+
+        public double Width { get; }
+
+        public double WidthIncludingTrailingWhitespace { get; }
+
+        public bool HasOverflowed { get; }
 
         /// <summary>
         /// Gets the distance from the top to the baseline of the line of text.
@@ -39,16 +45,10 @@ namespace Avalonia.Media.TextFormatting
         public double TextBaseline { get; }
 
         /// <summary>
-        /// Gets a boolean value that indicates whether content of the line overflows 
-        /// the specified paragraph width.
-        /// </summary>
-        public bool HasOverflowed { get; }
-
-        /// <summary>
         /// Creates the text line metrics.
         /// </summary>
         /// <param name="textRuns">The text runs.</param>
-        /// <param name="textRange">The text range that is covered by the text line.</param>
+        /// <param name="textRange"></param>
         /// <param name="paragraphWidth">The paragraph width.</param>
         /// <param name="paragraphProperties">The text alignment.</param>
         /// <returns></returns>
@@ -59,6 +59,8 @@ namespace Avalonia.Media.TextFormatting
             var ascent = 0.0;
             var descent = 0.0;
             var lineGap = 0.0;
+
+            var start = paragraphProperties.Indent;
 
             foreach (var textRun in textRuns)
             {
@@ -85,12 +87,12 @@ namespace Avalonia.Media.TextFormatting
                 }
             }
 
-            var size = new Size(lineWidth,
-                double.IsNaN(paragraphProperties.LineHeight) || MathUtilities.IsZero(paragraphProperties.LineHeight) ?
-                    descent - ascent + lineGap :
-                    paragraphProperties.LineHeight);
+            var height = double.IsNaN(paragraphProperties.LineHeight) ||
+                         MathUtilities.IsZero(paragraphProperties.LineHeight) ?
+                descent - ascent + lineGap :
+                paragraphProperties.LineHeight;
 
-            return new TextLineMetrics(size, -ascent, textRange, size.Width > paragraphWidth);
+            return new TextLineMetrics(textRange, start, height, lineWidth, lineWidth, -ascent, lineWidth > paragraphWidth);
         }
     }
 }

@@ -97,11 +97,11 @@ namespace Avalonia.Controls.Primitives
             {
                 var lastLine = TextLayout.TextLines[TextLayout.TextLines.Count - 1];
 
-                var lineX = lastLine.LineMetrics.Size.Width;
+                var lineX = lastLine.Width;
 
-                var lineY = Bounds.Height - lastLine.LineMetrics.Size.Height;
+                var lineY = Bounds.Height - lastLine.Height;
 
-                return new Rect(lineX, lineY, 0, lastLine.LineMetrics.Size.Height);
+                return new Rect(lineX, lineY, 0, lastLine.Height);
             }
 
             var currentY = 0.0;
@@ -110,7 +110,7 @@ namespace Avalonia.Controls.Primitives
             {
                 if (textLine.TextRange.End < textPosition)
                 {
-                    currentY += textLine.LineMetrics.Size.Height;
+                    currentY += textLine.Height;
 
                     continue;
                 }

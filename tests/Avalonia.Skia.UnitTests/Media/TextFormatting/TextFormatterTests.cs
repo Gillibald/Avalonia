@@ -167,7 +167,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 {
                     var textLine =
                         formatter.FormatLine(textSource, currentPosition, 1,
-                            new GenericTextParagraphProperties(defaultProperties, textWrapping: TextWrapping.WrapWithOverflow));
+                            new GenericTextParagraphProperties(defaultProperties, textWrap : TextWrapping.WrapWithOverflow));
 
                     if (text.Length - currentPosition > expectedCharactersPerLine)
                     {
@@ -223,7 +223,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 {
                     var textLine =
                         formatter.FormatLine(textSource, currentPosition, paragraphWidth,
-                            new GenericTextParagraphProperties(defaultProperties, textWrapping: TextWrapping.Wrap));
+                            new GenericTextParagraphProperties(defaultProperties, textWrap: TextWrapping.Wrap));
 
                     Assert.True(expected.Contains(textLine.TextRange.End));
 
@@ -256,7 +256,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                     formatter.FormatLine(textSource, 0, double.PositiveInfinity,
                         new GenericTextParagraphProperties(defaultProperties, lineHeight: 50));
 
-                Assert.Equal(50, textLine.LineMetrics.Size.Height);
+                Assert.Equal(50, textLine.Height);
             }
         }
 
@@ -273,7 +273,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 var defaultProperties = new GenericTextRunProperties(Typeface.Default);
 
-                var paragraphProperties = new GenericTextParagraphProperties(defaultProperties, textWrapping: TextWrapping.Wrap);
+                var paragraphProperties = new GenericTextParagraphProperties(defaultProperties, textWrap: TextWrapping.Wrap);
 
                 var textSource = new SingleBufferTextSource(text, defaultProperties);
 
@@ -286,7 +286,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                     var textLine =
                         formatter.FormatLine(textSource, textSourceIndex, 200, paragraphProperties);
 
-                    Assert.True(textLine.LineMetrics.Size.Width <= 200);
+                    Assert.True(textLine.Width <= 200);
 
                     textSourceIndex += textLine.TextRange.Length;
                 }
@@ -301,7 +301,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 const string text = "012345";
 
                 var defaultProperties = new GenericTextRunProperties(Typeface.Default);
-                var paragraphProperties = new GenericTextParagraphProperties(defaultProperties, textWrapping: TextWrapping.Wrap);
+                var paragraphProperties = new GenericTextParagraphProperties(defaultProperties, textWrap: TextWrapping.Wrap);
                 var textSource = new SingleBufferTextSource(text, defaultProperties);
                 var formatter = new TextFormatterImpl();
 

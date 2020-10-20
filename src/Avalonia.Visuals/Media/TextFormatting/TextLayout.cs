@@ -126,15 +126,12 @@ namespace Avalonia.Media.TextFormatting
 
             foreach (var textLine in TextLines)
             {
-                var offsetX = TextLine.GetParagraphOffsetX(textLine.LineMetrics.Size.Width, Size.Width,
+                var offsetX = TextLine.GetParagraphOffsetX(textLine.Width, Size.Width,
                     _paragraphProperties.TextAlignment);
 
-                using (context.PushPostTransform(Matrix.CreateTranslation(offsetX, currentY)))
-                {
-                    textLine.Draw(context);
-                }
+                textLine.Draw(context, new Point(offsetX, currentY));
 
-                currentY += textLine.LineMetrics.Size.Height;
+                currentY += textLine.Height;
             }
         }
 
@@ -155,7 +152,8 @@ namespace Avalonia.Media.TextFormatting
         {
             var textRunStyle = new GenericTextRunProperties(typeface, fontSize, textDecorations, foreground);
 
-            return new GenericTextParagraphProperties(textRunStyle, textAlignment, textWrapping, lineHeight);
+            return new GenericTextParagraphProperties(FlowDirection.LeftToRight, textAlignment, true, false,
+                textRunStyle, textWrapping, lineHeight, 0);
         }
 
         /// <summary>
@@ -166,12 +164,12 @@ namespace Avalonia.Media.TextFormatting
         /// <param name="height">The current height.</param>
         private static void UpdateBounds(TextLine textLine, ref double width, ref double height)
         {
-            if (width < textLine.LineMetrics.Size.Width)
+            if (width < textLine.Width)
             {
-                width = textLine.LineMetrics.Size.Width;
+                width = textLine.Width;
             }
 
-            height += textLine.LineMetrics.Size.Height;
+            height += textLine.Height;
         }
 
         /// <summary>
@@ -205,7 +203,7 @@ namespace Avalonia.Media.TextFormatting
 
                 TextLines = new List<TextLine> { textLine };
 
-                Size = new Size(0, textLine.LineMetrics.Size.Height);
+                Size = new Size(0, textLine.Height);
             }
             else
             {
@@ -230,7 +228,7 @@ namespace Avalonia.Media.TextFormatting
                     if (textLines.Count > 0)
                     {
                         if (textLines.Count == MaxLines || !double.IsPositiveInfinity(MaxHeight) &&
-                            height + textLine.LineMetrics.Size.Height > MaxHeight)
+                            height + textLine.Height > MaxHeight)
                         {
                             if (previousLine?.TextLineBreak != null && _textTrimming != TextTrimming.None)
                             {
@@ -244,7 +242,7 @@ namespace Avalonia.Media.TextFormatting
                         }
                     }
 
-                    var hasOverflowed = textLine.LineMetrics.HasOverflowed;
+                    var hasOverflowed = textLine.HasOverflowed;
 
                     if (hasOverflowed && _textTrimming != TextTrimming.None)
                     {

@@ -550,7 +550,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 foreach (var line in layout.TextLines)
                 {
-                    Assert.Equal(50, line.LineMetrics.Size.Height);
+                    Assert.Equal(50, line.Height);
                 }
             }
         }

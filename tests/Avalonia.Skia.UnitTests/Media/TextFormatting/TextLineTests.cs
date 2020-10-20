@@ -109,9 +109,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 nextCharacterHit = new CharacterHit(0, clusters[1] - clusters[0]);
 
-                for (var i = 0; i < clusters.Length; i++)
+                foreach (var cluster in clusters)
                 {
-                    Assert.Equal(clusters[i], nextCharacterHit.FirstCharacterIndex);
+                    Assert.Equal(cluster, nextCharacterHit.FirstCharacterIndex);
 
                     nextCharacterHit = textLine.GetNextCaretCharacterHit(nextCharacterHit);
                 }
@@ -269,7 +269,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                     }
                 }
 
-                characterHit = textLine.GetCharacterHitFromDistance(textLine.LineMetrics.Size.Width);
+                characterHit = textLine.GetCharacterHitFromDistance(textLine.Width);
 
                 Assert.Equal(MultiBufferTextSource.TextRange.End, characterHit.FirstCharacterIndex);
             }

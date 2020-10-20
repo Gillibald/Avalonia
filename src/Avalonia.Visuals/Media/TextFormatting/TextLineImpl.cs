@@ -6,25 +6,23 @@ namespace Avalonia.Media.TextFormatting
 {
     internal class TextLineImpl : TextLine
     {
+        private readonly TextLineMetrics _textLineMetrics;
         private readonly List<ShapedTextCharacters> _textRuns;
 
         public TextLineImpl(List<ShapedTextCharacters> textRuns, TextLineMetrics lineMetrics,
             TextLineBreak lineBreak = null, bool hasCollapsed = false)
         {
             _textRuns = textRuns;
-            LineMetrics = lineMetrics;
+            _textLineMetrics = lineMetrics;
             TextLineBreak = lineBreak;
             HasCollapsed = hasCollapsed;
         }
 
         /// <inheritdoc/>
-        public override TextRange TextRange => LineMetrics.TextRange;
+        public override TextRange TextRange => _textLineMetrics.TextRange;
 
         /// <inheritdoc/>
         public override IReadOnlyList<TextRun> TextRuns => _textRuns;
-
-        /// <inheritdoc/>
-        public override TextLineMetrics LineMetrics { get; }
 
         /// <inheritdoc/>
         public override TextLineBreak TextLineBreak { get; }
@@ -33,15 +31,45 @@ namespace Avalonia.Media.TextFormatting
         public override bool HasCollapsed { get; }
 
         /// <inheritdoc/>
-        public override void Draw(DrawingContext drawingContext)
+        public override bool HasOverflowed => _textLineMetrics.HasOverflowed;
+
+        /// <inheritdoc/>
+        public override double Baseline => _textLineMetrics.TextBaseline;
+
+        /// <inheritdoc/>
+        public override double Extent => _textLineMetrics.Height;
+
+        /// <inheritdoc/>
+        public override double Height => _textLineMetrics.Height;
+
+        /// <inheritdoc/>
+        public override double OverhangAfter => 0;
+
+        /// <inheritdoc/>
+        public override double OverhangLeading => 0;
+
+        /// <inheritdoc/>
+        public override double OverhangTrailing => 0;
+
+        /// <inheritdoc/>
+        public override double Start => _textLineMetrics.Start;
+
+        /// <inheritdoc/>
+        public override double Width => _textLineMetrics.Width;
+
+        /// <inheritdoc/>
+        public override double WidthIncludingTrailingWhitespace => _textLineMetrics.WidthIncludingTrailingWhitespace;
+
+        /// <inheritdoc/>
+        public override void Draw(DrawingContext drawingContext, Point lineOrigin)
         {
-            var currentX = 0.0;
+            var (currentX, currentY) = lineOrigin;
 
             foreach (var textRun in _textRuns)
             {
-                var offsetY = LineMetrics.TextBaseline - textRun.GlyphRun.BaselineOrigin.Y;
+                var offsetY = Baseline - textRun.GlyphRun.BaselineOrigin.Y;
 
-                using (drawingContext.PushPostTransform(Matrix.CreateTranslation(currentX, offsetY)))
+                using (drawingContext.PushPostTransform(Matrix.CreateTranslation(currentX, currentY + offsetY)))
                 {
                     textRun.Draw(drawingContext);
                 }
@@ -59,6 +87,7 @@ namespace Avalonia.Media.TextFormatting
             }
 
             var collapsingProperties = collapsingPropertiesList[0];
+
             var runIndex = 0;
             var currentWidth = 0.0;
             var textRange = TextRange;
@@ -118,10 +147,11 @@ namespace Avalonia.Media.TextFormatting
 
                     textRange = new TextRange(textRange.Start, collapsedLength);
 
-                    var shapedWidth = GetShapedWidth(shapedTextCharacters);
+                    var widthIncludingWhitespace = GetWidthIncludingWhitespace(shapedTextCharacters);
 
-                    textLineMetrics = new TextLineMetrics(new Size(shapedWidth, LineMetrics.Size.Height),
-                        LineMetrics.TextBaseline, textRange, false);
+                    var width = widthIncludingWhitespace - GetWhitespaceWidth(shapedTextCharacters);
+
+                    textLineMetrics = new TextLineMetrics(textRange, Start, Height, width, widthIncludingWhitespace, Baseline, false);
 
                     return new TextLineImpl(shapedTextCharacters, textLineMetrics, TextLineBreak, true);
                 }
@@ -133,12 +163,12 @@ namespace Avalonia.Media.TextFormatting
                 runIndex++;
             }
 
-            textLineMetrics =
-                new TextLineMetrics(LineMetrics.Size.WithWidth(LineMetrics.Size.Width + shapedSymbol.Size.Width),
-                    LineMetrics.TextBaseline, TextRange, LineMetrics.HasOverflowed);
+            return this;
+        }
 
-            return new TextLineImpl(new List<ShapedTextCharacters>(_textRuns) { shapedSymbol }, textLineMetrics, null,
-                true);
+        private static double GetWhitespaceWidth(List<ShapedTextCharacters> shapedCharacters)
+        {
+            return 0;
         }
 
         /// <inheritdoc/>
@@ -394,13 +424,13 @@ namespace Avalonia.Media.TextFormatting
         }
 
         /// <summary>
-        /// Gets the shaped width of specified shaped text characters.
+        /// Gets the width of specified shaped text characters.
         /// </summary>
         /// <param name="shapedTextCharacters">The shaped text characters.</param>
         /// <returns>
         /// The shaped width.
         /// </returns>
-        private static double GetShapedWidth(IReadOnlyList<ShapedTextCharacters> shapedTextCharacters)
+        private static double GetWidthIncludingWhitespace(IReadOnlyList<ShapedTextCharacters> shapedTextCharacters)
         {
             var shapedWidth = 0.0;
 
