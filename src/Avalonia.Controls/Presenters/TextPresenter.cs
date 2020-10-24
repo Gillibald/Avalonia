@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Reactive.Linq;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Metadata;
 using Avalonia.Threading;
+using Avalonia.Utilities;
 using Avalonia.VisualTree;
 
 namespace Avalonia.Controls.Presenters
@@ -72,7 +75,7 @@ namespace Avalonia.Controls.Presenters
         private int _selectionEnd;
         private bool _caretBlink;
         private string _text;
-        private FormattedText _formattedText;
+        private TextLayout _textLayout;
         private Size _constraint;
 
         static TextPresenter()
@@ -184,13 +187,13 @@ namespace Avalonia.Controls.Presenters
         }
 
         /// <summary>
-        /// Gets the <see cref="FormattedText"/> used to render the text.
+        /// Gets the <see cref="TextLayout"/> used to render the text.
         /// </summary>
-        public FormattedText FormattedText
+        public TextLayout TextLayout
         {
             get
             {
-                return _formattedText ?? (_formattedText = CreateFormattedText());
+                return _textLayout ?? (_textLayout = CreateTextLayout());
             }
         }
 
@@ -268,35 +271,34 @@ namespace Avalonia.Controls.Presenters
 
         public int GetCaretIndex(Point point)
         {
-            var hit = FormattedText.HitTestPoint(point);
+            var hit = HitTestPoint(point);
             return hit.TextPosition + (hit.IsTrailing ? 1 : 0);
         }
 
         /// <summary>
-        /// Creates the <see cref="FormattedText"/> used to render the text.
+        /// Creates the <see cref="TextLayout"/> used to render the text.
         /// </summary>
         /// <param name="constraint">The constraint of the text.</param>
         /// <param name="text">The text to format.</param>
-        /// <returns>A <see cref="FormattedText"/> object.</returns>
-        private FormattedText CreateFormattedTextInternal(Size constraint, string text)
+        /// <param name="typeface"></param>
+        /// <param name="textStyleOverrides"></param>
+        /// <returns>A <see cref="TextLayout"/> object.</returns>
+        private TextLayout CreateTextLayoutInternal(Size constraint, string text, Typeface typeface,
+            IReadOnlyList<ValueSpan<TextRunProperties>> textStyleOverrides)
         {
-            return new FormattedText
-            {
-                Constraint = constraint,
-                Typeface = new Typeface(FontFamily, FontStyle, FontWeight),
-                FontSize = FontSize,
-                Text = text ?? string.Empty,
-                TextAlignment = TextAlignment,
-                TextWrapping = TextWrapping,
-            };
+            var textLayout = new TextLayout(text ?? string.Empty, typeface, FontSize, Foreground, TextAlignment,
+                TextWrapping, maxWidth: constraint.Width, maxHeight: constraint.Height,
+                textStyleOverrides: textStyleOverrides);
+
+            return textLayout;
         }
 
         /// <summary>
-        /// Invalidates <see cref="FormattedText"/>.
+        /// Invalidates <see cref="TextLayout"/>.
         /// </summary>
         protected void InvalidateFormattedText()
         {
-            _formattedText = null;
+            _textLayout = null;
         }
 
         /// <summary>
@@ -312,13 +314,11 @@ namespace Avalonia.Controls.Presenters
                 context.FillRectangle(background, new Rect(Bounds.Size));
             }
 
-            context.DrawText(Foreground, new Point(), FormattedText);
+            TextLayout.Draw(context);
         }
 
         public override void Render(DrawingContext context)
         {
-            FormattedText.Constraint = Bounds.Size;
-
             _constraint = Bounds.Size;
 
             var selectionStart = SelectionStart;
@@ -329,7 +329,7 @@ namespace Avalonia.Controls.Presenters
                 var start = Math.Min(selectionStart, selectionEnd);
                 var length = Math.Max(selectionStart, selectionEnd) - start;
 
-                var rects = FormattedText.HitTestTextRange(start, length);
+                var rects = HitTestTextRange(start, length);
 
                 foreach (var rect in rects)
                 {
@@ -360,7 +360,7 @@ namespace Avalonia.Controls.Presenters
 
                 if (_caretBlink)
                 {
-                    var charPos = FormattedText.HitTestTextPosition(CaretIndex);
+                    var charPos = HitTestTextPosition(CaretIndex);
                     var x = Math.Floor(charPos.X) + 0.5;
                     var y = Math.Floor(charPos.Y) + 0.5;
                     var b = Math.Ceiling(charPos.Bottom) - 0.5;
@@ -407,7 +407,7 @@ namespace Avalonia.Controls.Presenters
 
                 if (IsMeasureValid)
                 {
-                    var rect = FormattedText.HitTestTextPosition(caretIndex);
+                    var rect = HitTestTextPosition(caretIndex);
                     this.BringIntoView(rect);
                 }
                 else
@@ -418,7 +418,7 @@ namespace Avalonia.Controls.Presenters
                     Dispatcher.UIThread.Post(
                         () =>
                         {
-                            var rect = FormattedText.HitTestTextPosition(caretIndex);
+                            var rect = HitTestTextPosition(caretIndex);
                             this.BringIntoView(rect);
                         },
                         DispatcherPriority.Render);
@@ -426,36 +426,57 @@ namespace Avalonia.Controls.Presenters
             }
         }
 
-        /// <summary>
-        /// Creates the <see cref="FormattedText"/> used to render the text.
-        /// </summary>
-        /// <returns>A <see cref="FormattedText"/> object.</returns>
-        protected virtual FormattedText CreateFormattedText()
+        private Rect HitTestTextPosition(int caretIndex)
         {
-            FormattedText result = null;
+            return Rect.Empty;
+        }
+
+        private IReadOnlyList<Rect> HitTestTextRange(int start, int length)
+        {
+            return Array.Empty<Rect>();
+        }
+
+        private TextHitTestResult HitTestPoint(in Point point)
+        {
+            return new TextHitTestResult();
+        }
+
+        /// <summary>
+        /// Creates the <see cref="TextLayout"/> used to render the text.
+        /// </summary>
+        /// <returns>A <see cref="TextLayout"/> object.</returns>
+        protected virtual TextLayout CreateTextLayout()
+        {
+            TextLayout result;
 
             var text = Text;
 
-            if (PasswordChar != default(char) && !RevealPassword)
-            {
-                result = CreateFormattedTextInternal(_constraint, new string(PasswordChar, text?.Length ?? 0));
-            }
-            else
-            {
-                result = CreateFormattedTextInternal(_constraint, text);
-            }
+            var typeface = new Typeface(FontFamily, FontStyle, FontWeight);
 
             var selectionStart = SelectionStart;
             var selectionEnd = SelectionEnd;
             var start = Math.Min(selectionStart, selectionEnd);
             var length = Math.Max(selectionStart, selectionEnd) - start;
 
+            IReadOnlyList<ValueSpan<TextRunProperties>> textStyleOverrides = null;
+
             if (length > 0)
             {
-                result.Spans = new[]
+                textStyleOverrides = new[]
                 {
-                    new FormattedTextStyleSpan(start, length, SelectionForegroundBrush),
+                    new ValueSpan<TextRunProperties>(start, length,
+                        new GenericTextRunProperties(typeface, FontSize, foregroundBrush: SelectionForegroundBrush))
                 };
+            }
+
+            if (PasswordChar != default(char) && !RevealPassword)
+            {
+                result = CreateTextLayoutInternal(_constraint, new string(PasswordChar, text?.Length ?? 0), typeface,
+                    textStyleOverrides);
+            }
+            else
+            {
+                result = CreateTextLayoutInternal(_constraint, text, typeface, textStyleOverrides);
             }
 
             return result;
@@ -479,9 +500,9 @@ namespace Avalonia.Controls.Presenters
                     _constraint = Size.Infinity;
                 }
 
-                _formattedText = null;
+                _textLayout = null;
 
-                return FormattedText.Bounds.Size;
+                return TextLayout.Size;
             }
 
             return new Size();
@@ -497,14 +518,12 @@ namespace Avalonia.Controls.Presenters
             }
             else
             {
-                return new FormattedText
-                {
-                    Text = "X",
-                    Typeface = new Typeface(FontFamily, FontStyle, FontWeight),
-                    FontSize = FontSize,
-                    TextAlignment = TextAlignment,
-                    Constraint = availableSize,
-                }.Bounds.Size;
+                var typeface = new Typeface(FontFamily, FontStyle, FontWeight);
+
+                var textLayout = new TextLayout("X", typeface, FontSize, null, TextAlignment,
+                    maxWidth: availableSize.Width, maxHeight: availableSize.Height);
+
+                return textLayout.Size;
             }
         }
 

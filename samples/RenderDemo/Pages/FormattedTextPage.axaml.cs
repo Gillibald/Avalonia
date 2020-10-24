@@ -3,9 +3,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
-using Avalonia.Media.Immutable;
-using Avalonia.Media.TextFormatting;
-using FormattedText = Avalonia.Media.TextFormatting.FormattedText;
 
 namespace RenderDemo.Pages
 {

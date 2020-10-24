@@ -16,7 +16,7 @@ namespace Avalonia.Controls.UnitTests.Presenters
                     PasswordChar = '*'
                 };
 
-                Assert.NotNull(target.FormattedText);
+                Assert.NotNull(target.TextLayout);
             }
         }
 
@@ -28,7 +28,7 @@ namespace Avalonia.Controls.UnitTests.Presenters
 
                 var target = new TextPresenter();
 
-                Assert.NotNull(target.FormattedText);
+                Assert.NotNull(target.TextLayout);
             }
         }
 
@@ -40,8 +40,8 @@ namespace Avalonia.Controls.UnitTests.Presenters
 
                 var target = new TextPresenter { PasswordChar = '*', Text = "Test" };
 
-                Assert.NotNull(target.FormattedText);
-                Assert.Equal("****", target.FormattedText.Text);
+                Assert.NotNull(target.TextLayout);
+                Assert.Equal("****", target.TextLayout.Text);
             }
         }
     }

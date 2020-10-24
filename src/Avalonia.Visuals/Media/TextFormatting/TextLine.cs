@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using Avalonia.Platform;
 
 namespace Avalonia.Media.TextFormatting
 {

@@ -1013,7 +1013,7 @@ namespace Avalonia.Controls
 
         private bool MoveVertical(int count)
         {
-            var formattedText = _presenter.FormattedText;
+            var formattedText = _presenter.TextLayout;
             var lines = formattedText.GetLines().ToList();
             var caretIndex = CaretIndex;
             var lineIndex = GetLine(caretIndex, lines) + count;
@@ -1045,7 +1045,7 @@ namespace Avalonia.Controls
             }
             else
             {
-                var lines = _presenter.FormattedText.GetLines();
+                var lines = _presenter.TextLayout.GetLines();
                 var pos = 0;
 
                 foreach (var line in lines)
@@ -1075,7 +1075,7 @@ namespace Avalonia.Controls
             }
             else
             {
-                var lines = _presenter.FormattedText.GetLines();
+                var lines = _presenter.TextLayout.GetLines();
                 var pos = 0;
 
                 foreach (var line in lines)
