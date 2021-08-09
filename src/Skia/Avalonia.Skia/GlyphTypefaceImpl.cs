@@ -23,17 +23,17 @@ namespace Avalonia.Skia
 
             Font.SetFunctionsOpenType();
 
-            DesignEmHeight = (short)Typeface.UnitsPerEm;
+            DesignEmHeight = (ushort)Typeface.UnitsPerEm;
 
             var metrics = Typeface.ToFont().Metrics;
 
             const double defaultFontRenderingEmSize = 12.0;
 
-            Ascent = (int)(metrics.Ascent / defaultFontRenderingEmSize * Typeface.UnitsPerEm);
+            Ascent = (int)(metrics.Ascent / defaultFontRenderingEmSize * DesignEmHeight);
 
-            Descent = (int)(metrics.Descent / defaultFontRenderingEmSize * Typeface.UnitsPerEm);
+            Descent = (int)(metrics.Descent / defaultFontRenderingEmSize * DesignEmHeight);
 
-            LineGap = (int)(metrics.Leading / defaultFontRenderingEmSize * Typeface.UnitsPerEm);
+            LineGap = (int)(metrics.Leading / defaultFontRenderingEmSize * DesignEmHeight);
 
             UnderlinePosition = metrics.UnderlinePosition != null ?
                 (int)(metrics.UnderlinePosition / defaultFontRenderingEmSize * Typeface.UnitsPerEm) :
@@ -61,7 +61,7 @@ namespace Avalonia.Skia
         public SKTypeface Typeface { get; }
 
         /// <inheritdoc cref="IGlyphTypefaceImpl"/>
-        public short DesignEmHeight { get; }
+        public ushort DesignEmHeight { get; }
 
         /// <inheritdoc cref="IGlyphTypefaceImpl"/>
         public int Ascent { get; }

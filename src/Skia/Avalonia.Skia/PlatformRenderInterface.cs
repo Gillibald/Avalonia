@@ -189,7 +189,7 @@ namespace Avalonia.Skia
         {
             Subpixel = true,
             Edging = SKFontEdging.Antialias,
-            Hinting = SKFontHinting.Full,
+            Hinting = SKFontHinting.Normal,
             LinearMetrics = true
         };
 

@@ -22,7 +22,7 @@ namespace Avalonia.Media
         /// <summary>
         ///     Gets the font design units per em.
         /// </summary>
-        public short DesignEmHeight => PlatformImpl.DesignEmHeight;
+        public ushort DesignEmHeight => PlatformImpl.DesignEmHeight;
 
         /// <summary>
         ///     Gets the recommended distance above the baseline in design em size. 

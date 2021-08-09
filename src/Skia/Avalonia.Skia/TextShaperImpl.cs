@@ -25,11 +25,11 @@ namespace Avalonia.Skia
 
                 var font = ((GlyphTypefaceImpl)glyphTypeface.PlatformImpl).Font;
 
+                font.GetScale(out var xScale, out _);
+                
+                font.SetScale(typeface.GlyphTypeface.DesignEmHeight, typeface.GlyphTypeface.DesignEmHeight);
+                
                 font.Shape(buffer);
-
-                font.GetScale(out var scaleX, out _);
-
-                var textScale = fontRenderingEmSize / scaleX;
 
                 var bufferLength = buffer.Length;
 
@@ -44,6 +44,8 @@ namespace Avalonia.Skia
                 double[] glyphAdvances = null;
 
                 Vector[] glyphOffsets = null;
+                
+                var textScale = fontRenderingEmSize / typeface.GlyphTypeface.DesignEmHeight;
 
                 for (var i = 0; i < bufferLength; i++)
                 {

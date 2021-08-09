@@ -7,7 +7,7 @@ namespace Avalonia.Platform
         /// <summary>
         ///     Gets the font design units per em.
         /// </summary>
-        short DesignEmHeight { get; }
+        ushort DesignEmHeight { get; }
 
         /// <summary>
         ///     Gets the recommended distance above the baseline in design em size. 
