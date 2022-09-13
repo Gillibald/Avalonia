@@ -6,6 +6,6 @@ namespace Avalonia.Media
     {
         public string? DefaultFamilyName { get; set; }
 
-        public IReadOnlyList<FontFallback>? FontFallbacks { get; set; }
+        public List<FontFallback>? FontFallbacks { get; set; }
     }
 }

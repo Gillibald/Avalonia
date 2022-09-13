@@ -3,6 +3,8 @@ using System.Reflection;
 using System.Linq;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform;
+using Avalonia.Media;
+using System.Collections.Generic;
 
 namespace Avalonia.Controls
 {
@@ -243,7 +245,53 @@ namespace Avalonia.Controls
             _optionsInitializers += () => { AvaloniaLocator.CurrentMutable.Bind<T>().ToFunc(options); };
             return Self;
         }
-        
+
+        public TAppBuilder UseFont(FontFamily fontFamily)
+        {
+            _optionsInitializers += () =>
+            {
+                UseFont(new FontFallback { FontFamily = fontFamily });
+            };
+
+            return Self;
+        }
+
+        public TAppBuilder UseFont(FontFamily fontFamily, UnicodeRange unicodeRange)
+        {
+            _optionsInitializers += () =>
+            {
+                UseFont(new FontFallback { FontFamily = fontFamily, UnicodeRange = unicodeRange });
+            };
+
+            return Self;
+        }
+
+        private void UseFont(FontFallback fallback)
+        {
+            var options = AvaloniaLocator.Current.GetService<FontManagerOptions>();
+
+            if (options == null)
+            {
+                options = new FontManagerOptions
+                {
+                    FontFallbacks = new List<FontFallback> { fallback }
+                };
+
+                AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(options);
+            }
+            else
+            {
+                if (options.FontFallbacks == null)
+                {
+                    options.FontFallbacks = new List<FontFallback> { fallback };
+                }
+                else
+                {
+                    options.FontFallbacks.Add(fallback);
+                }
+            }
+        }
+
         /// <summary>
         /// Sets up the platform-specific services for the <see cref="Application"/>.
         /// </summary>
