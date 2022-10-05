@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net7.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <WasmMainJSPath>main.js</WasmMainJSPath>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <MSBuildEnableWorkloadResolver>true</MSBuildEnableWorkloadResolver>
+    <WasmBuildNative>true</WasmBuildNative>
+    <EmccFlags>-sVERBOSE -sERROR_ON_UNDEFINED_SYMBOLS=0</EmccFlags>
+    <EmccExtraLDFlags>--js-library="C:\Users\User\repos\Avalonia\src\Web\Avalonia.Web.Sample\interop.js"</EmccExtraLDFlags>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <PublishTrimmed>true</PublishTrimmed>
+    <WasmBuildNative>true</WasmBuildNative>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <EmccCompileOptimizationFlag>-O3</EmccCompileOptimizationFlag>
+    <EmccLinkOptimizationFlag>-O3</EmccLinkOptimizationFlag>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\samples\ControlCatalog\ControlCatalog.csproj" />
+    <ProjectReference Include="..\Avalonia.Web\Avalonia.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <WasmExtraFilesToDeploy Include="index.html" />
+    <WasmExtraFilesToDeploy Include="main.js" />
+
+    <NativeFileReference Include="C:\Users\User\.nuget\packages\harfbuzzsharp.nativeassets.webassembly\2.8.2.1-preview.108\build\netstandard1.0\libHarfBuzzSharp.a\3.1.7\libHarfBuzzSharp.a" />
+    <NativeFileReference Include="C:\Users\User\.nuget\packages\skiasharp.nativeassets.webassembly\2.88.1\build\netstandard1.0\libSkiaSharp.a\3.1.7\libSkiaSharp.a" />
+  </ItemGroup>
+  
+  <Import Project="..\Avalonia.Web\Avalonia.Web.targets" />
+</Project>
