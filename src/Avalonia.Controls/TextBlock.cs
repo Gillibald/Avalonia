@@ -709,31 +709,9 @@ namespace Avalonia.Controls
 
         protected override Size ArrangeOverride(Size finalSize)
         {
-            var textWidth = Math.Ceiling(TextLayout.Bounds.Width);
-
-            if (finalSize.Width < textWidth)
-            {
-                finalSize = finalSize.WithWidth(textWidth);
-            }
-
             var scale = LayoutHelper.GetLayoutScale(this);
 
             var padding = LayoutHelper.RoundLayoutThickness(Padding, scale, scale);
-
-            if (HasComplexContent)
-            {
-                ArrangeComplexContent(TextLayout, padding);
-            }
-
-            if (MathUtilities.AreClose(_constraint.Inflate(padding).Width, finalSize.Width))
-            {
-                return finalSize;
-            }
-
-            _constraint = new Size(Math.Ceiling(finalSize.Deflate(padding).Width), double.PositiveInfinity);
-
-            _textLayout?.Dispose();
-            _textLayout = null;
 
             if (HasComplexContent)
             {
