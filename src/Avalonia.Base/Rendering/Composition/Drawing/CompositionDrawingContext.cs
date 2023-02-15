@@ -164,9 +164,14 @@ internal class CompositionDrawingContext : IDrawingContextImpl, IDrawingContextW
     public object? GetFeature(Type t) => null;
 
     /// <inheritdoc/>
-    public void DrawGlyphRun(IBrush? foreground, IRef<IGlyphRunImpl> glyphRun)
+    public void DrawGlyphRun(IBrush? foreground, IRef<IGlyphRunImpl>? glyphRun)
     {
         if (foreground is null)
+        {
+            return;
+        }
+
+        if (glyphRun is null)
         {
             return;
         }
@@ -377,7 +382,7 @@ internal class CompositionDrawingContext : IDrawingContextImpl, IDrawingContextW
             ? _builder.DrawOperations![_drawOperationIndex] as IRef<T>
             : null;
     }
-    
+
     private static IDisposable? CreateChildScene(IBrush? brush)
     {
         if (brush is VisualBrush visualBrush)
@@ -391,7 +396,7 @@ internal class CompositionDrawingContext : IDrawingContextImpl, IDrawingContextW
                 // be attached to the same composition target) like UWP does.
                 // Render-able visuals shouldn't be dangling unattached
                 (visual as IVisualBrushInitialize)?.EnsureInitialized();
-                
+
                 var recorder = new CompositionDrawingContext();
                 recorder.BeginUpdate(null);
                 ImmediateRenderer.Render(visual, new DrawingContext(recorder));

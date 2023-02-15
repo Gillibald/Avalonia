@@ -507,12 +507,15 @@ namespace Avalonia.Skia
                 return;
             }
 
-            using (var paintWrapper = CreatePaint(_fillPaint, foreground, glyphRun.Item.Size))
+            if(glyphRun != null)
             {
-                var glyphRunImpl = (GlyphRunImpl)glyphRun.Item;
+                using (var paintWrapper = CreatePaint(_fillPaint, foreground, glyphRun.Item.Size))
+                {
+                    var glyphRunImpl = (GlyphRunImpl)glyphRun.Item;
 
-                Canvas.DrawText(glyphRunImpl.TextBlob, (float)glyphRun.Item.BaselineOrigin.X,
-                    (float)glyphRun.Item.BaselineOrigin.Y, paintWrapper.Paint);
+                    Canvas.DrawText(glyphRunImpl.TextBlob, (float)glyphRun.Item.BaselineOrigin.X,
+                        (float)glyphRun.Item.BaselineOrigin.Y, paintWrapper.Paint);
+                }
             }
         }
 

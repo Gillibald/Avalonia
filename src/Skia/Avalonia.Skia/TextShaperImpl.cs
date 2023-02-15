@@ -48,7 +48,7 @@ namespace Avalonia.Skia
 
                 var textScale = fontRenderingEmSize / scaleX;
 
-                var bufferLength = buffer.Length;
+                var bufferLength = Math.Min(text.Length, buffer.Length);
 
                 var shapedBuffer = new ShapedBuffer(text, bufferLength, typeface, fontRenderingEmSize, bidiLevel);
 

@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 using Avalonia.Utilities;
+#if NET6_0_OR_GREATER
+using System.Runtime.InteropServices;
+#endif
 
 namespace Avalonia.Media
 {
@@ -153,7 +155,7 @@ namespace Avalonia.Media
         /// <summary>
         ///     Gets or sets the conservative bounding box of the <see cref="GlyphRun"/>.
         /// </summary>
-        public Size Size => PlatformImpl.Item.Size;
+        public Size Size => PlatformImpl != null ? PlatformImpl.Item.Size : default;
 
         /// <summary>
         /// 
@@ -166,7 +168,7 @@ namespace Avalonia.Media
         /// </summary>
         public Point BaselineOrigin
         {
-            get => PlatformImpl.Item.BaselineOrigin;
+            get => PlatformImpl != null ? PlatformImpl.Item.BaselineOrigin : default;
             set => Set(ref _baselineOrigin, value);
         }
 
@@ -214,7 +216,7 @@ namespace Avalonia.Media
         /// <summary>
         /// The platform implementation of the <see cref="GlyphRun"/>.
         /// </summary>
-        public IRef<IGlyphRunImpl> PlatformImpl
+        public IRef<IGlyphRunImpl>? PlatformImpl
             => _platformImpl ??= CreateGlyphRunImpl();
 
         /// <summary>
@@ -817,13 +819,18 @@ namespace Avalonia.Media
             field = value;
         }
 
-        private IRef<IGlyphRunImpl> CreateGlyphRunImpl()
+        private IRef<IGlyphRunImpl>? CreateGlyphRunImpl()
         {
             var platformImpl = s_renderInterface.CreateGlyphRun(
                 GlyphTypeface, 
                 FontRenderingEmSize, 
                 GlyphInfos, 
                 _baselineOrigin ?? new Point(0, -GlyphTypeface.Metrics.Ascent * Scale));
+
+            if(platformImpl == null)
+            {
+                return null;
+            }
 
             _platformImpl = RefCountable.Create(platformImpl);
 

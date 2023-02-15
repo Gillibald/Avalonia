@@ -214,12 +214,12 @@ namespace Avalonia.Skia
         {
             if (glyphTypeface == null)
             {
-                throw new ArgumentNullException(nameof(glyphTypeface));
+                return null;
             }
 
-            if (glyphInfos == null)
+            if(glyphInfos is null || glyphInfos.Count == 0)
             {
-                throw new ArgumentNullException(nameof(glyphInfos));
+                return null;
             }
 
             var glyphTypefaceImpl = glyphTypeface as GlyphTypefaceImpl;
@@ -262,7 +262,14 @@ namespace Avalonia.Skia
             var scale = fontRenderingEmSize / glyphTypeface.Metrics.DesignEmHeight;
             var height = glyphTypeface.Metrics.LineSpacing * scale;
 
-            return new GlyphRunImpl(builder.Build(), new Size(width, height), baselineOrigin);
+            var textBlob = builder.Build();
+
+            if(textBlob is null)
+            {
+                return null;
+            }
+
+            return new GlyphRunImpl(textBlob, new Size(width, height), baselineOrigin);
         }
     }
 }
