@@ -271,6 +271,27 @@ namespace Avalonia.Win32
             }
         }
 
+        private double CaptionHeight
+        {
+            get
+            {
+                return GetSystemMetrics(SystemMetric.SM_CYCAPTION) * RenderScaling;
+            }
+        }
+
+        private Thickness ResizeBorderThickness
+        {
+            get
+            {
+                var dx = GetSystemMetrics(SystemMetric.SM_CXFRAME) * RenderScaling;
+                var dy = GetSystemMetrics(SystemMetric.SM_CYFRAME) * RenderScaling;
+
+                var offset = GetSystemMetrics(SystemMetric.SM_CXPADDEDBORDER);
+
+                return new Thickness(dx + offset, dy + offset);
+            }
+        }
+
         public IScreenImpl Screen { get; }
 
         public IPlatformHandle Handle { get; private set; }

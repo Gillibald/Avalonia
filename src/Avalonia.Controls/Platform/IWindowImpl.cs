@@ -86,6 +86,10 @@ namespace Avalonia.Platform
         /// </summary>
         bool NeedsManagedDecorations { get; }
 
+        double CaptionHeight { get; }
+
+        Thickness ResizeBorderThickness { get; }
+
         /// <summary>
         /// Gets a thickness that describes the amount each side of the non-client area extends into the client area.
         /// It includes the titlebar.
