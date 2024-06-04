@@ -25,16 +25,13 @@ namespace Avalonia.Native
             
             using (var e = new WindowEvents(this))
             {
-                Init(_native = factory.CreateWindow(e), factory.CreateScreens());
+                Init(new MacOSWindowHandle(_native = factory.CreateWindow(e)), factory.CreateScreens());
             }
 
             _nativeMenuExporter = new AvaloniaNativeMenuExporter(_native, factory);
-            
-            InputMethod = new AvaloniaNativeTextInputMethod(_native);
         }
         
-        public AvaloniaNativeTextInputMethod InputMethod { get; }
-
+        
         class WindowEvents : WindowBaseEvents, IAvnWindowEvents
         {
             readonly WindowImpl _parent;
@@ -235,7 +232,7 @@ namespace Avalonia.Native
         public void Move(PixelPoint point) => Position = point;
 
         public override IPopupImpl CreatePopup() =>
-            _opts.OverlayPopups ? null : new PopupImpl(_factory, this);
+            _opts.OverlayPopups ? null : new PopupImpl(Factory, this);
 
         public Action GotInputWhenDisabled { get; set; }
 

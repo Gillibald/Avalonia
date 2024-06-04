@@ -20,7 +20,7 @@ namespace Avalonia.Native
             
             using (var e = new PopupEvents(this))
             {
-                Init(_native = factory.CreatePopup(e), factory.CreateScreens());
+                Init(new MacOSWindowHandle(_native = factory.CreatePopup(e)), factory.CreateScreens());
             }
             
             PopupPositioner = new ManagedPopupPositioner(new ManagedPopupPositionerPopupImplHelper(parent, MoveResize));
@@ -37,16 +37,6 @@ namespace Avalonia.Native
             }
         }
         
-        public override object TryGetFeature(Type featureType)
-        {
-            if(featureType == typeof(ITextInputMethodImpl))
-            {
-                return _inputMethod;
-            } 
-            
-            return base.TryGetFeature(featureType);
-        }
-
         private void MoveResize(PixelPoint position, Size size, double scaling)
         {
             Position = position;
@@ -88,7 +78,7 @@ namespace Avalonia.Native
             base.Show(false, isDialog);
         }
 
-        public override IPopupImpl CreatePopup() => new PopupImpl(_factory, this);
+        public override IPopupImpl CreatePopup() => new PopupImpl(Factory, this);
 
         public void SetWindowManagerAddShadowHint(bool enabled)
         {

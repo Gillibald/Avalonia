@@ -663,6 +663,7 @@ interface IAvaloniaNativeFactory : IUnknown
      HRESULT Initialize(IAvnGCHandleDeallocatorCallback* deallocator, IAvnApplicationEvents* appCb,
         IAvnDispatcher* dispatcher);
      IAvnMacOptions* GetMacOptions();
+     HRESULT CreateEmbeddedTopLevel(IAvnTopLevelEvents* cb, [intptr]void* parentView, IAvnTopLevel** ppv);
      HRESULT CreateWindow(IAvnWindowEvents* cb, IAvnWindow** ppv);
      HRESULT CreatePopup(IAvnWindowEvents* cb, IAvnPopup** ppv);
      HRESULT CreatePlatformThreadingInterface(IAvnPlatformThreadingInterface** ppv);
@@ -770,8 +771,6 @@ interface IAvnWindow : IAvnWindowBase
 interface IAvnTopLevelEvents : IUnknown
 {
     void Closed();
-    void Activated();
-    void Deactivated(); 
 
     HRESULT Paint();
     void Resized([const] AvnSize& size, AvnPlatformResizeReason reason);
@@ -798,6 +797,8 @@ interface IAvnTopLevelEvents : IUnknown
 [uuid(939b6599-40a8-4710-a4c8-5d72d8f174fb)]
 interface IAvnWindowBaseEvents : IAvnTopLevelEvents
 {
+     void Activated();
+     void Deactivated();
      void PositionChanged(AvnPoint position);
 }
 
