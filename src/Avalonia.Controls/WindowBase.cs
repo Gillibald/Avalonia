@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Platform;
+using Avalonia.Styling;
 
 namespace Avalonia.Controls
 {
@@ -47,6 +48,13 @@ namespace Avalonia.Controls
         public WindowBase(IWindowBaseImpl impl) : this(impl, AvaloniaLocator.Current)
         {
             CreatePlatformImplBinding(TopmostProperty, topmost => PlatformImpl!.SetTopmost(topmost));
+            CreatePlatformImplBinding(ActualThemeVariantProperty, variant =>
+            {
+                variant ??= ThemeVariant.Default;
+                PlatformImpl?.SetFrameThemeVariant((PlatformThemeVariant?)variant ?? PlatformThemeVariant.Light);
+            });
+            
+            FrameSize = impl.FrameSize;
         }
 
         public WindowBase(IWindowBaseImpl impl, IAvaloniaDependencyResolver? dependencyResolver) : base(impl, dependencyResolver)
@@ -212,6 +220,8 @@ namespace Avalonia.Controls
         /// <inheritdoc/>
         protected override void OnOpened(EventArgs e)
         {
+            FrameSize = PlatformImpl?.FrameSize;
+            
             // Window must manually raise Loaded/Unloaded events as it is a visual root and
             // does not raise OnAttachedToVisualTreeCore/OnDetachedFromVisualTreeCore events
             ScheduleOnLoadedCore();

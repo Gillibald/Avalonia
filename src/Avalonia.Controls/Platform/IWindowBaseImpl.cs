@@ -8,6 +8,17 @@ namespace Avalonia.Platform
     public interface IWindowBaseImpl : ITopLevelImpl
     {
         /// <summary>
+        /// Gets the total size of the toplevel, excluding shadows.
+        /// </summary>
+        Size? FrameSize { get; }
+        
+        /// <summary>
+        /// Sets the <see cref="PlatformThemeVariant"/> on the frame if it should be dark or light.
+        /// Also applies for the mobile status bar.
+        /// </summary>
+        void SetFrameThemeVariant(PlatformThemeVariant themeVariant);
+        
+        /// <summary>
         /// Shows the window.
         /// </summary>
         /// <param name="activate">Whether to activate the shown window.</param>

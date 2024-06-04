@@ -53,10 +53,16 @@ public:
                          
     virtual HRESULT Invalidate() override;
                          
+    virtual HRESULT PointToClient(AvnPoint point, AvnPoint *ret) override;
+
+    virtual HRESULT PointToScreen(AvnPoint point, AvnPoint *ret) override;
+     
+    virtual HRESULT SetTransparencyMode(AvnWindowTransparencyMode mode) override;
+                         
 protected:
     AutoFitContentView *StandardContainer;
     NSCursor *cursor;
-    virtual void UpdateAppearance() = 0;
+    virtual void UpdateAppearance();
                            
 public:
     NSObject<IRenderTarget> *currentRenderTarget;
@@ -65,7 +71,7 @@ public:
     AvnView *View;
                          
     void UpdateCursor();
-    virtual void SetClientSize(NSSize size) = 0;
+    virtual void SetClientSize(NSSize size);
 };
 
 #endif /* TopLevelImpl_h */

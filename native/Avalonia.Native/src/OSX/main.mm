@@ -225,6 +225,20 @@ public:
         return (IAvnMacOptions*)new MacOptions();
     }
     
+    virtual HRESULT CreateEmbeddedTopLevel(IAvnTopLevelEvents* cb,
+                                           void* parentView,
+                                           IAvnTopLevel** ppv) override {
+        START_COM_CALL;
+        
+        @autoreleasepool
+        {
+            if(cb == nullptr || ppv == nullptr)
+                return E_POINTER;
+            *ppv = CreateAvnTopLevel(cb);
+            return S_OK;
+        }
+    }
+    
     virtual HRESULT CreateWindow(IAvnWindowEvents* cb, IAvnWindow** ppv)  override
     {
         START_COM_CALL;

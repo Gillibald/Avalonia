@@ -67,10 +67,6 @@ public:
 
     virtual HRESULT SetPosition(AvnPoint point) override;
 
-    virtual HRESULT PointToClient(AvnPoint point, AvnPoint *ret) override;
-
-    virtual HRESULT PointToScreen(AvnPoint point, AvnPoint *ret) override;
-
     virtual HRESULT SetFrameThemeVariant(AvnPlatformThemeVariant variant) override;
 
     virtual HRESULT BeginDragAndDropOperation(AvnDragDropEffects effects, AvnPoint point,

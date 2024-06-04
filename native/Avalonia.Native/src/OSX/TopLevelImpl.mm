@@ -178,3 +178,77 @@ HRESULT TopLevelImpl::Invalidate() {
         return S_OK;
     }
 }
+
+HRESULT TopLevelImpl::PointToClient(AvnPoint point, AvnPoint *ret) {
+    START_COM_CALL;
+
+    @autoreleasepool {
+        if (ret == nullptr) {
+            return E_POINTER;
+        }
+
+        auto window = [View window];
+        
+        if(window == nullptr){
+            ret = &point;
+            
+            return S_OK;
+        }
+        
+        point = ConvertPointY(point);
+        NSRect convertRect = [window convertRectFromScreen:NSMakeRect(point.X, point.Y, 0.0, 0.0)];
+        auto viewPoint = NSMakePoint(convertRect.origin.x, convertRect.origin.y);
+
+        *ret = [View translateLocalPoint:ToAvnPoint(viewPoint)];
+
+        return S_OK;
+    }
+}
+
+HRESULT TopLevelImpl::PointToScreen(AvnPoint point, AvnPoint *ret) {
+    START_COM_CALL;
+
+    @autoreleasepool {
+        if (ret == nullptr) {
+            return E_POINTER;
+        }
+        
+        auto window = [View window];
+        
+        if(window == nullptr){
+            ret = &point;
+            
+            return S_OK;
+        }
+
+        auto cocoaViewPoint = ToNSPoint([View translateLocalPoint:point]);
+        NSRect convertRect = [window convertRectToScreen:NSMakeRect(cocoaViewPoint.x, cocoaViewPoint.y, 0.0, 0.0)];
+        auto cocoaScreenPoint = NSPointFromCGPoint(NSMakePoint(convertRect.origin.x, convertRect.origin.y));
+        *ret = ConvertPointY(ToAvnPoint(cocoaScreenPoint));
+
+        return S_OK;
+    }
+}
+
+HRESULT TopLevelImpl::SetTransparencyMode(AvnWindowTransparencyMode mode) {
+    START_COM_CALL;
+
+    return S_OK;
+}
+
+void TopLevelImpl::UpdateAppearance() {
+    
+}
+
+void TopLevelImpl::SetClientSize(NSSize size){
+    
+}
+
+extern IAvnTopLevel* CreateAvnTopLevel(IAvnTopLevelEvents* events)
+{
+    @autoreleasepool
+    {
+        IAvnTopLevel* ptr = (IAvnTopLevel*)new TopLevelImpl(events);
+        return ptr;
+    }
+}

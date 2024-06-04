@@ -1,5 +1,8 @@
+#nullable enable
+
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
@@ -31,24 +34,24 @@ internal class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHand
 
     public string HandleDescriptor => "NSView";
 
-    public IntPtr NSView => Native?.ObtainNSViewHandle() ?? IntPtr.Zero;
+    public IntPtr NSView => Native.ObtainNSViewHandle();
 
     public IntPtr GetNSViewRetained()
     {
-        return Native?.ObtainNSViewHandleRetained() ?? IntPtr.Zero;
+        return Native.ObtainNSViewHandleRetained();
     }
 }
 
 internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 {
-    protected IInputRoot _inputRoot;
-    private NativeControlHostImpl _nativeControlHost;
-    private IStorageProvider _storageProvider;
-    private PlatformBehaviorInhibition _platformBehaviorInhibition;
+    protected IInputRoot? _inputRoot;
+    private NativeControlHostImpl? _nativeControlHost;
+    private IStorageProvider? _storageProvider;
+    private PlatformBehaviorInhibition? _platformBehaviorInhibition;
 
-    private readonly MouseDevice _mouse;
-    private readonly IKeyboardDevice _keyboard;
-    private readonly ICursorFactory _cursorFactory;
+    private readonly MouseDevice? _mouse;
+    private readonly IKeyboardDevice? _keyboard;
+    private readonly ICursorFactory? _cursorFactory;
 
     protected readonly IAvaloniaNativeFactory Factory;
 
@@ -56,9 +59,10 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     private double _savedScaling;
     private WindowTransparencyLevel _transparencyLevel = WindowTransparencyLevel.None;
 
-    private MacOSTopLevelHandle _handle;
+    private MacOSTopLevelHandle? _handle;
 
     private object _syncRoot = new object();
+    private IEnumerable<object>? _surfaces;
 
     public TopLevelImpl(IAvaloniaNativeFactory factory)
     {
@@ -72,48 +76,44 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     protected void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
     {
         _handle = handle;
-
         _savedLogicalSize = ClientSize;
         _savedScaling = RenderScaling;
-        _nativeControlHost = new NativeControlHostImpl(Native.CreateNativeControlHost());
+        _nativeControlHost = new NativeControlHostImpl(Native!.CreateNativeControlHost());
         _storageProvider = new SystemDialogs(this, Factory.CreateSystemDialogs());
         _platformBehaviorInhibition = new PlatformBehaviorInhibition(Factory.CreatePlatformBehaviorInhibition());
-
-        Surfaces = new object[] { new GlPlatformSurface(Native), new MetalPlatformSurface(Native), this };
+        _surfaces = new object[] { new GlPlatformSurface(Native), new MetalPlatformSurface(Native), this };
+        
         Screen = new ScreenImpl(screens);
         InputMethod = new AvaloniaNativeTextInputMethod(Native);
     }
 
-    public IAvnTopLevel Native => _handle?.Native;
-
-    public IPlatformHandle Handle => _handle;
-
-    public AvaloniaNativeTextInputMethod InputMethod { get; private set; }
-
+    public IAvnTopLevel? Native => _handle?.Native;
+    public IPlatformHandle? Handle => _handle;
+    public AvaloniaNativeTextInputMethod? InputMethod { get; private set; }
     public Size ClientSize
     {
         get
         {
-            if (Native != null)
+            if (Native == null)
             {
-                var s = Native.ClientSize;
-                return new Size(s.Width, s.Height);
+                return default;
             }
+            
+            var s = Native.ClientSize;
+            return new Size(s.Width, s.Height);
 
-            return default;
         }
     }
-    public Size? FrameSize => null;
     public double RenderScaling => Native?.Scaling ?? 1;
-    public IEnumerable<object> Surfaces { get; private set; }
-    public Action<RawInputEventArgs> Input { get; set; }
-    public Action<Rect> Paint { get; set; }
-    public Action<Size, WindowResizeReason> Resized { get; set; }
-    public Action<double> ScalingChanged { get; set; }
-    public Action<WindowTransparencyLevel> TransparencyLevelChanged { get; set; }
+    public IEnumerable<object> Surfaces => _surfaces ?? Array.Empty<object>();
+    public Action<RawInputEventArgs>? Input { get; set; }
+    public Action<Rect>? Paint { get; set; }
+    public Action<Size, WindowResizeReason>? Resized { get; set; }
+    public Action<double>? ScalingChanged { get; set; }
+    public Action<WindowTransparencyLevel>? TransparencyLevelChanged { get; set; }
     public Compositor Compositor => AvaloniaNativePlatform.Compositor;
-    public Action Closed { get; set; }
-    public Action LostFocus { get; set; }
+    public Action? Closed { get; set; }
+    public Action? LostFocus { get; set; }
     
     public WindowTransparencyLevel TransparencyLevel
     {
@@ -130,13 +130,13 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 
     public AcrylicPlatformCompensationLevels AcrylicCompensationLevels { get; } = new AcrylicPlatformCompensationLevels(1, 0, 0);
 
-    public IMouseDevice MouseDevice => _mouse;
+    public IMouseDevice? MouseDevice => _mouse;
 
-    public INativeControlHostImpl NativeControlHost => _nativeControlHost;
+    public INativeControlHostImpl? NativeControlHost => _nativeControlHost;
 
-    public IScreenImpl Screen { get; private set; }
+    public IScreenImpl? Screen { get; private set; }
 
-    public AutomationPeer GetAutomationPeer()
+    public AutomationPeer? GetAutomationPeer()
     {
         return _inputRoot is Control c ? ControlAutomationPeer.CreatePeerForElement(c) : null;
     }
@@ -145,6 +145,11 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     {
         if (_inputRoot is null)
             return false;
+
+        if (_keyboard is null)
+        {
+            return false;
+        }
 
         Dispatcher.UIThread.RunJobs(DispatcherPriority.Input + 1);
 
@@ -165,6 +170,11 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     {
         if (_inputRoot is null)
             return false;
+
+        if (_keyboard is null)
+        {
+            return false;
+        }
 
         Dispatcher.UIThread.RunJobs(DispatcherPriority.Input + 1);
 
@@ -187,6 +197,11 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     {
         if (_inputRoot is null)
             return;
+
+        if (_mouse is null)
+        {
+            return;
+        }
 
         Dispatcher.UIThread.RunJobs(DispatcherPriority.Input + 1);
 
@@ -244,7 +259,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         return Native?.PointToScreen(point.ToAvnPoint()).ToAvaloniaPixelPoint() ?? default;
     }
 
-    public void SetCursor(ICursorImpl cursor)
+    public void SetCursor(ICursorImpl? cursor)
     {
         if (Native == null)
         {
@@ -252,8 +267,8 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         }
 
         var newCursor = cursor as AvaloniaNativeCursor;
-        newCursor = newCursor ?? (_cursorFactory.GetCursor(StandardCursorType.Arrow) as AvaloniaNativeCursor);
-        Native.SetCursor(newCursor.Cursor);
+        newCursor ??= (_cursorFactory?.GetCursor(StandardCursorType.Arrow) as AvaloniaNativeCursor);
+        Native.SetCursor(newCursor?.Cursor);
     }
 
     public virtual IPopupImpl CreatePopup()
@@ -290,12 +305,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         }
     }
 
-    public void SetFrameThemeVariant(PlatformThemeVariant themeVariant)
-    {
-        Native.SetFrameThemeVariant((AvnPlatformThemeVariant)themeVariant);
-    }
-
-    public virtual object TryGetFeature(Type featureType)
+    public virtual object? TryGetFeature(Type featureType)
     {
         if (featureType == typeof(ITextInputMethodImpl))
         {
@@ -339,7 +349,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         _nativeControlHost = null;
 
         (Screen as ScreenImpl)?.Dispose();
-        _mouse.Dispose();
+        _mouse?.Dispose();
     }
 
     protected virtual bool ChromeHitTest(RawPointerEventArgs e)
@@ -351,7 +361,15 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     {
         if (!Dispatcher.UIThread.CheckAccess())
             throw new RenderTargetNotReadyException();
-        return new FramebufferRenderTarget(this, Native.CreateSoftwareRenderTarget());
+
+        var nativeRenderTarget = Native?.CreateSoftwareRenderTarget();
+
+        if (nativeRenderTarget is null)
+        {
+            throw new RenderTargetNotReadyException();
+        }
+        
+        return new FramebufferRenderTarget(this, nativeRenderTarget);
     }
 
     protected unsafe class TopLevelEvents : NativeCallbackBase, IAvnTopLevelEvents
@@ -388,12 +406,14 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 
         void IAvnTopLevelEvents.Resized(AvnSize* size, AvnPlatformResizeReason reason)
         {
-            if (_parent?.Native != null)
+            if (_parent?.Native == null)
             {
-                var s = new Size(size->Width, size->Height);
-                _parent._savedLogicalSize = s;
-                _parent.Resized?.Invoke(s, (WindowResizeReason)reason);
+                return;
             }
+            
+            var s = new Size(size->Width, size->Height);
+            _parent._savedLogicalSize = s;
+            _parent.Resized?.Invoke(s, (WindowResizeReason)reason);
         }
 
         void IAvnTopLevelEvents.RawMouseEvent(AvnRawMouseEventType type, ulong timeStamp, AvnInputModifiers modifiers, AvnPoint point, AvnVector delta)
@@ -434,7 +454,17 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         {
             var device = AvaloniaLocator.Current.GetService<IDragDropDevice>();
 
-            IDataObject dataObject = null;
+            if (device is null)
+            {
+                return AvnDragDropEffects.None;
+            }
+
+            if (_parent._inputRoot is null)
+            {
+                return AvnDragDropEffects.None;
+            }
+            
+            IDataObject? dataObject = null;
             if (dataObjectHandle != IntPtr.Zero)
                 dataObject = GCHandle.FromIntPtr(dataObjectHandle).Target as IDataObject;
 
@@ -451,16 +481,21 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
             }
         }
 
-        IAvnAutomationPeer IAvnTopLevelEvents.AutomationPeer
+        IAvnAutomationPeer? IAvnTopLevelEvents.AutomationPeer
         {
-            get => AvnAutomationPeer.Wrap(_parent.GetAutomationPeer());
+            get
+            {
+                var native = _parent.GetAutomationPeer();
+
+                return native is null ? null : AvnAutomationPeer.Wrap(native);
+            }
         }
     }
 
     private class FramebufferRenderTarget : IFramebufferRenderTarget
     {
         private readonly TopLevelImpl _parent;
-        private IAvnSoftwareRenderTarget _target;
+        private IAvnSoftwareRenderTarget? _target;
 
         public FramebufferRenderTarget(TopLevelImpl parent, IAvnSoftwareRenderTarget target)
         {

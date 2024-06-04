@@ -1,3 +1,5 @@
+#nullable enable
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,14 +43,14 @@ namespace Avalonia.Native
 
     internal abstract class WindowBaseImpl : TopLevelImpl, IWindowBaseImpl
     {
-        private MacOSWindowHandle _handle;
+        private MacOSWindowHandle? _handle;
 
         internal WindowBaseImpl(IAvaloniaNativeFactory factory) : base(factory)
         {
 
         }
 
-        public new IAvnWindowBase Native => _handle.Native;
+        public new IAvnWindowBase? Native => _handle?.Native;
 
         public PixelPoint Position
         {
@@ -79,8 +81,7 @@ namespace Avalonia.Native
                 return default;
             }
         }
-
-
+        
         protected void Init(MacOSWindowHandle handle, IAvnScreens screens)
         {
             _handle = handle;
@@ -93,8 +94,6 @@ namespace Avalonia.Native
             Resize(new Size(monitor.WorkingArea.Width * 0.75d, monitor.WorkingArea.Height * 0.7d), WindowResizeReason.Layout);
         }
 
-      
-       
         public void Activate()
         {
             Native?.Activate();
@@ -103,6 +102,11 @@ namespace Avalonia.Native
         public void Resize(Size clientSize, WindowResizeReason reason)
         {
             Native?.Resize(clientSize.Width, clientSize.Height, (AvnPlatformResizeReason)reason);
+        }
+        
+        public void SetFrameThemeVariant(PlatformThemeVariant themeVariant)
+        {
+            Native?.SetFrameThemeVariant((AvnPlatformThemeVariant)themeVariant);
         }
 
         public override void Dispose()
@@ -152,7 +156,7 @@ namespace Avalonia.Native
             Native?.BeginDragAndDropOperation(effects, point, clipboard, callback, sourceHandle);
         }
 
-        protected unsafe class WindowBaseEvents : TopLevelEvents, IAvnWindowBaseEvents
+        protected class WindowBaseEvents : TopLevelEvents, IAvnWindowBaseEvents
         {
             private readonly WindowBaseImpl _parent;
 

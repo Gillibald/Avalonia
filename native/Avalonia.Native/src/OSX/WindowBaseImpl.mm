@@ -361,41 +361,6 @@ HRESULT WindowBaseImpl::SetPosition(AvnPoint point) {
     }
 }
 
-HRESULT WindowBaseImpl::PointToClient(AvnPoint point, AvnPoint *ret) {
-    START_COM_CALL;
-
-    @autoreleasepool {
-        if (ret == nullptr) {
-            return E_POINTER;
-        }
-
-        point = ConvertPointY(point);
-        NSRect convertRect = [Window convertRectFromScreen:NSMakeRect(point.X, point.Y, 0.0, 0.0)];
-        auto viewPoint = NSMakePoint(convertRect.origin.x, convertRect.origin.y);
-
-        *ret = [View translateLocalPoint:ToAvnPoint(viewPoint)];
-
-        return S_OK;
-    }
-}
-
-HRESULT WindowBaseImpl::PointToScreen(AvnPoint point, AvnPoint *ret) {
-    START_COM_CALL;
-
-    @autoreleasepool {
-        if (ret == nullptr) {
-            return E_POINTER;
-        }
-
-        auto cocoaViewPoint = ToNSPoint([View translateLocalPoint:point]);
-        NSRect convertRect = [Window convertRectToScreen:NSMakeRect(cocoaViewPoint.x, cocoaViewPoint.y, 0.0, 0.0)];
-        auto cocoaScreenPoint = NSPointFromCGPoint(NSMakePoint(convertRect.origin.x, convertRect.origin.y));
-        *ret = ConvertPointY(ToAvnPoint(cocoaScreenPoint));
-
-        return S_OK;
-    }
-}
-
 HRESULT WindowBaseImpl::SetTransparencyMode(AvnWindowTransparencyMode mode) {
     START_COM_CALL;
 

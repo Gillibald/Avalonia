@@ -26,11 +26,6 @@ namespace Avalonia.Platform
         Size ClientSize { get; }
 
         /// <summary>
-        /// Gets the total size of the toplevel, excluding shadows.
-        /// </summary>
-        Size? FrameSize { get; }
-
-        /// <summary>
         /// Gets the scaling factor for the toplevel. This is used for rendering.
         /// </summary>
         double RenderScaling { get; }
@@ -123,12 +118,6 @@ namespace Avalonia.Platform
         /// Gets the current <see cref="WindowTransparencyLevel"/> of the TopLevel.
         /// </summary>
         WindowTransparencyLevel TransparencyLevel { get; }
-
-        /// <summary>
-        /// Sets the <see cref="PlatformThemeVariant"/> on the frame if it should be dark or light.
-        /// Also applies for the mobile status bar.
-        /// </summary>
-        void SetFrameThemeVariant(PlatformThemeVariant themeVariant);
         
         /// <summary>
         /// Gets the <see cref="AcrylicPlatformCompensationLevels"/> for the platform.        

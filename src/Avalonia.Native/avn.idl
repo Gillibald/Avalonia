@@ -696,9 +696,6 @@ interface IAvnString : IUnknown
 [uuid(e8cccd3e-e6dc-430a-a0b9-2ce7d7922de6)]
 interface IAvnTopLevel : IUnknown
 {
-     HRESULT GetFrameSize(AvnSize*result);
-     HRESULT SetFrameThemeVariant(AvnPlatformThemeVariant mode);
-
      HRESULT GetClientSize(AvnSize*ret);
      HRESULT GetScaling(double*ret);
      
@@ -724,6 +721,8 @@ interface IAvnTopLevel : IUnknown
 [uuid(e5aca675-02b7-4129-aa79-d6e417210bda), cpp-virtual-inherits]
 interface IAvnWindowBase : IAvnTopLevel
 {
+     HRESULT GetFrameSize(AvnSize*result);
+     HRESULT SetFrameThemeVariant(AvnPlatformThemeVariant mode);
      HRESULT SetParent(IAvnWindowBase* parent);
      HRESULT Show(bool activate, bool isDialog);
      HRESULT Hide();
