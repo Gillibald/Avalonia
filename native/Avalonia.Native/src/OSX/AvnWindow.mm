@@ -200,8 +200,6 @@
     [self backingScaleFactor];
 }
 
-
-
 - (void)windowWillClose:(NSNotification *_Nonnull)notification
 {
     _closed = true;

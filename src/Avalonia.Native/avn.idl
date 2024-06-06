@@ -663,7 +663,7 @@ interface IAvaloniaNativeFactory : IUnknown
      HRESULT Initialize(IAvnGCHandleDeallocatorCallback* deallocator, IAvnApplicationEvents* appCb,
         IAvnDispatcher* dispatcher);
      IAvnMacOptions* GetMacOptions();
-     HRESULT CreateEmbeddedTopLevel(IAvnTopLevelEvents* cb, [intptr]void* parentView, IAvnTopLevel** ppv);
+     HRESULT CreateTopLevel(IAvnTopLevelEvents* cb, IAvnTopLevel** ppv);
      HRESULT CreateWindow(IAvnWindowEvents* cb, IAvnWindow** ppv);
      HRESULT CreatePopup(IAvnWindowEvents* cb, IAvnPopup** ppv);
      HRESULT CreatePlatformThreadingInterface(IAvnPlatformThreadingInterface** ppv);

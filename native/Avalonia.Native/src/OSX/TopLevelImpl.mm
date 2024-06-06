@@ -7,8 +7,6 @@
 #include "AvnTextInputMethod.h"
 #include "AvnView.h"
 
-@class AutoFitContentView;
-
 TopLevelImpl::~TopLevelImpl() {
     View = nullptr;
 }
@@ -17,7 +15,6 @@ TopLevelImpl::TopLevelImpl(IAvnTopLevelEvents *events) {
     TopLevelEvents = events;
     
     View = [[AvnView alloc] initWithParent:this];
-    StandardContainer = [[AutoFitContentView new] initWithContent:View];
     InputMethod = new AvnTextInputMethod(View);
 }
 
@@ -241,7 +238,7 @@ void TopLevelImpl::UpdateAppearance() {
 }
 
 void TopLevelImpl::SetClientSize(NSSize size){
-    
+    [View setFrameSize:size];
 }
 
 extern IAvnTopLevel* CreateAvnTopLevel(IAvnTopLevelEvents* events)

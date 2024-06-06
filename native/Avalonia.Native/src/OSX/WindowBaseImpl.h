@@ -102,6 +102,7 @@ private:
     bool _inResize;
 
 protected:
+    AutoFitContentView *StandardContainer;
     AvnPoint lastPositionSet;
     bool _shown;
     std::list<WindowBaseImpl*> _children;

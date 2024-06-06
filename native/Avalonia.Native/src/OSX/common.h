@@ -47,6 +47,7 @@ extern NSRect ToNSRect (AvnRect r);
 extern AvnPoint ToAvnPoint (NSPoint p);
 extern AvnPoint ConvertPointY (AvnPoint p);
 extern NSSize ToNSSize (AvnSize s);
+extern AvnSize FromNSSize (NSSize s);
 #ifdef DEBUG
 #define NSDebugLog(...) NSLog(__VA_ARGS__)
 #else

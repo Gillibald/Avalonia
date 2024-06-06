@@ -225,8 +225,7 @@ public:
         return (IAvnMacOptions*)new MacOptions();
     }
     
-    virtual HRESULT CreateEmbeddedTopLevel(IAvnTopLevelEvents* cb,
-                                           void* parentView,
+    virtual HRESULT CreateTopLevel(IAvnTopLevelEvents* cb,
                                            IAvnTopLevel** ppv) override {
         START_COM_CALL;
         
@@ -494,6 +493,15 @@ NSSize ToNSSize (AvnSize s)
     NSSize result;
     result.width = s.Width;
     result.height = s.Height;
+    
+    return result;
+}
+
+AvnSize FromNSSize (NSSize s)
+{
+    AvnSize result;
+    result.Width = s.width;
+    result.Height = s.height;
     
     return result;
 }

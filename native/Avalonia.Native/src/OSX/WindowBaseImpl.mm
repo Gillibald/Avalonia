@@ -19,6 +19,7 @@
 #include "AvnTextInputMethod.h"
 #include "AvnView.h"
 
+@class AutoFitContentView;
 
 WindowBaseImpl::~WindowBaseImpl() {
     View = nullptr;
@@ -39,6 +40,8 @@ WindowBaseImpl::WindowBaseImpl(IAvnWindowBaseEvents *events, bool usePanel) : To
     lastMenu = nullptr;
     
     CreateNSWindow(usePanel);
+    
+    StandardContainer = [[AutoFitContentView new] initWithContent:View];
     
     [Window setContentView:StandardContainer];
     [Window setBackingType:NSBackingStoreBuffered];

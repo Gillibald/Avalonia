@@ -24,6 +24,10 @@
     <PackageReference Include="MicroCom.CodeGenerator.MSBuild" Version="0.11.0" PrivateAssets="all" />
     <MicroComIdl Include="avn.idl" CSharpInteropPath="Interop.Generated.cs" />
   </ItemGroup>
+  
+  <ItemGroup>
+    <InternalsVisibleTo Include="Avalonia.Embedding.Mac, PublicKey=$(AvaloniaPublicKey)" />
+  </ItemGroup>
 
   <Import Project="..\..\build\DevAnalyzers.props" />
   <Import Project="..\..\build\TrimmingEnable.props" />

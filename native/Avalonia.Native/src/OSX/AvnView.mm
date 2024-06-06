@@ -156,7 +156,7 @@
 
         auto reason = [self inLiveResize] ? ResizeUser : _resizeReason;
 
-        _parent->TopLevelEvents->Resized(AvnSize{newSize.width, newSize.height}, reason);
+        _parent->TopLevelEvents->Resized(FromNSSize(newSize), reason);
     }
 }
 

@@ -1,15 +1,14 @@
-﻿using System;
-using Avalonia.Native.Interop;
+﻿using Avalonia.Native.Interop;
 
 namespace Avalonia.Native
 {
     internal class EmbeddedTopLevelImpl : TopLevelImpl
     {
-        public EmbeddedTopLevelImpl(IAvaloniaNativeFactory factory, IntPtr parentViewHandle) : base(factory)
+        public EmbeddedTopLevelImpl(IAvaloniaNativeFactory factory) : base(factory)
         {
             using (var e = new TopLevelEvents(this))
             {
-                Init(new MacOSTopLevelHandle(factory.CreateEmbeddedTopLevel(e, parentViewHandle)), factory.CreateScreens());
+                Init(new MacOSTopLevelHandle(factory.CreateTopLevel(e)), factory.CreateScreens());
             }
         }
     }

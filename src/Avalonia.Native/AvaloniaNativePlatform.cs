@@ -187,5 +187,10 @@ namespace Avalonia.Native
         {
             throw new NotImplementedException();
         }
+
+        public EmbeddedTopLevelImpl CreateTopLevelImpl()
+        {
+            return new EmbeddedTopLevelImpl(_factory);
+        }
     }
 }

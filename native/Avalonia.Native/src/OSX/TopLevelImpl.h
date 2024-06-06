@@ -60,7 +60,6 @@ public:
     virtual HRESULT SetTransparencyMode(AvnWindowTransparencyMode mode) override;
                          
 protected:
-    AutoFitContentView *StandardContainer;
     NSCursor *cursor;
     virtual void UpdateAppearance();
                            
