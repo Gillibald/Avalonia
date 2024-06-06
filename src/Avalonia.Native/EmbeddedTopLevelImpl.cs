@@ -1,15 +1,22 @@
 ﻿using Avalonia.Native.Interop;
+using Avalonia.Platform;
 
 namespace Avalonia.Native
 {
-    internal class EmbeddedTopLevelImpl : TopLevelImpl
+    public static class EmbeddedTopLevelImpl
     {
-        public EmbeddedTopLevelImpl(IAvaloniaNativeFactory factory) : base(factory)
+        public static ITopLevelImpl Create()
         {
-            using (var e = new TopLevelEvents(this))
+            var factory = AvaloniaLocator.Current.GetRequiredService<IAvaloniaNativeFactory>();
+
+            var topLevel = new TopLevelImpl(factory);
+            
+            using (var e = new TopLevelImpl.TopLevelEvents(topLevel))
             {
-                Init(new MacOSTopLevelHandle(factory.CreateTopLevel(e)), factory.CreateScreens());
+                topLevel.Init(new MacOSTopLevelHandle(factory.CreateTopLevel(e)), factory.CreateScreens());
             }
+
+            return topLevel;
         }
     }
 }

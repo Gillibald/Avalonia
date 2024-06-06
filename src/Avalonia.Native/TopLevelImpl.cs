@@ -21,14 +21,14 @@ using Avalonia.Threading;
 
 namespace Avalonia.Native;
 
-internal class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHandle
+public class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHandle
 {
-    public MacOSTopLevelHandle(IAvnTopLevel native)
+    internal MacOSTopLevelHandle(IAvnTopLevel native)
     {
         Native = native;
     }
 
-    public IAvnTopLevel Native { get; }
+    internal IAvnTopLevel Native { get; }
 
     public IntPtr Handle => NSView;
 
@@ -73,7 +73,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         _cursorFactory = AvaloniaLocator.Current.GetService<ICursorFactory>();
     }
 
-    protected void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
+    internal void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
     {
         _handle = handle;
         _savedLogicalSize = ClientSize;
@@ -372,7 +372,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         return new FramebufferRenderTarget(this, nativeRenderTarget);
     }
 
-    protected unsafe class TopLevelEvents : NativeCallbackBase, IAvnTopLevelEvents
+    protected internal unsafe class TopLevelEvents : NativeCallbackBase, IAvnTopLevelEvents
     {
         private readonly TopLevelImpl _parent;
 

@@ -21,6 +21,11 @@ namespace Avalonia.Platform
     public interface ITopLevelImpl : IOptionalFeatureProvider, IDisposable
     {
         /// <summary>
+        /// Get the platform handle.
+        /// </summary>
+        IPlatformHandle? Handle { get; }
+        
+        /// <summary>
         /// Gets the client size of the toplevel.
         /// </summary>
         Size ClientSize { get; }

@@ -36,7 +36,7 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
       useCustomWorkingDirectory = "YES"
-      customWorkingDirectory = "/Users/benediktstebner/RiderProjects/Avalonia/samples/Sandbox/bin/Debug/net8.0"
+      customWorkingDirectory = "/Users/benediktstebner/RiderProjects/Avalonia/samples/macOSApp1/bin/Debug/net8.0-macos/osx-arm64"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
@@ -56,7 +56,7 @@
       </MacroExpansion>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "Sandbox.dll"
+            argument = "macOSApp1.dll"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>
