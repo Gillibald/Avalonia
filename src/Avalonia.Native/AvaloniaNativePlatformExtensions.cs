@@ -23,8 +23,6 @@ namespace Avalonia
                             platform.SetupApplicationName();
                             platform.SetupApplicationMenuExporter();
                         });
-                        
-                        AvaloniaLocator.CurrentMutable.Bind<AvaloniaNativePlatform>().ToConstant(platform);
                 });
 
             return builder;

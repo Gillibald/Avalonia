@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Embedding;
 using Avalonia.Native;
+using Avalonia.Platform;
 
 namespace Xamarin.Mac.Interop;
 
@@ -12,7 +13,8 @@ public class AvaloniaView : IDisposable
 
     public AvaloniaView()
     {
-        var topLevelImpl = EmbeddedTopLevelImpl.Create();
+        var topLevelImpl = AvaloniaLocator.Current
+            .GetRequiredService<IWindowingPlatform>().CreateEmbeddableTopLevel();
         
         if (topLevelImpl.Handle is MacOSTopLevelHandle handle)
         {

@@ -58,6 +58,10 @@ namespace Avalonia.Headless
                 _frameBufferFormat = frameBufferFormat;
             }
             public IWindowImpl CreateWindow() => new HeadlessWindowImpl(false, _frameBufferFormat);
+            public ITopLevelImpl CreateEmbeddableTopLevel()
+            {
+                throw new NotImplementedException();
+            }
 
             public IWindowImpl CreateEmbeddableWindow() => throw new PlatformNotSupportedException();
 

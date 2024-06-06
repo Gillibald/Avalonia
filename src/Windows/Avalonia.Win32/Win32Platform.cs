@@ -217,6 +217,11 @@ namespace Avalonia.Win32
             return new WindowImpl();
         }
 
+        public ITopLevelImpl CreateEmbeddableTopLevel()
+        {
+            throw new NotImplementedException();
+        }
+
         public IWindowImpl CreateEmbeddableWindow()
         {
             var embedded = new EmbeddedWindowImpl();

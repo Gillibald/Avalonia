@@ -21,6 +21,10 @@ namespace Avalonia.DesignerSupport.Remote
         public ITrayIconImpl CreateTrayIcon() => null;
 
         public IWindowImpl CreateWindow() => new WindowStub();
+        public ITopLevelImpl CreateEmbeddableTopLevel()
+        {
+            throw new NotImplementedException();
+        }
 
         public IWindowImpl CreateEmbeddableWindow()
         {
