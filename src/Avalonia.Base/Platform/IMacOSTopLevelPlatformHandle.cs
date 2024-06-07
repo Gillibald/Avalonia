@@ -13,6 +13,9 @@ namespace Avalonia.Platform
     [Unstable]
     public interface IMacOSWindowHandle : IMacOSTopLevelPlatformHandle
     {
+        IntPtr NSView { get; }
+        IntPtr GetNSViewRetained();
+
         IntPtr NSWindow { get; }
         IntPtr GetNSWindowRetained();
     }
