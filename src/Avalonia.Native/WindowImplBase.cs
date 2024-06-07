@@ -20,7 +20,7 @@ using Avalonia.Threading;
 
 namespace Avalonia.Native
 {
-    internal class MacOSWindowHandle : MacOSTopLevelHandle
+    internal class MacOSWindowHandle : MacOSTopLevelHandle, IMacOSWindowHandle
     {
         public MacOSWindowHandle(IAvnWindowBase native) : base(native)
         {
