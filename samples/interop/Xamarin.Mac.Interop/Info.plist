@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>macOSApp1</string>
+	<string>Xamarin.Mac.Interop</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.companyname.macOSApp1</string>
+	<string>com.companyname.Xamarin.Mac.Interop</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>

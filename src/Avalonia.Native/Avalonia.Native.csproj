@@ -15,6 +15,15 @@
     <PackageReference Include="MicroCom.CodeGenerator.MSBuild" Version="0.11.0" PrivateAssets="all" />
     <MicroComIdl Include="avn.idl" CSharpInteropPath="Interop.Generated.cs" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(PackAvaloniaNative)' == 'true'">
+    <Content Include="../../Build/Products/Release/libAvalonia.Native.OSX.dylib">
+      <Link>libAvaloniaNative.dylib</Link>
+      <PackagePath>runtimes/osx/native/libAvaloniaNative.dylib</PackagePath>
+      <Pack>true</Pack>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
   
   <Import Project="..\..\build\DevAnalyzers.props" />
   <Import Project="..\..\build\TrimmingEnable.props" />

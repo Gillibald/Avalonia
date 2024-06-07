@@ -53,6 +53,7 @@ using Avalonia.Rendering.Composition;
         {
         }
 
+        public IPlatformHandle Handle { get; }
         public Size ClientSize => ScaledSize;
         public Size? FrameSize => null;
         public IMouseDevice MouseDevice => new MouseDevice();

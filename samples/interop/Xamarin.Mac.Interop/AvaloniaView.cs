@@ -15,7 +15,7 @@ public class AvaloniaView : IDisposable
     {
         _topLevel = new EmbeddableControlRoot();
         
-        if (_topLevel.PlatformImpl?.Handle is IMacOSTopLevelPlatformHandle handle)
+        if (_topLevel.TryGetPlatformHandle() is IMacOSTopLevelPlatformHandle handle)
         {
             AvnView = ObjCRuntime.Runtime.GetNSObject(handle.NSView) as NSView;
         }
