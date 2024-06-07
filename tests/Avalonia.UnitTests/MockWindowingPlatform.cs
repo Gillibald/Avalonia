@@ -152,10 +152,7 @@ namespace Avalonia.UnitTests
             }
         }
 
-        public ITopLevelImpl CreateEmbeddableTopLevel()
-        {
-            throw new NotImplementedException();
-        }
+        public ITopLevelImpl CreateEmbeddableTopLevel() => CreateEmbeddableWindow();
 
         public IWindowImpl CreateEmbeddableWindow()
         {

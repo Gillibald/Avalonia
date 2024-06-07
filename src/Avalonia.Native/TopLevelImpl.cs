@@ -21,7 +21,7 @@ using Avalonia.Threading;
 
 namespace Avalonia.Native;
 
-public class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHandle
+internal class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHandle
 {
     internal MacOSTopLevelHandle(IAvnTopLevel native)
     {

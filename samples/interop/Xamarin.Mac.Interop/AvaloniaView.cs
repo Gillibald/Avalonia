@@ -13,17 +13,12 @@ public class AvaloniaView : IDisposable
 
     public AvaloniaView()
     {
-        var topLevelImpl = AvaloniaLocator.Current
-            .GetRequiredService<IWindowingPlatform>().CreateEmbeddableTopLevel();
+        _topLevel = new EmbeddableControlRoot();
         
-        if (topLevelImpl.Handle is MacOSTopLevelHandle handle)
+        if (_topLevel.PlatformImpl?.Handle is IMacOSTopLevelPlatformHandle handle)
         {
-            var ptr = handle.NSView;
-            
-            AvnView = ObjCRuntime.Runtime.GetNSObject(ptr) as NSView;
+            AvnView = ObjCRuntime.Runtime.GetNSObject(handle.NSView) as NSView;
         }
-
-        _topLevel = new EmbeddableControlRoot(topLevelImpl);
     }
     
     public NSView? AvnView { get; }
@@ -37,14 +32,16 @@ public class AvaloniaView : IDisposable
             
             _topLevel.Content = _content;
 
-            if (_content is not null)
+            if (_content is null)
             {
-                _content.Measure(Size.Infinity);
-                
-                AvnView?.SetFrameSize(new CGSize(_content.DesiredSize.Width, _content.DesiredSize.Height));
-                
-                _topLevel.Prepare();
+                return;
             }
+            
+            _content.Measure(Size.Infinity);
+                
+            AvnView?.SetFrameSize(new CGSize(_content.DesiredSize.Width, _content.DesiredSize.Height));
+                
+            _topLevel.Prepare();
         }
     }
     
@@ -55,6 +52,7 @@ public class AvaloniaView : IDisposable
 
     public void Dispose()
     {
+        _topLevel.StopRendering();
         _topLevel.Dispose();
         AvnView?.Dispose();
     }
