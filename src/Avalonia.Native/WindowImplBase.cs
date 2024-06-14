@@ -1,22 +1,11 @@
 #nullable enable
 
 using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
-using Avalonia.Automation.Peers;
 using Avalonia.Controls;
-using Avalonia.Controls.Platform;
-using Avalonia.Controls.Platform.Surfaces;
 using Avalonia.Input;
-using Avalonia.Input.Platform;
-using Avalonia.Input.Raw;
 using Avalonia.Native.Interop;
 using Avalonia.Platform;
-using Avalonia.Platform.Storage;
-using Avalonia.Platform.Storage.FileIO;
-using Avalonia.Rendering.Composition;
-using Avalonia.Threading;
 
 namespace Avalonia.Native
 {
@@ -58,7 +47,6 @@ namespace Avalonia.Native
             set => Native?.SetPosition(value.ToAvnPoint());
         }
 
-        public double DesktopScaling => 1;
         public Action Deactivated { get; set; }
         public Action Activated { get; set; }
 
