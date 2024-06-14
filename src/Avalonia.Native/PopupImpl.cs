@@ -1,7 +1,5 @@
-﻿using System;
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Controls.Primitives.PopupPositioning;
-using Avalonia.Input.TextInput;
 using Avalonia.Native.Interop;
 using Avalonia.Platform;
 
@@ -9,12 +7,12 @@ namespace Avalonia.Native
 {
     class PopupImpl : WindowBaseImpl, IPopupImpl
     {
-        private readonly IWindowBaseImpl _parent;
+        private readonly ITopLevelImpl _parent;
         private readonly IAvnPopup _native;
         private readonly AvaloniaNativeTextInputMethod _inputMethod;
 
         public PopupImpl(IAvaloniaNativeFactory factory,
-            IWindowBaseImpl parent) : base(factory)
+            ITopLevelImpl parent) : base(factory)
         {
             _parent = parent;
             
@@ -29,11 +27,11 @@ namespace Avalonia.Native
             {
                 parent = popupImpl._parent;
             }
-            
-            //Only the parent window is able to process input context events
-            if (parent is WindowImpl windowImpl)
+
+            //Use the parent's input context to process events
+            if (parent is TopLevelImpl topLevelImpl)
             {
-                _inputMethod = windowImpl.InputMethod;
+                _inputMethod = topLevelImpl.InputMethod;
             }
         }
         

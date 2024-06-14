@@ -3,9 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Raw;
-using Avalonia.Layout;
 using Avalonia.Metadata;
-using Avalonia.Rendering;
 using Avalonia.Rendering.Composition;
 
 namespace Avalonia.Platform
@@ -20,6 +18,16 @@ namespace Avalonia.Platform
     [Unstable]
     public interface ITopLevelImpl : IOptionalFeatureProvider, IDisposable
     {
+        /// <summary>
+        /// Gets the scaling factor for Window positioning and sizing.
+        /// </summary>
+        double DesktopScaling { get; }
+
+        /// <summary>
+        /// Gets platform specific display information
+        /// </summary>
+        IScreenImpl? Screen { get; }
+
         /// <summary>
         /// Get the platform handle.
         /// </summary>

@@ -2,7 +2,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
@@ -86,6 +85,8 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         Screen = new ScreenImpl(screens);
         InputMethod = new AvaloniaNativeTextInputMethod(Native);
     }
+
+    public double DesktopScaling => 1;
 
     public IAvnTopLevel? Native => _handle?.Native;
     public IPlatformHandle? Handle => _handle;
@@ -273,7 +274,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 
     public virtual IPopupImpl CreatePopup()
     {
-        throw new NotImplementedException();
+        return new PopupImpl(Factory, this);
     }
 
     public void SetTransparencyLevelHint(IReadOnlyList<WindowTransparencyLevel> transparencyLevels)
