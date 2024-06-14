@@ -9,7 +9,7 @@ using Avalonia.Platform;
 
 namespace Avalonia.Native
 {
-    internal class MacOSWindowHandle : MacOSTopLevelHandle, IMacOSWindowHandle
+    internal class MacOSWindowHandle : MacOSTopLevelHandle, IPlatformHandle, IMacOSWindowHandle
     {
         public MacOSWindowHandle(IAvnWindowBase native) : base(native)
         {
