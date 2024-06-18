@@ -82,11 +82,6 @@ namespace Avalonia.Native
             }
         }
         
-        public void SetFrameThemeVariant(PlatformThemeVariant themeVariant)
-        {
-            _native.SetFrameThemeVariant((AvnPlatformThemeVariant)themeVariant);
-        }
-        
         public new IAvnWindow Native => _native;
 
         public void CanResize(bool value)
