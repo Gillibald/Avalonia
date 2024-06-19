@@ -47,11 +47,6 @@ namespace Avalonia.Platform
         /// Gets or sets a method called when the window is activated (receives focus).
         /// </summary>
         Action? Activated { get; set; }
-
-        /// <summary>
-        /// Gets the platform window handle.
-        /// </summary>
-        IPlatformHandle Handle { get; }
        
         /// <summary>
         /// Gets a maximum client size hint for an auto-sizing window, in device-independent pixels.

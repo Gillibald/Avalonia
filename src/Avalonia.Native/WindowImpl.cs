@@ -25,13 +25,17 @@ namespace Avalonia.Native
             
             using (var e = new WindowEvents(this))
             {
-                Init(new MacOSWindowHandle(_native = factory.CreateWindow(e)), factory.CreateScreens());
+                Init(new MacOSTopLevelHandle(_native = factory.CreateWindow(e)), factory.CreateScreens());
             }
 
             _nativeMenuExporter = new AvaloniaNativeMenuExporter(_native, factory);
         }
-        
-        
+
+        internal sealed override void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
+        {
+            base.Init(handle, screens);
+        }
+
         class WindowEvents : WindowBaseEvents, IAvnWindowEvents
         {
             readonly WindowImpl _parent;
@@ -61,24 +65,6 @@ namespace Avalonia.Native
             void IAvnWindowEvents.GotInputWhenDisabled()
             {
                 _parent.GotInputWhenDisabled?.Invoke();
-            }
-        }
-
-        public Size? FrameSize
-        {
-            get
-            {
-                if (_native != null)
-                {
-                    unsafe
-                    {
-                        var s = new AvnSize { Width = -1, Height = -1 };
-                        _native.GetFrameSize(&s);
-                        return s.Width < 0  && s.Height < 0 ? null : new Size(s.Width, s.Height);
-                    }
-                }
-
-                return default;
             }
         }
         

@@ -18,7 +18,7 @@ namespace Avalonia.Native
             
             using (var e = new PopupEvents(this))
             {
-                Init(new MacOSWindowHandle(_native = factory.CreatePopup(e)), factory.CreateScreens());
+                Init(new MacOSTopLevelHandle(_native = factory.CreatePopup(e)), factory.CreateScreens());
             }
             
             PopupPositioner = new ManagedPopupPositioner(new ManagedPopupPositionerPopupImplHelper(parent, MoveResize));
@@ -34,7 +34,12 @@ namespace Avalonia.Native
                 _inputMethod = topLevelImpl.InputMethod;
             }
         }
-        
+
+        internal sealed override void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
+        {
+            base.Init(handle, screens);
+        }
+
         private void MoveResize(PixelPoint position, Size size, double scaling)
         {
             Position = position;

@@ -9,37 +9,14 @@ using Avalonia.Platform;
 
 namespace Avalonia.Native
 {
-    internal class MacOSWindowHandle : MacOSTopLevelHandle, IPlatformHandle, IMacOSWindowHandle
-    {
-        public MacOSWindowHandle(IAvnWindowBase native) : base(native)
-        {
-            Native = native;
-        }
-
-        public new IAvnWindowBase Native { get; }
-
-        public new IntPtr Handle => NSWindow;
-
-        public new string HandleDescriptor => "NSWindow";
-
-        public IntPtr NSWindow => Native?.ObtainNSWindowHandle() ?? IntPtr.Zero;
-
-        public IntPtr GetNSWindowRetained()
-        {
-            return Native?.ObtainNSWindowHandleRetained() ?? IntPtr.Zero;
-        }
-    }
-
     internal abstract class WindowBaseImpl : TopLevelImpl, IWindowBaseImpl
     {
-        private MacOSWindowHandle? _handle;
-
         internal WindowBaseImpl(IAvaloniaNativeFactory factory) : base(factory)
         {
 
         }
 
-        public new IAvnWindowBase? Native => _handle?.Native;
+        public new IAvnWindowBase? Native => _handle?.Native as IAvnWindowBase;
 
         public PixelPoint Position
         {
@@ -47,12 +24,12 @@ namespace Avalonia.Native
             set => Native?.SetPosition(value.ToAvnPoint());
         }
 
-        public Action Deactivated { get; set; }
-        public Action Activated { get; set; }
+        public Action? Deactivated { get; set; }
+        public Action? Activated { get; set; }
 
-        public Action<PixelPoint> PositionChanged { get; set; }
+        public Action<PixelPoint>? PositionChanged { get; set; }
 
-        public new Size? FrameSize
+        public Size? FrameSize
         {
             get
             {
@@ -70,16 +47,16 @@ namespace Avalonia.Native
             }
         }
         
-        protected void Init(MacOSWindowHandle handle, IAvnScreens screens)
+        internal override void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
         {
             _handle = handle;
 
             base.Init(handle, screens);
 
-            var monitor = Screen.AllScreens.OrderBy(x => x.Scaling)
+            var monitor = Screen!.AllScreens.OrderBy(x => x.Scaling)
                 .FirstOrDefault(m => m.Bounds.Contains(Position));
 
-            Resize(new Size(monitor.WorkingArea.Width * 0.75d, monitor.WorkingArea.Height * 0.7d), WindowResizeReason.Layout);
+            Resize(new Size(monitor!.WorkingArea.Width * 0.75d, monitor.WorkingArea.Height * 0.7d), WindowResizeReason.Layout);
         }
 
         public void Activate()
@@ -119,7 +96,7 @@ namespace Avalonia.Native
             Native?.BeginMoveDrag();
         }
 
-        public Size MaxAutoSizeHint => Screen.AllScreens.Select(s => s.Bounds.Size.ToSize(1))
+        public Size MaxAutoSizeHint => Screen!.AllScreens.Select(s => s.Bounds.Size.ToSize(1))
             .OrderByDescending(x => x.Width + x.Height).FirstOrDefault();
 
         public void SetTopmost(bool value)

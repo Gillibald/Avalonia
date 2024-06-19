@@ -25,19 +25,39 @@ internal class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHand
     internal MacOSTopLevelHandle(IAvnTopLevel native)
     {
         Native = native;
+
+        HandleDescriptor = "NSView";
+
+        Handle = NSView;
+    }
+
+    internal MacOSTopLevelHandle(IAvnWindowBase native)
+    {
+        Native = native;
+
+        HandleDescriptor = "NSWindow";
+
+        Handle = NSWindow;
     }
 
     internal IAvnTopLevel Native { get; }
 
-    public IntPtr Handle => NSView;
+    public IntPtr Handle { get; }
 
-    public string HandleDescriptor => "NSView";
+    public string HandleDescriptor { get; }
 
     public IntPtr NSView => Native.ObtainNSViewHandle();
 
     public IntPtr GetNSViewRetained()
     {
         return Native.ObtainNSViewHandleRetained();
+    }
+    
+    public IntPtr NSWindow => (Native as IAvnWindowBase)?.ObtainNSWindowHandle() ?? IntPtr.Zero;
+
+    public IntPtr GetNSWindowRetained()
+    {
+        return (Native as IAvnWindowBase)?.ObtainNSWindowHandleRetained() ?? IntPtr.Zero;
     }
 }
 
@@ -58,7 +78,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     private double _savedScaling;
     private WindowTransparencyLevel _transparencyLevel = WindowTransparencyLevel.None;
 
-    private MacOSTopLevelHandle? _handle;
+    protected MacOSTopLevelHandle? _handle;
 
     private object _syncRoot = new object();
     private IEnumerable<object>? _surfaces;
@@ -72,7 +92,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         _cursorFactory = AvaloniaLocator.Current.GetService<ICursorFactory>();
     }
 
-    internal void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
+    internal virtual void Init(MacOSTopLevelHandle handle, IAvnScreens screens)
     {
         _handle = handle;
         _savedLogicalSize = ClientSize;
