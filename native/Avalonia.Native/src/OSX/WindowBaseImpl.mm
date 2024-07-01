@@ -106,6 +106,7 @@ HRESULT WindowBaseImpl::Show(bool activate, bool isDialog) {
 
         _shown = true;
         [Window setCollectionBehavior:collectionBehavior];
+        
         return S_OK;
     }
 }

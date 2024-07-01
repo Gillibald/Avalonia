@@ -71,6 +71,7 @@
 -(AvnView*)  initWithParent: (TopLevelImpl*) parent
 {
     self = [super init];
+    
     [self setWantsLayer:YES];
     [self setLayerContentsPlacement: NSViewLayerContentsPlacementTopLeft];
 
@@ -186,6 +187,7 @@
 - (AvnPoint) translateLocalPoint:(AvnPoint)pt
 {
     pt.Y = [self bounds].size.height - pt.Y;
+    
     return pt;
 }
 
@@ -255,7 +257,11 @@
         return;
     }
 
-    auto localPoint = [self convertPoint:[event locationInWindow] toView:self];
+    NSPoint eventLocation = [event locationInWindow];
+    
+    auto frame = [self frame];
+    
+    NSPoint localPoint = NSMakePoint(eventLocation.x - frame.origin.x, eventLocation.y - frame.origin.y);
     auto avnPoint = [AvnView toAvnPoint:localPoint];
     auto point = [self translateLocalPoint:avnPoint];
     AvnVector delta = { 0, 0};
