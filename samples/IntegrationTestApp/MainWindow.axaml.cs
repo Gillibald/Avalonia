@@ -219,6 +219,12 @@ namespace IntegrationTestApp
             }
         }
 
+        private void OnToggleTrayIconVisible()
+        {
+            var icon = TrayIcon.GetIcons(Application.Current!)!.FirstOrDefault()!;
+            icon.IsVisible = !icon.IsVisible;
+        }
+
         private void InitializeGesturesTab()
         {
             var gestureBorder = this.GetControl<Border>("GestureBorder");
@@ -285,6 +291,8 @@ namespace IntegrationTestApp
                 WindowState = WindowState.Normal;
             if (source?.Name == "RestoreAll")
                 RestoreAll();
+            if (source?.Name == nameof(ToggleTrayIconVisible))
+                OnToggleTrayIconVisible();
         }
 
         private void PointerPageShowDialogPressed(object? sender, PointerPressedEventArgs e)
