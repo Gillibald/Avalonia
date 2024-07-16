@@ -713,7 +713,7 @@ namespace Avalonia.Win32
 
                 case WindowsMessage.WM_DISPLAYCHANGE:
                     {
-                        (Screen as ScreenImpl)?.InvalidateScreensCache();
+                        Screen?.OnChanged();
                         return IntPtr.Zero;
                     }
 

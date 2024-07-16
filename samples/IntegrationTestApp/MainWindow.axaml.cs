@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Avalonia;
 using Avalonia.Automation;
@@ -293,6 +294,8 @@ namespace IntegrationTestApp
                 RestoreAll();
             if (source?.Name == nameof(ToggleTrayIconVisible))
                 OnToggleTrayIconVisible();
+            if (source?.Name == nameof(ScreenRefresh))
+                OnScreenRefresh();
         }
 
         private void PointerPageShowDialogPressed(object? sender, PointerPressedEventArgs e)
@@ -325,6 +328,20 @@ namespace IntegrationTestApp
             };
 
             dialog.ShowDialog(this);
+        }
+
+        private Screen? _lastScreen;
+        private void OnScreenRefresh()
+        {
+            var lastScreen = _lastScreen;
+            var screen = _lastScreen = Screens.ScreenFromWindow(this);
+            ScreenName.Text = screen?.DisplayName;
+            ScreenHandle.Text = screen?.TryGetPlatformHandle()?.ToString();
+            ScreenBounds.Text = screen?.Bounds.ToString();
+            ScreenWorkArea.Text = screen?.WorkingArea.ToString();
+            ScreenScaling.Text = screen?.Scaling.ToString(CultureInfo.InvariantCulture);
+            ScreenOrientation.Text = screen?.CurrentOrientation.ToString();
+            ScreenSameReference.Text = ReferenceEquals(lastScreen, screen).ToString();
         }
     }
 }
