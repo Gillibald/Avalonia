@@ -915,90 +915,121 @@ namespace Avalonia.Skia
                     break;
                 }
                 case IRadialGradientBrush radialGradient:
-                {
-                    var centerPoint = radialGradient.Center.ToPixels(targetRect);
-                    var center = centerPoint.ToSKPoint();
-                    
-                    var radiusX = (radialGradient.RadiusX.ToValue(targetRect.Width));
-                    var radiusY = (radialGradient.RadiusY.ToValue(targetRect.Height));
+                    {
+                        var centerPoint = radialGradient.Center.ToPixels(targetRect);
+                        var center = centerPoint.ToSKPoint();
 
-                    var originPoint = radialGradient.GradientOrigin.ToPixels(targetRect);
-                    
-                    Matrix? transform = null;
-                    
-                    if (radiusX != radiusY)
-                        transform =
-                            Matrix.CreateTranslation(-centerPoint)
-                            * Matrix.CreateScale(1, radiusY / radiusX)
-                            * Matrix.CreateTranslation(centerPoint);
-                    
-                    
-                    if (radialGradient.Transform != null)
-                    {
-                        var transformOrigin = radialGradient.TransformOrigin.ToPixels(targetRect);
-                        var offset = Matrix.CreateTranslation(transformOrigin);
-                        var brushTransform = (-offset) * radialGradient.Transform.Value * (offset);
-                        transform = transform.HasValue ? transform * brushTransform : brushTransform;
-                    }
-                    
-                    if (originPoint.Equals(centerPoint))
-                    {
-                        // when the origin is the same as the center the Skia RadialGradient acts the same as D2D
-                        using (var shader =
-                               transform.HasValue
-                                   ? SKShader.CreateRadialGradient(center, (float)radiusX, stopColors, stopOffsets, tileMode,
-                                       transform.Value.ToSKMatrix())
-                                   : SKShader.CreateRadialGradient(center, (float)radiusX, stopColors, stopOffsets, tileMode)
-                              )
-                        {
-                            paintWrapper.Paint.Shader = shader;
-                        }
-                    }
-                    else
-                    {
-                        // when the origin is different to the center use a two point ConicalGradient to match the behaviour of D2D
+                        var radiusX = (radialGradient.RadiusX.ToValue(targetRect.Width));
+                        var radiusY = (radialGradient.RadiusY.ToValue(targetRect.Height));
+
+                        var originPoint = radialGradient.GradientOrigin.ToPixels(targetRect);
+
+                        Matrix? transform = null;
 
                         if (radiusX != radiusY)
-                            // Adjust the origin point for radiusX/Y transformation by reversing it
-                            originPoint = originPoint.WithY(
-                                (originPoint.Y - centerPoint.Y) * radiusX / radiusY + centerPoint.Y);
-                        
-                        var origin = originPoint.ToSKPoint();
-                        
-                        // reverse the order of the stops to match D2D
-                        var reversedColors = new SKColor[stopColors.Length];
-                        Array.Copy(stopColors, reversedColors, stopColors.Length);
-                        Array.Reverse(reversedColors);
+                            transform =
+                                Matrix.CreateTranslation(-centerPoint)
+                                * Matrix.CreateScale(1, radiusY / radiusX)
+                                * Matrix.CreateTranslation(centerPoint);
 
-                        // and then reverse the reference point of the stops
-                        var reversedStops = new float[stopOffsets.Length];
-                        for (var i = 0; i < stopOffsets.Length; i++)
+
+                        if (radialGradient.Transform != null)
                         {
-                            reversedStops[i] = stopOffsets[i];
-                            if (reversedStops[i] > 0 && reversedStops[i] < 1)
+                            var transformOrigin = radialGradient.TransformOrigin.ToPixels(targetRect);
+                            var offset = Matrix.CreateTranslation(transformOrigin);
+                            var brushTransform = (-offset) * radialGradient.Transform.Value * (offset);
+                            transform = transform.HasValue ? transform * brushTransform : brushTransform;
+                        }
+
+                        if (originPoint.Equals(centerPoint))
+                        {
+                            // when the origin is the same as the center the Skia RadialGradient acts the same as D2D
+                            using (var shader =
+                                   transform.HasValue
+                                       ? SKShader.CreateRadialGradient(center, (float)radiusX, stopColors, stopOffsets, tileMode,
+                                           transform.Value.ToSKMatrix())
+                                       : SKShader.CreateRadialGradient(center, (float)radiusX, stopColors, stopOffsets, tileMode)
+                                  )
                             {
-                                reversedStops[i] = Math.Abs(1 - stopOffsets[i]);
+                                paintWrapper.Paint.Shader = shader;
                             }
                         }
-                            
-                        // compose with a background colour of the final stop to match D2D's behaviour of filling with the final color
-                        using (var shader = SKShader.CreateCompose(
-                                   SKShader.CreateColor(reversedColors[0]),
-                                   transform.HasValue
-                                       ? SKShader.CreateTwoPointConicalGradient(center, (float)radiusX, origin, 0,
-                                           reversedColors, reversedStops, tileMode, transform.Value.ToSKMatrix())
-                                       : SKShader.CreateTwoPointConicalGradient(center, (float)radiusX, origin, 0,
-                                           reversedColors, reversedStops, tileMode)
-
-                               )
-                              )
+                        else
                         {
-                            paintWrapper.Paint.Shader = shader;
-                        }
-                    }
+                            // when the origin is different to the center use a two point ConicalGradient to match the behaviour of D2D
 
-                    break;
-                }
+                            if (radiusX != radiusY)
+                                // Adjust the origin point for radiusX/Y transformation by reversing it
+                                originPoint = originPoint.WithY(
+                                    (originPoint.Y - centerPoint.Y) * radiusX / radiusY + centerPoint.Y);
+
+                            var origin = originPoint.ToSKPoint();
+
+                            //// reverse the order of the stops to match D2D
+                            var reversedColors = new SKColor[stopColors.Length];
+                            Array.Copy(stopColors, reversedColors, stopColors.Length);
+                            Array.Reverse(reversedColors);
+
+                            var end = 0.0;
+
+                            //// and then reverse the reference point of the stops
+                            var reversedStops = new float[stopOffsets.Length];
+                            for (var i = 0; i < stopOffsets.Length; i++)
+                            {
+                                var offset = stopOffsets[i];
+
+                                if (end < offset)
+                                {
+                                    end = offset;
+                                }
+
+                                reversedStops[i] = offset;
+                                if (reversedStops[i] > 0 && reversedStops[i] < 1)
+                                {
+                                    reversedStops[i] = Math.Abs(1 - offset);
+                                }
+                            }
+
+                            var reverse = MathUtilities.AreClose(1, end);
+
+                            if (reverse)
+                            {
+                                // compose with a background colour of the final stop to match D2D's behaviour of filling with the final color
+                                using (var shader = SKShader.CreateCompose(
+                                            SKShader.CreateColor(reversedColors[0]),
+                                            transform.HasValue
+                                                ? SKShader.CreateTwoPointConicalGradient(center, (float)radiusX, origin, 0,
+                                                    reversedColors, reversedStops, tileMode, transform.Value.ToSKMatrix())
+                                                : SKShader.CreateTwoPointConicalGradient(center, (float)radiusX, origin, 0,
+                                                    reversedColors, reversedStops, tileMode)
+
+                                            )
+                                        )
+                                {
+                                    paintWrapper.Paint.Shader = shader;
+                                }
+                            }
+                            else
+                            {
+                                // compose with a background colour of the final stop to match D2D's behaviour of filling with the final color
+                                using (var shader = SKShader.CreateCompose(
+                                           SKShader.CreateColor(stopColors[0]),
+                                           transform.HasValue
+                                               ? SKShader.CreateTwoPointConicalGradient(origin, 0, center, (float)radiusX,
+                                                  stopColors, stopOffsets, tileMode, transform.Value.ToSKMatrix())
+                                               : SKShader.CreateTwoPointConicalGradient(origin, 0, center, (float)radiusX,
+                                                  stopColors, stopOffsets, tileMode)
+
+                                            )
+                                        )
+                                {
+                                    paintWrapper.Paint.Shader = shader;
+                                }
+                            }
+                        }
+
+                        break;
+                    }
                 case IConicGradientBrush conicGradient:
                 {
                     var center = conicGradient.Center.ToPixels(targetRect).ToSKPoint();
