@@ -886,6 +886,71 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             }
         }
 
+        [Fact]
+        public void Should_GetCharacterHitFromDistance_From_Indic_Script()
+        {
+            using (Start())
+            {
+                var text = " [TestCase(\"๊U6-Un2D-001/module\", \"๊U6-Un2D-001\", \"module\", null)]";
+
+                var typeface = new Typeface(FontFamily.Parse("resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests#Inter"));
+                var defaultProperties = new GenericTextRunProperties(typeface);
+                var textSource = new SingleBufferTextSource(text, defaultProperties);
+
+                var formatter = new TextFormatterImpl();
+
+                var textLine =
+                    formatter.FormatLine(textSource, 0, double.PositiveInfinity,
+                        new GenericTextParagraphProperties(defaultProperties));
+
+                Assert.NotNull(textLine);
+
+                var textRuns = textLine.TextRuns;
+
+                var advances = new List<double>();
+                var offset = 0;
+
+                foreach (var run in textRuns)
+                {
+                    if (run is ShapedTextRun shapedTextRun)
+                    {
+                        foreach (var glyphInfo in shapedTextRun.ShapedBuffer)
+                        {
+                            if (glyphInfo.GlyphAdvance == 0)
+                            {
+                                continue;
+                            }
+
+                            if (shapedTextRun.IsReversed)
+                            {
+                                advances.Insert(offset, glyphInfo.GlyphAdvance);
+                            }
+                            else
+                            {
+                                advances.Add(glyphInfo.GlyphAdvance);
+                            }
+                        }
+
+                        offset += shapedTextRun.ShapedBuffer.Length;
+                    }
+                }
+
+                var textPosition = 0;
+                var currentX = 0.0;
+
+                foreach (var advance in advances)
+                {
+                    var characterHit = textLine.GetCharacterHitFromDistance(currentX);
+
+                    currentX += advance;
+
+                    textPosition = characterHit.FirstCharacterIndex + characterHit.TrailingLength;
+                }
+
+                Assert.Equal(text.Length, textPosition + 1);
+            }
+        }
+
         private class MixedTextBufferTextSource : ITextSource
         {
             public TextRun? GetTextRun(int textSourceIndex)
