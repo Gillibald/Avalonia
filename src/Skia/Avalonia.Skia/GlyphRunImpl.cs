@@ -61,7 +61,7 @@ namespace Avalonia.Skia
             var defaultTextOptions = default(TextOptions) with 
             { 
                 TextRenderingMode = TextRenderingMode.SubpixelAntialias, 
-                TextHintingMode = TextHintingMode.Full, 
+                TextHintingMode = TextHintingMode.Strong, 
                 BaselinePixelAlign = true 
             };
 
@@ -143,14 +143,13 @@ namespace Avalonia.Skia
             var hinting = textOptions.TextHintingMode switch
             {
                 TextHintingMode.None => SKFontHinting.None,
-                TextHintingMode.Slight => SKFontHinting.Slight,
-                TextHintingMode.Normal => SKFontHinting.Normal,
-                TextHintingMode.Full => SKFontHinting.Full,
+                TextHintingMode.Light => SKFontHinting.Slight,
+                TextHintingMode.Strong => SKFontHinting.Full,
                 _ => SKFontHinting.Full,
             };
 
             // Force auto-hinting for "Slight" mode (prefer autohinter over bytecode hints), otherwise default.
-            var forceAutoHinting = textOptions.TextHintingMode == TextHintingMode.Slight;
+            var forceAutoHinting = textOptions.TextHintingMode == TextHintingMode.Light;
 
             // Subpixel rendering enabled when edging is not alias.
             var subpixel = edging != SKFontEdging.Alias;

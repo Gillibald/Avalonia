@@ -9,7 +9,7 @@
     public enum TextHintingMode : byte
     {
         /// <summary>
-        /// Hinting mode is not explicitly specified. The system or platform default will be used.
+        /// Hinting mode is not explicitly specified. The default will be used.
         /// </summary>
         Unspecified,
 
@@ -19,18 +19,13 @@
         None,
 
         /// <summary>
-        /// Minimal hinting, preserves glyph shape, adjusts vertical metrics.
+        /// Minimal hinting, preserves glyph shape.
         /// </summary>
-        Slight,
-
-        /// <summary>
-        /// Standard hinting, balances fidelity and readability.
-        /// </summary>
-        Normal,
+        Light,
 
         /// <summary>
         /// Aggressive grid-fitting, maximum crispness at low DPI.
         /// </summary>
-        Full
+        Strong
     }
 }
