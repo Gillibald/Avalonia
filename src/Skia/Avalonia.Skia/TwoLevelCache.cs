@@ -113,7 +113,6 @@ namespace Avalonia.Skia
                 return value;
             }
 
-            // Check again if some secondary entry matches (possible race not expected here)
             for (int i = 0; i < sec.Length; i++)
             {
                 if (_comparer.Equals(sec[i].Key, key))
