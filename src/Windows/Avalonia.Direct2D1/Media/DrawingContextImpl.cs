@@ -732,4 +732,48 @@ namespace Avalonia.Direct2D1.Media
         public object GetFeature(Type t) => null;
 
         private void ApplyRenderOptions(RenderOptions renderOptions)
-        {            _deviceContext.AntialiasMode = renderOptions.EdgeMode != EdgeMode.Aliased ? AntialiasMode.PerPrimitive : AntialiasMode.Aliased;        }        /// <summary>        /// Applies text-related options to the Direct2D device context. Uses values from <paramref name="textOptions"/>        /// when specified; otherwise falls back to <paramref name="renderOptions"/> to choose sensible defaults.        /// </summary>        private void ApplyTextOptions(RenderOptions renderOptions, TextOptions textOptions)        {            // Determine TextAntialiasMode from TextRenderingMode if specified, otherwise fall back to EdgeMode.            var textRenderingMode = textOptions.TextRenderingMode;            TextAntialiasMode desired;            if (textRenderingMode == TextRenderingMode.Unspecified)            {                // Fallback: use EdgeMode to decide default behavior                desired = renderOptions.EdgeMode != EdgeMode.Aliased ? TextAntialiasMode.Default : TextAntialiasMode.Aliased;            }            else            {                switch (textRenderingMode)                {                    case TextRenderingMode.Alias:                        desired = TextAntialiasMode.Aliased;                        break;                    case TextRenderingMode.Antialias:                        desired = TextAntialiasMode.Grayscale;                        break;                    case TextRenderingMode.SubpixelAntialias:                        desired = TextAntialiasMode.Cleartype;                        break;                    default:                        desired = renderOptions.EdgeMode != EdgeMode.Aliased ? TextAntialiasMode.Default : TextAntialiasMode.Aliased;                        break;                }            }            _deviceContext.TextAntialiasMode = desired;            //ToDo: Implement TextHintingMode and BaselinePixelAlign        }     } }
+        {
+            _deviceContext.AntialiasMode = renderOptions.EdgeMode != EdgeMode.Aliased ? AntialiasMode.PerPrimitive : AntialiasMode.Aliased;
+        }
+
+        /// <summary>
+        /// Applies text-related options to the Direct2D device context. Uses values from <paramref name="textOptions"/>
+        /// when specified; otherwise falls back to <paramref name="renderOptions"/> to choose sensible defaults.
+        /// </summary>
+        private void ApplyTextOptions(RenderOptions renderOptions, TextOptions textOptions)
+        {
+            // Determine TextAntialiasMode from TextRenderingMode if specified, otherwise fall back to EdgeMode.
+            var textRenderingMode = textOptions.TextRenderingMode;
+
+            TextAntialiasMode desired;
+
+            if (textRenderingMode == TextRenderingMode.Unspecified)
+            {
+                // Fallback: use EdgeMode to decide default behavior
+                desired = renderOptions.EdgeMode != EdgeMode.Aliased ? TextAntialiasMode.Default : TextAntialiasMode.Aliased;
+            }
+            else
+            {
+                switch (textRenderingMode)
+                {
+                    case TextRenderingMode.Alias:
+                        desired = TextAntialiasMode.Aliased;
+                        break;
+                    case TextRenderingMode.Antialias:
+                        desired = TextAntialiasMode.Grayscale;
+                        break;
+                    case TextRenderingMode.SubpixelAntialias:
+                        desired = TextAntialiasMode.Cleartype;
+                        break;
+                    default:
+                        desired = renderOptions.EdgeMode != EdgeMode.Aliased ? TextAntialiasMode.Default : TextAntialiasMode.Aliased;
+                        break;
+                }
+            }
+
+            _deviceContext.TextAntialiasMode = desired;
+
+            //ToDo: Implement TextHintingMode and BaselinePixelAlign
+        }
+     }
+ }
