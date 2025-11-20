@@ -15,7 +15,7 @@ namespace Avalonia.Skia
         private readonly ushort[] _glyphIndices;
         private readonly SKPoint[] _glyphPositions;
 
-        // Small cache optimized for single-entry read. Uses TextOptions as a key.
+        // A two level cache optimized for single-entry read. Uses TextOptions as a key.
         private readonly TwoLevelCache<TextOptions, SKTextBlob> _textBlobCache =
             new TwoLevelCache<TextOptions, SKTextBlob>(secondarySize: 3, evictionAction: b => b?.Dispose());
 
