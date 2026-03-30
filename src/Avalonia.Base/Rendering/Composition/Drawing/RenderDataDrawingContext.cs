@@ -310,7 +310,10 @@ internal class RenderDataDrawingContext : DrawingContext
     {
         if (recording.IsCompositorBound)
         {
-            Add(new RenderDataRecordingCompositionNode { ServerRenderData = recording.ServerRenderData! });
+            recording.EnsureRegisteredForSerialization();
+            var renderData = recording.RenderData!;
+            renderData.AddRef();
+            Add(new RenderDataRecordingCompositionNode { RenderData = renderData });
         }
         else
         {
@@ -334,10 +337,23 @@ internal class RenderDataDrawingContext : DrawingContext
     
     public CompositionRenderData? GetRenderResults()
     {
+        var rv = GetRenderResultsCore();
+        if (rv != null)
+            _compositor!.RegisterForSerialization(rv);
+        return rv;
+    }
+
+    internal CompositionRenderData? GetRenderResultsWithoutRegistration()
+    {
+        return GetRenderResultsCore();
+    }
+
+    private CompositionRenderData? GetRenderResultsCore()
+    {
         Debug.Assert(_compositor != null);
-        
+
         FlushStack();
-        
+
         // Transfer items to RenderData
         if (_currentItemList is { Count: > 0 })
         {
@@ -349,9 +365,7 @@ internal class RenderDataDrawingContext : DrawingContext
         var rv = _renderData;
         _renderData = null;
         _resourcesHashSet?.Clear();
-        
-        if (rv != null)
-            _compositor.RegisterForSerialization(rv);
+
         return rv;
     }
 
