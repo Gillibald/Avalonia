@@ -36,6 +36,7 @@ namespace Avalonia.Media.TextFormatting
         /// <param name="maxLines">The maximum number of text lines.</param>
         /// <param name="fontFeatures">Optional list of turned on/off features.</param>
         /// <param name="textStyleOverrides">The text style overrides.</param>
+        /// <param name="lineHeightStrategy">The optional line height strategy. When set, takes precedence over <paramref name="lineHeight"/>.</param>
         public TextLayout(
             string? text,
             Typeface typeface,
@@ -52,11 +53,12 @@ namespace Avalonia.Media.TextFormatting
             double letterSpacing = 0,
             int maxLines = 0,
             FontFeatureCollection? fontFeatures = null,
-            IReadOnlyList<ValueSpan<TextRunProperties>>? textStyleOverrides = null)
+            IReadOnlyList<ValueSpan<TextRunProperties>>? textStyleOverrides = null,
+            LineHeightStrategy? lineHeightStrategy = null)
         {
             _paragraphProperties =
                 CreateTextParagraphProperties(typeface, fontSize, foreground, textAlignment, textWrapping,
-                    textDecorations, flowDirection, lineHeight, letterSpacing, fontFeatures);
+                    textDecorations, flowDirection, lineHeight, letterSpacing, fontFeatures, lineHeightStrategy);
 
             _textSource = new FormattedTextSource(text ?? "", _paragraphProperties.DefaultTextRunProperties, textStyleOverrides);
 
@@ -487,16 +489,24 @@ namespace Avalonia.Media.TextFormatting
         /// <param name="lineHeight">The height of each line of text.</param>
         /// <param name="letterSpacing">The letter spacing that is applied to rendered glyphs.</param>
         /// <param name="features">Optional list of turned on/off features.</param>
+        /// <param name="lineHeightStrategy">The optional line height strategy.</param>
         /// <returns></returns>
         internal static TextParagraphProperties CreateTextParagraphProperties(Typeface typeface, double fontSize,
             IBrush? foreground, TextAlignment textAlignment, TextWrapping textWrapping,
             TextDecorationCollection? textDecorations, FlowDirection flowDirection, double lineHeight,
-            double letterSpacing, FontFeatureCollection? features)
+            double letterSpacing, FontFeatureCollection? features, LineHeightStrategy? lineHeightStrategy = null)
         {
             var textRunStyle = new GenericTextRunProperties(typeface, fontSize, textDecorations, foreground, fontFeatures: features);
 
-            return new GenericTextParagraphProperties(flowDirection, textAlignment, true, false,
+            var props = new GenericTextParagraphProperties(flowDirection, textAlignment, true, false,
                 textRunStyle, textWrapping, lineHeight, 0, letterSpacing);
+
+            if (lineHeightStrategy != null)
+            {
+                props.SetLineHeightStrategy(lineHeightStrategy);
+            }
+
+            return props;
         }
 
         private TextLine[] CreateTextLines()

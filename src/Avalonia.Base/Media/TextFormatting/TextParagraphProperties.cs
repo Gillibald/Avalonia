@@ -83,5 +83,14 @@
         /// Gets the amount of letter spacing.
         /// </summary>
         public virtual double LetterSpacing { get; }
+
+        /// <summary>
+        /// Gets the line height strategy used to compute effective line heights.
+        /// </summary>
+        /// <remarks>
+        /// When <c>null</c>, the legacy <see cref="LineHeight"/> and <see cref="LineSpacing"/> behavior is used.
+        /// When set, the strategy takes precedence over <see cref="LineHeight"/>.
+        /// </remarks>
+        public virtual LineHeightStrategy? LineHeightStrategy => null;
     }
 }

@@ -95,6 +95,15 @@ namespace Avalonia.Controls
                 inherits: true);
 
         /// <summary>
+        /// Defines the <see cref="LineHeightStrategy"/> property.
+        /// </summary>
+        public static readonly AttachedProperty<LineHeightStrategy?> LineHeightStrategyProperty =
+            AvaloniaProperty.RegisterAttached<TextBlock, Control, LineHeightStrategy?>(
+                nameof(LineHeightStrategy),
+                defaultValue: null,
+                inherits: true);
+
+        /// <summary>
         /// Defines the <see cref="LetterSpacing"/> property.
         /// </summary>
         public static readonly StyledProperty<double> LetterSpacingProperty =
@@ -284,6 +293,18 @@ namespace Avalonia.Controls
         {
             get => GetValue(LineSpacingProperty);
             set => SetValue(LineSpacingProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets the line height strategy used to compute effective line heights.
+        /// </summary>
+        /// <remarks>
+        /// When set, takes precedence over <see cref="LineHeight"/>.
+        /// </remarks>
+        public LineHeightStrategy? LineHeightStrategy
+        {
+            get => GetValue(LineHeightStrategyProperty);
+            set => SetValue(LineHeightStrategyProperty, value);
         }
 
         /// <summary>
@@ -528,6 +549,35 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
+        /// Reads the attached property from the given element.
+        /// </summary>
+        /// <param name="control">The element to which to read the attached property.</param>
+        public static LineHeightStrategy? GetLineHeightStrategy(Control control)
+        {
+            if (control == null)
+            {
+                throw new ArgumentNullException(nameof(control));
+            }
+
+            return control.GetValue(LineHeightStrategyProperty);
+        }
+
+        /// <summary>
+        /// Writes the attached property LineHeightStrategy to the given element.
+        /// </summary>
+        /// <param name="control">The element to which to write the attached property.</param>
+        /// <param name="strategy">The property value to set.</param>
+        public static void SetLineHeightStrategy(Control control, LineHeightStrategy? strategy)
+        {
+            if (control == null)
+            {
+                throw new ArgumentNullException(nameof(control));
+            }
+
+            control.SetValue(LineHeightStrategyProperty, strategy);
+        }
+
+        /// <summary>
         /// Reads the attached property from the given element
         /// </summary>
         /// <param name="control">The element to which to read the attached property.</param>
@@ -670,6 +720,13 @@ namespace Avalonia.Controls
             {
                 LineSpacing = LineSpacing
             };
+
+            var lineHeightStrategy = LineHeightStrategy;
+
+            if (lineHeightStrategy != null)
+            {
+                paragraphProperties.SetLineHeightStrategy(lineHeightStrategy);
+            }
 
             ITextSource textSource;
 
@@ -849,6 +906,8 @@ namespace Avalonia.Controls
 
                 case nameof(Padding):
                 case nameof(LineHeight):
+                case nameof(LineSpacing):
+                case nameof(LineHeightStrategy):
                 case nameof(LetterSpacing):
                 case nameof(MaxLines):
 

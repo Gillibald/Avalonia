@@ -1368,7 +1368,28 @@ namespace Avalonia.Media.TextFormatting
             var baseline = -ascent + halfLineGap;
             var height = naturalHeight;
 
-            if (!double.IsNaN(lineHeight) && !MathUtilities.IsZero(lineHeight))
+            var lineHeightStrategy = _paragraphProperties.LineHeightStrategy;
+
+            if (lineHeightStrategy != null)
+            {
+                var naturalMetrics = new LineNaturalMetrics
+                {
+                    Ascent = ascent,
+                    Descent = descent,
+                    LineGap = lineGap,
+                    NaturalHeight = naturalHeight,
+                    NaturalBaseline = baseline,
+                    DefaultFontAscent = fontMetrics.Ascent * scale,
+                    DefaultFontDescent = fontMetrics.Descent * scale,
+                    DefaultFontLineGap = fontMetrics.LineGap * scale,
+                    InkExtent = inkBounds.Height
+                };
+
+                var result = lineHeightStrategy.Compute(in naturalMetrics);
+                height = result.Height;
+                baseline = result.Baseline;
+            }
+            else if (!double.IsNaN(lineHeight) && !MathUtilities.IsZero(lineHeight))
             {
                 if (lineHeight <= naturalHeight)
                 {

@@ -9,6 +9,7 @@
         private TextAlignment _textAlignment;
         private TextWrapping _textWrap;
         private double _lineHeight;
+        private LineHeightStrategy? _lineHeightStrategy;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="GenericTextParagraphProperties"/>.
@@ -80,6 +81,7 @@
                 textParagraphProperties.Indent,
                 textParagraphProperties.LetterSpacing)
         {
+            _lineHeightStrategy = textParagraphProperties.LineHeightStrategy;
         }
 
         /// <inheritdoc/>
@@ -121,6 +123,9 @@
         /// <inheritdoc/>
         public override double LetterSpacing { get; }
 
+        /// <inheritdoc/>
+        public override LineHeightStrategy? LineHeightStrategy => _lineHeightStrategy;
+
         /// <summary>
         /// Set text flow direction
         /// </summary>
@@ -153,6 +158,14 @@
         internal void SetTextWrapping(TextWrapping textWrap)
         {
             _textWrap = textWrap;
+        }
+
+        /// <summary>
+        /// Set line height strategy.
+        /// </summary>
+        internal void SetLineHeightStrategy(LineHeightStrategy? lineHeightStrategy)
+        {
+            _lineHeightStrategy = lineHeightStrategy;
         }
     }
 }
