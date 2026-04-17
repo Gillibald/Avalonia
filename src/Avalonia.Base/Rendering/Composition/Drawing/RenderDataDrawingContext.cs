@@ -295,6 +295,13 @@ internal class RenderDataDrawingContext : DrawingContext
     /// <inheritdoc />
     protected override void PopEffectCore() => Pop<RenderDataEffectNode>();
 
+    protected override void PushElementTagCore(object tag) => Push(new RenderDataElementTagNode
+    {
+        Tag = tag
+    });
+
+    protected override void PopElementTagCore() => Pop<RenderDataElementTagNode>();
+
     internal override void DrawBitmap(IRef<IBitmapImpl>? source, double opacity, Rect sourceRect, Rect destRect)
     {
         if (source == null || sourceRect.IsEmpty() || destRect.IsEmpty())

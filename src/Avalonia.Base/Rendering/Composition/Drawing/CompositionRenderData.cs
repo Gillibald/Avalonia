@@ -128,4 +128,10 @@ internal class CompositionRenderData : ICompositorSerializable, IDisposable
 
         return false;
     }
+
+    public void CollectHitTestTags(Point p, List<object> results)
+    {
+        foreach (var item in _items)
+            HitTestTagCollector.Collect(item, p, results);
+    }
 }

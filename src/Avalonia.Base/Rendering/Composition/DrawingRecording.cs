@@ -165,6 +165,26 @@ public sealed class DrawingRecording : IDisposable
         return _items!.HitTest(point);
     }
 
+    /// <summary>
+    /// Returns the <see cref="DrawingContext.PushElementTag"/> values whose subtree
+    /// contains <paramref name="point"/>. Traversal is in document order: nested
+    /// tags precede their containing tag in the result. Sibling tags appear in the
+    /// order they were drawn; consumers that want top-most-first (e.g. SVG
+    /// <c>pointer-events</c> semantics) should reverse the returned enumeration.
+    /// Returns an empty enumerable if no tagged content contains the point, or if
+    /// the recording contains no tags at all.
+    /// </summary>
+    public IEnumerable<object> HitTestElements(Point point)
+    {
+        ThrowIfDisposed();
+        var results = new List<object>();
+        if (_renderData != null)
+            _renderData.CollectHitTestTags(point, results);
+        else
+            _items!.CollectHitTestTags(point, results);
+        return results;
+    }
+
     public void Dispose()
     {
         if (!_disposed)

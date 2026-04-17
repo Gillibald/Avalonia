@@ -119,7 +119,7 @@ internal sealed class PlatformDrawingContext : DrawingContext
             (_transforms ?? throw new ObjectDisposedException(nameof(PlatformDrawingContext))).Pop();
 
     protected override void PopRenderOptionsCore() => _impl.PopRenderOptions();
-    
+
     protected override void PopTextOptionsCore() => _impl.PopTextOptions();
 
     /// <inheritdoc />
@@ -130,6 +130,10 @@ internal sealed class PlatformDrawingContext : DrawingContext
             effectImpl.PopEffect();
         }
     }
+
+    // Element tags are recording-only metadata; no effect on replay.
+    protected override void PushElementTagCore(object tag) { }
+    protected override void PopElementTagCore() { }
 
     protected override void DisposeCore()
     {

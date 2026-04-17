@@ -510,4 +510,165 @@ public class DrawingRecordingTests
             });
         });
     }
+
+    [Fact]
+    public void ElementTag_Untagged_Content_Returns_Empty()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        var tags = recording.HitTestElements(new Point(5, 5));
+        Assert.Empty(tags);
+    }
+
+    [Fact]
+    public void ElementTag_Single_Tag_Returned_When_Content_Hits()
+    {
+        var elem = new object();
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushElementTag(elem))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            }
+        });
+
+        Assert.Equal(new[] { elem }, recording.HitTestElements(new Point(5, 5)));
+    }
+
+    [Fact]
+    public void ElementTag_Miss_Returns_Empty()
+    {
+        var elem = new object();
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushElementTag(elem))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            }
+        });
+
+        Assert.Empty(recording.HitTestElements(new Point(100, 100)));
+    }
+
+    [Fact]
+    public void ElementTag_Nested_Returns_Innermost_First()
+    {
+        var outer = new object();
+        var inner = new object();
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushElementTag(outer))
+            using (ctx.PushElementTag(inner))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            }
+        });
+
+        Assert.Equal(
+            new[] { inner, outer },
+            recording.HitTestElements(new Point(5, 5)));
+    }
+
+    [Fact]
+    public void ElementTag_Siblings_Returned_In_Document_Order()
+    {
+        var a = new object();
+        var b = new object();
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushElementTag(a))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            using (ctx.PushElementTag(b))
+                ctx.DrawRectangle(Brushes.Blue, null, new Rect(5, 5, 10, 10));
+        });
+
+        // Overlap region — both should be returned, A first (document order).
+        Assert.Equal(new[] { a, b }, recording.HitTestElements(new Point(7, 7)));
+    }
+
+    [Fact]
+    public void ElementTag_Respects_PushMatrix()
+    {
+        var elem = new object();
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushTransform(Matrix.CreateTranslation(100, 100)))
+            using (ctx.PushElementTag(elem))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            }
+        });
+
+        // In world coords, the rect is at (100,100)-(110,110).
+        Assert.Equal(new[] { elem }, recording.HitTestElements(new Point(105, 105)));
+        Assert.Empty(recording.HitTestElements(new Point(5, 5)));
+    }
+
+    [Fact]
+    public void ElementTag_Respects_Clip()
+    {
+        var elem = new object();
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushClip(new Rect(0, 0, 5, 5)))
+            using (ctx.PushElementTag(elem))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            }
+        });
+
+        // Point inside rect but outside clip — tag is not active.
+        Assert.Empty(recording.HitTestElements(new Point(7, 7)));
+        Assert.Equal(new[] { elem }, recording.HitTestElements(new Point(2, 2)));
+    }
+
+    [Fact]
+    public void ElementTag_Crosses_Sub_Recording()
+    {
+        var outer = new object();
+        var inner = new object();
+
+        using var sub = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushElementTag(inner))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        using var parent = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushElementTag(outer))
+                ctx.DrawRecording(sub);
+        });
+
+        Assert.Equal(
+            new[] { inner, outer },
+            parent.HitTestElements(new Point(5, 5)));
+    }
+
+    [Fact]
+    public void PushElementTag_Throws_On_Null_Tag()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+        {
+            using var _ = DrawingRecording.Create(ctx =>
+            {
+                using var __ = ctx.PushElementTag(null!);
+            });
+        });
+    }
+
+    [Fact]
+    public void HitTestElements_Throws_On_Disposed()
+    {
+        var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        recording.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(
+            () => recording.HitTestElements(new Point(5, 5)));
+    }
 }
