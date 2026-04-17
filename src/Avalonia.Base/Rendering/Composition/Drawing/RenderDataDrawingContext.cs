@@ -317,7 +317,11 @@ internal class RenderDataDrawingContext : DrawingContext
             recording.EnsureRegisteredForSerialization();
             var renderData = recording.RenderData!;
             AddResource(new CompositionRenderDataResourceRef(renderData));
-            Add(new RenderDataRecordingCompositionNode { Server = renderData.Server });
+            Add(new RenderDataRecordingCompositionNode
+            {
+                Server = renderData.Server,
+                Client = renderData
+            });
         }
         else
         {

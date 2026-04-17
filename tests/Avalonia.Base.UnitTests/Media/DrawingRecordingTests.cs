@@ -267,4 +267,39 @@ public class DrawingRecordingTests
             });
         });
     }
+
+    [Fact]
+    public void Immutable_Parent_Bounds_Include_Nested_Immutable_Child()
+    {
+        using var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 100, 50));
+        });
+
+        using var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child);
+        });
+
+        Assert.Equal(new Rect(10, 10, 100, 50), parent.Bounds);
+        Assert.True(parent.HitTest(new Point(50, 30)));
+    }
+
+    [Fact]
+    public void DrawRecording_Throws_On_Disposed_Immutable_Recording()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        child.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            using var _ = DrawingRecording.Create(ctx =>
+            {
+                ctx.DrawRecording(child);
+            });
+        });
+    }
 }

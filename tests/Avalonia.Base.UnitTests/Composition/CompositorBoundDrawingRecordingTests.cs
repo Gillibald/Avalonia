@@ -300,4 +300,114 @@ public class CompositorBoundDrawingRecordingTests : ScopedTestBase
 
         Assert.NotNull(result);
     }
+
+    [Fact]
+    public void Parent_Bounds_Include_Nested_Compositor_Bound_Child_Before_Commit()
+    {
+        var child = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 100, 50));
+        });
+
+        var parent = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRecording(child);
+        });
+
+        // Parent bounds must reflect the nested child's bounds without waiting
+        // for a compositor commit.
+        Assert.Equal(new Rect(10, 10, 100, 50), parent.Bounds);
+        Assert.True(parent.HitTest(new Point(50, 30)));
+
+        parent.Dispose();
+        child.Dispose();
+    }
+
+    [Fact]
+    public void Parent_Retains_Compositor_Bound_Child_After_External_Dispose()
+    {
+        var child = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 100, 50));
+        });
+
+        var parent = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRecording(child);
+        });
+
+        // External owner disposes the child before the parent commits.
+        child.Dispose();
+
+        // Parent must still report the correct bounds and hit-test through
+        // its retained refcount on the child's render data.
+        Assert.Equal(new Rect(10, 10, 100, 50), parent.Bounds);
+        Assert.True(parent.HitTest(new Point(50, 30)));
+
+        parent.Dispose();
+    }
+
+    [Fact]
+    public void Compositor_Bound_Child_Shared_Across_Multiple_Parents()
+    {
+        var child = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        var parent1 = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRecording(child);
+        });
+        var parent2 = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRecording(child);
+        });
+
+        // Dispose child and one parent.
+        child.Dispose();
+        parent1.Dispose();
+
+        // Remaining parent still has a live reference.
+        Assert.Equal(new Rect(0, 0, 10, 10), parent2.Bounds);
+        Assert.True(parent2.HitTest(new Point(5, 5)));
+
+        parent2.Dispose();
+    }
+
+    [Fact]
+    public void DrawRecording_Throws_On_Disposed_Recording()
+    {
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        recording.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            using var _ = DrawingRecording.Create(_services.Compositor, ctx =>
+            {
+                ctx.DrawRecording(recording);
+            });
+        });
+    }
+
+    [Fact]
+    public void DrawRecording_With_Matrix_Throws_On_Disposed_Recording()
+    {
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        recording.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            using var _ = DrawingRecording.Create(_services.Compositor, ctx =>
+            {
+                ctx.DrawRecording(recording, Matrix.CreateTranslation(5, 5));
+            });
+        });
+    }
 }

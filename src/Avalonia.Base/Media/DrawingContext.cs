@@ -70,25 +70,36 @@ namespace Avalonia.Media
         internal abstract void DrawBitmap(IRef<IBitmapImpl> source, double opacity, Rect sourceRect, Rect destRect);
 
         /// <summary>
-        /// Draws a previously recorded drawing.
+        /// Draws a previously recorded drawing. The enclosing recording (when
+        /// <paramref name="recording"/> is drawn into another <see cref="DrawingRecording"/>)
+        /// retains a reference to the child for its own lifetime, so the child may be
+        /// disposed independently by its owner.
         /// </summary>
         /// <param name="recording">The drawing recording to replay.</param>
         public void DrawRecording(DrawingRecording recording)
         {
             _ = recording ?? throw new ArgumentNullException(nameof(recording));
+            if (recording.IsDisposed)
+                throw new ObjectDisposedException(
+                    nameof(DrawingRecording),
+                    "Cannot draw a disposed DrawingRecording.");
             DrawRecordingCore(recording);
         }
 
         /// <summary>
         /// Draws a previously recorded drawing under an additional transform.
         /// Equivalent to pushing the transform, drawing the recording, then
-        /// popping the transform, but recorded as a more efficient sequence.
+        /// popping the transform.
         /// </summary>
         /// <param name="recording">The drawing recording to replay.</param>
         /// <param name="transform">The transform to apply around the draw call.</param>
         public void DrawRecording(DrawingRecording recording, Matrix transform)
         {
             _ = recording ?? throw new ArgumentNullException(nameof(recording));
+            if (recording.IsDisposed)
+                throw new ObjectDisposedException(
+                    nameof(DrawingRecording),
+                    "Cannot draw a disposed DrawingRecording.");
             if (transform.IsIdentity)
             {
                 DrawRecordingCore(recording);
