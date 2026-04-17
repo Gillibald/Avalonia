@@ -183,4 +183,88 @@ public class DrawingRecordingTests
         Assert.True(bounds.Height >= 50);
         recording.Dispose();
     }
+
+    [Fact]
+    public void DrawRecording_With_Matrix_Translates_Bounds()
+    {
+        using var inner = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        using var outer = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(inner, Matrix.CreateTranslation(100, 100));
+        });
+
+        Assert.Equal(new Rect(100, 100, 10, 10), outer.Bounds);
+    }
+
+    [Fact]
+    public void DrawRecording_With_Matrix_Scales_Bounds()
+    {
+        using var inner = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        using var outer = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(inner, Matrix.CreateScale(3, 2));
+        });
+
+        Assert.Equal(new Rect(0, 0, 30, 20), outer.Bounds);
+    }
+
+    [Fact]
+    public void DrawRecording_With_Identity_Matrix_Matches_Unmatrixed()
+    {
+        using var inner = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 20, 30, 40));
+        });
+
+        using var withMatrix = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(inner, Matrix.Identity);
+        });
+
+        using var withoutMatrix = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(inner);
+        });
+
+        Assert.Equal(withoutMatrix.Bounds, withMatrix.Bounds);
+    }
+
+    [Fact]
+    public void DrawRecording_With_Matrix_HitTest_Uses_Transformed_Bounds()
+    {
+        using var inner = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        using var outer = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(inner, Matrix.CreateTranslation(100, 100));
+        });
+
+        Assert.True(outer.HitTest(new Point(105, 105)));
+        Assert.False(outer.HitTest(new Point(5, 5)));
+    }
+
+    [Fact]
+    public void DrawRecording_With_Matrix_Throws_OnNull()
+    {
+        using var outer = DrawingRecording.Create(_ => { });
+
+        Assert.Throws<ArgumentNullException>(() =>
+        {
+            using var _ = DrawingRecording.Create(ctx =>
+            {
+                ctx.DrawRecording(null!, Matrix.CreateTranslation(10, 10));
+            });
+        });
+    }
 }

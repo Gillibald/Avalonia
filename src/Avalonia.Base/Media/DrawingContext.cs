@@ -80,6 +80,26 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Draws a previously recorded drawing under an additional transform.
+        /// Equivalent to pushing the transform, drawing the recording, then
+        /// popping the transform, but recorded as a more efficient sequence.
+        /// </summary>
+        /// <param name="recording">The drawing recording to replay.</param>
+        /// <param name="transform">The transform to apply around the draw call.</param>
+        public void DrawRecording(DrawingRecording recording, Matrix transform)
+        {
+            _ = recording ?? throw new ArgumentNullException(nameof(recording));
+            if (transform.IsIdentity)
+            {
+                DrawRecordingCore(recording);
+                return;
+            }
+
+            using (PushTransform(transform))
+                DrawRecordingCore(recording);
+        }
+
+        /// <summary>
         /// When overridden in a derived class, draws a previously recorded drawing.
         /// </summary>
         internal abstract void DrawRecordingCore(DrawingRecording recording);
