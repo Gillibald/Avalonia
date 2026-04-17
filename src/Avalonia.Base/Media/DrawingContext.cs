@@ -486,7 +486,7 @@ namespace Avalonia.Media
         protected abstract void PushOpacityCore(double opacity);
 
         /// <summary>
-        /// Pushes an opacity mask.
+        /// Pushes an alpha opacity mask.
         /// </summary>
         /// <param name="mask">The opacity mask.</param>
         /// <param name="bounds">
@@ -494,13 +494,46 @@ namespace Avalonia.Media
         /// </param>
         /// <returns>A disposable to undo the opacity mask.</returns>
         public PushedState PushOpacityMask(IBrush mask, Rect bounds)
+            => PushOpacityMask(mask, bounds, MaskType.Alpha);
+
+        /// <summary>
+        /// Pushes an opacity mask whose coverage is derived from
+        /// <paramref name="maskType"/>.
+        /// </summary>
+        /// <param name="mask">The opacity mask.</param>
+        /// <param name="bounds">The size of the brush's target area.</param>
+        /// <param name="maskType">Whether the mask's alpha or luminance drives coverage.</param>
+        /// <returns>A disposable to undo the opacity mask.</returns>
+        /// <remarks>
+        /// Backends that do not advertise <c>IDrawingContextImplWithLuminanceMask</c>
+        /// fall back to alpha mode when <paramref name="maskType"/> is
+        /// <see cref="MaskType.Luminance"/>, emitting a one-shot warning.
+        /// </remarks>
+        public PushedState PushOpacityMask(IBrush mask, Rect bounds, MaskType maskType)
         {
-            PushOpacityMaskCore(mask, bounds);
+            PushOpacityMaskCore(mask, bounds, maskType);
             _states ??= StateStackPool.Get();
             _states.Push(new RestoreState(this, RestoreState.PushedStateType.OpacityMask));
             return new PushedState(this);
         }
+
+        /// <summary>
+        /// Legacy alpha-only core. Implementations should override
+        /// <see cref="PushOpacityMaskCore(IBrush, Rect, MaskType)"/> instead; the
+        /// three-parameter override forwards here when mask type is
+        /// <see cref="MaskType.Alpha"/>.
+        /// </summary>
         protected abstract void PushOpacityMaskCore(IBrush mask, Rect bounds);
+
+        /// <summary>
+        /// When overridden, pushes an opacity mask with the given mask type. The
+        /// base implementation ignores <paramref name="maskType"/> and delegates
+        /// to <see cref="PushOpacityMaskCore(IBrush, Rect)"/>, which keeps derived
+        /// contexts that do not care about luminance (e.g. immediate replay)
+        /// behaving exactly as before.
+        /// </summary>
+        protected virtual void PushOpacityMaskCore(IBrush mask, Rect bounds, MaskType maskType)
+            => PushOpacityMaskCore(mask, bounds);
 
         /// <summary>
         /// Pushes a matrix transformation.

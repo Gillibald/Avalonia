@@ -219,6 +219,18 @@ namespace Avalonia.Platform
         void PopEffect();
     }
 
+    /// <summary>
+    /// Optional capability for drawing contexts that support luminance-keyed
+    /// opacity masks. Backends that do not implement this interface receive
+    /// only alpha masks via <see cref="IDrawingContextImpl.PushOpacityMask"/>;
+    /// callers that target this interface must decide on a fallback.
+    /// </summary>
+    [PrivateApi]
+    public interface IDrawingContextImplWithLuminanceMask : IDrawingContextImpl
+    {
+        void PushOpacityMask(IBrush mask, Rect bounds, MaskType maskType);
+    }
+
     public static class DrawingContextImplExtensions
     {
         /// <summary>

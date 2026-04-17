@@ -82,8 +82,31 @@ internal sealed class PlatformDrawingContext : DrawingContext
     protected override void PushOpacityCore(double opacity) => 
         _impl.PushOpacity(opacity, null);
 
+    private static bool s_warnedAboutLuminanceFallback;
+
     protected override void PushOpacityMaskCore(IBrush mask, Rect bounds) =>
         _impl.PushOpacityMask(mask, bounds);
+
+    protected override void PushOpacityMaskCore(IBrush mask, Rect bounds, MaskType maskType)
+    {
+        if (maskType == MaskType.Luminance
+            && _impl is IDrawingContextImplWithLuminanceMask probe)
+        {
+            probe.PushOpacityMask(mask, bounds, maskType);
+            return;
+        }
+
+        if (maskType == MaskType.Luminance && !s_warnedAboutLuminanceFallback)
+        {
+            s_warnedAboutLuminanceFallback = true;
+            Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
+                this,
+                "Backend does not implement IDrawingContextImplWithLuminanceMask; " +
+                "falling back to alpha mask. Luminance mode will render incorrectly.");
+        }
+
+        _impl.PushOpacityMask(mask, bounds);
+    }
 
     protected override void PushTransformCore(Matrix matrix)
     {

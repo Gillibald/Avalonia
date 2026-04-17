@@ -671,4 +671,61 @@ public class DrawingRecordingTests
         Assert.Throws<ObjectDisposedException>(
             () => recording.HitTestElements(new Point(5, 5)));
     }
+
+    [Fact]
+    public void PushOpacityMask_Default_Behaves_As_Alpha()
+    {
+        // The alpha overload forwards to the MaskType overload with
+        // MaskType.Alpha — bounds and hit behavior must be unchanged.
+        var mask = new ImmutableSolidColorBrush(Colors.White);
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100)))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushOpacityMask_Luminance_Preserves_Bounds()
+    {
+        var mask = new ImmutableSolidColorBrush(Colors.White);
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100), MaskType.Luminance))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        // Mask type is purely compositional — geometric bounds are unaffected.
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushOpacityMask_Luminance_Hits_Unchanged_By_Type()
+    {
+        var mask = new ImmutableSolidColorBrush(Colors.White);
+
+        using var alphaRec = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100), MaskType.Alpha))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+        using var lumaRec = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100), MaskType.Luminance))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(alphaRec.Bounds, lumaRec.Bounds);
+        Assert.Equal(alphaRec.HitTest(new Point(20, 20)), lumaRec.HitTest(new Point(20, 20)));
+    }
 }

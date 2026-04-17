@@ -236,8 +236,11 @@ internal class RenderDataDrawingContext : DrawingRecordingContext
     }
 
     protected override void PushOpacityMaskCore(IBrush? mask, Rect bounds)
+        => PushOpacityMaskCore(mask, bounds, MaskType.Alpha);
+
+    protected override void PushOpacityMaskCore(IBrush? mask, Rect bounds, MaskType maskType)
     {
-        if(mask == null)
+        if (mask == null)
             Push();
         else
         {
@@ -245,7 +248,8 @@ internal class RenderDataDrawingContext : DrawingRecordingContext
             Push(new RenderDataOpacityMaskNode
             {
                 ServerBrush = mask.GetServer(_compositor),
-                BoundsRect = bounds
+                BoundsRect = bounds,
+                MaskType = maskType
             });
         }
     }
