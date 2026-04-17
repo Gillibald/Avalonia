@@ -19,6 +19,9 @@ public sealed class DrawingRecording : IDisposable
     private readonly IReadOnlyList<DrawingRecording>? _ownedChildren;
     private bool _registeredForSerialization;
     private bool _disposed;
+    private EventHandler<Rect>? _boundsChanged;
+    private bool _subscribedToAfterCommit;
+    private Rect _lastObservedBounds;
 
     internal DrawingRecording(RenderItemList items, IReadOnlyList<DrawingRecording>? ownedChildren = null)
     {
@@ -185,11 +188,69 @@ public sealed class DrawingRecording : IDisposable
         return results;
     }
 
+    /// <summary>
+    /// Raised on the UI thread after a compositor commit when <see cref="Bounds"/>
+    /// has changed since the previous commit (or since the first subscription).
+    /// Supported on compositor-bound recordings only; immutable recordings never
+    /// change bounds and subscribing throws.
+    ///
+    /// Fires at most once per commit. The event handler receives the new bounds.
+    /// </summary>
+    public event EventHandler<Rect> BoundsChanged
+    {
+        add
+        {
+            ThrowIfDisposed();
+            if (Compositor == null)
+                throw new InvalidOperationException(
+                    "BoundsChanged is only supported on compositor-bound DrawingRecordings.");
+            _boundsChanged += value;
+            EnsureSubscribedToAfterCommit();
+        }
+        remove
+        {
+            _boundsChanged -= value;
+            if (_boundsChanged == null)
+                UnsubscribeFromAfterCommit();
+        }
+    }
+
+    private void EnsureSubscribedToAfterCommit()
+    {
+        if (_subscribedToAfterCommit || Compositor == null)
+            return;
+        _lastObservedBounds = Bounds;
+        Compositor.AfterCommit += OnCompositorAfterCommit;
+        _subscribedToAfterCommit = true;
+    }
+
+    private void UnsubscribeFromAfterCommit()
+    {
+        if (!_subscribedToAfterCommit || Compositor == null)
+            return;
+        Compositor.AfterCommit -= OnCompositorAfterCommit;
+        _subscribedToAfterCommit = false;
+    }
+
+    private void OnCompositorAfterCommit()
+    {
+        if (_disposed)
+            return;
+        var current = Bounds;
+        if (current != _lastObservedBounds)
+        {
+            _lastObservedBounds = current;
+            _boundsChanged?.Invoke(this, current);
+        }
+    }
+
     public void Dispose()
     {
         if (!_disposed)
         {
             _disposed = true;
+            UnsubscribeFromAfterCommit();
+            _boundsChanged = null;
             _renderData?.Dispose();
             if (_ownedChildren != null)
             {

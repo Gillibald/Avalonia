@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
@@ -424,5 +425,119 @@ public class CompositorBoundDrawingRecordingTests : ScopedTestBase
             recording.GetBounds(Matrix.CreateTranslation(100, 200)));
 
         recording.Dispose();
+    }
+
+    [Fact]
+    public void BoundsChanged_Throws_On_Immutable_Recording()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            recording.BoundsChanged += (_, _) => { };
+        });
+    }
+
+    [Fact]
+    public void BoundsChanged_Throws_On_Disposed_Recording()
+    {
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        recording.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            recording.BoundsChanged += (_, _) => { };
+        });
+    }
+
+    [Fact]
+    public void BoundsChanged_Does_Not_Fire_When_Bounds_Stable()
+    {
+        using var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        int fired = 0;
+        recording.BoundsChanged += (_, _) => fired++;
+
+        ForceCommitAndRender();
+        ForceCommitAndRender();
+
+        Assert.Equal(0, fired);
+    }
+
+    [Fact]
+    public void BoundsChanged_Fires_When_Pen_Thickness_Animated()
+    {
+        var pen = new Pen(Brushes.Black, 2);
+        using var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(null, pen, new Rect(10, 10, 100, 50));
+        });
+
+        var fired = new List<Rect>();
+        recording.BoundsChanged += (_, bounds) => fired.Add(bounds);
+
+        // Commit once with no changes — event should not fire.
+        ForceCommitAndRender();
+        Assert.Empty(fired);
+
+        // Mutate the pen: thickness 2 → 20; bounds inflate by (20-2)/2 = 9 on each side.
+        pen.Thickness = 20;
+        ForceCommitAndRender();
+
+        Assert.Single(fired);
+    }
+
+    [Fact]
+    public void BoundsChanged_Unsubscribe_Stops_Notifications()
+    {
+        var pen = new Pen(Brushes.Black, 2);
+        using var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(null, pen, new Rect(10, 10, 100, 50));
+        });
+
+        int fired = 0;
+        EventHandler<Rect> handler = (_, _) => fired++;
+        recording.BoundsChanged += handler;
+
+        pen.Thickness = 20;
+        ForceCommitAndRender();
+        Assert.Equal(1, fired);
+
+        recording.BoundsChanged -= handler;
+
+        pen.Thickness = 30;
+        ForceCommitAndRender();
+        Assert.Equal(1, fired);
+    }
+
+    [Fact]
+    public void BoundsChanged_Dispose_Cleans_Up_Subscription()
+    {
+        var pen = new Pen(Brushes.Black, 2);
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(null, pen, new Rect(10, 10, 100, 50));
+        });
+
+        int fired = 0;
+        recording.BoundsChanged += (_, _) => fired++;
+
+        recording.Dispose();
+
+        // Mutation + commit after dispose must not invoke the handler.
+        pen.Thickness = 30;
+        ForceCommitAndRender();
+
+        Assert.Equal(0, fired);
     }
 }
