@@ -390,7 +390,7 @@ namespace Avalonia.Media
                 RenderOptions,
                 TextOptions,
                 Effect,
-                ElementTag
+                ElementTag // used by DrawingRecordingContext; dispatched there
             }
 
             public RestoreState(DrawingContext context, PushedStateType type)
@@ -422,7 +422,7 @@ namespace Avalonia.Media
                 else if (_type == PushedStateType.Effect)
                     _context.PopEffectCore();
                 else if (_type == PushedStateType.ElementTag)
-                    _context.PopElementTagCore();
+                    ((DrawingRecordingContext)_context).PopElementTagCore();
             }
         }
 
@@ -563,24 +563,16 @@ namespace Avalonia.Media
         protected abstract void PushTextOptionsCore(TextOptions textOptions);
 
         /// <summary>
-        /// Associates an opaque <paramref name="tag"/> with the subsequent draw operations
-        /// up to the matching <see cref="PushedState"/> disposal. Tags are preserved in
-        /// recordings built via <see cref="Rendering.Composition.DrawingRecording"/> and
-        /// surfaced by <see cref="Rendering.Composition.DrawingRecording.HitTestElements(Point)"/>.
-        /// They do not affect the rendered output.
+        /// Registers an element-tag entry on the restore stack so that disposing
+        /// the returned <see cref="PushedState"/> pops the matching tag.
+        /// Only invoked by <see cref="DrawingRecordingContext.PushElementTag"/>.
         /// </summary>
-        /// <param name="tag">An opaque identity value; typically the originating element.</param>
-        /// <returns>A disposable used to pop the tag.</returns>
-        public PushedState PushElementTag(object tag)
+        private protected PushedState PushElementTagRestoreState()
         {
-            _ = tag ?? throw new ArgumentNullException(nameof(tag));
-            PushElementTagCore(tag);
             _states ??= StateStackPool.Get();
             _states.Push(new RestoreState(this, RestoreState.PushedStateType.ElementTag));
             return new PushedState(this);
         }
-
-        protected abstract void PushElementTagCore(object tag);
 
         protected abstract void PushTransformCore(Matrix matrix);
 
@@ -603,8 +595,6 @@ namespace Avalonia.Media
         /// Pops an effect.
         /// </summary>
         protected abstract void PopEffectCore();
-
-        protected abstract void PopElementTagCore();
 
         private static bool PenIsVisible(IPen? pen)
         {

@@ -13,7 +13,7 @@ using Avalonia.Utilities;
 
 namespace Avalonia.Rendering.Composition.Drawing;
 
-internal class RenderDataDrawingContext : DrawingContext
+internal class RenderDataDrawingContext : DrawingRecordingContext
 {
     private readonly Compositor? _compositor;
     private CompositionRenderData? _renderData;
@@ -300,7 +300,7 @@ internal class RenderDataDrawingContext : DrawingContext
         Tag = tag
     });
 
-    protected override void PopElementTagCore() => Pop<RenderDataElementTagNode>();
+    protected internal override void PopElementTagCore() => Pop<RenderDataElementTagNode>();
 
     internal override void DrawBitmap(IRef<IBitmapImpl>? source, double opacity, Rect sourceRect, Rect destRect)
     {

@@ -402,10 +402,6 @@ namespace Avalonia.Media
             /// <inheritdoc />
             protected override void PopEffectCore() => Pop();
 
-            // Element tags are recording-only metadata; DrawingGroup does not preserve them.
-            protected override void PushElementTagCore(object tag) { }
-            protected override void PopElementTagCore() { }
-
             /// <summary>
             /// Creates a new DrawingGroup for a Push* call by setting the
             /// _currentDrawingGroup to a newly instantiated DrawingGroup,

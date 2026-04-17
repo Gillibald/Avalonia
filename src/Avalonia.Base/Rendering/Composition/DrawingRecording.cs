@@ -8,9 +8,10 @@ namespace Avalonia.Rendering.Composition;
 
 /// <summary>
 /// An immutable recorded draw list that can be replayed with minimal overhead.
-/// Created via <see cref="DrawingRecording.Create(System.Action{DrawingContext})"/> for immutable resources
-/// or <see cref="DrawingRecording.Create(Compositor, System.Action{DrawingContext})"/> for compositor-bound
-/// resources that support animations and change tracking.
+/// Created via <see cref="DrawingRecording.Create(System.Action{DrawingRecordingContext})"/>
+/// for immutable resources or
+/// <see cref="DrawingRecording.Create(Compositor, System.Action{DrawingRecordingContext})"/>
+/// for compositor-bound resources that support animations and change tracking.
 /// </summary>
 public sealed class DrawingRecording : IDisposable
 {
@@ -41,7 +42,7 @@ public sealed class DrawingRecording : IDisposable
     /// Creates a new <see cref="DrawingRecording"/> with immutable resources.
     /// No compositor is required. Only immutable brushes and pens are supported.
     /// </summary>
-    public static DrawingRecording Create(Action<DrawingContext> record)
+    public static DrawingRecording Create(Action<DrawingRecordingContext> record)
     {
         _ = record ?? throw new ArgumentNullException(nameof(record));
 
@@ -57,7 +58,7 @@ public sealed class DrawingRecording : IDisposable
     /// Creates a new <see cref="DrawingRecording"/> bound to a compositor.
     /// Supports mutable resources (animated brushes, pens) with automatic change tracking.
     /// </summary>
-    public static DrawingRecording Create(Compositor compositor, Action<DrawingContext> record)
+    public static DrawingRecording Create(Compositor compositor, Action<DrawingRecordingContext> record)
     {
         _ = compositor ?? throw new ArgumentNullException(nameof(compositor));
         _ = record ?? throw new ArgumentNullException(nameof(record));
@@ -84,8 +85,8 @@ public sealed class DrawingRecording : IDisposable
 
     /// <summary>
     /// Gets the bounds of the recorded content in the recording's local coordinate space.
-    /// Available synchronously after <see cref="Create(System.Action{DrawingContext})"/> or
-    /// <see cref="Create(Compositor, System.Action{DrawingContext})"/> returns — no compositor
+    /// Available synchronously after <see cref="Create(System.Action{DrawingRecordingContext})"/> or
+    /// <see cref="Create(Compositor, System.Action{DrawingRecordingContext})"/> returns — no compositor
     /// commit is required. Returns a default (empty) <see cref="Rect"/> if the recording
     /// contains no drawn content.
     /// </summary>
@@ -169,10 +170,11 @@ public sealed class DrawingRecording : IDisposable
     }
 
     /// <summary>
-    /// Returns the <see cref="DrawingContext.PushElementTag"/> values whose subtree
-    /// contains <paramref name="point"/>. Traversal is in document order: nested
-    /// tags precede their containing tag in the result. Sibling tags appear in the
-    /// order they were drawn; consumers that want top-most-first (e.g. SVG
+    /// Returns the tag values pushed via
+    /// <see cref="DrawingRecordingContext.PushElementTag"/> whose subtree contains
+    /// <paramref name="point"/>. Traversal is in document order: nested tags precede
+    /// their containing tag in the result. Sibling tags appear in the order they
+    /// were drawn; consumers that want top-most-first (e.g. SVG
     /// <c>pointer-events</c> semantics) should reverse the returned enumeration.
     /// Returns an empty enumerable if no tagged content contains the point, or if
     /// the recording contains no tags at all.

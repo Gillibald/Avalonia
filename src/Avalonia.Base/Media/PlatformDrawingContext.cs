@@ -131,10 +131,6 @@ internal sealed class PlatformDrawingContext : DrawingContext
         }
     }
 
-    // Element tags are recording-only metadata; no effect on replay.
-    protected override void PushElementTagCore(object tag) { }
-    protected override void PopElementTagCore() { }
-
     protected override void DisposeCore()
     {
         if (_ownsImpl)
