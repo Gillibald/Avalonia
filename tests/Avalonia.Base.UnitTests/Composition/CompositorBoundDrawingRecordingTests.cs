@@ -41,17 +41,43 @@ public class CompositorBoundDrawingRecordingTests : ScopedTestBase
     }
 
     [Fact]
-    public void Compositor_Bound_Bounds_Available_After_Commit()
+    public void Compositor_Bound_Bounds_Available_Before_Commit()
     {
         var recording = DrawingRecording.Create(_services.Compositor, ctx =>
         {
             ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 100, 50));
         });
 
-        ForceCommitAndRender();
-
+        // Bounds are computed from the client-side item list and are valid
+        // as soon as the record delegate returns — no compositor commit required.
         var bounds = recording.Bounds;
         Assert.Equal(new Rect(10, 10, 100, 50), bounds);
+        recording.Dispose();
+    }
+
+    [Fact]
+    public void Compositor_Bound_Bounds_Unchanged_By_Commit()
+    {
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 100, 50));
+        });
+
+        var boundsBefore = recording.Bounds;
+        ForceCommitAndRender();
+        var boundsAfter = recording.Bounds;
+
+        Assert.Equal(boundsBefore, boundsAfter);
+        Assert.Equal(new Rect(10, 10, 100, 50), boundsAfter);
+        recording.Dispose();
+    }
+
+    [Fact]
+    public void Compositor_Bound_Empty_Recording_Has_Default_Bounds()
+    {
+        var recording = DrawingRecording.Create(_services.Compositor, _ => { });
+
+        Assert.Equal(default, recording.Bounds);
         recording.Dispose();
     }
 

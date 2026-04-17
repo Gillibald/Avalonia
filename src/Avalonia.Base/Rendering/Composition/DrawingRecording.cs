@@ -73,8 +73,11 @@ public sealed class DrawingRecording : IDisposable
     internal bool IsCompositorBound => _renderData != null;
 
     /// <summary>
-    /// Gets the bounds of the recorded content.
-    /// For compositor-bound recordings, bounds are available after a compositor commit.
+    /// Gets the bounds of the recorded content in the recording's local coordinate space.
+    /// Available synchronously after <see cref="Create(System.Action{DrawingContext})"/> or
+    /// <see cref="Create(Compositor, System.Action{DrawingContext})"/> returns — no compositor
+    /// commit is required. Returns a default (empty) <see cref="Rect"/> if the recording
+    /// contains no drawn content.
     /// </summary>
     public Rect Bounds
     {
