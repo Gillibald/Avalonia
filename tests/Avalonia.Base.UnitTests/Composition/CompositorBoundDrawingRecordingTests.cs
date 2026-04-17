@@ -410,4 +410,19 @@ public class CompositorBoundDrawingRecordingTests : ScopedTestBase
             });
         });
     }
+
+    [Fact]
+    public void Compositor_Bound_GetBounds_With_Matrix_Works_Before_Commit()
+    {
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        Assert.Equal(
+            new Rect(100, 200, 10, 10),
+            recording.GetBounds(Matrix.CreateTranslation(100, 200)));
+
+        recording.Dispose();
+    }
 }

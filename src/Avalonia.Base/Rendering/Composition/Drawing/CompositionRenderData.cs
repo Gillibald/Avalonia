@@ -89,6 +89,21 @@ internal class CompositionRenderData : ICompositorSerializable, IDisposable
         }
     }
 
+    public Rect? GetBounds(Matrix transform)
+    {
+        if (transform.IsIdentity)
+            return Bounds;
+
+        LtrbRect? totalBounds = null;
+        foreach (var item in _items)
+        {
+            if (item.Bounds is { } b)
+                totalBounds = LtrbRect.FullUnion(totalBounds, b.TransformToAABB(transform));
+        }
+
+        return ServerCompositionRenderData.ApplyRenderBoundsRounding(totalBounds)?.ToRect();
+    }
+
     public void Render(IDrawingContextImpl context)
     {
         var ctx = new RenderDataNodeRenderContext(context);

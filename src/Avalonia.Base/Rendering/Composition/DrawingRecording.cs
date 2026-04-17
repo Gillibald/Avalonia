@@ -91,6 +91,23 @@ public sealed class DrawingRecording : IDisposable
     }
 
     /// <summary>
+    /// Gets the bounds of the recorded content after applying <paramref name="transform"/>
+    /// to each drawn item. Produces tighter bounds than <see cref="Bounds"/>.TransformToAABB
+    /// for rotations and skews over recordings containing multiple items, since each item's
+    /// bounds are transformed individually before being unioned. Returns a default (empty)
+    /// <see cref="Rect"/> if the recording contains no drawn content.
+    /// </summary>
+    /// <param name="transform">The outer transform to apply. When identity, equivalent to
+    /// <see cref="Bounds"/>.</param>
+    public Rect GetBounds(Matrix transform)
+    {
+        ThrowIfDisposed();
+        if (_renderData != null)
+            return _renderData.GetBounds(transform) ?? default;
+        return _items!.GetBounds(transform) ?? default;
+    }
+
+    /// <summary>
     /// Whether this recording has been disposed.
     /// </summary>
     public bool IsDisposed => _disposed;

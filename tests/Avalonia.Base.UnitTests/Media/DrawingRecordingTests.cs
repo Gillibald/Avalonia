@@ -302,4 +302,85 @@ public class DrawingRecordingTests
             });
         });
     }
+
+    [Fact]
+    public void GetBounds_Identity_Matches_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 20, 30, 40));
+        });
+
+        Assert.Equal(recording.Bounds, recording.GetBounds(Matrix.Identity));
+    }
+
+    [Fact]
+    public void GetBounds_Translate_Offsets_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        Assert.Equal(
+            new Rect(100, 200, 10, 10),
+            recording.GetBounds(Matrix.CreateTranslation(100, 200)));
+    }
+
+    [Fact]
+    public void GetBounds_Scale_Scales_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 20, 30, 40));
+        });
+
+        Assert.Equal(
+            new Rect(20, 60, 60, 120),
+            recording.GetBounds(Matrix.CreateScale(2, 3)));
+    }
+
+    [Fact]
+    public void GetBounds_Rotate_Gives_Tight_Union_Of_Per_Item_Aabb()
+    {
+        // Two small shapes at opposite corners. Under 45° rotation about origin,
+        // the per-item-AABB union is tighter than the AABB of the unrotated union.
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(-1, -1, 2, 2));
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(99, 99, 2, 2));
+        });
+
+        var tight = recording.GetBounds(Matrix.CreateRotation(Math.PI / 4));
+        var loose = recording.Bounds.TransformToAABB(Matrix.CreateRotation(Math.PI / 4));
+
+        // Tight bounds should fit inside the loose AABB.
+        Assert.True(loose.Contains(tight),
+            $"tight {tight} should be contained in loose {loose}");
+        // And be strictly smaller in area.
+        Assert.True(
+            tight.Width * tight.Height < loose.Width * loose.Height,
+            $"tight area {tight.Width * tight.Height} should be < loose {loose.Width * loose.Height}");
+    }
+
+    [Fact]
+    public void GetBounds_Empty_Recording_Returns_Default()
+    {
+        using var recording = DrawingRecording.Create(_ => { });
+
+        Assert.Equal(default, recording.GetBounds(Matrix.CreateTranslation(100, 100)));
+    }
+
+    [Fact]
+    public void GetBounds_Throws_On_Disposed()
+    {
+        var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        recording.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(
+            () => recording.GetBounds(Matrix.Identity));
+    }
 }
