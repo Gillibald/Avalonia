@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition.Drawing;
 using Avalonia.Rendering.Composition.Server;
@@ -15,18 +16,22 @@ public sealed class DrawingRecording : IDisposable
 {
     private readonly RenderItemList? _items;
     private readonly CompositionRenderData? _renderData;
+    private readonly IReadOnlyList<DrawingRecording>? _ownedChildren;
     private bool _registeredForSerialization;
     private bool _disposed;
 
-    internal DrawingRecording(RenderItemList items)
+    internal DrawingRecording(RenderItemList items, IReadOnlyList<DrawingRecording>? ownedChildren = null)
     {
         _items = items;
+        _ownedChildren = ownedChildren;
     }
 
-    internal DrawingRecording(Compositor compositor, CompositionRenderData renderData)
+    internal DrawingRecording(Compositor compositor, CompositionRenderData renderData,
+        IReadOnlyList<DrawingRecording>? ownedChildren = null)
     {
         Compositor = compositor;
         _renderData = renderData;
+        _ownedChildren = ownedChildren;
     }
 
     /// <summary>
@@ -41,7 +46,8 @@ public sealed class DrawingRecording : IDisposable
         record(context);
 
         var items = context.GetRenderItemList();
-        return new DrawingRecording(items);
+        var owned = context.TakeOwnedRecordings();
+        return new DrawingRecording(items, owned);
     }
 
     /// <summary>
@@ -58,8 +64,9 @@ public sealed class DrawingRecording : IDisposable
 
         var renderData = context.GetRenderResultsWithoutRegistration()
             ?? new CompositionRenderData(compositor);
+        var owned = context.TakeOwnedRecordings();
 
-        return new DrawingRecording(compositor, renderData);
+        return new DrawingRecording(compositor, renderData, owned);
     }
 
     /// <summary>
@@ -164,6 +171,11 @@ public sealed class DrawingRecording : IDisposable
         {
             _disposed = true;
             _renderData?.Dispose();
+            if (_ownedChildren != null)
+            {
+                foreach (var child in _ownedChildren)
+                    child.Dispose();
+            }
         }
     }
 

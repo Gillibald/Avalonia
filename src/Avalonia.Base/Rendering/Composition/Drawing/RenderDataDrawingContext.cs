@@ -18,6 +18,8 @@ internal class RenderDataDrawingContext : DrawingContext
     private readonly Compositor? _compositor;
     private CompositionRenderData? _renderData;
     private HashSet<object>? _resourcesHashSet;
+    private List<DrawingRecording>? _ownedRecordings;
+    private HashSet<DrawingRecording>? _ownedRecordingsDedup;
     private static readonly ThreadSafeObjectPool<HashSet<object>> s_hashSetPool = new();
     private CompositionRenderData RenderData
     {
@@ -306,6 +308,28 @@ internal class RenderDataDrawingContext : DrawingContext
         });
     }
 
+    internal override void RegisterOwnedRecording(DrawingRecording recording)
+    {
+        _ownedRecordingsDedup ??= new();
+        if (!_ownedRecordingsDedup.Add(recording))
+            return;
+        (_ownedRecordings ??= new()).Add(recording);
+    }
+
+    /// <summary>
+    /// Returns (and clears) the list of <see cref="DrawingRecordingOwnership.Owned"/>
+    /// child recordings registered during this context's lifetime, for transfer to
+    /// the resulting <see cref="DrawingRecording"/>.
+    /// </summary>
+    public IReadOnlyList<DrawingRecording>? TakeOwnedRecordings()
+    {
+        var list = _ownedRecordings;
+        _ownedRecordings = null;
+        _ownedRecordingsDedup?.Clear();
+        _ownedRecordingsDedup = null;
+        return list;
+    }
+
     internal override void DrawRecordingCore(DrawingRecording recording)
     {
         if (recording.IsCompositorBound)
@@ -424,6 +448,8 @@ internal class RenderDataDrawingContext : DrawingContext
         _currentItemList?.Clear();
         _parentNodeStack?.Clear();
         _resourcesHashSet?.Clear();
+        _ownedRecordings?.Clear();
+        _ownedRecordingsDedup?.Clear();
     }
     
     protected override void DisposeCore()

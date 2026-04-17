@@ -383,4 +383,131 @@ public class DrawingRecordingTests
         Assert.Throws<ObjectDisposedException>(
             () => recording.GetBounds(Matrix.Identity));
     }
+
+    [Fact]
+    public void Shared_Ownership_Does_Not_Dispose_Child()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, DrawingRecordingOwnership.Shared);
+        });
+
+        parent.Dispose();
+
+        Assert.False(child.IsDisposed);
+        child.Dispose();
+    }
+
+    [Fact]
+    public void Owned_Ownership_Disposes_Child_With_Parent()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, DrawingRecordingOwnership.Owned);
+        });
+
+        Assert.False(child.IsDisposed);
+        parent.Dispose();
+
+        Assert.True(child.IsDisposed);
+    }
+
+    [Fact]
+    public void Owned_Ownership_Disposes_Transitively()
+    {
+        var grandchild = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(grandchild, DrawingRecordingOwnership.Owned);
+        });
+        var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, DrawingRecordingOwnership.Owned);
+        });
+
+        parent.Dispose();
+
+        Assert.True(child.IsDisposed);
+        Assert.True(grandchild.IsDisposed);
+    }
+
+    [Fact]
+    public void Owned_Ownership_Handles_Double_Reference()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, DrawingRecordingOwnership.Owned);
+            // Referenced twice as Owned — dispose must be idempotent (not duplicated).
+            ctx.DrawRecording(child, DrawingRecordingOwnership.Owned);
+        });
+
+        parent.Dispose();
+        Assert.True(child.IsDisposed);
+    }
+
+    [Fact]
+    public void Owned_Ownership_With_Matrix_Overload()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, Matrix.CreateTranslation(50, 50),
+                DrawingRecordingOwnership.Owned);
+        });
+
+        parent.Dispose();
+        Assert.True(child.IsDisposed);
+    }
+
+    [Fact]
+    public void DrawRecording_Ownership_Throws_On_Null()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+        {
+            using var _ = DrawingRecording.Create(ctx =>
+            {
+                ctx.DrawRecording(null!, DrawingRecordingOwnership.Owned);
+            });
+        });
+    }
+
+    [Fact]
+    public void DrawRecording_Ownership_Throws_On_Disposed()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+        child.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() =>
+        {
+            using var _ = DrawingRecording.Create(ctx =>
+            {
+                ctx.DrawRecording(child, DrawingRecordingOwnership.Owned);
+            });
+        });
+    }
 }

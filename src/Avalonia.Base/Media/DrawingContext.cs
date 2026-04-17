@@ -111,6 +111,62 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Draws a previously recorded drawing with an explicit ownership contract.
+        /// </summary>
+        /// <param name="recording">The drawing recording to replay.</param>
+        /// <param name="ownership">Whether the enclosing recording (if any) takes
+        /// responsibility for disposing <paramref name="recording"/>. Honored only when
+        /// this context is building a <see cref="DrawingRecording"/>; replay contexts
+        /// ignore ownership.</param>
+        public void DrawRecording(DrawingRecording recording, DrawingRecordingOwnership ownership)
+        {
+            _ = recording ?? throw new ArgumentNullException(nameof(recording));
+            if (recording.IsDisposed)
+                throw new ObjectDisposedException(
+                    nameof(DrawingRecording),
+                    "Cannot draw a disposed DrawingRecording.");
+            if (ownership == DrawingRecordingOwnership.Owned)
+                RegisterOwnedRecording(recording);
+            DrawRecordingCore(recording);
+        }
+
+        /// <summary>
+        /// Draws a previously recorded drawing under a transform with an explicit
+        /// ownership contract.
+        /// </summary>
+        /// <param name="recording">The drawing recording to replay.</param>
+        /// <param name="transform">The transform to apply around the draw call.</param>
+        /// <param name="ownership">Whether the enclosing recording (if any) takes
+        /// responsibility for disposing <paramref name="recording"/>. Honored only when
+        /// this context is building a <see cref="DrawingRecording"/>; replay contexts
+        /// ignore ownership.</param>
+        public void DrawRecording(DrawingRecording recording, Matrix transform, DrawingRecordingOwnership ownership)
+        {
+            _ = recording ?? throw new ArgumentNullException(nameof(recording));
+            if (recording.IsDisposed)
+                throw new ObjectDisposedException(
+                    nameof(DrawingRecording),
+                    "Cannot draw a disposed DrawingRecording.");
+            if (ownership == DrawingRecordingOwnership.Owned)
+                RegisterOwnedRecording(recording);
+            if (transform.IsIdentity)
+            {
+                DrawRecordingCore(recording);
+                return;
+            }
+
+            using (PushTransform(transform))
+                DrawRecordingCore(recording);
+        }
+
+        /// <summary>
+        /// Overridden by contexts that build a <see cref="DrawingRecording"/> to track
+        /// <see cref="DrawingRecordingOwnership.Owned"/> children so that the resulting
+        /// recording disposes them. Replay contexts leave this as a no-op.
+        /// </summary>
+        internal virtual void RegisterOwnedRecording(DrawingRecording recording) { }
+
+        /// <summary>
         /// When overridden in a derived class, draws a previously recorded drawing.
         /// </summary>
         internal abstract void DrawRecordingCore(DrawingRecording recording);
