@@ -728,4 +728,112 @@ public class DrawingRecordingTests
         Assert.Equal(alphaRec.Bounds, lumaRec.Bounds);
         Assert.Equal(alphaRec.HitTest(new Point(20, 20)), lumaRec.HitTest(new Point(20, 20)));
     }
+
+    [Fact]
+    public void PushLayer_Passthrough_Has_Unchanged_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions()))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushLayer_With_Opacity_Preserves_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Opacity = 0.5 }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_BlendMode_Preserves_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions
+            {
+                BlendMode = Avalonia.Media.Imaging.BitmapBlendingMode.Multiply
+            }))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_Blur_Effect_Inflates_Bounds()
+    {
+        var blur = new ImmutableBlurEffect(5);
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = blur }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        // Blur radius expands bounds on every side.
+        var bounds = recording.Bounds;
+        Assert.True(bounds.Width > 30, $"bounds width {bounds.Width} should exceed 30");
+        Assert.True(bounds.Height > 30, $"bounds height {bounds.Height} should exceed 30");
+        Assert.True(bounds.X < 10, $"bounds X {bounds.X} should be < 10");
+        Assert.True(bounds.Y < 10, $"bounds Y {bounds.Y} should be < 10");
+    }
+
+    [Fact]
+    public void PushLayer_With_DropShadow_Effect_Expands_Bounds()
+    {
+        var drop = new ImmutableDropShadowEffect(10, 10, 0, Colors.Black, 1.0);
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = drop }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 30, 30));
+        });
+
+        // Drop shadow expands bounds to cover the offset shape.
+        var bounds = recording.Bounds;
+        Assert.True(bounds.Right >= 40, $"bounds.Right {bounds.Right} should cover offset shape");
+        Assert.True(bounds.Bottom >= 40, $"bounds.Bottom {bounds.Bottom} should cover offset shape");
+    }
+
+    [Fact]
+    public void PushLayer_Explicit_Bounds_Unions_With_Children()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            // Layer bounds extend beyond child geometry.
+            using (ctx.PushLayer(new LayerOptions { Bounds = new Rect(0, 0, 200, 200) }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        // Expected bounds include the explicit layer region.
+        Assert.Equal(new Rect(0, 0, 200, 200), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_Nested_Balances_Correctly()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Opacity = 0.5 }))
+            using (ctx.PushLayer(new LayerOptions
+            {
+                BlendMode = Avalonia.Media.Imaging.BitmapBlendingMode.Multiply
+            }))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
 }

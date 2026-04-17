@@ -402,6 +402,26 @@ namespace Avalonia.Media
             /// <inheritdoc />
             protected override void PopEffectCore() => Pop();
 
+            protected override void PushLayerCore(LayerOptions options)
+            {
+                // DrawingGroup doesn't preserve layer semantics (blend mode,
+                // effect, layer-opacity) in its graph representation. Degrade
+                // to per-primitive opacity so children at least fade if that's
+                // what the caller wanted; other aspects are dropped.
+                if (options.EffectiveOpacity < 1.0)
+                {
+                    var drawingGroup = PushNewDrawingGroup();
+                    drawingGroup.Opacity = options.EffectiveOpacity;
+                }
+                else
+                {
+                    // Still need a matching Push so Pop balances.
+                    PushNewDrawingGroup();
+                }
+            }
+
+            protected override void PopLayerCore() => Pop();
+
             /// <summary>
             /// Creates a new DrawingGroup for a Push* call by setting the
             /// _currentDrawingGroup to a newly instantiated DrawingGroup,

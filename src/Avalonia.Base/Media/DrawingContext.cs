@@ -390,7 +390,8 @@ namespace Avalonia.Media
                 RenderOptions,
                 TextOptions,
                 Effect,
-                ElementTag // used by DrawingRecordingContext; dispatched there
+                ElementTag, // used by DrawingRecordingContext; dispatched there
+                Layer
             }
 
             public RestoreState(DrawingContext context, PushedStateType type)
@@ -423,6 +424,8 @@ namespace Avalonia.Media
                     _context.PopEffectCore();
                 else if (_type == PushedStateType.ElementTag)
                     ((DrawingRecordingContext)_context).PopElementTagCore();
+                else if (_type == PushedStateType.Layer)
+                    _context.PopLayerCore();
             }
         }
 
@@ -606,6 +609,36 @@ namespace Avalonia.Media
             _states.Push(new RestoreState(this, RestoreState.PushedStateType.ElementTag));
             return new PushedState(this);
         }
+
+        /// <summary>
+        /// Pushes a compositing layer. Subsequent draw operations are rendered
+        /// into an offscreen buffer that is composited back onto the surface
+        /// below when the returned <see cref="PushedState"/> is disposed.
+        /// </summary>
+        /// <param name="options">
+        /// Options controlling how the layer composites: optional explicit
+        /// bounds, group opacity, blend mode, and filter effect.
+        /// </param>
+        /// <remarks>
+        /// Layers differ from <see cref="PushOpacity(double)"/> in that
+        /// overlapping semi-transparent children are first blended inside the
+        /// layer before the whole group is composited — this is what SVG's
+        /// <c>&lt;g opacity&gt;</c>, <c>mix-blend-mode</c>, and
+        /// <c>&lt;filter&gt;</c> require. Backends that do not advertise the
+        /// layer probe interface fall back to the closest approximation
+        /// available, emitting a one-shot warning.
+        /// </remarks>
+        /// <returns>A disposable used to pop the layer.</returns>
+        public PushedState PushLayer(LayerOptions options)
+        {
+            PushLayerCore(options);
+            _states ??= StateStackPool.Get();
+            _states.Push(new RestoreState(this, RestoreState.PushedStateType.Layer));
+            return new PushedState(this);
+        }
+
+        protected abstract void PushLayerCore(LayerOptions options);
+        protected abstract void PopLayerCore();
 
         protected abstract void PushTransformCore(Matrix matrix);
 

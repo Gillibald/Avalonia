@@ -235,6 +235,22 @@ internal class RenderDataDrawingContext : DrawingRecordingContext
             });
     }
 
+    protected override void PushLayerCore(LayerOptions options)
+    {
+        if (options.IsPassthrough)
+        {
+            Push();
+            return;
+        }
+
+        Push(new RenderDataLayerNode
+        {
+            Options = options
+        });
+    }
+
+    protected override void PopLayerCore() => Pop<RenderDataLayerNode>();
+
     protected override void PushOpacityMaskCore(IBrush? mask, Rect bounds)
         => PushOpacityMaskCore(mask, bounds, MaskType.Alpha);
 

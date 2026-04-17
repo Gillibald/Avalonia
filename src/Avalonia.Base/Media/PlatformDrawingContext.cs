@@ -83,6 +83,80 @@ internal sealed class PlatformDrawingContext : DrawingContext
         _impl.PushOpacity(opacity, null);
 
     private static bool s_warnedAboutLuminanceFallback;
+    private static bool s_warnedAboutLayerFallback;
+
+    private Stack<LayerFrame>? _layerFrames;
+
+    private struct LayerFrame
+    {
+        public bool Native;
+        public bool FallbackOpacity;
+        public bool FallbackEffect;
+    }
+
+    protected override void PushLayerCore(LayerOptions options)
+    {
+        _layerFrames ??= new Stack<LayerFrame>();
+
+        if (options.IsPassthrough)
+        {
+            _layerFrames.Push(default);
+            return;
+        }
+
+        if (_impl is IDrawingContextImplWithLayers native)
+        {
+            native.PushLayer(options);
+            _layerFrames.Push(new LayerFrame { Native = true });
+            return;
+        }
+
+        var frame = default(LayerFrame);
+
+        if (options.Effect is { } effect
+            && _impl is IDrawingContextImplWithEffects effects)
+        {
+            effects.PushEffect(options.Bounds, effect);
+            frame.FallbackEffect = true;
+        }
+
+        if (options.EffectiveOpacity < 1.0)
+        {
+            _impl.PushOpacity(options.EffectiveOpacity, options.Bounds);
+            frame.FallbackOpacity = true;
+        }
+
+        if (options.EffectiveBlendMode != BitmapBlendingMode.SourceOver
+            && !s_warnedAboutLayerFallback)
+        {
+            s_warnedAboutLayerFallback = true;
+            Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
+                this,
+                "Backend does not implement IDrawingContextImplWithLayers; " +
+                "layer blend mode '{0}' cannot be honored and will render as SourceOver.",
+                options.EffectiveBlendMode);
+        }
+
+        _layerFrames.Push(frame);
+    }
+
+    protected override void PopLayerCore()
+    {
+        var frame = _layerFrames!.Pop();
+
+        if (frame.Native)
+        {
+            ((IDrawingContextImplWithLayers)_impl).PopLayer();
+            return;
+        }
+
+        // Pop in reverse push order: opacity (innermost) first, then effect.
+        if (frame.FallbackOpacity)
+            _impl.PopOpacity();
+
+        if (frame.FallbackEffect)
+            ((IDrawingContextImplWithEffects)_impl).PopEffect();
+    }
 
     protected override void PushOpacityMaskCore(IBrush mask, Rect bounds) =>
         _impl.PushOpacityMask(mask, bounds);

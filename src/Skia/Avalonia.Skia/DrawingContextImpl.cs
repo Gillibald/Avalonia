@@ -19,7 +19,8 @@ namespace Avalonia.Skia
     internal partial class DrawingContextImpl : IDrawingContextImpl,
         IDrawingContextWithAcrylicLikeSupport,
         IDrawingContextImplWithEffects,
-        IDrawingContextImplWithLuminanceMask
+        IDrawingContextImplWithLuminanceMask,
+        IDrawingContextImplWithLayers
     {
         private IDisposable?[]? _disposables;
         // TODO: Get rid of this value, it's currently used to calculate intermediate sizes for tile brushes
