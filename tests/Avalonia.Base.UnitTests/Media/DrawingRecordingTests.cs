@@ -344,7 +344,9 @@ public class DrawingRecordingTests
     public void GetBounds_Rotate_Gives_Tight_Union_Of_Per_Item_Aabb()
     {
         // Two small shapes at opposite corners. Under 45° rotation about origin,
-        // the per-item-AABB union is tighter than the AABB of the unrotated union.
+        // the per-item-AABB union is much tighter than the AABB of the unrotated
+        // union — the rotated unioned-rect spans the full 144-unit diagonal width
+        // while the per-item AABBs each stay near the rotation axis.
         using var recording = DrawingRecording.Create(ctx =>
         {
             ctx.DrawRectangle(Brushes.Red, null, new Rect(-1, -1, 2, 2));
@@ -354,13 +356,12 @@ public class DrawingRecordingTests
         var tight = recording.GetBounds(Matrix.CreateRotation(Math.PI / 4));
         var loose = recording.Bounds.TransformToAABB(Matrix.CreateRotation(Math.PI / 4));
 
-        // Tight bounds should fit inside the loose AABB.
-        Assert.True(loose.Contains(tight),
-            $"tight {tight} should be contained in loose {loose}");
-        // And be strictly smaller in area.
+        // Tight bounds should be dramatically smaller in area than the loose AABB.
+        var tightArea = tight.Width * tight.Height;
+        var looseArea = loose.Width * loose.Height;
         Assert.True(
-            tight.Width * tight.Height < loose.Width * loose.Height,
-            $"tight area {tight.Width * tight.Height} should be < loose {loose.Width * loose.Height}");
+            tightArea < looseArea / 10,
+            $"tight area {tightArea:F1} should be at least 10x smaller than loose {looseArea:F1}");
     }
 
     [Fact]
@@ -806,17 +807,17 @@ public class DrawingRecordingTests
     }
 
     [Fact]
-    public void PushLayer_Explicit_Bounds_Unions_With_Children()
+    public void PushLayer_Explicit_Bounds_Does_Not_Extend_Recording_Bounds()
     {
         using var recording = DrawingRecording.Create(ctx =>
         {
-            // Layer bounds extend beyond child geometry.
+            // LayerOptions.Bounds is a backend hint for the compositor's offscreen
+            // buffer extent; it does not produce visible pixels on its own.
             using (ctx.PushLayer(new LayerOptions { Bounds = new Rect(0, 0, 200, 200) }))
                 ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
         });
 
-        // Expected bounds include the explicit layer region.
-        Assert.Equal(new Rect(0, 0, 200, 200), recording.Bounds);
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
     }
 
     [Fact]

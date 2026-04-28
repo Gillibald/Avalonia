@@ -25,5 +25,6 @@ class RenderDataGeometryNode : RenderDataBrushAndPenNode
         context.Context.DrawGeometry(ServerBrush, ServerPen, Geometry!);
     }
 
-    public override Rect? Bounds => Geometry?.GetRenderBounds(ServerPen) ?? default;
+    // Prefer ClientPen for bounds when set; see RenderDataRectangleNode for rationale.
+    public override Rect? Bounds => Geometry?.GetRenderBounds(ClientPen ?? ServerPen) ?? default;
 }
