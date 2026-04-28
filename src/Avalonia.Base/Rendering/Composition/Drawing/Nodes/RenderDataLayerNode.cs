@@ -20,14 +20,13 @@ internal class RenderDataLayerNode : RenderDataPushNode
     {
         get
         {
+            // The recording's visible bounds reflect drawn pixels. LayerOptions.Bounds
+            // is a backend hint for the compositor's offscreen buffer extent — it
+            // does not by itself produce visible pixels and must not extend the
+            // recorded bounds. Effect inflation (e.g. blur) does affect visible
+            // pixels and is included.
             var inner = base.Bounds;
-            if (inner == null)
-                return Options.Bounds;
-
-            // Explicit layer bounds (if supplied) contain the effective rendered
-            // area; otherwise the inner children's bounds drive the layer.
-            var effectBounds = InflateForEffect(inner.Value);
-            return Options.Bounds is { } bounds ? bounds.Union(effectBounds) : effectBounds;
+            return inner == null ? null : InflateForEffect(inner.Value);
         }
     }
 
