@@ -20,11 +20,16 @@ branch consumes a finished recording primitive; it does not extend it.
 Two branches, two reviews, in order:
 
 1. **Phase 0 — `feature/drawing-recording`** off `upstream/master`. Brings
-   `DrawingRecording` to feature-complete shape: baseline + every API and
-   behavior change that SVG will depend on (R1–R7, plus the recording-level
-   portions of gaps 4.1/4.2/4.3). Phase 0 is broken into sub-phases that can
-   land as separate commits or stacked PRs on the same branch; review
+   `DrawingRecording` to the shape SVG needs: baseline + bounds/transform/
+   ownership (R1–R5), bounds-change signal (R7), recording brush (G1),
+   luminance masks (G2), and unified layer API for blend modes + group
+   opacity + filter effects (G3). Phase 0 is broken into sub-phases that
+   can land as separate commits or stacked PRs on the same branch; review
    happens once the full recording surface is in place.
+
+   **Note:** R6 (element tags inside the recording) was prototyped and
+   then withdrawn — element identity is an SVG-layer concern handled by
+   the SVG compiler's own scene graph, not by the recording API.
 2. **Phases 1–6 — `feature/svg-rendering`** off the merged Phase 0. Adds
    `Avalonia.Svg` (parser, compiler, control, hit testing, animation
    driver). **No changes to `DrawingRecording`, `DrawingContext`, or the
@@ -77,7 +82,7 @@ Compositor binding:
 | `<g clip-path>` | `PushGeometryClip` |
 | `<g mask>` (alpha) | `PushOpacityMask` |
 | `<g mask>` (luminance) | `PushOpacityMask` + `MaskType.Luminance` (new) |
-| `<g filter>` | `PushEffect(region, effect)` (new on `DrawingContext`) |
+| `<g filter>` | `PushLayer(new { Bounds = region, Effect = effect })` |
 | `<image>` | `DrawImage` |
 | `<text>`, `<tspan>` | `DrawGlyphRun` via `GlyphTypeface` + `FormattedText` |
 | `linearGradient` | `ImmutableLinearGradientBrush` |
@@ -101,21 +106,25 @@ behavior may change freely.
 | R3 | `DrawingRecording.GetBounds(Matrix)` — tight bounds under an outer transform | 0.2 | Non-axis-aligned transforms on a referenced recording need precise bounds, not a transformed AABB. |
 | R4 | `DrawingContext.DrawRecording(DrawingRecording, Matrix)` overload | 0.2 | Common case of "draw this recording at this transform" fuses into one recorded node. |
 | R5 | `DrawingRecordingOwnership { Owned, Shared }` parameter on `DrawRecording` | 0.2 | Makes the lifetime rule for nested recordings explicit rather than inferred from call order. |
-| R6 | Element tags: `DrawingRecordingContext.PushElementTag(object)` preserved in the recording; `DrawingRecording.HitTestElements(Point) : IEnumerable<object>`. Narrow `DrawingRecording.Create` delegate to `Action<DrawingRecordingContext>` so the tag API is unreachable from replay contexts. | 0.3 | Per-element hit testing and targeting animations at sub-ranges by opaque identity. |
+| R6 | ~~Element tags inside the recording~~. **Dropped.** Element identity is an SVG-layer concern; the SVG compiler maintains its own per-element hit-test tree alongside the recording. The recording API stays free of identity tracking. | — | Avoid polluting the composition API with consumer-specific concepts. |
 | R7 | Bounds-invalidation signal on compositor-bound recordings when mutable state changes the visible region | 0.3 | Animated brush `Transform` or pen `Thickness` can grow the drawn area; layout needs a callback. |
 | G1 | `DrawingRecordingBrush : TileBrush` backed by a `DrawingRecording` (SVG gap 4.1) | 0.4 | Tiled content brush whose source is a recording. General-purpose; SVG `<pattern>` is one consumer. |
 | G2 | `MaskType { Alpha, Luminance }` enum, `DrawingContext.PushOpacityMask(IBrush, Rect, MaskType)` overload, recording support, `IDrawingContextImplWithLuminanceMask` probe interface, Skia lowering (SVG gap 4.2) | 0.5 | Luminance masks are a general compositing primitive. |
-| G3 | `DrawingContext.PushEffect(Rect?, IEffect)` + `PushedStateType.Effect` + `RenderDataEffectNode` + bounds inflation; new `IColorMatrixEffect` / `IOffsetEffect` / `ICompositeEffect` (+ immutables) + Skia lowering; `EffectAnimator` registration (SVG gap 4.3) | 0.6 | Effect pipeline generalized beyond the two `Visual.Effect` presets; records through the composition pipeline like any other push. |
+| G3 | `DrawingContext.PushLayer(LayerOptions)` unifying blend modes, group opacity, and filter effects + `PushedStateType.Layer` + `RenderDataLayerNode` + bounds inflation for blur/drop-shadow + `IDrawingContextImplWithLayers` probe + Skia lowering (SVG gaps 4.3 mix-blend / `<g opacity>` / `<filter>`). Existing `IBlurEffect` and `IDropShadowEffect` reused; new `IColorMatrixEffect` / `IOffsetEffect` / `ICompositeEffect` deferred until SVG Phase 5 needs them. | 0.6 | Single layer abstraction covers SVG `mix-blend-mode`, group opacity, and `<filter>` — the three SVG features that all reduce to "save layer, apply paint on restore". |
 
 **Explicitly not in Phase 0:**
 
+- R6 (element tags inside the recording) — withdrawn. Element identity is
+  an SVG-layer concern. The SVG compiler maintains its own per-element
+  scene graph (bounds, transforms, clips, `pointer-events`) alongside the
+  recording, since it already walks the element tree to emit draw calls.
+  The recording API stays minimal and consumer-agnostic.
 - R8 (`Rerecord` on compositor-bound recordings) — SVG's default strategy is
   many small swappable sub-recordings using R5 `Shared` ownership, which is
   sufficient. If benchmarks later demand it, R8 ships as a separate
   `DrawingRecording` follow-up PR — **not** on the SVG branch.
-- Any SVG-specific helpers, marker types, or per-element identity objects.
-  The `object` tags in R6 are opaque; the SVG compiler supplies its own
-  `SvgElement` references as tag values.
+- Any SVG-specific helpers, marker types, or element-identity objects in
+  the recording.
 
 ---
 
@@ -128,7 +137,7 @@ behavior may change freely.
 | — | Baseline DrawingRecording concept | 0.1 | drawing-recording | Yes — baseline |
 | 4.1 | Pattern brush backed by `DrawingRecording` | 0.4 (as G1) | drawing-recording | Yes |
 | 4.2 | Luminance masks | 0.5 (as G2) | drawing-recording | Yes |
-| 4.3 | Filter effects via existing `IEffect` | 0.6 (as G3) | drawing-recording | Yes |
+| 4.3 | Filter effects via `PushLayer` + `IEffect` | 0.6 (API as G3) + Phase 5 (new effect subtypes) | drawing-recording (API) + svg-rendering (compiler) | Partial — API in Phase 0.6, additional `IEffect` subtypes deferred to Phase 5 |
 | 4.10 | Eager bounds for compositor-bound recordings | 0.2 (as R1) | drawing-recording | Yes |
 | 4.11 | Explicit nested recording ownership | 0.2 (as R2, R5) | drawing-recording | Yes |
 | 4.4 | Paint order | 3 | svg-rendering | No (compiler) |
@@ -138,7 +147,7 @@ behavior may change freely.
 | 4.8 | Fill rule round-trip | 1 | svg-rendering | No (verification) |
 | 4.9 | Visibility toggling | 6 | svg-rendering | No (compiler + R5 usage) |
 | 4.12 | Gradient unit systems | 2 | svg-rendering | No (compiler) |
-| 4.13 | Per-element hit testing | 6 | svg-rendering | No (consumes R6) |
+| 4.13 | Per-element hit testing | 6 | svg-rendering | No (SVG-layer scene graph; uses recording's `HitTest(Point)→bool` only as an early-out) |
 
 ---
 
@@ -266,34 +275,26 @@ footing.
 
 ---
 
-### Phase 0.3 — Element Tags & Hit Identity (R6, R7)
+### Phase 0.3 — Bounds-Change Signal (R7)
 
-Adds per-element identity to recordings and a bounds-change signal for
-compositor-bound ones.
+Adds a bounds-change signal for compositor-bound recordings.
+
+> **R6 was withdrawn during implementation.** Element identity belongs in
+> the SVG layer, not in the recording. See "DrawingRecording Evolution"
+> for context.
 
 #### Checklist
 
-- [ ] **R6** — `DrawingContext.PushElementTag(object tag)` /
-      `PopElementTag()`. New push/pop `RenderDataElementTagNode` pair.
-      `DrawingRecording.HitTestElements(Point) : IEnumerable<object>`
-      returns the stack of active tags at the hit point, top-most first.
-      Untagged content returns an empty enumerable. Hit-test walker
-      traverses into `DrawRecording` children so tags from inner
-      recordings appear at the correct depth.
-- [ ] **R7** — `CompositorBoundDrawingRecording.BoundsChanged : event
-      EventHandler<Rect>` raised when a mutable property change alters
-      visible bounds. Fires at most once per compositor commit. The client
-      observes on the UI thread.
+- [ ] **R7** — `DrawingRecording.BoundsChanged : event EventHandler<Rect>`
+      raised on the UI thread when, after a compositor commit, the
+      observable `Bounds` differs from the previously-observed value.
+      Subscribing on an immutable recording throws
+      `InvalidOperationException`; on a disposed recording throws
+      `ObjectDisposedException`. Lazy hook: the recording subscribes to
+      `Compositor.AfterCommit` only while there is at least one handler.
 
 #### Tests
 
-- `DrawingRecordingTests.ElementTags_Stack` — balanced push/pop; nested
-  tags returned top-most first; unbalanced push/pop throws on `Dispose`.
-- `DrawingRecordingTests.ElementTags_Untagged` — hit in untagged region
-  returns empty.
-- `DrawingRecordingTests.ElementTags_AcrossSubRecordings` — parent and
-  child each contribute tags at the correct depth; unique object identity
-  preserved through recording/replay.
 - `CompositorBoundDrawingRecordingTests.BoundsChanged_OnGrow` — animating a
   brush `Transform` that enlarges visible bounds fires the event once per
   commit.
@@ -359,45 +360,56 @@ Tile brush whose source is a `DrawingRecording`.
 
 ---
 
-### Phase 0.6 — Filter Effects (G3 / SVG gap 4.3)
+### Phase 0.6 — Layers (G3 / SVG gap 4.3)
 
-Generalizes `IEffect` beyond `IBlurEffect` / `IDropShadowEffect`; exposes
-`PushEffect` on `DrawingContext`; records through the composition pipeline.
+Introduces a unified `PushLayer(LayerOptions)` API covering blend modes
+(SVG `mix-blend-mode`), group opacity (`<g opacity>` semantics, distinct
+from per-primitive `PushOpacity`), and filter effects (`<g filter>`) —
+the three SVG features that all reduce to "save layer, apply paint on
+restore" in Skia.
 
 #### Checklist
 
-- [ ] `DrawingContext.PushEffect(Rect? region, IEffect effect)` +
-      `PushedStateType.Effect` state-stack entry.
-- [ ] `PlatformDrawingContext.PushEffectCore` →
-      `IDrawingContextImplWithEffects.PushEffect` (existing backend hook).
-- [ ] `RenderDataEffectNode` (push/pop pair) captures an `IImmutableEffect`
-      via `IMutableEffect.ToImmutable()`. Bounds inflation: blur expands by
-      radius; drop-shadow adds offset + radius; offset shifts; color-matrix
-      is neutral; composite unions its stages.
-- [ ] New `IEffect` subtypes and their `Immutable…Effect` classes:
-  - [ ] `IColorMatrixEffect` (20-value matrix; SVG `feColorMatrix`).
-  - [ ] `IOffsetEffect` (`dx`, `dy`; SVG `feOffset`).
-  - [ ] `ICompositeEffect` with `IReadOnlyList<IEffect> Stages` for linear
-        chains (`feMerge`, `in`/`result`-linked primitives).
-- [ ] Skia lowering in `DrawingContextImpl.Effects.CreateEffect`:
-      `SKColorFilter.CreateColorMatrix`, `SKImageFilter.CreateOffset`,
-      `SKImageFilter.CreateCompose` for chains. Existing blur / drop-shadow
-      paths unchanged.
-- [ ] `EffectAnimator` registration so each new effect's parameters
-      participate in transitions.
+- [x] `Avalonia.Media.LayerOptions` readonly record struct: `Bounds`
+      (nullable), `Opacity` (nullable; null = 1.0), `BlendMode` reusing
+      `BitmapBlendingMode` (Unspecified = SourceOver), `Effect`
+      reusing `IEffect`.
+- [x] `DrawingContext.PushLayer(LayerOptions)` + `PushedStateType.Layer`.
+- [x] `IDrawingContextImplWithLayers` probe interface adds
+      `PushLayer(LayerOptions)` overload of the existing
+      `IDrawingContextImpl.PushLayer(Rect)` isolation primitive; pop is
+      shared.
+- [x] `RenderDataLayerNode` records the full `LayerOptions`. At replay,
+      dispatches to the probe interface when available; otherwise
+      composes `IDrawingContextImplWithEffects.PushEffect` + `PushOpacity`
+      with a one-shot warning if the blend mode would be lost.
+- [x] Bounds inflation for blur/drop-shadow effects on the layer.
+- [x] `PlatformDrawingContext` mirrors the same probe + fallback dispatch
+      for immediate rendering, balancing nested layers with a small
+      `LayerFrame` stack.
+- [x] `DrawingGroup` degrades a layer to per-primitive opacity (its graph
+      doesn't preserve blend / effect).
+- [x] Skia: implements `IDrawingContextImplWithLayers` by composing a
+      single `SKPaint` (`Alpha` + `BlendMode` + `ImageFilter`) and
+      calling `SaveLayer`.
+- [ ] **Deferred:** new `IEffect` subtypes (`IColorMatrixEffect`,
+      `IOffsetEffect`, `ICompositeEffect`). SVG Phase 5 (filters) will
+      revisit when the compiler needs primitives beyond blur and
+      drop-shadow.
 
 #### Tests
 
-- `DrawingContextEffectTests.PushPop` — balanced nesting, effect + clip
-  combination, effect + transform combination.
-- `RenderDataEffectTests.RoundTrip` — each effect type survives recording
-  serialization; bounds include inflation.
-- `SkiaEffectTests.ColorMatrix`, `.Offset`, `.Composite` — each maps to
-  the expected `SKImageFilter` / `SKColorFilter` tree.
-- `EffectAnimatorTests.ColorMatrix`, `.Offset` — parameter interpolation
-  over the animator.
-- `RenderTests.BlurKnown`, `.DropShadowKnown`, `.ColorMatrixKnown` —
-  golden diffs.
+- `DrawingRecordingTests.PushLayer_*` (7 unit tests) — passthrough,
+  opacity-only, blend-mode-only, blur-effect bounds inflation,
+  drop-shadow bounds expansion, explicit Bounds doesn't extend recording
+  bounds, nested layer balance.
+- `Avalonia.Skia.RenderTests.BlendModeRenderTests` (27 render tests) —
+  every `BitmapBlendingMode` value exercised through `PushLayer`,
+  organised into Porter-Duff, Separable, and HSL groups. Covers all SVG
+  `mix-blend-mode` and COLR v1 `CompositeMode` modes.
+- `Avalonia.Skia.RenderTests.DrawingRecordingTests.PushLayer_*` (3 render
+  tests) — blend-mode multiply, group vs per-primitive opacity, blur
+  effect.
 
 ---
 
@@ -550,13 +562,23 @@ in Phase 0 (sub-phases 0.4 and 0.5). Pure SVG compiler work.
 
 ## Phase 5 — Filter Effects
 
-**Goal:** SVG `<filter>` compiles to `PushEffect(region, composedEffect)`
-using the effect API already shipped in Phase 0.6. Pure SVG compiler work.
+**Goal:** SVG `<filter>` compiles to
+`PushLayer(new LayerOptions { Bounds = filterRegion, Effect = composedEffect })`
+using the layer API already shipped in Phase 0.6. Pure SVG compiler work,
+plus adding the new `IEffect` subtypes that Phase 0.6 deferred.
 
 ### Checklist
 
 - [ ] SVG `<filter>` region (`x`, `y`, `width`, `height`,
-      `filterUnits="userSpaceOnUse"` vs `"objectBoundingBox"`) → `effectClipRect`.
+      `filterUnits="userSpaceOnUse"` vs `"objectBoundingBox"`) →
+      `LayerOptions.Bounds`.
+- [ ] Add new `IEffect` subtypes (deferred from Phase 0.6) with their
+      `Immutable…Effect` counterparts: `IColorMatrixEffect`,
+      `IOffsetEffect`, `ICompositeEffect` (linear chain). Skia lowering
+      via `SKColorFilter.CreateColorMatrix`,
+      `SKImageFilter.CreateOffset`, `SKImageFilter.CreateCompose`.
+      `EffectAnimator` registration so each new effect's parameters
+      participate in transitions.
 - [ ] Primitive compilers:
   - [ ] `feGaussianBlur` → `ImmutableBlurEffect`.
   - [ ] `feOffset` → `ImmutableOffsetEffect`.
@@ -569,7 +591,8 @@ using the effect API already shipped in Phase 0.6. Pure SVG compiler work.
       into `ImmutableCompositeEffect`; non-linear graphs are rejected with
       a warning (defer full DAG support).
 - [ ] Compile `<g filter="url(#f)">` into
-      `PushEffect(region, composedEffect)` around the group's draw calls.
+      `PushLayer(new LayerOptions { Bounds = region, Effect = composedEffect })`
+      around the group's draw calls.
 
 ### Tests
 
@@ -588,23 +611,29 @@ using the effect API already shipped in Phase 0.6. Pure SVG compiler work.
 
 **Goal:** Interactive SVG: per-element hit testing, dynamic `visibility`, and a
 minimal SMIL-to-compositor animation driver. Pure SVG work built on top of the
-Phase 0 recording primitives (R5 ownership, R6 tags, R7 bounds signal).
+Phase 0 recording primitives (R5 ownership, R7 bounds signal). Element identity
+and hit testing are tracked entirely in the SVG layer.
 
 ### Checklist
 
-- [ ] On compile, pass each `SvgElement` to `DrawingContext.PushElementTag`
-      (Phase 0 R6) before emitting its draw calls, and `PopElementTag` after.
-      The compiler reads back via `DrawingRecording.HitTestElements`.
+- [ ] At compile time, build a parallel `SvgHitNode` tree alongside the
+      recording. Each `SvgHitNode` captures its `SvgElement`, accumulated
+      transform, accumulated clip geometry, local bounds (computed from the
+      same draw calls being emitted), and `PointerEvents`. For `<use>`
+      references, the hit subtree of the referenced `<symbol>` is reused
+      with the use site's transform/clip wrapped around it.
 - [ ] Parse `pointer-events` (`none`, `all`, `visiblePainted`, …) and store
-      on each `SvgElement`.
-- [ ] `Svg` control: `HitTestElements(Point)` returns `IEnumerable<SvgElement>`
-      (filters the `HitTestElements` output, casting tags back to
-      `SvgElement`); respect `pointer-events`.
-- [ ] Route pointer events from the control to hit-tested elements; expose a
-      `PointerPressedOnElement` event or similar.
-- [ ] Subscribe to `CompositorBoundDrawingRecording.BoundsChanged` (Phase 0
-      R7) on the `Svg` control to re-invalidate layout when animation
-      changes the bounding box.
+      on each `SvgElement` / `SvgHitNode`.
+- [ ] `Svg` control: `HitTestElements(Point) : IEnumerable<SvgElement>`
+      walks the `SvgHitNode` tree, inverting transforms and respecting
+      clips at each level. Returns innermost-first (the SVG event-target
+      order). Uses the recording's `HitTest(Point) : bool` as a cheap
+      early-out.
+- [ ] Route pointer events from the control to hit-tested elements; expose
+      a `PointerPressedOnElement` event or similar.
+- [ ] Subscribe to `DrawingRecording.BoundsChanged` (Phase 0 R7) on the
+      `Svg` control to re-invalidate layout when animation changes the
+      bounding box.
 - [ ] Visibility toggling (gap 4.9):
   - [ ] Static: compile-time filter of `display: none` / `visibility: hidden`.
   - [ ] Dynamic: toggleable subtrees compile into their own
@@ -614,7 +643,7 @@ Phase 0 recording primitives (R5 ownership, R6 tags, R7 bounds signal).
 - [ ] SMIL `<animate>` / `<set>` / `<animateTransform>` parser.
 - [ ] Animation driver that drives mutable brushes, pens, and transforms on
       a compositor-bound root recording. Targets elements by id using the
-      element-tag map built at compile time.
+      `Dictionary<string, SvgElement>` the compiler maintains.
 - [ ] CSS animation + transition support (minimal: `animation-name` +
       keyframes + `transition: property duration`). Reuse existing
       `Avalonia.Animation` where possible.
@@ -624,13 +653,13 @@ Phase 0 recording primitives (R5 ownership, R6 tags, R7 bounds signal).
 
 ### Tests
 
-All SVG-side — Phase 0 already covers `PushElementTag`, `HitTestElements`,
-and `BoundsChanged` on the recording side.
+All SVG-side. The recording exposes only `HitTest(Point) → bool` and
+`BoundsChanged` for these phases — the rest is `Avalonia.Svg`.
 
 - `HitTestTests` — point-in-shape correctness across groups, transformed
   children, stroke vs fill hit regions, `pointer-events: none` elements
-  excluded; tags round-trip from the compiler through `HitTestElements`
-  back to the originating `SvgElement`.
+  excluded. Verify the `SvgHitNode` walker reproduces SVG's deepest-first
+  event-target order.
 - `VisibilityTests` — toggled subtree appears/disappears without
   recompiling the root recording; shared sub-recording survives repeated
   toggles (relies on Phase 0 R5 `Shared`).
@@ -639,7 +668,7 @@ and `BoundsChanged` on the recording side.
   exactly once and unsubscribes on control detach.
 - `SmilTests` — `<animate>` on `fill`, `stroke`, transform; timing
   (`begin`/`dur`/`repeatCount`); `calcMode` linear vs discrete; animation
-  by element id resolves through the tag map.
+  by element id resolves through the SVG-side id map.
 - `IntegrationTests` — complete interactive SVG (hover state + click)
   round-trips through the `Svg` control.
 - `RenderTests.Animation` — deterministic frames at sampled timestamps
@@ -666,17 +695,16 @@ Bounds, transform, and ownership (0.2):
   overload.
 - `DrawingRecording.GetBounds(Matrix)`.
 
-Element identity and bounds signal (0.3):
+Bounds-change signal (0.3):
 
-- `DrawingContext.PushElementTag(object)` / `PopElementTag()`.
-- `DrawingRecording.HitTestElements(Point) : IEnumerable<object>`.
-- `CompositorBoundDrawingRecording.BoundsChanged : event EventHandler<Rect>`
-  (exposed via the `DrawingRecording` instance when compositor-bound).
+- `DrawingRecording.BoundsChanged : event EventHandler<Rect>` on
+  compositor-bound recordings (raised on the UI thread after a commit
+  when `Bounds` differs from its previous value).
 
 Recording brush (0.4):
 
-- `Avalonia.Media.DrawingRecordingBrush : TileBrush`.
-- `Avalonia.Media.ImmutableDrawingRecordingBrush`.
+- `Avalonia.Media.DrawingRecordingBrush : TileBrush, ISceneBrush`.
+  (No immutable counterpart — matches `DrawingBrush`'s shape.)
 
 Mask type (0.5):
 
@@ -684,11 +712,20 @@ Mask type (0.5):
 - `DrawingContext.PushOpacityMask(IBrush, Rect, MaskType)` overload.
 - `Avalonia.Platform.IDrawingContextImplWithLuminanceMask` probe interface.
 
-Effect pipeline (0.6):
+Layers (0.6) — unifies group opacity, blend modes, and filter effects:
 
-- `DrawingContext.PushEffect(Rect?, IEffect)` + `PushedStateType.Effect`.
-- `IColorMatrixEffect`, `IOffsetEffect`, `ICompositeEffect` (+ immutable
-  counterparts).
+- `Avalonia.Media.LayerOptions` readonly record struct (`Bounds`,
+  `Opacity`, `BlendMode` reusing `BitmapBlendingMode`, `Effect` reusing
+  `IEffect`).
+- `DrawingContext.PushLayer(LayerOptions)` + `PushedStateType.Layer`.
+- `Avalonia.Platform.IDrawingContextImplWithLayers` probe interface
+  (overload of the existing `IDrawingContextImpl.PushLayer(Rect)`
+  isolation primitive; pop is shared).
+- New `IEffect` subtypes (`IColorMatrixEffect`, `IOffsetEffect`,
+  `ICompositeEffect`) — **deferred** to a follow-up PR. Existing
+  `IBlurEffect` and `IDropShadowEffect` cover Phase 0's needs through
+  `LayerOptions.Effect`. SVG Phase 5 will revisit if more primitives are
+  required.
 
 Observable behavior changes in `DrawingRecording` (all in Phase 0; allowed —
 not yet stable API):
