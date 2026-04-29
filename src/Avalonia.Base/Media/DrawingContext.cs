@@ -390,7 +390,6 @@ namespace Avalonia.Media
                 RenderOptions,
                 TextOptions,
                 Effect,
-                ElementTag, // used by DrawingRecordingContext; dispatched there
                 Layer
             }
 
@@ -422,8 +421,6 @@ namespace Avalonia.Media
                     _context.PopTextOptionsCore();
                 else if (_type == PushedStateType.Effect)
                     _context.PopEffectCore();
-                else if (_type == PushedStateType.ElementTag)
-                    ((DrawingRecordingContext)_context).PopElementTagCore();
                 else if (_type == PushedStateType.Layer)
                     _context.PopLayerCore();
             }
@@ -597,18 +594,6 @@ namespace Avalonia.Media
         }
 
         protected abstract void PushTextOptionsCore(TextOptions textOptions);
-
-        /// <summary>
-        /// Registers an element-tag entry on the restore stack so that disposing
-        /// the returned <see cref="PushedState"/> pops the matching tag.
-        /// Only invoked by <see cref="DrawingRecordingContext.PushElementTag"/>.
-        /// </summary>
-        private protected PushedState PushElementTagRestoreState()
-        {
-            _states ??= StateStackPool.Get();
-            _states.Push(new RestoreState(this, RestoreState.PushedStateType.ElementTag));
-            return new PushedState(this);
-        }
 
         /// <summary>
         /// Pushes a compositing layer. Subsequent draw operations are rendered
