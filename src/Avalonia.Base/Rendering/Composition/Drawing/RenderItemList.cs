@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition.Drawing.Nodes;
 using Avalonia.Utilities;
@@ -73,11 +72,5 @@ internal class RenderItemList
         }
 
         return false;
-    }
-
-    public void CollectHitTestTags(Point p, List<object> results)
-    {
-        foreach (var item in _items)
-            HitTestTagCollector.Collect(item, p, results);
     }
 }
