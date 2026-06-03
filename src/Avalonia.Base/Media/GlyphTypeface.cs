@@ -1491,6 +1491,37 @@ namespace Avalonia.Media
             return null;
         }
 
+        // Reads the design-space bounding box of a single glyph from the glyf entry
+        // header. Returns false when the font has no glyf table (CFF / CFF2), when the
+        // glyph has no entry, or when the entry is empty. Internal because the
+        // rendering pipeline currently routes through SKFont.GetGlyphWidths for bounds;
+        // surfaces are kept narrow until a perf comparison justifies rewiring.
+        internal bool TryGetGlyphBounds(ushort glyphIndex, out short xMin, out short yMin, out short xMax, out short yMax)
+        {
+            xMin = yMin = xMax = yMax = 0;
+            if (_glyfTable is null || glyphIndex > GlyphCount)
+            {
+                return false;
+            }
+            return _glyfTable.TryGetGlyphBounds(glyphIndex, out xMin, out yMin, out xMax, out yMax);
+        }
+
+        // Batch variant. Span-caches the underlying glyf data so each glyph is one loca
+        // lookup plus four int16 reads from the cached span.
+        internal bool TryGetGlyphBounds(
+            ReadOnlySpan<ushort> glyphIndices,
+            Span<short> xMins,
+            Span<short> yMins,
+            Span<short> xMaxs,
+            Span<short> yMaxs)
+        {
+            if (_glyfTable is null)
+            {
+                return false;
+            }
+            return _glyfTable.TryGetGlyphBounds(glyphIndices, xMins, yMins, xMaxs, yMaxs);
+        }
+
         /// <summary>
         /// Derives this font's <see cref="NormalizedVariationPosition"/> from user-space
         /// settings (e.g. <c>wght = 700</c>), normalizing through the font's <c>fvar</c>
