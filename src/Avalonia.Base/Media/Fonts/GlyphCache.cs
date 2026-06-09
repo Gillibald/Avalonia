@@ -37,7 +37,7 @@ namespace Avalonia.Media.Fonts
     /// Composite components are kept at least as recent as their composites via recency propagation;
     /// referencing payloads (color drawings) additionally pin their dependencies.
     /// </remarks>
-    internal sealed class GlyphCache
+    internal sealed class GlyphCache : IDisposable
     {
         /// <summary>Default per-typeface geometry budget. Calibrated against the churn benchmark.</summary>
         public const int DefaultBudgetBytes = 4 * 1024 * 1024;
@@ -197,6 +197,30 @@ namespace Avalonia.Media.Fonts
                 {
                     disposable.Dispose();
                 }
+            }
+        }
+
+        /// <summary>
+        /// Drops all entries and disposes any retained geometry that owns native resources. Called when
+        /// the owning typeface is disposed so its built outlines are released deterministically instead
+        /// of lingering until finalization.
+        /// </summary>
+        public void Dispose()
+        {
+            lock (_lock)
+            {
+                foreach (var entry in _entries.Values)
+                {
+                    if (entry.Geometry is IDisposable disposable)
+                    {
+                        disposable.Dispose();
+                    }
+
+                    entry.ClearGeometry();
+                }
+
+                _entries.Clear();
+                _totalCost = 0;
             }
         }
     }
