@@ -94,7 +94,7 @@ internal static class SvgMarkers
             * Matrix.CreateRotation(angle)
             * Matrix.CreateTranslation(vertex.Position.X, vertex.Position.Y);
 
-        var recording = compileContext.GetSharedRecording(marker);
+        var recording = compileContext.GetSharedRecording(marker, out _);
         context.DrawRecording(recording, placement, Avalonia.Media.DrawingRecordingOwnership.Shared);
     }
 
