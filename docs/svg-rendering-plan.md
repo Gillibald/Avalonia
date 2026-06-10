@@ -1010,6 +1010,15 @@ All SVG-side. The recording exposes only `HitTest(Point) → bool` and
   compared to reference bitmaps. *(Deferred with the integration suite —
   the unit tests pin sampled values per timestamp.)*
 
+### Sample
+
+`samples/SvgDemo` exercises the whole surface end to end as a desktop app:
+one tab per feature area (shapes, gradients/patterns, use/symbol/markers,
+text incl. fallback/bidi/textPath, compositing, filters), an animation tab
+showing the paint and structural channels side by side, and an
+interactivity tab that live-displays the innermost-first hit chain and
+routes element pointer events.
+
 ---
 
 ## Public API Surface (end state)

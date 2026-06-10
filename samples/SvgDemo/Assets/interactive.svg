@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="240" viewBox="0 0 520 240">
+  <defs>
+    <symbol id="gear" viewBox="0 0 24 24">
+      <path d="M 12 1.5 L 14 5 L 18 4 L 18.5 8 L 22 9.5 L 20 13 L 22.5 16
+               L 19 18 L 19 22 L 15 21.5 L 12.5 24 L 10 21 L 6 22 L 5.5 18
+               L 2 16.5 L 4 13 L 1.5 10 L 5 8 L 5 4 L 9 4.5 Z" fill="#475569"/>
+      <circle cx="12" cy="12" r="4.5" fill="#cbd5e1"/>
+    </symbol>
+  </defs>
+
+  <!-- Decorative grid: pointer-events="none" lets hits pass through -->
+  <g id="grid" pointer-events="none" stroke="#f1f5f9" stroke-width="1">
+    <path d="M 60 0 V 240 M 120 0 V 240 M 180 0 V 240 M 240 0 V 240 M 300 0 V 240 M 360 0 V 240 M 420 0 V 240 M 480 0 V 240"/>
+    <path d="M 0 60 H 520 M 0 120 H 520 M 0 180 H 520"/>
+  </g>
+
+  <g id="traffic-light">
+    <rect id="housing" x="28" y="22" width="64" height="180" rx="14" fill="#1e293b"/>
+    <circle id="red" cx="60" cy="62" r="20" fill="#ef4444"/>
+    <circle id="amber" cx="60" cy="112" r="20" fill="#f59e0b"/>
+    <circle id="green" cx="60" cy="162" r="20" fill="#22c55e"/>
+  </g>
+
+  <g id="buttons" transform="translate(140 30)">
+    <g id="play-button">
+      <rect x="0" y="0" width="92" height="56" rx="11" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+      <path id="play-glyph" d="M 34 14 L 64 28 L 34 42 Z" fill="#16a34a"/>
+    </g>
+    <g id="stop-button" transform="translate(112 0)">
+      <rect x="0" y="0" width="92" height="56" rx="11" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+      <rect id="stop-glyph" x="33" y="15" width="26" height="26" rx="4" fill="#dc2626"/>
+    </g>
+  </g>
+
+  <!-- A stroke-only ring: only its 12px band hits, not the hollow center -->
+  <circle id="ring" cx="200" cy="160" r="38" fill="none" stroke="#7c3aed" stroke-width="12"/>
+
+  <!-- An invisible hot zone made interactive via pointer-events="all" -->
+  <rect id="hot-zone" x="280" y="120" width="120" height="84" rx="10" fill="none"
+        stroke="#94a3b8" stroke-dasharray="6 4" pointer-events="all"/>
+
+  <!-- Symbol instances: hits report the symbol content plus the use site -->
+  <use id="gear-small" href="#gear" x="430" y="36" width="44" height="44"/>
+  <use id="gear-large" href="#gear" x="416" y="120" width="72" height="72"/>
+</svg>

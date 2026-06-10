@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="190" viewBox="0 0 520 190">
+  <!-- Transforms, geometry and visibility animate on the structural channel:
+       sampled values become attribute overrides and the control re-compiles
+       the root recording, replaying cached shared sub-recordings. -->
+
+  <!-- Orbit: rotation about a fixed center -->
+  <circle cx="85" cy="95" r="56" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+  <circle cx="85" cy="95" r="13" fill="#f59e0b"/>
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="0 85 95" to="360 85 95" dur="5s" repeatCount="indefinite"/>
+    <circle cx="141" cy="95" r="8" fill="#3b82f6"/>
+  </g>
+
+  <!-- Pinwheel built from a reused petal, spinning as one group -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="360 230 95" to="0 230 95" dur="7s" repeatCount="indefinite"/>
+    <g id="petal">
+      <path d="M 230 95 C 222 60 238 45 230 25 C 222 45 238 60 230 95 Z" fill="#10b981"/>
+    </g>
+    <use href="#petal" transform="rotate(90 230 95)"/>
+    <use href="#petal" transform="rotate(180 230 95)"/>
+    <use href="#petal" transform="rotate(270 230 95)"/>
+  </g>
+
+  <!-- Geometry animation: a sliding x position -->
+  <rect y="25" width="34" height="24" rx="6" fill="#8b5cf6">
+    <animate attributeName="x" values="300;470;300" dur="3.6s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- Dynamic visibility: discrete blinking -->
+  <circle cx="330" cy="95" r="15" fill="#dc2626">
+    <animate attributeName="visibility" values="visible;hidden" dur="1s"
+             calcMode="discrete" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Scale that runs once and freezes -->
+  <g>
+    <animateTransform attributeName="transform" type="scale"
+                      from="0.4" to="1" dur="1.6s" fill="freeze"/>
+    <rect x="380" y="125" width="110" height="40" rx="9" fill="#0d9488"/>
+  </g>
+
+  <!-- A growing bar that freezes at full width -->
+  <rect x="300" y="70" width="20" height="14" rx="4" fill="#f43f5e">
+    <animate attributeName="width" from="20" to="190" dur="2.5s" fill="freeze"/>
+  </rect>
+</svg>
