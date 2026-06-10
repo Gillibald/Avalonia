@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Platform;
 
 namespace Avalonia.Svg.Parsing;
@@ -9,6 +10,22 @@ namespace Avalonia.Svg.Parsing;
 /// </summary>
 internal static class SvgPointsParser
 {
+    /// <summary>Parses the point list into points (for marker placement).</summary>
+    public static List<Point> ParseList(ReadOnlySpan<char> input)
+    {
+        var points = new List<Point>();
+        var tokenizer = new SvgTokenizer(input);
+
+        while (tokenizer.TryReadNumber(out var x))
+        {
+            if (!tokenizer.TryReadNumber(out var y))
+                break;
+            points.Add(new Point(x, y));
+        }
+
+        return points;
+    }
+
     /// <summary>
     /// Emits the point list as a single figure. Per the SVG error-handling rules an
     /// odd trailing coordinate drops only the incomplete pair; the parsed prefix

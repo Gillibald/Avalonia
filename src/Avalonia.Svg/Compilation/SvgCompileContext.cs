@@ -25,6 +25,13 @@ internal sealed class SvgCompileContext
     public Size Viewport { get; }
 
     /// <summary>
+    /// True while compiling a throwaway recording to measure an element's fill
+    /// box: masks, clips, markers and compositing layers are skipped, since the
+    /// objectBoundingBox is the undecorated geometry box.
+    /// </summary>
+    public bool Measuring { get; set; }
+
+    /// <summary>
     /// Guards against reference cycles while expanding <c>&lt;use&gt;</c>.
     /// Returns false when <paramref name="target"/> is already being expanded.
     /// </summary>
@@ -51,10 +58,12 @@ internal sealed class SvgCompileContext
         {
             var style = SvgStyle.CreateDefault(Viewport);
 
-            if (target.Name is "symbol" or "svg")
+            if (target.Name is "symbol" or "svg" or "marker" or "pattern" or "mask")
             {
-                // The symbol's viewport mapping (viewBox, width/height) is applied
-                // at the use site so the recording itself stays shareable.
+                // Viewport-establishing containers compile their children only —
+                // the viewport mapping (viewBox, width/height, ref points, tile
+                // rects, mask regions) is applied at each reference site so the
+                // recording itself stays shareable.
                 style.Apply(target);
                 foreach (var child in target.Children)
                     SvgCompiler.CompileElement(child, ctx, this, style);

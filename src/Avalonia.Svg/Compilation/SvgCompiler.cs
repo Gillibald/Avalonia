@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Parsing;
@@ -90,57 +92,129 @@ internal static class SvgCompiler
 
         using (transformState)
         {
-            DrawingContext.PushedState? clipState = null;
-            if (element.GetStyleOrAttribute("clip-path") is { } clipReference)
+            // Group compositing: element opacity (group semantics, distinct from
+            // per-primitive opacity), mix-blend-mode and isolation all fold into
+            // a single recorded layer. Skipped while measuring fill boxes.
+            DrawingContext.PushedState? layerState = null;
+            if (!compileContext.Measuring)
             {
-                // objectBoundingBox clip units require the element's bounding box;
-                // it is available for the basic shapes (geometry-backed shapes and
-                // groups support userSpaceOnUse clips only for now).
-                var clipBounds = TryGetCheapShapeBounds(element, style.Viewport) ?? default;
-                if (SvgClipPaths.TryBuild(compileContext, clipReference, clipBounds) is { } clip)
-                    clipState = context.PushGeometryClip(clip);
+                var opacity = 1.0;
+                if (element.GetStyleOrAttribute("opacity") is { } opacityValue
+                    && SvgStyle.TryParseOpacity(opacityValue, out var parsedOpacity))
+                {
+                    opacity = parsedOpacity;
+                }
+
+                if (opacity <= 0)
+                    return;
+
+                var blendMode = ParseBlendMode(element.GetStyleOrAttribute("mix-blend-mode"));
+                var isolate = element.GetStyleOrAttribute("isolation") == "isolate";
+
+                if (opacity < 1 || blendMode != BitmapBlendingMode.Unspecified || isolate)
+                {
+                    layerState = context.PushLayer(new LayerOptions
+                    {
+                        Opacity = opacity < 1 ? opacity : null,
+                        BlendMode = blendMode,
+                        Isolate = isolate,
+                    });
+                }
             }
 
-            using (clipState)
+            using (layerState)
             {
-                switch (element.Name)
+                DrawingContext.PushedState? clipState = null;
+                if (!compileContext.Measuring
+                    && element.GetStyleOrAttribute("clip-path") is { } clipReference)
                 {
-                    case "g":
-                    case "a":
-                    case "svg":
+                    var clipBounds = GetFillBounds(element, compileContext, style);
+                    if (SvgClipPaths.TryBuild(compileContext, clipReference, clipBounds) is { } clip)
+                        clipState = context.PushGeometryClip(clip);
+                }
+
+                using (clipState)
+                {
+                    DrawingContext.PushedState? maskState = null;
+                    if (!compileContext.Measuring
+                        && element.GetStyleOrAttribute("mask") is { } maskValue
+                        && SvgClipPaths.TryParseUrlReference(maskValue, out var maskId))
                     {
-                        foreach (var child in element.Children)
-                            CompileElement(child, context, compileContext, style);
-                        break;
+                        var maskBounds = GetFillBounds(element, compileContext, style);
+                        maskState = SvgMasks.TryPush(context, compileContext, maskId, maskBounds);
                     }
-                    case "use":
-                        CompileUse(element, context, compileContext, style);
-                        break;
-                    case "rect":
-                        CompileRect(element, context, compileContext, style);
-                        break;
-                    case "circle":
-                        CompileCircle(element, context, compileContext, style);
-                        break;
-                    case "ellipse":
-                        CompileEllipse(element, context, compileContext, style);
-                        break;
-                    case "line":
-                        CompileLine(element, context, compileContext, style);
-                        break;
-                    case "polyline":
-                        CompilePoly(element, context, compileContext, style, close: false);
-                        break;
-                    case "polygon":
-                        CompilePoly(element, context, compileContext, style, close: true);
-                        break;
-                    case "path":
-                        CompilePath(element, context, compileContext, style);
-                        break;
+
+                    using (maskState)
+                    {
+                        CompileElementContent(element, context, compileContext, style);
+                    }
                 }
             }
         }
     }
+
+    private static void CompileElementContent(
+        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
+    {
+        switch (element.Name)
+        {
+            case "g":
+            case "a":
+            case "svg":
+            {
+                foreach (var child in element.Children)
+                    CompileElement(child, context, compileContext, style);
+                break;
+            }
+            case "use":
+                CompileUse(element, context, compileContext, style);
+                break;
+            case "rect":
+                CompileRect(element, context, compileContext, style);
+                break;
+            case "circle":
+                CompileCircle(element, context, compileContext, style);
+                break;
+            case "ellipse":
+                CompileEllipse(element, context, compileContext, style);
+                break;
+            case "line":
+                CompileLine(element, context, compileContext, style);
+                break;
+            case "polyline":
+                CompilePoly(element, context, compileContext, style, close: false);
+                break;
+            case "polygon":
+                CompilePoly(element, context, compileContext, style, close: true);
+                break;
+            case "path":
+                CompilePath(element, context, compileContext, style);
+                break;
+            case "text":
+                SvgText.Compile(element, context, compileContext, style);
+                break;
+        }
+    }
+
+    private static BitmapBlendingMode ParseBlendMode(string? value) => value switch
+    {
+        "multiply" => BitmapBlendingMode.Multiply,
+        "screen" => BitmapBlendingMode.Screen,
+        "overlay" => BitmapBlendingMode.Overlay,
+        "darken" => BitmapBlendingMode.Darken,
+        "lighten" => BitmapBlendingMode.Lighten,
+        "color-dodge" => BitmapBlendingMode.ColorDodge,
+        "color-burn" => BitmapBlendingMode.ColorBurn,
+        "hard-light" => BitmapBlendingMode.HardLight,
+        "soft-light" => BitmapBlendingMode.SoftLight,
+        "difference" => BitmapBlendingMode.Difference,
+        "exclusion" => BitmapBlendingMode.Exclusion,
+        "hue" => BitmapBlendingMode.Hue,
+        "saturation" => BitmapBlendingMode.Saturation,
+        "color" => BitmapBlendingMode.Color,
+        "luminosity" => BitmapBlendingMode.Luminosity,
+        _ => BitmapBlendingMode.Unspecified,
+    };
 
     private static void CompileUse(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
@@ -162,6 +236,7 @@ internal static class SvgCompiler
             case "pattern":
             case "filter":
             case "marker":
+            case "mask":
             case "style":
             case "script":
             case "title":
@@ -178,50 +253,37 @@ internal static class SvgCompiler
         {
             var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport);
             var y = GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport);
+            var recording = compileContext.GetSharedRecording(target);
 
-            DrawingContext.PushedState? opacityState = null;
-            if (element.GetStyleOrAttribute("opacity") is { } opacityValue
-                && double.TryParse(opacityValue, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var opacity)
-                && opacity < 1)
+            if (target.Name is "symbol" or "svg")
             {
-                opacityState = context.PushOpacity(Math.Max(0, opacity));
+                var width = GetUseViewportLength(element, target, "width", SvgLengthAxis.Horizontal, style.Viewport);
+                var height = GetUseViewportLength(element, target, "height", SvgLengthAxis.Vertical, style.Viewport);
+                if (width <= 0 || height <= 0)
+                    return;
+
+                var contentMatrix = Matrix.Identity;
+                if (target.GetAttribute("viewBox") is { } viewBoxValue
+                    && SvgViewBox.TryParse(viewBoxValue.AsSpan(), out var viewBox))
+                {
+                    var preserveAspectRatio = SvgPreserveAspectRatio.Default;
+                    if (target.GetAttribute("preserveAspectRatio") is { } par)
+                        SvgPreserveAspectRatio.TryParse(par.AsSpan(), out preserveAspectRatio);
+                    contentMatrix = preserveAspectRatio.ComputeTransform(viewBox, new Size(width, height));
+                }
+
+                // A symbol establishes a viewport: position it, clip to it
+                // (overflow defaults to hidden), and replay the shared content
+                // recording under the viewBox mapping.
+                using (context.PushTransform(Matrix.CreateTranslation(x, y)))
+                using (context.PushClip(new Rect(0, 0, width, height)))
+                {
+                    context.DrawRecording(recording, contentMatrix, DrawingRecordingOwnership.Shared);
+                }
             }
-
-            using (opacityState)
+            else
             {
-                var recording = compileContext.GetSharedRecording(target);
-
-                if (target.Name is "symbol" or "svg")
-                {
-                    var width = GetUseViewportLength(element, target, "width", SvgLengthAxis.Horizontal, style.Viewport);
-                    var height = GetUseViewportLength(element, target, "height", SvgLengthAxis.Vertical, style.Viewport);
-                    if (width <= 0 || height <= 0)
-                        return;
-
-                    var contentMatrix = Matrix.Identity;
-                    if (target.GetAttribute("viewBox") is { } viewBoxValue
-                        && SvgViewBox.TryParse(viewBoxValue.AsSpan(), out var viewBox))
-                    {
-                        var preserveAspectRatio = SvgPreserveAspectRatio.Default;
-                        if (target.GetAttribute("preserveAspectRatio") is { } par)
-                            SvgPreserveAspectRatio.TryParse(par.AsSpan(), out preserveAspectRatio);
-                        contentMatrix = preserveAspectRatio.ComputeTransform(viewBox, new Size(width, height));
-                    }
-
-                    // A symbol establishes a viewport: position it, clip to it
-                    // (overflow defaults to hidden), and replay the shared content
-                    // recording under the viewBox mapping.
-                    using (context.PushTransform(Matrix.CreateTranslation(x, y)))
-                    using (context.PushClip(new Rect(0, 0, width, height)))
-                    {
-                        context.DrawRecording(recording, contentMatrix, DrawingRecordingOwnership.Shared);
-                    }
-                }
-                else
-                {
-                    context.DrawRecording(recording, Matrix.CreateTranslation(x, y), DrawingRecordingOwnership.Shared);
-                }
+                context.DrawRecording(recording, Matrix.CreateTranslation(x, y), DrawingRecordingOwnership.Shared);
             }
         }
         finally
@@ -241,11 +303,11 @@ internal static class SvgCompiler
     }
 
     private static IImmutableBrush? ResolvePaint(
-        in SvgPaint paint, in SvgStyle style, SvgCompileContext compileContext, Rect bounds)
+        in SvgPaint paint, in SvgStyle style, SvgCompileContext compileContext, Rect bounds, double opacity)
     {
         if (paint.Kind == SvgPaintKind.Reference)
-            return paint.Reference is { } id ? SvgPaintServers.Resolve(compileContext, id, style, bounds) : null;
-        return style.ResolveBrush(paint);
+            return paint.Reference is { } id ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity) : null;
+        return style.ResolveBrush(paint, opacity);
     }
 
     private static void CompileRect(
@@ -269,12 +331,20 @@ internal static class SvgCompiler
         radiusY = Math.Min(radiusY, height / 2);
 
         var rect = new Rect(x, y, width, height);
-        var brush = ResolvePaint(style.Fill, style, compileContext, rect);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect));
+        var brush = ResolvePaint(style.Fill, style, compileContext, rect, style.FillOpacity);
+        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect, style.StrokeOpacity));
         if (brush == null && pen == null)
             return;
 
-        context.DrawRectangle(brush, pen, rect, radiusX, radiusY);
+        if (style.StrokeBeforeFill && brush != null && pen != null)
+        {
+            context.DrawRectangle(null, pen, rect, radiusX, radiusY);
+            context.DrawRectangle(brush, null, rect, radiusX, radiusY);
+        }
+        else
+        {
+            context.DrawRectangle(brush, pen, rect, radiusX, radiusY);
+        }
     }
 
     private static double? GetCornerRadius(SvgElement element, string name, SvgLengthAxis axis, Size viewport)
@@ -302,13 +372,7 @@ internal static class SvgCompiler
         if (r <= 0)
             return;
 
-        var rect = new Rect(cx - r, cy - r, 2 * r, 2 * r);
-        var brush = ResolvePaint(style.Fill, style, compileContext, rect);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect));
-        if (brush == null && pen == null)
-            return;
-
-        context.DrawEllipse(brush, pen, rect);
+        DrawEllipseShape(context, compileContext, style, new Rect(cx - r, cy - r, 2 * r, 2 * r));
     }
 
     private static void CompileEllipse(
@@ -326,13 +390,26 @@ internal static class SvgCompiler
         if (rx <= 0 || ry <= 0)
             return;
 
-        var rect = new Rect(cx - rx, cy - ry, 2 * rx, 2 * ry);
-        var brush = ResolvePaint(style.Fill, style, compileContext, rect);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect));
+        DrawEllipseShape(context, compileContext, style, new Rect(cx - rx, cy - ry, 2 * rx, 2 * ry));
+    }
+
+    private static void DrawEllipseShape(
+        DrawingContext context, SvgCompileContext compileContext, in SvgStyle style, Rect rect)
+    {
+        var brush = ResolvePaint(style.Fill, style, compileContext, rect, style.FillOpacity);
+        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect, style.StrokeOpacity));
         if (brush == null && pen == null)
             return;
 
-        context.DrawEllipse(brush, pen, rect);
+        if (style.StrokeBeforeFill && brush != null && pen != null)
+        {
+            context.DrawEllipse(null, pen, rect);
+            context.DrawEllipse(brush, null, rect);
+        }
+        else
+        {
+            context.DrawEllipse(brush, pen, rect);
+        }
     }
 
     private static void CompileLine(
@@ -344,12 +421,31 @@ internal static class SvgCompiler
         var y2 = GetLength(element, "y2", SvgLengthAxis.Vertical, style.Viewport);
 
         var bounds = new Rect(new Point(x1, y1), new Point(x2, y2));
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds));
-        if (pen == null)
-            return;
+        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity));
+        if (pen != null)
+            context.DrawLine(pen, new Point(x1, y1), new Point(x2, y2));
 
-        context.DrawLine(pen, new Point(x1, y1), new Point(x2, y2));
+        if (!compileContext.Measuring && HasMarkers(style))
+        {
+            var direction = NormalizeDirection(new Point(x1, y1), new Point(x2, y2));
+            var vertices = new[]
+            {
+                new SvgPathVertex(new Point(x1, y1), null, direction),
+                new SvgPathVertex(new Point(x2, y2), direction, null),
+            };
+            SvgMarkers.Emit(context, compileContext, style, vertices);
+        }
     }
+
+    private static Vector? NormalizeDirection(Point from, Point to)
+    {
+        var v = new Vector(to.X - from.X, to.Y - from.Y);
+        var length = v.Length;
+        return length > 1e-9 ? v / length : null;
+    }
+
+    private static bool HasMarkers(in SvgStyle style) =>
+        style.MarkerStart != null || style.MarkerMid != null || style.MarkerEnd != null;
 
     private static void CompilePoly(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style, bool close)
@@ -358,27 +454,43 @@ internal static class SvgCompiler
         if (string.IsNullOrEmpty(points))
             return;
 
-        if (style.Fill.Kind == SvgPaintKind.None && style.Stroke.Kind == SvgPaintKind.None)
-            return;
-
-        var geometry = new StreamGeometry();
-        bool any;
-        using (var geometryContext = geometry.Open())
+        if (style.Fill.Kind != SvgPaintKind.None || style.Stroke.Kind != SvgPaintKind.None)
         {
-            geometryContext.SetFillRule(style.FillRule);
-            any = SvgPointsParser.Parse(points.AsSpan(), geometryContext, close);
+            var geometry = new StreamGeometry();
+            bool any;
+            using (var geometryContext = geometry.Open())
+            {
+                geometryContext.SetFillRule(style.FillRule);
+                any = SvgPointsParser.Parse(points.AsSpan(), geometryContext, close);
+            }
+
+            if (any)
+                DrawGeometryShape(context, compileContext, style, geometry);
         }
 
-        if (!any)
-            return;
+        if (!compileContext.Measuring && HasMarkers(style))
+        {
+            var list = SvgPointsParser.ParseList(points.AsSpan());
+            if (list.Count > 0)
+                SvgMarkers.Emit(context, compileContext, style, BuildPolyVertices(list, close));
+        }
+    }
 
-        var bounds = geometry.Bounds;
-        var brush = ResolvePaint(style.Fill, style, compileContext, bounds);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds));
-        if (brush == null && pen == null)
-            return;
+    private static IReadOnlyList<SvgPathVertex> BuildPolyVertices(List<Point> points, bool close)
+    {
+        var vertices = new List<SvgPathVertex>(points.Count);
+        for (var i = 0; i < points.Count; i++)
+        {
+            var incoming = i > 0
+                ? NormalizeDirection(points[i - 1], points[i])
+                : close && points.Count > 1 ? NormalizeDirection(points[points.Count - 1], points[0]) : null;
+            var outgoing = i + 1 < points.Count
+                ? NormalizeDirection(points[i], points[i + 1])
+                : close && points.Count > 1 ? NormalizeDirection(points[points.Count - 1], points[0]) : null;
+            vertices.Add(new SvgPathVertex(points[i], incoming, outgoing));
+        }
 
-        context.DrawGeometry(brush, pen, geometry);
+        return vertices;
     }
 
     private static void CompilePath(
@@ -388,76 +500,172 @@ internal static class SvgCompiler
         if (string.IsNullOrEmpty(data))
             return;
 
-        if (style.Fill.Kind == SvgPaintKind.None && style.Stroke.Kind == SvgPaintKind.None)
-            return;
-
-        var geometry = new StreamGeometry();
-        using (var geometryContext = geometry.Open())
+        if (style.Fill.Kind != SvgPaintKind.None || style.Stroke.Kind != SvgPaintKind.None)
         {
-            geometryContext.SetFillRule(style.FillRule);
-            try
+            var geometry = new StreamGeometry();
+            using (var geometryContext = geometry.Open())
             {
-                SvgPathParser.Parse(data.AsSpan(), geometryContext);
+                geometryContext.SetFillRule(style.FillRule);
+                try
+                {
+                    SvgPathParser.Parse(data.AsSpan(), geometryContext);
+                }
+                catch (FormatException)
+                {
+                    // Per the SVG error-handling rules the path's valid prefix
+                    // still renders; the parser emitted it before throwing.
+                }
             }
-            catch (FormatException)
-            {
-                // Per the SVG error-handling rules the path's valid prefix still
-                // renders; the parser emitted it before throwing.
-            }
+
+            DrawGeometryShape(context, compileContext, style, geometry);
         }
 
+        if (!compileContext.Measuring && HasMarkers(style))
+        {
+            var sampler = SvgPathSampler.Parse(data.AsSpan());
+            SvgMarkers.Emit(context, compileContext, style, sampler.Vertices);
+        }
+    }
+
+    private static void DrawGeometryShape(
+        DrawingContext context, SvgCompileContext compileContext, in SvgStyle style, StreamGeometry geometry)
+    {
         var bounds = geometry.Bounds;
-        var brush = ResolvePaint(style.Fill, style, compileContext, bounds);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds));
+        var brush = ResolvePaint(style.Fill, style, compileContext, bounds, style.FillOpacity);
+        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity));
         if (brush == null && pen == null)
             return;
 
-        context.DrawGeometry(brush, pen, geometry);
+        if (style.StrokeBeforeFill && brush != null && pen != null)
+        {
+            context.DrawGeometry(null, pen, geometry);
+            context.DrawGeometry(brush, null, geometry);
+        }
+        else
+        {
+            context.DrawGeometry(brush, pen, geometry);
+        }
     }
 
     /// <summary>
-    /// Computes the bounding box for shapes whose box is cheap to derive from
-    /// attributes (no geometry construction). Used for objectBoundingBox clip
-    /// resolution; returns null for geometry-backed shapes and containers.
+    /// Computes the element's fill box (the SVG objectBoundingBox: geometry
+    /// without stroke, markers or decorations). Cheap attribute math where
+    /// possible; containers and geometry-backed shapes measure through a
+    /// throwaway recording.
     /// </summary>
-    private static Rect? TryGetCheapShapeBounds(SvgElement element, Size viewport)
+    internal static Rect GetFillBounds(SvgElement element, SvgCompileContext compileContext, in SvgStyle style)
     {
         switch (element.Name)
         {
             case "rect":
             {
-                var width = GetLength(element, "width", SvgLengthAxis.Horizontal, viewport);
-                var height = GetLength(element, "height", SvgLengthAxis.Vertical, viewport);
+                var width = GetLength(element, "width", SvgLengthAxis.Horizontal, style.Viewport);
+                var height = GetLength(element, "height", SvgLengthAxis.Vertical, style.Viewport);
                 if (width <= 0 || height <= 0)
-                    return null;
+                    return default;
                 return new Rect(
-                    GetLength(element, "x", SvgLengthAxis.Horizontal, viewport),
-                    GetLength(element, "y", SvgLengthAxis.Vertical, viewport),
+                    GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport),
+                    GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport),
                     width, height);
             }
             case "circle":
             {
-                var r = GetLength(element, "r", SvgLengthAxis.Other, viewport);
+                var r = GetLength(element, "r", SvgLengthAxis.Other, style.Viewport);
                 if (r <= 0)
-                    return null;
+                    return default;
                 return new Rect(
-                    GetLength(element, "cx", SvgLengthAxis.Horizontal, viewport) - r,
-                    GetLength(element, "cy", SvgLengthAxis.Vertical, viewport) - r,
+                    GetLength(element, "cx", SvgLengthAxis.Horizontal, style.Viewport) - r,
+                    GetLength(element, "cy", SvgLengthAxis.Vertical, style.Viewport) - r,
                     2 * r, 2 * r);
             }
             case "ellipse":
             {
-                var rx = GetLength(element, "rx", SvgLengthAxis.Horizontal, viewport);
-                var ry = GetLength(element, "ry", SvgLengthAxis.Vertical, viewport);
-                if (rx <= 0 || ry <= 0)
-                    return null;
+                var rx = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style.Viewport);
+                var ry = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style.Viewport);
+                var radiusX = rx ?? ry ?? 0;
+                var radiusY = ry ?? rx ?? 0;
+                if (radiusX <= 0 || radiusY <= 0)
+                    return default;
                 return new Rect(
-                    GetLength(element, "cx", SvgLengthAxis.Horizontal, viewport) - rx,
-                    GetLength(element, "cy", SvgLengthAxis.Vertical, viewport) - ry,
-                    2 * rx, 2 * ry);
+                    GetLength(element, "cx", SvgLengthAxis.Horizontal, style.Viewport) - radiusX,
+                    GetLength(element, "cy", SvgLengthAxis.Vertical, style.Viewport) - radiusY,
+                    2 * radiusX, 2 * radiusY);
+            }
+            case "line":
+            {
+                return new Rect(
+                    new Point(
+                        GetLength(element, "x1", SvgLengthAxis.Horizontal, style.Viewport),
+                        GetLength(element, "y1", SvgLengthAxis.Vertical, style.Viewport)),
+                    new Point(
+                        GetLength(element, "x2", SvgLengthAxis.Horizontal, style.Viewport),
+                        GetLength(element, "y2", SvgLengthAxis.Vertical, style.Viewport)));
+            }
+            case "path":
+            {
+                if (element.GetStyleOrAttribute("d") is not { Length: > 0 } data)
+                    return default;
+                var geometry = new StreamGeometry();
+                using (var geometryContext = geometry.Open())
+                {
+                    try
+                    {
+                        SvgPathParser.Parse(data.AsSpan(), geometryContext);
+                    }
+                    catch (FormatException)
+                    {
+                    }
+                }
+
+                return geometry.Bounds;
+            }
+            case "polygon":
+            case "polyline":
+            {
+                if (element.GetAttribute("points") is not { Length: > 0 } points)
+                    return default;
+                var geometry = new StreamGeometry();
+                using (var geometryContext = geometry.Open())
+                {
+                    SvgPointsParser.Parse(points.AsSpan(), geometryContext, close: true);
+                }
+
+                return geometry.Bounds;
             }
             default:
-                return null;
+            {
+                // Containers (and use) measure through a throwaway strokeless
+                // recording of their content; decorations are skipped via the
+                // measuring flag.
+                var measureStyle = style;
+                measureStyle.Stroke = SvgPaint.None;
+                measureStyle.MarkerStart = measureStyle.MarkerMid = measureStyle.MarkerEnd = null;
+
+                var previous = compileContext.Measuring;
+                compileContext.Measuring = true;
+                try
+                {
+                    var capturedStyle = measureStyle;
+                    using var recording = DrawingRecording.Create(ctx =>
+                    {
+                        if (element.Name is "g" or "a" or "svg")
+                        {
+                            foreach (var child in element.Children)
+                                CompileElement(child, ctx, compileContext, capturedStyle);
+                        }
+                        else if (element.Name == "use")
+                        {
+                            CompileUse(element, ctx, compileContext, capturedStyle);
+                        }
+                    });
+
+                    return recording.Bounds;
+                }
+                finally
+                {
+                    compileContext.Measuring = previous;
+                }
+            }
         }
     }
 
