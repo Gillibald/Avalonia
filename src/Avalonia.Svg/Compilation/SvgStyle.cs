@@ -183,17 +183,21 @@ internal struct SvgStyle
 
     public IImmutableBrush? ResolveFillBrush() => ResolveBrush(Fill);
 
-    private IImmutableBrush? ResolveBrush(in SvgPaint paint) => paint.Kind switch
+    /// <summary>
+    /// Resolves color paints; paint-server references resolve through the
+    /// compiler (they need the document and the shape's bounding box).
+    /// </summary>
+    public IImmutableBrush? ResolveBrush(in SvgPaint paint) => paint.Kind switch
     {
         SvgPaintKind.Color => new ImmutableSolidColorBrush(paint.Color),
         SvgPaintKind.CurrentColor => new ImmutableSolidColorBrush(Color),
-        // None, and paint-server references until gradients/patterns land.
         _ => null,
     };
 
-    public ImmutablePen? ResolvePen()
+    public ImmutablePen? ResolvePen() => ResolvePen(ResolveBrush(Stroke));
+
+    public ImmutablePen? ResolvePen(IImmutableBrush? brush)
     {
-        var brush = ResolveBrush(Stroke);
         if (brush == null || StrokeWidth <= 0)
             return null;
 

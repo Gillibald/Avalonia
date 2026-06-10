@@ -32,6 +32,17 @@ public sealed class SvgImage : IImage, IDisposable
     /// <summary>The compiled recording; replayable directly via <see cref="DrawingContext.DrawRecording(DrawingRecording)"/>.</summary>
     public DrawingRecording Recording => _recording;
 
+    /// <summary>
+    /// The precise bounds of the drawn content in viewport space (the viewBox
+    /// mapping is baked into the recording), backed by the recording's eager
+    /// bounds. Useful for tight layout measurement; <see cref="GetContentBounds"/>
+    /// gives per-item-tight bounds under an additional transform.
+    /// </summary>
+    public Rect ContentBounds => _recording.Bounds;
+
+    /// <inheritdoc cref="ContentBounds"/>
+    public Rect GetContentBounds(Matrix transform) => _recording.GetBounds(transform);
+
     /// <inheritdoc/>
     public void Draw(DrawingContext context, Rect sourceRect, Rect destRect)
     {

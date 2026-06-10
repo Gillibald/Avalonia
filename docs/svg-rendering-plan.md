@@ -617,33 +617,60 @@ Phase 0.
 
 ### Checklist
 
-- [ ] Linear/radial gradient parsing → immutable brushes.
-- [ ] `gradientUnits="userSpaceOnUse"` vs `"objectBoundingBox"` +
+- [x] Linear/radial gradient parsing → immutable brushes, incl. stops
+      (offset clamp + monotonic ordering, `stop-opacity`, `currentColor`),
+      spread methods, focal points, single-stop → solid, and `href` /
+      `xlink:href` inheritance chains with cycle protection.
+- [x] `gradientUnits="userSpaceOnUse"` vs `"objectBoundingBox"` +
       `gradientTransform` — compiler-side coordinate transform (gap 4.12).
-- [ ] `clipPath` parsing and `PushGeometryClip` emission.
-- [ ] `<defs>` resolution; `<symbol>` compiled once to a standalone
-      `DrawingRecording`, cached on `SvgDocument`.
-- [ ] `<use href>` emits a single `DrawRecording(symbolRec, transform,
-      DrawingRecordingOwnership.Shared)` call at the use site. Attribute
-      overrides (fill, stroke, opacity, …) apply to the use site via push
-      states around the call.
-- [ ] `SvgDocument.Dispose` releases its Phase-0-retained shared
-      sub-recordings.
-- [ ] `SvgImage.Bounds` uses `DrawingRecording.GetBounds(viewBoxToDest)`
-      (from Phase 0 R3) so layout measurement is precise under non-trivial
-      `preserveAspectRatio`/stretch.
+      Unit systems map onto `RelativeUnit.Absolute`/`Relative` directly;
+      an objectBoundingBox `gradientTransform` is conjugated with the
+      shape's bounding-box scale so unit-space transforms are exact even
+      on non-square boxes. Zero-area boxes disable the paint per spec.
+- [x] `clipPath` parsing and `PushGeometryClip` emission (shape children
+      with per-child transforms and `clip-rule`; `clipPathUnits`
+      objectBoundingBox supported where the element's box is attribute-
+      derivable — rect/circle/ellipse; geometry-backed shapes and groups
+      take userSpaceOnUse clips).
+- [x] `<defs>` resolution; `<symbol>` (and any `<use>` target) compiled once
+      to a standalone `DrawingRecording`, cached on `SvgDocument` keyed by
+      (element, viewport). Shared content compiles with the default style
+      context — use-site style inheritance into unstyled referenced content
+      is not propagated (the recording is shared); self-styled content (the
+      common case) is unaffected.
+- [x] `<use href>` emits a single fused `DrawRecording(rec, transform,
+      DrawingRecordingOwnership.Shared)` call at the use site. `x`/`y`,
+      `transform`, `opacity` and symbol viewport mapping (width/height,
+      viewBox + preserveAspectRatio, overflow clip) apply at the use site
+      via push states around the call; reference cycles are pruned per the
+      SVG error rules.
+- [x] `SvgDocument.Dispose` releases the cached shared sub-recordings;
+      already-compiled content keeps replaying through its `Shared`
+      references.
+- [x] `SvgImage.ContentBounds` / `GetContentBounds(Matrix)` expose the
+      recording's eager bounds and R3 per-item bounds for precise layout
+      measurement (the viewBox mapping is baked into the recording).
 
-### Tests
+### Tests (as shipped)
 
-- `CompilerTests.Gradients` — linear/radial in both unit systems, with
-  `gradientTransform`. Assert brush stops, spread method, transform.
-- `CompilerTests.UseSymbol` — `<use>` emits one fused
-  `DrawRecording(..., Shared)` node with the expected matrix; nested `<use>`
-  works; override attributes apply.
-- `CompilerTests.UseSymbolShared` — same `<symbol>` referenced 10× produces
-  one sub-recording retained by 10 `Shared` references; document disposal
-  releases all of them.
-- `RenderTests` — W3C gradient + clipPath + use corpus.
+- [x] `Avalonia.Svg.UnitTests/SvgGradientTests` (17) — resolver-level: both
+  unit systems, defaults, spread methods, stop clamp/monotonic/opacity/
+  `currentColor`, single-stop solid, no-stops null, `href` inheritance +
+  cycle safety, userSpace and conjugated objectBoundingBox
+  `gradientTransform`, zero-area box, focal points, unknown references.
+- [x] `Avalonia.Svg.UnitTests/SvgUseSymbolTests` (11) — observed through
+  recording bounds/hit-testing: use translation, xlink fallback, direct
+  duplication, symbol viewBox scaling + overflow clipping, one shared
+  recording per target (`SharedRecordingCount`), nested use, cycle pruning,
+  missing target, document disposal releasing the cache while compiled
+  content keeps replaying.
+- [x] `Avalonia.Svg.RenderTests` goldens (10) — linear oBB, conjugated
+  rotate `gradientTransform` on a non-square box, three spread methods,
+  radial focal offset, stop-opacity over background, `href` inheritance;
+  symbol reused at three sizes with an opacity override, use-of-group with
+  transforms; circle clipPath over a group, objectBoundingBox clipPath.
+- [ ] Curated W3C / resvg gradient + clipPath + use corpus cases as the
+  suite grows.
 
 ---
 
