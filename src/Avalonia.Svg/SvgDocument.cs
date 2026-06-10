@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Xml;
 using Avalonia.Platform;
+using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg;
@@ -19,6 +20,8 @@ public sealed class SvgDocument : IDisposable
     internal const string XlinkHrefAttribute = "xlink:href";
 
     private readonly Dictionary<string, SvgElement> _elementsById;
+    private Dictionary<(SvgElement Element, Size Viewport), DrawingRecording>? _sharedRecordings;
+    private bool _disposed;
 
     private SvgDocument(SvgElement root, Dictionary<string, SvgElement> elementsById)
     {
@@ -187,13 +190,49 @@ public sealed class SvgDocument : IDisposable
         return null;
     }
 
+    internal bool TryGetSharedRecording(SvgElement element, Size viewport, out DrawingRecording recording)
+    {
+        ThrowIfDisposed();
+        if (_sharedRecordings != null && _sharedRecordings.TryGetValue((element, viewport), out recording!))
+            return true;
+        recording = null!;
+        return false;
+    }
+
+    internal void AddSharedRecording(SvgElement element, Size viewport, DrawingRecording recording)
+    {
+        ThrowIfDisposed();
+        _sharedRecordings ??= new Dictionary<(SvgElement, Size), DrawingRecording>();
+        _sharedRecordings[(element, viewport)] = recording;
+    }
+
+    /// <summary>The number of cached shared sub-recordings (symbols, use targets).</summary>
+    internal int SharedRecordingCount => _sharedRecordings?.Count ?? 0;
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(SvgDocument));
+    }
+
     /// <inheritdoc/>
     /// <remarks>
-    /// The document itself holds no drawing resources in the current phase; this
-    /// exists for the documented ownership contract once cached sub-recordings
-    /// (symbols, patterns) are introduced.
+    /// Releases the document's cached shared sub-recordings (symbol and
+    /// <c>&lt;use&gt;</c> targets). Recordings already referenced by compiled
+    /// content keep replaying — use sites reference them as
+    /// <c>DrawingRecordingOwnership.Shared</c> children.
     /// </remarks>
     public void Dispose()
     {
+        if (_disposed)
+            return;
+        _disposed = true;
+
+        if (_sharedRecordings != null)
+        {
+            foreach (var recording in _sharedRecordings.Values)
+                recording.Dispose();
+            _sharedRecordings = null;
+        }
     }
 }
