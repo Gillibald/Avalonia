@@ -42,19 +42,22 @@ public class SvgRenderTestBase : IDisposable
         await TestRenderHelper.RenderToFile(target, compositedPath, false, dpi);
     }
 
-    protected void CompareImages([CallerMemberName] string testName = "")
+    protected void CompareImages([CallerMemberName] string testName = "", bool skipImmediate = false)
     {
         var expectedPath = Path.Combine(OutputPath, testName + ".expected.png");
         var immediatePath = Path.Combine(OutputPath, testName + ".immediate.out.png");
         var compositedPath = Path.Combine(OutputPath, testName + ".composited.out.png");
 
         using (var expected = Image.Load<Rgba32>(expectedPath))
-        using (var immediate = Image.Load<Rgba32>(immediatePath))
         using (var composited = Image.Load<Rgba32>(compositedPath))
         {
-            var immediateError = TestRenderHelper.CompareImages(immediate, expected);
-            if (immediateError > AllowedError)
-                Assert.Fail(immediatePath + ": Error = " + immediateError);
+            if (!skipImmediate)
+            {
+                using var immediate = Image.Load<Rgba32>(immediatePath);
+                var immediateError = TestRenderHelper.CompareImages(immediate, expected);
+                if (immediateError > AllowedError)
+                    Assert.Fail(immediatePath + ": Error = " + immediateError);
+            }
 
             var compositedError = TestRenderHelper.CompareImages(composited, expected);
             if (compositedError > AllowedError)

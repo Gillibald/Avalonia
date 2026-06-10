@@ -11,6 +11,7 @@ public sealed class SvgElement
 {
     private readonly Dictionary<string, string> _attributes;
     private readonly List<SvgElement> _children = new();
+    private List<object>? _content;
     private Dictionary<string, string>? _styleDeclarations;
     private bool _styleParsed;
 
@@ -33,7 +34,25 @@ public sealed class SvgElement
     /// <summary>The child elements in document order.</summary>
     public IReadOnlyList<SvgElement> Children => _children;
 
-    internal void AddChild(SvgElement child) => _children.Add(child);
+    /// <summary>
+    /// The element's mixed content in document order: <see cref="string"/> text
+    /// segments interleaved with child <see cref="SvgElement"/>s. Null when the
+    /// element has no content. Consumed by text layout.
+    /// </summary>
+    internal IReadOnlyList<object>? Content => _content;
+
+    internal void AddChild(SvgElement child)
+    {
+        _children.Add(child);
+        (_content ??= new List<object>()).Add(child);
+    }
+
+    internal void AddText(string text)
+    {
+        if (text.Length == 0)
+            return;
+        (_content ??= new List<object>()).Add(text);
+    }
 
     /// <summary>Gets a raw attribute value by local name, or null.</summary>
     public string? GetAttribute(string name) =>
