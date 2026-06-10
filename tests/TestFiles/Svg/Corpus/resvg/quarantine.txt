@@ -2,5 +2,3 @@
 # Format: <test path> -- <reason>
 # Each entry is a measurable compliance gap; remove the line when fixed.
 # Upstream verdicts: linebender/resvg-test-suite results.csv.
-
-shapes/rect/ch-values.svg -- 'ch' resolves with the CSS 0.5em fallback, not real glyph metrics; render diverges from Chrome/Safari (Firefox and resvg fail this test too)
