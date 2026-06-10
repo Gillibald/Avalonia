@@ -34,6 +34,9 @@ internal sealed class SvgCompileContext
     /// </summary>
     public bool Measuring { get; set; }
 
+    /// <summary>The document root's computed font size; the reference for <c>rem</c>.</summary>
+    public double RootFontSize { get; set; } = 16;
+
     /// <summary>
     /// The hit-test tree collector, when the compilation builds one. Suspended
     /// while measuring (throwaway recordings must not contribute hit nodes) and
@@ -174,6 +177,7 @@ internal sealed class SvgCompileContext
         try
         {
             var style = SvgStyle.CreateDefault(Viewport);
+            style.RootFontSize = RootFontSize;
 
             if (target.Name is "symbol" or "svg" or "marker" or "pattern" or "mask")
             {

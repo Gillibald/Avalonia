@@ -69,8 +69,8 @@ internal static class SvgText
     public static void Compile(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
-        var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport);
-        var y = GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport);
+        var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
+        var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
 
         var chunk = new List<StyledRun>();
         var chunkOrigin = new Point(x, y);
@@ -121,14 +121,14 @@ internal static class SvgText
                             FlushChunk(textElement, context, compileContext, chunk, chunkOrigin);
                             chunk = new List<StyledRun>();
                             chunkOrigin = new Point(
-                                newX != null ? GetLength(child, "x", SvgLengthAxis.Horizontal, style.Viewport) : chunkOrigin.X,
-                                newY != null ? GetLength(child, "y", SvgLengthAxis.Vertical, style.Viewport) : chunkOrigin.Y);
+                                newX != null ? GetLength(child, "x", SvgLengthAxis.Horizontal, style) : chunkOrigin.X,
+                                newY != null ? GetLength(child, "y", SvgLengthAxis.Vertical, style) : chunkOrigin.Y);
                         }
 
                         CollectContent(
                             textElement, child, context, compileContext, childStyle, isSpan: true,
-                            dx: pendingDx + GetLength(child, "dx", SvgLengthAxis.Horizontal, style.Viewport),
-                            dy: pendingDy + GetLength(child, "dy", SvgLengthAxis.Vertical, style.Viewport),
+                            dx: pendingDx + GetLength(child, "dx", SvgLengthAxis.Horizontal, style),
+                            dy: pendingDy + GetLength(child, "dy", SvgLengthAxis.Vertical, style),
                             ref chunk, ref chunkOrigin);
                         pendingDx = 0;
                         pendingDy = 0;
@@ -309,7 +309,7 @@ internal static class SvgText
         {
             startOffset = startOffsetLength.Unit == SvgLengthUnit.Percent
                 ? startOffsetLength.Value / 100.0 * sampler.TotalLength
-                : startOffsetLength.Resolve(SvgLengthAxis.Other, style.Viewport);
+                : startOffsetLength.Resolve(SvgLengthAxis.Other, style.Viewport, style.FontSize, style.RootFontSize);
         }
 
         var bounds = new Rect(0, 0, sampler.TotalLength, style.FontSize * 2);
@@ -450,11 +450,11 @@ internal static class SvgText
         return style.ResolveBrush(style.Fill, style.FillOpacity);
     }
 
-    private static double GetLength(SvgElement element, string name, SvgLengthAxis axis, Size viewport)
+    private static double GetLength(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)
     {
         var value = element.GetStyleOrAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
-            return length.Resolve(axis, viewport);
+            return length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize);
         return 0;
     }
 }

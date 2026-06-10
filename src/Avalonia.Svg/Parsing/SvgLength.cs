@@ -11,9 +11,19 @@ internal enum SvgLengthUnit
     Picas,
     Millimeters,
     Centimeters,
+    /// <summary>CSS <c>Q</c>: quarter-millimeters.</summary>
+    QuarterMillimeters,
     Inches,
     Em,
     Ex,
+    /// <summary>CSS <c>rem</c>: relative to the root element's font size.</summary>
+    Rem,
+    /// <summary>CSS <c>ch</c>: the advance of "0"; resolved with the spec's 0.5em fallback.</summary>
+    Ch,
+    ViewportWidth,
+    ViewportHeight,
+    ViewportMin,
+    ViewportMax,
     Percent,
 }
 
@@ -27,6 +37,13 @@ internal enum SvgLengthAxis
 }
 
 /// <summary>An SVG length: a number with an optional unit.</summary>
+/// <remarks>
+/// SVG 2 turned the geometry attributes into CSS length-percentage values, so
+/// the accepted units are the CSS set (matched ASCII case-insensitively, which
+/// also covers the SVG 1.1 grammar). Units no major renderer supports in this
+/// context (<c>cap</c>, <c>ic</c>, <c>lh</c>, <c>rlh</c>, <c>vi</c>, <c>vb</c>)
+/// are rejected, which drops the attribute per the error-handling rules.
+/// </remarks>
 internal readonly struct SvgLength
 {
     public SvgLength(double value, SvgLengthUnit unit)
@@ -51,22 +68,36 @@ internal readonly struct SvgLength
         var unit = SvgLengthUnit.User;
         if (tokenizer.TryReadIdentifier(out var identifier))
         {
-            if (identifier.SequenceEqual("px".AsSpan()))
+            if (Is(identifier, "px"))
                 unit = SvgLengthUnit.Pixels;
-            else if (identifier.SequenceEqual("pt".AsSpan()))
+            else if (Is(identifier, "pt"))
                 unit = SvgLengthUnit.Points;
-            else if (identifier.SequenceEqual("pc".AsSpan()))
+            else if (Is(identifier, "pc"))
                 unit = SvgLengthUnit.Picas;
-            else if (identifier.SequenceEqual("mm".AsSpan()))
+            else if (Is(identifier, "mm"))
                 unit = SvgLengthUnit.Millimeters;
-            else if (identifier.SequenceEqual("cm".AsSpan()))
+            else if (Is(identifier, "cm"))
                 unit = SvgLengthUnit.Centimeters;
-            else if (identifier.SequenceEqual("in".AsSpan()))
+            else if (Is(identifier, "q"))
+                unit = SvgLengthUnit.QuarterMillimeters;
+            else if (Is(identifier, "in"))
                 unit = SvgLengthUnit.Inches;
-            else if (identifier.SequenceEqual("em".AsSpan()))
+            else if (Is(identifier, "em"))
                 unit = SvgLengthUnit.Em;
-            else if (identifier.SequenceEqual("ex".AsSpan()))
+            else if (Is(identifier, "ex"))
                 unit = SvgLengthUnit.Ex;
+            else if (Is(identifier, "rem"))
+                unit = SvgLengthUnit.Rem;
+            else if (Is(identifier, "ch"))
+                unit = SvgLengthUnit.Ch;
+            else if (Is(identifier, "vw"))
+                unit = SvgLengthUnit.ViewportWidth;
+            else if (Is(identifier, "vh"))
+                unit = SvgLengthUnit.ViewportHeight;
+            else if (Is(identifier, "vmin"))
+                unit = SvgLengthUnit.ViewportMin;
+            else if (Is(identifier, "vmax"))
+                unit = SvgLengthUnit.ViewportMax;
             else
             {
                 length = default;
@@ -88,11 +119,15 @@ internal readonly struct SvgLength
         return true;
     }
 
+    private static bool Is(ReadOnlySpan<char> identifier, string unit) =>
+        identifier.Equals(unit.AsSpan(), StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Resolves the length to DIPs (CSS pixels at 96 dpi).</summary>
     /// <param name="axis">The axis percentages resolve against.</param>
-    /// <param name="viewport">The viewport size for percentages.</param>
-    /// <param name="fontSize">The font size for <c>em</c>/<c>ex</c>.</param>
-    public double Resolve(SvgLengthAxis axis, Size viewport, double fontSize = 16)
+    /// <param name="viewport">The viewport size for percentages and viewport units.</param>
+    /// <param name="fontSize">The font size for <c>em</c>/<c>ex</c>/<c>ch</c>.</param>
+    /// <param name="rootFontSize">The root element's font size for <c>rem</c>.</param>
+    public double Resolve(SvgLengthAxis axis, Size viewport, double fontSize = 16, double rootFontSize = 16)
     {
         switch (Unit)
         {
@@ -107,12 +142,27 @@ internal readonly struct SvgLength
                 return Value * (96.0 / 25.4);
             case SvgLengthUnit.Centimeters:
                 return Value * (96.0 / 2.54);
+            case SvgLengthUnit.QuarterMillimeters:
+                return Value * (96.0 / 25.4 / 4.0);
             case SvgLengthUnit.Inches:
                 return Value * 96.0;
             case SvgLengthUnit.Em:
                 return Value * fontSize;
+            // The x-height and zero-advance measures use the spec-sanctioned
+            // 0.5em fallback; glyph metrics are not consulted at parse level.
             case SvgLengthUnit.Ex:
+            case SvgLengthUnit.Ch:
                 return Value * fontSize * 0.5;
+            case SvgLengthUnit.Rem:
+                return Value * rootFontSize;
+            case SvgLengthUnit.ViewportWidth:
+                return Value / 100.0 * viewport.Width;
+            case SvgLengthUnit.ViewportHeight:
+                return Value / 100.0 * viewport.Height;
+            case SvgLengthUnit.ViewportMin:
+                return Value / 100.0 * Math.Min(viewport.Width, viewport.Height);
+            case SvgLengthUnit.ViewportMax:
+                return Value / 100.0 * Math.Max(viewport.Width, viewport.Height);
             case SvgLengthUnit.Percent:
                 var reference = axis switch
                 {
