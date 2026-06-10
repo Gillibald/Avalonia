@@ -73,34 +73,36 @@ internal static class SvgPaintServers
                 ? GetCoordinate(chain, "fy", "radialGradient", 50, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport)
                 : cy;
 
+            var fr = GetCoordinate(chain, "fr", "radialGradient", 0, objectBoundingBox, SvgLengthAxis.Other, context.Viewport);
+
             // A negative radius is an error: the paint is invalid. A zero
-            // radius paints the last stop's color.
-            if (r < 0)
+            // end radius paints the last stop's color.
+            if (r < 0 || fr < 0)
                 return null;
             if (r == 0)
                 return new ImmutableSolidColorBrush(stops[stops.Count - 1].Color, opacity);
 
-            // A focal point outside the end circle is moved onto it, per spec.
+            // SVG 2 renders a focal point outside the end circle as a true
+            // two-point conical gradient, leaving the area outside the cone
+            // unpainted. The brush only takes its conical path with a focal
+            // radius, so give such a focal point a negligible one.
             var dx = fx - cx;
             var dy = fy - cy;
-            var distance = Math.Sqrt(dx * dx + dy * dy);
-            if (distance > r)
-            {
-                var k = r / distance * 0.999;
-                fx = cx + dx * k;
-                fy = cy + dy * k;
-            }
+            if (fr == 0 && dx * dx + dy * dy > r * r)
+                fr = r * 1e-6;
 
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
             return new ImmutableRadialGradientBrush(
                 stops,
                 opacity,
                 transform: transform,
+                transformOrigin: null,
                 spreadMethod: spreadMethod,
                 center: new RelativePoint(cx, cy, unit),
                 gradientOrigin: new RelativePoint(fx, fy, unit),
                 radiusX: new RelativeScalar(r, unit),
-                radiusY: new RelativeScalar(r, unit));
+                radiusY: new RelativeScalar(r, unit),
+                focalRadius: new RelativeScalar(fr, unit));
         }
         else
         {

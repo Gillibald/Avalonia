@@ -32,12 +32,6 @@ painting/stroke/pattern-on-text.svg -- text stroking not supported
 painting/stroke/radial-gradient-on-text.svg -- text stroking not supported
 painting/stroke-opacity/on-text.svg -- text stroking not supported
 
-# Avalonia's RadialGradientBrush has no focal radius, and its focal-point
-# rendering diverges for points clamped onto the end circle.
-paint-servers/radialGradient/fr=0.2.svg -- focal radius (fr) not supported by the radial brush
-paint-servers/radialGradient/fr=0.7.svg -- focal radius (fr) not supported by the radial brush
-paint-servers/radialGradient/focal-point-correction.svg -- corrected focal point renders incorrectly through the radial brush (needs investigation)
-
 # patternTransform composes with the referencing element's transform here;
 # browsers keep the pattern orientation independent of it.
 paint-servers/pattern/transform-and-patternTransform.svg -- patternTransform composition with the element transform diverges from browsers
