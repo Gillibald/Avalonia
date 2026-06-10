@@ -147,6 +147,7 @@
     <Project Path="tests/Avalonia.RenderTests.WpfCompare/Avalonia.RenderTests.WpfCompare.csproj" />
     <Project Path="tests/Avalonia.Skia.RenderTests/Avalonia.Skia.RenderTests.csproj" />
     <Project Path="tests/Avalonia.Skia.UnitTests/Avalonia.Skia.UnitTests.csproj" />
+    <Project Path="tests/Avalonia.Svg.UnitTests/Avalonia.Svg.UnitTests.csproj" />
     <Project Path="tests/Avalonia.UnitTests/Avalonia.UnitTests.csproj" />
   </Folder>
   <Folder Name="/Tests/TestFiles/" />
@@ -194,5 +195,6 @@
   <Project Path="src/Avalonia.Native/Avalonia.Native.csproj" />
   <Project Path="src/Avalonia.OpenGL/Avalonia.OpenGL.csproj" />
   <Project Path="src/Avalonia.Remote.Protocol/Avalonia.Remote.Protocol.csproj" />
+  <Project Path="src/Avalonia.Svg/Avalonia.Svg.csproj" />
   <Project Path="src/Avalonia.Vulkan/Avalonia.Vulkan.csproj" />
 </Solution>

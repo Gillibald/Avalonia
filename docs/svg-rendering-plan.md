@@ -534,41 +534,69 @@ extend this branch.
 
 ### Checklist
 
-- [ ] Create `src/Avalonia.Svg/Avalonia.Svg.csproj` and wire into `Avalonia.slnx`.
-- [ ] Parser skeleton: `SvgDocument.Load(Stream)` / `Load(Uri)` / `Parse(string)`.
-- [ ] `XmlReader`-based element parser producing `SvgElement` tree.
-- [ ] Attribute + inline-style resolver (no CSS cascade yet — presentation
-      attributes and `style="..."` only).
-- [ ] Reference attributes resolve both plain `href` (SVG 2) and legacy
-      `xlink:href` (SVG 1.1) at a single lookup point.
-- [ ] Unit parser (`px`, `pt`, `em`, `%`, unitless) → DIPs.
-- [ ] Path-data (`d`) parser → `StreamGeometry`.
-- [ ] Transform parser (`translate/rotate/scale/skewX/skewY/matrix`) → `Matrix`.
-- [ ] `viewBox` + `preserveAspectRatio` → outer `Matrix`.
-- [ ] Compiler emits `DrawRectangle`, `DrawEllipse`, `DrawLine`, `DrawGeometry`
-      for `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`.
-- [ ] `rx` / `ry` support the SVG 2 `auto` keyword on `<rect>` and
+- [x] Create `src/Avalonia.Svg/Avalonia.Svg.csproj` and wire into `Avalonia.slnx`.
+- [x] Parser skeleton: `SvgDocument.Load(Stream)` / `Load(Uri)` / `Parse(string)`.
+      The reader ignores DTDs, resolves no external entities, and skips
+      foreign-namespace subtrees (editor metadata).
+- [x] `XmlReader`-based element parser producing `SvgElement` tree (+ id map).
+- [x] Attribute + inline-style resolver (no CSS cascade yet — presentation
+      attributes and `style="..."` only; `style` declarations win, `inherit`
+      keeps the inherited value, inheritance via value-copied style context).
+- [x] Reference attributes resolve both plain `href` (SVG 2) and legacy
+      `xlink:href` (SVG 1.1) at a single lookup point (`SvgElement.Href`).
+- [x] Unit parser (`px`, `pt`, `pc`, `mm`, `cm`, `in`, `em`, `ex`, `%`,
+      unitless) → DIPs, with per-axis percentage resolution.
+- [x] Path-data (`d`) parser → `IGeometryContext`/`StreamGeometry`. Full
+      command set incl. smooth reflection, juxtaposed arc flags, scientific
+      notation, compressed numbers; malformed input renders its valid prefix
+      per the SVG error rules.
+- [x] Transform parser (`translate/rotate/scale/skewX/skewY/matrix`) →
+      `Matrix` (right-most transform applies first).
+- [x] `viewBox` + `preserveAspectRatio` → outer `Matrix` (all alignments,
+      meet/slice).
+- [x] Compiler emits `DrawRectangle`, `DrawEllipse`, `DrawLine`, `DrawGeometry`
+      for `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`;
+      `defs`/`symbol`/paint-server containers are excluded from rendering;
+      `display: none` prunes subtrees.
+- [x] `rx` / `ry` support the SVG 2 `auto` keyword on `<rect>` and
       `<ellipse>` (each defaults to the other when `auto` or absent).
-- [ ] Solid fill/stroke via `ImmutableSolidColorBrush` / `ImmutablePen`.
-- [ ] `fill-rule` and `stroke-dasharray` / `stroke-dashoffset` round-trip
-      verification (gaps 4.5, 4.8).
-- [ ] `SvgImage : IImage` that owns the root `DrawingRecording` and draws it
-      via `context.DrawRecording(...)`.
+- [x] Solid fill/stroke via `ImmutableSolidColorBrush` / `ImmutablePen`,
+      including `currentColor` and the SVG initial values (miter limit 4,
+      butt caps); `url(#...)` paints parse as references for Phase 2.
+- [x] `fill-rule` and `stroke-dasharray` / `stroke-dashoffset` round-trip
+      verification (gaps 4.5, 4.8) — unit level: `SetFillRule` emission and
+      the user-unit → thickness-multiple dash conversion (incl. odd-list
+      doubling) are asserted; pixel goldens follow with the render-test
+      project.
+- [x] `SvgImage : IImage` that owns the root `DrawingRecording` and draws it
+      via a single fused `context.DrawRecording(recording, matrix)` under a
+      dest-rect clip.
 
 ### Tests
 
 All tests live under the SVG test assemblies — no additions to
 `Avalonia.Base` tests.
 
-- `Avalonia.Svg.UnitTests/ParserTests` — unit/transform/path-data parsers.
-  - Covers malformed input, scientific notation, implicit commands, relative
-    vs absolute path commands.
-- `Avalonia.Svg.UnitTests/CompilerTests` — for each shape, snapshot the
-  emitted `RenderItemList` structure (inspect via public `DrawingRecording`
-  APIs or `Bounds`/`HitTest` observations). Includes dash and fill-rule
-  round-trip coverage by rendering to a recording and inspecting behavior.
-- `Avalonia.Svg.RenderTests` — bitmap reference diffs for a W3C SVG test
-  subset (shapes, path, viewBox, stroke-dasharray, fill-rule).
+- [x] `Avalonia.Svg.UnitTests` parser tests (`SvgPathParserTests`,
+  `SvgTransformParserTests`, `SvgLengthTests`, `SvgViewBoxTests`,
+  `SvgPaintTests`, `SvgDocumentTests`) — path data asserts the emitted
+  geometry commands through a recording `IGeometryContext` sink (no render
+  platform needed); covers malformed input (valid-prefix emission),
+  scientific notation, compressed numbers, juxtaposed arc flags, implicit
+  commands, relative vs absolute, smooth reflection, href dual lookup,
+  foreign-namespace skipping, DTD ignoring and intrinsic-size rules.
+- [x] `Avalonia.Svg.UnitTests/SvgCompilerTests` — per-shape behavior
+  observed through public `DrawingRecording` `Bounds`/`HitTest` (rect,
+  rounded rect via `ry`+auto `rx`, circle, ellipse incl. auto radius, line,
+  group/shape transforms, inheritance, `display:none`, `defs` exclusion,
+  `currentColor`, viewBox meet/scale, `SvgImage` size + scaled draw) plus
+  pen-construction tests (SVG initial values, dash thickness-multiple
+  conversion, odd-list doubling). Geometry-backed shapes (path/poly) are
+  covered at the parser level; their pixel behavior lands with the render
+  tests.
+- [ ] `Avalonia.Svg.RenderTests` — bitmap reference diffs for a W3C/resvg
+  test subset (shapes, path, viewBox, stroke-dasharray, fill-rule).
+  **Next up** — project scaffolding mirroring `Avalonia.Skia.RenderTests`.
 
 ---
 
