@@ -5,48 +5,54 @@ Build an `Avalonia.Svg` library that parses SVG documents, compiles them into
 replays them on every frame. SVG's `<symbol>` / `<use>` / `<defs>` concepts map
 naturally onto shared, replayable recordings.
 
-`DrawingRecording` is **not yet a stable API**, so its internal shape and
-behavior may be changed freely where this plan requires it. `IDrawingContextImpl`
-**is** stable and externally implementable; new backend capabilities are added
-via probe interfaces (`IDrawingContextImplWith<Feature>`) rather than
-modifications to `IDrawingContextImpl` itself.
+`DrawingRecording` is **not yet a stable API**, but Phase 0 brought it to a
+feature-complete, hardened shape that is not expected to diverge much —
+**SVG support is the proof of concept that validates it**.
+`IDrawingContextImpl` **is** stable and externally implementable; new
+backend capabilities are added via probe interfaces
+(`IDrawingContextImplWith<Feature>`) rather than modifications to
+`IDrawingContextImpl` itself.
 
 ## Branching & Review Strategy
 
-**All `DrawingRecording` / `DrawingContext` API and recording-pipeline
-evolution lands and is reviewed before any SVG code is written.** The SVG
-branch consumes a finished recording primitive; it does not extend it.
+**SVG development does not wait for `DrawingRecording` to merge.** Phase 0
+is feature-complete and audited against every SVG consumer in this plan;
+its shape is treated as settled. The SVG implementation starts immediately
+as the proof of concept — a real consumer whose feedback strengthens the
+Phase 0 review instead of trailing it.
 
-Two branches, two reviews, in order:
+Two branches, separate concerns, developed in parallel:
 
-1. **Phase 0 — `feature/drawing-recording`** off `upstream/master`. Brings
-   `DrawingRecording` to the shape SVG needs: baseline + bounds/transform/
-   ownership (R1–R5), bounds-change signal (R7), recording brush (G1),
-   luminance masks (G2), and unified layer API for blend modes + group
-   opacity + filter effects (G3). Phase 0 is broken into sub-phases that
-   can land as separate commits or stacked PRs on the same branch; review
-   happens once the full recording surface is in place.
+1. **Phase 0 — `feature/drawing-recording`** off `upstream/master`.
+   Feature-complete: baseline + bounds/transform/ownership (R1–R5),
+   bounds-change signal (R7), recording brush (G1), luminance masks (G2),
+   unified layer API for blend modes + group opacity + filter effects
+   (G3), and the immutable resource policy. Under review; merges to
+   `master` on its own schedule.
 
    **Note:** R6 (element tags inside the recording) was prototyped and
    then withdrawn — element identity is an SVG-layer concern handled by
    the SVG compiler's own scene graph, not by the recording API.
-2. **Phases 1–6 — `feature/svg-rendering`** off the merged Phase 0. Adds
-   `Avalonia.Svg` (parser, compiler, control, hit testing, animation
-   driver). **No changes to `DrawingRecording`, `DrawingContext`, or the
-   recording pipeline.** If SVG uncovers a missing recording capability
-   mid-phase, work stops and a follow-up PR against `DrawingRecording` is
-   opened — it is not mixed into the SVG branch.
+2. **Phases 1–6 — `feature/svg-rendering`**, stacked on
+   `feature/drawing-recording` and started immediately. Adds `Avalonia.Svg`
+   (parser, compiler, control, hit testing, animation driver). **No changes
+   to `DrawingRecording`, `DrawingContext`, or the recording pipeline land
+   on this branch.** If SVG uncovers a missing or wrong recording
+   capability, the fix is a commit (or follow-up PR) on the *recording*
+   side and the SVG branch rebases onto it — SVG work continues rather
+   than stopping. Once Phase 0 merges, the SVG branch rebases onto
+   `master`.
 
-Rationale: reviewers evaluate the recording primitive once, as a coherent
-surface, rather than chasing incremental extensions drip-fed through the SVG
-phases. The SVG branch then reads as "here is a parser and compiler that
-uses an existing API."
+Rationale: the recording PR stays one coherent, reviewable surface, and the
+SVG branch reads as "here is a parser and compiler that uses an existing
+API" — while the proof of concept exercises that API early enough for any
+findings to flow into the Phase 0 review rather than after it.
 
 The only carve-outs allowed on the SVG branch are **backend-only**
 implementations of already-declared probe interfaces (e.g. the Skia side of
 `IDrawingContextImplWithLuminanceMask`) where the API shipped in Phase 0 but
-the backend wasn't exercised. Even these should be rare; Phase 0 aims to
-ship working Skia lowering for every API it adds.
+the backend wasn't exercised. Even these should be rare; Phase 0 ships
+working Skia lowering for every API it adds.
 
 ## Architecture
 
@@ -69,6 +75,31 @@ Compositor binding:
 - Use the immutable `DrawingRecording.Create(…)` overload for static SVGs
   (the common case).
 
+## Spec Target
+
+Neither "SVG 1.1" nor "SVG 2.0" alone describes what real content needs:
+SVG 2 never left Candidate Recommendation and re-homed half its features
+into CSS modules, while strict 1.1 misses syntax that modern exporters
+emit. The target is the profile resvg and librsvg converged on:
+
+- **Feature scope:** SVG 1.1 Full, minus the legacy SVG 2 removed
+  (`<tref>`, `<altGlyph>`, SVG fonts, `enable-background`), plus the
+  SVG 2 / CSS-module features that are table stakes in current content:
+  - plain `href` accepted everywhere alongside legacy `xlink:href`
+    (Phase 1 parser rule);
+  - `rx` / `ry` `auto` keyword on `<rect>` / `<ellipse>` (Phase 1);
+  - `paint-order` (Phase 3, already planned);
+  - `mix-blend-mode` / `isolation` via the Phase 0.6 layer API (Phase 3);
+  - `orient="auto-start-reverse"` on markers (Phase 3);
+  - `mask-type` / `mask-mode` (Phase 4, already planned).
+- **Interpretation:** wherever SVG 1.1 and SVG 2 (or its CSS successors —
+  CSS Transforms, CSS Masking, CSS Compositing & Blending, Filter Effects
+  Level 1) both define a behavior, the SVG 2 / CSS text is normative; it
+  is the cleaned-up wording browsers actually implement.
+- **Excluded SVG 2 features** (unshipped anywhere, absent from content,
+  and — for mesh gradients/hatches — the ones that would require new
+  recording primitives): listed under Non-Goals.
+
 ## SVG → DrawingContext Mapping Reference
 
 | SVG | DrawingContext |
@@ -90,6 +121,36 @@ Compositor binding:
 | `pattern` | `DrawingRecordingBrush` (new `TileBrush`) |
 | `<use>` | `DrawRecording(cachedRecording)` inside `PushTransform` |
 | `<symbol>` | Pre-compiled reusable `DrawingRecording` |
+
+## Non-Goals (initial scope)
+
+Explicitly out of scope for Phases 1–6; revisit on demand afterwards:
+
+- `<foreignObject>`, scripting (`<script>`, DOM APIs), and declarative
+  interactivity beyond the pointer events in Phase 6.
+- Full CSS cascade (external stylesheets, selector machinery beyond the
+  minimal resolver). Phase 1 supports presentation attributes + inline
+  `style`; Phase 6 adds only minimal CSS animations/transitions.
+- `vector-effect="non-scaling-stroke"`.
+- `color-interpolation-filters="linearRGB"`: filters and luminance masks
+  operate in sRGB (matching common browser behavior), diverging from the
+  SVG 1.1 default on the letter of the spec.
+- Full SMIL timing — only `begin`/`dur`/`repeatCount` and
+  linear/discrete `calcMode` (Phase 6).
+- Non-linear filter primitive graphs — linear `in`/`result` chains only
+  (Phase 5).
+- SVG 2 features with no browser implementation and no real-world content:
+  mesh gradients, `<hatch>`, the SVG 2 text-layout model (`inline-size`,
+  `shape-inside`, automatic wrapping), and the `miter-clip` / `arcs` line
+  joins. Mesh gradients and hatches would also require new recording
+  primitives, putting them doubly out of scope.
+- SVG 1.1 legacy that SVG 2 removed: `<tref>`, `<altGlyph>`, SVG fonts,
+  `enable-background` / the `BackgroundImage` filter inputs.
+- Geometry properties via CSS (`d: path(…)`, `cx:` etc.) — deferred along
+  with the minimal-CSS scope.
+- A dedicated rasterized-export API: `SvgImage` → bitmap is
+  `RenderTargetBitmap.CreateDrawingContext()` + `context.DrawRecording(...)`,
+  which already works.
 
 ## DrawingRecording Evolution (Phase 0 scope)
 
@@ -137,7 +198,7 @@ behavior may change freely.
 | — | Baseline DrawingRecording concept | 0.1 | drawing-recording | Yes — baseline |
 | 4.1 | Pattern brush backed by `DrawingRecording` | 0.4 (as G1) | drawing-recording | Yes |
 | 4.2 | Luminance masks | 0.5 (as G2) | drawing-recording | Yes |
-| 4.3 | Filter effects via `PushLayer` + `IEffect` | 0.6 (API as G3) + Phase 5 (new effect subtypes) | drawing-recording (API) + svg-rendering (compiler) | Partial — API in Phase 0.6, additional `IEffect` subtypes deferred to Phase 5 |
+| 4.3 | Filter effects via `PushLayer` + `IEffect` | 0.6 (API as G3) + recording-side follow-up (new effect subtypes, consumed by Phase 5) | drawing-recording (API + effect subtypes) + svg-rendering (compiler) | Partial — API in Phase 0.6; additional `IEffect` subtypes land recording-side when Phase 5 needs them |
 | 4.10 | Eager bounds for compositor-bound recordings | 0.2 (as R1) | drawing-recording | Yes |
 | 4.11 | Explicit nested recording ownership | 0.2 (as R2, R5) | drawing-recording | Yes |
 | 4.4 | Paint order | 3 | svg-rendering | No (compiler) |
@@ -170,8 +231,10 @@ as a short stack of PRs depending on review preference.
 - `DrawingRecordingTests`, `CompositorBoundDrawingRecordingTests`,
   `DrawingRecordingBrushTests` and the Skia render tests
   (`DrawingRecordingTests`, `BlendModeRenderTests`) all pass.
-- PR(s) merged into `master`.
-- `feature/svg-rendering` branches from the merge commit.
+- PR(s) merged into `master` — proceeds in parallel with SVG development
+  and is **not** a gate for starting Phases 1–6.
+- `feature/svg-rendering` is stacked on this branch and rebases onto
+  `master` once Phase 0 merges.
 
 ---
 
@@ -439,9 +502,9 @@ restore" in Skia.
       single `SKPaint` (`Alpha` + `BlendMode` + `ImageFilter`) and
       calling `SaveLayer`.
 - [ ] **Deferred:** new `IEffect` subtypes (`IColorMatrixEffect`,
-      `IOffsetEffect`, `ICompositeEffect`). SVG Phase 5 (filters) will
-      revisit when the compiler needs primitives beyond blur and
-      drop-shadow.
+      `IOffsetEffect`, `ICompositeEffect`). When SVG Phase 5 (filters)
+      needs primitives beyond blur and drop-shadow, they land as a
+      recording-side commit/follow-up PR — not on the SVG branch.
 
 #### Tests
 
@@ -461,8 +524,10 @@ restore" in Skia.
 
 ## Phase 1 — Shapes & Paths
 
-**Branch:** Begin `feature/svg-rendering` off the merge commit of Phase 0.
-All subsequent phases extend this branch.
+**Branch:** Begin `feature/svg-rendering` stacked on
+`feature/drawing-recording` — there is no need to wait for the Phase 0
+merge; rebase onto `master` once Phase 0 lands. All subsequent phases
+extend this branch.
 
 **Goal:** Static SVGs with basic shapes render correctly into a
 `DrawingRecording`. No engine changes.
@@ -474,12 +539,16 @@ All subsequent phases extend this branch.
 - [ ] `XmlReader`-based element parser producing `SvgElement` tree.
 - [ ] Attribute + inline-style resolver (no CSS cascade yet — presentation
       attributes and `style="..."` only).
+- [ ] Reference attributes resolve both plain `href` (SVG 2) and legacy
+      `xlink:href` (SVG 1.1) at a single lookup point.
 - [ ] Unit parser (`px`, `pt`, `em`, `%`, unitless) → DIPs.
 - [ ] Path-data (`d`) parser → `StreamGeometry`.
 - [ ] Transform parser (`translate/rotate/scale/skewX/skewY/matrix`) → `Matrix`.
 - [ ] `viewBox` + `preserveAspectRatio` → outer `Matrix`.
 - [ ] Compiler emits `DrawRectangle`, `DrawEllipse`, `DrawLine`, `DrawGeometry`
       for `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `path`.
+- [ ] `rx` / `ry` support the SVG 2 `auto` keyword on `<rect>` and
+      `<ellipse>` (each defaults to the other when `auto` or absent).
 - [ ] Solid fill/stroke via `ImmutableSolidColorBrush` / `ImmutablePen`.
 - [ ] `fill-rule` and `stroke-dasharray` / `stroke-dashoffset` round-trip
       verification (gaps 4.5, 4.8).
@@ -557,9 +626,14 @@ changes.
 - [ ] `<marker>` — compile each marker once to a `DrawingRecording`; compute
       vertex positions + tangents from the owner path; emit
       `PushTransform(translate + rotate)` + `DrawRecording(markerRec)`
-      (gap 4.7).
+      (gap 4.7). `orient` supports `auto`, fixed angles, and SVG 2
+      `auto-start-reverse`.
 - [ ] `paint-order: stroke fill` — split into two `DrawGeometry` calls
       (gap 4.4).
+- [ ] `mix-blend-mode` / `isolation` →
+      `PushLayer(new LayerOptions { BlendMode = … })` around the element or
+      group (Phase 0.6 layer API; `isolation: isolate` is a passthrough
+      layer that bounds the blend).
 - [ ] `fill-opacity`, `stroke-opacity`, and `opacity` composition rules.
 
 ### Tests
@@ -569,7 +643,10 @@ changes.
 - `CompilerTests.TextOnPath` — straight path, curved path, closed path with
   wrap-around; glyph rotation matches tangent within tolerance.
 - `CompilerTests.Markers` — start/mid/end markers on a polyline; rotation
-  auto vs fixed; `markerUnits` = `strokeWidth` vs `userSpaceOnUse`.
+  auto vs fixed vs `auto-start-reverse`; `markerUnits` = `strokeWidth` vs
+  `userSpaceOnUse`.
+- `CompilerTests.BlendModes` — `mix-blend-mode` emits the expected
+  `PushLayer` blend mode; `isolation: isolate` bounds it.
 - `CompilerTests.PaintOrder` — verify order of emitted items for default vs
   `paint-order: stroke fill`.
 - `RenderTests` — W3C text + marker + textPath corpus.
@@ -610,8 +687,11 @@ in Phase 0 (sub-phases 0.4 and 0.5). Pure SVG compiler work.
 
 **Goal:** SVG `<filter>` compiles to
 `PushLayer(new LayerOptions { Bounds = filterRegion, Effect = composedEffect })`
-using the layer API already shipped in Phase 0.6. Pure SVG compiler work,
-plus adding the new `IEffect` subtypes that Phase 0.6 deferred.
+using the layer API already shipped in Phase 0.6. Pure SVG compiler work.
+The new `IEffect` subtypes that Phase 0.6 deferred are a **recording-side
+prerequisite**: they land as a commit/follow-up PR on the recording side
+(consistent with the "no `Avalonia.Base` additions from the SVG branch"
+rule) before this phase's compiler work consumes them.
 
 ### Checklist
 
@@ -620,13 +700,15 @@ plus adding the new `IEffect` subtypes that Phase 0.6 deferred.
       `LayerOptions.Bounds` **plus an explicit `PushClip(filterRegion)`**
       around the layer — `LayerOptions.Bounds` sizes the offscreen buffer
       but does not clip, while SVG's filter region is a hard clip.
-- [ ] Add new `IEffect` subtypes (deferred from Phase 0.6) with their
-      `Immutable…Effect` counterparts: `IColorMatrixEffect`,
-      `IOffsetEffect`, `ICompositeEffect` (linear chain). Skia lowering
-      via `SKColorFilter.CreateColorMatrix`,
-      `SKImageFilter.CreateOffset`, `SKImageFilter.CreateCompose`.
-      `EffectAnimator` registration so each new effect's parameters
-      participate in transitions.
+- [ ] **Prerequisite (recording side, not this branch):** new `IEffect`
+      subtypes (deferred from Phase 0.6) with their `Immutable…Effect`
+      counterparts: `IColorMatrixEffect`, `IOffsetEffect`,
+      `ICompositeEffect` (linear chain). Skia lowering via
+      `SKColorFilter.CreateColorMatrix`, `SKImageFilter.CreateOffset`,
+      `SKImageFilter.CreateCompose`. `EffectAnimator` registration so each
+      new effect's parameters participate in transitions, and
+      `RenderDataLayerNode` bounds inflation extended for offset (shifts
+      bounds) and composite (union of stage paddings).
 - [ ] Primitive compilers:
   - [ ] `feGaussianBlur` → `ImmutableBlurEffect`.
   - [ ] `feOffset` → `ImmutableOffsetEffect`.
@@ -689,8 +771,22 @@ and hit testing are tracked entirely in the SVG layer.
         whether to call `DrawRecording` on each per frame. Skipping a
         subtree does not dispose it.
 - [ ] SMIL `<animate>` / `<set>` / `<animateTransform>` parser.
-- [ ] Animation driver that drives mutable brushes, pens, and transforms on
-      a compositor-bound root recording. Targets elements by id using the
+- [ ] Animation driver, two channels (recorded transforms and geometry are
+      immutable values — only paint resources are mutable inside a
+      recording):
+  - [ ] **Paint animation** (`fill`, `stroke`, pen thickness, brush
+        transforms): mutable brushes/pens recorded into a compositor-bound
+        recording; the compositor's change tracking propagates mutations
+        without re-recording. Layout reacts via R7 `BoundsChanged`.
+  - [ ] **Structural animation** (`animateTransform` on elements/groups,
+        `d` morphing, structural attribute changes): re-emitted at the
+        control level — the `Svg` control invalidates and re-issues cheap
+        `DrawRecording(subRecording, matrix, Shared)` calls against the
+        unchanged sub-recordings (the same mechanism as visibility
+        toggling). Morphing shapes draw their geometry directly or swap a
+        small per-shape recording instead of being baked into a shared
+        recording.
+- [ ] Animation targets resolve by element id through the
       `Dictionary<string, SvgElement>` the compiler maintains.
 - [ ] CSS animation + transition support (minimal: `animation-name` +
       keyframes + `transition: property duration`). Reuse existing
@@ -813,9 +909,12 @@ Avalonia.Svg
 └── SvgSource             // Markup-extension friendly, cacheable.
 ```
 
-**No additions to `Avalonia.Base`.** Phases 1–6 consume the Phase 0 API
-exclusively. If a gap is discovered, it is addressed as a separate
-`DrawingRecording` follow-up PR, not mixed into the SVG branch.
+**No additions to `Avalonia.Base` from the SVG branch.** Phases 1–6 consume
+the recording API exclusively. If a gap is discovered, the fix lands on the
+recording side (a commit or follow-up PR on `feature/drawing-recording`, or
+against `master` once it merges) and the SVG branch rebases onto it — never
+mixed into the SVG branch itself. The Phase 5 effect subtypes are the one
+already-known instance of this rule.
 
 ---
 
@@ -823,7 +922,11 @@ exclusively. If a gap is discovered, it is addressed as a separate
 
 - **Golden-image corpus.** Curate a subset of the W3C SVG 1.1 test suite under
   `tests/Avalonia.Svg.RenderTests/Golden/`. Each `.svg` has a reference PNG
-  rendered at a fixed DPI; tests diff with a PSNR/SSIM threshold.
+  rendered at a fixed DPI; tests diff with a PSNR/SSIM threshold. Augment
+  with cases from the resvg test suite — the maintained corpus for exactly
+  the Spec Target's "1.1 + de-facto SVG 2" profile — covering the cherry-
+  picks (plain `href`, `paint-order`, `mask-type`, blend modes,
+  `auto-start-reverse` markers, `rx`/`ry` `auto`).
 - **Compiler snapshot tests.** Serialize emitted `RenderItemList` to a stable
   textual representation; compare to checked-in snapshots (like
   `DrawingRecordingTests`).
