@@ -61,14 +61,35 @@ internal static class SvgPaintServers
 
         if (radial)
         {
-            var cx = GetCoordinate(chain, "cx", 0.5, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
-            var cy = GetCoordinate(chain, "cy", 0.5, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
-            var r = GetCoordinate(chain, "r", 0.5, objectBoundingBox, SvgLengthAxis.Other, context.Viewport);
-            var fx = GetCoordinate(chain, "fx", cx, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
-            var fy = GetCoordinate(chain, "fy", cy, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
+            // Geometry attributes only inherit from gradients of the same kind;
+            // defaults are percentages, resolved against the units mode.
+            var cx = GetCoordinate(chain, "cx", "radialGradient", 50, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
+            var cy = GetCoordinate(chain, "cy", "radialGradient", 50, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
+            var r = GetCoordinate(chain, "r", "radialGradient", 50, objectBoundingBox, SvgLengthAxis.Other, context.Viewport);
+            var fx = GetChained(chain, "fx", "radialGradient") != null
+                ? GetCoordinate(chain, "fx", "radialGradient", 50, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport)
+                : cx;
+            var fy = GetChained(chain, "fy", "radialGradient") != null
+                ? GetCoordinate(chain, "fy", "radialGradient", 50, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport)
+                : cy;
 
-            if (r <= 0)
+            // A negative radius is an error: the paint is invalid. A zero
+            // radius paints the last stop's color.
+            if (r < 0)
+                return null;
+            if (r == 0)
                 return new ImmutableSolidColorBrush(stops[stops.Count - 1].Color, opacity);
+
+            // A focal point outside the end circle is moved onto it, per spec.
+            var dx = fx - cx;
+            var dy = fy - cy;
+            var distance = Math.Sqrt(dx * dx + dy * dy);
+            if (distance > r)
+            {
+                var k = r / distance * 0.999;
+                fx = cx + dx * k;
+                fy = cy + dy * k;
+            }
 
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
             return new ImmutableRadialGradientBrush(
@@ -83,16 +104,10 @@ internal static class SvgPaintServers
         }
         else
         {
-            var x1 = GetCoordinate(chain, "x1", 0, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
-            var y1 = GetCoordinate(chain, "y1", 0, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
-            var x2 = GetCoordinate(chain, "x2", objectBoundingBox ? 1 : 0, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
-            var y2 = GetCoordinate(chain, "y2", 0, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
-
-            if (!objectBoundingBox && GetChained(chain, "x2") == null)
-            {
-                // The userSpaceOnUse default for x2 is 100% of the viewport.
-                x2 = context.Viewport.Width;
-            }
+            var x1 = GetCoordinate(chain, "x1", "linearGradient", 0, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
+            var y1 = GetCoordinate(chain, "y1", "linearGradient", 0, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
+            var x2 = GetCoordinate(chain, "x2", "linearGradient", 100, objectBoundingBox, SvgLengthAxis.Horizontal, context.Viewport);
+            var y2 = GetCoordinate(chain, "y2", "linearGradient", 0, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
 
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
             return new ImmutableLinearGradientBrush(
@@ -131,10 +146,15 @@ internal static class SvgPaintServers
         return chain;
     }
 
-    private static string? GetChained(List<SvgElement> chain, string attribute)
+    private static string? GetChained(List<SvgElement> chain, string attribute, string? validOn = null)
     {
         foreach (var element in chain)
         {
+            // Geometry attributes are only valid on their own gradient kind; a
+            // chain may mix kinds, in which case foreign attributes are skipped.
+            if (validOn != null && element.Name != validOn)
+                continue;
+
             if (element.GetAttribute(attribute) is { } value)
                 return value;
         }
@@ -143,12 +163,15 @@ internal static class SvgPaintServers
     }
 
     private static double GetCoordinate(
-        List<SvgElement> chain, string attribute, double fallback,
+        List<SvgElement> chain, string attribute, string? validOn, double percentFallback,
         bool objectBoundingBox, SvgLengthAxis axis, Size viewport)
     {
-        var value = GetChained(chain, attribute);
+        var value = GetChained(chain, attribute, validOn);
         if (value == null || !SvgLength.TryParse(value.AsSpan(), out var length))
-            return fallback;
+        {
+            // The spec defaults are percentages, sensitive to the units mode.
+            length = new SvgLength(percentFallback, SvgLengthUnit.Percent);
+        }
 
         if (objectBoundingBox)
         {
@@ -216,9 +239,12 @@ internal static class SvgPaintServers
             if (child.Name != "stop")
                 continue;
 
+            // Offsets accept only numbers and percentages; anything else is an
+            // error and behaves as the initial 0.
             var offset = 0.0;
             if (child.GetStyleOrAttribute("offset") is { } offsetValue
-                && SvgLength.TryParse(offsetValue.AsSpan(), out var offsetLength))
+                && SvgLength.TryParse(offsetValue.AsSpan(), out var offsetLength)
+                && offsetLength.Unit is SvgLengthUnit.User or SvgLengthUnit.Percent)
             {
                 offset = offsetLength.Unit == SvgLengthUnit.Percent
                     ? offsetLength.Value / 100.0
@@ -233,16 +259,27 @@ internal static class SvgPaintServers
             if (child.GetStyleOrAttribute("stop-color") is { } colorValue)
             {
                 if (colorValue == "currentColor")
-                    color = style.Color;
+                {
+                    // currentColor takes the 'color' value inherited through the
+                    // stop's own tree position (typically set on the gradient),
+                    // falling back to the referencing element's color.
+                    color = GetInheritedColor(child) ?? style.Color;
+                }
+                else if (colorValue == "inherit")
+                {
+                    // stop-color does not inherit by default; the keyword pulls
+                    // the nearest ancestor declaration.
+                    color = GetInheritedStopColor(child, style) ?? Colors.Black;
+                }
                 else if (SvgColor.TryParse(colorValue, out var parsed))
+                {
                     color = parsed;
+                }
             }
 
             if (child.GetStyleOrAttribute("stop-opacity") is { } opacityValue
-                && double.TryParse(opacityValue, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var stopOpacity))
+                && SvgStyle.TryParseOpacity(opacityValue, out var stopOpacity))
             {
-                stopOpacity = Math.Min(1, Math.Max(0, stopOpacity));
                 color = new Color((byte)Math.Round(color.A * stopOpacity), color.R, color.G, color.B);
             }
 
@@ -250,5 +287,36 @@ internal static class SvgPaintServers
         }
 
         return stops;
+    }
+
+    private static Color? GetInheritedColor(SvgElement element)
+    {
+        for (var current = element; current != null; current = current.Parent)
+        {
+            if (current.GetStyleOrAttribute("color") is { } value
+                && value != "inherit"
+                && SvgColor.TryParse(value, out var color))
+            {
+                return color;
+            }
+        }
+
+        return null;
+    }
+
+    private static Color? GetInheritedStopColor(SvgElement element, in SvgStyle style)
+    {
+        // stop-color does not inherit: the 'inherit' keyword takes the
+        // immediate parent's computed value, which is the initial black unless
+        // declared on the parent itself.
+        if (element.Parent?.GetStyleOrAttribute("stop-color") is { } value && value != "inherit")
+        {
+            if (value == "currentColor")
+                return GetInheritedColor(element.Parent) ?? style.Color;
+            if (SvgColor.TryParse(value, out var color))
+                return color;
+        }
+
+        return null;
     }
 }

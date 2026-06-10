@@ -1155,7 +1155,17 @@ already-known instance of this rule.
   tolerance, review the outliers ("UB" references mark upstream-undecided
   behavior).
   Scoreboard: **shapes 133/133; painting 282/304 (22 quarantined:
-  context paint, `<image>`/feImage, text stroking)** — overall 415/437.
+  context paint, `<image>`/feImage, text stroking); paint-servers
+  145/149 (4 quarantined: radial focal radius/clamped focal point,
+  patternTransform×element-transform composition)** — overall 560/586.
+  Paint-servers fixes: userSpaceOnUse gradient defaults are 50%
+  percentages, geometry attributes inherit only across the same gradient
+  kind, negative radius invalidates the paint, out-of-circle focal
+  points clamp onto it, stop offsets accept only numbers/percent,
+  stop-opacity accepts percentages, `currentColor`/`inherit` stop colors
+  resolve through the defs tree, and viewBox patterns map per
+  preserveAspectRatio (Uniform/UniformToFill instead of Fill — the
+  Pattern_With_ViewBox feature golden was regenerated for this).
   Each sweep hardened the implementation before goldening: shapes
   surfaced the CSS length units (`Q`, `rem`, viewport units, font-aware
   geometry resolution, metric-true `ch`); painting surfaced a
