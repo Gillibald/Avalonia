@@ -20,18 +20,26 @@ internal static class SvgCompiler
     /// document's <c>viewBox</c> onto a viewport of <paramref name="viewportSize"/>.
     /// </summary>
     public static void CompileDocument(SvgDocument document, DrawingContext context, Size viewportSize) =>
-        CompileDocumentCore(document, context, viewportSize, buildHitTree: false);
+        CompileDocument(document, context, viewportSize, new SvgCompileOptions());
 
     /// <summary>
     /// Compiles the document and additionally builds the element hit-test tree
     /// alongside the emitted draw calls. Returns the tree's root node.
     /// </summary>
     public static SvgHitNode? CompileDocumentWithHitTree(
-        SvgDocument document, DrawingContext context, Size viewportSize) =>
-        CompileDocumentCore(document, context, viewportSize, buildHitTree: true);
+        SvgDocument document, DrawingContext context, Size viewportSize)
+    {
+        var options = new SvgCompileOptions { BuildHitTree = true };
+        CompileDocument(document, context, viewportSize, options);
+        return options.HitRoot;
+    }
 
-    private static SvgHitNode? CompileDocumentCore(
-        SvgDocument document, DrawingContext context, Size viewportSize, bool buildHitTree)
+    /// <summary>
+    /// Compiles the document with the given options; results (hit tree,
+    /// animated paint brushes) are written back onto <paramref name="options"/>.
+    /// </summary>
+    public static void CompileDocument(
+        SvgDocument document, DrawingContext context, Size viewportSize, SvgCompileOptions options)
     {
         var root = document.Root;
         var viewBox = document.TryGetViewBox();
@@ -57,10 +65,13 @@ internal static class SvgCompiler
 
         using (viewBoxState)
         {
-            var compileContext = new SvgCompileContext(document, contentViewport);
+            var compileContext = new SvgCompileContext(document, contentViewport)
+            {
+                PaintAnimationTargets = options.PaintAnimationTargets,
+            };
 
             SvgHitTreeBuilder? hitTree = null;
-            if (buildHitTree)
+            if (options.BuildHitTree)
             {
                 hitTree = new SvgHitTreeBuilder(rootMatrix);
                 hitTree.Root.Element = root;
@@ -73,7 +84,8 @@ internal static class SvgCompiler
             foreach (var child in root.Children)
                 CompileElement(child, context, compileContext, style);
 
-            return hitTree?.Root;
+            options.HitRoot = hitTree?.Root;
+            options.AnimatedBrushes = compileContext.AnimatedBrushes;
         }
     }
 
@@ -97,6 +109,10 @@ internal static class SvgCompiler
             case "desc":
             case "metadata":
             case "script":
+            // Animation elements are consumed by the animator, not rendered.
+            case "animate":
+            case "set":
+            case "animateTransform":
                 return;
         }
 
@@ -108,7 +124,7 @@ internal static class SvgCompiler
 
         var localTransform = Matrix.Identity;
         DrawingContext.PushedState? transformState = null;
-        if (element.GetAttribute("transform") is { } transform
+        if (element.GetAnimatedOrAttribute("transform") is { } transform
             && SvgTransformParser.TryParse(transform.AsSpan(), out var matrix)
             && !matrix.IsIdentity)
         {
@@ -399,6 +415,27 @@ internal static class SvgCompiler
         return style.ResolveBrush(paint, opacity);
     }
 
+    /// <summary>
+    /// Resolves a shape's fill for drawing, swapping in the registered mutable
+    /// brush when the (element, fill) pair runs on the animation paint channel.
+    /// </summary>
+    private static IBrush? ResolveFillForDrawing(
+        SvgElement element, in SvgStyle style, SvgCompileContext compileContext, Rect bounds)
+    {
+        var brush = ResolvePaint(style.Fill, style, compileContext, bounds, style.FillOpacity);
+        return compileContext.TryGetAnimatedBrush(element, "fill", brush) ?? (IBrush?)brush;
+    }
+
+    /// <inheritdoc cref="ResolveFillForDrawing"/>
+    private static IPen? ResolveStrokeForDrawing(
+        SvgElement element, in SvgStyle style, SvgCompileContext compileContext, Rect bounds)
+    {
+        var brush = ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity);
+        if (compileContext.TryGetAnimatedBrush(element, "stroke", brush) is { } animated)
+            return style.ResolveMutablePen(animated);
+        return style.ResolvePen(brush);
+    }
+
     private static void CompileRect(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
@@ -429,8 +466,8 @@ internal static class SvgCompiler
         if (!ShouldPaint(style, compileContext))
             return;
 
-        var brush = ResolvePaint(style.Fill, style, compileContext, rect, style.FillOpacity);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect, style.StrokeOpacity));
+        var brush = ResolveFillForDrawing(element, style, compileContext, rect);
+        var pen = ResolveStrokeForDrawing(element, style, compileContext, rect);
         if (brush == null && pen == null)
             return;
 
@@ -525,8 +562,8 @@ internal static class SvgCompiler
         if (!ShouldPaint(style, compileContext))
             return;
 
-        var brush = ResolvePaint(style.Fill, style, compileContext, rect, style.FillOpacity);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect, style.StrokeOpacity));
+        var brush = ResolveFillForDrawing(element, style, compileContext, rect);
+        var pen = ResolveStrokeForDrawing(element, style, compileContext, rect);
         if (brush == null && pen == null)
             return;
 
@@ -560,7 +597,7 @@ internal static class SvgCompiler
             return;
 
         var bounds = new Rect(new Point(x1, y1), new Point(x2, y2));
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity));
+        var pen = ResolveStrokeForDrawing(element, style, compileContext, bounds);
         if (pen != null)
             context.DrawLine(pen, new Point(x1, y1), new Point(x2, y2));
 
@@ -686,8 +723,8 @@ internal static class SvgCompiler
         if (!ShouldPaint(style, compileContext))
             return;
 
-        var brush = ResolvePaint(style.Fill, style, compileContext, bounds, style.FillOpacity);
-        var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity));
+        var brush = ResolveFillForDrawing(element, style, compileContext, bounds);
+        var pen = ResolveStrokeForDrawing(element, style, compileContext, bounds);
         if (brush == null && pen == null)
             return;
 

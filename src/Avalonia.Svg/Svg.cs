@@ -4,6 +4,8 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Logging;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
+using Avalonia.Svg.Animation;
 
 namespace Avalonia.Svg;
 
@@ -42,6 +44,11 @@ public class Svg : Control
     private SvgImage? _image;
     private SvgDocument? _ownedDocument;
     private bool _loadFailed;
+    private SvgAnimator? _animator;
+    private bool _animatorInitialized;
+    private bool _animationRunning;
+    private Action<TimeSpan>? _animationFrame;
+    private TimeSpan? _animationStart;
 
     static Svg()
     {
@@ -195,7 +202,7 @@ public class Svg : Control
         if (_image != null)
             return _image;
 
-        var document = Document;
+        var document = Document ?? _ownedDocument;
         if (document == null && !_loadFailed && Source is { } source)
         {
             try
@@ -216,29 +223,125 @@ public class Svg : Control
         if (document == null)
             return null;
 
-        _image = new SvgImage(document);
+        if (!_animatorInitialized)
+        {
+            _animatorInitialized = true;
+            _animator = SvgAnimator.TryCreate(document);
+        }
+
+        // Paint-only animations compile once into a compositor-bound recording
+        // with mutable brushes; the ticks then propagate through the
+        // compositor's change tracking without ever re-compiling. Everything
+        // else (or no compositor yet) compiles immutable; structural ticks
+        // re-compile against the document's cached shared sub-recordings.
+        if (_animator is { HasStructural: false } paintAnimator && GetCompositor() is { } compositor)
+        {
+            _image = new SvgImage(document, compositor, paintAnimator.GetPaintTargets());
+            paintAnimator.BindPaintBrushes(_image.AnimatedBrushes);
+        }
+        else
+        {
+            _image = new SvgImage(document);
+        }
 
         // Compositor-bound (animated) recordings report bounds changes; static
         // immutable recordings never do (and throw on subscription).
         if (_image.Recording.Compositor != null)
             _image.Recording.BoundsChanged += OnRecordingBoundsChanged;
 
+        TryStartAnimation();
         return _image;
     }
 
+    private Compositor? GetCompositor() =>
+        VisualRoot is { } root ? ElementComposition.GetElementVisual(root)?.Compositor : null;
+
     private void OnRecordingBoundsChanged(object? sender, Rect bounds) => InvalidateMeasure();
+
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+
+        // A paint-only image compiled before a compositor was available runs
+        // structurally; recompile it compositor-bound now.
+        if (_animator is { HasStructural: false } && _image != null && _image.Recording.Compositor == null
+            && GetCompositor() != null)
+        {
+            DisposeImage();
+        }
+
+        TryStartAnimation();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        StopAnimation();
+    }
+
+    private void TryStartAnimation()
+    {
+        if (_animator == null || _animationRunning || TopLevel.GetTopLevel(this) is not { } topLevel)
+            return;
+
+        _animationRunning = true;
+        _animationFrame ??= OnAnimationTick;
+        topLevel.RequestAnimationFrame(_animationFrame);
+    }
+
+    private void StopAnimation()
+    {
+        // The pending animation-frame callback checks the flag and stops
+        // re-requesting itself.
+        _animationRunning = false;
+        _animationStart = null;
+    }
+
+    private void OnAnimationTick(TimeSpan time)
+    {
+        if (!_animationRunning || _animator == null)
+            return;
+
+        // The first tick anchors the document timeline.
+        _animationStart ??= time;
+
+        if (_animator.Apply(time - _animationStart.Value))
+        {
+            // A structural value changed: re-compile the root recording. Shared
+            // sub-recordings (symbols, markers, patterns) stay cached on the
+            // document and are replayed, not rebuilt; the previous root keeps
+            // its shared children alive until the rendered frame releases it.
+            DisposeImage();
+            InvalidateVisual();
+        }
+
+        if (TopLevel.GetTopLevel(this) is { } topLevel)
+            topLevel.RequestAnimationFrame(_animationFrame!);
+        else
+            _animationRunning = false;
+    }
+
+    private void DisposeImage()
+    {
+        if (_image == null)
+            return;
+
+        if (_image.Recording.Compositor != null)
+            _image.Recording.BoundsChanged -= OnRecordingBoundsChanged;
+
+        _image.Dispose();
+        _image = null;
+    }
 
     private void ReleaseImage()
     {
-        if (_image != null)
-        {
-            if (_image.Recording.Compositor != null)
-                _image.Recording.BoundsChanged -= OnRecordingBoundsChanged;
+        StopAnimation();
+        DisposeImage();
 
-            _image.Dispose();
-            _image = null;
-        }
-
+        _animator = null;
+        _animatorInitialized = false;
         _ownedDocument?.Dispose();
         _ownedDocument = null;
         _loadFailed = false;

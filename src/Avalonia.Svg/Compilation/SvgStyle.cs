@@ -416,19 +416,33 @@ internal struct SvgStyle
         if (brush == null || StrokeWidth <= 0)
             return null;
 
-        ImmutableDashStyle? dashStyle = null;
-        if (DashArray is { Length: > 0 } dashArray)
-        {
-            // SVG dash values are user units; Avalonia dash values are multiples of
-            // the pen thickness. An odd-length list repeats doubled, per the spec.
-            var count = dashArray.Length % 2 == 0 ? dashArray.Length : dashArray.Length * 2;
-            var converted = new double[count];
-            for (var i = 0; i < count; i++)
-                converted[i] = dashArray[i % dashArray.Length] / StrokeWidth;
+        return new ImmutablePen(brush, StrokeWidth, BuildDashStyle(), LineCap, LineJoin, MiterLimit);
+    }
 
-            dashStyle = new ImmutableDashStyle(converted, DashOffset / StrokeWidth);
-        }
+    /// <summary>
+    /// Builds a mutable pen over a mutable (animated) stroke brush; immutable
+    /// pens cannot carry mutable brushes.
+    /// </summary>
+    public Pen? ResolveMutablePen(IBrush brush)
+    {
+        if (StrokeWidth <= 0)
+            return null;
 
-        return new ImmutablePen(brush, StrokeWidth, dashStyle, LineCap, LineJoin, MiterLimit);
+        return new Pen(brush, StrokeWidth, BuildDashStyle(), LineCap, LineJoin, MiterLimit);
+    }
+
+    private ImmutableDashStyle? BuildDashStyle()
+    {
+        if (DashArray is not { Length: > 0 } dashArray)
+            return null;
+
+        // SVG dash values are user units; Avalonia dash values are multiples of
+        // the pen thickness. An odd-length list repeats doubled, per the spec.
+        var count = dashArray.Length % 2 == 0 ? dashArray.Length : dashArray.Length * 2;
+        var converted = new double[count];
+        for (var i = 0; i < count; i++)
+            converted[i] = dashArray[i % dashArray.Length] / StrokeWidth;
+
+        return new ImmutableDashStyle(converted, DashOffset / StrokeWidth);
     }
 }
