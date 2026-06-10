@@ -42,9 +42,13 @@ class RenderDataRectangleNode : RenderDataBrushAndPenNode
     public override void Invoke(ref RenderDataNodeRenderContext context) =>
         context.Context.DrawRectangle(ServerBrush, ServerPen, Rect, BoxShadows);
 
-    // Prefer ClientPen for bounds when set (client-side query): it's the live
-    // mutable pen whose Thickness reflects pending writes that the server proxy
-    // hasn't yet applied. On server-side instances ClientPen is null after
-    // deserialize, so ServerPen carries the immutable snapshot.
-    public override Rect? Bounds => BoxShadows.TransformBounds(Rect.Rect).Inflate(((ClientPen ?? ServerPen)?.Thickness ?? 0) / 2);
+    // Client bounds read the live client pen (UI thread); the server bounds
+    // pass reads the server pen shadow, which is render-thread-safe and
+    // follows pen mutations through the compositor's change tracking.
+    public override Rect? Bounds => CalculateBounds(ClientPen);
+
+    public override Rect? ServerBounds => CalculateBounds(ServerPen);
+
+    private Rect CalculateBounds(IPen? pen) =>
+        BoxShadows.TransformBounds(Rect.Rect).Inflate((pen?.Thickness ?? 0) / 2);
 }

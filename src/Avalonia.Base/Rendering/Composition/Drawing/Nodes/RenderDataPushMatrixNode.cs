@@ -24,4 +24,6 @@ class RenderDataPushMatrixNode : RenderDataPushNode
     }
 
     public override Rect? Bounds => base.Bounds?.TransformToAABB(Matrix);
+
+    public override Rect? ServerBounds => base.ServerBounds?.TransformToAABB(Matrix);
 }

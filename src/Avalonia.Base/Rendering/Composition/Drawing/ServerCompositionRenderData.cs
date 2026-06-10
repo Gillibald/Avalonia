@@ -85,10 +85,13 @@ class ServerCompositionRenderData : SimpleServerRenderResource
 
     private LtrbRect? CalculateRenderBounds()
     {
+        // This runs on the render thread: items must be queried through their
+        // server bounds, which only read immutable data and server resource
+        // shadows (the client bounds may touch UI-thread-affine objects).
         LtrbRect? totalBounds = null;
-        foreach (var item in _items) 
-            totalBounds = LtrbRect.FullUnion(totalBounds, item.Bounds);
-        
+        foreach (var item in _items)
+            totalBounds = LtrbRect.FullUnion(totalBounds, item.ServerBounds);
+
         return ApplyRenderBoundsRounding(totalBounds);
     }
 
