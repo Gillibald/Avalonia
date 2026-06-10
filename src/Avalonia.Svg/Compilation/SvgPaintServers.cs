@@ -15,18 +15,23 @@ internal static class SvgPaintServers
     private const int MaxReferenceChain = 8;
 
     public static IImmutableBrush? Resolve(SvgCompileContext context, string id, in SvgStyle style, Rect bounds)
+        => Resolve(context, id, style, bounds, 1);
+
+    public static IImmutableBrush? Resolve(
+        SvgCompileContext context, string id, in SvgStyle style, Rect bounds, double opacity)
     {
         var element = context.Document.GetElementById(id);
         return element?.Name switch
         {
-            "linearGradient" => ResolveGradient(context, element, style, bounds, radial: false),
-            "radialGradient" => ResolveGradient(context, element, style, bounds, radial: true),
+            "linearGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: false),
+            "radialGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: true),
+            "pattern" => SvgPatterns.Resolve(context, element, bounds, opacity),
             _ => null,
         };
     }
 
     private static IImmutableBrush? ResolveGradient(
-        SvgCompileContext context, SvgElement element, in SvgStyle style, Rect bounds, bool radial)
+        SvgCompileContext context, SvgElement element, in SvgStyle style, Rect bounds, double opacity, bool radial)
     {
         // href chains: unset attributes and missing stops inherit from the
         // referenced gradient (linear and radial may reference each other).
@@ -36,7 +41,7 @@ internal static class SvgPaintServers
         if (stops == null || stops.Count == 0)
             return null;
         if (stops.Count == 1)
-            return new ImmutableSolidColorBrush(stops[0].Color);
+            return new ImmutableSolidColorBrush(stops[0].Color, opacity);
 
         var objectBoundingBox = GetChained(chain, "gradientUnits") != "userSpaceOnUse";
 
@@ -63,11 +68,12 @@ internal static class SvgPaintServers
             var fy = GetCoordinate(chain, "fy", cy, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
 
             if (r <= 0)
-                return new ImmutableSolidColorBrush(stops[stops.Count - 1].Color);
+                return new ImmutableSolidColorBrush(stops[stops.Count - 1].Color, opacity);
 
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
             return new ImmutableRadialGradientBrush(
                 stops,
+                opacity,
                 transform: transform,
                 spreadMethod: spreadMethod,
                 center: new RelativePoint(cx, cy, unit),
@@ -91,6 +97,7 @@ internal static class SvgPaintServers
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
             return new ImmutableLinearGradientBrush(
                 stops,
+                opacity,
                 transform: transform,
                 spreadMethod: spreadMethod,
                 startPoint: new RelativePoint(x1, y1, unit),

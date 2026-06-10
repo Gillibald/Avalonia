@@ -11,6 +11,11 @@
     <Compile Include="..\Avalonia.RenderTests\ManualRenderTimer.cs" Link="Infrastructure\ManualRenderTimer.cs" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Deterministic text rendering: SVG test content references this font via
+         a resm: font-family URI. -->
+    <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" Link="Assets\NotoMono-Regular.ttf" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />
     <ProjectReference Include="..\..\src\Avalonia.Controls\Avalonia.Controls.csproj" />
     <ProjectReference Include="..\..\src\Avalonia.Svg\Avalonia.Svg.csproj" />

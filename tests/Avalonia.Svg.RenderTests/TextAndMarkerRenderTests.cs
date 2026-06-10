@@ -1,0 +1,112 @@
+using System.Threading.Tasks;
+using Xunit;
+
+namespace Avalonia.Svg.RenderTests;
+
+public class TextAndMarkerRenderTests : SvgRenderTestBase
+{
+    public TextAndMarkerRenderTests() : base("TextAndMarkers")
+    {
+    }
+
+    private const string TestFont =
+        "resm:Avalonia.Svg.RenderTests.Assets?assembly=Avalonia.Svg.RenderTests#Noto Mono";
+
+    [Fact]
+    public async Task Text_Anchors()
+    {
+        var target = new SvgHost(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="120" font-family="{TestFont}">
+              <rect width="200" height="120" fill="white"/>
+              <line x1="100" y1="0" x2="100" y2="120" stroke="lightgray"/>
+              <text x="100" y="30" font-size="16">start</text>
+              <text x="100" y="60" font-size="16" text-anchor="middle">middle</text>
+              <text x="100" y="90" font-size="16" text-anchor="end">end</text>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
+    [Fact]
+    public async Task Text_Tspans_With_Styles_And_Offsets()
+    {
+        var target = new SvgHost(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="220" height="80" font-family="{TestFont}">
+              <rect width="220" height="80" fill="white"/>
+              <text x="10" y="40" font-size="16" fill="black">ab<tspan fill="red" font-size="24">cd</tspan><tspan dy="-8" fill="blue">up</tspan></text>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
+    [Fact]
+    public async Task Text_On_Path()
+    {
+        var target = new SvgHost(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="120" font-family="{TestFont}">
+              <defs>
+                <path id="arc" d="M 20 100 A 80 80 0 0 1 180 100"/>
+              </defs>
+              <rect width="200" height="120" fill="white"/>
+              <text font-size="14" fill="darkblue">
+                <textPath href="#arc" startOffset="10">curved baseline</textPath>
+              </text>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
+    [Fact]
+    public async Task Markers_On_Polyline()
+    {
+        var target = new SvgHost(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="120">
+              <defs>
+                <marker id="dot" markerWidth="6" markerHeight="6" refX="3" refY="3" viewBox="0 0 6 6">
+                  <circle cx="3" cy="3" r="3" fill="crimson"/>
+                </marker>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto" viewBox="0 0 8 6">
+                  <path d="M 0 0 L 8 3 L 0 6 Z" fill="darkblue"/>
+                </marker>
+              </defs>
+              <rect width="200" height="120" fill="white"/>
+              <polyline points="20,100 70,30 130,80 180,20" fill="none" stroke="gray" stroke-width="2"
+                        marker-start="url(#dot)" marker-mid="url(#dot)" marker-end="url(#arrow)"/>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
+    [Fact]
+    public async Task Markers_Auto_Start_Reverse_On_Path()
+    {
+        var target = new SvgHost(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="6" refX="1" refY="3" orient="auto-start-reverse" viewBox="0 0 8 6">
+                  <path d="M 0 0 L 8 3 L 0 6 Z" fill="seagreen"/>
+                </marker>
+              </defs>
+              <rect width="200" height="100" fill="white"/>
+              <path d="M 30 50 C 70 10 130 90 170 50" fill="none" stroke="gray" stroke-width="2"
+                    marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+}

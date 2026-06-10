@@ -11,10 +11,19 @@ namespace Avalonia.Svg.Compilation;
 /// modeled by value-copying the parent's struct and applying the element's own
 /// declarations on top.
 /// </summary>
+internal enum SvgTextAnchor
+{
+    Start,
+    Middle,
+    End,
+}
+
 internal struct SvgStyle
 {
     public SvgPaint Fill;
     public SvgPaint Stroke;
+    public double FillOpacity;
+    public double StrokeOpacity;
     public double StrokeWidth;
     public PenLineCap LineCap;
     public PenLineJoin LineJoin;
@@ -24,6 +33,16 @@ internal struct SvgStyle
     public FillRule FillRule;
     /// <summary>The CSS <c>color</c> property; the source of <c>currentColor</c>.</summary>
     public Color Color;
+    /// <summary>True when <c>paint-order</c> places the stroke before the fill.</summary>
+    public bool StrokeBeforeFill;
+    public string? MarkerStart;
+    public string? MarkerMid;
+    public string? MarkerEnd;
+    public string? FontFamily;
+    public double FontSize;
+    public FontStyle FontStyle;
+    public FontWeight FontWeight;
+    public SvgTextAnchor TextAnchor;
     /// <summary>The viewport percentages resolve against.</summary>
     public Size Viewport;
 
@@ -31,6 +50,8 @@ internal struct SvgStyle
     {
         Fill = SvgPaint.FromColor(Colors.Black),
         Stroke = SvgPaint.None,
+        FillOpacity = 1,
+        StrokeOpacity = 1,
         StrokeWidth = 1,
         LineCap = PenLineCap.Flat,
         LineJoin = PenLineJoin.Miter,
@@ -40,6 +61,12 @@ internal struct SvgStyle
         DashOffset = 0,
         FillRule = FillRule.NonZero,
         Color = Colors.Black,
+        StrokeBeforeFill = false,
+        FontFamily = null,
+        FontSize = 16,
+        FontStyle = FontStyle.Normal,
+        FontWeight = FontWeight.Normal,
+        TextAnchor = SvgTextAnchor.Start,
         Viewport = viewport,
     };
 
@@ -127,6 +154,135 @@ internal struct SvgStyle
                     break;
             }
         }
+
+        if (Get(element, "fill-opacity") is { } fillOpacity && TryParseOpacity(fillOpacity, out var fo))
+            FillOpacity = fo;
+
+        if (Get(element, "stroke-opacity") is { } strokeOpacity && TryParseOpacity(strokeOpacity, out var so))
+            StrokeOpacity = so;
+
+        if (Get(element, "paint-order") is { } paintOrder)
+        {
+            // Only the fill/stroke ordering is honored; markers always paint last.
+            StrokeBeforeFill = paintOrder != "normal"
+                && paintOrder.IndexOf("stroke", StringComparison.Ordinal) is var strokeIndex and >= 0
+                && (paintOrder.IndexOf("fill", StringComparison.Ordinal) is var fillIndex
+                    && (fillIndex < 0 || strokeIndex < fillIndex));
+        }
+
+        if (Get(element, "marker") is { } marker)
+        {
+            var reference = ParseMarkerReference(marker);
+            MarkerStart = MarkerMid = MarkerEnd = reference;
+        }
+
+        if (Get(element, "marker-start") is { } markerStart)
+            MarkerStart = ParseMarkerReference(markerStart);
+        if (Get(element, "marker-mid") is { } markerMid)
+            MarkerMid = ParseMarkerReference(markerMid);
+        if (Get(element, "marker-end") is { } markerEnd)
+            MarkerEnd = ParseMarkerReference(markerEnd);
+
+        if (Get(element, "font-family") is { } fontFamily)
+        {
+            // Take the first family of the list, unquoted.
+            var comma = fontFamily.IndexOf(',');
+            var first = (comma >= 0 ? fontFamily.Substring(0, comma) : fontFamily).Trim().Trim('\'', '"');
+            if (first.Length > 0)
+                FontFamily = first;
+        }
+
+        if (Get(element, "font-size") is { } fontSize
+            && SvgLength.TryParse(fontSize.AsSpan(), out var fontSizeLength))
+        {
+            // em/ex and percentages resolve against the inherited font size.
+            var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
+                ? fontSizeLength.Value / 100.0 * FontSize
+                : fontSizeLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize);
+            if (resolved > 0)
+                FontSize = resolved;
+        }
+
+        if (Get(element, "font-style") is { } fontStyle)
+        {
+            switch (fontStyle)
+            {
+                case "normal":
+                    FontStyle = FontStyle.Normal;
+                    break;
+                case "italic":
+                    FontStyle = FontStyle.Italic;
+                    break;
+                case "oblique":
+                    FontStyle = FontStyle.Oblique;
+                    break;
+            }
+        }
+
+        if (Get(element, "font-weight") is { } fontWeight)
+        {
+            switch (fontWeight)
+            {
+                case "normal":
+                    FontWeight = FontWeight.Normal;
+                    break;
+                case "bold":
+                    FontWeight = FontWeight.Bold;
+                    break;
+                default:
+                    if (int.TryParse(fontWeight, System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture, out var weight)
+                        && weight is >= 1 and <= 1000)
+                    {
+                        FontWeight = (FontWeight)weight;
+                    }
+
+                    break;
+            }
+        }
+
+        if (Get(element, "text-anchor") is { } textAnchor)
+        {
+            switch (textAnchor)
+            {
+                case "start":
+                    TextAnchor = SvgTextAnchor.Start;
+                    break;
+                case "middle":
+                    TextAnchor = SvgTextAnchor.Middle;
+                    break;
+                case "end":
+                    TextAnchor = SvgTextAnchor.End;
+                    break;
+            }
+        }
+    }
+
+    internal static bool TryParseOpacity(string value, out double opacity)
+    {
+        var trimmed = value.Trim();
+        var percent = trimmed.EndsWith("%", StringComparison.Ordinal);
+        if (percent)
+            trimmed = trimmed.Substring(0, trimmed.Length - 1);
+
+        if (double.TryParse(trimmed, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+        {
+            if (percent)
+                parsed /= 100.0;
+            opacity = Math.Min(1, Math.Max(0, parsed));
+            return true;
+        }
+
+        opacity = 1;
+        return false;
+    }
+
+    private static string? ParseMarkerReference(string value)
+    {
+        if (value == "none")
+            return null;
+        return SvgClipPaths.TryParseUrlReference(value, out var id) ? id : null;
     }
 
     private static string? Get(SvgElement element, string name)
@@ -187,10 +343,12 @@ internal struct SvgStyle
     /// Resolves color paints; paint-server references resolve through the
     /// compiler (they need the document and the shape's bounding box).
     /// </summary>
-    public IImmutableBrush? ResolveBrush(in SvgPaint paint) => paint.Kind switch
+    public IImmutableBrush? ResolveBrush(in SvgPaint paint) => ResolveBrush(paint, 1);
+
+    public IImmutableBrush? ResolveBrush(in SvgPaint paint, double opacity) => paint.Kind switch
     {
-        SvgPaintKind.Color => new ImmutableSolidColorBrush(paint.Color),
-        SvgPaintKind.CurrentColor => new ImmutableSolidColorBrush(Color),
+        SvgPaintKind.Color => new ImmutableSolidColorBrush(paint.Color, opacity),
+        SvgPaintKind.CurrentColor => new ImmutableSolidColorBrush(Color, opacity),
         _ => null,
     };
 

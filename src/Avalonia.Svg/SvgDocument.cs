@@ -121,6 +121,10 @@ public sealed class SvgDocument : IDisposable
             {
                 current = current?.Parent;
             }
+            else if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.SignificantWhitespace)
+            {
+                current?.AddText(reader.Value);
+            }
 
             if (!reader.Read())
                 break;
