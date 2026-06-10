@@ -43,6 +43,10 @@ internal struct SvgStyle
     public FontStyle FontStyle;
     public FontWeight FontWeight;
     public SvgTextAnchor TextAnchor;
+    /// <summary>The CSS <c>visibility</c> property: hidden elements keep their layout
+    /// and their children may re-enable visibility (unlike <c>display: none</c>).</summary>
+    public bool Visible;
+    public SvgPointerEvents PointerEvents;
     /// <summary>The viewport percentages resolve against.</summary>
     public Size Viewport;
 
@@ -67,6 +71,8 @@ internal struct SvgStyle
         FontStyle = FontStyle.Normal,
         FontWeight = FontWeight.Normal,
         TextAnchor = SvgTextAnchor.Start,
+        Visible = true,
+        PointerEvents = SvgPointerEvents.VisiblePainted,
         Viewport = viewport,
     };
 
@@ -253,6 +259,57 @@ internal struct SvgStyle
                     break;
                 case "end":
                     TextAnchor = SvgTextAnchor.End;
+                    break;
+            }
+        }
+
+        if (Get(element, "visibility") is { } visibility)
+        {
+            switch (visibility)
+            {
+                case "visible":
+                    Visible = true;
+                    break;
+                // 'collapse' behaves as 'hidden' outside table layout.
+                case "hidden":
+                case "collapse":
+                    Visible = false;
+                    break;
+            }
+        }
+
+        if (Get(element, "pointer-events") is { } pointerEvents)
+        {
+            switch (pointerEvents)
+            {
+                case "auto":
+                case "visiblePainted":
+                case "bounding-box": // approximated by the painted geometry
+                    PointerEvents = SvgPointerEvents.VisiblePainted;
+                    break;
+                case "none":
+                    PointerEvents = SvgPointerEvents.None;
+                    break;
+                case "all":
+                    PointerEvents = SvgPointerEvents.All;
+                    break;
+                case "fill":
+                    PointerEvents = SvgPointerEvents.Fill;
+                    break;
+                case "stroke":
+                    PointerEvents = SvgPointerEvents.Stroke;
+                    break;
+                case "painted":
+                    PointerEvents = SvgPointerEvents.Painted;
+                    break;
+                case "visible":
+                    PointerEvents = SvgPointerEvents.Visible;
+                    break;
+                case "visibleFill":
+                    PointerEvents = SvgPointerEvents.VisibleFill;
+                    break;
+                case "visibleStroke":
+                    PointerEvents = SvgPointerEvents.VisibleStroke;
                     break;
             }
         }

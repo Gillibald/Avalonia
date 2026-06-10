@@ -882,30 +882,48 @@ and hit testing are tracked entirely in the SVG layer.
 
 ### Checklist
 
-- [ ] At compile time, build a parallel `SvgHitNode` tree alongside the
+- [x] At compile time, build a parallel `SvgHitNode` tree alongside the
       recording. Each `SvgHitNode` captures its `SvgElement`, accumulated
       transform, accumulated clip geometry, local bounds (computed from the
       same draw calls being emitted), and `PointerEvents`. For `<use>`
       references, the hit subtree of the referenced `<symbol>` is reused
-      with the use site's transform/clip wrapped around it.
-- [ ] Parse `pointer-events` (`none`, `all`, `visiblePainted`, …) and store
-      on each `SvgElement` / `SvgHitNode`.
-- [ ] `Svg` control: `HitTestElements(Point) : IEnumerable<SvgElement>`
+      with the use site's transform/clip wrapped around it. *(Shipped:
+      `SvgHitTree.cs`; subtrees cached on the document next to the shared
+      recordings. Analytic hits for rect/circle/ellipse/line keep the walk
+      platform-free; path/polygon hits go through `Geometry.FillContains` /
+      `StrokeContains`. Text gets coarse per-segment layout-box leaves
+      attributed to the `<text>` element.)*
+- [x] Parse `pointer-events` (`none`, `all`, `visiblePainted`, …) and store
+      on each `SvgElement` / `SvgHitNode`. *(Inherited via `SvgStyle`;
+      never-hittable leaves are pruned at build time.)*
+- [x] `Svg` control: `HitTestElements(Point) : IEnumerable<SvgElement>`
       walks the `SvgHitNode` tree, inverting transforms and respecting
       clips at each level. Returns innermost-first (the SVG event-target
       order). Uses the recording's `HitTest(Point) : bool` as a cheap
-      early-out.
-- [ ] Route pointer events from the control to hit-tested elements; expose
-      a `PointerPressedOnElement` event or similar.
-- [ ] Subscribe to `DrawingRecording.BoundsChanged` (Phase 0 R7) on the
+      early-out. *(Shipped on `SvgImage` (viewport space) and the `Svg`
+      control (control space, mapped through the stretch transform). The
+      recording early-out is skipped when `pointer-events` made unpainted
+      or hidden geometry interactive anywhere in the tree.)*
+- [x] Route pointer events from the control to hit-tested elements; expose
+      a `PointerPressedOnElement` event or similar. *(Shipped:
+      `ElementPointerPressed/Released/Moved` with the innermost-first chain
+      in `SvgElementPointerEventArgs`; hit testing only runs while handlers
+      are attached.)*
+- [x] Subscribe to `DrawingRecording.BoundsChanged` (Phase 0 R7) on the
       `Svg` control to re-invalidate layout when animation changes the
-      bounding box.
+      bounding box. *(Subscribed when the recording is compositor-bound;
+      immutable recordings never fire and throw on subscription.)*
 - [ ] Visibility toggling (gap 4.9):
-  - [ ] Static: compile-time filter of `display: none` / `visibility: hidden`.
+  - [x] Static: compile-time filter of `display: none` / `visibility: hidden`.
+        *(`visibility` is inherited and children can re-enable it inside a
+        hidden container; hidden shapes skip painting and markers but keep
+        their fill box (getBBox semantics) — measuring passes still paint
+        them. Hidden text keeps layout via a null foreground.)*
   - [ ] Dynamic: toggleable subtrees compile into their own
         `DrawingRecording` held as `Shared` children; the parent chooses
         whether to call `DrawRecording` on each per frame. Skipping a
-        subtree does not dispose it.
+        subtree does not dispose it. *(Slice B, with the animation driver —
+        `<set attributeName="visibility">` is the trigger.)*
 - [ ] SMIL `<animate>` / `<set>` / `<animateTransform>` parser.
 - [ ] Animation driver, two channels (recorded transforms and geometry are
       immutable values — only paint resources are mutable inside a
@@ -939,10 +957,16 @@ All SVG-side. The recording exposes only `HitTest(Point) → bool` and
 - `HitTestTests` — point-in-shape correctness across groups, transformed
   children, stroke vs fill hit regions, `pointer-events: none` elements
   excluded. Verify the `SvgHitNode` walker reproduces SVG's deepest-first
-  event-target order.
+  event-target order. *(Shipped: `SvgHitTestTests`, 18 tests, including
+  use/symbol subtree reuse, viewport clipping of hits, topmost-sibling-wins
+  and the pointer-events matrix.)*
 - `VisibilityTests` — toggled subtree appears/disappears without
   recompiling the root recording; shared sub-recording survives repeated
-  toggles (relies on Phase 0 R5 `Shared`).
+  toggles (relies on Phase 0 R5 `Shared`). *(Static half shipped:
+  `SvgVisibilityTests` — hidden/collapse suppression, child re-enable,
+  marker suppression, getBBox inclusion, plus a regression test pinning
+  that measuring-time `<use>` expansion does not pollute the document's
+  shared-recording cache. Dynamic toggling lands with the driver.)*
 - `BoundsChangedTests` — `Svg` control re-measures when an animation
   extends bounds; subscribes to the compositor-bound recording's event
   exactly once and unsubscribes on control detach.

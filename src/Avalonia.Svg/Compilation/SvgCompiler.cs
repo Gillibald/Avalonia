@@ -19,13 +19,26 @@ internal static class SvgCompiler
     /// Compiles the document into <paramref name="context"/>, mapping the
     /// document's <c>viewBox</c> onto a viewport of <paramref name="viewportSize"/>.
     /// </summary>
-    public static void CompileDocument(SvgDocument document, DrawingContext context, Size viewportSize)
+    public static void CompileDocument(SvgDocument document, DrawingContext context, Size viewportSize) =>
+        CompileDocumentCore(document, context, viewportSize, buildHitTree: false);
+
+    /// <summary>
+    /// Compiles the document and additionally builds the element hit-test tree
+    /// alongside the emitted draw calls. Returns the tree's root node.
+    /// </summary>
+    public static SvgHitNode? CompileDocumentWithHitTree(
+        SvgDocument document, DrawingContext context, Size viewportSize) =>
+        CompileDocumentCore(document, context, viewportSize, buildHitTree: true);
+
+    private static SvgHitNode? CompileDocumentCore(
+        SvgDocument document, DrawingContext context, Size viewportSize, bool buildHitTree)
     {
         var root = document.Root;
         var viewBox = document.TryGetViewBox();
 
         DrawingContext.PushedState? viewBoxState = null;
         var contentViewport = viewportSize;
+        var rootMatrix = Matrix.Identity;
 
         if (viewBox is { } vb)
         {
@@ -33,9 +46,9 @@ internal static class SvgCompiler
             if (root.GetAttribute("preserveAspectRatio") is { } par)
                 SvgPreserveAspectRatio.TryParse(par.AsSpan(), out preserveAspectRatio);
 
-            var matrix = preserveAspectRatio.ComputeTransform(vb, viewportSize);
-            if (!matrix.IsIdentity)
-                viewBoxState = context.PushTransform(matrix);
+            rootMatrix = preserveAspectRatio.ComputeTransform(vb, viewportSize);
+            if (!rootMatrix.IsIdentity)
+                viewBoxState = context.PushTransform(rootMatrix);
 
             // Percentages inside the document resolve against the viewport the
             // svg element establishes — the viewBox coordinate system when present.
@@ -45,11 +58,22 @@ internal static class SvgCompiler
         using (viewBoxState)
         {
             var compileContext = new SvgCompileContext(document, contentViewport);
+
+            SvgHitTreeBuilder? hitTree = null;
+            if (buildHitTree)
+            {
+                hitTree = new SvgHitTreeBuilder(rootMatrix);
+                hitTree.Root.Element = root;
+                compileContext.SetHitTreeBuilder(hitTree);
+            }
+
             var style = SvgStyle.CreateDefault(contentViewport);
             style.Apply(root);
 
             foreach (var child in root.Children)
                 CompileElement(child, context, compileContext, style);
+
+            return hitTree?.Root;
         }
     }
 
@@ -82,11 +106,13 @@ internal static class SvgCompiler
         var style = parentStyle;
         style.Apply(element);
 
+        var localTransform = Matrix.Identity;
         DrawingContext.PushedState? transformState = null;
         if (element.GetAttribute("transform") is { } transform
             && SvgTransformParser.TryParse(transform.AsSpan(), out var matrix)
             && !matrix.IsIdentity)
         {
+            localTransform = matrix;
             transformState = context.PushTransform(matrix);
         }
 
@@ -124,13 +150,17 @@ internal static class SvgCompiler
 
             using (layerState)
             {
+                Geometry? clipGeometry = null;
                 DrawingContext.PushedState? clipState = null;
                 if (!compileContext.Measuring
                     && element.GetStyleOrAttribute("clip-path") is { } clipReference)
                 {
                     var clipBounds = GetFillBounds(element, compileContext, style);
                     if (SvgClipPaths.TryBuild(compileContext, clipReference, clipBounds) is { } clip)
+                    {
+                        clipGeometry = clip;
                         clipState = context.PushGeometryClip(clip);
+                    }
                 }
 
                 using (clipState)
@@ -158,7 +188,31 @@ internal static class SvgCompiler
                         using (filterScope)
                         {
                             if (!filterScope.Hidden)
-                                CompileElementContent(element, context, compileContext, style);
+                            {
+                                // The hit node mirrors only what affects hit
+                                // testing: the element's transform and clip-path.
+                                // Layers (opacity, blending), masks and filters
+                                // change pixels, not the hit geometry.
+                                var hitTree = compileContext.HitTree;
+                                SvgHitNode? hitNode = null;
+                                if (hitTree != null)
+                                {
+                                    if (element.Name is "g" or "a" or "svg" or "use")
+                                        hitNode = hitTree.PushNode(element, localTransform, clipGeometry: clipGeometry);
+                                    else if (!localTransform.IsIdentity || clipGeometry != null)
+                                        hitNode = hitTree.PushNode(null, localTransform, clipGeometry: clipGeometry);
+                                }
+
+                                try
+                                {
+                                    CompileElementContent(element, context, compileContext, style);
+                                }
+                                finally
+                                {
+                                    if (hitNode != null)
+                                        hitTree!.Pop();
+                                }
+                            }
                         }
                     }
                 }
@@ -266,7 +320,8 @@ internal static class SvgCompiler
         {
             var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport);
             var y = GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport);
-            var recording = compileContext.GetSharedRecording(target);
+            var recording = compileContext.GetSharedRecording(target, out var ownership, out var hitSubtree);
+            var placement = Matrix.CreateTranslation(x, y);
 
             if (target.Name is "symbol" or "svg")
             {
@@ -288,15 +343,24 @@ internal static class SvgCompiler
                 // A symbol establishes a viewport: position it, clip to it
                 // (overflow defaults to hidden), and replay the shared content
                 // recording under the viewBox mapping.
-                using (context.PushTransform(Matrix.CreateTranslation(x, y)))
+                using (context.PushTransform(placement))
                 using (context.PushClip(new Rect(0, 0, width, height)))
                 {
-                    context.DrawRecording(recording, contentMatrix, DrawingRecordingOwnership.Shared);
+                    context.DrawRecording(recording, contentMatrix, ownership);
+                }
+
+                if (hitSubtree != null)
+                {
+                    compileContext.HitTree?.AddUseSubtree(
+                        placement, new Rect(0, 0, width, height), contentMatrix, hitSubtree);
                 }
             }
             else
             {
-                context.DrawRecording(recording, Matrix.CreateTranslation(x, y), DrawingRecordingOwnership.Shared);
+                context.DrawRecording(recording, placement, ownership);
+
+                if (hitSubtree != null)
+                    compileContext.HitTree?.AddUseSubtree(placement, null, Matrix.Identity, hitSubtree);
             }
         }
         finally
@@ -315,11 +379,23 @@ internal static class SvgCompiler
         return axis == SvgLengthAxis.Horizontal ? viewport.Width : viewport.Height;
     }
 
+    private static readonly ImmutableSolidColorBrush s_measuringFill = new(Colors.Black);
+
     private static IImmutableBrush? ResolvePaint(
         in SvgPaint paint, in SvgStyle style, SvgCompileContext compileContext, Rect bounds, double opacity)
     {
         if (paint.Kind == SvgPaintKind.Reference)
+        {
+            // Fill boxes do not depend on the paint, so measuring recordings
+            // substitute a plain brush — resolving a paint server here would
+            // compile pattern content under measuring semantics and pollute the
+            // document's shared-recording cache with decoration-free content.
+            if (compileContext.Measuring)
+                return s_measuringFill;
+
             return paint.Reference is { } id ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity) : null;
+        }
+
         return style.ResolveBrush(paint, opacity);
     }
 
@@ -344,6 +420,15 @@ internal static class SvgCompiler
         radiusY = Math.Min(radiusY, height / 2);
 
         var rect = new Rect(x, y, width, height);
+        AddHitShape(element, compileContext, style, new SvgHitShape
+        {
+            Kind = SvgHitShape.ShapeKind.Rectangle,
+            Bounds = rect,
+        });
+
+        if (!ShouldPaint(style, compileContext))
+            return;
+
         var brush = ResolvePaint(style.Fill, style, compileContext, rect, style.FillOpacity);
         var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect, style.StrokeOpacity));
         if (brush == null && pen == null)
@@ -358,6 +443,28 @@ internal static class SvgCompiler
         {
             context.DrawRectangle(brush, pen, rect, radiusX, radiusY);
         }
+    }
+
+    /// <summary>
+    /// <c>visibility: hidden</c> suppresses painting but, unlike
+    /// <c>display: none</c>, keeps layout and the fill box — measuring passes
+    /// therefore include hidden geometry, matching <c>getBBox()</c>.
+    /// </summary>
+    private static bool ShouldPaint(in SvgStyle style, SvgCompileContext compileContext) =>
+        style.Visible || compileContext.Measuring;
+
+    private static void AddHitShape(
+        SvgElement element, SvgCompileContext compileContext, in SvgStyle style, SvgHitShape shape)
+    {
+        if (compileContext.HitTree is not { } hitTree)
+            return;
+
+        shape.StrokeWidth = style.StrokeWidth;
+        if (shape.Kind != SvgHitShape.ShapeKind.Line)
+            shape.HasFill = style.Fill.Kind != SvgPaintKind.None;
+        shape.HasStroke = style.Stroke.Kind != SvgPaintKind.None && style.StrokeWidth > 0;
+
+        hitTree.AddShape(element, shape, style.PointerEvents, style.Visible);
     }
 
     private static double? GetCornerRadius(SvgElement element, string name, SvgLengthAxis axis, Size viewport)
@@ -385,7 +492,7 @@ internal static class SvgCompiler
         if (r <= 0)
             return;
 
-        DrawEllipseShape(context, compileContext, style, new Rect(cx - r, cy - r, 2 * r, 2 * r));
+        DrawEllipseShape(element, context, compileContext, style, new Rect(cx - r, cy - r, 2 * r, 2 * r));
     }
 
     private static void CompileEllipse(
@@ -403,12 +510,21 @@ internal static class SvgCompiler
         if (rx <= 0 || ry <= 0)
             return;
 
-        DrawEllipseShape(context, compileContext, style, new Rect(cx - rx, cy - ry, 2 * rx, 2 * ry));
+        DrawEllipseShape(element, context, compileContext, style, new Rect(cx - rx, cy - ry, 2 * rx, 2 * ry));
     }
 
     private static void DrawEllipseShape(
-        DrawingContext context, SvgCompileContext compileContext, in SvgStyle style, Rect rect)
+        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style, Rect rect)
     {
+        AddHitShape(element, compileContext, style, new SvgHitShape
+        {
+            Kind = SvgHitShape.ShapeKind.Ellipse,
+            Bounds = rect,
+        });
+
+        if (!ShouldPaint(style, compileContext))
+            return;
+
         var brush = ResolvePaint(style.Fill, style, compileContext, rect, style.FillOpacity);
         var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, rect, style.StrokeOpacity));
         if (brush == null && pen == null)
@@ -432,6 +548,16 @@ internal static class SvgCompiler
         var y1 = GetLength(element, "y1", SvgLengthAxis.Vertical, style.Viewport);
         var x2 = GetLength(element, "x2", SvgLengthAxis.Horizontal, style.Viewport);
         var y2 = GetLength(element, "y2", SvgLengthAxis.Vertical, style.Viewport);
+
+        AddHitShape(element, compileContext, style, new SvgHitShape
+        {
+            Kind = SvgHitShape.ShapeKind.Line,
+            P1 = new Point(x1, y1),
+            P2 = new Point(x2, y2),
+        });
+
+        if (!ShouldPaint(style, compileContext))
+            return;
 
         var bounds = new Rect(new Point(x1, y1), new Point(x2, y2));
         var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity));
@@ -467,7 +593,11 @@ internal static class SvgCompiler
         if (string.IsNullOrEmpty(points))
             return;
 
-        if (style.Fill.Kind != SvgPaintKind.None || style.Stroke.Kind != SvgPaintKind.None)
+        // The geometry also backs hit testing, so it is built even for unpainted
+        // shapes when a hit tree is being collected (pointer-events can make
+        // unpainted geometry interactive).
+        if (style.Fill.Kind != SvgPaintKind.None || style.Stroke.Kind != SvgPaintKind.None
+            || compileContext.HitTree != null)
         {
             var geometry = new StreamGeometry();
             bool any;
@@ -478,10 +608,10 @@ internal static class SvgCompiler
             }
 
             if (any)
-                DrawGeometryShape(context, compileContext, style, geometry);
+                DrawGeometryShape(element, context, compileContext, style, geometry);
         }
 
-        if (!compileContext.Measuring && HasMarkers(style))
+        if (!compileContext.Measuring && style.Visible && HasMarkers(style))
         {
             var list = SvgPointsParser.ParseList(points.AsSpan());
             if (list.Count > 0)
@@ -513,7 +643,8 @@ internal static class SvgCompiler
         if (string.IsNullOrEmpty(data))
             return;
 
-        if (style.Fill.Kind != SvgPaintKind.None || style.Stroke.Kind != SvgPaintKind.None)
+        if (style.Fill.Kind != SvgPaintKind.None || style.Stroke.Kind != SvgPaintKind.None
+            || compileContext.HitTree != null)
         {
             var geometry = new StreamGeometry();
             using (var geometryContext = geometry.Open())
@@ -530,10 +661,10 @@ internal static class SvgCompiler
                 }
             }
 
-            DrawGeometryShape(context, compileContext, style, geometry);
+            DrawGeometryShape(element, context, compileContext, style, geometry);
         }
 
-        if (!compileContext.Measuring && HasMarkers(style))
+        if (!compileContext.Measuring && style.Visible && HasMarkers(style))
         {
             var sampler = SvgPathSampler.Parse(data.AsSpan());
             SvgMarkers.Emit(context, compileContext, style, sampler.Vertices);
@@ -541,9 +672,20 @@ internal static class SvgCompiler
     }
 
     private static void DrawGeometryShape(
-        DrawingContext context, SvgCompileContext compileContext, in SvgStyle style, StreamGeometry geometry)
+        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style,
+        StreamGeometry geometry)
     {
         var bounds = geometry.Bounds;
+        AddHitShape(element, compileContext, style, new SvgHitShape
+        {
+            Kind = SvgHitShape.ShapeKind.Geometry,
+            Bounds = bounds,
+            Geometry = geometry,
+        });
+
+        if (!ShouldPaint(style, compileContext))
+            return;
+
         var brush = ResolvePaint(style.Fill, style, compileContext, bounds, style.FillOpacity);
         var pen = style.ResolvePen(ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity));
         if (brush == null && pen == null)
@@ -660,17 +802,7 @@ internal static class SvgCompiler
                 {
                     var capturedStyle = measureStyle;
                     using var recording = DrawingRecording.Create(ctx =>
-                    {
-                        if (element.Name is "g" or "a" or "svg")
-                        {
-                            foreach (var child in element.Children)
-                                CompileElement(child, ctx, compileContext, capturedStyle);
-                        }
-                        else if (element.Name == "use")
-                        {
-                            CompileUse(element, ctx, compileContext, capturedStyle);
-                        }
-                    });
+                        CompileElementContent(element, ctx, compileContext, capturedStyle));
 
                     return recording.Bounds;
                 }
