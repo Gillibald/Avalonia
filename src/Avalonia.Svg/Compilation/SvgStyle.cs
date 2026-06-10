@@ -144,7 +144,7 @@ internal struct SvgStyle
                 FontSize = resolved;
         }
 
-        if (Get(element, "color") is { } colorValue && Media.Color.TryParse(colorValue, out var color))
+        if (Get(element, "color") is { } colorValue && SvgColor.TryParse(colorValue, out var color))
             Color = color;
 
         if (Get(element, "fill") is { } fill && SvgPaint.TryParse(fill, out var fillPaint))

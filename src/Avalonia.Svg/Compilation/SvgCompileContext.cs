@@ -15,6 +15,7 @@ namespace Avalonia.Svg.Compilation;
 internal sealed class SvgCompileContext
 {
     private HashSet<SvgElement>? _useStack;
+    private HashSet<SvgElement>? _sharedStack;
     private SvgHitTreeBuilder? _hitTree;
 
     public SvgCompileContext(SvgDocument document, Size viewport)
@@ -101,74 +102,112 @@ internal sealed class SvgCompileContext
     /// compiled once with the default style context — use-site style inheritance
     /// into unstyled referenced content is not propagated (the recording is
     /// shared between all reference sites).
+    /// Returns null for circular references (e.g. a marker whose content is
+    /// marked with itself): the cache only fills after the compile returns, so
+    /// re-entrant requests would otherwise recurse without bound. Callers treat
+    /// null as an invalid reference and ignore it, per the error-handling rules.
     /// </summary>
-    public DrawingRecording GetSharedRecording(SvgElement target, out DrawingRecordingOwnership ownership)
+    public DrawingRecording? GetSharedRecording(SvgElement target, out DrawingRecordingOwnership ownership)
     {
-        // Measuring-time compilation skips decorations and compositing; such a
-        // recording must never enter the document cache. Hand the caller an
-        // owned throwaway instead — the enclosing measuring recording disposes it.
-        if (Measuring)
-        {
-            ownership = DrawingRecordingOwnership.Owned;
-            return DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, hitTree: null));
-        }
-
         ownership = DrawingRecordingOwnership.Shared;
-        if (Document.TryGetSharedRecording(target, Viewport, out var recording))
-            return recording;
+        if (!EnterShared(target))
+            return null;
 
-        recording = DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, hitTree: null));
-        Document.AddSharedRecording(target, Viewport, recording);
-        return recording;
+        try
+        {
+            // Measuring-time compilation skips decorations and compositing; such a
+            // recording must never enter the document cache. Hand the caller an
+            // owned throwaway instead — the enclosing measuring recording disposes it.
+            if (Measuring)
+            {
+                ownership = DrawingRecordingOwnership.Owned;
+                return DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, hitTree: null));
+            }
+
+            if (Document.TryGetSharedRecording(target, Viewport, out var recording))
+                return recording;
+
+            recording = DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, hitTree: null));
+            Document.AddSharedRecording(target, Viewport, recording);
+            return recording;
+        }
+        finally
+        {
+            ExitShared(target);
+        }
     }
 
     /// <summary>
     /// Gets the shared recording for a <c>&lt;use&gt;</c> target, together with
     /// the target's hit subtree when this compilation builds a hit-test tree.
     /// The subtree is cached next to the recording and reused (as a shared node)
-    /// by every use site.
+    /// by every use site. Returns null for circular references.
     /// </summary>
-    public DrawingRecording GetSharedRecording(
+    public DrawingRecording? GetSharedRecording(
         SvgElement target, out DrawingRecordingOwnership ownership, out SvgHitNode? hitSubtree)
     {
-        if (Measuring)
-        {
-            hitSubtree = null;
-            ownership = DrawingRecordingOwnership.Owned;
-            return DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, hitTree: null));
-        }
-
+        hitSubtree = null;
         ownership = DrawingRecordingOwnership.Shared;
-        var needHits = _hitTree != null;
+        if (!EnterShared(target))
+            return null;
 
-        if (!Document.TryGetSharedRecording(target, Viewport, out var recording))
+        try
         {
-            var builder = needHits ? new SvgHitTreeBuilder(Matrix.Identity) : null;
-            recording = DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, builder));
-            Document.AddSharedRecording(target, Viewport, recording);
+            if (Measuring)
+            {
+                ownership = DrawingRecordingOwnership.Owned;
+                return DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, hitTree: null));
+            }
 
-            if (builder != null)
-                Document.AddSharedHitSubtree(target, Viewport, builder.Root);
+            var needHits = _hitTree != null;
 
-            hitSubtree = builder?.Root;
+            if (!Document.TryGetSharedRecording(target, Viewport, out var recording))
+            {
+                var builder = needHits ? new SvgHitTreeBuilder(Matrix.Identity) : null;
+                recording = DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, builder));
+                Document.AddSharedRecording(target, Viewport, recording);
+
+                if (builder != null)
+                    Document.AddSharedHitSubtree(target, Viewport, builder.Root);
+
+                hitSubtree = builder?.Root;
+                return recording;
+            }
+
+            SvgHitNode? subtree = null;
+            if (needHits && !Document.TryGetSharedHitSubtree(target, Viewport, out subtree!))
+            {
+                // The recording was cached by a compilation that did not build hit
+                // information (e.g. nested inside pattern or mask content). Rebuild
+                // just the hit subtree through a throwaway recording.
+                var builder = new SvgHitTreeBuilder(Matrix.Identity);
+                DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, builder)).Dispose();
+                subtree = builder.Root;
+                Document.AddSharedHitSubtree(target, Viewport, subtree);
+            }
+
+            hitSubtree = subtree;
             return recording;
         }
-
-        SvgHitNode? subtree = null;
-        if (needHits && !Document.TryGetSharedHitSubtree(target, Viewport, out subtree!))
+        finally
         {
-            // The recording was cached by a compilation that did not build hit
-            // information (e.g. nested inside pattern or mask content). Rebuild
-            // just the hit subtree through a throwaway recording.
-            var builder = new SvgHitTreeBuilder(Matrix.Identity);
-            DrawingRecording.Create(ctx => CompileSharedContent(target, ctx, builder)).Dispose();
-            subtree = builder.Root;
-            Document.AddSharedHitSubtree(target, Viewport, subtree);
+            ExitShared(target);
         }
-
-        hitSubtree = subtree;
-        return recording;
     }
+
+    /// <summary>
+    /// Guards shared-content compilation against reference cycles across all
+    /// shared kinds (markers, patterns, masks, use targets) — including cycles
+    /// that cross kinds, e.g. a pattern whose tile is marked with a marker that
+    /// fills with that pattern.
+    /// </summary>
+    private bool EnterShared(SvgElement target)
+    {
+        _sharedStack ??= new HashSet<SvgElement>();
+        return _sharedStack.Add(target);
+    }
+
+    private void ExitShared(SvgElement target) => _sharedStack?.Remove(target);
 
     private void CompileSharedContent(SvgElement target, DrawingContext ctx, SvgHitTreeBuilder? hitTree)
     {

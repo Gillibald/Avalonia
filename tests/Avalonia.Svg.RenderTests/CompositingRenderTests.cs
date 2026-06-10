@@ -46,7 +46,7 @@ public class CompositingRenderTests : SvgRenderTestBase
               <rect x="10" y="20" width="80" height="40" fill="gold"/>
               <circle cx="50" cy="60" r="25" fill="magenta" style="mix-blend-mode: multiply"/>
               <rect x="110" y="20" width="80" height="40" fill="gold"/>
-              <g isolation="isolate">
+              <g style="isolation:isolate">
                 <circle cx="150" cy="60" r="25" fill="magenta" style="mix-blend-mode: multiply"/>
               </g>
             </svg>

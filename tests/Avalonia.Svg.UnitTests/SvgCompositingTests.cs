@@ -60,7 +60,7 @@ public class SvgCompositingTests
         using var recording = Compile(
             """
             <svg xmlns="http://www.w3.org/2000/svg">
-              <g isolation="isolate">
+              <g style="isolation:isolate">
                 <rect x="5" y="5" width="20" height="20" fill="red" style="mix-blend-mode: multiply"/>
               </g>
             </svg>

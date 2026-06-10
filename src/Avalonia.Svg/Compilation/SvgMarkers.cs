@@ -63,12 +63,8 @@ internal static class SvgMarkers
                 angle = vertex.Angle + (isStart ? Math.PI : 0);
                 break;
             default:
-                if (double.TryParse(orient, System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out var degrees))
-                {
-                    angle = Matrix.ToRadians(degrees);
-                }
-
+                if (TryParseAngle(orient, out var radians))
+                    angle = radians;
                 break;
         }
 
@@ -87,15 +83,69 @@ internal static class SvgMarkers
         var reference = new Point(GetAttribute(marker, "refX", 0), GetAttribute(marker, "refY", 0))
             .Transform(contentMatrix);
 
-        var placement =
-            contentMatrix
-            * Matrix.CreateTranslation(-reference.X, -reference.Y)
+        var position =
+            Matrix.CreateTranslation(-reference.X, -reference.Y)
             * Matrix.CreateScale(scale, scale)
             * Matrix.CreateRotation(angle)
             * Matrix.CreateTranslation(vertex.Position.X, vertex.Position.Y);
 
+        // Null means a circular marker reference; the reference is ignored.
         var recording = compileContext.GetSharedRecording(marker, out _);
-        context.DrawRecording(recording, placement, Avalonia.Media.DrawingRecordingOwnership.Shared);
+        if (recording == null)
+            return;
+
+        // A marker establishes a viewport: content clips to it unless overflow
+        // opts out ('visible'/'auto'; the initial value is hidden).
+        var overflow = marker.GetStyleOrAttribute("overflow");
+        if (overflow is "visible" or "auto")
+        {
+            context.DrawRecording(recording, contentMatrix * position, Avalonia.Media.DrawingRecordingOwnership.Shared);
+        }
+        else
+        {
+            using (context.PushTransform(position))
+            using (context.PushClip(new Rect(0, 0, markerWidth, markerHeight)))
+            {
+                context.DrawRecording(recording, contentMatrix, Avalonia.Media.DrawingRecordingOwnership.Shared);
+            }
+        }
+    }
+
+    /// <summary>Parses a CSS angle: a number with an optional deg/grad/rad/turn metric (degrees by default).</summary>
+    private static bool TryParseAngle(string value, out double radians)
+    {
+        radians = 0;
+        var trimmed = value.Trim();
+        var multiplier = Math.PI / 180.0;
+
+        if (trimmed.EndsWith("deg", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed.Substring(0, trimmed.Length - 3);
+        }
+        else if (trimmed.EndsWith("grad", StringComparison.OrdinalIgnoreCase))
+        {
+            multiplier = Math.PI / 200.0;
+            trimmed = trimmed.Substring(0, trimmed.Length - 4);
+        }
+        else if (trimmed.EndsWith("rad", StringComparison.OrdinalIgnoreCase))
+        {
+            multiplier = 1.0;
+            trimmed = trimmed.Substring(0, trimmed.Length - 3);
+        }
+        else if (trimmed.EndsWith("turn", StringComparison.OrdinalIgnoreCase))
+        {
+            multiplier = Math.PI * 2.0;
+            trimmed = trimmed.Substring(0, trimmed.Length - 4);
+        }
+
+        if (!double.TryParse(trimmed, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var number))
+        {
+            return false;
+        }
+
+        radians = number * multiplier;
+        return true;
     }
 
     private static double GetAttribute(SvgElement element, string name, double fallback)

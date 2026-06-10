@@ -174,7 +174,7 @@ internal static class SvgFilters
                     var color = Colors.Black;
                     if (primitive.GetStyleOrAttribute("flood-color") is { } floodColor
                         && floodColor != "currentColor"
-                        && Color.TryParse(floodColor, out var parsed))
+                        && SvgColor.TryParse(floodColor, out var parsed))
                     {
                         color = parsed;
                     }

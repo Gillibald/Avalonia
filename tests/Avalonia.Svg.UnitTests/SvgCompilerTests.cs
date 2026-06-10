@@ -347,6 +347,66 @@ public class SvgCompilerTests
     }
 
     [Fact]
+    public void Recursive_Marker_Reference_Is_Ignored()
+    {
+        // The marker's own content is marked with itself; without a cycle
+        // guard this recursed to a stack overflow. The reference is invalid
+        // and ignored — only the line itself renders.
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <marker id="m" markerWidth="10" markerHeight="10">
+                  <line x1="0" y1="0" x2="8" y2="0" stroke="green" marker-end="url(#m)"/>
+                </marker>
+              </defs>
+              <line x1="10" y1="50" x2="90" y2="50" stroke="green" marker-end="url(#m)"/>
+            </svg>
+            """);
+
+        Assert.True(recording.Bounds.Width >= 80);
+    }
+
+    [Fact]
+    public void Recursive_Pattern_Reference_Is_Ignored()
+    {
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <pattern id="p" patternUnits="userSpaceOnUse" width="10" height="10">
+                  <rect width="10" height="10" fill="url(#p)"/>
+                </pattern>
+              </defs>
+              <rect width="50" height="50" fill="url(#p)"/>
+            </svg>
+            """);
+
+        // The cycle is broken one level in: the inner self-reference is
+        // invalid, so the outer rect paints with an empty tile — geometry
+        // bounds remain, nothing is visible, and compilation terminates.
+        Assert.Equal(new Rect(0, 0, 50, 50), recording.Bounds);
+    }
+
+    [Fact]
+    public void Recursive_Mask_Reference_Renders_Unmasked()
+    {
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <mask id="m">
+                  <rect width="100" height="100" fill="white" mask="url(#m)"/>
+                </mask>
+              </defs>
+              <rect width="50" height="50" fill="green" mask="url(#m)"/>
+            </svg>
+            """);
+
+        Assert.Equal(new Rect(0, 0, 50, 50), recording.Bounds);
+    }
+
+    [Fact]
     public void Ch_Falls_Back_To_Half_Em_Without_A_Font_Manager()
     {
         // No font manager is registered in this test context, so ch resolves
