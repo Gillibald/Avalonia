@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media;
 
 namespace Avalonia.Svg.Parsing;
 
@@ -163,4 +164,31 @@ internal readonly struct SvgPreserveAspectRatio
         SvgAspectRatioAlign.XMinYMax or SvgAspectRatioAlign.XMidYMax or SvgAspectRatioAlign.XMaxYMax => 1.0,
         _ => 0.0,
     };
+
+    /// <summary>
+    /// Maps the aspect-ratio rules onto a tile brush: <c>meet</c> is
+    /// <see cref="Stretch.Uniform"/>, <c>slice</c> is
+    /// <see cref="Stretch.UniformToFill"/>, <c>none</c> is
+    /// <see cref="Stretch.Fill"/>, with the alignment taken from the align value.
+    /// </summary>
+    public (Stretch Stretch, AlignmentX AlignmentX, AlignmentY AlignmentY) ToTileBrushMapping()
+    {
+        if (Align == SvgAspectRatioAlign.None)
+            return (Stretch.Fill, AlignmentX.Left, AlignmentY.Top);
+
+        var alignmentX = AlignFactorX(Align) switch
+        {
+            0.5 => AlignmentX.Center,
+            1.0 => AlignmentX.Right,
+            _ => AlignmentX.Left,
+        };
+        var alignmentY = AlignFactorY(Align) switch
+        {
+            0.5 => AlignmentY.Center,
+            1.0 => AlignmentY.Bottom,
+            _ => AlignmentY.Top,
+        };
+
+        return (Slice ? Stretch.UniformToFill : Stretch.Uniform, alignmentX, alignmentY);
+    }
 }
