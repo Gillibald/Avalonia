@@ -683,20 +683,22 @@ changes.
 ### Checklist
 
 - [x] `<text>` / `<tspan>` layout: resolve font family/size/weight/style to
-      `Typeface`; lay out through **`TextLayout`** (an `ITextSource` with
-      per-run properties), not direct `TextShaper`/`GlyphRun` construction —
-      SVG text must go through the full pipeline (script itemization, font
-      fallback, bidi) to stay on par with regular Avalonia text rendering.
-      Chunks split into layout segments at `dx`/`dy` adjustments; style-only
-      `tspan` boundaries shape continuously within one layout. The parser
-      captures mixed element/text content in document order with SVG
-      white-space normalization.
+      `Typeface`; lay out through **`TextFormatter.FormatLine`** (an
+      `ITextSource` with per-run properties), not direct
+      `TextShaper`/`GlyphRun` construction — SVG text must go through the
+      full pipeline (script itemization, font fallback, bidi) to stay on
+      par with regular Avalonia text rendering, and `FormatLine` is the
+      single-line primitive SVG chunks need (no paragraph-layout
+      machinery). Chunks split into line segments at `dx`/`dy`
+      adjustments; style-only `tspan` boundaries shape continuously within
+      one line. The parser captures mixed element/text content in document
+      order with SVG white-space normalization.
 - [x] `text-anchor`, `dx`/`dy`, basic `x`/`y` offsets (scalar values;
       per-glyph position lists are out of scope). SVG baselines map to
-      `TextLayout` origins via the first line's baseline; absolutely
-      positioned `tspan`s start new anchor chunks.
+      line origins via `TextLine.Baseline`; absolutely positioned
+      `tspan`s start new anchor chunks.
 - [x] `<textPath>` — arc-length sample the referenced path (gap 4.6 option
-      (a)) via a path flattener; the text lays out through `TextLayout`
+      (a)) via a path flattener; the text lays out through `FormatLine`
       (fallback-correct), then each glyph is placed individually:
       one fused `PushTransform` + `DrawGlyphRun` per glyph, rotated to the
       tangent, with `startOffset` (incl. percentages) honored and glyphs
