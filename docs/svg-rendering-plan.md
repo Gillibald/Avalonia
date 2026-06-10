@@ -102,8 +102,8 @@ behavior may change freely.
 | # | Change | Sub-phase | Why |
 |---|---|---|---|
 | R1 | `Bounds` returns real bounds synchronously for compositor-bound recordings (no "wait for compositor commit") | 0.2 | Any layout-sensitive consumer needs bounds before the first commit. |
-| R2 | `DrawingRecording` explicitly retains child recordings referenced via `DrawRecording`; server-side refcounting | 0.2 | Shared sub-recordings (symbol libraries, component recordings) must survive independent parent disposal. |
-| R3 | `DrawingRecording.GetBounds(Matrix)` — tight bounds under an outer transform | 0.2 | Non-axis-aligned transforms on a referenced recording need precise bounds, not a transformed AABB. |
+| R2 | `DrawingRecording` explicitly retains child recordings referenced via `DrawRecording`; client-side (UI-thread) refcounting that releases the server data on the next batch | 0.2 | Shared sub-recordings (symbol libraries, component recordings) must survive independent parent disposal. |
+| R3 | `DrawingRecording.GetBounds(Matrix)` — per-item bounds under an outer transform (each top-level item's AABB is transformed individually before union; nested structures contribute their local AABB) | 0.2 | Non-axis-aligned transforms on a referenced recording need tighter bounds than a single transformed AABB. Exact for the axis-aligned viewBox/stretch case SVG layout uses. |
 | R4 | `DrawingContext.DrawRecording(DrawingRecording, Matrix)` overload | 0.2 | Common case of "draw this recording at this transform" fuses into one recorded node. |
 | R5 | `DrawingRecordingOwnership { Owned, Shared }` parameter on `DrawRecording` | 0.2 | Makes the lifetime rule for nested recordings explicit rather than inferred from call order. |
 | R6 | ~~Element tags inside the recording~~. **Dropped.** Element identity is an SVG-layer concern; the SVG compiler maintains its own per-element hit-test tree alongside the recording. The recording API stays free of identity tracking. | — | Avoid polluting the composition API with consumer-specific concepts. |
@@ -163,10 +163,13 @@ as a short stack of PRs depending on review preference.
 
 **Exit criteria:**
 
-- All sub-phases 0.1 through 0.6 complete; 0.7 done; 0.8 done.
+- All sub-phases 0.1 through 0.6 complete.
+- `DrawingRecordingBenchmarks` (BenchmarkDotNet) and the RenderDemo
+  `DrawingRecordingPage` exist for perf tracking and manual validation.
 - Full solution builds on supported platforms.
 - `DrawingRecordingTests`, `CompositorBoundDrawingRecordingTests`,
-  `PatternBrushTests`, `LuminanceMaskTests`, effect tests all pass.
+  `DrawingRecordingBrushTests` and the Skia render tests
+  (`DrawingRecordingTests`, `BlendModeRenderTests`) all pass.
 - PR(s) merged into `master`.
 - `feature/svg-rendering` branches from the merge commit.
 
@@ -206,7 +209,7 @@ cross-compositor guard.
       submodule entry, and `.claude/settings.local.json`.
 - [x] `Avalonia.Base` builds clean on net8.0 and net10.0.
 - [ ] Full solution build (after submodule init) clean.
-- [ ] `DrawingRecordingTests` + `CompositorBoundDrawingRecordingTests` pass.
+- [x] `DrawingRecordingTests` + `CompositorBoundDrawingRecordingTests` pass.
 
 #### Tests (already in the branch)
 
@@ -225,53 +228,73 @@ footing.
 
 #### Checklist
 
-- [ ] **R1** — `RenderDataDrawingContext` / `CompositionRenderData`
+- [x] **R1** — `RenderDataDrawingContext` / `CompositionRenderData`
       accumulate bounds eagerly as items are appended. Both immutable and
       compositor-bound recordings expose correct `Bounds` immediately
       (synchronous for immutable; synchronous for compositor-bound after the
-      record delegate returns, independent of the first commit).
-- [ ] **R2** — Parent recordings retain child recordings referenced via
-      `DrawRecording`. Server-side `CompositionRenderData` is refcounted;
-      `Release` only disposes when the count reaches zero.
-- [ ] **R3** — `DrawingRecording.GetBounds(Matrix)` walks the item list
-      under the transform and unions per-item transformed bounds. Recurses
-      into nested recordings.
-- [ ] **R4** — `DrawingContext.DrawRecording(DrawingRecording, Matrix)`
-      overload, recorded as a single node carrying the matrix; server-side
-      fuses with the current transform at replay time.
-- [ ] **R5** — `public enum DrawingRecordingOwnership { Owned, Shared }`;
+      record delegate returns, independent of the first commit). Leaf nodes
+      prefer the client-side pen for bounds so pending pen mutations are
+      visible to UI-thread queries before the next commit.
+- [x] **R2** — Parent recordings retain child recordings referenced via
+      `DrawRecording`. `CompositionRenderData` is refcounted on the client
+      (UI thread) via `CompositionRenderDataResourceRef` in the parent's
+      resource list; reaching zero releases the server data on the next
+      batch. (Refcounting on the UI thread avoids cross-thread disposal.)
+- [x] **R3** — `DrawingRecording.GetBounds(Matrix)` walks the top-level
+      item list under the transform and unions per-item transformed AABBs.
+      Nested recordings and push scopes contribute their local AABB as one
+      item (no recursion) — exact for axis-aligned transforms, conservative
+      for rotation/skew over nested multi-item content.
+- [x] **R4** — `DrawingContext.DrawRecording(DrawingRecording, Matrix)`
+      overload, recorded as a single node carrying the matrix; replay
+      fuses it with the current transform, bounds/hit-test apply it
+      per-item (inverse-transformed point for hit tests).
+- [x] **R5** — `public enum DrawingRecordingOwnership { Owned, Shared }`;
       `DrawRecording(recording, ownership)` and
       `DrawRecording(recording, matrix, ownership)` overloads. Default on
       the existing `DrawRecording(recording)` becomes `Shared`. `Owned`
-      disposes the child when the parent disposes; `Shared` leaves it to
-      the external owner.
-- [ ] Document ownership and lifetime rules on the `DrawingRecording` XML
+      disposes the child when the parent disposes (including when the
+      record delegate throws); `Shared` leaves it to the external owner.
+      Ownership is honored only by recording-building contexts; the visual
+      content recorder and transient scene-brush contents ignore it.
+- [x] Document ownership and lifetime rules on the `DrawingRecording` XML
       doc comments.
+- [x] **Immutable resource policy** — `DrawingRecording.Create(record)`
+      (no compositor) snapshots mutable brushes, pens and layer effects at
+      record time; scene brushes (`VisualBrush`, `DrawingBrush`,
+      `DrawingRecordingBrush`) are captured via an immutable content
+      snapshot. Resources that cannot be snapshotted throw, as does any
+      reference to a compositor-bound recording (directly or through a
+      brush's content) — an immutable recording cannot retain or track
+      compositor-bound state. Replay of immutable recordings on the render
+      thread therefore never touches an `AvaloniaObject`.
 
-#### Tests
+#### Tests (as shipped)
 
-- `DrawingRecordingTests.EagerBounds_Immutable` — shapes appended produce
-  expected bounds immediately after the record delegate returns.
-- `CompositorBoundDrawingRecordingTests.EagerBounds` — fresh compositor-bound
-  recording has valid bounds before the first commit; mutating a brush's
-  geometry-affecting property updates bounds after commit.
-- `DrawingRecordingTests.GetBounds_Transform` — known shapes under
-  translate/scale/rotate/skew match a hand-computed tight bounds within
-  floating-point tolerance.
-- `DrawingRecordingTests.GetBounds_NestedRecording` — bounds propagate
-  through a parent that references a child via `DrawRecording(child, m)`.
-- `DrawingRecordingTests.DrawRecordingWithMatrix` — `DrawRecording(rec, m)`
-  renders identically to `PushTransform(m) + DrawRecording(rec) + Pop` and
-  snapshot shows one fused node.
-- `DrawingRecordingTests.NestedOwnership_Shared` — disposing the parent of
-  a `Shared` child does not dispose the child; the child remains
-  hit-testable from another parent.
-- `DrawingRecordingTests.NestedOwnership_Owned` — `Owned` child is disposed
-  exactly once when the parent is disposed; double-dispose of parent is
-  safe.
-- `DrawingRecordingTests.NestedOwnership_Refcount` — a child referenced
-  from three parents (all `Shared`, external owner disposes too) survives
-  until the last reference releases.
+- `DrawingRecordingTests.Bounds_Available_Immediately` /
+  `CompositorBoundDrawingRecordingTests.Compositor_Bound_Bounds_Available_Before_Commit`
+  — eager bounds in both modes, before any commit.
+- `DrawingRecordingTests.GetBounds_{Identity,Translate,Scale,Rotate,Empty}` +
+  `GetBounds_Rotate_Gives_Tight_Union_Of_Per_Item_Aabb` — per-item transformed
+  AABB semantics; `CompositorBound...GetBounds_With_Matrix_Works_Before_Commit`.
+- `DrawingRecordingTests.Immutable_Parent_Bounds_Include_Nested_Immutable_Child`
+  / `CompositorBound...Parent_Bounds_Include_Nested_Compositor_Bound_Child_Before_Commit`
+  — bounds propagate through nesting.
+- `DrawingRecordingTests.DrawRecording_With_Matrix_{Translates,Scales}_Bounds`,
+  `DrawRecording_With_Identity_Matrix_Matches_Unmatrixed`,
+  `DrawRecording_With_Matrix_HitTest_Uses_Transformed_Bounds`, and
+  `DrawRecording_With_Rotation_Has_Per_Item_Tight_Bounds` — the latter proves
+  the matrix fuses into the recording node (per-item tight bounds rather than
+  a transformed united AABB). Render: `DrawRecording_With_Matrix_Translates_Content`.
+- `DrawingRecordingTests.Shared_Ownership_Does_Not_Dispose_Child`,
+  `Owned_Ownership_{Disposes_Child_With_Parent,Disposes_Transitively,Handles_Double_Reference,With_Matrix_Overload}`,
+  `Owned_Children_Disposed_When_Record_Delegate_Throws`.
+- `CompositorBound...{Same_Recording_Drawn_Multiple_Times_Increments_RefCount,Compositor_Bound_Child_Shared_Across_Multiple_Parents,Parent_Retains_Compositor_Bound_Child_After_External_Dispose}`
+  — refcounted retention.
+- Immutable resource policy:
+  `DrawingRecordingTests.Immutable_Create_Snapshots_{Mutable_Brush,Mutable_Pen,Scene_Brush}`,
+  `Immutable_Create_Throws_On_Brush_That_Cannot_Be_Snapshotted`;
+  `CompositorBound...Immutable_Create_Throws_On_{Compositor_Bound_Child,Scene_Brush_With_Compositor_Bound_Source}`.
 
 ---
 
@@ -285,7 +308,7 @@ Adds a bounds-change signal for compositor-bound recordings.
 
 #### Checklist
 
-- [ ] **R7** — `DrawingRecording.BoundsChanged : event EventHandler<Rect>`
+- [x] **R7** — `DrawingRecording.BoundsChanged : event EventHandler<Rect>`
       raised on the UI thread when, after a compositor commit, the
       observable `Bounds` differs from the previously-observed value.
       Subscribing on an immutable recording throws
@@ -293,13 +316,14 @@ Adds a bounds-change signal for compositor-bound recordings.
       `ObjectDisposedException`. Lazy hook: the recording subscribes to
       `Compositor.AfterCommit` only while there is at least one handler.
 
-#### Tests
+#### Tests (as shipped)
 
-- `CompositorBoundDrawingRecordingTests.BoundsChanged_OnGrow` — animating a
-  brush `Transform` that enlarges visible bounds fires the event once per
-  commit.
-- `CompositorBoundDrawingRecordingTests.BoundsChanged_NoOpWhenStable` —
-  mutations that do not affect bounds do not raise the event.
+- `CompositorBoundDrawingRecordingTests.BoundsChanged_Fires_When_Pen_Thickness_Animated`
+  — a geometry-affecting mutation fires the event after commit. (Brush
+  `Transform` does not affect drawn bounds; pen thickness is the
+  representative growth case.)
+- `CompositorBoundDrawingRecordingTests.BoundsChanged_Does_Not_Fire_When_Bounds_Stable`.
+- `CompositorBound...BoundsChanged_{Throws_On_Immutable_Recording,Throws_On_Disposed_Recording,Unsubscribe_Stops_Notifications,Dispose_Cleans_Up_Subscription}`.
 
 ---
 
@@ -309,27 +333,42 @@ Tile brush whose source is a `DrawingRecording`.
 
 #### Checklist
 
-- [ ] `Avalonia.Media.DrawingRecordingBrush : TileBrush` with `Recording`,
-      `SourceRect`, `DestinationRect`, `TileMode`, `Transform`.
-- [ ] `ImmutableDrawingRecordingBrush` snapshot type.
-- [ ] Serialization through `RenderDataDrawingContext` — the brush carries a
-      refcounted reference to the server-side render data.
-- [ ] Server-side brush implementation analogous to `ImageBrush`: realizes
-      the recording into a tile and samples per the tile mode.
-- [ ] Handles both immutable and compositor-bound recordings as brush
-      source.
+- [x] `Avalonia.Media.DrawingRecordingBrush : TileBrush, ISceneBrush` with
+      `Recording`; `SourceRect`, `DestinationRect`, `TileMode`, `Transform`
+      come from the `TileBrush`/`Brush` base.
+- [x] No immutable snapshot type — matches `DrawingBrush`'s shape. When the
+      brush is captured by an *immutable* recording, the recording snapshots
+      the brush's current content at record time instead (see the 0.2
+      immutable resource policy). Changing `Recording` after the brush is
+      referenced by a compositor does not refresh existing content
+      (documented; matches `DrawingBrush.Drawing`).
+- [x] Serialization through `RenderDataDrawingContext` — the brush carries a
+      refcounted reference to the server-side render data
+      (`CompositionRenderDataSceneBrushContent`).
+- [x] Server-side brush implementation reuses
+      `ServerCompositionSimpleContentBrush` (same machinery as
+      `DrawingBrush`/`VisualBrush`): realizes the content into a tile and
+      samples per the tile mode.
+- [x] Recording sources by context: compositor-bound sources work for
+      compositor use and transient (immediate) content; immutable
+      recordings accept only immutable sources (a compositor-bound source
+      throws at record time, since it could not be retained or tracked).
 
-#### Tests
+#### Tests (as shipped)
 
-- `PatternBrushTests.TileModes` — none, tile, flip-x, flip-y, flip-xy.
-- `PatternBrushTests.SourceAndDest` — cropping, scaling, translation via
-  source-rect / dest-rect.
-- `PatternBrushTests.CompositorBoundSource` — animated content inside the
-  brush source reflects in rendered output.
-- `PatternBrushTests.Disposal` — brush retains the recording for its
-  lifetime; disposing the external recording while a brush references it
-  (as `Shared`) is safe.
-- `RenderTests.PatternBrush` — golden-image for known configurations.
+- `Avalonia.Skia.RenderTests.DrawingRecordingTests.DrawingRecordingBrush_TileMode_{None,FlipX,FlipY,FlipXY}`
+  + `DrawingRecordingBrush_Tiles_Recording` — tile-mode goldens. The
+  tile-mode tests draw the brush from inside an immutable recording, so they
+  also cover the record-time content snapshot end to end (composited and
+  immediate).
+- `...DrawingRecordingBrush_SourceRect_Selects_Region` — source-rect crop +
+  dest-rect scale golden.
+- `DrawingRecordingBrushTests.Accepts_Compositor_Bound_Recording_From_Same_Compositor`
+  — compositor-bound source stays usable for transient content; animated
+  propagation rides the same change-tracking machinery as `DrawingBrush`
+  (covered by `CompositorBoundDrawingRecordingTests`).
+- `DrawingRecordingBrushTests.{SceneBrush_Content_Survives_Source_Disposal,SceneBrush_Content_Is_Null_When_Recording_Is_Disposed,Brush_Reusable_Across_Multiple_Content_Creations}`
+  — disposal and reuse semantics.
 
 ---
 
@@ -337,26 +376,27 @@ Tile brush whose source is a `DrawingRecording`.
 
 #### Checklist
 
-- [ ] `Avalonia.Media.MaskType { Alpha, Luminance }` enum.
-- [ ] `DrawingContext.PushOpacityMask(IBrush, Rect, MaskType)` overload;
+- [x] `Avalonia.Media.MaskType { Alpha, Luminance }` enum.
+- [x] `DrawingContext.PushOpacityMask(IBrush, Rect, MaskType)` overload;
       existing alpha-only overload forwards to this with `MaskType.Alpha`.
-- [ ] `RenderDataDrawingContext` records the mask type on the opacity-mask
+- [x] `RenderDataDrawingContext` records the mask type on the opacity-mask
       node.
-- [ ] `Avalonia.Platform.IDrawingContextImplWithLuminanceMask` probe
+- [x] `Avalonia.Platform.IDrawingContextImplWithLuminanceMask` probe
       interface (non-breaking addition to the backend surface).
-- [ ] Skia implementation: luminance-to-alpha `SKColorFilter` applied to
-      the mask layer; backend that doesn't implement the probe logs a
-      one-shot warning and falls back to alpha.
+- [x] Skia implementation: luminance-to-alpha `SKColorFilter.CreateLumaColor`
+      applied to the mask layer; a backend that doesn't implement the probe
+      logs a one-shot warning and falls back to alpha.
 
-#### Tests
+#### Tests (as shipped)
 
-- `DrawingContextMaskTests.AlphaDefault` — default behavior unchanged.
-- `DrawingContextMaskTests.Luminance_SkiaBackend` — mask rendered from a
-  gradient; compare to pre-computed alpha from the same gradient's luma.
-- `RenderDataDrawingContextTests.RoundTrip_MaskType` — round-trip
-  serialization preserves `MaskType`.
-- `RenderTests.LuminanceMask` — golden image for a luminance mask against a
-  colored background.
+- `DrawingRecordingTests.PushOpacityMask_Default_Behaves_As_Alpha` — default
+  behavior unchanged.
+- `DrawingRecordingTests.PushOpacityMask_Luminance_{Preserves_Bounds,Hits_Unchanged_By_Type}`
+  — mask type does not perturb bounds/hit-testing.
+- `Avalonia.Skia.RenderTests.DrawingRecordingTests.PushOpacityMask_Luminance_Differs_From_Alpha`
+  — golden comparing luminance vs alpha for the same gradient mask.
+- (A `MaskType` serialization round-trip test is moot: the in-process batch
+  transport passes node object references, so the property cannot be lost.)
 
 ---
 
@@ -375,6 +415,12 @@ restore" in Skia.
       `BitmapBlendingMode` (Unspecified = SourceOver), `Effect`
       reusing `IEffect`.
 - [x] `DrawingContext.PushLayer(LayerOptions)` + `PushedStateType.Layer`.
+- [x] Recording contexts snapshot `LayerOptions.Effect` (mutable effects
+      → `ToImmutable()`; non-snapshottable effects throw), so recorded
+      layer nodes never read a live `AvaloniaObject` at replay time.
+      `LayerOptions.Bounds` is a sizing hint for the offscreen buffer, not
+      a clip — documented on the struct; consumers needing a hard clip
+      (e.g. SVG filter regions) push an explicit clip around the layer.
 - [x] `IDrawingContextImplWithLayers` probe interface adds
       `PushLayer(LayerOptions)` overload of the existing
       `IDrawingContextImpl.PushLayer(Rect)` isolation primitive; pop is
@@ -571,7 +617,9 @@ plus adding the new `IEffect` subtypes that Phase 0.6 deferred.
 
 - [ ] SVG `<filter>` region (`x`, `y`, `width`, `height`,
       `filterUnits="userSpaceOnUse"` vs `"objectBoundingBox"`) →
-      `LayerOptions.Bounds`.
+      `LayerOptions.Bounds` **plus an explicit `PushClip(filterRegion)`**
+      around the layer — `LayerOptions.Bounds` sizes the offscreen buffer
+      but does not clip, while SVG's filter region is a hard clip.
 - [ ] Add new `IEffect` subtypes (deferred from Phase 0.6) with their
       `Immutable…Effect` counterparts: `IColorMatrixEffect`,
       `IOffsetEffect`, `ICompositeEffect` (linear chain). Skia lowering
@@ -733,9 +781,26 @@ not yet stable API):
 - `Bounds` returns real bounds synchronously in both immutable and
   compositor-bound modes (R1, Phase 0.2).
 - Child recordings referenced via `DrawRecording` are retained by the
-  parent until the parent is disposed; lifetime is refcounted on the
-  server side. Default ownership on the existing `DrawRecording(rec)`
-  becomes `Shared` (R2, R5, Phase 0.2).
+  parent until the parent is disposed; lifetime is refcounted client-side
+  (UI thread), releasing the server data on the next batch. Default
+  ownership on the existing `DrawRecording(rec)` becomes `Shared`
+  (R2, R5, Phase 0.2).
+- `DrawRecording(rec, matrix)` records one fused node instead of a
+  transform push around the recording node (R4, Phase 0.2).
+- Immutable `Create(record)` snapshots mutable brushes/pens/effects at
+  record time (scene brushes via their current content) and throws for
+  resources that cannot be snapshotted or that reference compositor-bound
+  state. `Owned` children are disposed even when the record delegate
+  throws. (Phase 0.2 immutable resource policy.) Snapshotting rides the
+  existing `BrushExtensions.ToImmutable` (brush/pen/dash-style) and
+  `EffectExtesions.ToImmutable` helpers; the recording context only adds
+  the embed-policy checks.
+- `BrushExtensions.ToImmutable(IBrush)` — public behavior change — now
+  snapshots scene brushes (`VisualBrush`, `DrawingBrush`,
+  `DrawingRecordingBrush`) to an immutable snapshot of their current
+  content (transparent brush when there is no content) instead of throwing
+  `InvalidCastException`. `Pen.ToImmutable` and the composition visual's
+  `OpacityMask` serialization inherit this.
 
 ### Added by Phases 1–6 (`feature/svg-rendering`)
 
