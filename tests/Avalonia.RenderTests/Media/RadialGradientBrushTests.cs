@@ -190,6 +190,128 @@ namespace Avalonia.Skia.RenderTests
             CompareImages();
         }
 
+        /// <summary>
+        /// A focal radius starts the gradient at a circle around the origin instead of at the
+        /// origin point: the focal circle's interior takes the first stop's color.
+        /// </summary>
+        [Fact]
+        public async Task RadialGradientBrush_FocalRadius_Concentric()
+        {
+            Decorator target = new Decorator
+            {
+                Padding = new Thickness(8),
+                Width = 200,
+                Height = 200,
+                Child = new Border
+                {
+                    Background = new RadialGradientBrush
+                    {
+                        GradientStops =
+                        {
+                            new GradientStop { Color = Colors.Black, Offset = 0 },
+                            new GradientStop { Color = Colors.White, Offset = 1 }
+                        },
+                        FocalRadius = new RelativeScalar(0.2, RelativeUnit.Relative)
+                    }
+                }
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
+        /// <summary>
+        /// A focal circle larger than the end circle inverts the gradient's direction, per
+        /// CSS/SVG 2 two-point conical semantics.
+        /// </summary>
+        [Fact]
+        public async Task RadialGradientBrush_FocalRadius_Larger_Than_Radius()
+        {
+            Decorator target = new Decorator
+            {
+                Padding = new Thickness(8),
+                Width = 200,
+                Height = 200,
+                Child = new Border
+                {
+                    Background = new RadialGradientBrush
+                    {
+                        GradientStops =
+                        {
+                            new GradientStop { Color = Colors.Black, Offset = 0 },
+                            new GradientStop { Color = Colors.White, Offset = 1 }
+                        },
+                        FocalRadius = new RelativeScalar(0.7, RelativeUnit.Relative)
+                    }
+                }
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
+        /// <summary>
+        /// Tests a focal circle around an origin offset from the center.
+        /// </summary>
+        [Fact]
+        public async Task RadialGradientBrush_FocalRadius_Offset_Origin()
+        {
+            Decorator target = new Decorator
+            {
+                Padding = new Thickness(8),
+                Width = 200,
+                Height = 200,
+                Child = new Border
+                {
+                    Background = new RadialGradientBrush
+                    {
+                        GradientStops =
+                        {
+                            new GradientStop { Color = Colors.Red, Offset = 0 },
+                            new GradientStop { Color = Colors.Blue, Offset = 1 }
+                        },
+                        GradientOrigin = new RelativePoint(0.3, 0.3, RelativeUnit.Relative),
+                        FocalRadius = new RelativeScalar(0.15, RelativeUnit.Relative)
+                    }
+                }
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
+        /// <summary>
+        /// With different end radii the focal circle follows the end gradient's RadiusY/RadiusX
+        /// aspect, so the focal boundary is an ellipse of the same shape.
+        /// </summary>
+        [Fact]
+        public async Task RadialGradientBrush_FocalRadius_Elliptical()
+        {
+            Decorator target = new Decorator
+            {
+                Padding = new Thickness(8),
+                Width = 200,
+                Height = 200,
+                Child = new Border
+                {
+                    Background = new RadialGradientBrush
+                    {
+                        GradientStops =
+                        {
+                            new GradientStop { Color = Colors.Red, Offset = 0 },
+                            new GradientStop { Color = Colors.Blue, Offset = 1 }
+                        },
+                        GradientOrigin = new RelativePoint(0.4, 0.4, RelativeUnit.Relative),
+                        RadiusY = new RelativeScalar(0.25, RelativeUnit.Relative),
+                        FocalRadius = new RelativeScalar(0.15, RelativeUnit.Relative)
+                    }
+                }
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
         [Fact]
         public async Task RadialGradientBrush_DrawingContext()
         {

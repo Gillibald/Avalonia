@@ -52,12 +52,48 @@ namespace Avalonia.Media.Immutable
             RelativeScalar? radiusX = null,
             RelativeScalar? radiusY = null
             )
+            : this(gradientStops, opacity, transform, transformOrigin, spreadMethod,
+                center, gradientOrigin, radiusX, radiusY, null)
+        {
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ImmutableRadialGradientBrush"/> class.
+        /// </summary>
+        /// <param name="gradientStops">The gradient stops.</param>
+        /// <param name="opacity">The opacity of the brush.</param>
+        /// <param name="transform">The transform of the brush.</param>
+        /// <param name="transformOrigin">The transform origin of the brush</param>
+        /// <param name="spreadMethod">The spread method.</param>
+        /// <param name="center">The start point for the gradient.</param>
+        /// <param name="gradientOrigin">
+        /// The location of the two-dimensional focal point that defines the beginning of the gradient.
+        /// </param>
+        /// <param name="radiusX">The horizontal radius of the outermost circle of the radial gradient.</param>
+        /// <param name="radiusY">The vertical radius of the outermost circle of the radial gradient.</param>
+        /// <param name="focalRadius">
+        /// The radius of the focal circle around <paramref name="gradientOrigin"/> at which the
+        /// gradient starts, making the brush a two-point conical gradient.
+        /// </param>
+        public ImmutableRadialGradientBrush(
+            IReadOnlyList<ImmutableGradientStop> gradientStops,
+            double opacity,
+            ImmutableTransform? transform,
+            RelativePoint? transformOrigin,
+            GradientSpreadMethod spreadMethod,
+            RelativePoint? center,
+            RelativePoint? gradientOrigin,
+            RelativeScalar? radiusX,
+            RelativeScalar? radiusY,
+            RelativeScalar? focalRadius
+            )
             : base(gradientStops, opacity, transform, transformOrigin, spreadMethod)
         {
             Center = center ?? RelativePoint.Center;
             GradientOrigin = gradientOrigin ?? RelativePoint.Center;
             RadiusX = radiusX ?? RelativeScalar.Middle;
             RadiusY = radiusY ?? RelativeScalar.Middle;
+            FocalRadius = focalRadius ?? RelativeScalar.Beginning;
         }
 
 
@@ -71,7 +107,8 @@ namespace Avalonia.Media.Immutable
             Center = source.Center;
             GradientOrigin = source.GradientOrigin;
             RadiusX = source.RadiusX;
-            RadiusY = source.RadiusX;
+            RadiusY = source.RadiusY;
+            FocalRadius = source.FocalRadius;
         }
 
         /// <inheritdoc/>
@@ -82,8 +119,11 @@ namespace Avalonia.Media.Immutable
 
         /// <inheritdoc/>
         public RelativeScalar RadiusX { get; }
-        
+
         /// <inheritdoc/>
         public RelativeScalar RadiusY { get; }
+
+        /// <inheritdoc/>
+        public RelativeScalar FocalRadius { get; }
     }
 }

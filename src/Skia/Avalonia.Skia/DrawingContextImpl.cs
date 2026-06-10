@@ -988,7 +988,34 @@ namespace Avalonia.Skia
                             transform = transform.HasValue ? transform * brushTransform : brushTransform;
                         }
 
-                        if (originPoint.Equals(centerPoint))
+                        var focalRadius = radialGradient.FocalRadius.ToValue(targetRect.Width);
+
+                        if (focalRadius > 0)
+                        {
+                            // A focal radius makes this a true two-point conical gradient running
+                            // from the focal circle to the end circle, with CSS/SVG 2 semantics:
+                            // the focal circle's interior takes the first stop's color, and a focal
+                            // circle larger than the end circle inverts the gradient's direction.
+                            if (radiusX != radiusY)
+                                // Adjust the origin point for radiusX/Y transformation by reversing it
+                                originPoint = originPoint.WithY(
+                                    (originPoint.Y - centerPoint.Y) * radiusX / radiusY + centerPoint.Y);
+
+                            var origin = originPoint.ToSKPoint();
+
+                            using (var shader =
+                                       transform.HasValue
+                                           ? SKShader.CreateTwoPointConicalGradient(origin, (float)focalRadius,
+                                               center, (float)radiusX, stopColors, stopOffsets, tileMode,
+                                               transform.Value.ToSKMatrix())
+                                           : SKShader.CreateTwoPointConicalGradient(origin, (float)focalRadius,
+                                               center, (float)radiusX, stopColors, stopOffsets, tileMode)
+                                  )
+                            {
+                                paintWrapper.Paint.Shader = shader;
+                            }
+                        }
+                        else if (originPoint.Equals(centerPoint))
                         {
                             // when the origin is the same as the center the Skia RadialGradient acts the same as D2D
                             using (var shader =

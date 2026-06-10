@@ -99,6 +99,7 @@
         <Property Name="GradientOrigin" Type="Avalonia.RelativePoint" />
         <Property Name="RadiusX" Type="Avalonia.RelativeScalar" />
         <Property Name="RadiusY" Type="Avalonia.RelativeScalar" />
+        <Property Name="FocalRadius" Type="Avalonia.RelativeScalar" />
     </Object>
     <Object Name="CompositionSimpleLinearGradientBrush" Internal="true" ServerOnly="true" ServerBase="ServerCompositionSimpleGradientBrush">
         <Property Name="StartPoint" Type="Avalonia.RelativePoint" />
