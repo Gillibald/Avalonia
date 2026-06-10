@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Shared render-test infrastructure (immediate + composited rendering and
+         image comparison) reused from the platform render tests. -->
+    <Compile Include="..\Avalonia.RenderTests\TestRenderHelper.cs" Link="Infrastructure\TestRenderHelper.cs" />
+    <Compile Include="..\Avalonia.RenderTests\TestRenderRoot.cs" Link="Infrastructure\TestRenderRoot.cs" />
+    <Compile Include="..\Avalonia.RenderTests\ManualRenderTimer.cs" Link="Infrastructure\ManualRenderTimer.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Controls\Avalonia.Controls.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Svg\Avalonia.Svg.csproj" />
+    <ProjectReference Include="..\..\src\Skia\Avalonia.Skia\Avalonia.Skia.csproj" />
+    <ProjectReference Include="..\Avalonia.UnitTests\Avalonia.UnitTests.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" />
+    <PackageReference Include="System.Reactive" />
+  </ItemGroup>
+  <Import Project="..\..\build\XUnit.props" />
+  <Import Project="..\..\build\SkiaSharp.props" />
+  <Import Project="..\..\build\SharedVersion.props" />
+  <Import Project="..\..\build\NullableEnable.props" />
+</Project>
