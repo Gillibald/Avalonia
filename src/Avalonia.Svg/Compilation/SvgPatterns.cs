@@ -46,7 +46,7 @@ internal static class SvgPatterns
         if (contentSource == null)
             return null;
 
-        var recording = context.GetSharedRecording(contentSource);
+        var recording = context.GetSharedRecording(contentSource, out _);
 
         // The source region selects the tile's extent in content coordinates.
         var tileWidthUser = boxUnits ? width * bounds.Width : width;

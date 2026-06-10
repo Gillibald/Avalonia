@@ -47,7 +47,7 @@ internal static class SvgMasks
         if (mask.Children.Count == 0)
             return context.PushOpacity(0);
 
-        var recording = compileContext.GetSharedRecording(mask);
+        var recording = compileContext.GetSharedRecording(mask, out _);
 
         // The mask content paints 1:1 over the region: the source region in
         // content coordinates maps onto the region rect.
