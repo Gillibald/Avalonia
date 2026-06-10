@@ -919,32 +919,55 @@ and hit testing are tracked entirely in the SVG layer.
         hidden container; hidden shapes skip painting and markers but keep
         their fill box (getBBox semantics) — measuring passes still paint
         them. Hidden text keeps layout via a null foreground.)*
-  - [ ] Dynamic: toggleable subtrees compile into their own
+  - [x] Dynamic: toggleable subtrees compile into their own
         `DrawingRecording` held as `Shared` children; the parent chooses
         whether to call `DrawRecording` on each per frame. Skipping a
-        subtree does not dispose it. *(Slice B, with the animation driver —
-        `<set attributeName="visibility">` is the trigger.)*
-- [ ] SMIL `<animate>` / `<set>` / `<animateTransform>` parser.
-- [ ] Animation driver, two channels (recorded transforms and geometry are
+        subtree does not dispose it. *(Shipped through the structural
+        channel: `<set attributeName="visibility">` (or any discrete
+        animate) toggles the override and the control re-compiles the root;
+        shared sub-recordings stay cached on the document and are replayed,
+        not rebuilt, across toggles — R5 keeps them alive while skipped.)*
+- [x] SMIL `<animate>` / `<set>` / `<animateTransform>` parser. *(Shipped:
+      `Animation/SvgAnimator` — offset `begin`, `dur`, `repeatCount`
+      (incl. indefinite), `fill="freeze"`, `from`/`to`/`values`, `calcMode`
+      linear|discrete, `animateTransform` translate/scale/rotate/skewX/Y.
+      Event-based `begin`, `paced`/`spline` calc modes, `additive` and
+      `accumulate` are out of scope. Animations targeting content inside
+      shared-compiled containers (symbol/marker/pattern/mask) are skipped —
+      those recordings replay at multiple sites.)*
+- [x] Animation driver, two channels (recorded transforms and geometry are
       immutable values — only paint resources are mutable inside a
       recording):
-  - [ ] **Paint animation** (`fill`, `stroke`, pen thickness, brush
+  - [x] **Paint animation** (`fill`, `stroke`, pen thickness, brush
         transforms): mutable brushes/pens recorded into a compositor-bound
         recording; the compositor's change tracking propagates mutations
         without re-recording. Layout reacts via R7 `BoundsChanged`.
-  - [ ] **Structural animation** (`animateTransform` on elements/groups,
+        *(Shipped for color animations on a shape's own fill/stroke: the
+        compile registers mutable `SolidColorBrush`es (mutable `Pen` for
+        strokes) and the driver mutates colors — `Apply` never requests a
+        recompile for them. Inherited paints, opacity and thickness stay on
+        the structural channel. A `<use>` replay of a paint-animated shape
+        shows the static color — the shared recording is immutable.)*
+  - [x] **Structural animation** (`animateTransform` on elements/groups,
         `d` morphing, structural attribute changes): re-emitted at the
         control level — the `Svg` control invalidates and re-issues cheap
         `DrawRecording(subRecording, matrix, Shared)` calls against the
         unchanged sub-recordings (the same mechanism as visibility
-        toggling). Morphing shapes draw their geometry directly or swap a
-        small per-shape recording instead of being baked into a shared
-        recording.
-- [ ] Animation targets resolve by element id through the
-      `Dictionary<string, SvgElement>` the compiler maintains.
+        toggling). *(Shipped: sampled values land as per-element overrides
+        (`SvgElement.SetAnimatedValue`, highest cascade precedence) and the
+        control re-compiles the root recording on change ticks; shared
+        sub-recordings replay from the document cache. The root re-record
+        is the v1 cost — R8 below if benchmarks demand better.)*
+- [x] Animation targets resolve by element id through the
+      `Dictionary<string, SvgElement>` the compiler maintains. *(Parent
+      element by default, `href`/`xlink:href` through the id map.)*
 - [ ] CSS animation + transition support (minimal: `animation-name` +
       keyframes + `transition: property duration`). Reuse existing
-      `Avalonia.Animation` where possible.
+      `Avalonia.Animation` where possible. *(Deferred: there is no
+      stylesheet engine in scope (`<style>` content is not parsed — only
+      inline `style` attributes), so CSS animations have nothing to bind
+      to. SMIL covers declarative animation; revisit if a stylesheet pass
+      ever lands.)*
 - [ ] If benchmarks show structural animation is a bottleneck, file a
       separate `DrawingRecording` follow-up PR for R8 (`Rerecord`). **Do
       not** add it on the SVG branch.
@@ -969,14 +992,23 @@ All SVG-side. The recording exposes only `HitTest(Point) → bool` and
   shared-recording cache. Dynamic toggling lands with the driver.)*
 - `BoundsChangedTests` — `Svg` control re-measures when an animation
   extends bounds; subscribes to the compositor-bound recording's event
-  exactly once and unsubscribes on control detach.
+  exactly once and unsubscribes on control detach. *(Subscription logic
+  shipped in the control; the event-level test needs the compositor test
+  harness — deferred with the integration suite.)*
 - `SmilTests` — `<animate>` on `fill`, `stroke`, transform; timing
   (`begin`/`dur`/`repeatCount`); `calcMode` linear vs discrete; animation
-  by element id resolves through the SVG-side id map.
+  by element id resolves through the SVG-side id map. *(Shipped:
+  `SvgSmilTests`, 17 tests — deterministic sampling at fixed timestamps
+  drives `SvgAnimator.Apply` directly, asserting recompiled recording
+  bounds for the structural channel and brush mutation/restore for the
+  paint channel.)*
 - `IntegrationTests` — complete interactive SVG (hover state + click)
-  round-trips through the `Svg` control.
+  round-trips through the `Svg` control. *(Deferred: needs a headless
+  app harness; the control's hit mapping and event raising are thin
+  wrappers over the unit-tested `SvgImage` walk.)*
 - `RenderTests.Animation` — deterministic frames at sampled timestamps
-  compared to reference bitmaps.
+  compared to reference bitmaps. *(Deferred with the integration suite —
+  the unit tests pin sampled values per timestamp.)*
 
 ---
 
@@ -1062,12 +1094,21 @@ not yet stable API):
 
 ```
 Avalonia.Svg
-├── SvgDocument           // Load/Parse; owns recordings; IDisposable.
-├── SvgImage : IImage     // IImage implementation that draws the recording.
-├── Svg : Control         // DPs: Source (Uri/Stream/string), Stretch,
-│                         //      StretchDirection; raises hit events.
-└── SvgSource             // Markup-extension friendly, cacheable.
+├── SvgDocument           // Load/Parse; owns recordings; IDisposable. ✓
+├── SvgElement            // Parsed element; hit-test results and event args. ✓
+├── SvgImage : IImage     // Draws the recording; HitTestElements(Point). ✓
+├── Svg : Control         // DPs: Source (Uri), Document, Stretch,
+│                         //      StretchDirection; HitTestElements,
+│                         //      ElementPointer{Pressed,Released,Moved};
+│                         //      SMIL driver (paint + structural channels). ✓
+└── SvgSource             // Markup-extension friendly, cacheable. (open —
+                          // small follow-up; the Svg control's Source Uri
+                          // covers the markup story meanwhile)
 ```
+
+Note: the `Svg` control made `Avalonia.Svg` reference `Avalonia.Controls`
+(`Control` lives there); the compiler/image layers still depend on
+`Avalonia.Base` only.
 
 **No additions to `Avalonia.Base` from the SVG branch.** Phases 1–6 consume
 the recording API exclusively. If a gap is discovered, the fix lands on the

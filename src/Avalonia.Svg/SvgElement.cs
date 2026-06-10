@@ -13,6 +13,7 @@ public sealed class SvgElement
     private readonly List<SvgElement> _children = new();
     private List<object>? _content;
     private Dictionary<string, string>? _styleDeclarations;
+    private Dictionary<string, string>? _animatedValues;
     private bool _styleParsed;
 
     internal SvgElement(string name, SvgElement? parent, Dictionary<string, string> attributes)
@@ -66,11 +67,15 @@ public sealed class SvgElement
     internal string? Href => GetAttribute("href") ?? GetAttribute(SvgDocument.XlinkHrefAttribute);
 
     /// <summary>
-    /// Gets a style property value: a declaration in the <c>style</c> attribute
-    /// wins over the presentation attribute of the same name, per the CSS cascade.
+    /// Gets a style property value: an active SMIL animation override wins over
+    /// everything, then a declaration in the <c>style</c> attribute over the
+    /// presentation attribute of the same name, per the cascade.
     /// </summary>
     internal string? GetStyleOrAttribute(string name)
     {
+        if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
+            return animated;
+
         if (!_styleParsed)
         {
             _styleParsed = true;
@@ -82,6 +87,31 @@ public sealed class SvgElement
             return declared;
 
         return GetAttribute(name);
+    }
+
+    /// <summary>Gets an attribute value, preferring an active SMIL animation override.</summary>
+    internal string? GetAnimatedOrAttribute(string name)
+    {
+        if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
+            return animated;
+        return GetAttribute(name);
+    }
+
+    /// <summary>Gets the current SMIL animation override for an attribute, or null.</summary>
+    internal string? GetAnimatedValue(string name) =>
+        _animatedValues != null && _animatedValues.TryGetValue(name, out var value) ? value : null;
+
+    /// <summary>
+    /// Sets (or, with null, clears) the SMIL animation override for an
+    /// attribute. Overrides feed the next compilation; they do not modify the
+    /// parsed attributes.
+    /// </summary>
+    internal void SetAnimatedValue(string name, string? value)
+    {
+        if (value == null)
+            _animatedValues?.Remove(name);
+        else
+            (_animatedValues ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
     }
 
     private static Dictionary<string, string>? ParseStyleDeclarations(string style)

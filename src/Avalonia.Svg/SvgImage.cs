@@ -22,20 +22,47 @@ public sealed class SvgImage : IImage, IDisposable
     /// document's intrinsic size.
     /// </summary>
     public SvgImage(SvgDocument document)
+        : this(document, compositor: null, paintAnimationTargets: null)
+    {
+    }
+
+    /// <summary>
+    /// Compiles the document, optionally compositor-bound with mutable brushes
+    /// for the animation paint channel; see <see cref="SvgCompileOptions"/>.
+    /// </summary>
+    internal SvgImage(
+        SvgDocument document,
+        Compositor? compositor,
+        IReadOnlyCollection<(SvgElement Element, string Attribute)>? paintAnimationTargets)
     {
         _ = document ?? throw new ArgumentNullException(nameof(document));
 
         Size = document.GetIntrinsicSize();
-        SvgHitNode? hitRoot = null;
-        _recording = DrawingRecording.Create(
-            ctx => hitRoot = SvgCompiler.CompileDocumentWithHitTree(document, ctx, Size));
-        _hitRoot = hitRoot;
+        var options = new SvgCompileOptions
+        {
+            BuildHitTree = true,
+            PaintAnimationTargets = paintAnimationTargets,
+        };
+
+        void Compile(DrawingContext ctx) => SvgCompiler.CompileDocument(document, ctx, Size, options);
+
+        _recording = compositor == null
+            ? DrawingRecording.Create(Compile)
+            : DrawingRecording.Create(compositor, Compile);
+        _hitRoot = options.HitRoot;
+        AnimatedBrushes = options.AnimatedBrushes;
 
         // The recording only contains painted content, so it can pre-filter hit
         // tests — unless pointer-events made unpainted or hidden geometry
         // interactive somewhere in the tree.
-        _hitTestNeedsFullWalk = hitRoot != null && RequiresFullWalk(hitRoot);
+        _hitTestNeedsFullWalk = _hitRoot != null && RequiresFullWalk(_hitRoot);
     }
+
+    /// <summary>
+    /// The mutable brushes registered for the animation paint channel, keyed by
+    /// (element, fill/stroke); null when the compile had no paint targets.
+    /// </summary>
+    internal Dictionary<(SvgElement Element, string Attribute), SolidColorBrush>? AnimatedBrushes { get; }
 
     /// <inheritdoc/>
     public Size Size { get; }
