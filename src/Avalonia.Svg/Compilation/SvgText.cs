@@ -10,9 +10,10 @@ namespace Avalonia.Svg.Compilation;
 
 /// <summary>
 /// Lays out <c>&lt;text&gt;</c> content — plain runs, <c>&lt;tspan&gt;</c>s and
-/// <c>&lt;textPath&gt;</c> — and emits it through <see cref="TextLayout"/>, so SVG
-/// text gets the full Avalonia text pipeline: script itemization, font fallback,
-/// bidi and shaping, on par with regular text rendering.
+/// <c>&lt;textPath&gt;</c> — through <see cref="TextFormatter.FormatLine"/>, so
+/// SVG text gets the full Avalonia text pipeline (script itemization, font
+/// fallback, bidi, shaping) on par with regular text rendering, without the
+/// paragraph-layout machinery SVG's single-line chunks never need.
 /// </summary>
 /// <remarks>
 /// Scope: single-line chunked layout with <c>text-anchor</c>, scalar
@@ -167,15 +168,15 @@ internal static class SvgText
                 hasReferences = true;
         }
 
-        var layouts = new List<TextLayout>(segments.Count);
+        var lines = new List<TextLine?>(segments.Count);
         double totalAdvance = 0;
         try
         {
             foreach (var segment in segments)
             {
-                var layout = BuildLayout(segment, compileContext, chunkBounds: null);
-                layouts.Add(layout);
-                totalAdvance += segment[0].Dx + layout.WidthIncludingTrailingWhitespace;
+                var line = FormatSegment(segment, compileContext, chunkBounds: null);
+                lines.Add(line);
+                totalAdvance += segment[0].Dx + (line?.WidthIncludingTrailingWhitespace ?? 0);
             }
 
             var anchorShift = chunk[0].Style.TextAnchor switch
@@ -188,46 +189,54 @@ internal static class SvgText
             if (hasReferences)
             {
                 // Re-resolve run foregrounds against the measured chunk bounds and
-                // rebuild, so objectBoundingBox paint servers map correctly.
+                // reformat, so objectBoundingBox paint servers map correctly.
                 var height = 0.0;
-                foreach (var layout in layouts)
-                    height = Math.Max(height, layout.Height);
+                foreach (var line in lines)
+                    height = Math.Max(height, line?.Height ?? 0);
 
                 var chunkBounds = new Rect(origin.X + anchorShift, origin.Y - height, totalAdvance, height * 1.25);
 
-                for (var i = 0; i < layouts.Count; i++)
+                for (var i = 0; i < lines.Count; i++)
                 {
-                    layouts[i].Dispose();
-                    layouts[i] = BuildLayout(segments[i], compileContext, chunkBounds);
+                    lines[i]?.Dispose();
+                    lines[i] = FormatSegment(segments[i], compileContext, chunkBounds);
                 }
             }
 
             var penX = origin.X + anchorShift;
             var penY = origin.Y;
 
-            for (var i = 0; i < layouts.Count; i++)
+            for (var i = 0; i < lines.Count; i++)
             {
                 var segment = segments[i];
-                var layout = layouts[i];
+                var line = lines[i];
 
                 penX += segment[0].Dx;
                 penY += segment[0].Dy;
 
-                // SVG positions the baseline; TextLayout draws from the line top.
-                var baseline = layout.TextLines.Count > 0 ? layout.TextLines[0].Baseline : 0;
-                layout.Draw(context, new Point(penX, penY - baseline));
+                if (line == null)
+                    continue;
 
-                penX += layout.WidthIncludingTrailingWhitespace;
+                // SVG positions the baseline; a text line draws from its top.
+                line.Draw(context, new Point(penX, penY - line.Baseline));
+
+                penX += line.WidthIncludingTrailingWhitespace;
             }
         }
         finally
         {
-            foreach (var layout in layouts)
-                layout.Dispose();
+            foreach (var line in lines)
+                line?.Dispose();
         }
     }
 
-    private static TextLayout BuildLayout(
+    /// <summary>
+    /// Formats one chunk segment into a single <see cref="TextLine"/> via
+    /// <see cref="TextFormatter.FormatLine"/> — the full pipeline (itemization,
+    /// font fallback, bidi, shaping) without the paragraph-layout machinery SVG
+    /// chunks never need.
+    /// </summary>
+    private static TextLine? FormatSegment(
         List<StyledRun> segment, SvgCompileContext compileContext, Rect? chunkBounds)
     {
         var source = new SegmentTextSource();
@@ -243,7 +252,7 @@ internal static class SvgText
         var paragraphProperties = new GenericTextParagraphProperties(
             new GenericTextRunProperties(CreateTypeface(defaultStyle), defaultStyle.FontSize));
 
-        return new TextLayout(source, paragraphProperties);
+        return TextFormatter.Current.FormatLine(source, 0, double.PositiveInfinity, paragraphProperties);
     }
 
     private static Typeface CreateTypeface(in SvgStyle style)
@@ -294,16 +303,16 @@ internal static class SvgText
         // place each glyph individually along the arc-length parameterization.
         var pathSource = new SegmentTextSource();
         pathSource.Add(text, new GenericTextRunProperties(CreateTypeface(style), style.FontSize));
-        using var layout = new TextLayout(
-            pathSource,
+        using var line = TextFormatter.Current.FormatLine(
+            pathSource, 0, double.PositiveInfinity,
             new GenericTextParagraphProperties(new GenericTextRunProperties(CreateTypeface(style), style.FontSize)));
 
-        if (layout.TextLines.Count == 0)
+        if (line == null)
             return;
 
         var distance = startOffset;
 
-        foreach (var textRun in layout.TextLines[0].TextRuns)
+        foreach (var textRun in line.TextRuns)
         {
             if (textRun is not ShapedTextRun shapedRun)
                 continue;
