@@ -1156,16 +1156,27 @@ already-known instance of this rule.
   behavior).
   Scoreboard: **shapes 133/133; painting 282/304 (22 quarantined:
   context paint, `<image>`/feImage, text stroking); paint-servers
-  145/149 (4 quarantined: radial focal radius/clamped focal point,
-  patternTransform×element-transform composition)** — overall 560/586.
+  148/149 (1 quarantined: patternTransform×element-transform
+  composition)** — overall 563/586.
   Paint-servers fixes: userSpaceOnUse gradient defaults are 50%
   percentages, geometry attributes inherit only across the same gradient
-  kind, negative radius invalidates the paint, out-of-circle focal
-  points clamp onto it, stop offsets accept only numbers/percent,
-  stop-opacity accepts percentages, `currentColor`/`inherit` stop colors
-  resolve through the defs tree, and viewBox patterns map per
-  preserveAspectRatio (Uniform/UniformToFill instead of Fill — the
-  Pattern_With_ViewBox feature golden was regenerated for this).
+  kind, negative radius invalidates the paint, stop offsets accept only
+  numbers/percent, stop-opacity accepts percentages,
+  `currentColor`/`inherit` stop colors resolve through the defs tree, and
+  viewBox patterns map per preserveAspectRatio (Uniform/UniformToFill
+  instead of Fill — the Pattern_With_ViewBox feature golden was
+  regenerated for this). SVG 2 `fr` rides the `FocalRadius` added to
+  Avalonia's radial gradient brush on the recording branch (two-point
+  conical, Skia-native); a focal point outside the end circle no longer
+  clamps onto it (SVG 1.1 behavior) but renders the true cone with the
+  outside left unpainted, like all modern renderers — implemented by
+  giving such gradients a negligible focal radius so the brush takes its
+  conical path while `FocalRadius == 0` brushes keep Avalonia's
+  D2D-compatible rendering. `fr=0.5` (degenerate `fr == r`) and `fr=-1`
+  are upstream-undecided; ours render first-stop fill and invalid paint
+  (matching `negative-r`) respectively. The focal-point-correction
+  reference diff (0.035) is resample aliasing along the hard cone edge,
+  verified visually.
   Each sweep hardened the implementation before goldening: shapes
   surfaced the CSS length units (`Q`, `rem`, viewport units, font-aware
   geometry resolution, metric-true `ch`); painting surfaced a
@@ -1179,7 +1190,7 @@ already-known instance of this rule.
   `mix-blend-mode`/`isolation` are CSS-only properties whose attribute
   form must be ignored.
   Next categories in rough order of coverage value:
-  `paint-servers`, `masking`, `structure`, `filters`, `text`. The W3C 1.1
+  `masking`, `structure`, `filters`, `text`. The W3C 1.1
   `animate-elem-*` tests remain the SMIL source when animation goldens
   land.)*
 - **Compiler snapshot tests.** Serialize emitted `RenderItemList` to a stable
