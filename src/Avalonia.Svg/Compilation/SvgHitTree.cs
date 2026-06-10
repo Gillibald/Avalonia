@@ -144,9 +144,8 @@ internal sealed class SvgHitShape
         var ab = b - a;
         var lengthSquared = ab.X * ab.X + ab.Y * ab.Y;
         var t = lengthSquared > 0
-            ? ((point.X - a.X) * ab.X + (point.Y - a.Y) * ab.Y) / lengthSquared
+            ? Math.Clamp(((point.X - a.X) * ab.X + (point.Y - a.Y) * ab.Y) / lengthSquared, 0, 1)
             : 0;
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
         var closest = a + ab * t;
         var d = point - closest;
         return d.X * d.X + d.Y * d.Y;
