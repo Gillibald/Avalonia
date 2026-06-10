@@ -13,7 +13,9 @@ internal class EffectAnimator : Animator<IEffect?>
         IObservable<bool> match, Action? onComplete, bool shouldPauseOnInvisible)
     {
         if (TryCreateAnimator<BlurEffectAnimator, IBlurEffect>(out var animator)
-            || TryCreateAnimator<DropShadowEffectAnimator, IDropShadowEffect>(out animator))
+            || TryCreateAnimator<DropShadowEffectAnimator, IDropShadowEffect>(out animator)
+            || TryCreateAnimator<OffsetEffectAnimator, IOffsetEffect>(out animator)
+            || TryCreateAnimator<ColorMatrixEffectAnimator, IColorMatrixEffect>(out animator))
             return animator.Apply(animation, control, clock, match, onComplete, shouldPauseOnInvisible);
 
         Logger.TryGet(LogEventLevel.Error, LogArea.Animations)?.Log(
@@ -99,6 +101,38 @@ internal class BlurEffectAnimator : EffectAnimatorBase<IBlurEffect>
     {
         return new ImmutableBlurEffect(
             s_doubleAnimator.Interpolate(progress, oldValue.Radius, newValue.Radius));
+    }
+}
+
+internal class OffsetEffectAnimator : EffectAnimatorBase<IOffsetEffect>
+{
+    private static readonly DoubleAnimator s_doubleAnimator = new DoubleAnimator();
+
+    protected override IOffsetEffect Interpolate(double progress, IOffsetEffect oldValue, IOffsetEffect newValue)
+    {
+        return new ImmutableOffsetEffect(
+            s_doubleAnimator.Interpolate(progress, oldValue.OffsetX, newValue.OffsetX),
+            s_doubleAnimator.Interpolate(progress, oldValue.OffsetY, newValue.OffsetY));
+    }
+}
+
+internal class ColorMatrixEffectAnimator : EffectAnimatorBase<IColorMatrixEffect>
+{
+    private static readonly DoubleAnimator s_doubleAnimator = new DoubleAnimator();
+
+    protected override IColorMatrixEffect Interpolate(double progress, IColorMatrixEffect oldValue, IColorMatrixEffect newValue)
+    {
+        if (oldValue.Matrix.Count != ImmutableColorMatrixEffect.MatrixLength
+            || newValue.Matrix.Count != ImmutableColorMatrixEffect.MatrixLength)
+        {
+            return progress >= 0.5 ? newValue : oldValue;
+        }
+
+        var matrix = new double[ImmutableColorMatrixEffect.MatrixLength];
+        for (var i = 0; i < matrix.Length; i++)
+            matrix[i] = s_doubleAnimator.Interpolate(progress, oldValue.Matrix[i], newValue.Matrix[i]);
+
+        return new ImmutableColorMatrixEffect(matrix);
     }
 }
 

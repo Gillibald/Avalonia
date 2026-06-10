@@ -82,13 +82,9 @@ internal class RenderDataLayerNode : RenderDataPushNode
 
     private Rect InflateForEffect(Rect inner)
     {
-        if (Options.Effect is IBlurEffect blur)
-            return inner.Inflate(blur.Radius);
-        if (Options.Effect is IDropShadowEffect drop)
-        {
-            var expanded = inner.Translate(new Vector(drop.OffsetX, drop.OffsetY));
-            return inner.Union(expanded).Inflate(drop.BlurRadius);
-        }
-        return inner;
+        // The shared output-padding helper covers every effect type (blur,
+        // drop shadow, offset, color matrix, composite chains).
+        var padding = Options.Effect.GetEffectOutputPadding();
+        return padding == default ? inner : inner.Inflate(padding);
     }
 }

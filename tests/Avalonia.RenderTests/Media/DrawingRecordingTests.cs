@@ -281,6 +281,45 @@ public class DrawingRecordingTests : TestBase
     }
 
     [Fact]
+    public async Task PushLayer_Composite_Effect_Chain()
+    {
+        // Grayscale (saturate 0) then offset: one composed filter on the layer.
+        var grayscale = new ImmutableColorMatrixEffect(new double[]
+        {
+            0.213, 0.715, 0.072, 0, 0,
+            0.213, 0.715, 0.072, 0, 0,
+            0.213, 0.715, 0.072, 0, 0,
+            0, 0, 0, 1, 0,
+        });
+
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 150, 100));
+
+            // Reference: the unfiltered shape.
+            context.FillRectangle(Brushes.Crimson, new Rect(20, 20, 40, 40));
+
+            using (context.PushLayer(new LayerOptions
+            {
+                Effect = new ImmutableCompositeEffect(new IEffect[]
+                {
+                    grayscale,
+                    new ImmutableOffsetEffect(70, 20),
+                })
+            }))
+            {
+                context.FillRectangle(Brushes.Crimson, new Rect(20, 20, 40, 40));
+            }
+        })
+        {
+            Width = 150, Height = 100
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
     public async Task PushLayer_Isolation_Bounds_Blend_Modes()
     {
         var target = new RecordingRenderer((control, context) =>
