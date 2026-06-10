@@ -20,6 +20,10 @@ public readonly record struct LayerOptions
     /// <summary>
     /// Optional explicit layer bounds in local coordinates. When <c>null</c>,
     /// the backend sizes the layer implicitly from the drawn content.
+    /// The bounds are a sizing hint for the offscreen buffer, not a clip —
+    /// content drawn outside them is not necessarily clipped. Callers that
+    /// need hard clipping (e.g. an SVG filter region) must push an explicit
+    /// clip around the layer.
     /// </summary>
     public Rect? Bounds { get; init; }
 

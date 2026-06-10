@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using SkiaSharp;
@@ -15,7 +16,7 @@ partial class DrawingContextImpl
 
         var opacity = options.EffectiveOpacity;
         if (opacity < 1.0)
-            paint.Color = new SKColor(255, 255, 255, (byte)(opacity * 255));
+            paint.Color = new SKColor(255, 255, 255, (byte)Math.Round(opacity * 255));
 
         var blendMode = options.EffectiveBlendMode;
         if (blendMode != BitmapBlendingMode.SourceOver && blendMode != BitmapBlendingMode.Unspecified)

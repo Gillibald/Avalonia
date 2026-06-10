@@ -88,8 +88,9 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Draws a previously recorded drawing under an additional transform.
-        /// Equivalent to pushing the transform, drawing the recording, then
-        /// popping the transform.
+        /// Semantically equivalent to pushing the transform, drawing the
+        /// recording, then popping the transform; recording contexts fuse the
+        /// transform and the drawn recording into a single recorded node.
         /// </summary>
         /// <param name="recording">The drawing recording to replay.</param>
         /// <param name="transform">The transform to apply around the draw call.</param>
@@ -106,8 +107,7 @@ namespace Avalonia.Media
                 return;
             }
 
-            using (PushTransform(transform))
-                DrawRecordingCore(recording);
+            DrawRecordingCore(recording, transform);
         }
 
         /// <summary>
@@ -155,8 +155,7 @@ namespace Avalonia.Media
                 return;
             }
 
-            using (PushTransform(transform))
-                DrawRecordingCore(recording);
+            DrawRecordingCore(recording, transform);
         }
 
         /// <summary>
@@ -170,6 +169,17 @@ namespace Avalonia.Media
         /// When overridden in a derived class, draws a previously recorded drawing.
         /// </summary>
         internal abstract void DrawRecordingCore(DrawingRecording recording);
+
+        /// <summary>
+        /// Draws a previously recorded drawing under a non-identity transform.
+        /// The default implementation composes push-transform + draw + pop;
+        /// recording contexts override this to fuse both into a single node.
+        /// </summary>
+        internal virtual void DrawRecordingCore(DrawingRecording recording, Matrix transform)
+        {
+            using (PushTransform(transform))
+                DrawRecordingCore(recording);
+        }
 
         /// <summary>
         /// Draws a line.

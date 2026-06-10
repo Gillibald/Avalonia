@@ -47,6 +47,12 @@ namespace Avalonia.Media
         /// <summary>
         /// Gets or sets the <see cref="DrawingRecording"/> to paint with.
         /// </summary>
+        /// <remarks>
+        /// Changing this property after the brush has been referenced by a
+        /// compositor does not refresh already-created compositor content
+        /// (matching <see cref="DrawingBrush.Drawing"/> semantics) — create a
+        /// new brush instead of mutating this property.
+        /// </remarks>
         public DrawingRecording? Recording
         {
             get => GetValue(RecordingProperty);

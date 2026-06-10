@@ -303,6 +303,70 @@ public class CompositorBoundDrawingRecordingTests : ScopedTestBase
     }
 
     [Fact]
+    public void Immutable_Create_Throws_On_Compositor_Bound_Child()
+    {
+        var child = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        // An immutable recording would neither retain nor track compositor-bound
+        // content, so referencing it must fail fast.
+        Assert.Throws<InvalidOperationException>(() => DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child);
+        }));
+
+        child.Dispose();
+    }
+
+    [Fact]
+    public void Immutable_Create_Throws_On_Scene_Brush_With_Compositor_Bound_Source()
+    {
+        var source = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 8, 8));
+        });
+        var brush = new DrawingRecordingBrush(source);
+
+        // The brush's content snapshot would smuggle the compositor-bound source
+        // into the immutable recording without retention; must fail fast too.
+        Assert.Throws<InvalidOperationException>(() => DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(brush, null, new Rect(0, 0, 100, 100));
+        }));
+
+        source.Dispose();
+    }
+
+    [Fact]
+    public void Server_Tracks_Resources_Inside_Opacity_Mask_Scope()
+    {
+        var pen = new Pen(new SolidColorBrush(Colors.Red), 2);
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            using (ctx.PushOpacityMask(Brushes.White, new Rect(0, 0, 200, 200)))
+                ctx.DrawLine(pen, new Point(0, 100), new Point(100, 100));
+        });
+
+        recording.EnsureRegisteredForSerialization();
+        ForceCommitAndRender();
+
+        var server = recording.ServerRenderData;
+        Assert.NotNull(server);
+        var boundsBefore = server!.Bounds;
+
+        // The pen lives inside the opacity-mask scope. The server render data must
+        // observe it so the cached server bounds invalidate when it changes.
+        pen.Thickness = 20;
+        ForceCommitAndRender();
+
+        Assert.NotEqual(boundsBefore, server.Bounds);
+
+        recording.Dispose();
+    }
+
+    [Fact]
     public void Parent_Bounds_Include_Nested_Compositor_Bound_Child_Before_Commit()
     {
         var child = DrawingRecording.Create(_services.Compositor, ctx =>

@@ -44,6 +44,11 @@ class RenderDataOpacityMaskNode : RenderDataPushNode, IRenderDataItemWithServerR
         context.Context.PushOpacityMask(ServerBrush, BoundsRect);
     }
 
-    public override void Pop(ref RenderDataNodeRenderContext context) =>
+    public override void Pop(ref RenderDataNodeRenderContext context)
+    {
+        // Mirror Push: when no mask brush was pushed there is nothing to pop.
+        if (ServerBrush == null)
+            return;
         context.Context.PopOpacityMask();
+    }
 }

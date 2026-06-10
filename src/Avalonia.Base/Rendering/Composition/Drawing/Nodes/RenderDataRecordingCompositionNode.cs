@@ -18,14 +18,36 @@ internal class RenderDataRecordingCompositionNode : IRenderDataItemWithServerRes
     /// </summary>
     public required CompositionRenderData Client { get; init; }
 
+    /// <summary>
+    /// Transform fused into the node by
+    /// <see cref="Media.DrawingContext.DrawRecording(DrawingRecording, Matrix)"/> so the
+    /// common "draw this recording at this transform" case records a single node.
+    /// </summary>
+    public Matrix Transform { get; init; } = Matrix.Identity;
+
     public void Invoke(ref RenderDataNodeRenderContext context)
     {
-        Server.Render(context.Context);
+        if (Transform.IsIdentity)
+        {
+            Server.Render(context.Context);
+            return;
+        }
+
+        var ctx = context.Context;
+        var saved = ctx.Transform;
+        ctx.Transform = Transform * saved;
+        Server.Render(ctx);
+        ctx.Transform = saved;
     }
 
-    public Rect? Bounds => Client.Bounds;
+    public Rect? Bounds => Transform.IsIdentity ? Client.Bounds : Client.GetBounds(Transform);
 
-    public bool HitTest(Point p) => Client.HitTest(p);
+    public bool HitTest(Point p)
+    {
+        if (Transform.IsIdentity)
+            return Client.HitTest(p);
+        return Transform.TryInvert(out var inverted) && Client.HitTest(p.Transform(inverted));
+    }
 
     public void Collect(IRenderDataServerResourcesCollector collector)
     {

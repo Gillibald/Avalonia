@@ -106,6 +106,85 @@ public class DrawingRecordingTests : TestBase
         CompareImages();
     }
 
+    [Theory]
+    [InlineData(TileMode.None)]
+    [InlineData(TileMode.FlipX)]
+    [InlineData(TileMode.FlipY)]
+    [InlineData(TileMode.FlipXY)]
+    public async Task DrawingRecordingBrush_TileMode(TileMode mode)
+    {
+        // Asymmetric tile (red square top-left, blue top-right, lime bottom-left)
+        // so every flip mode produces a distinct pattern.
+        var tile = DrawingRecording.Create(ctx =>
+        {
+            ctx.FillRectangle(Brushes.Red, new Rect(0, 0, 12, 12));
+            ctx.FillRectangle(Brushes.Blue, new Rect(12, 0, 8, 8));
+            ctx.FillRectangle(Brushes.Lime, new Rect(0, 12, 8, 8));
+        });
+
+        var brush = new DrawingRecordingBrush(tile)
+        {
+            TileMode = mode,
+            Stretch = Stretch.None,
+            SourceRect = new RelativeRect(0, 0, 20, 20, RelativeUnit.Absolute),
+            DestinationRect = new RelativeRect(0, 0, 20, 20, RelativeUnit.Absolute)
+        };
+
+        // The brush is captured by an immutable recording — this exercises the
+        // record-time content snapshot that replays on the render thread.
+        var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.FillRectangle(Brushes.White, new Rect(0, 0, 150, 150));
+            ctx.FillRectangle(brush, new Rect(5, 5, 140, 140));
+        });
+
+        var target = new RecordingRenderer(recording)
+        {
+            Width = 150, Height = 150
+        };
+
+        var testName = "DrawingRecordingBrush_TileMode_" + mode;
+        await RenderToFile(target, testName);
+        CompareImages(testName);
+    }
+
+    [Fact]
+    public async Task DrawingRecordingBrush_SourceRect_Selects_Region()
+    {
+        // Source recording is a 2x2 colour grid; SourceRect selects only the left
+        // column (red over lime), DestinationRect stretches it onto 30x30 tiles.
+        // Blue and yellow must not appear in the output.
+        var grid = DrawingRecording.Create(ctx =>
+        {
+            ctx.FillRectangle(Brushes.Red, new Rect(0, 0, 10, 10));
+            ctx.FillRectangle(Brushes.Blue, new Rect(10, 0, 10, 10));
+            ctx.FillRectangle(Brushes.Lime, new Rect(0, 10, 10, 10));
+            ctx.FillRectangle(Brushes.Yellow, new Rect(10, 10, 10, 10));
+        });
+
+        var brush = new DrawingRecordingBrush(grid)
+        {
+            TileMode = TileMode.Tile,
+            Stretch = Stretch.Fill,
+            SourceRect = new RelativeRect(0, 0, 10, 20, RelativeUnit.Absolute),
+            DestinationRect = new RelativeRect(0, 0, 30, 30, RelativeUnit.Absolute)
+        };
+
+        var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.FillRectangle(Brushes.White, new Rect(0, 0, 150, 150));
+            ctx.FillRectangle(brush, new Rect(5, 5, 140, 140));
+        });
+
+        var target = new RecordingRenderer(recording)
+        {
+            Width = 150, Height = 150
+        };
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
     [Fact]
     public async Task PushOpacityMask_Luminance_Differs_From_Alpha()
     {
