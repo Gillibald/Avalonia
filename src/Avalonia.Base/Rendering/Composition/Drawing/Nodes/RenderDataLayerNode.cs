@@ -30,6 +30,12 @@ internal class RenderDataLayerNode : RenderDataPushNode
         }
     }
 
+    // The recorded effect is always an immutable snapshot (see PushLayerCore),
+    // so the inflation itself is thread-safe; only the child union differs
+    // between the client and server passes.
+    public override Rect? ServerBounds =>
+        base.ServerBounds is { } inner ? InflateForEffect(inner) : null;
+
     public override void Push(ref RenderDataNodeRenderContext context)
     {
         if (Children.Count == 0)

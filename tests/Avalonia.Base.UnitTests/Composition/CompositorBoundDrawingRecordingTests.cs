@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
@@ -231,6 +232,79 @@ public class CompositorBoundDrawingRecordingTests : ScopedTestBase
 
         outerRenderData.Dispose();
         outerRenderData2.Dispose();
+        recording.Dispose();
+    }
+
+    [Fact]
+    public void Client_Bounds_Read_The_Live_Pen_Synchronously()
+    {
+        var pen = new Pen(Brushes.Black, 10);
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+            ctx.DrawLine(pen, new Point(0, 50), new Point(100, 50)));
+
+        // The server pen shadow is not populated until the first commit
+        // applies; the synchronous client bounds must come from the live pen.
+        Assert.Equal(new Rect(0, 45, 100, 10), recording.Bounds);
+        recording.Dispose();
+    }
+
+    [Fact]
+    public void Server_Bounds_Follow_The_Server_Pen_Shadow()
+    {
+        var pen = new Pen(Brushes.Black, 4);
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+            ctx.DrawRectangle(null, pen, new Rect(10, 10, 100, 50)));
+
+        Assert.Equal(new Rect(8, 8, 104, 54), recording.Bounds);
+
+        // Server data only serializes once the recording is referenced.
+        using var outerCtx = new RenderDataDrawingContext(_services.Compositor);
+        outerCtx.DrawRecording(recording);
+        using var outerRenderData = outerCtx.GetRenderResults()!;
+
+        ForceCommitAndRender();
+        var server = recording.ServerRenderData!;
+        Assert.Equal(new Rect(8, 8, 104, 54), server.Bounds?.ToRect());
+
+        // A pen mutation is visible to the client immediately, but the server
+        // bounds derive from the server pen shadow and only move once a commit
+        // applies the change — they never read the UI-thread-affine pen. This
+        // is what keeps animated pen thickness rendering with correct bounds.
+        pen.Thickness = 20;
+        Assert.Equal(new Rect(0, 0, 120, 70), recording.Bounds);
+        Assert.Equal(new Rect(8, 8, 104, 54), server.Bounds?.ToRect());
+
+        ForceCommitAndRender();
+        Assert.Equal(new Rect(0, 0, 120, 70), server.Bounds?.ToRect());
+
+        recording.Dispose();
+    }
+
+    [Fact]
+    public void Server_Bounds_Do_Not_Touch_UI_Thread_Affine_Pens()
+    {
+        var pen = new Pen(Brushes.Black, 4);
+        var recording = DrawingRecording.Create(_services.Compositor, ctx =>
+        {
+            ctx.DrawRectangle(null, pen, new Rect(10, 10, 100, 50));
+            ctx.DrawEllipse(null, pen, new Rect(0, 0, 20, 20));
+            ctx.DrawLine(pen, new Point(0, 100), new Point(100, 100));
+        });
+
+        using var outerCtx = new RenderDataDrawingContext(_services.Compositor);
+        outerCtx.DrawRecording(recording, Matrix.CreateTranslation(5, 5));
+        var outerRenderData = outerCtx.GetRenderResults()!;
+
+        ForceCommitAndRender();
+
+        // The server bounds pass runs on the render thread. Evaluating it from
+        // a worker thread must not throw: every node, including the nested
+        // recording node, answers from server-side data and resource shadows.
+        var bounds = Task.Run(() => outerRenderData.Server.Bounds).GetAwaiter().GetResult();
+
+        Assert.Equal(new Rect(1, 1, 116, 106), bounds?.ToRect());
+
+        outerRenderData.Dispose();
         recording.Dispose();
     }
 

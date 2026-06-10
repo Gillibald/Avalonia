@@ -54,10 +54,18 @@ class RenderDataLineNode : IRenderDataItemWithServerResources
     }
     
 
-    public void Invoke(ref RenderDataNodeRenderContext context) 
+    public void Invoke(ref RenderDataNodeRenderContext context)
         => context.Context.DrawLine(ServerPen, P1, P2);
 
-    public Rect? Bounds => LineBoundsHelper.CalculateBounds(P1, P2, ServerPen!);
+    // Client bounds read the live client pen — the server pen shadow is not
+    // populated until the first commit applies, so reading it here would
+    // produce wrong synchronous bounds for compositor-bound recordings. The
+    // server bounds pass reads the shadow, which is render-thread-safe and
+    // follows pen mutations through change tracking.
+    public Rect? Bounds => LineBoundsHelper.CalculateBounds(P1, P2, ClientPen!);
+
+    public Rect? ServerBounds => LineBoundsHelper.CalculateBounds(P1, P2, ServerPen!);
+
     public void Collect(IRenderDataServerResourcesCollector collector)
     {
         collector.AddRenderDataServerResource(ServerPen);

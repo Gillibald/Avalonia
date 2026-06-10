@@ -57,6 +57,9 @@ class RenderDataEllipseNode :RenderDataBrushAndPenNode
     public override void Invoke(ref RenderDataNodeRenderContext context) =>
         context.Context.DrawEllipse(ServerBrush, ServerPen, Rect);
 
-    // Prefer ClientPen for bounds when set; see RenderDataRectangleNode for rationale.
-    public override Rect? Bounds => Rect.Inflate((ClientPen ?? ServerPen)?.Thickness ?? 0);
+    // Client bounds read the live client pen; the server bounds pass reads the
+    // server pen shadow. See RenderDataRectangleNode for the rationale.
+    public override Rect? Bounds => Rect.Inflate(ClientPen?.Thickness ?? 0);
+
+    public override Rect? ServerBounds => Rect.Inflate(ServerPen?.Thickness ?? 0);
 }

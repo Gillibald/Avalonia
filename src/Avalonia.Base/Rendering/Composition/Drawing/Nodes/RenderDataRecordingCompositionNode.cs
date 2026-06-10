@@ -42,6 +42,23 @@ internal class RenderDataRecordingCompositionNode : IRenderDataItemWithServerRes
 
     public Rect? Bounds => Transform.IsIdentity ? Client.Bounds : Client.GetBounds(Transform);
 
+    /// <summary>
+    /// The server-side bounds pass must answer from the server render data:
+    /// the client item list reads UI-thread-affine resources (mutable pens) and
+    /// is not safe on the render thread. The server data only references
+    /// resource shadows and recomputes when they change, so animated resources
+    /// keep these bounds current.
+    /// </summary>
+    public Rect? ServerBounds
+    {
+        get
+        {
+            if (Server.Bounds?.ToRect() is not { } bounds)
+                return null;
+            return Transform.IsIdentity ? bounds : bounds.TransformToAABB(Transform);
+        }
+    }
+
     public bool HitTest(Point p)
     {
         if (Transform.IsIdentity)

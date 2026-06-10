@@ -64,9 +64,21 @@ interface IRenderDataItem
     
     /// <summary>
     /// Gets the bounds of the visible content in the node in global coordinates.
+    /// Evaluated on the UI thread (client-side queries) and may read live client
+    /// resources such as mutable pens.
     /// </summary>
     Rect? Bounds { get; }
-    
+
+    /// <summary>
+    /// Gets the same bounds for the server-side bounds pass, which runs on the
+    /// render thread. Implementations must only read immutable data or server
+    /// resource shadows — never UI-thread-affine objects (mutable pens, brushes,
+    /// effects). Because the shadows are updated by the compositor's change
+    /// tracking, these bounds follow resource mutations (e.g. an animated pen
+    /// thickness) without re-recording.
+    /// </summary>
+    Rect? ServerBounds => Bounds;
+
     /// <summary>
     /// Hit test the geometry in this node.
     /// </summary>
@@ -118,6 +130,19 @@ abstract class RenderDataPushNode : IRenderDataItem, IDisposable
             Rect? union = null;
             foreach (var i in Children)
                 union = Rect.Union(union, i.Bounds);
+            return union;
+        }
+    }
+
+    public virtual Rect? ServerBounds
+    {
+        get
+        {
+            if (Children.Count == 0)
+                return null;
+            Rect? union = null;
+            foreach (var i in Children)
+                union = Rect.Union(union, i.ServerBounds);
             return union;
         }
     }
@@ -216,6 +241,7 @@ abstract class RenderDataBrushAndPenNode : IRenderDataItemWithServerResources
 
     public abstract void Invoke(ref RenderDataNodeRenderContext context);
     public abstract Rect? Bounds { get; }
+    public abstract Rect? ServerBounds { get; }
     public abstract bool HitTest(Point p);
 }
 
