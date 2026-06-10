@@ -1,6 +1,8 @@
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using Avalonia.UnitTests;
+using Moq;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media;
@@ -138,5 +140,62 @@ public class DrawingRecordingBrushTests : ScopedTestBase
         Assert.NotNull(first);
         Assert.NotNull(second);
         Assert.NotNull(third);
+    }
+
+    [Fact]
+    public void ToImmutable_Returns_Renderable_Content_Snapshot()
+    {
+        using var source = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Lime, null, new Rect(0, 0, 8, 8));
+        });
+        var brush = new DrawingRecordingBrush(source) { TileMode = TileMode.Tile };
+
+        var snapshot = brush.ToImmutable();
+
+        // Scene brushes snapshot to their current content with immutable
+        // tile-brush properties, instead of throwing InvalidCastException.
+        Assert.NotSame(brush, snapshot);
+        var content = Assert.IsAssignableFrom<ISceneBrushContent>(snapshot);
+        Assert.Equal(TileMode.Tile, content.Brush.TileMode);
+        Assert.IsAssignableFrom<IImmutableBrush>(content.Brush);
+    }
+
+    [Fact]
+    public void ToImmutable_Returns_Transparent_For_Empty_Content()
+    {
+        var brush = new DrawingRecordingBrush();
+
+        var snapshot = brush.ToImmutable();
+
+        var solid = Assert.IsAssignableFrom<ISolidColorBrush>(snapshot);
+        Assert.Equal(Colors.Transparent, solid.Color);
+    }
+
+    [Fact]
+    public void SceneBrush_Content_Survives_Source_Disposal()
+    {
+        var source = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Lime, null, new Rect(0, 0, 8, 8));
+        });
+        var brush = new DrawingRecordingBrush(source);
+
+        var content = ((ISceneBrush)brush).CreateContent();
+        Assert.NotNull(content);
+
+        // The content captured the source's item list; disposing the source
+        // afterwards must not invalidate the content.
+        source.Dispose();
+
+        var mockImpl = new Mock<IDrawingContextImpl>();
+        mockImpl.Setup(x => x.Transform).Returns(Matrix.Identity);
+        content!.Render(mockImpl.Object, null);
+
+        mockImpl.Verify(x => x.DrawRectangle(
+            It.IsAny<IBrush>(), It.IsAny<IPen>(),
+            It.IsAny<RoundedRect>(), It.IsAny<BoxShadows>()), Times.Once);
+
+        content.Dispose();
     }
 }

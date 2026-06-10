@@ -1,7 +1,9 @@
 using System;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
+using Moq;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media;
@@ -675,5 +677,164 @@ public class DrawingRecordingTests
         });
 
         Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    private static IBrush? ReplayAndCaptureBrush(DrawingRecording recording)
+    {
+        var mockImpl = new Mock<IDrawingContextImpl>();
+        mockImpl.Setup(x => x.Transform).Returns(Matrix.Identity);
+        IBrush? captured = null;
+        mockImpl.Setup(x => x.DrawRectangle(
+                It.IsAny<IBrush?>(), It.IsAny<IPen?>(), It.IsAny<RoundedRect>(), It.IsAny<BoxShadows>()))
+            .Callback<IBrush?, IPen?, RoundedRect, BoxShadows>((b, _, _, _) => captured = b);
+
+        using (var platformCtx = new PlatformDrawingContext(mockImpl.Object, false))
+            platformCtx.DrawRecording(recording);
+
+        return captured;
+    }
+
+    [Fact]
+    public void Immutable_Create_Snapshots_Mutable_Brush()
+    {
+        var brush = new SolidColorBrush(Colors.Red);
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(brush, null, new Rect(0, 0, 100, 50));
+        });
+
+        // Later mutations must not leak into the immutable recording.
+        brush.Color = Colors.Blue;
+
+        var captured = ReplayAndCaptureBrush(recording);
+        var immutable = Assert.IsType<ImmutableSolidColorBrush>(captured);
+        Assert.Equal(Colors.Red, immutable.Color);
+    }
+
+    [Fact]
+    public void Immutable_Create_Snapshots_Mutable_Pen()
+    {
+        var pen = new Pen(new SolidColorBrush(Colors.Red), 4);
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawLine(pen, new Point(0, 50), new Point(100, 50));
+        });
+
+        var boundsBefore = recording.Bounds;
+
+        // Mutating the live pen must not affect the recording's bounds.
+        pen.Thickness = 40;
+
+        Assert.Equal(boundsBefore, recording.Bounds);
+    }
+
+    [Fact]
+    public void Immutable_Create_Snapshots_Scene_Brush()
+    {
+        using var source = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Lime, null, new Rect(0, 0, 8, 8));
+        });
+        var pattern = new DrawingRecordingBrush(source) { TileMode = TileMode.Tile };
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(pattern, null, new Rect(0, 0, 100, 100));
+        });
+
+        // The live scene brush is an AvaloniaObject and cannot be touched at
+        // replay time; the recording must capture an immutable content snapshot.
+        var captured = ReplayAndCaptureBrush(recording);
+        Assert.NotNull(captured);
+        Assert.NotSame(pattern, captured);
+        Assert.IsAssignableFrom<IImmutableBrush>(captured);
+    }
+
+    private sealed class FakeBrush : IBrush
+    {
+        public double Opacity => 1;
+        public ITransform? Transform => null;
+        public RelativePoint TransformOrigin => default;
+    }
+
+    [Fact]
+    public void Immutable_Create_Throws_On_Brush_That_Cannot_Be_Snapshotted()
+    {
+        Assert.Throws<InvalidOperationException>(() => DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(new FakeBrush(), null, new Rect(0, 0, 10, 10));
+        }));
+    }
+
+    [Fact]
+    public void Owned_Children_Disposed_When_Record_Delegate_Throws()
+    {
+        var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        });
+
+        Assert.Throws<InvalidOperationException>(() => DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, DrawingRecordingOwnership.Owned);
+            throw new InvalidOperationException("record failed");
+        }));
+
+        // Ownership transferred at the DrawRecording call; the failed recording
+        // must not leak the child.
+        Assert.True(child.IsDisposed);
+    }
+
+    [Fact]
+    public void PushLayer_Snapshots_Mutable_Effect()
+    {
+        var blur = new BlurEffect { Radius = 10 };
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = blur }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(20, 20, 30, 30));
+        });
+
+        var boundsBefore = recording.Bounds;
+
+        // Mutating the live effect must not affect the recorded layer.
+        blur.Radius = 100;
+
+        Assert.Equal(boundsBefore, recording.Bounds);
+    }
+
+    private sealed class FakeEffect : IEffect
+    {
+    }
+
+    [Fact]
+    public void PushLayer_Throws_On_Effect_That_Cannot_Be_Snapshotted()
+    {
+        Assert.Throws<InvalidOperationException>(() => DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = new FakeEffect() }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        }));
+    }
+
+    [Fact]
+    public void DrawRecording_With_Rotation_Has_Per_Item_Tight_Bounds()
+    {
+        // Two small far-apart squares: per-item transformed bounds stay narrow,
+        // while transforming the child's overall AABB would be ~10x wider. This
+        // verifies the matrix overload fuses into the recording node instead of
+        // wrapping the child's united bounds in a transform.
+        using var child = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+            ctx.DrawRectangle(Brushes.Red, null, new Rect(90, 90, 10, 10));
+        });
+
+        using var parent = DrawingRecording.Create(ctx =>
+        {
+            ctx.DrawRecording(child, Matrix.CreateRotation(Math.PI / 4));
+        });
+
+        Assert.Equal(new Rect(-8, 0, 16, 142), parent.Bounds);
     }
 }

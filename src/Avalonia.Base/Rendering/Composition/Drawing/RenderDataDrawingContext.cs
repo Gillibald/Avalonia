@@ -16,10 +16,13 @@ namespace Avalonia.Rendering.Composition.Drawing;
 internal class RenderDataDrawingContext : DrawingContext
 {
     private readonly Compositor? _compositor;
+    private readonly bool _buildingRecording;
     private CompositionRenderData? _renderData;
     private HashSet<object>? _resourcesHashSet;
     private List<DrawingRecording>? _ownedRecordings;
     private HashSet<DrawingRecording>? _ownedRecordingsDedup;
+    private bool _containsCompositorResources;
+    private bool _containsMutableResources;
     private static readonly ThreadSafeObjectPool<HashSet<object>> s_hashSetPool = new();
     private CompositionRenderData RenderData
     {
@@ -29,22 +32,32 @@ internal class RenderDataDrawingContext : DrawingContext
             return _renderData ??= new(_compositor);
         }
     }
-    
+
     struct ParentStackItem
     {
         public RenderDataPushNode? Node;
         public List<IRenderDataItem> Items;
     }
-    
+
     private List<IRenderDataItem>? _currentItemList;
     private static readonly ThreadSafeObjectPool<List<IRenderDataItem>> s_listPool = new();
 
     private Stack<ParentStackItem>? _parentNodeStack;
     private static readonly ThreadSafeObjectPool<Stack<ParentStackItem>> s_parentStackPool = new();
 
-    public RenderDataDrawingContext(Compositor? compositor)
+    /// <param name="compositor">The compositor whose server resources the recorded
+    /// content binds to, or null for content that only uses immutable resources.</param>
+    /// <param name="buildingRecording">True when this context builds a long-lived
+    /// <see cref="DrawingRecording"/>. Recording-building contexts honor
+    /// <see cref="DrawingRecordingOwnership.Owned"/> registrations, and — when
+    /// <paramref name="compositor"/> is null — enforce that captured resources are
+    /// (or can be snapshotted to) immutable so the recording can be replayed on the
+    /// render thread. Transient contexts (the visual-content recorder, immediate
+    /// scene-brush content) capture resources as-is.</param>
+    public RenderDataDrawingContext(Compositor? compositor, bool buildingRecording = false)
     {
         _compositor = compositor;
+        _buildingRecording = buildingRecording;
     }
 
     void Add(IRenderDataItem item)
@@ -100,19 +113,19 @@ internal class RenderDataDrawingContext : DrawingContext
     {
         if (_compositor == null)
             return;
-        
+
         if (resource == null
             || resource is IImmutableBrush
             || resource is ImmutablePen
             || resource is ImmutableTransform)
             return;
-        
+
         if (resource is ICompositionRenderResource renderResource)
         {
             _resourcesHashSet ??= s_hashSetPool.Get();
             if (!_resourcesHashSet.Add(renderResource))
                 return;
-            
+
             renderResource.AddRefOnCompositor(_compositor);
             RenderData.AddResource(renderResource);
             return;
@@ -120,16 +133,140 @@ internal class RenderDataDrawingContext : DrawingContext
 
         throw new InvalidOperationException(resource.GetType().FullName + " can not be used with this DrawingContext");
     }
-    
+
+    /// <summary>
+    /// Captures a brush for a recorded node. Compositor-bound contexts register the
+    /// brush as a composition resource and store its server-side counterpart. Contexts
+    /// building an immutable <see cref="DrawingRecording"/> snapshot the brush (see
+    /// <see cref="SnapshotBrush"/>) so the recording stays valid and thread-safe when
+    /// replayed on the render thread. Transient contexts capture the brush as-is and
+    /// only track whether non-immutable resources were seen.
+    /// </summary>
+    IBrush? CaptureBrush(IBrush? brush)
+    {
+        if (brush == null)
+            return null;
+
+        if (_compositor != null)
+        {
+            AddResource(brush);
+            return brush.GetServer(_compositor);
+        }
+
+        if (!_buildingRecording)
+        {
+            if (brush is not IImmutableBrush)
+                _containsMutableResources = true;
+            return brush;
+        }
+
+        return SnapshotBrush(brush);
+    }
+
+    /// <summary>
+    /// Captures a pen, returning the client-side instance (used for bounds and
+    /// hit-test queries) and the server-side instance (used at replay). For
+    /// immutable recordings both are the same immutable snapshot.
+    /// </summary>
+    (IPen? Client, IPen? Server) CapturePen(IPen? pen)
+    {
+        if (pen == null)
+            return (null, null);
+
+        if (_compositor != null)
+        {
+            AddResource(pen);
+            return (pen, pen.GetServer(_compositor));
+        }
+
+        if (!_buildingRecording)
+        {
+            if (pen is not ImmutablePen)
+                _containsMutableResources = true;
+            return (pen, pen);
+        }
+
+        var snapshot = SnapshotPen(pen);
+        return (snapshot, snapshot);
+    }
+
+    /// <summary>
+    /// Snapshots a brush for capture into an immutable <see cref="DrawingRecording"/>.
+    /// Immutable brushes pass through; everything else converts via
+    /// <see cref="BrushExtensions.ToImmutable(IBrush)"/> (mutable brushes are cloned;
+    /// scene brushes are resolved to their current content), so no
+    /// <see cref="AvaloniaObject"/> is touched at replay time. Throws for brushes
+    /// that cannot be made immutable and for scene-brush content that references
+    /// compositor-bound or mutable resources.
+    /// </summary>
+    IImmutableBrush SnapshotBrush(IBrush brush)
+    {
+        switch (brush)
+        {
+            case IImmutableBrush immutable:
+                return immutable;
+            case ISceneBrush:
+            case IMutableBrush:
+            {
+                var snapshot = brush.ToImmutable();
+                ThrowIfRestrictedSceneContent(snapshot, brush);
+                return snapshot;
+            }
+            default:
+                throw new InvalidOperationException(
+                    brush.GetType() + " cannot be captured by an immutable DrawingRecording. Use an immutable brush.");
+        }
+    }
+
+    /// <summary>
+    /// Snapshots a pen for capture into an immutable <see cref="DrawingRecording"/>
+    /// via <see cref="BrushExtensions.ToImmutable(IPen)"/>.
+    /// </summary>
+    IPen SnapshotPen(IPen pen)
+    {
+        switch (pen)
+        {
+            case ImmutablePen immutable:
+                return immutable;
+            case Pen:
+            {
+                var snapshot = pen.ToImmutable();
+                ThrowIfRestrictedSceneContent(snapshot.Brush, pen);
+                return snapshot;
+            }
+            default:
+                throw new InvalidOperationException(
+                    pen.GetType() + " cannot be captured by an immutable DrawingRecording. Use ImmutablePen.");
+        }
+    }
+
+    /// <summary>
+    /// Rejects scene-brush content snapshots that an immutable recording must not
+    /// embed: content referencing compositor-bound render data (could be neither
+    /// retained nor tracked) or live mutable resources (unsafe to read at replay
+    /// time on the render thread).
+    /// </summary>
+    static void ThrowIfRestrictedSceneContent(IBrush? snapshot, object source)
+    {
+        if (snapshot is EmbeddedSceneBrushContent { ContainsCompositorResources: true })
+            throw new InvalidOperationException(
+                source.GetType().Name + " content references compositor-bound resources and cannot be " +
+                "captured by an immutable DrawingRecording. Use DrawingRecording.Create(Compositor, ...) instead.");
+        if (snapshot is EmbeddedSceneBrushContent { ContainsMutableResources: true })
+            throw new InvalidOperationException(
+                source.GetType().Name + " content references mutable resources and cannot be captured " +
+                "by an immutable DrawingRecording. Use immutable brushes and pens inside the brush content.");
+    }
+
     protected override void DrawLineCore(IPen? pen, Point p1, Point p2)
     {
         if(pen == null)
             return;
-        AddResource(pen);
+        var (clientPen, serverPen) = CapturePen(pen);
         Add(new RenderDataLineNode
         {
-            ClientPen = pen,
-            ServerPen = pen.GetServer(_compositor),
+            ClientPen = clientPen,
+            ServerPen = serverPen,
             P1 = p1,
             P2 = p2
         });
@@ -139,13 +276,12 @@ internal class RenderDataDrawingContext : DrawingContext
     {
         if (brush == null && pen == null)
             return;
-        AddResource(brush);
-        AddResource(pen);
+        var (clientPen, serverPen) = CapturePen(pen);
         Add(new RenderDataGeometryNode
         {
-            ServerBrush = brush.GetServer(_compositor),
-            ServerPen = pen.GetServer(_compositor),
-            ClientPen = pen,
+            ServerBrush = CaptureBrush(brush),
+            ServerPen = serverPen,
+            ClientPen = clientPen,
             Geometry = geometry
         });
     }
@@ -156,13 +292,12 @@ internal class RenderDataDrawingContext : DrawingContext
             return;
         if(brush == null && pen == null && boxShadows == default)
             return;
-        AddResource(brush);
-        AddResource(pen);
+        var (clientPen, serverPen) = CapturePen(pen);
         Add(new RenderDataRectangleNode
         {
-            ServerBrush = brush.GetServer(_compositor),
-            ServerPen = pen.GetServer(_compositor),
-            ClientPen = pen,
+            ServerBrush = CaptureBrush(brush),
+            ServerPen = serverPen,
+            ClientPen = clientPen,
             Rect = rrect,
             BoxShadows = boxShadows
         });
@@ -172,16 +307,15 @@ internal class RenderDataDrawingContext : DrawingContext
     {
         if (rect.IsEmpty())
             return;
-        
+
         if(brush == null && pen == null)
             return;
-        AddResource(brush);
-        AddResource(pen);
+        var (clientPen, serverPen) = CapturePen(pen);
         Add(new RenderDataEllipseNode
         {
-            ServerBrush = brush.GetServer(_compositor),
-            ServerPen = pen.GetServer(_compositor),
-            ClientPen = pen,
+            ServerBrush = CaptureBrush(brush),
+            ServerPen = serverPen,
+            ClientPen = clientPen,
             Rect = rect,
         });
     }
@@ -195,10 +329,9 @@ internal class RenderDataDrawingContext : DrawingContext
     {
         if (foreground == null || glyphRun == null)
             return;
-        AddResource(foreground);
         Add(new RenderDataGlyphRunNode
         {
-            ServerBrush = foreground.GetServer(_compositor),
+            ServerBrush = CaptureBrush(foreground),
             GlyphRun = glyphRun.PlatformImpl.Clone()
         });
     }
@@ -243,6 +376,21 @@ internal class RenderDataDrawingContext : DrawingContext
             return;
         }
 
+        // The recorded node replays on the render thread and is not registered as a
+        // composition resource, so the effect must be captured as an immutable
+        // snapshot regardless of the context mode.
+        if (options.Effect is { } effect && effect is not IImmutableEffect)
+        {
+            options = options with
+            {
+                Effect = effect is IMutableEffect
+                    ? effect.ToImmutable()
+                    : throw new InvalidOperationException(
+                        effect.GetType() + " cannot be recorded. LayerOptions.Effect must be an " +
+                        "immutable effect or a mutable effect that supports snapshotting.")
+            };
+        }
+
         Push(new RenderDataLayerNode
         {
             Options = options
@@ -260,10 +408,9 @@ internal class RenderDataDrawingContext : DrawingContext
             Push();
         else
         {
-            AddResource(mask);
             Push(new RenderDataOpacityMaskNode
             {
-                ServerBrush = mask.GetServer(_compositor),
+                ServerBrush = CaptureBrush(mask),
                 BoundsRect = bounds,
                 MaskType = maskType
             });
@@ -330,6 +477,11 @@ internal class RenderDataDrawingContext : DrawingContext
 
     internal override void RegisterOwnedRecording(DrawingRecording recording)
     {
+        // Ownership is honored only when this context builds a DrawingRecording
+        // (per the DrawingRecordingOwnership contract). The shared visual-content
+        // recorder and transient scene-brush contents leave disposal to the caller.
+        if (!_buildingRecording)
+            return;
         _ownedRecordingsDedup ??= new();
         if (!_ownedRecordingsDedup.Add(recording))
             return;
@@ -350,7 +502,10 @@ internal class RenderDataDrawingContext : DrawingContext
         return list;
     }
 
-    internal override void DrawRecordingCore(DrawingRecording recording)
+    internal override void DrawRecordingCore(DrawingRecording recording) =>
+        DrawRecordingCore(recording, Matrix.Identity);
+
+    internal override void DrawRecordingCore(DrawingRecording recording, Matrix transform)
     {
         if (recording.IsCompositorBound)
         {
@@ -358,18 +513,29 @@ internal class RenderDataDrawingContext : DrawingContext
                 throw new InvalidOperationException(
                     "Cannot draw a compositor-bound DrawingRecording into a context belonging to a different compositor.");
 
+            if (_compositor == null)
+            {
+                if (_buildingRecording)
+                    throw new InvalidOperationException(
+                        "An immutable DrawingRecording cannot reference a compositor-bound DrawingRecording: " +
+                        "it would neither retain nor track the compositor-bound content. " +
+                        "Use DrawingRecording.Create(Compositor, ...) for the enclosing recording instead.");
+                _containsCompositorResources = true;
+            }
+
             recording.EnsureRegisteredForSerialization();
             var renderData = recording.RenderData!;
             AddResource(new CompositionRenderDataResourceRef(renderData));
             Add(new RenderDataRecordingCompositionNode
             {
                 Server = renderData.Server,
-                Client = renderData
+                Client = renderData,
+                Transform = transform
             });
         }
         else
         {
-            Add(new RenderDataRecordingItemListNode { Items = recording.ItemList! });
+            Add(new RenderDataRecordingItemListNode { Items = recording.ItemList!, Transform = transform });
         }
     }
 
@@ -453,7 +619,8 @@ internal class RenderDataDrawingContext : DrawingContext
         var itemList = _currentItemList;
         _currentItemList = null;
 
-        return new ImmediateRenderDataSceneBrushContent(brush, itemList, rect, useScalableRasterization, s_listPool);
+        return new ImmediateRenderDataSceneBrushContent(brush, itemList, rect, useScalableRasterization, s_listPool,
+            _containsCompositorResources, _containsMutableResources);
     }
 
     public void Reset()
@@ -465,11 +632,22 @@ internal class RenderDataDrawingContext : DrawingContext
             _renderData = null;
         }
 
+        // Ownership of these children was transferred by DrawRecording(..., Owned).
+        // If they are still here the discarded work never reached a DrawingRecording
+        // (e.g. the record delegate threw), so disposing them is this context's job.
+        if (_ownedRecordings != null)
+        {
+            foreach (var owned in _ownedRecordings)
+                owned.Dispose();
+            _ownedRecordings = null;
+        }
+        _ownedRecordingsDedup?.Clear();
+
         _currentItemList?.Clear();
         _parentNodeStack?.Clear();
         _resourcesHashSet?.Clear();
-        _ownedRecordings?.Clear();
-        _ownedRecordingsDedup?.Clear();
+        _containsCompositorResources = false;
+        _containsMutableResources = false;
     }
     
     protected override void DisposeCore()

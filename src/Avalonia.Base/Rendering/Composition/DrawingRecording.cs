@@ -40,13 +40,18 @@ public sealed class DrawingRecording : IDisposable
 
     /// <summary>
     /// Creates a new <see cref="DrawingRecording"/> with immutable resources.
-    /// No compositor is required. Only immutable brushes and pens are supported.
+    /// No compositor is required. Mutable brushes, pens and effects are snapshotted
+    /// at record time (scene brushes via their current content), so later mutations
+    /// do not affect the recording. Resources that cannot be snapshotted, and any
+    /// reference to a compositor-bound recording (directly or through a brush's
+    /// content), throw <see cref="InvalidOperationException"/> — use
+    /// <see cref="Create(Compositor, System.Action{DrawingContext})"/> for such content.
     /// </summary>
     public static DrawingRecording Create(Action<DrawingContext> record)
     {
         _ = record ?? throw new ArgumentNullException(nameof(record));
 
-        using var context = new RenderDataDrawingContext(null);
+        using var context = new RenderDataDrawingContext(null, buildingRecording: true);
         record(context);
 
         var items = context.GetRenderItemList();
@@ -63,7 +68,7 @@ public sealed class DrawingRecording : IDisposable
         _ = compositor ?? throw new ArgumentNullException(nameof(compositor));
         _ = record ?? throw new ArgumentNullException(nameof(record));
 
-        using var context = new RenderDataDrawingContext(compositor);
+        using var context = new RenderDataDrawingContext(compositor, buildingRecording: true);
         record(context);
 
         var renderData = context.GetRenderResultsWithoutRegistration()

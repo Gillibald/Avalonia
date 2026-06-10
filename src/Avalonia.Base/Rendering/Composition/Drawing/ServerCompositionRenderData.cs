@@ -62,7 +62,10 @@ class ServerCompositionRenderData : SimpleServerRenderResource
         {
             if (item is IRenderDataItemWithServerResources resourceItem)
                 resourceItem.Collect(collector);
-            else if (item is RenderDataPushNode pushNode)
+            // A node can both carry its own resources and have children (e.g. an
+            // opacity-mask push node) — its children must still be traversed so
+            // resources inside the pushed scope register as dependencies.
+            if (item is RenderDataPushNode pushNode)
                 CollectResources(pushNode.Children, collector);
         }
     }
