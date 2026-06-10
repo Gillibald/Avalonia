@@ -1150,8 +1150,11 @@ already-known instance of this rule.
   verified once against each test's stated expectation plus the upstream
   cross-renderer `results.csv`; `quarantine.txt` lists known gaps with
   reasons and is the measurable compliance score. First category:
-  **shapes — 128/133 pass**, 5 quarantined (CSS `q`/`rem`/`ch`/viewport
-  units in attribute lengths, which browsers accept and resvg also fails).
+  **shapes — 132/133 pass**; only `ch-values` stays quarantined (resolved
+  via the spec's 0.5em fallback instead of real glyph metrics). The CSS
+  length units the pilot surfaced (`Q`, `rem`, viewport units,
+  case-insensitive matching, font-aware geometry resolution) landed in
+  `SvgLength` before the next category.
   Next categories in rough order of coverage value: `painting`,
   `paint-servers`, `masking`, `structure`, `filters`, `text`. The W3C 1.1
   `animate-elem-*` tests remain the SMIL source when animation goldens
