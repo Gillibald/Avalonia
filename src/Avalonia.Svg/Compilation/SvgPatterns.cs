@@ -55,11 +55,23 @@ internal static class SvgPatterns
         var tileWidthUser = boxUnits ? width * bounds.Width : width;
         var tileHeightUser = boxUnits ? height * bounds.Height : height;
 
+        // viewBox maps content per preserveAspectRatio (xMidYMid meet default);
+        // without one the tile content fills the tile 1:1.
+        var stretch = Stretch.Fill;
+        var alignmentX = AlignmentX.Left;
+        var alignmentY = AlignmentY.Top;
+
         Rect sourceRect;
         if (GetChained(chain, "viewBox") is { } viewBoxValue
             && SvgViewBox.TryParse(viewBoxValue.AsSpan(), out var viewBox))
         {
             sourceRect = new Rect(viewBox.X, viewBox.Y, viewBox.Width, viewBox.Height);
+
+            var preserveAspectRatio = SvgPreserveAspectRatio.Default;
+            if (GetChained(chain, "preserveAspectRatio") is { } par)
+                SvgPreserveAspectRatio.TryParse(par.AsSpan(), out preserveAspectRatio);
+
+            (stretch, alignmentX, alignmentY) = preserveAspectRatio.ToTileBrushMapping();
         }
         else if (GetChained(chain, "patternContentUnits") == "objectBoundingBox")
         {
@@ -81,9 +93,9 @@ internal static class SvgPatterns
         var brush = new DrawingRecordingBrush(recording)
         {
             TileMode = TileMode.Tile,
-            Stretch = Stretch.Fill,
-            AlignmentX = AlignmentX.Left,
-            AlignmentY = AlignmentY.Top,
+            Stretch = stretch,
+            AlignmentX = alignmentX,
+            AlignmentY = alignmentY,
             SourceRect = new RelativeRect(sourceRect, RelativeUnit.Absolute),
             DestinationRect = destinationRect,
             Opacity = opacity,
