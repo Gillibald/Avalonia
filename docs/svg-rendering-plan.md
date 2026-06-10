@@ -682,38 +682,74 @@ changes.
 
 ### Checklist
 
-- [ ] `<text>` / `<tspan>` layout: resolve font family/size/weight/style to
-      `Typeface`; build `FormattedText` or direct `GlyphRun`.
-- [ ] `text-anchor`, `dx`/`dy`, basic `x`/`y` offsets.
-- [ ] `<textPath>` — arc-length sample the referenced path (gap 4.6 option
-      (a)); emit one `PushTransform` + `DrawGlyphRun` per glyph cluster.
-- [ ] `<marker>` — compile each marker once to a `DrawingRecording`; compute
-      vertex positions + tangents from the owner path; emit
-      `PushTransform(translate + rotate)` + `DrawRecording(markerRec)`
-      (gap 4.7). `orient` supports `auto`, fixed angles, and SVG 2
-      `auto-start-reverse`.
-- [ ] `paint-order: stroke fill` — split into two `DrawGeometry` calls
-      (gap 4.4).
-- [ ] `mix-blend-mode` / `isolation` →
-      `PushLayer(new LayerOptions { BlendMode = … })` around the element or
-      group (Phase 0.6 layer API; `isolation: isolate` is a passthrough
-      layer that bounds the blend).
-- [ ] `fill-opacity`, `stroke-opacity`, and `opacity` composition rules.
+- [x] `<text>` / `<tspan>` layout: resolve font family/size/weight/style to
+      `Typeface`; lay out through **`TextLayout`** (an `ITextSource` with
+      per-run properties), not direct `TextShaper`/`GlyphRun` construction —
+      SVG text must go through the full pipeline (script itemization, font
+      fallback, bidi) to stay on par with regular Avalonia text rendering.
+      Chunks split into layout segments at `dx`/`dy` adjustments; style-only
+      `tspan` boundaries shape continuously within one layout. The parser
+      captures mixed element/text content in document order with SVG
+      white-space normalization.
+- [x] `text-anchor`, `dx`/`dy`, basic `x`/`y` offsets (scalar values;
+      per-glyph position lists are out of scope). SVG baselines map to
+      `TextLayout` origins via the first line's baseline; absolutely
+      positioned `tspan`s start new anchor chunks.
+- [x] `<textPath>` — arc-length sample the referenced path (gap 4.6 option
+      (a)) via a path flattener; the text lays out through `TextLayout`
+      (fallback-correct), then each glyph is placed individually:
+      one fused `PushTransform` + `DrawGlyphRun` per glyph, rotated to the
+      tangent, with `startOffset` (incl. percentages) honored and glyphs
+      past the path end dropped per spec.
+- [x] `<marker>` — each marker compiles once to a shared `DrawingRecording`;
+      vertex positions + in/out tangents come from the path sampler (lines
+      and polylines/polygons compute them directly); every placement is a
+      single fused `DrawRecording(markerRec, matrix, Shared)` combining
+      viewBox fit, refX/refY alignment, `markerUnits` stroke-width scaling
+      and orientation (gap 4.7). `orient` supports `auto`, fixed angles,
+      and SVG 2 `auto-start-reverse`; interior vertices bisect in/out.
+- [x] `paint-order: stroke fill` — split into two draw calls per shape
+      (geometry, rect and ellipse paths; gap 4.4). Markers always paint
+      last.
+- [x] `mix-blend-mode` / `isolation` →
+      `PushLayer(new LayerOptions { BlendMode = …, Isolate = … })` around
+      the element or group. Landed `LayerOptions.Isolate` on the recording
+      side first (the passthrough elision left no way to force a bare
+      isolation layer); element opacity, blend mode and isolation fold into
+      one recorded layer.
+- [x] `fill-opacity`, `stroke-opacity`, and `opacity` composition rules:
+      the paint opacities multiply into the brushes; element `opacity`
+      uses the layer API for correct group semantics (overlapping children
+      composite before the group fades); `opacity: 0` prunes the subtree.
 
 ### Tests
 
-- `CompilerTests.Text` — glyph run positions for anchored/justified text,
-  multi-`<tspan>` with inherited styles.
-- `CompilerTests.TextOnPath` — straight path, curved path, closed path with
-  wrap-around; glyph rotation matches tangent within tolerance.
-- `CompilerTests.Markers` — start/mid/end markers on a polyline; rotation
-  auto vs fixed vs `auto-start-reverse`; `markerUnits` = `strokeWidth` vs
-  `userSpaceOnUse`.
-- `CompilerTests.BlendModes` — `mix-blend-mode` emits the expected
-  `PushLayer` blend mode; `isolation: isolate` bounds it.
-- `CompilerTests.PaintOrder` — verify order of emitted items for default vs
-  `paint-order: stroke fill`.
-- `RenderTests` — W3C text + marker + textPath corpus.
+Tests, as shipped:
+
+- [x] `SvgPathSamplerTests` (7) — arc-length measurement (lines, arcs),
+  point/angle sampling, vertex tangents incl. closed-figure bisection,
+  cubic control-point tangents, malformed-prefix sampling.
+- [x] `SvgMarkerTests` (7) — placement and orientation observed through
+  recording hit-testing: end/mid markers, `markerUnits` strokeWidth vs
+  userSpaceOnUse, `auto` rotation, `auto-start-reverse` flip, refX/refY +
+  viewBox alignment, one shared recording per marker.
+- [x] `SvgCompositingTests` (9) — group opacity bounds, `opacity: 0`
+  pruning, blend/isolation bounds, mask bounds + shared recording,
+  pattern brush construction (immutable scene-brush content, dest/source
+  rects per unit system, href chains, empty/zero rejection), fill-opacity
+  in the brush.
+- [x] Render goldens (14): text anchors (pixel-measured: the middle anchor
+  centers exactly), styled `tspan`s with `dy`, text-on-path along an arc;
+  markers on a polyline (auto) and `auto-start-reverse` arrows on a curve;
+  group-vs-fill opacity, multiply with and without isolation, paint-order
+  stroke-first; oBB checkerboard pattern (per-shape tile scaling),
+  user-space pattern with `patternTransform`, viewBox pattern; luminance
+  gradient mask, `mask-type="alpha"`, mask on a group (measured fill box).
+  Pixel verification of glyph positions confirms the embedded-font resm
+  resolution; text scenes use the deterministic Noto Mono test font.
+- [ ] Curated W3C / resvg text + marker corpus cases as the suite grows.
+  Stroked text and `text-decoration` are deferred (noted for a later
+  pass alongside per-glyph position lists).
 
 ---
 
@@ -725,25 +761,39 @@ in Phase 0 (sub-phases 0.4 and 0.5). Pure SVG compiler work.
 
 ### Checklist
 
-- [ ] SVG `<pattern>` → compile contents to a cached sub-`DrawingRecording`
+- [x] SVG `<pattern>` → compile contents to a cached sub-`DrawingRecording`
       and wrap in a `DrawingRecordingBrush` with the pattern's `x`, `y`,
       `width`, `height`, `patternTransform`, `patternUnits`,
-      `patternContentUnits`.
-- [ ] Reference resolution: `<pattern href="#other">` inheritance chain.
-- [ ] SVG `<mask>` → compile contents to a sub-recording, wrap in a brush,
-      emit `PushOpacityMask(brush, bounds, MaskType.Luminance)` by default,
-      `MaskType.Alpha` when `mask-type="alpha"` or `mask-mode="alpha"`.
-- [ ] Unit-system conversions (`userSpaceOnUse` vs `objectBoundingBox`) for
-      both pattern and mask.
+      `patternContentUnits` and `viewBox` mapped onto
+      `SourceRect`/`DestinationRect`/`Transform`. The mutable brush is
+      snapshotted via `ToImmutable()` (the Phase 0 scene-brush snapshot)
+      so immutable recordings capture it safely.
+- [x] Reference resolution: `<pattern href="#other">` inheritance chain
+      (attributes and content, cycle-safe).
+- [x] SVG `<mask>` → compile contents to a shared sub-recording, wrap in an
+      immutable content brush mapped 1:1 over the mask region, emit
+      `PushOpacityMask(brush, region, MaskType.Luminance)` by default,
+      `MaskType.Alpha` when `mask-type="alpha"`. Mask regions honor the
+      spec's -10%/120% defaults; group masks measure the element fill box
+      through a throwaway strokeless recording.
+- [x] Unit-system conversions (`userSpaceOnUse` vs `objectBoundingBox`) for
+      both pattern (tile and content units independently) and mask (region
+      and content units).
 
 ### Tests
 
-- `CompilerTests.Pattern` — tile mode, source/destination rect, transform;
-  inheritance via `href`.
-- `CompilerTests.Mask_Luminance` — default luminance mode; visual diff
-  matches reference.
-- `CompilerTests.Mask_Alpha` — `mask-type="alpha"` opts into alpha mode.
-- `RenderTests` — W3C pattern + mask corpus.
+Tests, as shipped (see also the Phase 3 list — patterns/masks share the
+`SvgCompositingTests` unit coverage and the `PatternsAndMasks` goldens):
+
+- [x] Unit: pattern brush construction per unit system, viewBox source
+  mapping, href inheritance, empty/zero-area rejection; mask bounds and
+  shared-recording reuse.
+- [x] Render goldens: oBB checkerboard (per-shape tile scaling proves the
+  bounding-box mapping), user-space stripes under `patternTransform`,
+  viewBox-scaled dots; luminance gradient fade, `mask-type="alpha"`
+  (a luminance-dark but opaque mask passing at full strength proves the
+  mode switch), mask on a group.
+- [ ] Curated W3C / resvg pattern + mask corpus cases as the suite grows.
 
 ---
 
