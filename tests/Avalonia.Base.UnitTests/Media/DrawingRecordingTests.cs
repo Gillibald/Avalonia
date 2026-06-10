@@ -662,6 +662,24 @@ public class DrawingRecordingTests
     }
 
     [Fact]
+    public void PushLayer_Isolate_Forces_A_Layer()
+    {
+        // Isolation must defeat the passthrough elision: an all-default layer is
+        // elided, an isolated one is not.
+        Assert.True(new LayerOptions().IsPassthrough);
+        Assert.False(new LayerOptions { Isolate = true }.IsPassthrough);
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Isolate = true }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
     public void PushLayer_Nested_Balances_Correctly()
     {
         using var recording = DrawingRecording.Create(ctx =>

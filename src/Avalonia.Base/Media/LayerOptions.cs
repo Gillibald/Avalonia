@@ -50,6 +50,14 @@ public readonly record struct LayerOptions
     /// </summary>
     public IEffect? Effect { get; init; }
 
+    /// <summary>
+    /// Forces an isolated offscreen layer even when no other compositing
+    /// parameter is set. Children with non-default blend modes then composite
+    /// against the layer's contents instead of the page backdrop — the CSS
+    /// <c>isolation: isolate</c> semantics.
+    /// </summary>
+    public bool Isolate { get; init; }
+
     /// <summary>Opacity with the default (<c>1.0</c>) substituted for an unset value.</summary>
     internal double EffectiveOpacity => Opacity ?? 1.0;
 
@@ -59,7 +67,8 @@ public readonly record struct LayerOptions
 
     /// <summary>True when the options would produce a pass-through layer (no visible effect).</summary>
     internal bool IsPassthrough =>
-        EffectiveOpacity == 1.0
+        !Isolate
+        && EffectiveOpacity == 1.0
         && EffectiveBlendMode == BitmapBlendingMode.SourceOver
         && Effect == null;
 }
