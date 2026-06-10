@@ -811,45 +811,65 @@ rule) before this phase's compiler work consumes them.
 
 ### Checklist
 
-- [ ] SVG `<filter>` region (`x`, `y`, `width`, `height`,
-      `filterUnits="userSpaceOnUse"` vs `"objectBoundingBox"`) →
-      `LayerOptions.Bounds` **plus an explicit `PushClip(filterRegion)`**
-      around the layer — `LayerOptions.Bounds` sizes the offscreen buffer
-      but does not clip, while SVG's filter region is a hard clip.
-- [ ] **Prerequisite (recording side, not this branch):** new `IEffect`
-      subtypes (deferred from Phase 0.6) with their `Immutable…Effect`
-      counterparts: `IColorMatrixEffect`, `IOffsetEffect`,
-      `ICompositeEffect` (linear chain). Skia lowering via
-      `SKColorFilter.CreateColorMatrix`, `SKImageFilter.CreateOffset`,
-      `SKImageFilter.CreateCompose`. `EffectAnimator` registration so each
-      new effect's parameters participate in transitions, and
-      `RenderDataLayerNode` bounds inflation extended for offset (shifts
-      bounds) and composite (union of stage paddings).
-- [ ] Primitive compilers:
-  - [ ] `feGaussianBlur` → `ImmutableBlurEffect`.
-  - [ ] `feOffset` → `ImmutableOffsetEffect`.
-  - [ ] `feColorMatrix` (matrix / saturate / hueRotate / luminanceToAlpha) →
-        `ImmutableColorMatrixEffect`.
-  - [ ] `feDropShadow` → `ImmutableDropShadowEffect`.
-  - [ ] `feMerge` → `ImmutableCompositeEffect` with stages.
-  - [ ] Stubs that log a one-shot warning for unsupported primitives.
-- [ ] Chain linking via `in` / `in2` / `result`: collapse linear chains
-      into `ImmutableCompositeEffect`; non-linear graphs are rejected with
-      a warning (defer full DAG support).
-- [ ] Compile `<g filter="url(#f)">` into
+- [x] SVG `<filter>` region (`x`, `y`, `width`, `height`,
+      `filterUnits="userSpaceOnUse"` vs `"objectBoundingBox"` with the
+      spec's -10%/120% defaults) → `LayerOptions.Bounds` **plus an explicit
+      `PushClip(filterRegion)`** around the layer — `LayerOptions.Bounds`
+      sizes the offscreen buffer but does not clip, while SVG's filter
+      region is a hard clip. Empty filters and empty regions hide the
+      element (pruned at compile time, so bounds stay empty too).
+- [x] **Prerequisite (recording side):** landed on
+      `feature/drawing-recording` — `IOffsetEffect`, `IColorMatrixEffect`
+      (5×4 matrix, SVG/Skia layout) and `ICompositeEffect` (sequential
+      linear chain) with immutable implementations, structural equality
+      and `EffectAnimator` interpolation. Skia lowering via
+      `CreateOffset`, `CreateColorMatrix` + `CreateColorFilter`, and
+      folded `CreateCompose`. `GetEffectOutputPadding` (which throws for
+      unknown effects) learned the new types, and
+      `RenderDataLayerNode`'s bounds inflation now derives from that
+      shared helper, so layer bounds and visual effect padding cannot
+      drift apart.
+- [x] Primitive compilers:
+  - [x] `feGaussianBlur` → `ImmutableBlurEffect`. SVG `stdDeviation` is
+        the Gaussian sigma; the compiler inverts Skia's
+        `sigma = 0.288675·radius + 0.5` mapping so rendered blurs match.
+  - [x] `feOffset` → `ImmutableOffsetEffect`.
+  - [x] `feColorMatrix` (matrix / saturate / hueRotate / luminanceToAlpha)
+        → `ImmutableColorMatrixEffect` via the spec matrices.
+  - [x] `feDropShadow` → `ImmutableDropShadowEffect` (incl. `flood-color`
+        and `flood-opacity`).
+  - [x] `feMerge` — the classic drop-shadow pattern (blur of
+        `SourceAlpha` [+ offset], merged under `SourceGraphic`) collapses
+        to `ImmutableDropShadowEffect`; general merges (stacking, which a
+        sequential composite cannot express) are rejected with the
+        unsupported warning.
+  - [x] Unsupported primitives log a one-shot warning and the element
+        renders unfiltered.
+- [x] Chain linking via `in` / `result`: linear chains collapse into
+      `ImmutableCompositeEffect`; non-linear inputs are rejected with the
+      warning (full DAG support deferred).
+- [x] Compile `filter="url(#f)"` (innermost, after clip and mask) into
+      `PushClip(region)` +
       `PushLayer(new LayerOptions { Bounds = region, Effect = composedEffect })`
-      around the group's draw calls.
+      around the element's draw calls.
 
-### Tests
+### Tests (as shipped)
 
-- `CompilerTests.Filters_Primitives` — one test per supported primitive;
-  assert the recorded `IImmutableEffect` tree matches expectation.
-- `CompilerTests.Filters_Chain` — linear chain collapses into a composite
-  of the expected length.
-- `CompilerTests.Filters_Unsupported` — unsupported primitive emits a
-  warning and the group renders without the filter.
-- `RenderTests` — W3C filter corpus subset for supported primitives;
-  golden diffs for blur, drop-shadow, color-matrix.
+- [x] `Avalonia.Svg.UnitTests/SvgFilterTests` (15) — resolver-level effect
+  trees per primitive (blur sigma→radius conversion, offset, explicit /
+  saturate / hueRotate / luminanceToAlpha matrices, feDropShadow with
+  flood attributes), linear-chain composite collapse, the classic feMerge
+  → drop-shadow pattern, region defaults and userSpace units, unsupported
+  / non-linear rejection, empty-filter pruning (bounds stay empty),
+  blur-inflated compile bounds, missing-reference fallback.
+- [x] Recording-side (`DrawingRecordingTests`): offset/color-matrix/
+  composite bounds behavior, composite structural equality, and a render
+  golden chaining grayscale + offset through one composed filter.
+- [x] Render goldens (6): blur on a group vs sharp reference, feDropShadow,
+  saturate(0) grayscale (distinct luma grays for red vs lime), the classic
+  feMerge shadow, a tight userSpace region hard-clipping the blur halo,
+  and an unsupported filter rendering unfiltered.
+- [ ] Curated W3C / resvg filter corpus cases as the suite grows.
 
 ---
 
