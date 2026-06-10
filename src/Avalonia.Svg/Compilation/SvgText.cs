@@ -74,13 +74,13 @@ internal static class SvgText
         var chunk = new List<StyledRun>();
         var chunkOrigin = new Point(x, y);
 
-        CollectContent(element, context, compileContext, style, isSpan: false, dx: 0, dy: 0, ref chunk, ref chunkOrigin);
-        FlushChunk(context, compileContext, chunk, chunkOrigin);
+        CollectContent(element, element, context, compileContext, style, isSpan: false, dx: 0, dy: 0, ref chunk, ref chunkOrigin);
+        FlushChunk(element, context, compileContext, chunk, chunkOrigin);
     }
 
     private static void CollectContent(
-        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style,
-        bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin)
+        SvgElement textElement, SvgElement element, DrawingContext context, SvgCompileContext compileContext,
+        in SvgStyle style, bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin)
     {
         if (element.Content == null)
             return;
@@ -117,7 +117,7 @@ internal static class SvgText
                         var newY = child.GetAttribute("y");
                         if (newX != null || newY != null)
                         {
-                            FlushChunk(context, compileContext, chunk, chunkOrigin);
+                            FlushChunk(textElement, context, compileContext, chunk, chunkOrigin);
                             chunk = new List<StyledRun>();
                             chunkOrigin = new Point(
                                 newX != null ? GetLength(child, "x", SvgLengthAxis.Horizontal, style.Viewport) : chunkOrigin.X,
@@ -125,7 +125,7 @@ internal static class SvgText
                         }
 
                         CollectContent(
-                            child, context, compileContext, childStyle, isSpan: true,
+                            textElement, child, context, compileContext, childStyle, isSpan: true,
                             dx: pendingDx + GetLength(child, "dx", SvgLengthAxis.Horizontal, style.Viewport),
                             dy: pendingDy + GetLength(child, "dy", SvgLengthAxis.Vertical, style.Viewport),
                             ref chunk, ref chunkOrigin);
@@ -143,7 +143,8 @@ internal static class SvgText
     }
 
     private static void FlushChunk(
-        DrawingContext context, SvgCompileContext compileContext, List<StyledRun> chunk, Point origin)
+        SvgElement textElement, DrawingContext context, SvgCompileContext compileContext,
+        List<StyledRun> chunk, Point origin)
     {
         if (chunk.Count == 0)
             return;
@@ -219,6 +220,22 @@ internal static class SvgText
 
                 // SVG positions the baseline; a text line draws from its top.
                 line.Draw(context, new Point(penX, penY - line.Baseline));
+
+                // Coarse, layout-box hit area per segment, attributed to the
+                // <text> element (tspan-level targeting is out of scope).
+                var segmentStyle = segment[0].Style;
+                compileContext.HitTree?.AddShape(
+                    textElement,
+                    new SvgHitShape
+                    {
+                        Kind = SvgHitShape.ShapeKind.Rectangle,
+                        Bounds = new Rect(
+                            penX, penY - line.Baseline,
+                            line.WidthIncludingTrailingWhitespace, line.Height),
+                        HasFill = segmentStyle.Fill.Kind != SvgPaintKind.None,
+                    },
+                    segmentStyle.PointerEvents,
+                    segmentStyle.Visible);
 
                 penX += line.WidthIncludingTrailingWhitespace;
             }
@@ -412,10 +429,20 @@ internal static class SvgText
 
     private static IImmutableBrush? ResolveFill(in SvgStyle style, SvgCompileContext compileContext, Rect? bounds)
     {
+        // visibility: hidden text keeps its layout (advances, chunk anchoring)
+        // but paints no glyphs — a null foreground does exactly that. Measuring
+        // still paints so hidden text contributes to fill boxes, per getBBox().
+        if (!style.Visible && !compileContext.Measuring)
+            return null;
+
         if (style.Fill.Kind == SvgPaintKind.Reference)
         {
             if (bounds is not { } resolved || style.Fill.Reference is not { } id)
                 return null;
+
+            if (compileContext.Measuring)
+                return new ImmutableSolidColorBrush(Colors.Black);
+
             return SvgPaintServers.Resolve(compileContext, id, style, resolved, style.FillOpacity);
         }
 

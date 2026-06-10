@@ -4,6 +4,7 @@ using System.IO;
 using System.Xml;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
+using Avalonia.Svg.Compilation;
 using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg;
@@ -21,6 +22,7 @@ public sealed class SvgDocument : IDisposable
 
     private readonly Dictionary<string, SvgElement> _elementsById;
     private Dictionary<(SvgElement Element, Size Viewport), DrawingRecording>? _sharedRecordings;
+    private Dictionary<(SvgElement Element, Size Viewport), SvgHitNode>? _sharedHitSubtrees;
     private bool _disposed;
 
     private SvgDocument(SvgElement root, Dictionary<string, SvgElement> elementsById)
@@ -213,6 +215,22 @@ public sealed class SvgDocument : IDisposable
     /// <summary>The number of cached shared sub-recordings (symbols, use targets).</summary>
     internal int SharedRecordingCount => _sharedRecordings?.Count ?? 0;
 
+    internal bool TryGetSharedHitSubtree(SvgElement element, Size viewport, out SvgHitNode subtree)
+    {
+        ThrowIfDisposed();
+        if (_sharedHitSubtrees != null && _sharedHitSubtrees.TryGetValue((element, viewport), out subtree!))
+            return true;
+        subtree = null!;
+        return false;
+    }
+
+    internal void AddSharedHitSubtree(SvgElement element, Size viewport, SvgHitNode subtree)
+    {
+        ThrowIfDisposed();
+        _sharedHitSubtrees ??= new Dictionary<(SvgElement, Size), SvgHitNode>();
+        _sharedHitSubtrees[(element, viewport)] = subtree;
+    }
+
     private void ThrowIfDisposed()
     {
         if (_disposed)
@@ -238,5 +256,7 @@ public sealed class SvgDocument : IDisposable
                 recording.Dispose();
             _sharedRecordings = null;
         }
+
+        _sharedHitSubtrees = null;
     }
 }
