@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="250" viewBox="0 0 520 250">
+  <!-- text-anchor against a guide line -->
+  <line x1="260" y1="14" x2="260" y2="92" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="260" y="34" font-size="17" fill="#0f172a">text-anchor: start</text>
+  <text x="260" y="60" font-size="17" fill="#0f172a" text-anchor="middle">text-anchor: middle</text>
+  <text x="260" y="86" font-size="17" fill="#0f172a" text-anchor="end">text-anchor: end</text>
+
+  <!-- Styled tspans share one shaped line; dy shifts the baseline -->
+  <text x="20" y="125" font-size="19" fill="#0f172a">Styled
+    <tspan font-weight="bold" fill="#dc2626">tspans</tspan> with
+    <tspan font-style="italic" fill="#2563eb">mixed styles</tspan> and
+    <tspan dy="-7" font-size="13" fill="#7c3aed">baseline</tspan>
+    <tspan dy="14" font-size="13" fill="#7c3aed">shifts</tspan></text>
+
+  <!-- Font fallback and bidi run through the full text pipeline -->
+  <text x="20" y="160" font-size="18" fill="#0f172a">Fallback: Ωμέγα → Живопись → 中文文本 → نص عربي</text>
+
+  <!-- Text on a path, offset along the arc length -->
+  <path id="curve" d="M 30 225 Q 260 130 490 225" fill="none" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text font-size="17" fill="#0d9488" font-weight="bold">
+    <textPath href="#curve" startOffset="26">Text follows a path through the same layout pipeline.</textPath>
+  </text>
+</svg>

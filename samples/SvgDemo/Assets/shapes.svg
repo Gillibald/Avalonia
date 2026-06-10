@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="260" viewBox="0 0 520 260">
+  <!-- Basic shapes -->
+  <rect x="20" y="20" width="90" height="60" fill="#3b82f6"/>
+  <rect x="130" y="20" width="90" height="60" rx="16" fill="#8b5cf6"/>
+  <!-- rx is 'auto': it takes ry's value (SVG 2) -->
+  <rect x="240" y="20" width="90" height="60" ry="26" fill="#ec4899"/>
+  <circle cx="385" cy="50" r="32" fill="#f59e0b"/>
+  <ellipse cx="470" cy="50" rx="24" ry="32" fill="#10b981"/>
+
+  <!-- Strokes: caps, joins, dashes -->
+  <line x1="25" y1="120" x2="105" y2="170" stroke="#0f172a" stroke-width="9" stroke-linecap="round"/>
+  <polyline points="130,170 155,120 180,170 205,120 230,170" fill="none"
+            stroke="#0ea5e9" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 20 230 q 20 -28 40 0 t 40 0 t 40 0 t 40 0 t 40 0" fill="none"
+        stroke="#14b8a6" stroke-width="5" stroke-dasharray="14 7" stroke-dashoffset="4"/>
+
+  <!-- Polygon star and an even-odd donut -->
+  <polygon points="290,112 305,148 343,151 314,175 323,212 290,192 257,212 266,175 237,151 275,148"
+           fill="#facc15" stroke="#ca8a04" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M 395 165 m -32 0 a 32 32 0 1 0 64 0 a 32 32 0 1 0 -64 0
+           M 395 165 m -15 0 a 15 15 0 1 1 30 0 a 15 15 0 1 1 -30 0"
+        fill-rule="evenodd" fill="#6366f1"/>
+
+  <!-- Path with curves: a heart -->
+  <path d="M 470 140 C 470 118 500 118 500 140 C 500 118 530 118 530 140
+           Q 530 158 500 180 Q 470 158 470 140 Z"
+        transform="translate(-22 0)" fill="#ef4444"/>
+
+  <!-- paint-order: default (stroke over fill) vs stroke painted first -->
+  <circle cx="300" cy="235" r="17" fill="#22c55e" stroke="#14532d" stroke-width="10"/>
+  <circle cx="360" cy="235" r="17" fill="#22c55e" stroke="#14532d" stroke-width="10" paint-order="stroke"/>
+  <!-- stroke-miterlimit: sharp spike beveled when the limit is exceeded -->
+  <path d="M 420 250 L 445 215 L 470 250" fill="none" stroke="#7c3aed" stroke-width="10" stroke-miterlimit="1"/>
+</svg>

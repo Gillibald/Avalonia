@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="250" viewBox="0 0 520 250">
+  <defs>
+    <filter id="blur">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="4" dy="5" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.45"/>
+    </filter>
+    <!-- The classic SourceAlpha blur+offset+merge drop-shadow pattern -->
+    <filter id="classicShadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2.5"/>
+      <feOffset dx="3" dy="4" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="gray">
+      <feColorMatrix type="saturate" values="0"/>
+    </filter>
+    <filter id="hue">
+      <feColorMatrix type="hueRotate" values="160"/>
+    </filter>
+    <filter id="ghost">
+      <feOffset dx="10" dy="10"/>
+      <feColorMatrix type="matrix"
+        values="0 0 0 0 0.55  0 0 0 0 0.6  0 0 0 0 0.7  0 0 0 0.35 0"/>
+    </filter>
+  </defs>
+
+  <circle cx="65" cy="65" r="36" fill="#0ea5e9" filter="url(#blur)"/>
+  <rect x="140" y="30" width="80" height="68" rx="10" fill="#22c55e" filter="url(#shadow)"/>
+  <polygon points="300,28 315,62 352,66 324,90 333,126 300,106 267,126 276,90 248,66 285,62"
+           fill="#f59e0b" stroke="#b45309" stroke-width="2" filter="url(#classicShadow)"/>
+
+  <!-- The same artwork raw, desaturated, and hue-rotated -->
+  <g id="art">
+    <rect x="30" y="160" width="90" height="60" rx="9" fill="#3b82f6"/>
+    <circle cx="60" cy="190" r="17" fill="#fbbf24"/>
+    <circle cx="95" cy="190" r="17" fill="#ef4444"/>
+  </g>
+  <use href="#art" x="140" filter="url(#gray)"/>
+  <use href="#art" x="280" filter="url(#hue)"/>
+
+  <circle cx="455" cy="65" r="34" fill="#8b5cf6" filter="url(#ghost)"/>
+</svg>
