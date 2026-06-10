@@ -309,7 +309,7 @@ internal static class SvgText
         {
             startOffset = startOffsetLength.Unit == SvgLengthUnit.Percent
                 ? startOffsetLength.Value / 100.0 * sampler.TotalLength
-                : startOffsetLength.Resolve(SvgLengthAxis.Other, style.Viewport, style.FontSize, style.RootFontSize);
+                : style.ResolveLength(startOffsetLength, SvgLengthAxis.Other);
         }
 
         var bounds = new Rect(0, 0, sampler.TotalLength, style.FontSize * 2);
@@ -454,7 +454,7 @@ internal static class SvgText
     {
         var value = element.GetStyleOrAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
-            return length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize);
+            return style.ResolveLength(length, axis);
         return 0;
     }
 }
