@@ -1144,6 +1144,18 @@ already-known instance of this rule.
   the Spec Target's "1.1 + de-facto SVG 2" profile — covering the cherry-
   picks (plain `href`, `paint-order`, `mask-type`, blend modes,
   `auto-start-reverse` markers, `rx`/`ry` `auto`).
+  *(Pilot shipped: `ResvgCorpusTests` runs the vendored resvg corpus from
+  `tests/TestFiles/Svg/Corpus/resvg/` (MIT, commit-pinned) — discovery per
+  category, both pipelines, goldens produced by this implementation and
+  verified once against each test's stated expectation plus the upstream
+  cross-renderer `results.csv`; `quarantine.txt` lists known gaps with
+  reasons and is the measurable compliance score. First category:
+  **shapes — 128/133 pass**, 5 quarantined (CSS `q`/`rem`/`ch`/viewport
+  units in attribute lengths, which browsers accept and resvg also fails).
+  Next categories in rough order of coverage value: `painting`,
+  `paint-servers`, `masking`, `structure`, `filters`, `text`. The W3C 1.1
+  `animate-elem-*` tests remain the SMIL source when animation goldens
+  land.)*
 - **Compiler snapshot tests.** Serialize emitted `RenderItemList` to a stable
   textual representation; compare to checked-in snapshots (like
   `DrawingRecordingTests`).
