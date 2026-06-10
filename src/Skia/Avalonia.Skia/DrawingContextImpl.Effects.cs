@@ -47,6 +47,47 @@ partial class DrawingContextImpl
             return SKImageFilter.CreateDropShadow((float)drop.OffsetX, (float)drop.OffsetY, sigma, sigma, color);
         }
 
+        if (effect is IOffsetEffect offset)
+            return SKImageFilter.CreateOffset((float)offset.OffsetX, (float)offset.OffsetY);
+
+        if (effect is IColorMatrixEffect colorMatrix
+            && colorMatrix.Matrix.Count == ImmutableColorMatrixEffect.MatrixLength)
+        {
+            var matrix = new float[ImmutableColorMatrixEffect.MatrixLength];
+            for (var i = 0; i < matrix.Length; i++)
+                matrix[i] = (float)colorMatrix.Matrix[i];
+
+            using var filter = SKColorFilter.CreateColorMatrix(matrix);
+            return SKImageFilter.CreateColorFilter(filter);
+        }
+
+        if (effect is ICompositeEffect composite)
+        {
+            // Children apply in sequence: fold so each stage wraps the previous
+            // one (CreateCompose applies the inner filter first).
+            SKImageFilter? chain = null;
+            foreach (var child in composite.Children)
+            {
+                var stage = CreateEffect(child);
+                if (stage == null)
+                    continue;
+
+                if (chain == null)
+                {
+                    chain = stage;
+                }
+                else
+                {
+                    var composed = SKImageFilter.CreateCompose(stage, chain);
+                    stage.Dispose();
+                    chain.Dispose();
+                    chain = composed;
+                }
+            }
+
+            return chain;
+        }
+
         return null;
     }
     

@@ -662,6 +662,70 @@ public class DrawingRecordingTests
     }
 
     [Fact]
+    public void PushLayer_With_Offset_Effect_Shifts_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = new ImmutableOffsetEffect(20, 10) }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 30, 30));
+        });
+
+        // The output pads towards the offset direction.
+        var bounds = recording.Bounds;
+        Assert.Equal(0, bounds.X);
+        Assert.Equal(0, bounds.Y);
+        Assert.True(bounds.Right >= 50, $"bounds.Right {bounds.Right} should cover the shifted content");
+        Assert.True(bounds.Bottom >= 40, $"bounds.Bottom {bounds.Bottom} should cover the shifted content");
+    }
+
+    [Fact]
+    public void PushLayer_With_ColorMatrix_Effect_Preserves_Bounds()
+    {
+        var matrix = new double[20];
+        matrix[0] = matrix[6] = matrix[12] = matrix[18] = 1; // identity
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = new ImmutableColorMatrixEffect(matrix) }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_Composite_Effect_Accumulates_Bounds()
+    {
+        var composite = new ImmutableCompositeEffect(new IEffect[]
+        {
+            new ImmutableBlurEffect(4),
+            new ImmutableOffsetEffect(15, 0),
+        });
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = composite }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 30, 30));
+        });
+
+        // Blur padding plus the offset towards +x.
+        var bounds = recording.Bounds;
+        Assert.True(bounds.X < 0, $"bounds.X {bounds.X} should include blur padding");
+        Assert.True(bounds.Right >= 45 + 4, $"bounds.Right {bounds.Right} should cover blur + offset");
+    }
+
+    [Fact]
+    public void Composite_Effect_Equality_Is_Structural()
+    {
+        var a = new ImmutableCompositeEffect(new IEffect[] { new ImmutableBlurEffect(4), new ImmutableOffsetEffect(1, 2) });
+        var b = new ImmutableCompositeEffect(new IEffect[] { new ImmutableBlurEffect(4), new ImmutableOffsetEffect(1, 2) });
+        var c = new ImmutableCompositeEffect(new IEffect[] { new ImmutableBlurEffect(5), new ImmutableOffsetEffect(1, 2) });
+
+        Assert.True(a.Equals(b));
+        Assert.False(a.Equals(c));
+    }
+
+    [Fact]
     public void PushLayer_Isolate_Forces_A_Layer()
     {
         // Isolation must defeat the passthrough elision: an all-default layer is

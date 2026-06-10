@@ -27,6 +27,37 @@ public static class EffectExtensions
                 Math.Max(0, 0 - rc.Y), Math.Max(0, rc.Right), Math.Max(0, rc.Bottom));
         }
 
+        if (effect is IOffsetEffect offset)
+        {
+            // The output is the input shifted; pad the side it moves towards.
+            return new Thickness(
+                Math.Max(0, -offset.OffsetX),
+                Math.Max(0, -offset.OffsetY),
+                Math.Max(0, offset.OffsetX),
+                Math.Max(0, offset.OffsetY));
+        }
+
+        if (effect is IColorMatrixEffect)
+            return default;
+
+        if (effect is ICompositeEffect composite)
+        {
+            // Sequential stages each grow the previous stage's output;
+            // accumulating the per-stage paddings is a conservative union.
+            var total = default(Thickness);
+            foreach (var child in composite.Children)
+            {
+                var padding = child.GetEffectOutputPadding();
+                total = new Thickness(
+                    total.Left + padding.Left,
+                    total.Top + padding.Top,
+                    total.Right + padding.Right,
+                    total.Bottom + padding.Bottom);
+            }
+
+            return total;
+        }
+
         throw new ArgumentException("Unknown effect type: " + effect.GetType());
     }
 
