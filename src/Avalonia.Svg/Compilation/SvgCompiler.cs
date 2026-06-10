@@ -42,6 +42,27 @@ internal static class SvgCompiler
         SvgDocument document, DrawingContext context, Size viewportSize, SvgCompileOptions options)
     {
         var root = document.Root;
+
+        // display and opacity on the root element apply like on any container.
+        if (root.GetStyleOrAttribute("display") == "none")
+            return;
+
+        var rootOpacity = 1.0;
+        if (root.GetStyleOrAttribute("opacity") is { } rootOpacityValue
+            && SvgStyle.TryParseOpacity(rootOpacityValue, out var parsedRootOpacity))
+        {
+            rootOpacity = parsedRootOpacity;
+        }
+
+        if (rootOpacity <= 0)
+            return;
+
+        DrawingContext.PushedState? rootOpacityState = rootOpacity < 1
+            ? context.PushOpacity(rootOpacity)
+            : null;
+
+        using var _ = rootOpacityState;
+
         var viewBox = document.TryGetViewBox();
 
         DrawingContext.PushedState? viewBoxState = null;
@@ -155,8 +176,10 @@ internal static class SvgCompiler
                 if (opacity <= 0)
                     return;
 
-                var blendMode = ParseBlendMode(element.GetStyleOrAttribute("mix-blend-mode"));
-                var isolate = element.GetStyleOrAttribute("isolation") == "isolate";
+                // mix-blend-mode and isolation are CSS-only properties: they
+                // have no presentation attribute form.
+                var blendMode = ParseBlendMode(element.GetStyleProperty("mix-blend-mode"));
+                var isolate = element.GetStyleProperty("isolation") == "isolate";
 
                 if (opacity < 1 || blendMode != BitmapBlendingMode.Unspecified || isolate)
                 {
@@ -342,6 +365,8 @@ internal static class SvgCompiler
             var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
             var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
             var recording = compileContext.GetSharedRecording(target, out var ownership, out var hitSubtree);
+            if (recording == null)
+                return;
             var placement = Matrix.CreateTranslation(x, y);
 
             if (target.Name is "symbol" or "svg")
@@ -414,7 +439,20 @@ internal static class SvgCompiler
             if (compileContext.Measuring)
                 return s_measuringFill;
 
-            return paint.Reference is { } id ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity) : null;
+            var brush = paint.Reference is { } id
+                ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity)
+                : null;
+            if (brush != null)
+                return brush;
+
+            // An unresolved reference uses the declared fallback; without one
+            // the paint is invalid and paints nothing.
+            return paint.Fallback switch
+            {
+                SvgPaintFallback.Color => new ImmutableSolidColorBrush(paint.FallbackColor, opacity),
+                SvgPaintFallback.CurrentColor => new ImmutableSolidColorBrush(style.Color, opacity),
+                _ => null,
+            };
         }
 
         return style.ResolveBrush(paint, opacity);
