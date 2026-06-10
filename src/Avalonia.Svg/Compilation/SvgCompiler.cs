@@ -146,7 +146,20 @@ internal static class SvgCompiler
 
                     using (maskState)
                     {
-                        CompileElementContent(element, context, compileContext, style);
+                        var filterScope = default(SvgFilters.SvgFilterScope);
+                        if (!compileContext.Measuring
+                            && element.GetStyleOrAttribute("filter") is { } filterValue
+                            && SvgClipPaths.TryParseUrlReference(filterValue, out var filterId))
+                        {
+                            var filterBounds = GetFillBounds(element, compileContext, style);
+                            filterScope = SvgFilters.Push(context, compileContext, filterId, filterBounds);
+                        }
+
+                        using (filterScope)
+                        {
+                            if (!filterScope.Hidden)
+                                CompileElementContent(element, context, compileContext, style);
+                        }
                     }
                 }
             }
