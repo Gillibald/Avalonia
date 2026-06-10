@@ -40,6 +40,8 @@ internal struct SvgStyle
     public string? MarkerEnd;
     public string? FontFamily;
     public double FontSize;
+    /// <summary>The document root's font size; the reference for <c>rem</c> lengths.</summary>
+    public double RootFontSize;
     public FontStyle FontStyle;
     public FontWeight FontWeight;
     public SvgTextAnchor TextAnchor;
@@ -68,6 +70,7 @@ internal struct SvgStyle
         StrokeBeforeFill = false,
         FontFamily = null,
         FontSize = 16,
+        RootFontSize = 16,
         FontStyle = FontStyle.Normal,
         FontWeight = FontWeight.Normal,
         TextAnchor = SvgTextAnchor.Start,
@@ -83,6 +86,20 @@ internal struct SvgStyle
     /// </summary>
     public void Apply(SvgElement element)
     {
+        // font-size computes first, like the CSS cascade: every other length
+        // property on this element resolves em/ex/ch against the element's own
+        // computed font size.
+        if (Get(element, "font-size") is { } fontSize
+            && SvgLength.TryParse(fontSize.AsSpan(), out var fontSizeLength))
+        {
+            // em/ex and percentages resolve against the inherited font size.
+            var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
+                ? fontSizeLength.Value / 100.0 * FontSize
+                : fontSizeLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize);
+            if (resolved > 0)
+                FontSize = resolved;
+        }
+
         if (Get(element, "color") is { } colorValue && Media.Color.TryParse(colorValue, out var color))
             Color = color;
 
@@ -94,7 +111,7 @@ internal struct SvgStyle
 
         if (Get(element, "stroke-width") is { } strokeWidth
             && SvgLength.TryParse(strokeWidth.AsSpan(), out var widthLength)
-            && widthLength.Resolve(SvgLengthAxis.Other, Viewport) is var resolvedWidth and >= 0)
+            && widthLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize) is var resolvedWidth and >= 0)
         {
             StrokeWidth = resolvedWidth;
         }
@@ -139,13 +156,13 @@ internal struct SvgStyle
             MiterLimit = miter;
         }
 
-        if (Get(element, "stroke-dasharray") is { } dashArray && TryParseDashArray(dashArray, Viewport, out var dashes))
+        if (Get(element, "stroke-dasharray") is { } dashArray && TryParseDashArray(dashArray, out var dashes))
             DashArray = dashes;
 
         if (Get(element, "stroke-dashoffset") is { } dashOffset
             && SvgLength.TryParse(dashOffset.AsSpan(), out var offsetLength))
         {
-            DashOffset = offsetLength.Resolve(SvgLengthAxis.Other, Viewport);
+            DashOffset = offsetLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize);
         }
 
         if (Get(element, "fill-rule") is { } fillRule)
@@ -196,17 +213,6 @@ internal struct SvgStyle
             var first = (comma >= 0 ? fontFamily.Substring(0, comma) : fontFamily).Trim().Trim('\'', '"');
             if (first.Length > 0)
                 FontFamily = first;
-        }
-
-        if (Get(element, "font-size") is { } fontSize
-            && SvgLength.TryParse(fontSize.AsSpan(), out var fontSizeLength))
-        {
-            // em/ex and percentages resolve against the inherited font size.
-            var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
-                ? fontSizeLength.Value / 100.0 * FontSize
-                : fontSizeLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize);
-            if (resolved > 0)
-                FontSize = resolved;
         }
 
         if (Get(element, "font-style") is { } fontStyle)
@@ -349,7 +355,7 @@ internal struct SvgStyle
         return value == "inherit" ? null : value;
     }
 
-    private static bool TryParseDashArray(string value, Size viewport, out double[]? dashes)
+    private readonly bool TryParseDashArray(string value, out double[]? dashes)
     {
         if (value == "none")
         {
@@ -368,7 +374,7 @@ internal struct SvgStyle
                 return false;
             }
 
-            var resolved = length.Resolve(SvgLengthAxis.Other, viewport);
+            var resolved = length.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize);
             if (resolved < 0)
             {
                 // A negative value invalidates the whole list.
