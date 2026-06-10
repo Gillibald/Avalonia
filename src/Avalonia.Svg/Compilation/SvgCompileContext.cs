@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 
@@ -41,6 +42,43 @@ internal sealed class SvgCompileContext
     public SvgHitTreeBuilder? HitTree => Measuring ? null : _hitTree;
 
     public void SetHitTreeBuilder(SvgHitTreeBuilder? builder) => _hitTree = builder;
+
+    /// <summary>
+    /// (element, fill/stroke) pairs compiled as mutable brushes for the
+    /// animation paint channel; see <see cref="SvgCompileOptions"/>.
+    /// </summary>
+    public IReadOnlyCollection<(SvgElement Element, string Attribute)>? PaintAnimationTargets { get; set; }
+
+    /// <summary>The mutable brushes registered during compilation, keyed like the targets.</summary>
+    public Dictionary<(SvgElement Element, string Attribute), SolidColorBrush>? AnimatedBrushes { get; private set; }
+
+    /// <summary>
+    /// Returns (creating and registering on first use) the mutable brush for an
+    /// animated fill/stroke, seeded from the statically resolved brush. Returns
+    /// null when the pair is not an animation target. Measuring passes and
+    /// shared content keep their immutable paints — the same element compiles
+    /// into multiple recordings, but only the main tree is animated.
+    /// </summary>
+    public SolidColorBrush? TryGetAnimatedBrush(SvgElement element, string attribute, IBrush? resolved)
+    {
+        if (Measuring
+            || PaintAnimationTargets == null
+            || !PaintAnimationTargets.Contains((element, attribute)))
+        {
+            return null;
+        }
+
+        AnimatedBrushes ??= new Dictionary<(SvgElement, string), SolidColorBrush>();
+        if (!AnimatedBrushes.TryGetValue((element, attribute), out var brush))
+        {
+            brush = resolved is ISolidColorBrush solid
+                ? new SolidColorBrush(solid.Color) { Opacity = solid.Opacity }
+                : new SolidColorBrush(Colors.Transparent);
+            AnimatedBrushes.Add((element, attribute), brush);
+        }
+
+        return brush;
+    }
 
     /// <summary>
     /// Guards against reference cycles while expanding <c>&lt;use&gt;</c>.
