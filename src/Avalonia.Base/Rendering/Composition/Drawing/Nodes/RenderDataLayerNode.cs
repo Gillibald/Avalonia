@@ -42,15 +42,14 @@ internal class RenderDataLayerNode : RenderDataPushNode
         }
 
         if (!Options.IsPassthrough
-            && Options.EffectiveBlendMode != BitmapBlendingMode.SourceOver
+            && (Options.EffectiveBlendMode != BitmapBlendingMode.SourceOver || Options.Isolate)
             && !s_warnedAboutLayerFallback)
         {
             s_warnedAboutLayerFallback = true;
             Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
                 this,
                 "Backend does not implement IDrawingContextImplWithLayers; " +
-                "layer blend mode '{0}' cannot be honored and will render as SourceOver.",
-                Options.EffectiveBlendMode);
+                "layer blend mode / isolation cannot be honored.");
         }
 
         // Compose fallback: effect via IDrawingContextImplWithEffects, then opacity.

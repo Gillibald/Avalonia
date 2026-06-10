@@ -281,6 +281,33 @@ public class DrawingRecordingTests : TestBase
     }
 
     [Fact]
+    public async Task PushLayer_Isolation_Bounds_Blend_Modes()
+    {
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 200, 100));
+
+            // Left: multiply blends with the yellow backdrop (red intersection).
+            context.FillRectangle(Brushes.Yellow, new Rect(10, 20, 80, 40));
+            using (context.PushLayer(new LayerOptions { BlendMode = BitmapBlendingMode.Multiply }))
+                context.FillRectangle(Brushes.Magenta, new Rect(30, 40, 50, 40));
+
+            // Right: the isolated group bounds the blend — multiply sees only the
+            // group's transparent backdrop, so the magenta stays magenta.
+            context.FillRectangle(Brushes.Yellow, new Rect(110, 20, 80, 40));
+            using (context.PushLayer(new LayerOptions { Isolate = true }))
+            using (context.PushLayer(new LayerOptions { BlendMode = BitmapBlendingMode.Multiply }))
+                context.FillRectangle(Brushes.Magenta, new Rect(130, 40, 50, 40));
+        })
+        {
+            Width = 200, Height = 100
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
     public async Task PushLayer_With_Blur_Effect()
     {
         var target = new RecordingRenderer((control, context) =>
