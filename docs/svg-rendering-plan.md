@@ -1084,6 +1084,13 @@ not yet stable API):
   (R2, R5, Phase 0.2).
 - `DrawRecording(rec, matrix)` records one fused node instead of a
   transform push around the recording node (R4, Phase 0.2).
+- Render data items split `Bounds` (client side: UI thread, may read live
+  client resources, valid synchronously before the first commit) from
+  `ServerBounds` (render thread: immutable data and server resource
+  shadows only). The server bounds pass follows mutable pen mutations
+  through the shadows' change tracking — required by the animation paint
+  channel, where a mutable `Pen` lives inside a compositor-bound
+  recording for its whole lifetime.
 - Immutable `Create(record)` snapshots mutable brushes/pens/effects at
   record time (scene brushes via their current content) and throws for
   resources that cannot be snapshotted or that reference compositor-bound
