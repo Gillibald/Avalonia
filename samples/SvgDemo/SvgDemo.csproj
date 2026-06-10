@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**\*.svg" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Svg\Avalonia.Svg.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
+  </ItemGroup>
+  <Import Project="..\..\build\SampleApp.props" />
+  <Import Project="..\..\build\EmbedXaml.props" />
+  <Import Project="..\..\build\ReferenceCoreLibraries.props" />
+  <Import Project="..\..\build\BuildTargets.targets" />
+</Project>

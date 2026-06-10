@@ -10,7 +10,8 @@ namespace Avalonia.Svg.Compilation;
 
 /// <summary>
 /// Lays out <c>&lt;text&gt;</c> content — plain runs, <c>&lt;tspan&gt;</c>s and
-/// <c>&lt;textPath&gt;</c> — through <see cref="TextFormatter.FormatLine"/>, so
+/// <c>&lt;textPath&gt;</c> — through <see cref="TextFormatter"/>'s
+/// <c>FormatLine</c>, so
 /// SVG text gets the full Avalonia text pipeline (script itemization, font
 /// fallback, bidi, shaping) on par with regular text rendering, without the
 /// paragraph-layout machinery SVG's single-line chunks never need.
@@ -249,9 +250,9 @@ internal static class SvgText
 
     /// <summary>
     /// Formats one chunk segment into a single <see cref="TextLine"/> via
-    /// <see cref="TextFormatter.FormatLine"/> — the full pipeline (itemization,
-    /// font fallback, bidi, shaping) without the paragraph-layout machinery SVG
-    /// chunks never need.
+    /// <see cref="TextFormatter"/>'s <c>FormatLine</c> — the full pipeline
+    /// (itemization, font fallback, bidi, shaping) without the paragraph-layout
+    /// machinery SVG chunks never need.
     /// </summary>
     private static TextLine? FormatSegment(
         List<StyledRun> segment, SvgCompileContext compileContext, Rect? chunkBounds)
