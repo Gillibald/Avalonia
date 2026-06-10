@@ -302,4 +302,47 @@ public class SvgCompilerTests
 
         Assert.Equal(new Rect(10, 10, 50, 50), drawn.Bounds);
     }
+
+    [Fact]
+    public void Em_Geometry_Resolves_Against_The_Elements_Font_Size()
+    {
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+              <g font-size="20">
+                <rect x="1em" y="1em" width="8em" height="8em" fill="green"/>
+              </g>
+            </svg>
+            """);
+
+        Assert.Equal(new Rect(20, 20, 160, 160), recording.Bounds);
+    }
+
+    [Fact]
+    public void Rem_Geometry_References_The_Root_Font_Size()
+    {
+        // rem ignores the element's own font-size (64) and resolves against
+        // the document root's computed font size (32).
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" font-size="32">
+              <rect font-size="64" x="1rem" y="1rem" width="4rem" height="4rem" fill="green"/>
+            </svg>
+            """);
+
+        Assert.Equal(new Rect(32, 32, 128, 128), recording.Bounds);
+    }
+
+    [Fact]
+    public void Viewport_Units_Resolve_Against_The_Viewport()
+    {
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">
+              <rect x="5vw" y="5vh" width="30vw" height="30vmax" fill="green"/>
+            </svg>
+            """);
+
+        Assert.Equal(new Rect(10, 5, 60, 60), recording.Bounds);
+    }
 }

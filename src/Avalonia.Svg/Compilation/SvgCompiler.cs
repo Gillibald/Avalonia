@@ -81,6 +81,11 @@ internal static class SvgCompiler
             var style = SvgStyle.CreateDefault(contentViewport);
             style.Apply(root);
 
+            // The root's computed font size is the reference for rem lengths
+            // everywhere in the document, including shared content.
+            style.RootFontSize = style.FontSize;
+            compileContext.RootFontSize = style.FontSize;
+
             foreach (var child in root.Children)
                 CompileElement(child, context, compileContext, style);
 
@@ -334,15 +339,15 @@ internal static class SvgCompiler
 
         try
         {
-            var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport);
-            var y = GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport);
+            var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
+            var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
             var recording = compileContext.GetSharedRecording(target, out var ownership, out var hitSubtree);
             var placement = Matrix.CreateTranslation(x, y);
 
             if (target.Name is "symbol" or "svg")
             {
-                var width = GetUseViewportLength(element, target, "width", SvgLengthAxis.Horizontal, style.Viewport);
-                var height = GetUseViewportLength(element, target, "height", SvgLengthAxis.Vertical, style.Viewport);
+                var width = GetUseViewportLength(element, target, "width", SvgLengthAxis.Horizontal, style);
+                var height = GetUseViewportLength(element, target, "height", SvgLengthAxis.Vertical, style);
                 if (width <= 0 || height <= 0)
                     return;
 
@@ -386,13 +391,13 @@ internal static class SvgCompiler
     }
 
     private static double GetUseViewportLength(
-        SvgElement use, SvgElement target, string name, SvgLengthAxis axis, Size viewport)
+        SvgElement use, SvgElement target, string name, SvgLengthAxis axis, in SvgStyle style)
     {
         // width/height resolve from the use site, then the symbol, then 100%.
         var value = use.GetAttribute(name) ?? target.GetAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
-            return length.Resolve(axis, viewport);
-        return axis == SvgLengthAxis.Horizontal ? viewport.Width : viewport.Height;
+            return length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize);
+        return axis == SvgLengthAxis.Horizontal ? style.Viewport.Width : style.Viewport.Height;
     }
 
     private static readonly ImmutableSolidColorBrush s_measuringFill = new(Colors.Black);
@@ -439,18 +444,18 @@ internal static class SvgCompiler
     private static void CompileRect(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
-        var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport);
-        var y = GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport);
-        var width = GetLength(element, "width", SvgLengthAxis.Horizontal, style.Viewport);
-        var height = GetLength(element, "height", SvgLengthAxis.Vertical, style.Viewport);
+        var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
+        var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
+        var width = GetLength(element, "width", SvgLengthAxis.Horizontal, style);
+        var height = GetLength(element, "height", SvgLengthAxis.Vertical, style);
 
         if (width <= 0 || height <= 0)
             return;
 
         // rx/ry default to 'auto' (SVG 2): an auto value takes the other's value;
         // both auto means square corners. Values clamp to half the rect side.
-        var rx = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style.Viewport);
-        var ry = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style.Viewport);
+        var rx = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style);
+        var ry = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style);
         var radiusX = rx ?? ry ?? 0;
         var radiusY = ry ?? rx ?? 0;
         radiusX = Math.Min(radiusX, width / 2);
@@ -504,13 +509,13 @@ internal static class SvgCompiler
         hitTree.AddShape(element, shape, style.PointerEvents, style.Visible);
     }
 
-    private static double? GetCornerRadius(SvgElement element, string name, SvgLengthAxis axis, Size viewport)
+    private static double? GetCornerRadius(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)
     {
         var value = element.GetStyleOrAttribute(name);
         if (value == null || value == "auto")
             return null;
         if (SvgLength.TryParse(value.AsSpan(), out var length)
-            && length.Resolve(axis, viewport) is var resolved and >= 0)
+            && length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize) is var resolved and >= 0)
         {
             return resolved;
         }
@@ -522,9 +527,9 @@ internal static class SvgCompiler
     private static void CompileCircle(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
-        var cx = GetLength(element, "cx", SvgLengthAxis.Horizontal, style.Viewport);
-        var cy = GetLength(element, "cy", SvgLengthAxis.Vertical, style.Viewport);
-        var r = GetLength(element, "r", SvgLengthAxis.Other, style.Viewport);
+        var cx = GetLength(element, "cx", SvgLengthAxis.Horizontal, style);
+        var cy = GetLength(element, "cy", SvgLengthAxis.Vertical, style);
+        var r = GetLength(element, "r", SvgLengthAxis.Other, style);
 
         if (r <= 0)
             return;
@@ -535,12 +540,12 @@ internal static class SvgCompiler
     private static void CompileEllipse(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
-        var cx = GetLength(element, "cx", SvgLengthAxis.Horizontal, style.Viewport);
-        var cy = GetLength(element, "cy", SvgLengthAxis.Vertical, style.Viewport);
+        var cx = GetLength(element, "cx", SvgLengthAxis.Horizontal, style);
+        var cy = GetLength(element, "cy", SvgLengthAxis.Vertical, style);
 
         // SVG 2: an 'auto' radius takes the other radius' value.
-        var rxValue = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style.Viewport);
-        var ryValue = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style.Viewport);
+        var rxValue = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style);
+        var ryValue = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style);
         var rx = rxValue ?? ryValue ?? 0;
         var ry = ryValue ?? rxValue ?? 0;
 
@@ -581,10 +586,10 @@ internal static class SvgCompiler
     private static void CompileLine(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
-        var x1 = GetLength(element, "x1", SvgLengthAxis.Horizontal, style.Viewport);
-        var y1 = GetLength(element, "y1", SvgLengthAxis.Vertical, style.Viewport);
-        var x2 = GetLength(element, "x2", SvgLengthAxis.Horizontal, style.Viewport);
-        var y2 = GetLength(element, "y2", SvgLengthAxis.Vertical, style.Viewport);
+        var x1 = GetLength(element, "x1", SvgLengthAxis.Horizontal, style);
+        var y1 = GetLength(element, "y1", SvgLengthAxis.Vertical, style);
+        var x2 = GetLength(element, "x2", SvgLengthAxis.Horizontal, style);
+        var y2 = GetLength(element, "y2", SvgLengthAxis.Vertical, style);
 
         AddHitShape(element, compileContext, style, new SvgHitShape
         {
@@ -751,47 +756,47 @@ internal static class SvgCompiler
         {
             case "rect":
             {
-                var width = GetLength(element, "width", SvgLengthAxis.Horizontal, style.Viewport);
-                var height = GetLength(element, "height", SvgLengthAxis.Vertical, style.Viewport);
+                var width = GetLength(element, "width", SvgLengthAxis.Horizontal, style);
+                var height = GetLength(element, "height", SvgLengthAxis.Vertical, style);
                 if (width <= 0 || height <= 0)
                     return default;
                 return new Rect(
-                    GetLength(element, "x", SvgLengthAxis.Horizontal, style.Viewport),
-                    GetLength(element, "y", SvgLengthAxis.Vertical, style.Viewport),
+                    GetLength(element, "x", SvgLengthAxis.Horizontal, style),
+                    GetLength(element, "y", SvgLengthAxis.Vertical, style),
                     width, height);
             }
             case "circle":
             {
-                var r = GetLength(element, "r", SvgLengthAxis.Other, style.Viewport);
+                var r = GetLength(element, "r", SvgLengthAxis.Other, style);
                 if (r <= 0)
                     return default;
                 return new Rect(
-                    GetLength(element, "cx", SvgLengthAxis.Horizontal, style.Viewport) - r,
-                    GetLength(element, "cy", SvgLengthAxis.Vertical, style.Viewport) - r,
+                    GetLength(element, "cx", SvgLengthAxis.Horizontal, style) - r,
+                    GetLength(element, "cy", SvgLengthAxis.Vertical, style) - r,
                     2 * r, 2 * r);
             }
             case "ellipse":
             {
-                var rx = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style.Viewport);
-                var ry = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style.Viewport);
+                var rx = GetCornerRadius(element, "rx", SvgLengthAxis.Horizontal, style);
+                var ry = GetCornerRadius(element, "ry", SvgLengthAxis.Vertical, style);
                 var radiusX = rx ?? ry ?? 0;
                 var radiusY = ry ?? rx ?? 0;
                 if (radiusX <= 0 || radiusY <= 0)
                     return default;
                 return new Rect(
-                    GetLength(element, "cx", SvgLengthAxis.Horizontal, style.Viewport) - radiusX,
-                    GetLength(element, "cy", SvgLengthAxis.Vertical, style.Viewport) - radiusY,
+                    GetLength(element, "cx", SvgLengthAxis.Horizontal, style) - radiusX,
+                    GetLength(element, "cy", SvgLengthAxis.Vertical, style) - radiusY,
                     2 * radiusX, 2 * radiusY);
             }
             case "line":
             {
                 return new Rect(
                     new Point(
-                        GetLength(element, "x1", SvgLengthAxis.Horizontal, style.Viewport),
-                        GetLength(element, "y1", SvgLengthAxis.Vertical, style.Viewport)),
+                        GetLength(element, "x1", SvgLengthAxis.Horizontal, style),
+                        GetLength(element, "y1", SvgLengthAxis.Vertical, style)),
                     new Point(
-                        GetLength(element, "x2", SvgLengthAxis.Horizontal, style.Viewport),
-                        GetLength(element, "y2", SvgLengthAxis.Vertical, style.Viewport)));
+                        GetLength(element, "x2", SvgLengthAxis.Horizontal, style),
+                        GetLength(element, "y2", SvgLengthAxis.Vertical, style)));
             }
             case "path":
             {
@@ -851,11 +856,11 @@ internal static class SvgCompiler
         }
     }
 
-    private static double GetLength(SvgElement element, string name, SvgLengthAxis axis, Size viewport)
+    private static double GetLength(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)
     {
         var value = element.GetStyleOrAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
-            return length.Resolve(axis, viewport);
+            return length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize);
         return 0;
     }
 }

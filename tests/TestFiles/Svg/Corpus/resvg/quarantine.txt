@@ -3,11 +3,4 @@
 # Each entry is a measurable compliance gap; remove the line when fixed.
 # Upstream verdicts: linebender/resvg-test-suite results.csv.
 
-# SVG 2 geometry attributes accept CSS lengths; browsers parse these units in
-# attribute values, our SvgLength only implements the SVG 1.1 unit grammar
-# (resvg has the same gap).
-shapes/rect/q-values.svg -- CSS 'q' length unit not supported in attribute lengths (Chrome/Firefox/Safari pass; resvg fails too)
-shapes/rect/rem-values.svg -- CSS 'rem' length unit not supported in attribute lengths (Chrome/Firefox/Safari pass; resvg fails too)
-shapes/rect/ch-values.svg -- CSS 'ch' length unit not supported in attribute lengths (Chrome/Safari pass, Firefox fails; resvg fails too)
-shapes/rect/vw-and-vh-values.svg -- CSS viewport units not supported in attribute lengths (Chrome/Firefox pass, Safari fails; resvg fails too)
-shapes/rect/vmin-and-vmax-values.svg -- CSS viewport units not supported in attribute lengths (Chrome/Firefox pass, Safari fails; resvg fails too)
+shapes/rect/ch-values.svg -- 'ch' resolves with the CSS 0.5em fallback, not real glyph metrics; render diverges from Chrome/Safari (Firefox and resvg fail this test too)
