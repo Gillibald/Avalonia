@@ -396,7 +396,7 @@ internal static class SvgCompiler
         // width/height resolve from the use site, then the symbol, then 100%.
         var value = use.GetAttribute(name) ?? target.GetAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
-            return length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize);
+            return style.ResolveLength(length, axis);
         return axis == SvgLengthAxis.Horizontal ? style.Viewport.Width : style.Viewport.Height;
     }
 
@@ -515,7 +515,7 @@ internal static class SvgCompiler
         if (value == null || value == "auto")
             return null;
         if (SvgLength.TryParse(value.AsSpan(), out var length)
-            && length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize) is var resolved and >= 0)
+            && style.ResolveLength(length, axis) is var resolved and >= 0)
         {
             return resolved;
         }
@@ -860,7 +860,7 @@ internal static class SvgCompiler
     {
         var value = element.GetStyleOrAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
-            return length.Resolve(axis, style.Viewport, style.FontSize, style.RootFontSize);
+            return style.ResolveLength(length, axis);
         return 0;
     }
 }

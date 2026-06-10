@@ -80,6 +80,50 @@ internal struct SvgStyle
     };
 
     /// <summary>
+    /// Resolves a length against this style's resolution context: percentages
+    /// and viewport units against <see cref="Viewport"/>, <c>em</c>/<c>ex</c>
+    /// against <see cref="FontSize"/>, <c>rem</c> against
+    /// <see cref="RootFontSize"/> and <c>ch</c> against the advance of the
+    /// <c>0</c> glyph in this style's font.
+    /// </summary>
+    public readonly double ResolveLength(in SvgLength length, SvgLengthAxis axis)
+    {
+        if (length.Unit == SvgLengthUnit.Ch)
+            return length.Value * GetChAdvance();
+        return length.Resolve(axis, Viewport, FontSize, RootFontSize);
+    }
+
+    /// <summary>
+    /// The used advance of the <c>0</c> glyph at <see cref="FontSize"/> — the
+    /// CSS <c>ch</c> measure. Falls back to <c>0.5em</c>, per CSS Values, when
+    /// no font manager is available (parser-only contexts) or the font has no
+    /// <c>0</c> glyph.
+    /// </summary>
+    private readonly double GetChAdvance()
+    {
+        FontManager fontManager;
+        try
+        {
+            fontManager = FontManager.Current;
+        }
+        catch (InvalidOperationException)
+        {
+            return FontSize * 0.5;
+        }
+
+        var fontFamily = FontFamily is { } family ? Media.FontFamily.Parse(family) : Media.FontFamily.Default;
+        if (fontManager.TryGetGlyphTypeface(new Typeface(fontFamily, FontStyle, FontWeight), out var glyphTypeface)
+            && glyphTypeface.CharacterToGlyphMap.TryGetGlyph('0', out var glyph)
+            && glyphTypeface.TryGetHorizontalGlyphAdvance(glyph, out var advance)
+            && glyphTypeface.Metrics.DesignEmHeight > 0)
+        {
+            return advance * FontSize / glyphTypeface.Metrics.DesignEmHeight;
+        }
+
+        return FontSize * 0.5;
+    }
+
+    /// <summary>
     /// Applies the element's style declarations and presentation attributes.
     /// Invalid values and the <c>inherit</c> keyword leave the inherited value in
     /// place, per CSS error handling.
@@ -92,10 +136,10 @@ internal struct SvgStyle
         if (Get(element, "font-size") is { } fontSize
             && SvgLength.TryParse(fontSize.AsSpan(), out var fontSizeLength))
         {
-            // em/ex and percentages resolve against the inherited font size.
+            // em/ex/ch and percentages resolve against the inherited font.
             var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
                 ? fontSizeLength.Value / 100.0 * FontSize
-                : fontSizeLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize);
+                : ResolveLength(fontSizeLength, SvgLengthAxis.Other);
             if (resolved > 0)
                 FontSize = resolved;
         }
@@ -111,7 +155,7 @@ internal struct SvgStyle
 
         if (Get(element, "stroke-width") is { } strokeWidth
             && SvgLength.TryParse(strokeWidth.AsSpan(), out var widthLength)
-            && widthLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize) is var resolvedWidth and >= 0)
+            && ResolveLength(widthLength, SvgLengthAxis.Other) is var resolvedWidth and >= 0)
         {
             StrokeWidth = resolvedWidth;
         }
@@ -162,7 +206,7 @@ internal struct SvgStyle
         if (Get(element, "stroke-dashoffset") is { } dashOffset
             && SvgLength.TryParse(dashOffset.AsSpan(), out var offsetLength))
         {
-            DashOffset = offsetLength.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize);
+            DashOffset = ResolveLength(offsetLength, SvgLengthAxis.Other);
         }
 
         if (Get(element, "fill-rule") is { } fillRule)
@@ -374,7 +418,7 @@ internal struct SvgStyle
                 return false;
             }
 
-            var resolved = length.Resolve(SvgLengthAxis.Other, Viewport, FontSize, RootFontSize);
+            var resolved = ResolveLength(length, SvgLengthAxis.Other);
             if (resolved < 0)
             {
                 // A negative value invalidates the whole list.

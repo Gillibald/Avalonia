@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Skia.RenderTests;
 using Xunit;
 
@@ -18,6 +20,16 @@ namespace Avalonia.Svg.RenderTests;
 public class ResvgCorpusTests : SvgRenderTestBase
 {
     private static readonly Lazy<Dictionary<string, string>> s_quarantine = new(LoadQuarantine);
+
+    // The corpus' bundled fonts, registered once so plain family names
+    // ("Noto Sans") resolve identically on every machine.
+    private static readonly Lazy<bool> s_corpusFonts = new(() =>
+    {
+        FontManager.Current.AddFontCollection(new EmbeddedFontCollection(
+            new Uri("fonts:svg-corpus"),
+            new Uri("resm:Avalonia.Svg.RenderTests.Assets?assembly=Avalonia.Svg.RenderTests")));
+        return true;
+    });
 
     public ResvgCorpusTests() : base(Path.Combine("Corpus", "resvg"))
     {
@@ -43,10 +55,40 @@ public class ResvgCorpusTests : SvgRenderTestBase
         return data;
     }
 
+    /// <summary>
+    /// Pins that <c>ch</c> resolves through real glyph metrics: the rect's
+    /// width must equal ten advances of the "0" glyph computed from the same
+    /// glyph typeface the compiler uses — not the 0.5em fallback.
+    /// </summary>
+    [Fact]
+    public void Ch_Lengths_Use_The_Fonts_Zero_Advance()
+    {
+        _ = s_corpusFonts.Value;
+
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" font-family="Noto Sans" font-size="32">
+              <rect width="10ch" height="50" fill="green"/>
+            </svg>
+            """);
+        using var image = new SvgImage(document);
+
+        Assert.True(FontManager.Current.TryGetGlyphTypeface(new Typeface("Noto Sans"), out var glyphTypeface));
+        Assert.True(glyphTypeface!.CharacterToGlyphMap.TryGetGlyph('0', out var zero));
+        Assert.True(glyphTypeface.TryGetHorizontalGlyphAdvance(zero, out var advance));
+        var expected = 10.0 * advance * 32 / glyphTypeface.Metrics.DesignEmHeight;
+
+        // Recording bounds apply render-bounds rounding (ceil to whole pixels).
+        Assert.Equal(Math.Ceiling(expected), image.ContentBounds.Width, 3);
+        Assert.NotEqual(10 * 16.0, Math.Ceiling(expected), 3); // distinguishable from the 0.5em fallback
+    }
+
     private async Task RunCorpusTest(string test)
     {
         if (s_quarantine.Value.TryGetValue(test, out var reason))
             Assert.Skip(reason);
+
+        _ = s_corpusFonts.Value;
 
         var svg = await File.ReadAllTextAsync(
             Path.Combine(CorpusRoot, test.Replace('/', Path.DirectorySeparatorChar)));
