@@ -15,15 +15,15 @@
   </defs>
 
   <!-- mix-blend-mode: multiply venn, isolated against the page -->
-  <g isolation="isolate">
-    <circle cx="70" cy="60" r="36" fill="#22d3ee" mix-blend-mode="multiply"/>
-    <circle cx="110" cy="60" r="36" fill="#f472b6" mix-blend-mode="multiply"/>
-    <circle cx="90" cy="92" r="36" fill="#facc15" mix-blend-mode="multiply"/>
+  <g style="isolation:isolate">
+    <circle cx="70" cy="60" r="36" fill="#22d3ee" style="mix-blend-mode:multiply"/>
+    <circle cx="110" cy="60" r="36" fill="#f472b6" style="mix-blend-mode:multiply"/>
+    <circle cx="90" cy="92" r="36" fill="#facc15" style="mix-blend-mode:multiply"/>
   </g>
-  <g isolation="isolate">
+  <g style="isolation:isolate">
     <rect x="180" y="28" width="64" height="64" fill="#1e293b"/>
-    <circle cx="244" cy="60" r="32" fill="#38bdf8" mix-blend-mode="screen"/>
-    <circle cx="244" cy="92" r="32" fill="#fb7185" mix-blend-mode="screen"/>
+    <circle cx="244" cy="60" r="32" fill="#38bdf8" style="mix-blend-mode:screen"/>
+    <circle cx="244" cy="92" r="32" fill="#fb7185" style="mix-blend-mode:screen"/>
   </g>
 
   <!-- Group opacity flattens once; per-shape opacity blends pairwise -->

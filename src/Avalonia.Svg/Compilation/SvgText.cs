@@ -438,13 +438,21 @@ internal static class SvgText
 
         if (style.Fill.Kind == SvgPaintKind.Reference)
         {
-            if (bounds is not { } resolved || style.Fill.Reference is not { } id)
-                return null;
-
             if (compileContext.Measuring)
                 return new ImmutableSolidColorBrush(Colors.Black);
 
-            return SvgPaintServers.Resolve(compileContext, id, style, resolved, style.FillOpacity);
+            var brush = bounds is { } resolved && style.Fill.Reference is { } id
+                ? SvgPaintServers.Resolve(compileContext, id, style, resolved, style.FillOpacity)
+                : null;
+            if (brush != null)
+                return brush;
+
+            return style.Fill.Fallback switch
+            {
+                SvgPaintFallback.Color => new ImmutableSolidColorBrush(style.Fill.FallbackColor, style.FillOpacity),
+                SvgPaintFallback.CurrentColor => new ImmutableSolidColorBrush(style.Color, style.FillOpacity),
+                _ => null,
+            };
         }
 
         return style.ResolveBrush(style.Fill, style.FillOpacity);

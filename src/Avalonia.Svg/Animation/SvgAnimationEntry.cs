@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using Avalonia.Media;
+using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg.Animation;
 
@@ -74,7 +75,7 @@ internal sealed class SvgAnimationEntry
         {
             foreach (var value in Values)
             {
-                if (!Color.TryParse(value, out _))
+                if (!SvgColor.TryParse(value, out _))
                     return false;
             }
 
@@ -143,7 +144,7 @@ internal sealed class SvgAnimationEntry
         if (TransformType is { } transformType)
             return InterpolateTransform(transformType, from, to, t);
 
-        if (Color.TryParse(from, out var fromColor) && Color.TryParse(to, out var toColor))
+        if (SvgColor.TryParse(from, out var fromColor) && SvgColor.TryParse(to, out var toColor))
             return LerpColor(fromColor, toColor, t).ToString();
 
         if (TryParseNumber(from, out var fromNumber) && TryParseNumber(to, out var toNumber))

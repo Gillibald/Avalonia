@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Media;
+using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg.Animation;
 
@@ -108,7 +109,7 @@ internal sealed class SvgAnimator
 
             if (entry.PaintBrush is { } brush)
             {
-                var color = value != null && Color.TryParse(value, out var parsed)
+                var color = value != null && SvgColor.TryParse(value, out var parsed)
                     ? parsed
                     : entry.PaintBaseColor;
                 if (brush.Color != color)

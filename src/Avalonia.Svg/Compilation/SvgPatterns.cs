@@ -46,7 +46,10 @@ internal static class SvgPatterns
         if (contentSource == null)
             return null;
 
+        // Null means a circular pattern reference; the paint is invalid.
         var recording = context.GetSharedRecording(contentSource, out _);
+        if (recording == null)
+            return null;
 
         // The source region selects the tile's extent in content coordinates.
         var tileWidthUser = boxUnits ? width * bounds.Width : width;

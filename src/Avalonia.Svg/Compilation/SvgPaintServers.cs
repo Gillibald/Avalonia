@@ -234,7 +234,7 @@ internal static class SvgPaintServers
             {
                 if (colorValue == "currentColor")
                     color = style.Color;
-                else if (Color.TryParse(colorValue, out var parsed))
+                else if (SvgColor.TryParse(colorValue, out var parsed))
                     color = parsed;
             }
 
