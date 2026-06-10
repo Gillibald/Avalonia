@@ -14,6 +14,7 @@ using Avalonia.Media.Fonts.Tables.Glyf;
 using Avalonia.Media.Fonts.Tables.Metrics;
 using Avalonia.Media.Fonts.Tables.Name;
 using Avalonia.Media.Fonts.Tables.Variation;
+using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 
@@ -31,8 +32,6 @@ namespace Avalonia.Media
     {
         private static readonly IReadOnlyDictionary<CultureInfo, string> s_emptyStringDictionary =
             new Dictionary<CultureInfo, string>(0);
-
-        private static readonly IPlatformRenderInterface _renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
 
         private bool _isDisposed;
 
@@ -1541,7 +1540,7 @@ namespace Avalonia.Media
             }
 
             var cache = _glyphCache ?? GetOrCreateGlyphCache();
-            var entry = cache.GetEntry(glyph, retainBounds: true);
+            var entry = cache.GetEntry(glyph);
 
             if (!entry.HasBounds)
             {
@@ -1570,7 +1569,9 @@ namespace Avalonia.Media
 
         private GlyphCache GetOrCreateGlyphCache()
         {
-            var created = new GlyphCache();
+            // CFF / CFF2 entries survive geometry eviction for their interpreted bounds; glyf bounds
+            // are a cheap header read and are never cached, so those entries are dropped whole.
+            var created = new GlyphCache(retainOutlineBounds: _cffTable is not null || _cff2Table is not null);
 
             // First publisher wins; later racers reuse it.
             return Interlocked.CompareExchange(ref _glyphCache, created, null) ?? created;
@@ -1593,6 +1594,14 @@ namespace Avalonia.Media
             : GlyphOutlineType.None;
 
         /// <summary>
+        /// Retrieves a color-glyph drawing for the specified glyph using the font's default drawing
+        /// options, if the font provides one. Equivalent to passing <c>null</c> options to
+        /// <see cref="GetGlyphDrawing(ushort, GlyphDrawingOptions?)"/>.
+        /// </summary>
+        /// <param name="glyphIndex">The identifier of the glyph to retrieve.</param>
+        public IGlyphDrawing? GetGlyphDrawing(ushort glyphIndex) => GetGlyphDrawing(glyphIndex, null);
+
+        /// <summary>
         /// Retrieves a color-glyph drawing for the specified glyph, if the font provides one.
         /// </summary>
         /// <remarks>
@@ -1602,13 +1611,20 @@ namespace Avalonia.Media
         /// <see cref="GetGlyphOutline"/> when this returns <c>null</c>.
         /// </remarks>
         /// <param name="glyphIndex">The identifier of the glyph to retrieve.</param>
+        /// <param name="options">
+        /// Optional drawing options; <c>null</c> is equivalent to <see cref="GlyphDrawingOptions.Default"/>.
+        /// <see cref="GlyphDrawingOptions.PaletteIndex"/> selects the CPAL palette the drawing resolves
+        /// its colours with; an index the font does not define falls back to the font's default
+        /// palette (0). <see cref="GlyphDrawingOptions.PixelSize"/> is reserved for bitmap strikes and
+        /// has no effect yet.
+        /// </param>
         /// <returns>
         /// An <see cref="IGlyphDrawing"/> for the glyph, or <c>null</c> when no color
         /// drawing is available. Variable-font axis configuration is taken from the typeface
         /// instance itself; to render at a different variation point, obtain a separately
         /// configured <see cref="GlyphTypeface"/> from the font collection.
         /// </returns>
-        public IGlyphDrawing? GetGlyphDrawing(ushort glyphIndex)
+        public IGlyphDrawing? GetGlyphDrawing(ushort glyphIndex, GlyphDrawingOptions? options)
         {
             if (glyphIndex >= GlyphCount || _colrTable is null || _cpalTable is null)
             {
@@ -1626,21 +1642,36 @@ namespace Avalonia.Media
                 return null;   // outline-only glyph — caller should use GetGlyphOutline()
             }
 
-            // Cache the drawing per instance: building it parses the whole paint graph (v1), which is
-            // wasteful to repeat per call. The drawing re-fetches its layer outlines on every Draw, so
-            // it is recorded as a GlyphPayloadKind.ColorDrawing that pins those outlines (once they are
-            // cached) and keeps them warm by recency. The build delegate is cached to keep hits
-            // alloc-free.
+            // Normalize the palette before keying the cache, so every out-of-range request shares the
+            // default palette's entry instead of minting one junk entry per bogus index.
+            var palette = NormalizePaletteIndex(options);
+
+            // Cache the drawing per instance and per (glyph, palette): building it parses the whole
+            // paint graph (v1), which is wasteful to repeat per call. The drawing re-fetches its layer
+            // outlines on every Draw, so it is recorded as a GlyphPayloadKind.ColorDrawing that pins
+            // its layer entries (creating absent ones, which then arrive pre-pinned when built) and
+            // keeps them warm by recency. The build delegate is cached to keep hits alloc-free.
             var cache = _glyphCache ?? GetOrCreateGlyphCache();
-            var entry = cache.GetColorEntry(glyphIndex);
+            var entry = cache.GetColorEntry(glyphIndex, palette);
 
             return (IGlyphDrawing?)cache.GetOrBuildDrawing(entry, _buildColorDrawing ??= BuildColorDrawingEntry);
         }
 
+        // CPAL resolution: a request for a palette the font does not define uses the font's default
+        // palette (0), matching common rasterizer behaviour. PaletteCount is a uint16, so the
+        // narrowing cast is safe after the range check.
+        private ushort NormalizePaletteIndex(GlyphDrawingOptions? options)
+        {
+            var requested = options?.PaletteIndex ?? 0;
+
+            return requested > 0 && requested < _cpalTable!.PaletteCount ? (ushort)requested : (ushort)0;
+        }
+
         /// <summary>
         /// Builds the colour-drawing payload for an in-range colour glyph — the cold path behind
-        /// <see cref="GetGlyphDrawing"/>'s cache. The payload is a COLR v1 paint-graph drawing or a v0
-        /// layer drawing; <see cref="BuiltGeometry.Dependencies"/> are the layer glyphs it re-fetches on
+        /// <see cref="GetGlyphDrawing(ushort, GlyphDrawingOptions?)"/>'s cache. The payload is a COLR
+        /// v1 paint-graph drawing or a v0 layer drawing, resolved with the entry's (normalized) CPAL
+        /// palette; <see cref="BuiltGeometry.Dependencies"/> are the layer glyphs it re-fetches on
         /// every draw, and <see cref="BuiltGeometry.Cost"/> reflects the drawing's own (small) footprint
         /// — the layer outlines are charged on their own entries.
         /// </summary>
@@ -1652,13 +1683,13 @@ namespace Avalonia.Media
 
             if (_colrTable!.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out var record))
             {
-                var v1 = new ColorGlyphV1Drawing(this, _colrTable, _cpalTable!, glyphIndex, record);
+                var v1 = new ColorGlyphV1Drawing(this, _colrTable, _cpalTable!, glyphIndex, record, entry.Palette);
                 drawing = v1;
                 dependencies = v1.Dependencies;
             }
             else if (_colrTable.HasColorLayers(glyphIndex))
             {
-                drawing = new ColorGlyphDrawing(this, _colrTable, _cpalTable!, glyphIndex);
+                drawing = new ColorGlyphDrawing(this, _colrTable, _cpalTable!, glyphIndex, entry.Palette);
                 dependencies = CollectColorLayerDependencies(glyphIndex);
             }
 
@@ -1728,7 +1759,7 @@ namespace Avalonia.Media
             // fills the entry's cheap ink box for the metrics path. Per instance, so a variation clone
             // caches at its own variation point. The build delegate is cached to keep hits alloc-free.
             var cache = _glyphCache ?? GetOrCreateGlyphCache();
-            var entry = cache.GetEntry(glyphIndex, retainBounds: _cffTable is not null || _cff2Table is not null);
+            var entry = cache.GetEntry(glyphIndex);
 
             return (IGeometryImpl?)cache.GetOrBuildGeometry(entry, _buildGlyphGeometry ??= BuildGlyphGeometryEntry);
         }
@@ -1753,7 +1784,7 @@ namespace Avalonia.Media
         private BuiltGeometry BuildGlyphGeometryEntry(GlyphCacheEntry entry)
         {
             var glyphIndex = entry.Glyph;
-            var outline = BuildGlyphOutline(glyphIndex, out var segmentCount);
+            var outline = BuildGlyphOutline(glyphIndex, out var segmentCount, out var controlBounds);
             var cost = OutlineBaseCost + (segmentCount * OutlineSegmentCost);
 
             var kind = GlyphPayloadKind.Outline;
@@ -1770,41 +1801,42 @@ namespace Avalonia.Media
                 dependencies = components;
             }
 
-            // For CFF / CFF2 the built outline's bounds ARE the control-point ink box, so reuse them as
-            // the entry's bounds — a later metrics read then needs no separate charstring interpret.
+            // For CFF / CFF2, reuse the control-point box accumulated during the build as the entry's
+            // ink box — a later metrics read then needs no separate charstring interpret, and both
+            // producers write bit-identical values (the SetBoundsOnce race stays benign) because the
+            // box comes from the emitted control points, not from a backend's notion of bounds.
             // glyf bounds come from the header (cheaper than this), so leave them unset here.
             var bounds = default(GlyphBounds);
             var hasBounds = false;
             if (outline is not null && (_cffTable is not null || _cff2Table is not null))
             {
-                bounds = ToGlyphBounds(outline.Bounds);
+                bounds = controlBounds;
                 hasBounds = true;
             }
 
             return new BuiltGeometry(outline, cost, kind, dependencies, bounds, hasBounds);
         }
 
-        // Converts a geometry's control-point bounds (font design units) to the GlyphBounds box the
-        // metrics path uses — floor the minima, ceil the maxima, matching BoundsGeometryContext.
-        private static GlyphBounds ToGlyphBounds(Rect bounds)
-            => new(ClampToShort(Math.Floor(bounds.Left)), ClampToShort(Math.Floor(bounds.Top)),
-                ClampToShort(Math.Ceiling(bounds.Right)), ClampToShort(Math.Ceiling(bounds.Bottom)));
-
-        private static short ClampToShort(double value) => (short)Math.Clamp(value, short.MinValue, short.MaxValue);
-
         /// <summary>
         /// Builds the immutable outline geometry for an in-range glyph and reports the number of path
-        /// segments emitted (the cost proxy). Returns <c>null</c> for a malformed glyph.
+        /// segments emitted (the cost proxy) plus the control-point box of the emitted points (the
+        /// CFF / CFF2 ink box). Returns <c>null</c> for a malformed glyph.
         /// </summary>
-        private IGeometryImpl? BuildGlyphOutline(ushort glyphIndex, out int segmentCount)
+        private IGeometryImpl? BuildGlyphOutline(ushort glyphIndex, out int segmentCount, out GlyphBounds controlBounds)
         {
             segmentCount = 0;
+            controlBounds = default;
 
-            var geometry = _renderInterface.CreateStreamGeometry();
+            // Resolved per build (a cache miss) rather than captured statically: the locator scope can
+            // change in-process (e.g. headless test sessions), and a static initializer would latch the
+            // first scope's interface — or poison the type if none is registered at first touch.
+            var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
+            var geometry = renderInterface.CreateStreamGeometry();
 
             using (var ctx = geometry.Open())
             {
-                // Count emitted segments to estimate the payload's retained size, without a second pass.
+                // Count emitted segments to estimate the payload's retained size, and accumulate the
+                // control-point box for the entry's ink bounds, without a second pass.
                 var counting = new SegmentCountingGeometryContext(ctx);
 
                 // Build the outline in font design-unit space (identity transform); callers apply
@@ -1846,6 +1878,7 @@ namespace Avalonia.Media
                 if (built)
                 {
                     segmentCount = counting.SegmentCount;
+                    controlBounds = counting.GetControlBounds();
                     return new ImmutableGeometryImpl(geometry);
                 }
             }
@@ -2375,6 +2408,7 @@ namespace Avalonia.Media
         private readonly CpalTable _cpalTable;
         private readonly ushort _glyphIndex;
         private readonly int _paletteIndex;
+        private readonly Rect _bounds;
 
         public ColorGlyphDrawing(GlyphTypeface glyphTypeface, ColrTable colrTable, CpalTable cpalTable, ushort glyphIndex, int paletteIndex = 0)
         {
@@ -2383,31 +2417,32 @@ namespace Avalonia.Media
             _cpalTable = cpalTable;
             _glyphIndex = glyphIndex;
             _paletteIndex = paletteIndex;
+            _bounds = ComputeBounds();
         }
 
         public GlyphDrawingType Type => GlyphDrawingType.ColorLayers;
 
-        public Rect Bounds
+        /// <summary>
+        /// The union of the layers' control-point ink boxes, flipped to drawing space (Y-down) —
+        /// computed once at parse time from the outline tables' bounds path, so no geometry is built
+        /// and no render backend is required just to size the glyph.
+        /// </summary>
+        public Rect Bounds => _bounds;
+
+        private Rect ComputeBounds()
         {
-            get
+            Rect? combined = null;
+
+            foreach (var layerRecord in _colrTable.GetLayers(_glyphIndex))
             {
-                Rect? combinedBounds = null;
-                var layerRecords = _colrTable.GetLayers(_glyphIndex);
-
-                foreach (var layerRecord in layerRecords)
+                if (_glyphTypeface.TryGetGlyphInkBounds(layerRecord.GlyphIndex, out var box))
                 {
-                    var geometry = _glyphTypeface.GetGlyphOutline(layerRecord.GlyphIndex)?.WithTransform(Matrix.CreateScale(1, -1));
-                    if (geometry != null)
-                    {
-                        var layerBounds = geometry.Bounds;
-                        combinedBounds = combinedBounds.HasValue
-                            ? combinedBounds.Value.Union(layerBounds)
-                            : layerBounds;
-                    }
+                    var layerBounds = new Rect(box.XMin, box.YMin, box.Width, box.Height);
+                    combined = combined?.Union(layerBounds) ?? layerBounds;
                 }
-
-                return combinedBounds ?? default;
             }
+
+            return combined?.TransformToAABB(Matrix.CreateScale(1, -1)) ?? default;
         }
 
         /// <summary>
@@ -2415,30 +2450,35 @@ namespace Avalonia.Media
         /// </summary>
         /// <remarks>This method renders a multi-layered color glyph by drawing each layer with its
         /// associated color. The colors are determined by the current palette and may fall back to black if a color is
-        /// not found. The method does not apply any transformations; the glyph is drawn at the specified origin in the
-        /// current context.</remarks>
+        /// not found.</remarks>
         /// <param name="context">The drawing context to use for rendering the glyph. Must not be null.</param>
         /// <param name="origin">The point, in device-independent pixels, that specifies the origin at which to draw the glyph.</param>
         public void Draw(DrawingContext context, Point origin)
         {
             var layerRecords = _colrTable.GetLayers(_glyphIndex);
 
-            foreach (var layerRecord in layerRecords)
+            if (layerRecords.Length == 0)
             {
-                // Get the color for this layer from the CPAL table
-                if (!_cpalTable.TryGetColor(_paletteIndex, layerRecord.PaletteIndex, out var color))
-                {
-                    color = Colors.Black; // Fallback
-                }
+                return;
+            }
 
-                // Get the outline geometry for the layer glyph
-                var geometry = _glyphTypeface.GetGlyphOutline(layerRecord.GlyphIndex)?.WithTransform(Matrix.CreateScale(1, -1));
-
-                if (geometry != null)
+            // One pushed transform maps font space (Y-up design units) to drawing space at the origin,
+            // so every cached design-space outline is drawn as-is — no per-layer transformed clone.
+            using (context.PushTransform(Matrix.CreateScale(1, -1) * Matrix.CreateTranslation(origin.X, origin.Y)))
+            {
+                foreach (var layerRecord in layerRecords)
                 {
-                    using (context.PushTransform(Matrix.CreateTranslation(origin.X, origin.Y)))
+                    // Get the color for this layer from the CPAL table
+                    if (!_cpalTable.TryGetColor(_paletteIndex, layerRecord.PaletteIndex, out var color))
                     {
-                        context.DrawGeometry(new SolidColorBrush(color), null, geometry);
+                        color = Colors.Black; // Fallback
+                    }
+
+                    var geometry = _glyphTypeface.GetGlyphOutline(layerRecord.GlyphIndex);
+
+                    if (geometry != null)
+                    {
+                        context.DrawGeometry(new ImmutableSolidColorBrush(color), null, geometry);
                     }
                 }
             }
