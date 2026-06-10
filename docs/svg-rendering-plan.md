@@ -1150,11 +1150,15 @@ already-known instance of this rule.
   verified once against each test's stated expectation plus the upstream
   cross-renderer `results.csv`; `quarantine.txt` lists known gaps with
   reasons and is the measurable compliance score. First category:
-  **shapes — 132/133 pass**; only `ch-values` stays quarantined (resolved
-  via the spec's 0.5em fallback instead of real glyph metrics). The CSS
-  length units the pilot surfaced (`Q`, `rem`, viewport units,
-  case-insensitive matching, font-aware geometry resolution) landed in
-  `SvgLength` before the next category.
+  **shapes — 133/133 pass, quarantine empty.** The CSS length units the
+  pilot surfaced landed before the next category: `Q`, `rem` (root font
+  size), viewport units, case-insensitive matching, font-aware geometry
+  resolution (em/ex/ch against the element's computed font size), and
+  `ch` via the real `0`-glyph advance (0.5em fallback only without a
+  font manager). The corpus' bundled Noto Sans is embedded and registered
+  as a font collection in the render tests, so plain font-family names
+  resolve deterministically — the same infrastructure the `text`
+  category will need.
   Next categories in rough order of coverage value: `painting`,
   `paint-servers`, `masking`, `structure`, `filters`, `text`. The W3C 1.1
   `animate-elem-*` tests remain the SMIL source when animation goldens

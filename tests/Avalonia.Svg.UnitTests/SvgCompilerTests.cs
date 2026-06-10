@@ -345,4 +345,20 @@ public class SvgCompilerTests
 
         Assert.Equal(new Rect(10, 5, 60, 60), recording.Bounds);
     }
+
+    [Fact]
+    public void Ch_Falls_Back_To_Half_Em_Without_A_Font_Manager()
+    {
+        // No font manager is registered in this test context, so ch resolves
+        // with the CSS-sanctioned 0.5em fallback; with a platform present it
+        // uses the '0' glyph advance (covered by the render-side corpus test).
+        using var recording = Compile(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" font-size="32">
+              <rect width="4ch" height="10" fill="green"/>
+            </svg>
+            """);
+
+        Assert.Equal(new Rect(0, 0, 64, 10), recording.Bounds);
+    }
 }
