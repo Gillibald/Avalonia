@@ -1,0 +1,167 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svg="clr-namespace:Avalonia.Svg;assembly=Avalonia.Svg"
+        x:Class="SvgDemo.MainWindow"
+        Title="Avalonia.Svg Demo"
+        Width="960" Height="700">
+
+  <Window.Styles>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Foreground" Value="#475569"/>
+      <Setter Property="MaxWidth" Value="820"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+    <Style Selector="Border.canvas">
+      <Setter Property="Background" Value="White"/>
+      <Setter Property="BorderBrush" Value="#e2e8f0"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+    </Style>
+  </Window.Styles>
+
+  <TabControl Margin="8">
+
+    <TabItem Header="Shapes">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            All basic shape elements compile into one retained DrawingRecording: rect (including rounded
+            and SVG 2 rx/ry auto), circle, ellipse, line, polyline, polygon and path with the full path
+            grammar (curves, arcs, even-odd fill rule). Stroke caps, joins, dash arrays, miter limits and
+            paint-order are honored.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/shapes.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Gradients &amp; Patterns">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            Linear and radial gradients in objectBoundingBox or userSpaceOnUse units, with
+            gradientTransform, stop-opacity and spreadMethod. The wide bottom row shares a single
+            user-space gradient across three shapes. Patterns compile their tile content once into a
+            shared recording and paint as a tiled brush, including patternTransform.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/gradients.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Use &amp; Markers">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            A symbol compiles once and replays at every use site under its own viewport mapping — the
+            map pin is one shared recording at three sizes, and the badge group is rendered once and
+            referenced twice more. Markers (arrowheads, vertex dots) replay the same way along path and
+            polyline vertices, including orient="auto-start-reverse".
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/symbols.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Text">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            SVG text runs through Avalonia's full text pipeline (TextFormatter): script itemization,
+            font fallback, bidi and shaping — so mixed scripts just work. Chunks anchor with
+            text-anchor, tspans restyle mid-line without breaking shaping, dx/dy shift baselines, and
+            textPath places glyphs along an arc-length parameterized path.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/text.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Compositing">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            Group opacity, mix-blend-mode and isolation fold into recorded layers; clip-path clips
+            geometrically and mask applies a luminance mask brush (white keeps, black removes). Compare
+            the two red pairs: group opacity flattens the overlap, per-shape opacity blends it.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/compositing.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Filters">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            Filters map onto recorded layer effects: feGaussianBlur, feDropShadow, feOffset and
+            feColorMatrix (matrix, saturate, hueRotate), composed into sequential chains. The star uses
+            the classic SourceAlpha blur + offset + feMerge pattern, which collapses into a single
+            drop-shadow effect at compile time.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/filters.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Animation">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            SMIL animations run on two channels. Paint channel: color animations on a shape's own
+            fill/stroke mutate brushes inside a compositor-bound recording — nothing is ever
+            re-recorded. Structural channel: transforms, geometry and visibility re-compile the root
+            per change tick while shared sub-recordings (like the pinwheel petal) replay from cache.
+          </TextBlock>
+          <TextBlock FontWeight="Bold">Paint channel — brush mutation only</TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/animation-paint.svg"/>
+          </Border>
+          <TextBlock FontWeight="Bold">Structural channel — re-emission over shared recordings</TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Source="avares://SvgDemo/Assets/animation-structural.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Interactivity">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            The compiler builds an element hit-test tree next to the recording. Move over the drawing to
+            see the innermost-first event-target chain; click to log the hit. The grid ignores the
+            pointer (pointer-events="none"), the purple ring hits only on its stroke band, the dashed
+            rectangle is an invisible hot zone (fill="none" with pointer-events="all"), and the gears
+            report the symbol content plus their use site.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Name="InteractiveSvg" Source="avares://SvgDemo/Assets/interactive.svg"/>
+          </Border>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock FontWeight="Bold" Text="Under pointer:"/>
+            <TextBlock Name="HoverChainText" Foreground="#0f766e" FontFamily="Consolas,Menlo,monospace" Text="—"/>
+          </StackPanel>
+          <TextBlock FontWeight="Bold" Text="Clicks:"/>
+          <ItemsControl Name="ClickLog" FontFamily="Consolas,Menlo,monospace" Foreground="#334155"/>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+  </TabControl>
+</Window>
