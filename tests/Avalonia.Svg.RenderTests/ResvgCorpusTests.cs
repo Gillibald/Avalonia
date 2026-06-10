@@ -44,6 +44,12 @@ public class ResvgCorpusTests : SvgRenderTestBase
     [MemberData(nameof(ShapesTests))]
     public Task Shapes(string test) => RunCorpusTest(test);
 
+    public static TheoryData<string> PaintingTests { get; } = Discover("painting");
+
+    [Theory]
+    [MemberData(nameof(PaintingTests))]
+    public Task Painting(string test) => RunCorpusTest(test);
+
     private static TheoryData<string> Discover(string category)
     {
         var data = new TheoryData<string>();

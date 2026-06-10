@@ -1149,17 +1149,26 @@ already-known instance of this rule.
   category, both pipelines, goldens produced by this implementation and
   verified once against each test's stated expectation plus the upstream
   cross-renderer `results.csv`; `quarantine.txt` lists known gaps with
-  reasons and is the measurable compliance score. First category:
-  **shapes — 133/133 pass, quarantine empty.** The CSS length units the
-  pilot surfaced landed before the next category: `Q`, `rem` (root font
-  size), viewport units, case-insensitive matching, font-aware geometry
-  resolution (em/ex/ch against the element's computed font size), and
-  `ch` via the real `0`-glyph advance (0.5em fallback only without a
-  font manager). The corpus' bundled Noto Sans is embedded and registered
-  as a font collection in the render tests, so plain font-family names
-  resolve deterministically — the same infrastructure the `text`
-  category will need.
-  Next categories in rough order of coverage value: `painting`,
+  reasons and is the measurable compliance score. The vendored corpus
+  also carries the suite's 500×500 reference renders (`<test>.png`),
+  which make triage automatable: diff ours against the reference with a
+  tolerance, review the outliers ("UB" references mark upstream-undecided
+  behavior).
+  Scoreboard: **shapes 133/133; painting 282/304 (22 quarantined:
+  context paint, `<image>`/feImage, text stroking)** — overall 415/437.
+  Each sweep hardened the implementation before goldening: shapes
+  surfaced the CSS length units (`Q`, `rem`, viewport units, font-aware
+  geometry resolution, metric-true `ch`); painting surfaced a
+  stack-overflow on circular marker/pattern/mask references (now guarded
+  — cycles degrade to ignored references), CSS color parsing
+  (`#RGBA`/`#RRGGBBAA` alpha-last ordering, `rgb()` floats/percent rules,
+  clamping, `hsl()` hue wrapping, `grey` spellings, `icc-color()`
+  annexes), `url(#id)` paint fallbacks (color/`none`/`currentColor`),
+  `display`/`opacity` on the root element, marker viewport clipping with
+  `overflow` opt-out, CSS angle units in `orient`, and the fact that
+  `mix-blend-mode`/`isolation` are CSS-only properties whose attribute
+  form must be ignored.
+  Next categories in rough order of coverage value:
   `paint-servers`, `masking`, `structure`, `filters`, `text`. The W3C 1.1
   `animate-elem-*` tests remain the SMIL source when animation goldens
   land.)*

@@ -47,7 +47,11 @@ internal static class SvgMasks
         if (mask.Children.Count == 0)
             return context.PushOpacity(0);
 
+        // Null means a circular mask reference; the reference is ignored and
+        // the element renders unmasked.
         var recording = compileContext.GetSharedRecording(mask, out _);
+        if (recording == null)
+            return null;
 
         // The mask content paints 1:1 over the region: the source region in
         // content coordinates maps onto the region rect.

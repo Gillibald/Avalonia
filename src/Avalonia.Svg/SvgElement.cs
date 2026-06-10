@@ -89,6 +89,29 @@ public sealed class SvgElement
         return GetAttribute(name);
     }
 
+    /// <summary>
+    /// Gets a CSS-only property from the <c>style</c> attribute (with an
+    /// animation override taking precedence). Properties like
+    /// <c>mix-blend-mode</c> and <c>isolation</c> have no presentation
+    /// attribute — an attribute of that name must be ignored.
+    /// </summary>
+    internal string? GetStyleProperty(string name)
+    {
+        if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
+            return animated;
+
+        if (!_styleParsed)
+        {
+            _styleParsed = true;
+            if (GetAttribute("style") is { } style)
+                _styleDeclarations = ParseStyleDeclarations(style);
+        }
+
+        return _styleDeclarations != null && _styleDeclarations.TryGetValue(name, out var declared)
+            ? declared
+            : null;
+    }
+
     /// <summary>Gets an attribute value, preferring an active SMIL animation override.</summary>
     internal string? GetAnimatedOrAttribute(string name)
     {
