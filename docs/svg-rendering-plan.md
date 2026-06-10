@@ -563,6 +563,9 @@ extend this branch.
 - [x] Solid fill/stroke via `ImmutableSolidColorBrush` / `ImmutablePen`,
       including `currentColor` and the SVG initial values (miter limit 4,
       butt caps); `url(#...)` paints parse as references for Phase 2.
+      Named-color coverage comes from Avalonia's `KnownColors`, which lacks
+      the CSS Color 4 additions (e.g. `rebeccapurple`) — such values fall
+      back to the inherited paint per CSS error handling.
 - [x] `fill-rule` and `stroke-dasharray` / `stroke-dashoffset` round-trip
       verification (gaps 4.5, 4.8) — unit level: `SetFillRule` emission and
       the user-unit → thickness-multiple dash conversion (incl. odd-list
@@ -594,9 +597,15 @@ All tests live under the SVG test assemblies — no additions to
   conversion, odd-list doubling). Geometry-backed shapes (path/poly) are
   covered at the parser level; their pixel behavior lands with the render
   tests.
-- [ ] `Avalonia.Svg.RenderTests` — bitmap reference diffs for a W3C/resvg
-  test subset (shapes, path, viewBox, stroke-dasharray, fill-rule).
-  **Next up** — project scaffolding mirroring `Avalonia.Skia.RenderTests`.
+- [x] `Avalonia.Svg.RenderTests` — golden-image project reusing the shared
+  `TestRenderHelper` (immediate + composited pipelines, RMSE diff against
+  `tests/TestFiles/Svg/`). Seed suite of 8 scenes shipped: basic shapes,
+  polygon/polyline, path with curves + arcs, fill-rule nonzero vs evenodd,
+  stroke-dasharray (user-unit periods across widths + dashoffset), viewBox
+  meet letterboxing, nested transforms, inheritance + `currentColor`.
+  The dash and fill-rule scenes are the pixel-level halves of gaps 4.5/4.8.
+- [ ] Expand the corpus with curated W3C / resvg cases as Phases 2+ add
+  features (gradients, use/symbol, text, …).
 
 ---
 
