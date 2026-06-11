@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Avalonia.Svg.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
+    <InternalsVisibleTo Include="Avalonia.Svg.Benchmarks, PublicKey=$(AvaloniaPublicKey)" />
   </ItemGroup>
 
   <Import Project="..\..\build\DevAnalyzers.props" />

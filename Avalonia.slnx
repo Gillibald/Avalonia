@@ -148,6 +148,7 @@
     <Project Path="tests/Avalonia.RenderTests.WpfCompare/Avalonia.RenderTests.WpfCompare.csproj" />
     <Project Path="tests/Avalonia.Skia.RenderTests/Avalonia.Skia.RenderTests.csproj" />
     <Project Path="tests/Avalonia.Skia.UnitTests/Avalonia.Skia.UnitTests.csproj" />
+    <Project Path="tests/Avalonia.Svg.Benchmarks/Avalonia.Svg.Benchmarks.csproj" />
     <Project Path="tests/Avalonia.Svg.RenderTests/Avalonia.Svg.RenderTests.csproj" />
     <Project Path="tests/Avalonia.Svg.UnitTests/Avalonia.Svg.UnitTests.csproj" />
     <Project Path="tests/Avalonia.UnitTests/Avalonia.UnitTests.csproj" />
