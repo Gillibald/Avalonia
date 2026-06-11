@@ -68,6 +68,33 @@ internal static class SvgText
 
     public static void Compile(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
+        => CompileCore(element, context, compileContext, style, geometrySink: null);
+
+    /// <summary>
+    /// Lays the text element out through the normal chunk pipeline and returns
+    /// the union of its glyph outlines under the given fill rule — the shape
+    /// the element contributes to a <c>&lt;clipPath&gt;</c>. Null when the
+    /// element produces no glyphs.
+    /// </summary>
+    public static Geometry? BuildClipGeometry(
+        SvgElement element, SvgCompileContext compileContext, in SvgStyle style, FillRule rule)
+    {
+        var sink = new List<Geometry>();
+        CompileCore(element, context: null, compileContext, style, sink);
+
+        if (sink.Count == 0)
+            return null;
+
+        // Glyph outlines merge under one rule: evenodd cancels glyph overlaps.
+        var group = new GeometryGroup { FillRule = rule };
+        foreach (var geometry in sink)
+            group.Children.Add(geometry);
+        return group;
+    }
+
+    private static void CompileCore(
+        SvgElement element, DrawingContext? context, SvgCompileContext compileContext, in SvgStyle style,
+        List<Geometry>? geometrySink)
     {
         var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
         var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
@@ -75,13 +102,14 @@ internal static class SvgText
         var chunk = new List<StyledRun>();
         var chunkOrigin = new Point(x, y);
 
-        CollectContent(element, element, context, compileContext, style, isSpan: false, dx: 0, dy: 0, ref chunk, ref chunkOrigin);
-        FlushChunk(element, context, compileContext, chunk, chunkOrigin);
+        CollectContent(element, element, context, compileContext, style, isSpan: false, dx: 0, dy: 0, ref chunk, ref chunkOrigin, geometrySink);
+        FlushChunk(element, context, compileContext, chunk, chunkOrigin, geometrySink);
     }
 
     private static void CollectContent(
-        SvgElement textElement, SvgElement element, DrawingContext context, SvgCompileContext compileContext,
-        in SvgStyle style, bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin)
+        SvgElement textElement, SvgElement element, DrawingContext? context, SvgCompileContext compileContext,
+        in SvgStyle style, bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin,
+        List<Geometry>? geometrySink)
     {
         if (element.Content == null)
             return;
@@ -118,7 +146,7 @@ internal static class SvgText
                         var newY = child.GetAttribute("y");
                         if (newX != null || newY != null)
                         {
-                            FlushChunk(textElement, context, compileContext, chunk, chunkOrigin);
+                            FlushChunk(textElement, context, compileContext, chunk, chunkOrigin, geometrySink);
                             chunk = new List<StyledRun>();
                             chunkOrigin = new Point(
                                 newX != null ? GetLength(child, "x", SvgLengthAxis.Horizontal, style) : chunkOrigin.X,
@@ -129,14 +157,16 @@ internal static class SvgText
                             textElement, child, context, compileContext, childStyle, isSpan: true,
                             dx: pendingDx + GetLength(child, "dx", SvgLengthAxis.Horizontal, style),
                             dy: pendingDy + GetLength(child, "dy", SvgLengthAxis.Vertical, style),
-                            ref chunk, ref chunkOrigin);
+                            ref chunk, ref chunkOrigin, geometrySink);
                         pendingDx = 0;
                         pendingDy = 0;
                         break;
                     }
                     case "textPath":
-                        // A text path lays out independently of the chunk flow.
-                        CompileTextPath(child, context, compileContext, style);
+                        // A text path lays out independently of the chunk flow;
+                        // it contributes nothing to clip geometry.
+                        if (context != null)
+                            CompileTextPath(child, context, compileContext, style);
                         break;
                 }
             }
@@ -144,9 +174,26 @@ internal static class SvgText
     }
 
     private static void FlushChunk(
-        SvgElement textElement, DrawingContext context, SvgCompileContext compileContext,
-        List<StyledRun> chunk, Point origin)
+        SvgElement textElement, DrawingContext? context, SvgCompileContext compileContext,
+        List<StyledRun> chunk, Point origin, List<Geometry>? geometrySink = null)
     {
+        // Trailing collapsed whitespace does not render and contributes no
+        // advance, per the SVG white-space processing rules.
+        while (chunk.Count > 0)
+        {
+            var last = chunk[chunk.Count - 1];
+            var trimmed = last.Text.TrimEnd(' ');
+            if (trimmed.Length == last.Text.Length)
+                break;
+
+            chunk.RemoveAt(chunk.Count - 1);
+            if (trimmed.Length > 0)
+            {
+                chunk.Add(new StyledRun(trimmed, last.Style, last.Dx, last.Dy));
+                break;
+            }
+        }
+
         if (chunk.Count == 0)
             return;
 
@@ -188,7 +235,7 @@ internal static class SvgText
                 _ => 0,
             };
 
-            if (hasReferences)
+            if (hasReferences && geometrySink == null)
             {
                 // Re-resolve run foregrounds against the measured chunk bounds and
                 // reformat, so objectBoundingBox paint servers map correctly.
@@ -219,8 +266,34 @@ internal static class SvgText
                 if (line == null)
                     continue;
 
+                if (geometrySink != null)
+                {
+                    // Mirror TextLineImpl.Draw: each shaped run's outline at its
+                    // pen position, with the run's own baseline (the glyph run's
+                    // baseline origin is baked into the built geometry).
+                    var currentX = penX + line.Start;
+                    foreach (var textRun in line.TextRuns)
+                    {
+                        if (textRun is DrawableTextRun drawable)
+                        {
+                            if (textRun is ShapedTextRun shaped && shaped.GlyphRun.GlyphInfos.Count > 0)
+                            {
+                                var geometry = shaped.GlyphRun.BuildGeometry();
+                                geometry.Transform = new MatrixTransform(
+                                    Matrix.CreateTranslation(currentX, penY - shaped.Baseline));
+                                geometrySink.Add(geometry);
+                            }
+
+                            currentX += drawable.Size.Width;
+                        }
+                    }
+
+                    penX += line.WidthIncludingTrailingWhitespace;
+                    continue;
+                }
+
                 // SVG positions the baseline; a text line draws from its top.
-                line.Draw(context, new Point(penX, penY - line.Baseline));
+                line.Draw(context!, new Point(penX, penY - line.Baseline));
 
                 // Coarse, layout-box hit area per segment, attributed to the
                 // <text> element (tspan-level targeting is out of scope).

@@ -16,6 +16,7 @@ internal sealed class SvgCompileContext
 {
     private HashSet<SvgElement>? _useStack;
     private HashSet<SvgElement>? _sharedStack;
+    private HashSet<SvgElement>? _clipPathStack;
     private SvgHitTreeBuilder? _hitTree;
 
     public SvgCompileContext(SvgDocument document, Size viewport)
@@ -95,6 +96,21 @@ internal sealed class SvgCompileContext
     }
 
     public void ExitUse(SvgElement target) => _useStack?.Remove(target);
+
+    /// <summary>
+    /// Tracks the <c>&lt;clipPath&gt;</c> elements currently being built so a
+    /// recursive <c>clip-path</c> reference can be ignored, breaking the cycle
+    /// one level in.
+    /// </summary>
+    public bool EnterClipPath(SvgElement clipPath)
+    {
+        _clipPathStack ??= new HashSet<SvgElement>();
+        return _clipPathStack.Add(clipPath);
+    }
+
+    public void ExitClipPath(SvgElement clipPath) => _clipPathStack?.Remove(clipPath);
+
+    public bool IsBuildingClipPath(SvgElement clipPath) => _clipPathStack?.Contains(clipPath) == true;
 
     /// <summary>
     /// Gets (or compiles and caches) the shared recording for non-interactive
