@@ -467,16 +467,21 @@ internal static class SvgText
         }
 
         // First pass: solid foregrounds resolve immediately; paint-server
-        // references need the chunk bounds and are filled in a second pass.
+        // references (fill or stroke) need the chunk bounds and are filled in
+        // a second pass.
         var hasReferences = false;
         foreach (var run in chunk)
         {
-            if (run.Style.ResolveContextPaint(run.Style.Fill).Kind == SvgPaintKind.Reference)
+            if (run.Style.ResolveContextPaint(run.Style.Fill).Kind == SvgPaintKind.Reference
+                || run.Style.ResolveContextPaint(run.Style.Stroke).Kind == SvgPaintKind.Reference)
+            {
                 hasReferences = true;
+            }
         }
 
         var lines = new List<TextLine?>(segments.Count);
         double totalAdvance = 0;
+        Rect? chunkBounds = null;
         try
         {
             foreach (var segment in segments)
@@ -501,12 +506,12 @@ internal static class SvgText
                 foreach (var line in lines)
                     height = Math.Max(height, line?.Height ?? 0);
 
-                var chunkBounds = new Rect(origin.X + anchorShift, origin.Y - height, totalAdvance, height * 1.25);
+                chunkBounds = new Rect(origin.X + anchorShift, origin.Y - height, totalAdvance, height * 1.25);
 
                 for (var i = 0; i < lines.Count; i++)
                 {
                     lines[i]?.Dispose();
-                    lines[i] = FormatSegment(segments[i], compileContext, chunkBounds);
+                    lines[i] = FormatSegment(segments[i], compileContext, chunkBounds.Value);
                 }
             }
 
@@ -550,12 +555,21 @@ internal static class SvgText
                     continue;
                 }
 
+                // Stroked text draws the glyph outlines with the pen around
+                // the filled line, honoring paint-order.
+                var segmentStyle = segment[0].Style;
+                var strokePen = ResolveStrokePen(segmentStyle, compileContext, chunkBounds);
+                if (strokePen != null && segmentStyle.StrokeBeforeFill)
+                    StrokeLine(context!, line, strokePen, penX, penY);
+
                 // SVG positions the baseline; a text line draws from its top.
                 line.Draw(context!, new Point(penX, penY - line.Baseline));
 
+                if (strokePen != null && !segmentStyle.StrokeBeforeFill)
+                    StrokeLine(context!, line, strokePen, penX, penY);
+
                 // Coarse, layout-box hit area per segment, attributed to the
                 // <text> element (tspan-level targeting is out of scope).
-                var segmentStyle = segment[0].Style;
                 compileContext.HitTree?.AddShape(
                     textElement,
                     new SvgHitShape
@@ -1109,6 +1123,65 @@ internal static class SvgText
         foreach (var c in text)
             builder.Append(c is '\t' or '\n' or '\r' ? ' ' : c);
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Resolves a segment's stroke into a pen, or null when the text is not
+    /// stroked. Paint-server strokes resolve against the chunk bounds.
+    /// </summary>
+    private static ImmutablePen? ResolveStrokePen(
+        in SvgStyle style, SvgCompileContext compileContext, Rect? chunkBounds)
+    {
+        if (!style.Visible || compileContext.Measuring || style.StrokeWidth <= 0)
+            return null;
+
+        var stroke = style.ResolveContextPaint(style.Stroke);
+        if (stroke.Kind == SvgPaintKind.None)
+            return null;
+
+        IImmutableBrush? brush;
+        if (stroke.Kind == SvgPaintKind.Reference)
+        {
+            brush = chunkBounds is { } bounds && stroke.Reference is { } id
+                ? SvgPaintServers.Resolve(compileContext, id, style, bounds, style.StrokeOpacity)
+                : null;
+            brush ??= stroke.Fallback switch
+            {
+                SvgPaintFallback.Color => new ImmutableSolidColorBrush(stroke.FallbackColor, style.StrokeOpacity),
+                SvgPaintFallback.CurrentColor => new ImmutableSolidColorBrush(style.Color, style.StrokeOpacity),
+                _ => null,
+            };
+        }
+        else
+        {
+            brush = style.ResolveBrush(stroke, style.StrokeOpacity);
+        }
+
+        return brush == null ? null : style.ResolvePen(brush);
+    }
+
+    /// <summary>
+    /// Strokes a line's glyph outlines: each shaped run's geometry at its pen
+    /// position, mirroring the clip-geometry walk.
+    /// </summary>
+    private static void StrokeLine(DrawingContext context, TextLine line, ImmutablePen pen, double penX, double penY)
+    {
+        var currentX = penX + line.Start;
+        foreach (var textRun in line.TextRuns)
+        {
+            if (textRun is DrawableTextRun drawable)
+            {
+                if (textRun is ShapedTextRun shaped && shaped.GlyphRun.GlyphInfos.Count > 0)
+                {
+                    var geometry = shaped.GlyphRun.BuildGeometry();
+                    geometry.Transform = new MatrixTransform(
+                        Matrix.CreateTranslation(currentX, penY - shaped.Baseline));
+                    context.DrawGeometry(null, pen, geometry);
+                }
+
+                currentX += drawable.Size.Width;
+            }
+        }
     }
 
     private static IImmutableBrush? ResolveFill(in SvgStyle style, SvgCompileContext compileContext, Rect? bounds)
