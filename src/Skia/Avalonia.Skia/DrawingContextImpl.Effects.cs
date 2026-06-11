@@ -61,6 +61,64 @@ partial class DrawingContextImpl
             return SKImageFilter.CreateColorFilter(filter);
         }
 
+        if (effect is IFloodEffect flood)
+        {
+            var alpha = flood.Color.A * flood.Opacity;
+            var color = new SKColor(flood.Color.R, flood.Color.G, flood.Color.B,
+                (byte)Math.Max(0, Math.Min(255, alpha)));
+
+            // A Src-blend color filter replaces every pixel, transparent ones
+            // included: a flood across the layer region.
+            using var colorFilter = SKColorFilter.CreateBlendMode(color, SKBlendMode.Src);
+            return SKImageFilter.CreateColorFilter(colorFilter);
+        }
+
+        if (effect is IMergeEffect merge)
+        {
+            // A null input is the layer source, which is Skia's null-filter
+            // convention too.
+            var inputs = new SKImageFilter?[merge.Inputs.Count];
+            for (var i = 0; i < inputs.Length; i++)
+                inputs[i] = merge.Inputs[i] is { } input ? CreateEffect(input) : null;
+
+            var merged = SKImageFilter.CreateMerge(inputs!);
+            foreach (var input in inputs)
+                input?.Dispose();
+            return merged;
+        }
+
+        if (effect is IBlendEffect blend)
+        {
+            using var background = blend.Background is { } bg ? CreateEffect(bg) : null;
+            using var foreground = blend.Foreground is { } fg ? CreateEffect(fg) : null;
+            return SKImageFilter.CreateBlendMode(blend.Mode.ToSKBlendMode(), background, foreground);
+        }
+
+        if (effect is IArithmeticCompositeEffect arithmetic)
+        {
+            using var background = arithmetic.Background is { } bg ? CreateEffect(bg) : null;
+            using var foreground = arithmetic.Foreground is { } fg ? CreateEffect(fg) : null;
+            return SKImageFilter.CreateArithmetic(
+                (float)arithmetic.K1, (float)arithmetic.K2, (float)arithmetic.K3, (float)arithmetic.K4,
+                enforcePMColor: true, background, foreground);
+        }
+
+        if (effect is ITileEffect tile)
+        {
+            using var input = tile.Input is { } tileInput ? CreateEffect(tileInput) : null;
+            return SKImageFilter.CreateTile(tile.Source.ToSKRect(), tile.Destination.ToSKRect(), input);
+        }
+
+        if (effect is IMorphologyEffect morphology)
+        {
+            using var input = morphology.Input is { } morphologyInput ? CreateEffect(morphologyInput) : null;
+            var radiusX = (float)morphology.RadiusX;
+            var radiusY = (float)morphology.RadiusY;
+            return morphology.Dilate
+                ? SKImageFilter.CreateDilate(radiusX, radiusY, input)
+                : SKImageFilter.CreateErode(radiusX, radiusY, input);
+        }
+
         if (effect is ICompositeEffect composite)
         {
             // Children apply in sequence: fold so each stage wraps the previous
