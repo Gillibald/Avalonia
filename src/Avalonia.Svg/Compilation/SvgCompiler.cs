@@ -482,6 +482,28 @@ internal static class SvgCompiler
                * Matrix.CreateTranslation(origin.X, origin.Y);
     }
 
+    /// <summary>
+    /// The <see cref="ApplyTransformOrigin(SvgElement,Matrix,SvgCompileContext,in SvgStyle)"/>
+    /// variant for referenced content (clipPath, pattern) whose transforms are
+    /// parsed outside the element pipeline: the caller supplies the reference
+    /// boxes directly.
+    /// </summary>
+    internal static Matrix ApplyTransformOrigin(SvgElement element, Matrix matrix, Rect viewBoxRect, Rect fillBox)
+    {
+        if (element.GetStyleOrAttribute("transform-origin") is not { Length: > 0 } value)
+            return matrix;
+
+        var box = element.GetStyleOrAttribute("transform-box") == "fill-box" ? fillBox : viewBoxRect;
+        var style = SvgStyle.CreateDefault(viewBoxRect.Size);
+
+        if (!TryParseTransformOrigin(value, box, style, out var origin) || origin == default)
+            return matrix;
+
+        return Matrix.CreateTranslation(-origin.X, -origin.Y)
+               * matrix
+               * Matrix.CreateTranslation(origin.X, origin.Y);
+    }
+
     private static bool TryParseTransformOrigin(string value, Rect box, in SvgStyle style, out Point origin)
     {
         origin = default;
