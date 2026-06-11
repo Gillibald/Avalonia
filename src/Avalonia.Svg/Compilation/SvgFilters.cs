@@ -109,16 +109,42 @@ internal static class SvgFilters
         if (compileContext.Document.GetElementById(id) is not { Name: "filter" } filter)
             return false;
 
+        // Attributes and primitives inherit through filter href chains.
+        var chain = new List<SvgElement> { filter };
+        for (var depth = 0; depth < 8; depth++)
+        {
+            var href = chain[chain.Count - 1].Href;
+            if (href is not { Length: > 1 } || href[0] != '#'
+                || compileContext.Document.GetElementById(href.Substring(1)) is not { Name: "filter" } target
+                || chain.Contains(target))
+            {
+                break;
+            }
+
+            chain.Add(target);
+        }
+
+        string? GetChained(string attribute)
+        {
+            foreach (var element in chain)
+            {
+                if (element.GetAttribute(attribute) is { } value)
+                    return value;
+            }
+
+            return null;
+        }
+
         // Filter region; filterUnits default to objectBoundingBox with the
         // spec's -10% / 120% defaults, which are percentages in either mode.
-        var boxUnits = filter.GetAttribute("filterUnits") != "userSpaceOnUse";
+        var boxUnits = GetChained("filterUnits") != "userSpaceOnUse";
         if (boxUnits && (bounds.Width <= 0 || bounds.Height <= 0))
             return true; // hides the element
 
-        var x = GetCoordinate(filter, "x", -10, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
-        var y = GetCoordinate(filter, "y", -10, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
-        var width = GetCoordinate(filter, "width", 120, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
-        var height = GetCoordinate(filter, "height", 120, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
+        var x = GetCoordinate(GetChained("x"), -10, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
+        var y = GetCoordinate(GetChained("y"), -10, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
+        var width = GetCoordinate(GetChained("width"), 120, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
+        var height = GetCoordinate(GetChained("height"), 120, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
 
         region = boxUnits
             ? new Rect(
@@ -131,18 +157,75 @@ internal static class SvgFilters
         if (region.Width <= 0 || region.Height <= 0)
             return true; // hides the element
 
-        return TryBuildEffectGraph(filter, style, out effect);
+        // Primitives come from the first filter in the chain that has any.
+        var primitiveSource = filter;
+        foreach (var element in chain)
+        {
+            if (element.Children.Count > 0)
+            {
+                primitiveSource = element;
+                break;
+            }
+        }
+
+        var primitiveBoxUnits = GetChained("primitiveUnits") == "objectBoundingBox";
+        return TryBuildEffectGraph(
+            primitiveSource, style, bounds, region, compileContext.Viewport, primitiveBoxUnits, out effect);
     }
 
-    private static bool TryBuildEffectGraph(SvgElement filter, in SvgStyle style, out IImmutableEffect? effect)
+    private static bool TryBuildEffectGraph(
+        SvgElement filter, in SvgStyle style, Rect bounds, Rect region, Size viewport, bool boxUnits,
+        out IImmutableEffect? effect)
     {
         effect = null;
 
-        // Named results; a null value is the unmodified source graphic.
+        // primitiveUnits=objectBoundingBox makes primitive lengths and
+        // subregions bounding-box fractions.
+        var diagonal = Math.Sqrt((bounds.Width * bounds.Width + bounds.Height * bounds.Height) / 2);
+
+        double ScaleX(double value) => boxUnits ? value * bounds.Width : value;
+        double ScaleY(double value) => boxUnits ? value * bounds.Height : value;
+        double ScaleOther(double value) => boxUnits ? value * diagonal : value;
+
+        // Named results; a null value is the unmodified source graphic. The
+        // subregions feed feTile and crop each primitive's output.
         var results = new Dictionary<string, IImmutableEffect?>(StringComparer.Ordinal);
+        var resultSubregions = new Dictionary<string, Rect?>(StringComparer.Ordinal);
         IImmutableEffect? last = null;
+        Rect? lastSubregion = null;
         var lastSet = false;
         var any = false;
+
+        // The primitive subregion: absent attributes default to the filter
+        // region (no crop).
+        Rect? GetSubregion(SvgElement primitive)
+        {
+            var x = primitive.GetAttribute("x");
+            var y = primitive.GetAttribute("y");
+            var width = primitive.GetAttribute("width");
+            var height = primitive.GetAttribute("height");
+            if (x == null && y == null && width == null && height == null)
+                return null;
+
+            double Resolve(string? value, double fallback, double origin, double size, SvgLengthAxis axis)
+            {
+                if (value == null || !SvgLength.TryParse(value.AsSpan(), out var length))
+                    return fallback;
+                if (boxUnits)
+                {
+                    var fraction = length.Unit == SvgLengthUnit.Percent ? length.Value / 100 : length.Value;
+                    return origin + fraction * size;
+                }
+
+                return length.Resolve(axis, viewport);
+            }
+
+            var rx = Resolve(x, region.X, bounds.X, bounds.Width, SvgLengthAxis.Horizontal);
+            var ry = Resolve(y, region.Y, bounds.Y, bounds.Height, SvgLengthAxis.Vertical);
+            var rw = Resolve(width, region.Right - rx, 0, bounds.Width, SvgLengthAxis.Horizontal);
+            var rh = Resolve(height, region.Bottom - ry, 0, bounds.Height, SvgLengthAxis.Vertical);
+            return new Rect(rx, ry, Math.Max(0, rw), Math.Max(0, rh));
+        }
 
         // Resolves an 'in'/'in2' reference: null = SourceGraphic.
         bool TryResolveInput(string? name, bool isFirstInput, out IImmutableEffect? input)
@@ -176,6 +259,14 @@ internal static class SvgFilters
             }
         }
 
+        // The subregion of an input, for feTile's source tile.
+        Rect? GetInputSubregion(string? name)
+        {
+            if (name == null)
+                return lastSet ? lastSubregion : null;
+            return resultSubregions.TryGetValue(name, out var subregion) ? subregion : null;
+        }
+
         foreach (var primitive in filter.Children)
         {
             if (primitive.Name is "title" or "desc" or "metadata")
@@ -185,6 +276,8 @@ internal static class SvgFilters
             if (!TryResolveInput(primitive.GetAttribute("in"), isFirstInput: true, out var input))
                 return Unsupported($"a '{primitive.GetAttribute("in")}' input");
 
+            var subregion = GetSubregion(primitive);
+
             IImmutableEffect? node;
             switch (primitive.Name)
             {
@@ -192,6 +285,73 @@ internal static class SvgFilters
                     node = new ImmutableFloodEffect(
                         GetFloodColor(primitive, style), GetFloodOpacity(primitive));
                     break;
+
+                case "feTile":
+                {
+                    // Tiles the input's subregion across this primitive's
+                    // subregion (or the filter region).
+                    var source = GetInputSubregion(primitive.GetAttribute("in")) ?? region;
+                    var destination = subregion ?? region;
+                    node = new ImmutableTileEffect(source, destination, input);
+                    break;
+                }
+
+                case "feMorphology":
+                {
+                    var radius = primitive.GetAttribute("radius");
+                    var radiusX = 0.0;
+                    var radiusY = 0.0;
+                    if (radius != null)
+                    {
+                        var tokenizer = new SvgTokenizer(radius.AsSpan());
+                        if (tokenizer.TryReadNumber(out radiusX))
+                            radiusY = tokenizer.TryReadNumber(out var second) ? second : radiusX;
+                    }
+
+                    // A negative radius is an error (no rendering); zero is a no-op.
+                    if (radiusX < 0 || radiusY < 0)
+                    {
+                        node = new ImmutableFloodEffect(Colors.Transparent, 0);
+                        break;
+                    }
+
+                    radiusX = ScaleX(radiusX);
+                    radiusY = ScaleY(radiusY);
+                    node = radiusX > 0 || radiusY > 0
+                        ? Chain(input, new ImmutableMorphologyEffect(
+                            radiusX, radiusY, primitive.GetAttribute("operator") == "dilate", input: null))
+                        : input;
+                    break;
+                }
+
+                case "feComponentTransfer":
+                {
+                    var red = BuildTransferTable(primitive, "feFuncR");
+                    var green = BuildTransferTable(primitive, "feFuncG");
+                    var blue = BuildTransferTable(primitive, "feFuncB");
+                    var alpha = BuildTransferTable(primitive, "feFuncA");
+                    node = red == null && green == null && blue == null && alpha == null
+                        ? input
+                        : Chain(input, new ImmutableComponentTransferEffect(red, green, blue, alpha, input: null));
+                    break;
+                }
+
+                case "feConvolveMatrix":
+                {
+                    if (!TryCreateConvolveMatrix(primitive, out var convolve))
+                        return Unsupported("an invalid feConvolveMatrix");
+                    node = Chain(input, convolve);
+                    break;
+                }
+
+                case "feDiffuseLighting":
+                case "feSpecularLighting":
+                {
+                    if (!TryCreateLighting(primitive, style, ScaleX, ScaleY, ScaleOther, out var lighting))
+                        return Unsupported("an invalid lighting primitive");
+                    node = Chain(input, lighting);
+                    break;
+                }
 
                 case "feMerge":
                 {
@@ -265,15 +425,15 @@ internal static class SvgFilters
 
                 case "feGaussianBlur":
                 {
-                    var sigma = GetNumber(primitive, "stdDeviation", 0);
+                    var sigma = ScaleOther(GetNumber(primitive, "stdDeviation", 0));
                     node = sigma > 0 ? Chain(input, new ImmutableBlurEffect(SigmaToBlurRadius(sigma))) : input;
                     break;
                 }
 
                 case "feOffset":
                     node = Chain(input, new ImmutableOffsetEffect(
-                        GetNumber(primitive, "dx", 0),
-                        GetNumber(primitive, "dy", 0)));
+                        ScaleX(GetNumber(primitive, "dx", 0)),
+                        ScaleY(GetNumber(primitive, "dy", 0))));
                     break;
 
                 case "feColorMatrix":
@@ -286,10 +446,10 @@ internal static class SvgFilters
 
                 case "feDropShadow":
                 {
-                    var sigma = GetNumber(primitive, "stdDeviation", 2);
+                    var sigma = ScaleOther(GetNumber(primitive, "stdDeviation", 2));
                     node = Chain(input, new ImmutableDropShadowEffect(
-                        GetNumber(primitive, "dx", 2),
-                        GetNumber(primitive, "dy", 2),
+                        ScaleX(GetNumber(primitive, "dx", 2)),
+                        ScaleY(GetNumber(primitive, "dy", 2)),
                         sigma > 0 ? SigmaToBlurRadius(sigma) : 0,
                         GetFloodColor(primitive, style),
                         GetFloodOpacity(primitive)));
@@ -300,9 +460,19 @@ internal static class SvgFilters
                     return Unsupported($"the '{primitive.Name}' primitive");
             }
 
+            // The primitive subregion crops the node's output (feTile already
+            // fills its destination).
+            if (subregion is { } crop && primitive.Name != "feTile")
+                node = new ImmutableCropEffect(crop, node);
+
             if (primitive.GetAttribute("result") is { } result)
+            {
                 results[result] = node;
+                resultSubregions[result] = subregion;
+            }
+
             last = node;
+            lastSubregion = subregion;
             lastSet = true;
         }
 
@@ -318,6 +488,238 @@ internal static class SvgFilters
     /// <summary>Sequences an input effect into a single-input stage.</summary>
     private static IImmutableEffect Chain(IImmutableEffect? input, IImmutableEffect stage) =>
         input == null ? stage : new ImmutableCompositeEffect(new IEffect[] { input, stage });
+
+    /// <summary>
+    /// Builds the 256-entry lookup table of one transfer function child, or
+    /// null for identity (absent child or <c>type="identity"</c>).
+    /// </summary>
+    private static byte[]? BuildTransferTable(SvgElement transfer, string childName)
+    {
+        SvgElement? function = null;
+        foreach (var child in transfer.Children)
+        {
+            if (child.Name == childName)
+                function = child;
+        }
+
+        if (function == null)
+            return null;
+
+        var type = function.GetAttribute("type");
+        var values = new List<double>();
+        if (function.GetAttribute("tableValues") is { } tableValues)
+        {
+            var tokenizer = new SvgTokenizer(tableValues.AsSpan());
+            while (tokenizer.TryReadNumber(out var v))
+                values.Add(v);
+        }
+
+        var table = new byte[256];
+        switch (type)
+        {
+            case "table":
+            {
+                if (values.Count == 0)
+                    return null;
+                if (values.Count == 1)
+                {
+                    var constant = ToByte(values[0]);
+                    for (var i = 0; i < 256; i++)
+                        table[i] = constant;
+                    return table;
+                }
+
+                var n = values.Count - 1;
+                for (var i = 0; i < 256; i++)
+                {
+                    var c = i / 255.0;
+                    var k = Math.Min(n - 1, (int)(c * n));
+                    var v = values[k] + (c * n - k) * (values[k + 1] - values[k]);
+                    table[i] = ToByte(v);
+                }
+
+                return table;
+            }
+            case "discrete":
+            {
+                if (values.Count == 0)
+                    return null;
+                var n = values.Count;
+                for (var i = 0; i < 256; i++)
+                {
+                    var k = Math.Min(n - 1, (int)(i / 255.0 * n));
+                    table[i] = ToByte(values[k]);
+                }
+
+                return table;
+            }
+            case "linear":
+            {
+                var slope = GetNumber(function, "slope", 1);
+                var intercept = GetNumber(function, "intercept", 0);
+                for (var i = 0; i < 256; i++)
+                    table[i] = ToByte(slope * (i / 255.0) + intercept);
+                return table;
+            }
+            case "gamma":
+            {
+                var amplitude = GetNumber(function, "amplitude", 1);
+                var exponent = GetNumber(function, "exponent", 1);
+                var offset = GetNumber(function, "offset", 0);
+                for (var i = 0; i < 256; i++)
+                    table[i] = ToByte(amplitude * Math.Pow(i / 255.0, exponent) + offset);
+                return table;
+            }
+            default:
+                return null; // identity (or unknown, treated as identity)
+        }
+
+        static byte ToByte(double value) =>
+            (byte)Math.Max(0, Math.Min(255, Math.Round(value * 255)));
+    }
+
+    private static bool TryCreateConvolveMatrix(SvgElement primitive, out ImmutableConvolveMatrixEffect effect)
+    {
+        effect = null!;
+
+        var orderX = 3;
+        var orderY = 3;
+        if (primitive.GetAttribute("order") is { } order)
+        {
+            var tokenizer = new SvgTokenizer(order.AsSpan());
+            if (!tokenizer.TryReadNumber(out var first))
+                return false;
+            orderX = (int)first;
+            orderY = tokenizer.TryReadNumber(out var second) ? (int)second : orderX;
+        }
+
+        if (orderX <= 0 || orderY <= 0 || orderX * orderY > 1024)
+            return false;
+
+        if (primitive.GetAttribute("kernelMatrix") is not { } kernelMatrix)
+            return false;
+
+        var kernel = new List<double>();
+        var kernelTokenizer = new SvgTokenizer(kernelMatrix.AsSpan());
+        while (kernelTokenizer.TryReadNumber(out var value))
+            kernel.Add(value);
+        if (kernel.Count != orderX * orderY)
+            return false;
+
+        // The default divisor is the kernel sum, or 1 when that is zero.
+        var divisor = GetNumber(primitive, "divisor", double.NaN);
+        if (double.IsNaN(divisor))
+        {
+            divisor = 0;
+            foreach (var value in kernel)
+                divisor += value;
+            if (divisor == 0)
+                divisor = 1;
+        }
+        else if (divisor == 0)
+        {
+            return false;
+        }
+
+        var targetX = (int)GetNumber(primitive, "targetX", orderX / 2);
+        var targetY = (int)GetNumber(primitive, "targetY", orderY / 2);
+        if (targetX < 0 || targetX >= orderX || targetY < 0 || targetY >= orderY)
+            return false;
+
+        var edgeMode = primitive.GetAttribute("edgeMode") switch
+        {
+            "wrap" => ConvolveMatrixEdgeMode.Wrap,
+            "none" => ConvolveMatrixEdgeMode.None,
+            _ => ConvolveMatrixEdgeMode.Duplicate,
+        };
+
+        effect = new ImmutableConvolveMatrixEffect(
+            orderX, orderY, kernel,
+            divisor,
+            GetNumber(primitive, "bias", 0),
+            targetX, targetY,
+            edgeMode,
+            primitive.GetAttribute("preserveAlpha") == "true",
+            input: null);
+        return true;
+    }
+
+    private static bool TryCreateLighting(
+        SvgElement primitive, in SvgStyle style,
+        Func<double, double> scaleX, Func<double, double> scaleY, Func<double, double> scaleOther,
+        out ImmutableLightingEffect effect)
+    {
+        effect = null!;
+
+        // Exactly one light source child defines the light.
+        SvgElement? light = null;
+        foreach (var child in primitive.Children)
+        {
+            if (child.Name is "feDistantLight" or "fePointLight" or "feSpotLight")
+            {
+                if (light != null)
+                    return false;
+                light = child;
+            }
+        }
+
+        if (light == null)
+            return false;
+
+        var lightColor = Colors.White;
+        if (primitive.GetStyleOrAttribute("lighting-color") is { } lightingColor)
+        {
+            if (lightingColor == "currentColor")
+                lightColor = style.Color;
+            else if (SvgColor.TryParse(lightingColor, out var parsed))
+                lightColor = parsed;
+        }
+
+        var specular = primitive.Name == "feSpecularLighting";
+        var constant = specular
+            ? GetNumber(primitive, "specularConstant", 1)
+            : GetNumber(primitive, "diffuseConstant", 1);
+
+        // Negative constants and exponents are errors.
+        if (constant < 0
+            || GetNumber(primitive, "specularExponent", 1) < 0
+            || GetNumber(light, "specularExponent", 1) < 0)
+        {
+            return false;
+        }
+
+        var kind = light.Name switch
+        {
+            "fePointLight" => LightSourceKind.Point,
+            "feSpotLight" => LightSourceKind.Spot,
+            _ => LightSourceKind.Distant,
+        };
+
+        double? limitingConeAngle = null;
+        if (kind == LightSourceKind.Spot && light.GetAttribute("limitingConeAngle") is { } cone
+            && TryParseNumber(cone, out var coneAngle))
+        {
+            limitingConeAngle = coneAngle;
+        }
+
+        effect = new ImmutableLightingEffect(
+            kind,
+            new Point(scaleX(GetNumber(light, "x", 0)), scaleY(GetNumber(light, "y", 0))),
+            scaleOther(GetNumber(light, "z", 0)),
+            new Point(scaleX(GetNumber(light, "pointsAtX", 0)), scaleY(GetNumber(light, "pointsAtY", 0))),
+            scaleOther(GetNumber(light, "pointsAtZ", 0)),
+            GetNumber(light, "specularExponent", 1),
+            limitingConeAngle,
+            GetNumber(light, "azimuth", 0),
+            GetNumber(light, "elevation", 0),
+            lightColor,
+            GetNumber(primitive, "surfaceScale", 1),
+            constant,
+            GetNumber(primitive, "specularExponent", 1),
+            specular,
+            input: null);
+        return true;
+    }
 
     private static Color GetFloodColor(SvgElement primitive, in SvgStyle style)
     {
@@ -639,10 +1041,9 @@ internal static class SvgFilters
     }
 
     private static double GetCoordinate(
-        SvgElement element, string attribute, double percentFallback,
+        string? value, double percentFallback,
         bool boxUnits, SvgLengthAxis axis, Size viewport)
     {
-        var value = element.GetAttribute(attribute);
         if (value == null || !SvgLength.TryParse(value.AsSpan(), out var length))
         {
             // The spec defaults are percentages, sensitive to the units mode.
