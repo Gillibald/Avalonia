@@ -1159,15 +1159,34 @@ already-known instance of this rule.
   149/149; masking 93/93; text 336/356 (20 quarantined: vertical
   writing modes ×16, filters on text spans ×2, language-dependent CJK
   glyph variants ×1, tiny-coordinate textPath sampling ×1);
-  structure 223/247 (24 quarantined: CSS engine limits ×6, use-site
-  inheritance into shared recordings ×5, nested-SVG image sizing ×4,
-  strict funcIRI errors ×2, zero-size canvases ×3, DTD entities ×4);
+  structure 242/247 (5 quarantined: DTD entities ×4 and remote image
+  fetching ×1, both by design);
   filters 347/397 (50 quarantined: enable-background + BackgroundImage
   inputs ×21, feConvolveMatrix bias/edge sampling ×14,
   FillPaint/StrokePaint inputs ×6, feTile sampling ×5, feTurbulence
   stitching/zero-axis/oBB frequencies ×3, huge-sigma clamping ×1)**
-  — overall 1585/1679. Four categories are complete: shapes, painting,
-  paint-servers and masking.
+  — overall 1604/1679. Four categories are complete (shapes, painting,
+  paint-servers, masking) and structure's only remaining gaps are
+  deliberate policy (no DTD resolution, no remote fetches).
+  The structure sweep generalized the context-recording mechanism into
+  per-site use compilation: a use whose inheritable style differs from
+  the defaults (SvgStyle.InheritablesEqual against the default style)
+  compiles its target with the site's full style seeded, per the SVG
+  clone semantics — inherited fills, currentColor, fill-opacity
+  overrides and the no-ancestor-styles rule all follow, and unstyled
+  sites keep sharing the document-cached recording. The CSS engine
+  grew selector chains (descendant and child combinators with
+  right-to-left ancestor matching), attribute selectors and file-based
+  @import via the document base URI. Geometry now strictly resolves
+  from presentation attributes only (the style-aware length getter was
+  applying CSS geometry by accident; the references pin attribute-only
+  resolution, resvg parity). Zero- and negative-size roots render
+  nothing — pixel-exact against the blank references — and a root with
+  no size hints at all takes the content's extent as its canvas
+  instead of the CSS 300×150 default, which only feeds the compilation
+  viewport. The strict-funcIRI and auto-sized-image-of-SVG references
+  are upstream "UB" placeholders; ours render browser-like (lenient
+  funcIRI resolution, aspect-preserving auto sizing) and are goldened.
   The text font-capability sweep closed most of that family. The
   NotoColorEmoji CBDT font joined the embedded corpus collection (with
   a family mapping and a fallback entry) and Avalonia's text stack
