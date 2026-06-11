@@ -119,6 +119,105 @@ partial class DrawingContextImpl
                 : SKImageFilter.CreateErode(radiusX, radiusY, input);
         }
 
+        if (effect is ILightingEffect lighting)
+        {
+            using var lightingInput = lighting.Input is { } li ? CreateEffect(li) : null;
+            var lightColor = new SKColor(lighting.LightColor.R, lighting.LightColor.G, lighting.LightColor.B);
+            var surfaceScale = (float)lighting.SurfaceScale;
+            var constant = (float)lighting.LightingConstant;
+            var shininess = (float)lighting.Shininess;
+
+            switch (lighting.Light)
+            {
+                case LightSourceKind.Distant:
+                {
+                    // Azimuth/elevation degrees to a direction vector.
+                    var azimuth = Matrix.ToRadians(lighting.Azimuth);
+                    var elevation = Matrix.ToRadians(lighting.Elevation);
+                    var direction = new SKPoint3(
+                        (float)(Math.Cos(azimuth) * Math.Cos(elevation)),
+                        (float)(Math.Sin(azimuth) * Math.Cos(elevation)),
+                        (float)Math.Sin(elevation));
+                    return lighting.Specular
+                        ? SKImageFilter.CreateDistantLitSpecular(direction, lightColor, surfaceScale, constant, shininess, lightingInput)
+                        : SKImageFilter.CreateDistantLitDiffuse(direction, lightColor, surfaceScale, constant, lightingInput);
+                }
+                case LightSourceKind.Point:
+                {
+                    var location = new SKPoint3(
+                        (float)lighting.LightPosition.X, (float)lighting.LightPosition.Y, (float)lighting.LightZ);
+                    return lighting.Specular
+                        ? SKImageFilter.CreatePointLitSpecular(location, lightColor, surfaceScale, constant, shininess, lightingInput)
+                        : SKImageFilter.CreatePointLitDiffuse(location, lightColor, surfaceScale, constant, lightingInput);
+                }
+                default:
+                {
+                    var location = new SKPoint3(
+                        (float)lighting.LightPosition.X, (float)lighting.LightPosition.Y, (float)lighting.LightZ);
+                    var target = new SKPoint3(
+                        (float)lighting.PointsAt.X, (float)lighting.PointsAt.Y, (float)lighting.PointsAtZ);
+                    var cutoff = (float)(lighting.LimitingConeAngle ?? 90);
+                    return lighting.Specular
+                        ? SKImageFilter.CreateSpotLitSpecular(location, target, (float)lighting.SpotExponent, cutoff,
+                            lightColor, surfaceScale, constant, shininess, lightingInput)
+                        : SKImageFilter.CreateSpotLitDiffuse(location, target, (float)lighting.SpotExponent, cutoff,
+                            lightColor, surfaceScale, constant, lightingInput);
+                }
+            }
+        }
+
+        if (effect is IComponentTransferEffect transfer)
+        {
+            using var transferInput = transfer.Input is { } ti ? CreateEffect(ti) : null;
+            using var table = SKColorFilter.CreateTable(
+                ToTable(transfer.AlphaTable), ToTable(transfer.RedTable),
+                ToTable(transfer.GreenTable), ToTable(transfer.BlueTable));
+            return SKImageFilter.CreateColorFilter(table, transferInput);
+
+            static byte[]? ToTable(System.Collections.Generic.IReadOnlyList<byte>? source)
+            {
+                if (source == null)
+                    return null;
+                var table = new byte[256];
+                for (var i = 0; i < table.Length; i++)
+                    table[i] = source[i];
+                return table;
+            }
+        }
+
+        if (effect is IConvolveMatrixEffect convolve)
+        {
+            using var convolveInput = convolve.Input is { } ci ? CreateEffect(ci) : null;
+            var kernel = new float[convolve.Kernel.Count];
+            for (var i = 0; i < kernel.Length; i++)
+                kernel[i] = (float)convolve.Kernel[i];
+
+            var tileMode = convolve.EdgeMode switch
+            {
+                ConvolveMatrixEdgeMode.Wrap => SKShaderTileMode.Repeat,
+                ConvolveMatrixEdgeMode.None => SKShaderTileMode.Decal,
+                _ => SKShaderTileMode.Clamp,
+            };
+
+            return SKImageFilter.CreateMatrixConvolution(
+                new SKSizeI(convolve.OrderX, convolve.OrderY),
+                kernel,
+                (float)(1 / convolve.Divisor),
+                (float)convolve.Bias,
+                new SKPointI(convolve.TargetX, convolve.TargetY),
+                tileMode,
+                convolve.PreserveAlpha,
+                convolveInput);
+        }
+
+        if (effect is ICropEffect crop)
+        {
+            // A tile with identical source and destination passes the region
+            // through unchanged — a crop to the primitive subregion.
+            using var cropInput = crop.Input is { } cri ? CreateEffect(cri) : null;
+            return SKImageFilter.CreateTile(crop.Rect.ToSKRect(), crop.Rect.ToSKRect(), cropInput);
+        }
+
         if (effect is ICompositeEffect composite)
         {
             // Children apply in sequence: fold so each stage wraps the previous
