@@ -208,7 +208,9 @@ partial class DrawingContextImpl
                 (float)(convolve.Bias * 255),
                 new SKPointI(convolve.TargetX, convolve.TargetY),
                 tileMode,
-                convolve.PreserveAlpha,
+                // Skia's flag is convolveAlpha — the inverse of preserveAlpha:
+                // the SVG default convolves premultiplied data incl. alpha.
+                !convolve.PreserveAlpha,
                 convolveInput);
         }
 
