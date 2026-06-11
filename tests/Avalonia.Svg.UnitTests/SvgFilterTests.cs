@@ -12,7 +12,8 @@ public class SvgFilterTests
         using var document = SvgDocument.Parse(
             $"""<svg xmlns="http://www.w3.org/2000/svg">{defs}</svg>""");
         var context = new SvgCompileContext(document, new Size(100, 100));
-        return SvgFilters.TryResolve(context, "f", bounds, out region, out effect);
+        var style = SvgStyle.CreateDefault(new Size(100, 100));
+        return SvgFilters.TryResolve(context, "f", bounds, style, out region, out effect);
     }
 
     private static Rect DefaultBounds => new(0, 0, 100, 100);
@@ -117,7 +118,7 @@ public class SvgFilterTests
     }
 
     [Fact]
-    public void Classic_Merge_Collapses_To_DropShadow()
+    public void Classic_Merge_Builds_A_Merge_Graph()
     {
         Assert.True(Resolve(
             """
@@ -132,10 +133,11 @@ public class SvgFilterTests
             """,
             DefaultBounds, out _, out var effect));
 
-        var shadow = Assert.IsType<ImmutableDropShadowEffect>(effect);
-        Assert.Equal(4, shadow.OffsetX);
-        Assert.Equal(4, shadow.OffsetY);
-        Assert.Equal(Colors.Black, shadow.Color);
+        // The shadow chain stacks under the unmodified source graphic.
+        var merge = Assert.IsType<ImmutableMergeEffect>(effect);
+        Assert.Equal(2, merge.Inputs.Count);
+        Assert.IsType<ImmutableCompositeEffect>(merge.Inputs[0]);
+        Assert.Null(merge.Inputs[1]);
     }
 
     [Fact]
@@ -167,16 +169,20 @@ public class SvgFilterTests
     }
 
     [Fact]
-    public void NonLinear_Input_Renders_Unfiltered()
+    public void NonLinear_Input_Resolves_Through_The_Graph()
     {
-        Assert.False(Resolve(
+        // A primitive may branch from SourceGraphic regardless of earlier
+        // results: inputs form a graph, not a chain.
+        Assert.True(Resolve(
             """
             <filter id="f">
               <feGaussianBlur stdDeviation="2" result="b"/>
               <feOffset in="SourceGraphic" dx="5" dy="5"/>
             </filter>
             """,
-            DefaultBounds, out _, out _));
+            DefaultBounds, out _, out var effect));
+
+        Assert.IsType<ImmutableOffsetEffect>(effect);
     }
 
     [Fact]
