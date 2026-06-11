@@ -194,6 +194,18 @@ public class ShapeTests : ScopedTestBase
         {
         }
 
+        protected override void PushLayerCore(LayerOptions options)
+        {
+        }
+
+        protected override void PopLayerCore()
+        {
+        }
+
+        internal override void DrawRecordingCore(Rendering.Composition.DrawingRecording recording)
+        {
+        }
+
         protected override void PopClipCore()
         {
         }
