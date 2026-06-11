@@ -95,10 +95,12 @@ internal class RenderDataDrawingContext : DrawingContext
         if (!(parent.Node is T))
             throw new InvalidOperationException("Invalid Pop operation");
 
-        var removeLastPush = true;
+        // Empty push/pop pairs are elided from the recording — except nodes
+        // that render output even without children (effect layers).
+        var removeLastPush = !parent.Node.ProducesOutputWithoutChildren;
         if (_currentItemList != null)
         {
-            removeLastPush = _currentItemList.Count == 0;
+            removeLastPush &= _currentItemList.Count == 0;
             foreach (var item in _currentItemList)
                 parent.Node.Children.Add(item);
             _currentItemList.Clear();

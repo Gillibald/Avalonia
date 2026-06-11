@@ -24,21 +24,37 @@ internal class RenderDataLayerNode : RenderDataPushNode
             // is a backend hint for the compositor's offscreen buffer extent — it
             // does not by itself produce visible pixels and must not extend the
             // recorded bounds. Effect inflation (e.g. blur) does affect visible
-            // pixels and is included.
+            // pixels and is included. An effect can paint without any content
+            // (a flood fills its whole layer), so an empty layer with an
+            // effect is as large as the layer itself.
             var inner = base.Bounds;
-            return inner == null ? null : InflateForEffect(inner.Value);
+            if (inner == null)
+                return Options.Effect != null ? Options.Bounds : null;
+            return InflateForEffect(inner.Value);
         }
     }
 
     // The recorded effect is always an immutable snapshot (see PushLayerCore),
     // so the inflation itself is thread-safe; only the child union differs
     // between the client and server passes.
-    public override Rect? ServerBounds =>
-        base.ServerBounds is { } inner ? InflateForEffect(inner) : null;
+    public override Rect? ServerBounds
+    {
+        get
+        {
+            var inner = base.ServerBounds;
+            if (inner == null)
+                return Options.Effect != null ? Options.Bounds : null;
+            return InflateForEffect(inner.Value);
+        }
+    }
+
+    // An effect produces output even over empty content (a flood fills the
+    // layer), so effect layers survive empty-node elision.
+    public override bool ProducesOutputWithoutChildren => Options.Effect != null;
 
     public override void Push(ref RenderDataNodeRenderContext context)
     {
-        if (Children.Count == 0)
+        if (Children.Count == 0 && !ProducesOutputWithoutChildren)
             return;
 
         if (context.Context is IDrawingContextImplWithLayers native)
@@ -69,7 +85,7 @@ internal class RenderDataLayerNode : RenderDataPushNode
 
     public override void Pop(ref RenderDataNodeRenderContext context)
     {
-        if (Children.Count == 0)
+        if (Children.Count == 0 && !ProducesOutputWithoutChildren)
             return;
 
         if (context.Context is IDrawingContextImplWithLayers native)

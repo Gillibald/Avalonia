@@ -109,14 +109,23 @@ class RenderDataCustomNode : IRenderDataItem, IDisposable
 abstract class RenderDataPushNode : IRenderDataItem, IDisposable
 {
     public PooledInlineList<IRenderDataItem> Children;
+
+    /// <summary>
+    /// True when the node renders output even without children, so it must
+    /// not be elided from recordings or skipped during replay. Effect layers
+    /// override this: an effect (e.g. an SVG flood) can paint over empty
+    /// content.
+    /// </summary>
+    public virtual bool ProducesOutputWithoutChildren => false;
+
     public abstract void Push(ref RenderDataNodeRenderContext context);
     public abstract void Pop(ref RenderDataNodeRenderContext context);
     public void Invoke(ref RenderDataNodeRenderContext context)
     {
-        if (Children.Count == 0)
+        if (Children.Count == 0 && !ProducesOutputWithoutChildren)
             return;
         Push(ref context);
-        foreach (var ch in Children) 
+        foreach (var ch in Children)
             ch.Invoke(ref context);
         Pop(ref context);
     }
