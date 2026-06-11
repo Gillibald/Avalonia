@@ -101,6 +101,11 @@ internal static class SvgClipPaths
                 {
                     return null;
                 }
+
+                // transform-origin conjugates the transform itself, inside the
+                // units mapping.
+                clipTransform = SvgCompiler.ApplyTransformOrigin(
+                    clipPath, clipTransform, new Rect(context.Viewport), bounds);
             }
 
             // The clipPath's own clip-path intersects the result; in-error
