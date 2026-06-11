@@ -249,12 +249,32 @@ internal sealed class SvgCompileContext
     }
 
     /// <summary>
-    /// Compiles referenced content with site-specific context paints. The
-    /// recording is always owned (never cached): every site resolves the
-    /// context paints differently. Returns null for circular references.
+    /// Compiles referenced content with site-specific context paints over the
+    /// default style — markers, whose content inherits from the marker
+    /// element rather than the marked path. Returns null for circular
+    /// references.
     /// </summary>
     public DrawingRecording? GetContextRecording(
         SvgElement target, in SvgPaint contextFill, in SvgPaint contextStroke, Rect contextBounds,
+        out DrawingRecordingOwnership ownership, out SvgHitNode? hitSubtree)
+    {
+        var style = SvgStyle.CreateDefault(Viewport);
+        style.RootFontSize = RootFontSize;
+        style.ContextFill = contextFill;
+        style.ContextStroke = contextStroke;
+        style.ContextBounds = contextBounds;
+        return GetSiteRecording(target, style, out ownership, out hitSubtree);
+    }
+
+    /// <summary>
+    /// Compiles referenced content with the full style of one reference site
+    /// — use targets inherit from the use element, per the SVG clone
+    /// semantics. The recording is always owned (never cached): every site
+    /// resolves the inherited state differently. Returns null for circular
+    /// references.
+    /// </summary>
+    public DrawingRecording? GetSiteRecording(
+        SvgElement target, SvgStyle siteStyle,
         out DrawingRecordingOwnership ownership, out SvgHitNode? hitSubtree)
     {
         hitSubtree = null;
@@ -265,10 +285,8 @@ internal sealed class SvgCompileContext
         try
         {
             var builder = _hitTree != null && !Measuring ? new SvgHitTreeBuilder(Matrix.Identity) : null;
-            var fill = contextFill;
-            var stroke = contextStroke;
             var recording = DrawingRecording.Create(
-                ctx => CompileSharedContent(target, ctx, builder, fill, stroke, contextBounds));
+                ctx => CompileSiteContent(target, ctx, builder, siteStyle));
             hitSubtree = builder?.Root;
             return recording;
         }
@@ -292,21 +310,20 @@ internal sealed class SvgCompileContext
 
     private void ExitShared(SvgElement target) => _sharedStack?.Remove(target);
 
-    private void CompileSharedContent(
-        SvgElement target, DrawingContext ctx, SvgHitTreeBuilder? hitTree,
-        in SvgPaint contextFill = default, in SvgPaint contextStroke = default,
-        Rect contextBounds = default)
+    private void CompileSharedContent(SvgElement target, DrawingContext ctx, SvgHitTreeBuilder? hitTree)
+    {
+        var style = SvgStyle.CreateDefault(Viewport);
+        style.RootFontSize = RootFontSize;
+        CompileSiteContent(target, ctx, hitTree, style);
+    }
+
+    private void CompileSiteContent(
+        SvgElement target, DrawingContext ctx, SvgHitTreeBuilder? hitTree, SvgStyle style)
     {
         var previousHitTree = _hitTree;
         _hitTree = hitTree;
         try
         {
-            var style = SvgStyle.CreateDefault(Viewport);
-            style.RootFontSize = RootFontSize;
-            style.ContextFill = contextFill;
-            style.ContextStroke = contextStroke;
-            style.ContextBounds = contextBounds;
-
             if (target.Name is "symbol" or "svg" or "marker" or "pattern" or "mask")
             {
                 // Viewport-establishing containers compile their children only —

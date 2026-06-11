@@ -239,6 +239,15 @@ public sealed class SvgDocument : IDisposable
         return fallback;
     }
 
+    /// <summary>
+    /// True when the root carries any size hint (width, height or viewBox);
+    /// without one the rendered canvas takes the content's extent.
+    /// </summary>
+    internal bool HasIntrinsicSizeHints =>
+        Root.GetAttribute("width") != null
+        || Root.GetAttribute("height") != null
+        || Root.GetAttribute("viewBox") != null;
+
     internal SvgViewBox? TryGetViewBox()
     {
         var attribute = Root.GetAttribute("viewBox");

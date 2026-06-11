@@ -50,34 +50,14 @@ text/text/xml-lang=ja.svg -- language-dependent CJK glyph variants not supported
 
 
 # Strict funcIRI error handling diverges from the reference renderer.
-structure/svg/funcIRI-parsing.svg -- strict funcIRI error handling diverges
-structure/svg/funcIRI-with-invalid-characters.svg -- strict funcIRI error handling diverges
 
 # The CSS engine supports compound selectors only, and no external sheets.
-structure/style/external-CSS.svg -- external stylesheets not supported
-structure/style/attribute-selector.svg -- attribute selectors not supported
-structure/style/combined-selectors.svg -- selector combinators not supported
-structure/style/rule-specificity.svg -- selector combinators not supported
-structure/style/non-presentational-attribute.svg -- CSS geometry property handling diverges (needs adjudication)
-structure/style-attribute/non-presentational-attribute.svg -- CSS geometry property handling diverges (needs adjudication)
 
 # Shared recordings do not propagate use-site style inheritance.
-structure/use/complex-style-resolving-order.svg -- use-site style inheritance into shared recordings
-structure/use/with-currentColor.svg -- use-site style inheritance into shared recordings
-structure/use/style-inheritance-2.svg -- use-site style inheritance into shared recordings
-structure/use/transform-attribute-1.svg -- use-site style inheritance into shared recordings
-structure/use/transform-attribute-2.svg -- use-site style inheritance into shared recordings
 
 # Sizing an <image> from a nested SVG intrinsics diverges.
-structure/image/url-to-svg.svg -- nested SVG image sizing diverges
-structure/image/no-width-on-svg.svg -- nested SVG image sizing diverges
-structure/image/no-height-on-svg.svg -- nested SVG image sizing diverges
-structure/image/no-width-and-height-on-svg.svg -- nested SVG image sizing diverges
 
 # A zero/negative/absent root size produces no canvas to compare.
-structure/svg/zero-size.svg -- zero-size canvas produces no comparable surface
-structure/svg/negative-size.svg -- zero-size canvas produces no comparable surface
-structure/svg/no-size.svg -- default-size canvas diverges from the reference
 
 # DTD entities are never resolved (XXE-safe parsing posture); documents
 # built from internal entities fail to parse.
@@ -143,3 +123,4 @@ filters/filter/in=FillPaint-with-pattern.svg -- the FillPaint/StrokePaint inputs
 filters/filter/in=FillPaint-with-target-on-g.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=StrokePaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 text/textPath/dy-with-tiny-coordinates.svg -- tiny-coordinate path sampling and dy interplay diverge (multiple compounding factors)
+structure/image/url-to-svg.svg -- remote image references are never fetched, by design
