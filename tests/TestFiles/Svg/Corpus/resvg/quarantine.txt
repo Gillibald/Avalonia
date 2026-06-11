@@ -3,18 +3,6 @@
 # Each entry is a measurable compliance gap; remove the line when fixed.
 # Upstream verdicts: linebender/resvg-test-suite results.csv.
 
-# context-fill / context-stroke require plumbing the referencing element's
-# paint into marker and use content; currently they degrade to 'none'.
-
-# <image> (and feImage) are not implemented; image-rendering is a hint on them.
-
-# Mask luminance is computed in sRGB; color-interpolation=linearRGB needs a
-# linear-space luminance option on the opacity-mask layer.
-
-# Text stroking is out of scope for the current text pipeline integration.
-
-# browsers keep the pattern orientation independent of it.
-
 # Vertical writing modes (writing-mode: tb / vertical-*) are not implemented.
 text/writing-mode/tb.svg -- vertical writing modes not supported
 text/writing-mode/tb-rl.svg -- vertical writing modes not supported
@@ -33,8 +21,6 @@ text/textPath/writing-mode=tb.svg -- vertical writing modes not supported
 text/lengthAdjust/vertical.svg -- vertical writing modes not supported
 text/alignment-baseline/hanging-on-vertical.svg -- vertical writing modes not supported
 
-# feFlood is not implemented yet (the filters category is pending).
-
 # Chrome applies filters declared on tspan/textPath; we treat them as
 # non-applicable, like Firefox and resvg themselves.
 text/tspan/with-filter.svg -- filter on a text span not supported
@@ -44,20 +30,7 @@ text/textPath/with-filter.svg -- filter on a text span not supported
 text/text/xml-lang=ja.svg -- language-dependent CJK glyph variants not supported
 
 # Text layout gaps.
-
-# Decorations: the stroked variants need text stroking; style-resolving-4's
-# override semantics diverge.
-
-
-# Strict funcIRI error handling diverges from the reference renderer.
-
-# The CSS engine supports compound selectors only, and no external sheets.
-
-# Shared recordings do not propagate use-site style inheritance.
-
-# Sizing an <image> from a nested SVG intrinsics diverges.
-
-# A zero/negative/absent root size produces no canvas to compare.
+text/textPath/dy-with-tiny-coordinates.svg -- tiny-coordinate path sampling and dy interplay diverge (multiple compounding factors)
 
 # DTD entities are never resolved (XXE-safe parsing posture); documents
 # built from internal entities fail to parse.
@@ -66,12 +39,11 @@ structure/svg/elements-via-ENTITY-reference-2.svg -- DTD entities are deliberate
 structure/svg/elements-via-ENTITY-reference-3.svg -- DTD entities are deliberately not resolved
 structure/svg/attribute-value-via-ENTITY-reference.svg -- DTD entities are deliberately not resolved
 
-# brush mapping; the origin conjugation there needs the same rework as the
-# patternTransform composition gap.
+# Remote references are never fetched, by design.
+structure/image/url-to-svg.svg -- remote image references are never fetched, by design
 
-# to apply transforms after the relative resolution.
-
-# Filters: engine sampling gaps and deliberately unsupported legacy inputs.
+# The legacy background-image filter inputs are deprecated and deliberately
+# unsupported (Chrome and Firefox dropped them too).
 filters/enable-background/accumulate-with-new.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/filter-on-shape.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/inherit.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
@@ -89,38 +61,18 @@ filters/enable-background/with-opacity-2.svg -- enable-background and the Backgr
 filters/enable-background/with-opacity-3.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-opacity-4.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-transform.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
-filters/feConvolveMatrix/bias=-0.5.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/bias=0.5.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/bias=9999.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/custom-divisor.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/edgeMode=none.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/edgeMode=wrap.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/edgeMode=wrap-with-matrix-larger-than-target.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/kernelMatrix-with-zero-sum-and-no-divisor.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/order=4.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/order=4-2.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/order=4-4.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/targetX=0.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/targetX=2.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feConvolveMatrix/unset-order.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
-filters/feGaussianBlur/huge-stdDeviation.svg -- consensus implementations bound huge sigmas to the surface size; Skia's blur dissipates the content correctly
-filters/feTile/simple-case.svg -- feTile source sampling diverges; pending
-filters/feTile/with-region.svg -- feTile source sampling diverges; pending
-filters/feTile/with-subregion-1.svg -- feTile source sampling diverges; pending
-filters/feTile/with-subregion-2.svg -- feTile source sampling diverges; pending
-filters/feTile/with-subregion-3.svg -- feTile source sampling diverges; pending
-filters/feTurbulence/baseFrequency=0.05-0.svg -- Skia's Perlin noise differs from the spec turbulence here (stitching, zero-frequency axes, oBB frequency scaling); pending
-filters/feTurbulence/primitiveUnits=objectBoundingBox.svg -- Skia's Perlin noise differs from the spec turbulence here (stitching, zero-frequency axes, oBB frequency scaling); pending
-filters/feTurbulence/stitchTiles=stitch.svg -- Skia's Perlin noise differs from the spec turbulence here (stitching, zero-frequency axes, oBB frequency scaling); pending
 filters/filter/in=BackgroundAlpha.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/filter/in=BackgroundAlpha-with-enable-background.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/filter/in=BackgroundImage.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/filter/in=BackgroundImage-with-enable-background.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+
+# The SVG 1.1 paint-server filter inputs never reached interop.
 filters/filter/in=FillPaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-on-g-without-children.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-gradient.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-pattern.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-target-on-g.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=StrokePaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
-text/textPath/dy-with-tiny-coordinates.svg -- tiny-coordinate path sampling and dy interplay diverge (multiple compounding factors)
-structure/image/url-to-svg.svg -- remote image references are never fetched, by design
+
+# Blur capping.
+filters/feGaussianBlur/huge-stdDeviation.svg -- consensus implementations bound huge sigmas to the surface size; Skia's blur dissipates the content correctly
