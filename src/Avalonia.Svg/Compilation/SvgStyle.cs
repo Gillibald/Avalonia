@@ -540,6 +540,77 @@ internal struct SvgStyle
     }
 
     /// <summary>
+    /// True when every property a referenced subtree could inherit matches
+    /// <paramref name="other"/> — the test that decides whether a use target
+    /// can share its document-cached recording (compiled with the default
+    /// style) or must compile per reference site. Context geometry
+    /// (<see cref="ContextBounds"/>, <see cref="ContextTransform"/>) is
+    /// excluded: it only matters alongside context paints, which the caller
+    /// detects separately.
+    /// </summary>
+    public readonly bool InheritablesEqual(in SvgStyle other)
+    {
+        // ReSharper disable CompareOfFloatsByEqualityOperator
+        return Fill.Equals(other.Fill)
+               && Stroke.Equals(other.Stroke)
+               && ContextFill.Equals(other.ContextFill)
+               && ContextStroke.Equals(other.ContextStroke)
+               && FillOpacity == other.FillOpacity
+               && StrokeOpacity == other.StrokeOpacity
+               && StrokeWidth == other.StrokeWidth
+               && LineCap == other.LineCap
+               && LineJoin == other.LineJoin
+               && MiterLimit == other.MiterLimit
+               && DashesEqual(DashArray, other.DashArray)
+               && DashOffset == other.DashOffset
+               && FillRule == other.FillRule
+               && Color == other.Color
+               && StrokeBeforeFill == other.StrokeBeforeFill
+               && string.Equals(MarkerStart, other.MarkerStart, StringComparison.Ordinal)
+               && string.Equals(MarkerMid, other.MarkerMid, StringComparison.Ordinal)
+               && string.Equals(MarkerEnd, other.MarkerEnd, StringComparison.Ordinal)
+               && string.Equals(FontFamily, other.FontFamily, StringComparison.Ordinal)
+               && FontSize == other.FontSize
+               && RootFontSize == other.RootFontSize
+               && FontStyle == other.FontStyle
+               && FontWeight == other.FontWeight
+               && FontStretch == other.FontStretch
+               && TextAnchor == other.TextAnchor
+               && LetterSpacing == other.LetterSpacing
+               && WordSpacing == other.WordSpacing
+               && BaselineShift == other.BaselineShift
+               && KerningDisabled == other.KerningDisabled
+               && string.Equals(Language, other.Language, StringComparison.Ordinal)
+               && FontSizeAdjust == other.FontSizeAdjust
+               && SmallCaps == other.SmallCaps
+               && Underline == other.Underline
+               && Overline == other.Overline
+               && LineThrough == other.LineThrough
+               && DecorationEmSize == other.DecorationEmSize
+               && ReferenceEquals(UnderlineBrush, other.UnderlineBrush)
+               && ReferenceEquals(OverlineBrush, other.OverlineBrush)
+               && ReferenceEquals(LineThroughBrush, other.LineThroughBrush)
+               && Visible == other.Visible
+               && PointerEvents == other.PointerEvents
+               && Viewport == other.Viewport;
+
+        static bool DashesEqual(double[]? a, double[]? b)
+        {
+            if (ReferenceEquals(a, b))
+                return true;
+            if (a == null || b == null || a.Length != b.Length)
+                return false;
+            for (var i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i])
+                    return false;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The font size used for glyph rendering: <c>font-size-adjust</c> scales
     /// it so the first available font's aspect (x-height over em) matches the
     /// requested value; em-based lengths keep using <see cref="FontSize"/>.

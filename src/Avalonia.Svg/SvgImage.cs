@@ -49,6 +49,13 @@ public sealed class SvgImage : IImage, IDisposable
         _recording = compositor == null
             ? DrawingRecording.Create(Compile)
             : DrawingRecording.Create(compositor, Compile);
+
+        // Without any size hints (width, height or viewBox) the canvas takes
+        // the content's extent; the CSS 300×150 default only feeds the
+        // compilation viewport.
+        if (!document.HasIntrinsicSizeHints && _recording.Bounds is { Width: > 0, Height: > 0 } contentBounds)
+            Size = new Size(Math.Max(0, contentBounds.Right), Math.Max(0, contentBounds.Bottom));
+
         _hitRoot = options.HitRoot;
         AnimatedBrushes = options.AnimatedBrushes;
 

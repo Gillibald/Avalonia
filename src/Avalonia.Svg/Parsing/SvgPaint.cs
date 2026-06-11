@@ -61,6 +61,13 @@ internal readonly struct SvgPaint
 
     public static SvgPaint FromColor(Color color) => new(SvgPaintKind.Color, color, null);
 
+    public readonly bool Equals(in SvgPaint other) =>
+        Kind == other.Kind
+        && Color == other.Color
+        && string.Equals(Reference, other.Reference, StringComparison.Ordinal)
+        && Fallback == other.Fallback
+        && FallbackColor == other.FallbackColor;
+
     public static bool TryParse(string input, out SvgPaint paint)
     {
         var value = input.Trim();
