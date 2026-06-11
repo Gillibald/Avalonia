@@ -1156,18 +1156,33 @@ already-known instance of this rule.
   tolerance, review the outliers ("UB" references mark upstream-undecided
   behavior).
   Scoreboard: **shapes 133/133; painting 304/304; paint-servers
-  149/149; masking 93/93; text 336/356 (20 quarantined: vertical
-  writing modes ×16, filters on text spans ×2, language-dependent CJK
-  glyph variants ×1, tiny-coordinate textPath sampling ×1);
+  149/149; masking 93/93; text 338/356 (18 quarantined: vertical
+  writing modes ×16, language-driven CJK glyph variants ×1,
+  tiny-coordinate textPath sampling ×1);
   structure 242/247 (5 quarantined: DTD entities ×4 and remote image
   fetching ×1, both by design);
   filters 369/397 (28 quarantined: enable-background + BackgroundImage
   inputs ×21, FillPaint/StrokePaint inputs ×6, huge-sigma clamping ×1)**
-  — overall 1626/1679. Four categories are complete (shapes, painting,
+  — overall 1628/1679. Four categories are complete (shapes, painting,
   paint-servers, masking); structure's and filters' remaining gaps are
   all deliberate policy (no DTD resolution, no remote fetches, no
   deprecated background-image or paint filter inputs, no
   consensus-style sigma bounding).
+  Filters on text spans landed (SVG 2; the references follow
+  Chrome/Safari — resvg fails its own tests here): runs remember the
+  nearest span that declares a filter, layout segments split at filter
+  boundaries (a filtered span draws as one isolated group), and both
+  draw paths open a filter scope over each contiguous filtered range —
+  the region resolves against the range's cell box, an unresolvable
+  filter hides the range's glyphs, and the pen advances regardless
+  since filters never affect layout. textPath now places its glyphs
+  before drawing them, so a filter on the textPath wraps all of them
+  in one layer sized to the united glyph cells. The xml-lang=ja
+  quarantine is confirmed permanent policy: the ja-variant reference
+  needs culture-aware fallback across two CJK fonts the suite does
+  not ship (it carries only the Japanese-only M PLUS 1p; resvg itself
+  fails the test, and the default and zh-HANT reference rows are
+  pixel-identical while only ja differs).
   The filters engine tier closed the last three primitive families.
   SkiaSharp's CreateMatrixConvolution boolean is convolveAlpha — the
   inverse of SVG preserveAlpha (probed: gain through a no-op kernel
