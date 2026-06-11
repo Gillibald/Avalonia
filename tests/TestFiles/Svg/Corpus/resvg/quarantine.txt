@@ -5,33 +5,11 @@
 
 # context-fill / context-stroke require plumbing the referencing element's
 # paint into marker and use content; currently they degrade to 'none'.
-painting/color/recursive-nested-context.svg -- context paint not supported (degrades to none)
-painting/context/in-marker.svg -- context paint not supported (degrades to none)
-painting/context/in-nested-marker.svg -- context paint not supported (degrades to none)
-painting/context/in-nested-use-and-marker.svg -- context paint not supported (degrades to none)
-painting/context/in-nested-use.svg -- context paint not supported (degrades to none)
-painting/context/in-use.svg -- context paint not supported (degrades to none)
-painting/context/with-gradient-and-gradient-transform.svg -- context paint not supported (degrades to none)
-painting/context/with-gradient-in-use.svg -- context paint not supported (degrades to none)
-painting/context/with-gradient-on-marker.svg -- context paint not supported (degrades to none)
-painting/context/with-pattern-and-transform-in-use.svg -- context paint not supported (degrades to none)
-painting/context/with-pattern-in-use.svg -- context paint not supported (degrades to none)
-painting/context/with-pattern-objectBoundingBox-in-use.svg -- context paint not supported (degrades to none)
-painting/context/with-pattern-on-marker.svg -- context paint not supported (degrades to none)
-painting/context/with-text.svg -- context paint not supported (degrades to none)
 
 # <image> (and feImage) are not implemented; image-rendering is a hint on them.
-painting/image-rendering/on-feImage.svg -- feImage / <image> not supported
-painting/image-rendering/optimizeSpeed.svg -- <image> not supported
-painting/image-rendering/optimizeSpeed-on-SVG.svg -- <image> not supported
-painting/marker/with-an-image-child.svg -- <image> not supported
-masking/clip/simple-case.svg -- <image> not supported
-masking/mask/with-image.svg -- <image> not supported
-masking/mask/with-grayscale-image.svg -- <image> not supported
 
 # Mask luminance is computed in sRGB; color-interpolation=linearRGB needs a
 # linear-space luminance option on the opacity-mask layer.
-masking/mask/color-interpolation=linearRGB.svg -- linearRGB mask luminance not supported by the opacity-mask layer
 
 # Text stroking is out of scope for the current text pipeline integration.
 painting/stroke/linear-gradient-on-text.svg -- text stroking not supported
@@ -188,3 +166,10 @@ filters/filter/in=FillPaint-with-gradient.svg -- the FillPaint/StrokePaint input
 filters/filter/in=FillPaint-with-pattern.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-target-on-g.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=StrokePaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
+painting/context/with-gradient-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
+painting/context/with-gradient-and-gradient-transform.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
+painting/context/with-pattern-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
+painting/context/with-pattern-and-transform-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
+painting/context/with-pattern-objectBoundingBox-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
+painting/context/with-pattern-on-marker.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
+painting/context/with-text.svg -- text stroking not supported

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
+using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg.Compilation;
 
@@ -212,6 +213,72 @@ internal sealed class SvgCompileContext
     }
 
     /// <summary>
+    /// True when the target's subtree consumes <c>context-fill</c> or
+    /// <c>context-stroke</c> — directly or through nested <c>use</c>
+    /// references. Such content cannot share a recording between reference
+    /// sites: the context paints differ per site.
+    /// </summary>
+    public bool UsesContextPaint(SvgElement target)
+    {
+        return Walk(target, null);
+
+        bool Walk(SvgElement element, HashSet<SvgElement>? visited)
+        {
+            if (element.GetStyleOrAttribute("fill") is { } fill && fill.Contains("context-"))
+                return true;
+            if (element.GetStyleOrAttribute("stroke") is { } stroke && stroke.Contains("context-"))
+                return true;
+
+            if (element.Name == "use"
+                && element.Href is { Length: > 1 } href && href[0] == '#'
+                && Document.GetElementById(href.Substring(1)) is { } useTarget)
+            {
+                visited ??= new HashSet<SvgElement>();
+                if (visited.Add(element) && Walk(useTarget, visited))
+                    return true;
+            }
+
+            foreach (var child in element.Children)
+            {
+                if (Walk(child, visited))
+                    return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Compiles referenced content with site-specific context paints. The
+    /// recording is always owned (never cached): every site resolves the
+    /// context paints differently. Returns null for circular references.
+    /// </summary>
+    public DrawingRecording? GetContextRecording(
+        SvgElement target, in SvgPaint contextFill, in SvgPaint contextStroke, Rect contextBounds,
+        out DrawingRecordingOwnership ownership, out SvgHitNode? hitSubtree)
+    {
+        hitSubtree = null;
+        ownership = DrawingRecordingOwnership.Owned;
+        if (!EnterShared(target))
+            return null;
+
+        try
+        {
+            var builder = _hitTree != null && !Measuring ? new SvgHitTreeBuilder(Matrix.Identity) : null;
+            var fill = contextFill;
+            var stroke = contextStroke;
+            var recording = DrawingRecording.Create(
+                ctx => CompileSharedContent(target, ctx, builder, fill, stroke, contextBounds));
+            hitSubtree = builder?.Root;
+            return recording;
+        }
+        finally
+        {
+            ExitShared(target);
+        }
+    }
+
+    /// <summary>
     /// Guards shared-content compilation against reference cycles across all
     /// shared kinds (markers, patterns, masks, use targets) — including cycles
     /// that cross kinds, e.g. a pattern whose tile is marked with a marker that
@@ -225,7 +292,10 @@ internal sealed class SvgCompileContext
 
     private void ExitShared(SvgElement target) => _sharedStack?.Remove(target);
 
-    private void CompileSharedContent(SvgElement target, DrawingContext ctx, SvgHitTreeBuilder? hitTree)
+    private void CompileSharedContent(
+        SvgElement target, DrawingContext ctx, SvgHitTreeBuilder? hitTree,
+        in SvgPaint contextFill = default, in SvgPaint contextStroke = default,
+        Rect contextBounds = default)
     {
         var previousHitTree = _hitTree;
         _hitTree = hitTree;
@@ -233,6 +303,9 @@ internal sealed class SvgCompileContext
         {
             var style = SvgStyle.CreateDefault(Viewport);
             style.RootFontSize = RootFontSize;
+            style.ContextFill = contextFill;
+            style.ContextStroke = contextStroke;
+            style.ContextBounds = contextBounds;
 
             if (target.Name is "symbol" or "svg" or "marker" or "pattern" or "mask")
             {

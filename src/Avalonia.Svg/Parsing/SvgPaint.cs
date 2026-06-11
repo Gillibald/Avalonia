@@ -13,6 +13,10 @@ internal enum SvgPaintKind
     CurrentColor,
     /// <summary>A <c>url(#...)</c> paint-server reference (gradients/patterns; later phases).</summary>
     Reference,
+    /// <summary>The context element's fill (SVG 2; markers and use sites).</summary>
+    ContextFill,
+    /// <summary>The context element's stroke (SVG 2; markers and use sites).</summary>
+    ContextStroke,
 }
 
 /// <summary>The fallback of a <c>url(#id)</c> paint reference.</summary>
@@ -80,11 +84,17 @@ internal readonly struct SvgPaint
         }
 
         // Context paints resolve against the element a marker or use site was
-        // referenced from. Without that plumbing the spec-correct degradation
-        // is 'none' — not the inherited paint.
-        if (value is "context-fill" or "context-stroke")
+        // referenced from; the compiler substitutes the context element's
+        // computed paint at the consuming site.
+        if (value == "context-fill")
         {
-            paint = None;
+            paint = new SvgPaint(SvgPaintKind.ContextFill, default, null);
+            return true;
+        }
+
+        if (value == "context-stroke")
+        {
+            paint = new SvgPaint(SvgPaintKind.ContextStroke, default, null);
             return true;
         }
 
