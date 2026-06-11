@@ -89,6 +89,25 @@ public static class EffectExtensions
                 : default;
         }
 
+        // Lighting and per-channel transfers recolor without moving pixels;
+        // crops only shrink.
+        if (effect is ILightingEffect lightingEffect)
+            return lightingEffect.Input.GetEffectOutputPadding();
+        if (effect is IComponentTransferEffect componentTransfer)
+            return componentTransfer.Input.GetEffectOutputPadding();
+        if (effect is ICropEffect cropEffect)
+            return cropEffect.Input.GetEffectOutputPadding();
+
+        if (effect is IConvolveMatrixEffect convolve)
+        {
+            // The kernel reads up to a full order in every direction;
+            // conservative, like the composite accumulation.
+            var inner = convolve.Input.GetEffectOutputPadding();
+            return new Thickness(
+                inner.Left + convolve.OrderX, inner.Top + convolve.OrderY,
+                inner.Right + convolve.OrderX, inner.Bottom + convolve.OrderY);
+        }
+
         throw new ArgumentException("Unknown effect type: " + effect.GetType());
 
         static Thickness Max(Thickness a, Thickness b) => new(
