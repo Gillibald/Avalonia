@@ -145,9 +145,9 @@ internal static class SvgCompiler
                 if (root.GetStyleOrAttribute("filter") is { } rootFilterValue && rootFilterValue != "none")
                 {
                     var rootBounds = new Rect(contentViewport);
-                    rootFilterScope = SvgClipPaths.TryParseUrlReference(rootFilterValue, out var rootFilterId)
+                    rootFilterScope = SvgFilters.TryParseSingleUrl(rootFilterValue, out var rootFilterId)
                         ? SvgFilters.Push(context, compileContext, rootFilterId, rootBounds, style)
-                        : SvgFilters.PushFunctions(context, rootFilterValue, rootBounds, style);
+                        : SvgFilters.PushFunctions(context, compileContext, rootFilterValue, rootBounds, style);
                 }
 
                 using (rootFilterScope)
@@ -287,9 +287,9 @@ internal static class SvgCompiler
                             && filterValue != "none")
                         {
                             var filterBounds = GetFillBounds(element, compileContext, style);
-                            filterScope = SvgClipPaths.TryParseUrlReference(filterValue, out var filterId)
+                            filterScope = SvgFilters.TryParseSingleUrl(filterValue, out var filterId)
                                 ? SvgFilters.Push(context, compileContext, filterId, filterBounds, style)
-                                : SvgFilters.PushFunctions(context, filterValue, filterBounds, style);
+                                : SvgFilters.PushFunctions(context, compileContext, filterValue, filterBounds, style);
                         }
 
                         using (filterScope)
