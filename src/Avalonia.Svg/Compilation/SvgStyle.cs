@@ -103,10 +103,12 @@ internal struct SvgStyle
 
     /// <summary>
     /// Resolves a length against this style's resolution context: percentages
-    /// and viewport units against <see cref="Viewport"/>, <c>em</c>/<c>ex</c>
-    /// against <see cref="FontSize"/>, <c>rem</c> against
-    /// <see cref="RootFontSize"/> and <c>ch</c> against the advance of the
-    /// <c>0</c> glyph in this style's font.
+    /// and viewport units against <see cref="Viewport"/>, <c>em</c> against
+    /// <see cref="FontSize"/>, <c>rem</c> against <see cref="RootFontSize"/>
+    /// and <c>ch</c> against the advance of the <c>0</c> glyph in this style's
+    /// font. <c>ex</c> stays the 0.5em convention here: geometry attributes
+    /// resolve it that way in every renderer the corpus tracks, while
+    /// font-size (see <see cref="ApplyFontSize"/>) uses the font's x-height.
     /// </summary>
     public readonly double ResolveLength(in SvgLength length, SvgLengthAxis axis)
     {
@@ -511,19 +513,26 @@ internal struct SvgStyle
         var metrics = glyphTypeface.Metrics;
         var scale = FontSize / metrics.DesignEmHeight;
 
-        // Avalonia metrics are y-down: the ascent is negative. The metrics
-        // carry no x-height; 0.5em is the usual approximation.
-        return (-metrics.Ascent * scale, metrics.Descent * scale, 0.5 * FontSize);
+        // Avalonia metrics are y-down: the ascent is negative. Fonts without
+        // an OS/2 x-height fall back to the usual 0.5em approximation.
+        var xHeight = metrics.XHeight > 0 ? metrics.XHeight * scale : 0.5 * FontSize;
+
+        return (-metrics.Ascent * scale, metrics.Descent * scale, xHeight);
     }
 
     private void ApplyFontSize(string value)
     {
         if (SvgLength.TryParse(value.AsSpan(), out var fontSizeLength))
         {
-            // em/ex/ch and percentages resolve against the inherited font.
-            var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
-                ? fontSizeLength.Value / 100.0 * FontSize
-                : ResolveLength(fontSizeLength, SvgLengthAxis.Other);
+            // em/ex/ch and percentages resolve against the inherited font; ex
+            // uses the inherited font's real x-height here, unlike geometry.
+            double resolved;
+            if (fontSizeLength.Unit == SvgLengthUnit.Percent)
+                resolved = fontSizeLength.Value / 100.0 * FontSize;
+            else if (fontSizeLength.Unit == SvgLengthUnit.Ex && GetFontMetrics() is { } metrics)
+                resolved = fontSizeLength.Value * metrics.XHeight;
+            else
+                resolved = ResolveLength(fontSizeLength, SvgLengthAxis.Other);
             if (resolved > 0)
                 FontSize = resolved;
             return;

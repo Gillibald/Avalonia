@@ -1190,6 +1190,12 @@ already-known instance of this rule.
   unsupported (Chrome agrees with none of the eleven reference images —
   the element is gone from SVG 2), so those tests golden our rendering,
   as do the sixteen upstream-undecided (UB) tests.
+  Follow-up: FontMetrics now exposes the OS/2 x-height and cap height
+  (recording branch), so the named-baseline mapping and `ex` in
+  font-size use the font's real x-height — the references confirmed
+  both (the middle-baseline and font-size ex diffs dropped to match) —
+  while `ex` in geometry attributes stays the 0.5em convention every
+  tracked renderer uses there. Five goldens refreshed.
   Masking fixes (the clipPath builder was substantially rewritten): an
   empty or in-error clipPath — no valid children, invisible children,
   unresolvable or non-invertible attributes — hides the element instead
