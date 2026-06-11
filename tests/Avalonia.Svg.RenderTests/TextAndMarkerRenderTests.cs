@@ -109,4 +109,49 @@ public class TextAndMarkerRenderTests : SvgRenderTestBase
         await RenderToFile(target);
         CompareImages();
     }
+
+    [Fact]
+    public async Task Small_Caps_Uses_The_Fonts_Smcp_Feature()
+    {
+        // Source Sans Pro carries a real smcp feature; Noto Sans does not
+        // (its small-caps go through the synthesis fallback instead).
+        Assert.True(Avalonia.Media.FontManager.Current.TryGetGlyphTypeface(
+            new Avalonia.Media.Typeface("fonts:svg-corpus#Source Sans Pro"), out var sourceSans));
+        Assert.Contains(Avalonia.Media.Fonts.OpenTypeTag.Parse("smcp"), sourceSans!.SupportedFeatures);
+
+        // The feature must reach shaping: the small-caps render differs from
+        // the plain one.
+        var plain = new SvgHost(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" font-family="Source Sans Pro">
+              <rect width="200" height="80" fill="white"/>
+              <text x="10" y="50" font-size="32">Text</text>
+            </svg>
+            """);
+        var smallCaps = new SvgHost(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" font-family="Source Sans Pro">
+              <rect width="200" height="80" fill="white"/>
+              <text x="10" y="50" font-size="32" font-variant="small-caps">Text</text>
+            </svg>
+            """);
+
+        await RenderToFile(plain, "Smcp_Plain");
+        await RenderToFile(smallCaps, "Smcp_SmallCaps");
+
+        using var plainImage = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(
+            System.IO.Path.Combine(OutputPath, "Smcp_Plain.composited.out.png"));
+        using var capsImage = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(
+            System.IO.Path.Combine(OutputPath, "Smcp_SmallCaps.composited.out.png"));
+
+        var different = 0;
+        for (var y = 0; y < 80; y++)
+        for (var x = 0; x < 200; x++)
+        {
+            if (plainImage[x, y].R != capsImage[x, y].R)
+                different++;
+        }
+
+        Assert.True(different > 100, $"smcp shaping should change the render ({different} px differ)");
+    }
 }
