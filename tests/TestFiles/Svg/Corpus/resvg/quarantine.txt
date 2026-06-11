@@ -39,9 +39,7 @@ painting/stroke/pattern-on-text.svg -- text stroking not supported
 painting/stroke/radial-gradient-on-text.svg -- text stroking not supported
 painting/stroke-opacity/on-text.svg -- text stroking not supported
 
-# patternTransform composes with the referencing element's transform here;
 # browsers keep the pattern orientation independent of it.
-paint-servers/pattern/transform-and-patternTransform.svg -- patternTransform composition with the element transform diverges from browsers
 
 # Vertical writing modes (writing-mode: tb / vertical-*) are not implemented.
 text/writing-mode/tb.svg -- vertical writing modes not supported
@@ -134,7 +132,11 @@ structure/svg/elements-via-ENTITY-reference-2.svg -- DTD entities are deliberate
 structure/svg/elements-via-ENTITY-reference-3.svg -- DTD entities are deliberately not resolved
 structure/svg/attribute-value-via-ENTITY-reference.svg -- DTD entities are deliberately not resolved
 
-# The objectBoundingBox pattern transform composes through the relative
 # brush mapping; the origin conjugation there needs the same rework as the
 # patternTransform composition gap.
-structure/transform-origin/on-pattern-object-bounding-box.svg -- transform-origin on objectBoundingBox patterns diverges
+
+# The objectBoundingBox pattern path resolves its destination relatively;
+# the brush transform composes with that mapping at a different stage than
+# the SVG user-space model. Needs the DrawingRecordingBrush tile lowering
+# to apply transforms after the relative resolution.
+structure/transform-origin/on-pattern-object-bounding-box.svg -- brush transform composes before the relative tile mapping
