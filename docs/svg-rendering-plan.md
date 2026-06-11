@@ -1156,16 +1156,37 @@ already-known instance of this rule.
   behavior).
   Scoreboard: **shapes 133/133; painting 282/304 (22 quarantined:
   context paint, `<image>`/feImage, text stroking); paint-servers
-  148/149 (1 quarantined: patternTransform×element-transform
-  composition); masking 89/93 (4 quarantined: `<image>` in masks/clip,
+  149/149; masking 89/93 (4 quarantined: `<image>` in masks/clip,
   linearRGB mask luminance); text 317/356 (39 quarantined: vertical
   writing modes ×16, font capabilities ×11, feFlood/span filters ×4,
   tspan textLength and textPath details ×4, stroked decorations ×4);
-  structure 219/247 (28 quarantined: transform-origin on
-  clip/pattern ×4, CSS engine limits ×6, use-site inheritance into
-  shared recordings ×5, nested-SVG image sizing ×4, strict funcIRI
-  errors ×2, zero-size canvases ×3, DTD entities ×4)** — overall
-  1188/1282.
+  structure 223/247 (24 quarantined: CSS engine limits ×6, use-site
+  inheritance into shared recordings ×5, nested-SVG image sizing ×4,
+  strict funcIRI errors ×2, zero-size canvases ×3, DTD entities ×4);
+  filters 298/397 (99 quarantined: feImage ×29, enable-background +
+  BackgroundImage inputs ×21, feTurbulence ×19, feConvolveMatrix
+  bias/edge sampling ×14, FillPaint/StrokePaint inputs ×6, feTile
+  sampling ×5, asymmetric stdDeviation ×4, huge-sigma clamping ×1)**
+  — overall 1491/1679.
+  Filters slice 3 made `color-interpolation-filters` real: primitives
+  operate in linearRGB by default, with sRGB↔linear transfer tables
+  inserted at space boundaries (intermediates track their space; pure
+  pixel-movers pass it through; light and shadow color constants
+  linearize; the final result always returns to sRGB). The error model
+  landed (invalid values hide the element; invalid feColorMatrix/
+  transfer-function/morphology attributes fall back to their defaults;
+  a missing filter target hides the element while a missing url mid
+  function-list is skipped; empty feMerge hides), filter function lists
+  chain `url(#f)` references with each filter cropped to its own
+  region, primitive subregions default to the union of their input
+  subregions and hard-clip to the (capped) filter region, oBB light
+  positions resolve from the box origin, and CSS function parsing went
+  strict (clamps, negative/unitless-angle invalidation). Three
+  recording-branch fixes fell out: SkiaSharp's `CreateTable` rejects
+  null channel tables (identity tables materialize instead — this was
+  also the immediate/composited transfer divergence), and effect
+  layers now survive empty-content elision at record, replay and
+  bounds time (an SVG flood paints without input).
   The structure sweep brought `<image>` (data URIs incl. SVG-in-image
   compiled inline with a depth guard, BaseUri-relative files, gzip,
   format sniffing, the SVG 2 auto-sizing rules, image-rendering hints,
