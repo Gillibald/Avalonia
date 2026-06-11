@@ -255,7 +255,9 @@ internal static class SvgCompiler
                     && element.GetStyleOrAttribute("clip-path") is { } clipReference)
                 {
                     var clipBounds = GetFillBounds(element, compileContext, style);
-                    var strokeWidth = style.Stroke.Kind != SvgPaintKind.None ? style.StrokeWidth : 0;
+                    var strokeWidth = style.ResolveContextPaint(style.Stroke).Kind != SvgPaintKind.None
+                        ? style.StrokeWidth
+                        : 0;
                     switch (SvgClipPaths.Resolve(compileContext, clipReference, clipBounds, strokeWidth, out var clip))
                     {
                         case SvgClipPathResult.Hidden:
@@ -702,7 +704,19 @@ internal static class SvgCompiler
         {
             var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
             var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
-            var recording = compileContext.GetSharedRecording(target, out var ownership, out var hitSubtree);
+
+            // Content consuming context paints compiles per site — the use
+            // element's own computed fill/stroke are the context values
+            // (themselves substituted, so context chains resolve outward),
+            // and context paint servers map onto the target's geometry.
+            var recording = compileContext.UsesContextPaint(target)
+                ? compileContext.GetContextRecording(
+                    target,
+                    style.ResolveContextPaint(style.Fill),
+                    style.ResolveContextPaint(style.Stroke),
+                    GetFillBounds(target, compileContext, style),
+                    out var ownership, out var hitSubtree)
+                : compileContext.GetSharedRecording(target, out ownership, out hitSubtree);
             if (recording == null)
                 return;
 
@@ -792,17 +806,28 @@ internal static class SvgCompiler
     private static readonly ImmutableSolidColorBrush s_measuringFill = new(Colors.Black);
 
     private static IImmutableBrush? ResolvePaint(
-        in SvgPaint paint, in SvgStyle style, SvgCompileContext compileContext, Rect bounds, double opacity)
+        in SvgPaint contextual, in SvgStyle style, SvgCompileContext compileContext, Rect bounds, double opacity)
     {
+        // Fill boxes do not depend on the paint, so measuring recordings
+        // substitute a plain brush for everything but an explicit 'none' —
+        // resolving a paint server here would compile pattern content under
+        // measuring semantics and pollute the document's shared-recording
+        // cache, and context paints measure before their context is seeded.
+        if (compileContext.Measuring)
+            return contextual.Kind == SvgPaintKind.None ? null : s_measuringFill;
+
+        // Context paints substitute the context element's computed paint; a
+        // url() context resolves against the context element's geometry, so
+        // one gradient spans all the consuming shapes.
+        var paint = style.ResolveContextPaint(contextual);
+        if (contextual.Kind is SvgPaintKind.ContextFill or SvgPaintKind.ContextStroke
+            && style.ContextBounds.Width > 0 && style.ContextBounds.Height > 0)
+        {
+            bounds = style.ContextBounds;
+        }
+
         if (paint.Kind == SvgPaintKind.Reference)
         {
-            // Fill boxes do not depend on the paint, so measuring recordings
-            // substitute a plain brush — resolving a paint server here would
-            // compile pattern content under measuring semantics and pollute the
-            // document's shared-recording cache with decoration-free content.
-            if (compileContext.Measuring)
-                return s_measuringFill;
-
             var brush = paint.Reference is { } id
                 ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity)
                 : null;
@@ -905,8 +930,9 @@ internal static class SvgCompiler
 
         shape.StrokeWidth = style.StrokeWidth;
         if (shape.Kind != SvgHitShape.ShapeKind.Line)
-            shape.HasFill = style.Fill.Kind != SvgPaintKind.None;
-        shape.HasStroke = style.Stroke.Kind != SvgPaintKind.None && style.StrokeWidth > 0;
+            shape.HasFill = style.ResolveContextPaint(style.Fill).Kind != SvgPaintKind.None;
+        shape.HasStroke = style.ResolveContextPaint(style.Stroke).Kind != SvgPaintKind.None
+            && style.StrokeWidth > 0;
 
         hitTree.AddShape(element, shape, style.PointerEvents, style.Visible);
     }

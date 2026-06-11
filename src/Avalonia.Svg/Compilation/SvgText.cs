@@ -471,7 +471,7 @@ internal static class SvgText
         var hasReferences = false;
         foreach (var run in chunk)
         {
-            if (run.Style.Fill.Kind == SvgPaintKind.Reference)
+            if (run.Style.ResolveContextPaint(run.Style.Fill).Kind == SvgPaintKind.Reference)
                 hasReferences = true;
         }
 
@@ -564,7 +564,7 @@ internal static class SvgText
                         Bounds = new Rect(
                             penX, penY - line.Baseline,
                             line.WidthIncludingTrailingWhitespace, line.Height),
-                        HasFill = segmentStyle.Fill.Kind != SvgPaintKind.None,
+                        HasFill = segmentStyle.ResolveContextPaint(segmentStyle.Fill).Kind != SvgPaintKind.None,
                     },
                     segmentStyle.PointerEvents,
                     segmentStyle.Visible);
@@ -734,7 +734,7 @@ internal static class SvgText
                     {
                         Kind = SvgHitShape.ShapeKind.Rectangle,
                         Bounds = new Rect(origin.X + anchorShift, origin.Y - maxHeight, totalAdvance, maxHeight),
-                        HasFill = chunkStyle.Fill.Kind != SvgPaintKind.None,
+                        HasFill = chunkStyle.ResolveContextPaint(chunkStyle.Fill).Kind != SvgPaintKind.None,
                     },
                     chunkStyle.PointerEvents,
                     chunkStyle.Visible);
@@ -1119,26 +1119,27 @@ internal static class SvgText
         if (!style.Visible && !compileContext.Measuring)
             return null;
 
-        if (style.Fill.Kind == SvgPaintKind.Reference)
+        var fill = style.ResolveContextPaint(style.Fill);
+        if (fill.Kind == SvgPaintKind.Reference)
         {
             if (compileContext.Measuring)
                 return new ImmutableSolidColorBrush(Colors.Black);
 
-            var brush = bounds is { } resolved && style.Fill.Reference is { } id
+            var brush = bounds is { } resolved && fill.Reference is { } id
                 ? SvgPaintServers.Resolve(compileContext, id, style, resolved, style.FillOpacity)
                 : null;
             if (brush != null)
                 return brush;
 
-            return style.Fill.Fallback switch
+            return fill.Fallback switch
             {
-                SvgPaintFallback.Color => new ImmutableSolidColorBrush(style.Fill.FallbackColor, style.FillOpacity),
+                SvgPaintFallback.Color => new ImmutableSolidColorBrush(fill.FallbackColor, style.FillOpacity),
                 SvgPaintFallback.CurrentColor => new ImmutableSolidColorBrush(style.Color, style.FillOpacity),
                 _ => null,
             };
         }
 
-        return style.ResolveBrush(style.Fill, style.FillOpacity);
+        return style.ResolveBrush(fill, style.FillOpacity);
     }
 
     private static double GetLength(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)

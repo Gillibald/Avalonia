@@ -90,7 +90,17 @@ internal static class SvgMarkers
             * Matrix.CreateTranslation(vertex.Position.X, vertex.Position.Y);
 
         // Null means a circular marker reference; the reference is ignored.
-        var recording = compileContext.GetSharedRecording(marker, out _);
+        // Markers consuming context paints compile per site: the marked
+        // path's computed fill/stroke are the context values.
+        var ownership = Avalonia.Media.DrawingRecordingOwnership.Shared;
+        var recording = compileContext.UsesContextPaint(marker)
+            ? compileContext.GetContextRecording(
+                marker,
+                style.ResolveContextPaint(style.Fill),
+                style.ResolveContextPaint(style.Stroke),
+                contextBounds: default,
+                out ownership, out _)
+            : compileContext.GetSharedRecording(marker, out _);
         if (recording == null)
             return;
 
@@ -99,14 +109,14 @@ internal static class SvgMarkers
         var overflow = marker.GetStyleOrAttribute("overflow");
         if (overflow is "visible" or "auto")
         {
-            context.DrawRecording(recording, contentMatrix * position, Avalonia.Media.DrawingRecordingOwnership.Shared);
+            context.DrawRecording(recording, contentMatrix * position, ownership);
         }
         else
         {
             using (context.PushTransform(position))
             using (context.PushClip(new Rect(0, 0, markerWidth, markerHeight)))
             {
-                context.DrawRecording(recording, contentMatrix, Avalonia.Media.DrawingRecordingOwnership.Shared);
+                context.DrawRecording(recording, contentMatrix, ownership);
             }
         }
     }
