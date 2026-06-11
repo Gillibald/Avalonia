@@ -140,8 +140,24 @@ internal static class SvgCompiler
 
             using (rootClipState)
             {
-                foreach (var child in root.Children)
-                    CompileElement(child, context, compileContext, style);
+                // filter on the root element applies to the whole document.
+                var rootFilterScope = default(SvgFilters.SvgFilterScope);
+                if (root.GetStyleOrAttribute("filter") is { } rootFilterValue && rootFilterValue != "none")
+                {
+                    var rootBounds = new Rect(contentViewport);
+                    rootFilterScope = SvgClipPaths.TryParseUrlReference(rootFilterValue, out var rootFilterId)
+                        ? SvgFilters.Push(context, compileContext, rootFilterId, rootBounds, style)
+                        : SvgFilters.PushFunctions(context, rootFilterValue, rootBounds, style);
+                }
+
+                using (rootFilterScope)
+                {
+                    if (!rootFilterScope.Hidden)
+                    {
+                        foreach (var child in root.Children)
+                            CompileElement(child, context, compileContext, style);
+                    }
+                }
             }
 
             options.HitRoot = hitTree?.Root;
