@@ -58,7 +58,44 @@ public static class EffectExtensions
             return total;
         }
 
+        // Flood and tile fill whatever region the layer provides; they add no
+        // padding of their own.
+        if (effect is IFloodEffect or ITileEffect)
+            return default;
+
+        if (effect is IMergeEffect merge)
+        {
+            var total = default(Thickness);
+            foreach (var input in merge.Inputs)
+                total = Max(total, input.GetEffectOutputPadding());
+            return total;
+        }
+
+        if (effect is IBlendEffect blend)
+            return Max(blend.Background.GetEffectOutputPadding(), blend.Foreground.GetEffectOutputPadding());
+
+        if (effect is IArithmeticCompositeEffect arithmetic)
+        {
+            return Max(
+                arithmetic.Background.GetEffectOutputPadding(),
+                arithmetic.Foreground.GetEffectOutputPadding());
+        }
+
+        if (effect is IMorphologyEffect morphology)
+        {
+            // Dilation grows the input; erosion only shrinks it.
+            return morphology.Dilate
+                ? new Thickness(morphology.RadiusX, morphology.RadiusY, morphology.RadiusX, morphology.RadiusY)
+                : default;
+        }
+
         throw new ArgumentException("Unknown effect type: " + effect.GetType());
+
+        static Thickness Max(Thickness a, Thickness b) => new(
+            Math.Max(a.Left, b.Left),
+            Math.Max(a.Top, b.Top),
+            Math.Max(a.Right, b.Right),
+            Math.Max(a.Bottom, b.Bottom));
     }
 
     /// <summary>
