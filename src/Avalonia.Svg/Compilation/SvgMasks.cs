@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg.Compilation;
@@ -98,8 +99,59 @@ internal static class SvgMasks
         // SVG masks are luminance by default; mask-type opts into alpha.
         var maskType = mask.GetStyleOrAttribute("mask-type") == "alpha" ? MaskType.Alpha : MaskType.Luminance;
 
+        // color-interpolation=linearRGB computes the luminance on linearized
+        // values: the content linearizes through the same transfer tables the
+        // filter pipeline uses, then the backend's luma conversion applies.
+        if (maskType == MaskType.Luminance && UsesLinearLuminance(mask))
+        {
+            var inner = recording;
+            var contentBounds = inner.Bounds;
+            recording = DrawingRecording.Create(ctx =>
+            {
+                using (ctx.PushLayer(new LayerOptions
+                       {
+                           Bounds = contentBounds,
+                           Effect = SvgFilters.CreateLinearizeEffect(),
+                       }))
+                {
+                    ctx.DrawRecording(inner);
+                }
+            });
+
+            brush = new DrawingRecordingBrush(recording)
+            {
+                TileMode = TileMode.None,
+                Stretch = Stretch.Fill,
+                AlignmentX = AlignmentX.Left,
+                AlignmentY = AlignmentY.Top,
+                SourceRect = new RelativeRect(sourceRect, RelativeUnit.Absolute),
+                DestinationRect = RelativeRect.Fill,
+            }.ToImmutable();
+        }
+
         var maskState = context.PushOpacityMask(brush, region, maskType);
         return chainedMask == null ? maskState : new ChainedState(maskState, chainedMask);
+    }
+
+    /// <summary>
+    /// Resolves the inherited <c>color-interpolation</c> property for the mask
+    /// element; the initial value (and <c>auto</c>) selects sRGB.
+    /// </summary>
+    private static bool UsesLinearLuminance(SvgElement mask)
+    {
+        for (var element = mask; element != null; element = element.Parent)
+        {
+            switch (element.GetStyleOrAttribute("color-interpolation"))
+            {
+                case "sRGB":
+                case "auto":
+                    return false;
+                case "linearRGB":
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

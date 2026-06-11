@@ -22,6 +22,15 @@ internal struct SvgStyle
 {
     public SvgPaint Fill;
     public SvgPaint Stroke;
+
+    // The context element's computed paints (SVG 2 context-fill /
+    // context-stroke): seeded at marker and use sites, pre-substituted so
+    // they never hold a context kind themselves. Context paint servers
+    // resolve against the context element's geometry, carried in
+    // ContextBounds (empty = fall back to the consuming shape).
+    public SvgPaint ContextFill;
+    public SvgPaint ContextStroke;
+    public Rect ContextBounds;
     public double FillOpacity;
     public double StrokeOpacity;
     public double StrokeWidth;
@@ -778,7 +787,20 @@ internal struct SvgStyle
     {
         SvgPaintKind.Color => new ImmutableSolidColorBrush(paint.Color, opacity),
         SvgPaintKind.CurrentColor => new ImmutableSolidColorBrush(Color, opacity),
+        SvgPaintKind.ContextFill => ResolveBrush(ContextFill, opacity),
+        SvgPaintKind.ContextStroke => ResolveBrush(ContextStroke, opacity),
         _ => null,
+    };
+
+    /// <summary>
+    /// Substitutes a context paint with the context element's computed paint;
+    /// other kinds pass through.
+    /// </summary>
+    public SvgPaint ResolveContextPaint(in SvgPaint paint) => paint.Kind switch
+    {
+        SvgPaintKind.ContextFill => ContextFill,
+        SvgPaintKind.ContextStroke => ContextStroke,
+        _ => paint,
     };
 
     public ImmutablePen? ResolvePen() => ResolvePen(ResolveBrush(Stroke));

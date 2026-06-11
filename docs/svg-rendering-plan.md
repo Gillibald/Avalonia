@@ -1155,12 +1155,12 @@ already-known instance of this rule.
   which make triage automatable: diff ours against the reference with a
   tolerance, review the outliers ("UB" references mark upstream-undecided
   behavior).
-  Scoreboard: **shapes 133/133; painting 282/304 (22 quarantined:
-  context paint, `<image>`/feImage, text stroking); paint-servers
-  149/149; masking 89/93 (4 quarantined: `<image>` in masks/clip,
-  linearRGB mask luminance); text 317/356 (39 quarantined: vertical
-  writing modes ×16, font capabilities ×11, feFlood/span filters ×4,
-  tspan textLength and textPath details ×4, stroked decorations ×4);
+  Scoreboard: **shapes 133/133; painting 293/304 (11 quarantined:
+  context paint servers anchored in the context element's space ×6,
+  text stroking ×5); paint-servers 149/149; masking 93/93; text
+  317/356 (39 quarantined: vertical writing modes ×16, font
+  capabilities ×11, feFlood/span filters ×4, tspan textLength and
+  textPath details ×4, stroked decorations ×4);
   structure 223/247 (24 quarantined: CSS engine limits ×6, use-site
   inheritance into shared recordings ×5, nested-SVG image sizing ×4,
   strict funcIRI errors ×2, zero-size canvases ×3, DTD entities ×4);
@@ -1168,7 +1168,24 @@ already-known instance of this rule.
   inputs ×21, feConvolveMatrix bias/edge sampling ×14,
   FillPaint/StrokePaint inputs ×6, feTile sampling ×5, feTurbulence
   stitching/zero-axis/oBB frequencies ×3, huge-sigma clamping ×1)**
-  — overall 1540/1679.
+  — overall 1555/1679.
+  The cross-category sweep after filters completed masking (93/93) and
+  brought painting to 293/304. SVG 2 context paint landed: context-fill
+  and context-stroke substitute the context element's computed paint at
+  marker and use sites (chains resolve outward, so nested use contexts
+  work), content consuming them compiles per site instead of through
+  the shared-recording cache, fill boxes measure paint-independently
+  (context paints measure before their context is seeded), and context
+  paint servers resolve against the context element's geometry. The
+  remaining gap — anchoring a context gradient/pattern in the context
+  element's coordinate space across the consumers' own transforms — is
+  quarantined pending accumulated-transform tracking. The legacy clip
+  property's rect() insets now clip image viewports, linearRGB mask
+  luminance reuses the filter pipeline's transfer tables around the
+  mask content, feImage recordings honor image-rendering, and the
+  stale `<image>`-era masking/painting quarantines cleared outright
+  (the optimizeSpeed pair diverge from the references only by
+  rasterization scale: at 1:1 there is no upscale to interpolate).
   Filters slice 4 implemented feImage and feTurbulence end to end:
   document fragments compile through the shared-recording cache (with
   the cross-kind cycle guard hiding recursive chains) and anchor at the

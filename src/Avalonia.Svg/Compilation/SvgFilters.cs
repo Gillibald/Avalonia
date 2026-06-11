@@ -780,6 +780,16 @@ internal static class SvgFilters
     }
 
     /// <summary>
+    /// A transfer effect linearizing sRGB color channels — shared with the
+    /// linearRGB mask-luminance path.
+    /// </summary>
+    internal static IImmutableEffect CreateLinearizeEffect()
+    {
+        var table = SpaceTable(toLinear: true);
+        return new ImmutableComponentTransferEffect(table, table, table, alphaTable: null, input: null);
+    }
+
+    /// <summary>
     /// Builds the 256-entry lookup table of one transfer function child, or
     /// null for identity (absent child or <c>type="identity"</c>).
     /// </summary>
@@ -1020,28 +1030,41 @@ internal static class SvgFilters
             using (ctx.PushClip(destination))
             using (ctx.PushTransform(Matrix.CreateTranslation(destination.X, destination.Y)))
             {
-                if (content is Bitmap image)
+                // image-rendering speed hints opt out of smooth interpolation.
+                DrawingContext.PushedState? renderOptions = null;
+                if (primitive.GetStyleOrAttribute("image-rendering") is "optimizeSpeed" or "pixelated" or "crisp-edges")
                 {
-                    var mapped = new Rect(
-                        contentMatrix.M31,
-                        contentMatrix.M32,
-                        intrinsicWidth * contentMatrix.M11,
-                        intrinsicHeight * contentMatrix.M22);
-                    ctx.DrawImage(image, new Rect(image.Size), mapped);
+                    renderOptions = ctx.PushRenderOptions(new RenderOptions
+                    {
+                        BitmapInterpolationMode = BitmapInterpolationMode.None,
+                    });
                 }
-                else if (content is SvgDocument nestedDocument && SvgImages.EnterNested())
+
+                using (renderOptions)
                 {
-                    try
+                    if (content is Bitmap image)
                     {
-                        using (ctx.PushTransform(contentMatrix))
-                        {
-                            SvgCompiler.CompileDocument(nestedDocument, ctx,
-                                new Size(intrinsicWidth, intrinsicHeight));
-                        }
+                        var mapped = new Rect(
+                            contentMatrix.M31,
+                            contentMatrix.M32,
+                            intrinsicWidth * contentMatrix.M11,
+                            intrinsicHeight * contentMatrix.M22);
+                        ctx.DrawImage(image, new Rect(image.Size), mapped);
                     }
-                    finally
+                    else if (content is SvgDocument nestedDocument && SvgImages.EnterNested())
                     {
-                        SvgImages.ExitNested();
+                        try
+                        {
+                            using (ctx.PushTransform(contentMatrix))
+                            {
+                                SvgCompiler.CompileDocument(nestedDocument, ctx,
+                                    new Size(intrinsicWidth, intrinsicHeight));
+                            }
+                        }
+                        finally
+                        {
+                            SvgImages.ExitNested();
+                        }
                     }
                 }
             }
