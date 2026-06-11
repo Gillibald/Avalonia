@@ -137,103 +137,54 @@ structure/svg/attribute-value-via-ENTITY-reference.svg -- DTD entities are delib
 
 # to apply transforms after the relative resolution.
 
-# Filters: unimplemented primitive families and engine gaps; slice 4 backlog.
+# Filters: engine sampling gaps and deliberately unsupported legacy inputs.
 filters/enable-background/accumulate-with-new.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/filter-on-shape.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/inherit.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
-filters/enable-background/new-with-region.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/new.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+filters/enable-background/new-with-region.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/shapes-after-filter.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/stop-on-the-first-new-1.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/stop-on-the-first-new-2.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-clip-path.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
-filters/enable-background/with-filter-on-the-same-element.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-filter.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+filters/enable-background/with-filter-on-the-same-element.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-mask.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-opacity-1.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-opacity-2.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-opacity-3.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-opacity-4.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/enable-background/with-transform.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
-filters/feConvolveMatrix/bias=-0.5.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/bias=0.5.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/bias=9999.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/custom-divisor.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/edgeMode=none.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/edgeMode=wrap-with-matrix-larger-than-target.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/edgeMode=wrap.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/kernelMatrix-with-zero-sum-and-no-divisor.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/order=4-2.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/order=4-4.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/order=4.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/targetX=0.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/targetX=2.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
-filters/feConvolveMatrix/unset-order.svg -- feConvolveMatrix bias scaling and edge sampling differ from Skia's convolution; pending (slice 4)
+filters/feConvolveMatrix/bias=-0.5.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/bias=0.5.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/bias=9999.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/custom-divisor.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/edgeMode=none.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/edgeMode=wrap.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/edgeMode=wrap-with-matrix-larger-than-target.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/kernelMatrix-with-zero-sum-and-no-divisor.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/order=4.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/order=4-2.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/order=4-4.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/targetX=0.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/targetX=2.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
+filters/feConvolveMatrix/unset-order.svg -- feConvolveMatrix bias application and edge sampling differ from Skia's convolution; pending
 filters/feGaussianBlur/huge-stdDeviation.svg -- consensus implementations bound huge sigmas to the surface size; Skia's blur dissipates the content correctly
-filters/feGaussianBlur/stdDeviation-with-multiple-values.svg -- asymmetric stdDeviation needs a two-axis blur effect; pending (slice 4)
-filters/feGaussianBlur/stdDeviation-with-two-different-values.svg -- asymmetric stdDeviation needs a two-axis blur effect; pending (slice 4)
-filters/feGaussianBlur/stdDeviation=0-5.svg -- asymmetric stdDeviation needs a two-axis blur effect; pending (slice 4)
-filters/feGaussianBlur/stdDeviation=5-0.svg -- asymmetric stdDeviation needs a two-axis blur effect; pending (slice 4)
-filters/feImage/chained-feImage.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/embedded-png.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/empty.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-on-an-element-with-complex-transform.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-on-an-element-with-transform.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-an-element-outside-defs-1.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-an-element-outside-defs-2.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-an-element-with-opacity.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-an-element-with-transform.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-an-element.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-an-invalid-element.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-g.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/link-to-use.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/preserveAspectRatio=none.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/recursive-links-1.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/recursive-links-2.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/self-recursive.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/simple-case.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/svg.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-subregion-1.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-subregion-2.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-subregion-3.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-subregion-4.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-subregion-5.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-x-y-and-protruding-subregion-1.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-x-y-and-protruding-subregion-2.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feImage/with-x-y.svg -- feImage is not implemented yet; pending (slice 4)
-filters/feTile/simple-case.svg -- feTile source sampling diverges; pending (slice 4)
-filters/feTile/with-region.svg -- feTile source sampling diverges; pending (slice 4)
-filters/feTile/with-subregion-1.svg -- feTile source sampling diverges; pending (slice 4)
-filters/feTile/with-subregion-2.svg -- feTile source sampling diverges; pending (slice 4)
-filters/feTile/with-subregion-3.svg -- feTile source sampling diverges; pending (slice 4)
-filters/feTurbulence/baseFrequency=-0.05.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/baseFrequency=0.01.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/baseFrequency=0.05--0.01.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/baseFrequency=0.05-0.01.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/baseFrequency=0.05-0.05.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/baseFrequency=0.05-0.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/color-interpolation-filters=sRGB.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/complex-transform.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/no-attributes.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/numOctaves=-1.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/numOctaves=0.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/numOctaves=5.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/primitiveUnits=objectBoundingBox.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/seed=-20.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/seed=1.5.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/seed=20.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/stitchTiles=stitch.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/type=fractalNoise.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/feTurbulence/type=invalid.svg -- feTurbulence (Perlin noise) is not implemented yet; pending (slice 4)
-filters/filter/in=BackgroundAlpha-with-enable-background.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+filters/feTile/simple-case.svg -- feTile source sampling diverges; pending
+filters/feTile/with-region.svg -- feTile source sampling diverges; pending
+filters/feTile/with-subregion-1.svg -- feTile source sampling diverges; pending
+filters/feTile/with-subregion-2.svg -- feTile source sampling diverges; pending
+filters/feTile/with-subregion-3.svg -- feTile source sampling diverges; pending
+filters/feTurbulence/baseFrequency=0.05-0.svg -- Skia's Perlin noise differs from the spec turbulence here (stitching, zero-frequency axes, oBB frequency scaling); pending
+filters/feTurbulence/primitiveUnits=objectBoundingBox.svg -- Skia's Perlin noise differs from the spec turbulence here (stitching, zero-frequency axes, oBB frequency scaling); pending
+filters/feTurbulence/stitchTiles=stitch.svg -- Skia's Perlin noise differs from the spec turbulence here (stitching, zero-frequency axes, oBB frequency scaling); pending
 filters/filter/in=BackgroundAlpha.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
-filters/filter/in=BackgroundImage-with-enable-background.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+filters/filter/in=BackgroundAlpha-with-enable-background.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
 filters/filter/in=BackgroundImage.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+filters/filter/in=BackgroundImage-with-enable-background.svg -- enable-background and the BackgroundImage inputs are deprecated and deliberately unsupported (Chrome and Firefox dropped them too)
+filters/filter/in=FillPaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-on-g-without-children.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-gradient.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-pattern.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-target-on-g.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
-filters/filter/in=FillPaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=StrokePaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
-filters/filter/on-group-with-child-outside-of-canvas.svg -- feImage is not implemented yet; pending (slice 4)
-filters/filter/with-transform-outside-of-canvas.svg -- feImage is not implemented yet; pending (slice 4)

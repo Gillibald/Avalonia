@@ -119,7 +119,7 @@ public class FilterRenderTests : SvgRenderTestBase
         var target = new SvgHost(
             """
             <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">
-              <defs><filter id="f"><feTurbulence baseFrequency="0.05"/></filter></defs>
+              <defs><filter id="f"><feDisplacementMap scale="20"/></filter></defs>
               <rect width="200" height="100" fill="white"/>
               <rect x="70" y="20" width="60" height="60" fill="teal" filter="url(#f)"/>
             </svg>
