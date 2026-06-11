@@ -12,6 +12,7 @@
       "samples\\RenderDemo\\RenderDemo.csproj",
       "samples\\SampleControls\\ControlSamples.csproj",
       "samples\\Sandbox\\Sandbox.csproj",
+      "samples\\SvgDemo\\SvgDemo.csproj",
       "samples\\TextTestApp\\TextTestApp.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContextPlug\\UnloadableAssemblyLoadContextPlug.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext.csproj",
@@ -31,6 +32,7 @@
       "src\\Avalonia.Native\\Avalonia.Native.csproj",
       "src\\Avalonia.OpenGL\\Avalonia.OpenGL.csproj",
       "src\\Avalonia.Remote.Protocol\\Avalonia.Remote.Protocol.csproj",
+      "src\\Avalonia.Svg\\Avalonia.Svg.csproj",
       "src\\Avalonia.Themes.Fluent\\Avalonia.Themes.Fluent.csproj",
       "src\\Avalonia.Themes.Simple\\Avalonia.Themes.Simple.csproj",
       "src\\Avalonia.Vulkan\\Avalonia.Vulkan.csproj",
@@ -71,6 +73,9 @@
       "tests\\Avalonia.RenderTests.WpfCompare\\Avalonia.RenderTests.WpfCompare.csproj",
       "tests\\Avalonia.Skia.RenderTests\\Avalonia.Skia.RenderTests.csproj",
       "tests\\Avalonia.Skia.UnitTests\\Avalonia.Skia.UnitTests.csproj",
+      "tests\\Avalonia.Svg.Benchmarks\\Avalonia.Svg.Benchmarks.csproj",
+      "tests\\Avalonia.Svg.RenderTests\\Avalonia.Svg.RenderTests.csproj",
+      "tests\\Avalonia.Svg.UnitTests\\Avalonia.Svg.UnitTests.csproj",
       "tests\\Avalonia.UnitTests\\Avalonia.UnitTests.csproj",
       "tests\\TestFiles\\BuildTasks\\PInvoke\\PInvoke.csproj"
     ]

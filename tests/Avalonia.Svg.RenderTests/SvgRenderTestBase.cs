@@ -108,8 +108,17 @@ public class SvgRenderTestBase : IDisposable
         private readonly SvgImage _image;
 
         public SvgHost(string svg, Uri? baseUri = null)
+            : this(new SvgImage(SvgDocument.Parse(svg, baseUri)))
         {
-            _image = new SvgImage(SvgDocument.Parse(svg, baseUri));
+        }
+
+        /// <summary>
+        /// Hosts a pre-built image — used by animation tests that apply a
+        /// SMIL timestamp to the document before compiling.
+        /// </summary>
+        public SvgHost(SvgImage image)
+        {
+            _image = image;
 
             // A zero/negative-size document renders nothing; the render
             // surface still needs a pixel to produce a comparable file.

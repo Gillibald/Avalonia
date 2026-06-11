@@ -1008,8 +1008,11 @@ All SVG-side. The recording exposes only `HitTest(Point) → bool` and
   app harness; the control's hit mapping and event raising are thin
   wrappers over the unit-tested `SvgImage` walk.)*
 - `RenderTests.Animation` — deterministic frames at sampled timestamps
-  compared to reference bitmaps. *(Deferred with the integration suite —
-  the unit tests pin sampled values per timestamp.)*
+  compared to reference bitmaps. *(Shipped: `AnimationRenderTests` —
+  the animator applies a fixed timestamp, the document compiles like
+  any static one, and the frame renders against a per-timestamp golden:
+  structural slide at start/midpoint/near-end, paint midpoint blend,
+  rotate midpoint.)*
 
 ### Sample
 
@@ -1451,4 +1454,10 @@ already-known instance of this rule.
   `RenderTests` project) to keep output deterministic across platforms.
 - **Benchmarks.** `BenchmarkDotNet` suite under `tests/Avalonia.Svg.Benchmarks`
   for parse → compile → first-frame on a representative set (logos, icons,
-  maps, chart SVGs). Track regressions in CI.
+  maps, chart SVGs). Track regressions in CI. *(Shipped: `SvgBenchmarks`
+  measures parse, compile, first frame, raster replay and hit testing over
+  deterministic synthetic icon/logo/map/chart documents through the real
+  Skia + HarfBuzz backends; `SvgAnimationBenchmarks` measures the SMIL tick
+  and the full structural frame. Indicative debug-build numbers: icon
+  first-frame ~190µs, map ~6.8ms; animation tick 7µs, structural frame
+  73µs.)*
