@@ -1161,13 +1161,41 @@ already-known instance of this rule.
   glyph variants ×1, tiny-coordinate textPath sampling ×1);
   structure 242/247 (5 quarantined: DTD entities ×4 and remote image
   fetching ×1, both by design);
-  filters 347/397 (50 quarantined: enable-background + BackgroundImage
-  inputs ×21, feConvolveMatrix bias/edge sampling ×14,
-  FillPaint/StrokePaint inputs ×6, feTile sampling ×5, feTurbulence
-  stitching/zero-axis/oBB frequencies ×3, huge-sigma clamping ×1)**
-  — overall 1604/1679. Four categories are complete (shapes, painting,
-  paint-servers, masking) and structure's only remaining gaps are
-  deliberate policy (no DTD resolution, no remote fetches).
+  filters 369/397 (28 quarantined: enable-background + BackgroundImage
+  inputs ×21, FillPaint/StrokePaint inputs ×6, huge-sigma clamping ×1)**
+  — overall 1626/1679. Four categories are complete (shapes, painting,
+  paint-servers, masking); structure's and filters' remaining gaps are
+  all deliberate policy (no DTD resolution, no remote fetches, no
+  deprecated background-image or paint filter inputs, no
+  consensus-style sigma bounding).
+  The filters engine tier closed the last three primitive families.
+  SkiaSharp's CreateMatrixConvolution boolean is convolveAlpha — the
+  inverse of SVG preserveAlpha (probed: gain through a no-op kernel
+  left alpha opaque until inverted) — so the lowering now negates it;
+  that one flag swept the feConvolveMatrix family into reference
+  agreement (custom divisors attenuate alpha, edge modes, kernel
+  orders and targets), with the bias trio and the
+  wrap-with-larger-matrix case goldened as ours per their all-zero
+  upstream verdicts ("UB" titles). feTile needed no fix at all:
+  per-pixel lattice measurement proved our tile phase, pitch, partial
+  edge tiles and subregion crops identical to the references — the
+  flagged diffs were resample noise on 10px-pitch grids (and the
+  earlier "phase-shifted" read was an eyeballing artifact). The
+  convolution kernel footprint is raster-scale-bound by spec
+  (kernelUnitLength is universally unimplemented), so edge-detect
+  lines and smears legitimately cover 2.5× more user units at our
+  1:1 raster than in the 500px references; structure matches, ours
+  are goldened. feTurbulence had two real parameter bugs: a zero
+  frequency on one axis is valid 1-D noise (only negatives are
+  errors; the disable gate now requires both axes non-positive, and
+  Skia's zero-axis noise matches resvg's stripes into MATCH range),
+  and primitiveUnits=objectBoundingBox does not rescale baseFrequency
+  in any passing renderer — the oBB reference is byte-identical to
+  the plain 0.05 reference — so the oBB frequency division is gone.
+  stitchTiles=stitch carries all-zero verdicts (true UB) and our
+  stitched noise is goldened. The quarantine file shed its stale
+  comment blocks and now carries exactly the deliberate-policy
+  entries.
   The structure sweep generalized the context-recording mechanism into
   per-site use compilation: a use whose inheritable style differs from
   the defaults (SvgStyle.InheritablesEqual against the default style)
@@ -1246,7 +1274,7 @@ already-known instance of this rule.
   unclamped subregion origin while the clamped subregion crops; raster
   and nested-SVG content decode through the image loader and scale into
   the subregion via preserveAspectRatio; Perlin noise maps onto the new
-  turbulence effect with oBB frequency scaling. Two-value stdDeviation
+  turbulence effect. Two-value stdDeviation
   blurs through the new anisotropic blur effect. Three recording-branch
   additions carry it: IRecordingEffect (a DrawingRecording rasterized
   into the layer via an SKPicture filter), ITurbulenceEffect and
