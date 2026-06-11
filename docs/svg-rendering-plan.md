@@ -1158,7 +1158,38 @@ already-known instance of this rule.
   context paint, `<image>`/feImage, text stroking); paint-servers
   148/149 (1 quarantined: patternTransform×element-transform
   composition); masking 89/93 (4 quarantined: `<image>` in masks/clip,
-  linearRGB mask luminance)** — overall 652/679.
+  linearRGB mask luminance); text 317/356 (39 quarantined: vertical
+  writing modes ×16, font capabilities ×11, feFlood/span filters ×4,
+  tspan textLength and textPath details ×4, stroked decorations ×4)**
+  — overall 969/1035.
+  The text sweep grew the pipeline substantially. A glyph-placement
+  layout path joins the segment pipeline: chunks shape normally, then
+  typographic clusters place individually, which carries per-character
+  x/y/dx/dy/rotate lists (innermost element wins per index, rotate
+  persists its last value, absolute values start anchor chunks unless
+  lists are already in scope), letter- and word-spacing, and
+  textLength/lengthAdjust distribution (spacing or spacingAndGlyphs
+  scaling) — the anchor shift uses the adjusted advance. Cluster values
+  are relative to each shaped run's own text, so the mapping rebases
+  them onto the segment (the bug made the second styled run's clusters
+  read the first run's placement lists). SvgStyle gained letter/word
+  spacing, baseline-shift (accumulating, spans only per SVG 1.1, with
+  OS/2-flavored sub/super offsets), dominant/alignment-baseline mapped
+  to font-metric offsets through the same shift plumbing (text-level
+  shifts move the chunk origin), font-stretch, the font shorthand,
+  relative font weights (bolder/lighter), CSS font-size keywords,
+  kerning (disables the kern feature and adds the length, resolved
+  against the viewport for percentages), font-kerning, xml:lang-driven
+  shaping culture, and accumulated text decorations painted with the
+  declaring element's fill via run properties. The XML parser keeps
+  xml:* attributes (xml:space="preserve" suppresses collapsing;
+  trailing-trim exempts preserved runs). textPath honors baseline-shift
+  along the path normal and letter-spacing between glyphs. The corpus
+  fonts grew to twelve faces with family mappings and an in-collection
+  fallback so CJK never leaves the embedded set. tref is deliberately
+  unsupported (Chrome agrees with none of the eleven reference images —
+  the element is gone from SVG 2), so those tests golden our rendering,
+  as do the sixteen upstream-undecided (UB) tests.
   Masking fixes (the clipPath builder was substantially rewritten): an
   empty or in-error clipPath — no valid children, invisible children,
   unresolvable or non-invertible attributes — hides the element instead
@@ -1232,7 +1263,7 @@ already-known instance of this rule.
   `mix-blend-mode`/`isolation` are CSS-only properties whose attribute
   form must be ignored.
   Next categories in rough order of coverage value:
-  `structure`, `filters`, `text`. The W3C 1.1
+  `structure`, `filters`. The W3C 1.1
   `animate-elem-*` tests remain the SMIL source when animation goldens
   land.)*
 - **Compiler snapshot tests.** Serialize emitted `RenderItemList` to a stable

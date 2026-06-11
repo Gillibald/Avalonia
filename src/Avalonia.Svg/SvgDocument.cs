@@ -18,6 +18,7 @@ public sealed class SvgDocument : IDisposable
 {
     internal const string SvgNamespace = "http://www.w3.org/2000/svg";
     internal const string XlinkNamespace = "http://www.w3.org/1999/xlink";
+    internal const string XmlNamespace = "http://www.w3.org/XML/1998/namespace";
     internal const string XlinkHrefAttribute = "xlink:href";
 
     private readonly Dictionary<string, SvgElement> _elementsById;
@@ -159,6 +160,8 @@ public sealed class SvgDocument : IDisposable
                     attributes[reader.LocalName] = reader.Value;
                 else if (reader.NamespaceURI == XlinkNamespace && reader.LocalName == "href")
                     attributes[XlinkHrefAttribute] = reader.Value;
+                else if (reader.NamespaceURI == XmlNamespace)
+                    attributes["xml:" + reader.LocalName] = reader.Value;
 
                 // Attributes in foreign namespaces (editor metadata etc.) are dropped.
             }
