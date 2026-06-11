@@ -96,11 +96,6 @@ text/text-decoration/overline.svg -- text stroking not supported
 text/text-decoration/line-through.svg -- text stroking not supported
 text/text-decoration/style-resolving-4.svg -- decoration style resolution diverges (needs debugging)
 
-# transform-origin is not wired through clipPath/pattern transforms.
-structure/transform-origin/on-clippath.svg -- transform-origin on clipPath transforms not wired
-structure/transform-origin/on-clippath-objectBoundingBox.svg -- transform-origin on clipPath transforms not wired
-structure/transform-origin/on-pattern-object-bounding-box.svg -- transform-origin on pattern transforms not wired
-structure/transform-origin/on-pattern-user-space-on-use.svg -- transform-origin on pattern transforms not wired
 
 # Strict funcIRI error handling diverges from the reference renderer.
 structure/svg/funcIRI-parsing.svg -- strict funcIRI error handling diverges
@@ -138,3 +133,8 @@ structure/svg/elements-via-ENTITY-reference-1.svg -- DTD entities are deliberate
 structure/svg/elements-via-ENTITY-reference-2.svg -- DTD entities are deliberately not resolved
 structure/svg/elements-via-ENTITY-reference-3.svg -- DTD entities are deliberately not resolved
 structure/svg/attribute-value-via-ENTITY-reference.svg -- DTD entities are deliberately not resolved
+
+# The objectBoundingBox pattern transform composes through the relative
+# brush mapping; the origin conjugation there needs the same rework as the
+# patternTransform composition gap.
+structure/transform-origin/on-pattern-object-bounding-box.svg -- transform-origin on objectBoundingBox patterns diverges

@@ -105,6 +105,13 @@ internal static class SvgPatterns
             && SvgTransformParser.TryParse(transformValue.AsSpan(), out var transform)
             && !transform.IsIdentity)
         {
+            // transform-origin conjugates the pattern transform. The brush
+            // transform applies relative to the target bounds, so the
+            // reference boxes shift into that space.
+            transform = SvgCompiler.ApplyTransformOrigin(
+                element, transform,
+                new Rect(-bounds.X, -bounds.Y, context.Viewport.Width, context.Viewport.Height),
+                new Rect(0, 0, bounds.Width, bounds.Height));
             brush.Transform = new ImmutableTransform(transform);
         }
 
