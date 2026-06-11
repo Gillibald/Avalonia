@@ -132,9 +132,10 @@ Explicitly out of scope for Phases 1–6; revisit on demand afterwards:
   minimal resolver). Phase 1 supports presentation attributes + inline
   `style`; Phase 6 adds only minimal CSS animations/transitions.
 - `vector-effect="non-scaling-stroke"`.
-- `color-interpolation-filters="linearRGB"`: filters and luminance masks
-  operate in sRGB (matching common browser behavior), diverging from the
-  SVG 1.1 default on the letter of the spec.
+- `color-interpolation-filters="linearRGB"` for **luminance masks**: mask
+  luminance computes in sRGB. *(Filters implement the property fully since
+  the filters sweep — primitives default to linearRGB with transfer-table
+  conversions at the space boundaries.)*
 - Full SMIL timing — only `begin`/`dur`/`repeatCount` and
   linear/discrete `calcMode` (Phase 6).
 - Non-linear filter primitive graphs — linear `in`/`result` chains only
@@ -1163,11 +1164,24 @@ already-known instance of this rule.
   structure 223/247 (24 quarantined: CSS engine limits ×6, use-site
   inheritance into shared recordings ×5, nested-SVG image sizing ×4,
   strict funcIRI errors ×2, zero-size canvases ×3, DTD entities ×4);
-  filters 298/397 (99 quarantined: feImage ×29, enable-background +
-  BackgroundImage inputs ×21, feTurbulence ×19, feConvolveMatrix
-  bias/edge sampling ×14, FillPaint/StrokePaint inputs ×6, feTile
-  sampling ×5, asymmetric stdDeviation ×4, huge-sigma clamping ×1)**
-  — overall 1491/1679.
+  filters 347/397 (50 quarantined: enable-background + BackgroundImage
+  inputs ×21, feConvolveMatrix bias/edge sampling ×14,
+  FillPaint/StrokePaint inputs ×6, feTile sampling ×5, feTurbulence
+  stitching/zero-axis/oBB frequencies ×3, huge-sigma clamping ×1)**
+  — overall 1540/1679.
+  Filters slice 4 implemented feImage and feTurbulence end to end:
+  document fragments compile through the shared-recording cache (with
+  the cross-kind cycle guard hiding recursive chains) and anchor at the
+  unclamped subregion origin while the clamped subregion crops; raster
+  and nested-SVG content decode through the image loader and scale into
+  the subregion via preserveAspectRatio; Perlin noise maps onto the new
+  turbulence effect with oBB frequency scaling. Two-value stdDeviation
+  blurs through the new anisotropic blur effect. Three recording-branch
+  additions carry it: IRecordingEffect (a DrawingRecording rasterized
+  into the layer via an SKPicture filter), ITurbulenceEffect and
+  IAnisotropicBlurEffect, plus the convolution-bias 255-scaling fix and
+  layer bounds that union the layer extent when an effect can paint
+  beyond its content.
   Filters slice 3 made `color-interpolation-filters` real: primitives
   operate in linearRGB by default, with sRGB↔linear transfer tables
   inserted at space boundaries (intermediates track their space; pure
