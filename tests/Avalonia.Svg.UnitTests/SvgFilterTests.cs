@@ -22,7 +22,7 @@ public class SvgFilterTests
     public void Blur_Primitive_Converts_Sigma_To_Radius()
     {
         Assert.True(Resolve(
-            """<filter id="f"><feGaussianBlur stdDeviation="2"/></filter>""",
+            """<filter id="f" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="2"/></filter>""",
             DefaultBounds, out _, out var effect));
 
         var blur = Assert.IsType<ImmutableBlurEffect>(effect);
@@ -46,7 +46,7 @@ public class SvgFilterTests
     public void ColorMatrix_Explicit_Values()
     {
         Assert.True(Resolve(
-            """<filter id="f"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>""",
+            """<filter id="f" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>""",
             DefaultBounds, out _, out var effect));
 
         var matrix = Assert.IsType<ImmutableColorMatrixEffect>(effect);
@@ -59,7 +59,7 @@ public class SvgFilterTests
     public void ColorMatrix_Saturate_Zero_Is_Grayscale()
     {
         Assert.True(Resolve(
-            """<filter id="f"><feColorMatrix type="saturate" values="0"/></filter>""",
+            """<filter id="f" color-interpolation-filters="sRGB"><feColorMatrix type="saturate" values="0"/></filter>""",
             DefaultBounds, out _, out var effect));
 
         var matrix = Assert.IsType<ImmutableColorMatrixEffect>(effect);
@@ -75,7 +75,7 @@ public class SvgFilterTests
     public void ColorMatrix_LuminanceToAlpha()
     {
         Assert.True(Resolve(
-            """<filter id="f"><feColorMatrix type="luminanceToAlpha"/></filter>""",
+            """<filter id="f" color-interpolation-filters="sRGB"><feColorMatrix type="luminanceToAlpha"/></filter>""",
             DefaultBounds, out _, out var effect));
 
         var matrix = Assert.IsType<ImmutableColorMatrixEffect>(effect);
@@ -88,7 +88,7 @@ public class SvgFilterTests
     public void DropShadow_Primitive_With_Flood_Color()
     {
         Assert.True(Resolve(
-            """<filter id="f"><feDropShadow dx="4" dy="6" stdDeviation="1" flood-color="red" flood-opacity="0.5"/></filter>""",
+            """<filter id="f" color-interpolation-filters="sRGB"><feDropShadow dx="4" dy="6" stdDeviation="1" flood-color="red" flood-opacity="0.5"/></filter>""",
             DefaultBounds, out _, out var effect));
 
         var shadow = Assert.IsType<ImmutableDropShadowEffect>(effect);
@@ -104,7 +104,7 @@ public class SvgFilterTests
     {
         Assert.True(Resolve(
             """
-            <filter id="f">
+            <filter id="f" color-interpolation-filters="sRGB">
               <feGaussianBlur stdDeviation="2" result="b"/>
               <feOffset in="b" dx="5" dy="5"/>
             </filter>
@@ -122,7 +122,7 @@ public class SvgFilterTests
     {
         Assert.True(Resolve(
             """
-            <filter id="f">
+            <filter id="f" color-interpolation-filters="sRGB">
               <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
               <feOffset dx="4" dy="4" result="shadow"/>
               <feMerge>
@@ -138,6 +138,30 @@ public class SvgFilterTests
         Assert.Equal(2, merge.Inputs.Count);
         Assert.IsType<ImmutableCompositeEffect>(merge.Inputs[0]);
         Assert.Null(merge.Inputs[1]);
+    }
+
+    [Fact]
+    public void Default_Space_Is_LinearRGB_With_Transfer_Conversions()
+    {
+        // The initial color-interpolation-filters value is linearRGB: the
+        // source linearizes before the blur and the result converts back to
+        // sRGB, both as transfer tables on the color channels.
+        Assert.True(Resolve(
+            """<filter id="f"><feGaussianBlur stdDeviation="2"/></filter>""",
+            DefaultBounds, out _, out var effect));
+
+        var toSrgb = Assert.IsType<ImmutableComponentTransferEffect>(effect);
+        Assert.Null(toSrgb.AlphaTable);
+        var chain = Assert.IsType<ImmutableCompositeEffect>(toSrgb.Input);
+        var toLinear = Assert.IsType<ImmutableComponentTransferEffect>(chain.Children[0]);
+        Assert.IsType<ImmutableBlurEffect>(chain.Children[1]);
+
+        // The curves are inverses with fixed endpoints, and linearization
+        // darkens mid-tones.
+        Assert.Equal(0, toLinear.RedTable![0]);
+        Assert.Equal(255, toLinear.RedTable[255]);
+        Assert.True(toLinear.RedTable[128] < 128);
+        Assert.True(toSrgb.RedTable![128] > 128);
     }
 
     [Fact]
@@ -223,13 +247,46 @@ public class SvgFilterTests
     }
 
     [Fact]
-    public void Missing_Filter_Renders_Unfiltered()
+    public void Missing_Filter_Hides_The_Element()
     {
+        // A plain url() reference to a missing filter is an error per SVG:
+        // the element does not render.
         using var document = SvgDocument.Parse(
             """<svg xmlns="http://www.w3.org/2000/svg"><rect width="50" height="50" fill="red" filter="url(#missing)"/></svg>""");
         using var recording = DrawingRecording.Create(ctx =>
             SvgCompiler.CompileDocument(document, ctx, document.GetIntrinsicSize()));
 
-        Assert.Equal(new Rect(0, 0, 50, 50), recording.Bounds);
+        Assert.Equal(default, recording.Bounds);
+    }
+
+    [Fact]
+    public void Missing_Url_In_A_Function_List_Is_Skipped()
+    {
+        // In the SVG 2 list form a missing url is skipped and the remaining
+        // functions still apply.
+        using var document = SvgDocument.Parse(
+            """<svg xmlns="http://www.w3.org/2000/svg"><rect width="50" height="50" fill="red" filter="grayscale(0.5) url(#missing) opacity(0.5)"/></svg>""");
+        using var recording = DrawingRecording.Create(ctx =>
+            SvgCompiler.CompileDocument(document, ctx, document.GetIntrinsicSize()));
+
+        Assert.NotEqual(default, recording.Bounds);
+    }
+
+    [Fact]
+    public void Url_References_Chain_With_Functions()
+    {
+        // SVG 2 filter lists mix url() references with functions, applied in
+        // order: the element renders filtered, with the blur's padding.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg">
+              <defs><filter id="f"><feGaussianBlur stdDeviation="3"/></filter></defs>
+              <rect x="20" y="20" width="40" height="40" fill="red" filter="url(#f) grayscale(1)"/>
+            </svg>
+            """);
+        using var recording = DrawingRecording.Create(ctx =>
+            SvgCompiler.CompileDocument(document, ctx, document.GetIntrinsicSize()));
+
+        Assert.True(recording.Bounds.X < 20, $"bounds.X {recording.Bounds.X} should include blur padding");
     }
 }
