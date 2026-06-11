@@ -73,7 +73,9 @@ public sealed class SvgDocument : IDisposable
         XmlResolver = null,
         IgnoreComments = true,
         IgnoreProcessingInstructions = true,
-        IgnoreWhitespace = true,
+        // Whitespace-only nodes are kept (filtered to text content while
+        // loading): the whitespace between tspans collapses to a space.
+        IgnoreWhitespace = false,
         CloseInput = false,
     };
 
@@ -126,6 +128,13 @@ public sealed class SvgDocument : IDisposable
             else if (reader.NodeType is XmlNodeType.Text or XmlNodeType.CDATA or XmlNodeType.SignificantWhitespace)
             {
                 current?.AddText(reader.Value);
+            }
+            else if (reader.NodeType == XmlNodeType.Whitespace)
+            {
+                // Whitespace-only nodes matter only between text content, where
+                // they collapse to a single space.
+                if (current?.Name is "text" or "tspan" or "textPath")
+                    current.AddText(reader.Value);
             }
 
             if (!reader.Read())

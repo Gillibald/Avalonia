@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Media;
-using Avalonia.Media.Fonts;
 using Avalonia.Skia.RenderTests;
 using Xunit;
 
@@ -20,16 +19,6 @@ namespace Avalonia.Svg.RenderTests;
 public class ResvgCorpusTests : SvgRenderTestBase
 {
     private static readonly Lazy<Dictionary<string, string>> s_quarantine = new(LoadQuarantine);
-
-    // The corpus' bundled fonts, registered once so plain family names
-    // ("Noto Sans") resolve identically on every machine.
-    private static readonly Lazy<bool> s_corpusFonts = new(() =>
-    {
-        FontManager.Current.AddFontCollection(new EmbeddedFontCollection(
-            new Uri("fonts:svg-corpus"),
-            new Uri("resm:Avalonia.Svg.RenderTests.Assets?assembly=Avalonia.Svg.RenderTests")));
-        return true;
-    });
 
     public ResvgCorpusTests() : base(Path.Combine("Corpus", "resvg"))
     {
@@ -56,6 +45,12 @@ public class ResvgCorpusTests : SvgRenderTestBase
     [MemberData(nameof(PaintServersTests))]
     public Task PaintServers(string test) => RunCorpusTest(test);
 
+    public static TheoryData<string> MaskingTests { get; } = Discover("masking");
+
+    [Theory]
+    [MemberData(nameof(MaskingTests))]
+    public Task Masking(string test) => RunCorpusTest(test);
+
     private static TheoryData<string> Discover(string category)
     {
         var data = new TheoryData<string>();
@@ -75,8 +70,6 @@ public class ResvgCorpusTests : SvgRenderTestBase
     [Fact]
     public void Ch_Lengths_Use_The_Fonts_Zero_Advance()
     {
-        _ = s_corpusFonts.Value;
-
         using var document = SvgDocument.Parse(
             """
             <svg xmlns="http://www.w3.org/2000/svg" width="400" height="100" font-family="Noto Sans" font-size="32">
@@ -99,8 +92,6 @@ public class ResvgCorpusTests : SvgRenderTestBase
     {
         if (s_quarantine.Value.TryGetValue(test, out var reason))
             Assert.Skip(reason);
-
-        _ = s_corpusFonts.Value;
 
         var svg = await File.ReadAllTextAsync(
             Path.Combine(CorpusRoot, test.Replace('/', Path.DirectorySeparatorChar)));

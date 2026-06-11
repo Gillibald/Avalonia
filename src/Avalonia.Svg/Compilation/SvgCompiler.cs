@@ -107,8 +107,28 @@ internal static class SvgCompiler
             style.RootFontSize = style.FontSize;
             compileContext.RootFontSize = style.FontSize;
 
-            foreach (var child in root.Children)
-                CompileElement(child, context, compileContext, style);
+            // clip-path on the root element clips the whole document; its fill
+            // box is the viewport the root establishes.
+            DrawingContext.PushedState? rootClipState = null;
+            if (root.GetStyleOrAttribute("clip-path") is { } rootClipValue)
+            {
+                switch (SvgClipPaths.Resolve(
+                            compileContext, rootClipValue, new Rect(contentViewport), 0, out var rootClip))
+                {
+                    case SvgClipPathResult.Hidden:
+                        options.HitRoot = hitTree?.Root;
+                        return;
+                    case SvgClipPathResult.Clipped:
+                        rootClipState = context.PushGeometryClip(rootClip!);
+                        break;
+                }
+            }
+
+            using (rootClipState)
+            {
+                foreach (var child in root.Children)
+                    CompileElement(child, context, compileContext, style);
+            }
 
             options.HitRoot = hitTree?.Root;
             options.AnimatedBrushes = compileContext.AnimatedBrushes;
@@ -200,16 +220,22 @@ internal static class SvgCompiler
                     && element.GetStyleOrAttribute("clip-path") is { } clipReference)
                 {
                     var clipBounds = GetFillBounds(element, compileContext, style);
-                    if (SvgClipPaths.TryBuild(compileContext, clipReference, clipBounds) is { } clip)
+                    var strokeWidth = style.Stroke.Kind != SvgPaintKind.None ? style.StrokeWidth : 0;
+                    switch (SvgClipPaths.Resolve(compileContext, clipReference, clipBounds, strokeWidth, out var clip))
                     {
-                        clipGeometry = clip;
-                        clipState = context.PushGeometryClip(clip);
+                        case SvgClipPathResult.Hidden:
+                            // The clip resolves to nothing: the element is not rendered.
+                            return;
+                        case SvgClipPathResult.Clipped:
+                            clipGeometry = clip;
+                            clipState = context.PushGeometryClip(clip!);
+                            break;
                     }
                 }
 
                 using (clipState)
                 {
-                    DrawingContext.PushedState? maskState = null;
+                    IDisposable? maskState = null;
                     if (!compileContext.Measuring
                         && element.GetStyleOrAttribute("mask") is { } maskValue
                         && SvgClipPaths.TryParseUrlReference(maskValue, out var maskId))

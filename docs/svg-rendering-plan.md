@@ -1157,7 +1157,43 @@ already-known instance of this rule.
   Scoreboard: **shapes 133/133; painting 282/304 (22 quarantined:
   context paint, `<image>`/feImage, text stroking); paint-servers
   148/149 (1 quarantined: patternTransform×element-transform
-  composition)** — overall 563/586.
+  composition); masking 89/93 (4 quarantined: `<image>` in masks/clip,
+  linearRGB mask luminance)** — overall 652/679.
+  Masking fixes (the clipPath builder was substantially rewritten): an
+  empty or in-error clipPath — no valid children, invisible children,
+  unresolvable or non-invertible attributes — hides the element instead
+  of being ignored; invalid children (`g`, `line`, `image`, `switch`,
+  symbols via `use`) are excluded; per-child `clip-rule` survives via
+  CombinedGeometry unions instead of a single-rule GeometryGroup, with
+  the inherited value looked up through the DOM chain; `clip-path` on
+  the clipPath itself and on its children intersects (child clips apply
+  before the child's transform; recursive references are ignored,
+  breaking the cycle one level in); `transform` on clipPath applies
+  after the units mapping and a non-invertible one is an error; `use`
+  and `text` are valid clip sources (glyph outlines via
+  GlyphRun.BuildGeometry through the normal chunk layout, merged under
+  the clip rule so even-odd cancels tspan overlaps); rect clips honor
+  rx/ry; CSS basic-shape `circle()` works with fill/stroke/view-box
+  reference boxes; `clip-path` on the root svg clips the document.
+  Mask fixes: the userSpaceOnUse region defaults are the spec's
+  -10%/120% percentages (they resolved as raw user units, collapsing
+  the mask to ~1px); a mask on a `<mask>` chains multiplicatively onto
+  the element unless the chain is cyclic, in which case the whole chain
+  is dropped, matching browsers.
+  Two cross-cutting fixes fell out: whitespace-only XML nodes between
+  tspans now survive parsing (filtered to text content) and collapse to
+  a single space, with trailing chunk whitespace trimmed; and the corpus
+  fonts are now truly hermetic — plain family names only ever resolve
+  against system fonts, so "Noto Sans" is mapped into the embedded
+  collection via FontManagerOptions.FontFamilyMappings (which also
+  fixed bold tspans silently shaping with the regular face when the
+  machine has a partial Noto Sans installed; NotoSans-Bold.ttf is now
+  embedded alongside Regular). Six text goldens regenerated for the
+  font/whitespace changes, verified against references.
+  Known issue for the text sweep: segments with multiple styled runs
+  draw overlapped by roughly a glyph (visible in the *-on-tspan
+  goldens; pre-existing, within reference tolerance, the cause is in
+  the run-advance accounting in FlushChunk/FormatSegment).
   Paint-servers fixes: userSpaceOnUse gradient defaults are 50%
   percentages, geometry attributes inherit only across the same gradient
   kind, negative radius invalidates the paint, stop offsets accept only
@@ -1190,7 +1226,7 @@ already-known instance of this rule.
   `mix-blend-mode`/`isolation` are CSS-only properties whose attribute
   form must be ignored.
   Next categories in rough order of coverage value:
-  `masking`, `structure`, `filters`, `text`. The W3C 1.1
+  `structure`, `filters`, `text`. The W3C 1.1
   `animate-elem-*` tests remain the SMIL source when animation goldens
   land.)*
 - **Compiler snapshot tests.** Serialize emitted `RenderItemList` to a stable

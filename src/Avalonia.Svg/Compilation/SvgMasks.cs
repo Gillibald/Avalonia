@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Svg.Parsing;
 
@@ -16,22 +17,22 @@ internal static class SvgMasks
     /// Pushes the opacity mask for a <c>mask: url(#id)</c> reference. Returns
     /// null when the reference is invalid (the element renders unmasked).
     /// </summary>
-    public static DrawingContext.PushedState? TryPush(
+    public static IDisposable? TryPush(
         DrawingContext context, SvgCompileContext compileContext, string id, Rect bounds)
     {
         if (compileContext.Document.GetElementById(id) is not { Name: "mask" } mask)
             return null;
 
         // Mask region; maskUnits default to objectBoundingBox with the spec's
-        // -10% / 120% defaults.
+        // -10% / 120% defaults, which are percentages in either units mode.
         var boxUnits = mask.GetAttribute("maskUnits") != "userSpaceOnUse";
         if (boxUnits && (bounds.Width <= 0 || bounds.Height <= 0))
             return context.PushOpacity(0);
 
-        var x = GetCoordinate(mask, "x", -0.1, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
-        var y = GetCoordinate(mask, "y", -0.1, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
-        var width = GetCoordinate(mask, "width", 1.2, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
-        var height = GetCoordinate(mask, "height", 1.2, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
+        var x = GetCoordinate(mask, "x", -10, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
+        var y = GetCoordinate(mask, "y", -10, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
+        var width = GetCoordinate(mask, "width", 120, boxUnits, SvgLengthAxis.Horizontal, compileContext.Viewport);
+        var height = GetCoordinate(mask, "height", 120, boxUnits, SvgLengthAxis.Vertical, compileContext.Viewport);
 
         var region = boxUnits
             ? new Rect(
@@ -82,19 +83,77 @@ internal static class SvgMasks
             DestinationRect = RelativeRect.Fill,
         }.ToImmutable();
 
+        // A mask on the mask element itself chains: masking the mask's content
+        // scales its luminance, which is the same as applying both masks to the
+        // element. A chain that cycles back to this mask is dropped entirely —
+        // the mask applies alone, matching browsers.
+        IDisposable? chainedMask = null;
+        if (mask.GetStyleOrAttribute("mask") is { } chainedValue
+            && SvgClipPaths.TryParseUrlReference(chainedValue, out var chainedId)
+            && !ChainIsCyclic(compileContext, mask))
+        {
+            chainedMask = TryPush(context, compileContext, chainedId, bounds);
+        }
+
         // SVG masks are luminance by default; mask-type opts into alpha.
         var maskType = mask.GetStyleOrAttribute("mask-type") == "alpha" ? MaskType.Alpha : MaskType.Luminance;
 
-        return context.PushOpacityMask(brush, region, maskType);
+        var maskState = context.PushOpacityMask(brush, region, maskType);
+        return chainedMask == null ? maskState : new ChainedState(maskState, chainedMask);
+    }
+
+    /// <summary>
+    /// Follows the <c>mask</c> attributes from <paramref name="mask"/> and
+    /// reports whether the chain returns to an already visited mask.
+    /// </summary>
+    private static bool ChainIsCyclic(SvgCompileContext compileContext, SvgElement mask)
+    {
+        var visited = new HashSet<SvgElement> { mask };
+        var current = mask;
+
+        while (current.GetStyleOrAttribute("mask") is { } value
+               && SvgClipPaths.TryParseUrlReference(value, out var id)
+               && compileContext.Document.GetElementById(id) is { Name: "mask" } next)
+        {
+            if (!visited.Add(next))
+                return true;
+
+            current = next;
+        }
+
+        return false;
+    }
+
+    private sealed class ChainedState : IDisposable
+    {
+        private DrawingContext.PushedState _inner;
+        private IDisposable? _outer;
+
+        public ChainedState(DrawingContext.PushedState inner, IDisposable outer)
+        {
+            _inner = inner;
+            _outer = outer;
+        }
+
+        public void Dispose()
+        {
+            // Pop in reverse push order: the mask itself, then its chained mask.
+            _inner.Dispose();
+            _outer?.Dispose();
+            _outer = null;
+        }
     }
 
     private static double GetCoordinate(
-        SvgElement element, string attribute, double fallback,
+        SvgElement element, string attribute, double percentFallback,
         bool boxUnits, SvgLengthAxis axis, Size viewport)
     {
         var value = element.GetAttribute(attribute);
         if (value == null || !SvgLength.TryParse(value.AsSpan(), out var length))
-            return fallback;
+        {
+            // The spec defaults are percentages, sensitive to the units mode.
+            length = new SvgLength(percentFallback, SvgLengthUnit.Percent);
+        }
 
         if (boxUnits)
             return length.Unit == SvgLengthUnit.Percent ? length.Value / 100.0 : length.Value;
