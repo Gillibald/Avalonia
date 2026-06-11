@@ -98,6 +98,20 @@ public static class EffectExtensions
         if (effect is ICropEffect cropEffect)
             return cropEffect.Input.GetEffectOutputPadding();
 
+        // Generators replace the layer content within the layer bounds; they
+        // add no padding of their own.
+        if (effect is IRecordingEffect or ITurbulenceEffect)
+            return default;
+
+        if (effect is IAnisotropicBlurEffect anisotropicBlur)
+        {
+            var inner = anisotropicBlur.Input.GetEffectOutputPadding();
+            var padX = AdjustPaddingRadius(anisotropicBlur.RadiusX);
+            var padY = AdjustPaddingRadius(anisotropicBlur.RadiusY);
+            return new Thickness(
+                inner.Left + padX, inner.Top + padY, inner.Right + padX, inner.Bottom + padY);
+        }
+
         if (effect is IConvolveMatrixEffect convolve)
         {
             // The kernel reads up to a full order in every direction;

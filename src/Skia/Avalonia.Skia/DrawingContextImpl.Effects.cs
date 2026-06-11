@@ -203,11 +203,61 @@ partial class DrawingContextImpl
                 new SKSizeI(convolve.OrderX, convolve.OrderY),
                 kernel,
                 (float)(1 / convolve.Divisor),
-                (float)convolve.Bias,
+                // Skia's bias is in [0, 255] color units; the effect's is the
+                // SVG [0, 1] fraction.
+                (float)(convolve.Bias * 255),
                 new SKPointI(convolve.TargetX, convolve.TargetY),
                 tileMode,
                 convolve.PreserveAlpha,
                 convolveInput);
+        }
+
+        if (effect is IRecordingEffect recordingEffect)
+        {
+            // The recording rasterizes into a picture replayed by the filter:
+            // the layer content is replaced by the recorded drawing.
+            using var recorder = new SKPictureRecorder();
+            var canvas = recorder.BeginRecording(recordingEffect.Bounds.ToSKRect());
+            var createInfo = new CreateInfo
+            {
+                Canvas = canvas,
+                Dpi = new Vector(96, 96),
+                DisableSubpixelTextRendering = true,
+                GrContext = _grContext,
+                Gpu = _gpu,
+            };
+            using (var nested = new DrawingContextImpl(createInfo))
+                recordingEffect.Recording.Render(nested);
+            using var picture = recorder.EndRecording();
+            return SKImageFilter.CreatePicture(picture, recordingEffect.Bounds.ToSKRect());
+        }
+
+        if (effect is ITurbulenceEffect turbulence)
+        {
+            var frequencyX = (float)turbulence.BaseFrequencyX;
+            var frequencyY = (float)turbulence.BaseFrequencyY;
+            var seed = (float)turbulence.Seed;
+            var stitchTile = new SKPointI(
+                (int)Math.Round(turbulence.StitchTile.Width),
+                (int)Math.Round(turbulence.StitchTile.Height));
+
+            using var noise = turbulence.FractalNoise
+                ? turbulence.Stitch
+                    ? SKShader.CreatePerlinNoiseFractalNoise(frequencyX, frequencyY, turbulence.Octaves, seed, stitchTile)
+                    : SKShader.CreatePerlinNoiseFractalNoise(frequencyX, frequencyY, turbulence.Octaves, seed)
+                : turbulence.Stitch
+                    ? SKShader.CreatePerlinNoiseTurbulence(frequencyX, frequencyY, turbulence.Octaves, seed, stitchTile)
+                    : SKShader.CreatePerlinNoiseTurbulence(frequencyX, frequencyY, turbulence.Octaves, seed);
+
+            return noise == null ? null : SKImageFilter.CreateShader(noise, dither: false);
+        }
+
+        if (effect is IAnisotropicBlurEffect anisotropicBlur)
+        {
+            using var blurInput = anisotropicBlur.Input is { } abi ? CreateEffect(abi) : null;
+            var sigmaX = anisotropicBlur.RadiusX > 0 ? SkBlurRadiusToSigma(anisotropicBlur.RadiusX) : 0;
+            var sigmaY = anisotropicBlur.RadiusY > 0 ? SkBlurRadiusToSigma(anisotropicBlur.RadiusY) : 0;
+            return SKImageFilter.CreateBlur(sigmaX, sigmaY, blurInput);
         }
 
         if (effect is ICropEffect crop)
