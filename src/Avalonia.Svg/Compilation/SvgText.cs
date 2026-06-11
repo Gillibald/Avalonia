@@ -940,10 +940,12 @@ internal static class SvgText
             var culture = GetCulture(run.Style);
             var features = CreateFontFeatures(run.Style);
 
-            // small-caps synthesis: lowercase stretches map to capitals at a
-            // reduced size. Skipped when per-character placement lists are in
-            // play — the indices must stay aligned with the source text.
-            if (run.Style.SmallCaps && run.Chars == null)
+            // small-caps prefers the font's real smcp feature (applied via
+            // the font features); synthesis — lowercase stretches mapped to
+            // capitals at a reduced size — is the fallback for fonts without
+            // one. Synthesis is skipped when per-character placement lists
+            // are in play: the indices must stay aligned with the source.
+            if (run.Style.SmallCaps && run.Chars == null && !HasSmallCapsFeature(run.Style))
             {
                 var text = run.Text;
                 var position = 0;
@@ -1061,15 +1063,48 @@ internal static class SvgText
         }
     }
 
+    private static readonly Avalonia.Media.Fonts.OpenTypeTag s_smcpTag =
+        Avalonia.Media.Fonts.OpenTypeTag.Parse("smcp");
+
+    /// <summary>
+    /// True when the style's resolved font carries a real <c>smcp</c> GSUB
+    /// feature; small-caps synthesis is only the fallback without one.
+    /// </summary>
+    private static bool HasSmallCapsFeature(in SvgStyle style)
+    {
+        try
+        {
+            if (!FontManager.Current.TryGetGlyphTypeface(CreateTypeface(style), out var glyphTypeface))
+                return false;
+
+            var features = glyphTypeface.SupportedFeatures;
+            for (var i = 0; i < features.Count; i++)
+            {
+                if (features[i] == s_smcpTag)
+                    return true;
+            }
+
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            // No font manager in this context.
+            return false;
+        }
+    }
+
     private static FontFeatureCollection? CreateFontFeatures(in SvgStyle style)
     {
-        if (!style.KerningDisabled)
+        var smallCaps = style.SmallCaps && HasSmallCapsFeature(style);
+        if (!style.KerningDisabled && !smallCaps)
             return null;
 
-        return new FontFeatureCollection
-        {
-            new FontFeature { Tag = "kern", Value = 0 },
-        };
+        var features = new FontFeatureCollection();
+        if (style.KerningDisabled)
+            features.Add(new FontFeature { Tag = "kern", Value = 0 });
+        if (smallCaps)
+            features.Add(new FontFeature { Tag = "smcp", Value = 1 });
+        return features;
     }
 
     private static void CompileTextPath(
