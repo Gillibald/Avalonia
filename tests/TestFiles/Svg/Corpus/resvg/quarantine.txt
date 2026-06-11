@@ -25,6 +25,13 @@ painting/image-rendering/on-feImage.svg -- feImage / <image> not supported
 painting/image-rendering/optimizeSpeed.svg -- <image> not supported
 painting/image-rendering/optimizeSpeed-on-SVG.svg -- <image> not supported
 painting/marker/with-an-image-child.svg -- <image> not supported
+masking/clip/simple-case.svg -- <image> not supported
+masking/mask/with-image.svg -- <image> not supported
+masking/mask/with-grayscale-image.svg -- <image> not supported
+
+# Mask luminance is computed in sRGB; color-interpolation=linearRGB needs a
+# linear-space luminance option on the opacity-mask layer.
+masking/mask/color-interpolation=linearRGB.svg -- linearRGB mask luminance not supported by the opacity-mask layer
 
 # Text stroking is out of scope for the current text pipeline integration.
 painting/stroke/linear-gradient-on-text.svg -- text stroking not supported

@@ -14,10 +14,11 @@
     <!-- Deterministic text rendering: SVG test content references this font via
          a resm: font-family URI. -->
     <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" Link="Assets\NotoMono-Regular.ttf" />
-    <!-- The resvg corpus' bundled font (OFL, see Assets/Noto-LICENSE-OFL.txt):
+    <!-- The resvg corpus' bundled fonts (OFL, see Assets/Noto-LICENSE-OFL.txt):
          registered as a font collection so corpus tests resolve the plain
          "Noto Sans" family deterministically on every machine. -->
     <EmbeddedResource Include="Assets\NotoSans-Regular.ttf" />
+    <EmbeddedResource Include="Assets\NotoSans-Bold.ttf" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />

@@ -22,6 +22,26 @@ public class SvgRenderTestBase : IDisposable
 {
     private const double AllowedError = 0.022;
 
+    static SvgRenderTestBase()
+    {
+        // Plain family names resolve against system fonts only, so map the
+        // corpus families into the embedded collection before the FontManager
+        // is constructed: rendering stays hermetic on machines that have any
+        // (possibly partial) "Noto Sans" installed. The options must be bound
+        // before FontManager.Current is first touched.
+        AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+        {
+            FontFamilyMappings = new System.Collections.Generic.Dictionary<string, FontFamily>
+            {
+                ["Noto Sans"] = new FontFamily("fonts:svg-corpus#Noto Sans"),
+            },
+        });
+
+        FontManager.Current.AddFontCollection(new Avalonia.Media.Fonts.EmbeddedFontCollection(
+            new Uri("fonts:svg-corpus"),
+            new Uri("resm:Avalonia.Svg.RenderTests.Assets?assembly=Avalonia.Svg.RenderTests")));
+    }
+
     public SvgRenderTestBase(string outputPath)
     {
         outputPath = outputPath.Replace('\\', Path.DirectorySeparatorChar);
