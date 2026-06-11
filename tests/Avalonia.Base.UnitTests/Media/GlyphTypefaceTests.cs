@@ -29,6 +29,24 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
+        public void Metrics_Should_Expose_XHeight_And_CapHeight()
+        {
+            var assetLoader = new StandardAssetLoader();
+
+            using var stream = assetLoader.Open(new Uri(InterFontUri));
+
+            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+
+            var metrics = typeface.Metrics;
+
+            // Inter carries a modern OS/2 table with both heights populated.
+            Assert.True(metrics.XHeight > 0);
+            Assert.True(metrics.CapHeight > 0);
+            Assert.True(metrics.XHeight < metrics.CapHeight);
+            Assert.True(metrics.CapHeight <= -metrics.Ascent);
+        }
+
+        [Fact]
         public void Should_Have_CharacterToGlyphMap_For_Common_Characters()
         {
             var assetLoader = new StandardAssetLoader();

@@ -159,7 +159,11 @@ namespace Avalonia.Media
                 UnderlineThickness = underlineSize,
                 StrikethroughPosition = _hasOs2Table ? -_os2Table.StrikeoutPosition : 0,
                 StrikethroughThickness = _hasOs2Table ? _os2Table.StrikeoutSize : 0,
-                IsFixedPitch = isFixedPitch
+                IsFixedPitch = isFixedPitch,
+                // The x-height and cap height fields exist from OS/2 version 2 on;
+                // older fonts report zero.
+                XHeight = _hasOs2Table && _os2Table.XHeight > 0 ? _os2Table.XHeight : 0,
+                CapHeight = _hasOs2Table && _os2Table.CapHeight > 0 ? _os2Table.CapHeight : 0
             };
 
             FontSimulations = fontSimulations;
