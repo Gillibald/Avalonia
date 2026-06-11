@@ -58,7 +58,7 @@ internal static class SvgText
     private sealed class StyledRun
     {
         public StyledRun(string text, in SvgStyle style, double dx, double dy,
-            CharPlacement[]? chars = null, bool preservesWhitespace = false)
+            CharPlacement[]? chars = null, bool preservesWhitespace = false, SvgElement? filterElement = null)
         {
             Text = text;
             Style = style;
@@ -66,6 +66,7 @@ internal static class SvgText
             Dy = dy;
             Chars = chars;
             PreservesWhitespace = preservesWhitespace;
+            FilterElement = filterElement;
         }
 
         public string Text { get; }
@@ -78,6 +79,13 @@ internal static class SvgText
 
         /// <summary>True under <c>xml:space="preserve"</c>: exempt from trimming.</summary>
         public bool PreservesWhitespace { get; }
+
+        /// <summary>
+        /// The nearest enclosing span that declares a filter (SVG 2 allows
+        /// filters on tspan), or null. The span's glyphs render through the
+        /// filter as one group.
+        /// </summary>
+        public SvgElement? FilterElement { get; }
     }
 
     /// <summary>An <see cref="ITextSource"/> over a segment's styled runs.</summary>
@@ -327,7 +335,7 @@ internal static class SvgText
         SvgElement textElement, SvgElement element, DrawingContext? context, SvgCompileContext compileContext,
         in SvgStyle style, bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin,
         ref double? chunkTextLength, ref bool chunkSpacingAndGlyphs,
-        List<Geometry>? geometrySink, List<PositionScope> scopes)
+        List<Geometry>? geometrySink, List<PositionScope> scopes, SvgElement? spanFilter = null)
     {
         if (element.Content == null)
             return;
@@ -354,7 +362,7 @@ internal static class SvgText
                         chars[i] = ResolveCharPlacement(scopes);
                 }
 
-                chunk.Add(new StyledRun(normalized, style, pendingDx, pendingDy, chars, preserve));
+                chunk.Add(new StyledRun(normalized, style, pendingDx, pendingDy, chars, preserve, spanFilter));
                 pendingDx = 0;
                 pendingDy = 0;
             }
@@ -408,12 +416,19 @@ internal static class SvgText
                         // the shift boundaries.
                         var shiftDelta = childStyle.BaselineShift - style.BaselineShift;
 
+                        // A filter on the span groups its glyphs (SVG 2); the
+                        // innermost declaring span wins for nested filters.
+                        var childFilter = child.GetStyleOrAttribute("filter") is { Length: > 0 } childFilterValue
+                                          && childFilterValue != "none"
+                            ? child
+                            : spanFilter;
+
                         CollectContent(
                             textElement, child, context, compileContext, childStyle, isSpan: true,
                             dx: pendingDx + dxLegacy,
                             dy: pendingDy + dyLegacy - shiftDelta,
                             ref chunk, ref chunkOrigin, ref chunkTextLength, ref chunkSpacingAndGlyphs,
-                            geometrySink, scopes);
+                            geometrySink, scopes, childFilter);
 
                         if (childScope != null)
                             scopes.Remove(childScope);
@@ -443,6 +458,45 @@ internal static class SvgText
         }
     }
 
+    /// <summary>
+    /// Splits a chunk into layout segments at dx/dy adjustments and span
+    /// filter boundaries (a filtered span's glyphs draw as one isolated
+    /// group, so they cannot share a line with unfiltered neighbors).
+    /// </summary>
+    private static List<List<StyledRun>> SplitSegments(List<StyledRun> chunk)
+    {
+        var segments = new List<List<StyledRun>>();
+        SvgElement? currentFilter = null;
+        foreach (var run in chunk)
+        {
+            if (segments.Count == 0 || run.Dx != 0 || run.Dy != 0
+                || !ReferenceEquals(run.FilterElement, currentFilter))
+            {
+                segments.Add(new List<StyledRun>());
+            }
+
+            currentFilter = run.FilterElement;
+            segments[segments.Count - 1].Add(run);
+        }
+
+        return segments;
+    }
+
+    /// <summary>
+    /// Opens the filter scope for a span's glyph range. The declared filter
+    /// resolves against the range's cell box (the span's bounding box) and
+    /// the declaring span's computed style.
+    /// </summary>
+    private static SvgFilters.SvgFilterScope PushSpanFilter(
+        DrawingContext context, SvgCompileContext compileContext, SvgElement filterElement,
+        in SvgStyle style, Rect bounds)
+    {
+        var value = filterElement.GetStyleOrAttribute("filter")!;
+        return SvgFilters.TryParseSingleUrl(value, out var filterId)
+            ? SvgFilters.Push(context, compileContext, filterId, bounds, style)
+            : SvgFilters.PushFunctions(context, compileContext, value, bounds, style);
+    }
+
     private static void FlushChunk(
         SvgElement textElement, DrawingContext? context, SvgCompileContext compileContext,
         List<StyledRun> chunk, Point origin, List<Geometry>? geometrySink = null,
@@ -464,7 +518,8 @@ internal static class SvgText
             if (trimmed.Length > 0)
             {
                 chunk.Add(new StyledRun(trimmed, last.Style, last.Dx, last.Dy,
-                    last.Chars is { } trimmedChars ? trimmedChars[..trimmed.Length] : null));
+                    last.Chars is { } trimmedChars ? trimmedChars[..trimmed.Length] : null,
+                    filterElement: last.FilterElement));
                 break;
             }
         }
@@ -491,13 +546,7 @@ internal static class SvgText
         // Split the chunk into layout segments at dx/dy adjustments; runs inside
         // a segment share one TextLayout so shaping continues across style-only
         // tspan boundaries.
-        var segments = new List<List<StyledRun>>();
-        foreach (var run in chunk)
-        {
-            if (segments.Count == 0 || run.Dx != 0 || run.Dy != 0)
-                segments.Add(new List<StyledRun>());
-            segments[segments.Count - 1].Add(run);
-        }
+        var segments = SplitSegments(chunk);
 
         // First pass: solid foregrounds resolve immediately; paint-server
         // references (fill or stroke) need the chunk bounds and are filled in
@@ -550,6 +599,9 @@ internal static class SvgText
 
             var penX = origin.X + anchorShift;
             var penY = origin.Y;
+            var spanFilterScope = default(SvgFilters.SvgFilterScope);
+            SvgElement? activeSpanFilter = null;
+            var spanFilterHidden = false;
 
             for (var i = 0; i < lines.Count; i++)
             {
@@ -558,6 +610,50 @@ internal static class SvgText
 
                 penX += segment[0].Dx;
                 penY += segment[0].Dy;
+
+                // A span filter scope opens at the first segment of the
+                // declaring span's range and closes when the span changes;
+                // the filter region resolves against the range's cell box.
+                // An unresolvable filter hides the range's glyphs, but the
+                // pen still advances — filters do not affect layout.
+                if (!ReferenceEquals(segment[0].FilterElement, activeSpanFilter))
+                {
+                    spanFilterScope.Dispose();
+                    spanFilterScope = default;
+                    spanFilterHidden = false;
+                    activeSpanFilter = segment[0].FilterElement;
+
+                    if (activeSpanFilter != null && geometrySink == null && context != null
+                        && !compileContext.Measuring)
+                    {
+                        var rangeWidth = 0.0;
+                        var rangeTop = double.PositiveInfinity;
+                        var rangeBottom = double.NegativeInfinity;
+                        var scanY = penY;
+                        for (var j = i; j < lines.Count
+                             && ReferenceEquals(segments[j][0].FilterElement, activeSpanFilter); j++)
+                        {
+                            if (j > i)
+                            {
+                                rangeWidth += segments[j][0].Dx;
+                                scanY += segments[j][0].Dy;
+                            }
+
+                            if (lines[j] is not { } scanLine)
+                                continue;
+                            rangeWidth += scanLine.WidthIncludingTrailingWhitespace;
+                            rangeTop = Math.Min(rangeTop, scanY - scanLine.Baseline);
+                            rangeBottom = Math.Max(rangeBottom, scanY - scanLine.Baseline + scanLine.Height);
+                        }
+
+                        if (rangeWidth > 0 && rangeBottom > rangeTop)
+                        {
+                            spanFilterScope = PushSpanFilter(context, compileContext, activeSpanFilter,
+                                segment[0].Style, new Rect(penX, rangeTop, rangeWidth, rangeBottom - rangeTop));
+                            spanFilterHidden = spanFilterScope.Hidden;
+                        }
+                    }
+                }
 
                 if (line == null)
                     continue;
@@ -588,46 +684,51 @@ internal static class SvgText
                     continue;
                 }
 
-                // Stroked text draws the glyph outlines with the pen around
-                // the filled line, honoring paint-order.
-                var segmentStyle = segment[0].Style;
-                var strokePen = ResolveStrokePen(segmentStyle, compileContext, chunkBounds);
-                if (strokePen != null && segmentStyle.StrokeBeforeFill)
-                    StrokeLine(context!, line, strokePen, penX, penY);
-
-                // SVG positions the baseline; a text line draws from its top.
-                line.Draw(context!, new Point(penX, penY - line.Baseline));
-
-                if (strokePen != null && !segmentStyle.StrokeBeforeFill)
-                    StrokeLine(context!, line, strokePen, penX, penY);
-
-                // getBBox() for text covers the glyph cells (the layout box),
-                // not the ink: pad measuring recordings to the line box so
-                // filters, masks and clips size against the cell bounds.
-                if (compileContext.Measuring)
+                if (!spanFilterHidden)
                 {
-                    context!.DrawRectangle(s_measuringCellBrush, null, new Rect(
-                        penX, penY - line.Baseline,
-                        line.WidthIncludingTrailingWhitespace, line.Height));
-                }
+                    // Stroked text draws the glyph outlines with the pen around
+                    // the filled line, honoring paint-order.
+                    var segmentStyle = segment[0].Style;
+                    var strokePen = ResolveStrokePen(segmentStyle, compileContext, chunkBounds);
+                    if (strokePen != null && segmentStyle.StrokeBeforeFill)
+                        StrokeLine(context!, line, strokePen, penX, penY);
 
-                // Coarse, layout-box hit area per segment, attributed to the
-                // <text> element (tspan-level targeting is out of scope).
-                compileContext.HitTree?.AddShape(
-                    textElement,
-                    new SvgHitShape
+                    // SVG positions the baseline; a text line draws from its top.
+                    line.Draw(context!, new Point(penX, penY - line.Baseline));
+
+                    if (strokePen != null && !segmentStyle.StrokeBeforeFill)
+                        StrokeLine(context!, line, strokePen, penX, penY);
+
+                    // getBBox() for text covers the glyph cells (the layout box),
+                    // not the ink: pad measuring recordings to the line box so
+                    // filters, masks and clips size against the cell bounds.
+                    if (compileContext.Measuring)
                     {
-                        Kind = SvgHitShape.ShapeKind.Rectangle,
-                        Bounds = new Rect(
+                        context!.DrawRectangle(s_measuringCellBrush, null, new Rect(
                             penX, penY - line.Baseline,
-                            line.WidthIncludingTrailingWhitespace, line.Height),
-                        HasFill = segmentStyle.ResolveContextPaint(segmentStyle.Fill).Kind != SvgPaintKind.None,
-                    },
-                    segmentStyle.PointerEvents,
-                    segmentStyle.Visible);
+                            line.WidthIncludingTrailingWhitespace, line.Height));
+                    }
+
+                    // Coarse, layout-box hit area per segment, attributed to the
+                    // <text> element (tspan-level targeting is out of scope).
+                    compileContext.HitTree?.AddShape(
+                        textElement,
+                        new SvgHitShape
+                        {
+                            Kind = SvgHitShape.ShapeKind.Rectangle,
+                            Bounds = new Rect(
+                                penX, penY - line.Baseline,
+                                line.WidthIncludingTrailingWhitespace, line.Height),
+                            HasFill = segmentStyle.ResolveContextPaint(segmentStyle.Fill).Kind != SvgPaintKind.None,
+                        },
+                        segmentStyle.PointerEvents,
+                        segmentStyle.Visible);
+                }
 
                 penX += line.WidthIncludingTrailingWhitespace;
             }
+
+            spanFilterScope.Dispose();
         }
         finally
         {
@@ -662,13 +763,7 @@ internal static class SvgText
         List<StyledRun> chunk, Point origin, double? textLength, bool spacingAndGlyphs,
         List<Geometry>? geometrySink)
     {
-        var segments = new List<List<StyledRun>>();
-        foreach (var run in chunk)
-        {
-            if (segments.Count == 0 || run.Dx != 0 || run.Dy != 0)
-                segments.Add(new List<StyledRun>());
-            segments[segments.Count - 1].Add(run);
-        }
+        var segments = SplitSegments(chunk);
 
         var lines = new List<TextLine?>(segments.Count);
         try
@@ -729,6 +824,9 @@ internal static class SvgText
             var penX = origin.X + anchorShift;
             var penY = origin.Y;
             var segmentIndex = -1;
+            var spanFilterScope = default(SvgFilters.SvgFilterScope);
+            SvgElement? activeSpanFilter = null;
+            var spanFilterHidden = false;
 
             for (var i = 0; i < clusters.Count; i++)
             {
@@ -748,8 +846,50 @@ internal static class SvgText
                 penX += placement.Dx;
                 penY += placement.Dy;
 
+                // Span filter scopes open at the first cluster of the
+                // declaring span's range (see the line-layout path). The
+                // range's cell box accumulates the scanned clusters' pen
+                // advances; absolute per-character placements inside a
+                // filtered span are not anticipated.
+                if (!ReferenceEquals(cluster.Run.FilterElement, activeSpanFilter))
+                {
+                    spanFilterScope.Dispose();
+                    spanFilterScope = default;
+                    spanFilterHidden = false;
+                    activeSpanFilter = cluster.Run.FilterElement;
+
+                    if (activeSpanFilter != null && geometrySink == null && context != null
+                        && !compileContext.Measuring)
+                    {
+                        var rangeWidth = 0.0;
+                        var rangeTop = double.PositiveInfinity;
+                        var rangeBottom = double.NegativeInfinity;
+                        for (var j = i; j < clusters.Count
+                             && ReferenceEquals(clusters[j].Run.FilterElement, activeSpanFilter); j++)
+                        {
+                            var scanned = clusters[j];
+                            rangeWidth += (scanned.Advance + scanned.Run.Style.LetterSpacing
+                                           + (scanned.IsWordSeparator ? scanned.Run.Style.WordSpacing : 0)) * scale;
+                            if (j > i)
+                                rangeWidth += gap;
+
+                            if (lines[scanned.SegmentIndex] is not { } scanLine)
+                                continue;
+                            rangeTop = Math.Min(rangeTop, penY - scanLine.Baseline);
+                            rangeBottom = Math.Max(rangeBottom, penY - scanLine.Baseline + scanLine.Height);
+                        }
+
+                        if (rangeWidth > 0 && rangeBottom > rangeTop)
+                        {
+                            spanFilterScope = PushSpanFilter(context, compileContext, activeSpanFilter,
+                                cluster.Run.Style, new Rect(penX, rangeTop, rangeWidth, rangeBottom - rangeTop));
+                            spanFilterHidden = spanFilterScope.Hidden;
+                        }
+                    }
+                }
+
                 var brush = geometrySink == null ? brushes[cluster.Run] : null;
-                if (geometrySink != null || (brush != null && context != null))
+                if (!spanFilterHidden && (geometrySink != null || (brush != null && context != null)))
                 {
                     var rotate = placement.Rotate ?? 0;
                     if (rotate != 0 || scale != 1)
@@ -785,6 +925,8 @@ internal static class SvgText
                 if (i < clusters.Count - 1)
                     penX += gap;
             }
+
+            spanFilterScope.Dispose();
 
             // One coarse hit box for the whole chunk.
             if (geometrySink == null && maxHeight > 0)
@@ -1164,8 +1306,18 @@ internal static class SvgText
 
         var distance = startOffset;
 
+        // Place first, draw second: a filter declared on the textPath (SVG 2)
+        // wraps all its glyphs in one layer, and the filter region needs the
+        // united glyph cell box before anything draws.
+        var draws = new List<(GlyphRun Run, Matrix Transform)>();
+        var cellBounds = default(Rect);
+        var overflowed = false;
+
         foreach (var textRun in line.TextRuns)
         {
+            if (overflowed)
+                break;
+
             if (textRun is not ShapedTextRun shapedRun)
                 continue;
 
@@ -1182,7 +1334,10 @@ internal static class SvgText
 
                 // Glyphs whose midpoint leaves the path are not rendered, per spec.
                 if (midpoint > sampler.TotalLength)
-                    return;
+                {
+                    overflowed = true;
+                    break;
+                }
 
                 var sampleAt = reverse ? sampler.TotalLength - midpoint : midpoint;
                 if (sampler.TryGetPointAtLength(sampleAt, out var position, out var angle))
@@ -1209,11 +1364,36 @@ internal static class SvgText
                         * Matrix.CreateRotation(angle)
                         * Matrix.CreateTranslation(position.X, position.Y);
 
-                    using (context.PushTransform(transform))
-                        context.DrawGlyphRun(brush, singleGlyphRun);
+                    var cell = new Rect(0, -shapedRun.Baseline, advance, line.Height)
+                        .TransformToAABB(transform);
+                    cellBounds = draws.Count == 0 ? cell : cellBounds.Union(cell);
+                    draws.Add((singleGlyphRun, transform));
                 }
 
                 distance += advance + style.LetterSpacing;
+            }
+        }
+
+        if (draws.Count == 0)
+            return;
+
+        var filterScope = default(SvgFilters.SvgFilterScope);
+        if (!compileContext.Measuring
+            && element.GetStyleOrAttribute("filter") is { Length: > 0 } filterValue
+            && filterValue != "none")
+        {
+            filterScope = PushSpanFilter(context, compileContext, element, style, cellBounds);
+        }
+
+        using (filterScope)
+        {
+            if (!filterScope.Hidden)
+            {
+                foreach (var (run, transform) in draws)
+                {
+                    using (context.PushTransform(transform))
+                        context.DrawGlyphRun(brush, run);
+                }
             }
         }
     }
