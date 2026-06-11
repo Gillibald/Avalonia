@@ -72,9 +72,18 @@ internal struct SvgStyle
     public bool KerningDisabled;
     /// <summary>BCP-47 language of the content (<c>xml:lang</c>), for shaping.</summary>
     public string? Language;
+
+    /// <summary>The <c>font-size-adjust</c> aspect value, null for none.</summary>
+    public double? FontSizeAdjust;
+
+    /// <summary>True under <c>font-variant: small-caps</c>.</summary>
+    public bool SmallCaps;
     public bool Underline;
     public bool Overline;
     public bool LineThrough;
+
+    /// <summary>The declaring element's font size when decorations were set.</summary>
+    public double DecorationEmSize;
     /// <summary>The fill that declared the decoration, captured per kind.</summary>
     public IBrush? UnderlineBrush;
     public IBrush? OverlineBrush;
@@ -178,6 +187,17 @@ internal struct SvgStyle
         // computed font size.
         if (Get(element, "font-size") is { } fontSize)
             ApplyFontSize(fontSize);
+
+        // font-size-adjust scales the rendered glyph size by the font's
+        // aspect; 'none' (or an invalid value) clears it.
+        if (Get(element, "font-size-adjust") is { } fontSizeAdjust)
+        {
+            FontSizeAdjust = double.TryParse(fontSizeAdjust.Trim(),
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+                out var aspect) && aspect > 0
+                ? aspect
+                : null;
+        }
 
         if (Get(element, "color") is { } colorValue && SvgColor.TryParse(colorValue, out var color))
             Color = color;
@@ -308,6 +328,16 @@ internal struct SvgStyle
                     FontStyle = FontStyle.Oblique;
                     break;
             }
+        }
+
+        // small-caps synthesizes from scaled capitals; fonts with a real smcp
+        // feature are not probed (the corpus fonts lack one).
+        if (Get(element, "font-variant") is { } fontVariant)
+        {
+            if (fontVariant == "small-caps")
+                SmallCaps = true;
+            else if (fontVariant == "normal")
+                SmallCaps = false;
         }
 
         if (Get(element, "font-weight") is { } fontWeight)
@@ -451,6 +481,7 @@ internal struct SvgStyle
             {
                 Underline = Overline = LineThrough = false;
                 UnderlineBrush = OverlineBrush = LineThroughBrush = null;
+                DecorationEmSize = 0;
             }
             else
             {
@@ -471,6 +502,10 @@ internal struct SvgStyle
                     LineThrough = true;
                     LineThroughBrush = brush;
                 }
+
+                // Decoration geometry derives from the declaring element's
+                // font, even when descendants change theirs.
+                DecorationEmSize = FontSize;
             }
         }
     }
@@ -502,6 +537,65 @@ internal struct SvgStyle
 
         if (offset is { } resolved)
             BaselineShift -= resolved;
+    }
+
+    /// <summary>
+    /// The font size used for glyph rendering: <c>font-size-adjust</c> scales
+    /// it so the first available font's aspect (x-height over em) matches the
+    /// requested value; em-based lengths keep using <see cref="FontSize"/>.
+    /// </summary>
+    public readonly double GetEffectiveFontSize()
+    {
+        if (FontSizeAdjust is not { } adjust || adjust <= 0 || FontSize <= 0)
+            return FontSize;
+
+        if (GetFontMetrics() is not { } metrics || metrics.XHeight <= 0)
+            return FontSize;
+
+        var aspect = metrics.XHeight / FontSize;
+        return aspect > 0 ? FontSize * adjust / aspect : FontSize;
+    }
+
+    /// <summary>
+    /// The declaring font's decoration geometry in pixels, for decorations
+    /// declared at a different font size than the run's: underline thickness
+    /// and the absolute offset from the run's recommended position to the
+    /// declaring font's, per decoration location.
+    /// </summary>
+    public readonly (double Thickness, double UnderlineOffset, double OverlineOffset, double StrikethroughOffset)?
+        GetDecorationGeometry(double runEmSize)
+    {
+        if (DecorationEmSize <= 0 || Math.Abs(DecorationEmSize - runEmSize) < 0.01)
+            return null;
+
+        FontManager fontManager;
+        try
+        {
+            fontManager = FontManager.Current;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        var fontFamily = FontFamily is { } family ? Media.FontFamily.Parse(family) : Media.FontFamily.Default;
+        if (!fontManager.TryGetGlyphTypeface(new Typeface(fontFamily, FontStyle, FontWeight, FontStretch), out var glyphTypeface)
+            || glyphTypeface.Metrics.DesignEmHeight <= 0)
+        {
+            return null;
+        }
+
+        var metrics = glyphTypeface.Metrics;
+        var delta = (DecorationEmSize - runEmSize) / metrics.DesignEmHeight;
+
+        // Avalonia font metrics are already y-down signed: the underline
+        // position is positive (below the baseline), ascent and the
+        // strikethrough position negative (above it).
+        return (
+            Math.Max(1, metrics.UnderlineThickness * DecorationEmSize / metrics.DesignEmHeight),
+            metrics.UnderlinePosition * delta,
+            metrics.Ascent * delta,
+            metrics.StrikethroughPosition * delta);
     }
 
     /// <summary>Ascent, descent and x-height at the current font size, as positive extents.</summary>

@@ -1156,9 +1156,9 @@ already-known instance of this rule.
   tolerance, review the outliers ("UB" references mark upstream-undecided
   behavior).
   Scoreboard: **shapes 133/133; painting 304/304; paint-servers
-  149/149; masking 93/93; text 320/356 (36 quarantined: vertical
-  writing modes ×16, font capabilities ×11, feFlood/span filters ×4,
-  tspan textLength and textPath details ×4, decoration details ×1);
+  149/149; masking 93/93; text 336/356 (20 quarantined: vertical
+  writing modes ×16, filters on text spans ×2, language-dependent CJK
+  glyph variants ×1, tiny-coordinate textPath sampling ×1);
   structure 223/247 (24 quarantined: CSS engine limits ×6, use-site
   inheritance into shared recordings ×5, nested-SVG image sizing ×4,
   strict funcIRI errors ×2, zero-size canvases ×3, DTD entities ×4);
@@ -1166,8 +1166,30 @@ already-known instance of this rule.
   inputs ×21, feConvolveMatrix bias/edge sampling ×14,
   FillPaint/StrokePaint inputs ×6, feTile sampling ×5, feTurbulence
   stitching/zero-axis/oBB frequencies ×3, huge-sigma clamping ×1)**
-  — overall 1569/1679. Four categories are complete: shapes, painting,
+  — overall 1585/1679. Four categories are complete: shapes, painting,
   paint-servers and masking.
+  The text font-capability sweep closed most of that family. The
+  NotoColorEmoji CBDT font joined the embedded corpus collection (with
+  a family mapping and a fallback entry) and Avalonia's text stack
+  renders it as-is — simple and ZWJ-compound emoji match the
+  references. font-stretch matching already worked (the quarantine
+  predated the FontStretch wiring); synthesized bold-italic is
+  goldened as an engine difference. font-size-adjust scales the
+  rendered glyph size by the font's x-height aspect (em lengths keep
+  the specified size), small-caps synthesizes lowercase as 0.8×
+  capitals (matching resvg's factor), and decorations now carry the
+  declaring element's font geometry as pixel-unit thickness and
+  offsets, so an underline declared at 200px stays 200px-sized around
+  48px text. textLength applies per chunk (a tspan owning a whole
+  chunk contributes its own), textPath gained side=right (reversed
+  sampling) and the text element's dy as a persistent path-normal
+  shift, and getBBox() semantics for text now cover the glyph cell box
+  rather than the ink — measuring recordings pad to the line box, so
+  filters, masks and clips size like the references. Anchored
+  letter-spaced chunks exclude the spacing after the last character
+  from the anchor advance and the cell box, which re-centered several
+  previously-goldened kerning and letter-spacing tests onto the
+  reference positions.
   Context paint servers now anchor fully: the compiler tracks the
   accumulated transform from each recording root, context gradients
   resolve their coordinates absolutely in the context element's space
