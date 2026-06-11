@@ -174,13 +174,13 @@ partial class DrawingContextImpl
                 ToTable(transfer.GreenTable), ToTable(transfer.BlueTable));
             return SKImageFilter.CreateColorFilter(table, transferInput);
 
-            static byte[]? ToTable(System.Collections.Generic.IReadOnlyList<byte>? source)
+            // SKColorFilter.CreateTable rejects null channel tables, so an
+            // unset (identity) channel materializes as an identity table.
+            static byte[] ToTable(System.Collections.Generic.IReadOnlyList<byte>? source)
             {
-                if (source == null)
-                    return null;
                 var table = new byte[256];
                 for (var i = 0; i < table.Length; i++)
-                    table[i] = source[i];
+                    table[i] = source?[i] ?? (byte)i;
                 return table;
             }
         }
