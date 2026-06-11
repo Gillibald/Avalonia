@@ -57,7 +57,7 @@ internal static class SvgPaintServers
             _ => GradientSpreadMethod.Pad,
         };
 
-        var transform = ParseGradientTransform(chain, objectBoundingBox, bounds);
+        var transform = ParseGradientTransform(chain, objectBoundingBox, bounds, context.Viewport);
 
         if (radial)
         {
@@ -184,7 +184,8 @@ internal static class SvgPaintServers
         return length.Resolve(axis, viewport);
     }
 
-    private static ImmutableTransform? ParseGradientTransform(List<SvgElement> chain, bool objectBoundingBox, Rect bounds)
+    private static ImmutableTransform? ParseGradientTransform(
+        List<SvgElement> chain, bool objectBoundingBox, Rect bounds, Size viewport)
     {
         var value = GetChained(chain, "gradientTransform");
         if (value == null
@@ -192,6 +193,19 @@ internal static class SvgPaintServers
             || matrix.IsIdentity)
         {
             return null;
+        }
+
+        // transform-origin conjugates the gradient transform in the gradient's
+        // own coordinate space: the unit box in objectBoundingBox mode, user
+        // space otherwise.
+        SvgElement? originElement = null;
+        foreach (var element in chain)
+        {
+            if (element.GetStyleOrAttribute("transform-origin") != null)
+            {
+                originElement = element;
+                break;
+            }
         }
 
         if (objectBoundingBox)
@@ -203,9 +217,29 @@ internal static class SvgPaintServers
             if (bounds.Width <= 0 || bounds.Height <= 0)
                 return null;
 
+            if (originElement != null)
+            {
+                matrix = SvgCompiler.ApplyTransformOrigin(
+                    originElement, matrix, new Rect(0, 0, 1, 1), new Rect(0, 0, 1, 1));
+            }
+
             matrix = Matrix.CreateScale(1 / bounds.Width, 1 / bounds.Height)
                      * matrix
                      * Matrix.CreateScale(bounds.Width, bounds.Height);
+        }
+        else if (originElement != null)
+        {
+            matrix = SvgCompiler.ApplyTransformOrigin(
+                originElement, matrix, new Rect(viewport), bounds);
+
+            // The brush conjugates its transform about the target bounds
+            // position; compensate so the matrix acts in user space.
+            if (bounds.X != 0 || bounds.Y != 0)
+            {
+                matrix = Matrix.CreateTranslation(bounds.X, bounds.Y)
+                         * matrix
+                         * Matrix.CreateTranslation(-bounds.X, -bounds.Y);
+            }
         }
 
         return new ImmutableTransform(matrix);

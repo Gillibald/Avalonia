@@ -511,6 +511,14 @@ internal static class SvgCompiler
         if (tokens.Length is < 1 or > 3)
             return false;
 
+        // A single vertical keyword centers the horizontal axis.
+        if (tokens.Length == 1 && tokens[0] is "top" or "bottom")
+        {
+            TryParseOriginComponent(tokens[0], box.Y, box.Height, style, out var verticalOnly);
+            origin = new Point(box.X + box.Width / 2, verticalOnly);
+            return true;
+        }
+
         if (!TryParseOriginComponent(tokens[0], box.X, box.Width, style, out var x))
             return false;
 
