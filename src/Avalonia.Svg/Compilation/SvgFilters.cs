@@ -390,9 +390,11 @@ internal static class SvgFilters
 
                 case "feTurbulence":
                 {
-                    // Frequencies are per user unit; objectBoundingBox units
-                    // divide by the box dimensions. Invalid values behave as
-                    // unspecified.
+                    // Frequencies are per user unit regardless of
+                    // primitiveUnits (the interop behavior; the references
+                    // are identical with and without objectBoundingBox).
+                    // Invalid values behave as unspecified; a zero on one
+                    // axis is valid and yields one-dimensional noise.
                     var frequencyX = 0.0;
                     var frequencyY = 0.0;
                     if (primitive.GetAttribute("baseFrequency") is { } frequency)
@@ -407,14 +409,8 @@ internal static class SvgFilters
                         }
                     }
 
-                    if (boxUnits)
-                    {
-                        frequencyX /= bounds.Width;
-                        frequencyY /= bounds.Height;
-                    }
-
                     var octaves = (int)GetStrictNumber(primitive, "numOctaves", 1);
-                    if (frequencyX <= 0 || frequencyY <= 0 || octaves < 1)
+                    if ((frequencyX <= 0 && frequencyY <= 0) || octaves < 1)
                     {
                         // No noise is transparent black.
                         node = new ImmutableFloodEffect(Colors.Transparent, 0);
