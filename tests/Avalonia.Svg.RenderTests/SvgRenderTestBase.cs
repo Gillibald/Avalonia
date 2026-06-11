@@ -39,12 +39,15 @@ public class SvgRenderTestBase : IDisposable
                 ["Noto Sans Devanagari"] = new FontFamily("fonts:svg-corpus#Noto Sans Devanagari"),
                 ["Source Sans Pro"] = new FontFamily("fonts:svg-corpus#Source Sans Pro"),
                 ["Noto Serif"] = new FontFamily("fonts:svg-corpus#Noto Serif"),
+                ["Noto Color Emoji"] = new FontFamily("fonts:svg-corpus#Noto Color Emoji"),
             },
-            // Missing glyphs (CJK in the corpus) fall back inside the embedded
-            // collection instead of machine-dependent system fonts.
+            // Missing glyphs (CJK and emoji in the corpus) fall back inside
+            // the embedded collection instead of machine-dependent system
+            // fonts.
             FontFallbacks = new[]
             {
                 new FontFallback { FontFamily = new FontFamily("fonts:svg-corpus#Mplus 1p") },
+                new FontFallback { FontFamily = new FontFamily("fonts:svg-corpus#Noto Color Emoji") },
             },
         });
 

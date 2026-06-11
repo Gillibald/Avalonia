@@ -25,6 +25,10 @@ namespace Avalonia.Svg.Compilation;
 /// </remarks>
 internal static class SvgText
 {
+    // Measuring recordings draw the text cell box with this throwaway brush;
+    // only the recorded bounds matter.
+    private static readonly ImmutableSolidColorBrush s_measuringCellBrush = new(Colors.Black);
+
     /// <summary>Per-character placement resolved from x/y/dx/dy/rotate lists.</summary>
     private struct CharPlacement
     {
@@ -145,24 +149,29 @@ internal static class SvgText
         var chunkOrigin = new Point(xList?[0] ?? 0, (yList?[0] ?? 0) - style.BaselineShift);
 
         // textLength stretches or squeezes the laid-out chunk to a target
-        // advance; lengthAdjust selects whether glyphs scale along.
-        double? textLength = null;
-        var spacingAndGlyphs = false;
-        if (element.GetStyleOrAttribute("textLength") is { } textLengthValue
-            && SvgLength.TryParse(textLengthValue.AsSpan(), out var textLengthLength)
-            && style.ResolveLength(textLengthLength, SvgLengthAxis.Horizontal) is var resolvedLength and >= 0)
-        {
-            textLength = resolvedLength;
-            spacingAndGlyphs = element.GetStyleOrAttribute("lengthAdjust") == "spacingAndGlyphs";
-        }
+        // advance; lengthAdjust selects whether glyphs scale along. A tspan
+        // owning a whole chunk contributes its own (see CollectContent).
+        var (textLength, spacingAndGlyphs) = GetTextLength(element, style);
 
         var scopes = new List<PositionScope>();
         if (CreatePositionScope(element, style, xList, yList, dxLegacy: out _, dyLegacy: out _, isText: true) is { } scope)
             scopes.Add(scope);
 
         CollectContent(element, element, context, compileContext, style, isSpan: false, dx: 0, dy: 0,
-            ref chunk, ref chunkOrigin, geometrySink, scopes);
+            ref chunk, ref chunkOrigin, ref textLength, ref spacingAndGlyphs, geometrySink, scopes);
         FlushChunk(element, context, compileContext, chunk, chunkOrigin, geometrySink, textLength, spacingAndGlyphs);
+    }
+
+    private static (double? Length, bool SpacingAndGlyphs) GetTextLength(SvgElement element, in SvgStyle style)
+    {
+        if (element.GetStyleOrAttribute("textLength") is { } value
+            && SvgLength.TryParse(value.AsSpan(), out var length)
+            && style.ResolveLength(length, SvgLengthAxis.Horizontal) is var resolved and >= 0)
+        {
+            return (resolved, element.GetStyleOrAttribute("lengthAdjust") == "spacingAndGlyphs");
+        }
+
+        return (null, false);
     }
 
     /// <summary>
@@ -317,6 +326,7 @@ internal static class SvgText
     private static void CollectContent(
         SvgElement textElement, SvgElement element, DrawingContext? context, SvgCompileContext compileContext,
         in SvgStyle style, bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin,
+        ref double? chunkTextLength, ref bool chunkSpacingAndGlyphs,
         List<Geometry>? geometrySink, List<PositionScope> scopes)
     {
         if (element.Content == null)
@@ -371,9 +381,21 @@ internal static class SvgText
                         var listsActive = HasActiveLists(scopes);
                         if (!listsActive && (xList != null || yList != null))
                         {
-                            FlushChunk(textElement, context, compileContext, chunk, chunkOrigin, geometrySink);
+                            FlushChunk(textElement, context, compileContext, chunk, chunkOrigin, geometrySink,
+                                chunkTextLength, chunkSpacingAndGlyphs);
                             chunk = new List<StyledRun>();
                             chunkOrigin = new Point(xList?[0] ?? chunkOrigin.X, yList?[0] ?? chunkOrigin.Y);
+                            chunkTextLength = null;
+                            chunkSpacingAndGlyphs = false;
+                        }
+
+                        // A tspan that owns a whole chunk contributes its own
+                        // textLength (the innermost value wins for its range).
+                        var spanTextLength = GetTextLength(child, childStyle);
+                        if (chunk.Count == 0 && spanTextLength.Length is { } spanLength)
+                        {
+                            chunkTextLength = spanLength;
+                            chunkSpacingAndGlyphs = spanTextLength.SpacingAndGlyphs;
                         }
 
                         var childScope = CreatePositionScope(child, style, xList, yList,
@@ -390,7 +412,8 @@ internal static class SvgText
                             textElement, child, context, compileContext, childStyle, isSpan: true,
                             dx: pendingDx + dxLegacy,
                             dy: pendingDy + dyLegacy - shiftDelta,
-                            ref chunk, ref chunkOrigin, geometrySink, scopes);
+                            ref chunk, ref chunkOrigin, ref chunkTextLength, ref chunkSpacingAndGlyphs,
+                            geometrySink, scopes);
 
                         if (childScope != null)
                             scopes.Remove(childScope);
@@ -401,9 +424,19 @@ internal static class SvgText
                     }
                     case "textPath":
                         // A text path lays out independently of the chunk flow;
-                        // it contributes nothing to clip geometry.
+                        // it contributes nothing to clip geometry. A dy (from
+                        // the text element's list or a pending adjustment)
+                        // shifts the glyphs along the path normal and persists
+                        // as a baseline shift past the path.
                         if (context != null)
-                            CompileTextPath(child, context, compileContext, style);
+                        {
+                            var pathDy = pendingDy;
+                            if (HasActiveLists(scopes))
+                                pathDy += ResolveCharPlacement(scopes).Dy;
+                            CompileTextPath(child, context, compileContext, style, pathDy);
+                            pendingDy = pathDy;
+                        }
+
                         break;
                 }
             }
@@ -568,6 +601,16 @@ internal static class SvgText
                 if (strokePen != null && !segmentStyle.StrokeBeforeFill)
                     StrokeLine(context!, line, strokePen, penX, penY);
 
+                // getBBox() for text covers the glyph cells (the layout box),
+                // not the ink: pad measuring recordings to the line box so
+                // filters, masks and clips size against the cell bounds.
+                if (compileContext.Measuring)
+                {
+                    context!.DrawRectangle(s_measuringCellBrush, null, new Rect(
+                        penX, penY - line.Baseline,
+                        line.WidthIncludingTrailingWhitespace, line.Height));
+                }
+
                 // Coarse, layout-box hit area per segment, attributed to the
                 // <text> element (tspan-level targeting is out of scope).
                 compileContext.HitTree?.AddShape(
@@ -659,7 +702,12 @@ internal static class SvgText
                     gap = (target - natural) / (clusters.Count - 1);
             }
 
-            var totalAdvance = textLength ?? natural;
+            // Anchoring (and the cell box) exclude the spacing trailing the
+            // last cluster: letter-spacing applies between characters.
+            var trailingSpacing = clusters.Count > 0
+                ? clusters[clusters.Count - 1].Run.Style.LetterSpacing * scale
+                : 0;
+            var totalAdvance = (textLength ?? natural) - trailingSpacing;
             var anchorShift = chunk[0].Style.TextAnchor switch
             {
                 SvgTextAnchor.Middle => -totalAdvance / 2,
@@ -752,6 +800,17 @@ internal static class SvgText
                     },
                     chunkStyle.PointerEvents,
                     chunkStyle.Visible);
+            }
+
+            // Pad measuring recordings to the chunk's cell box (see the
+            // line-layout path): baseline-relative, spanning the line height.
+            if (geometrySink == null && maxHeight > 0 && context != null && compileContext.Measuring)
+            {
+                var maxBaseline = 0.0;
+                foreach (var line in lines)
+                    maxBaseline = Math.Max(maxBaseline, line?.Baseline ?? 0);
+                context.DrawRectangle(s_measuringCellBrush, null,
+                    new Rect(origin.X + anchorShift, origin.Y - maxBaseline, totalAdvance, maxHeight));
             }
         }
         finally
@@ -875,18 +934,51 @@ internal static class SvgText
         var source = new SegmentTextSource();
         foreach (var run in segment)
         {
+            var fontSize = run.Style.GetEffectiveFontSize();
+            var decorations = CreateDecorations(run.Style);
+            var foreground = ResolveFill(run.Style, compileContext, chunkBounds);
+            var culture = GetCulture(run.Style);
+            var features = CreateFontFeatures(run.Style);
+
+            // small-caps synthesis: lowercase stretches map to capitals at a
+            // reduced size. Skipped when per-character placement lists are in
+            // play — the indices must stay aligned with the source text.
+            if (run.Style.SmallCaps && run.Chars == null)
+            {
+                var text = run.Text;
+                var position = 0;
+                while (position < text.Length)
+                {
+                    var start = position;
+                    var lower = char.IsLower(text[position]);
+                    while (position < text.Length && char.IsLower(text[position]) == lower)
+                        position++;
+
+                    var piece = text.Substring(start, position - start);
+                    source.Add(lower ? piece.ToUpperInvariant() : piece, new GenericTextRunProperties(
+                        CreateTypeface(run.Style),
+                        lower ? fontSize * 0.8 : fontSize,
+                        textDecorations: decorations,
+                        foregroundBrush: foreground,
+                        cultureInfo: culture,
+                        fontFeatures: features));
+                }
+
+                continue;
+            }
+
             source.Add(run.Text, new GenericTextRunProperties(
                 CreateTypeface(run.Style),
-                run.Style.FontSize,
-                textDecorations: CreateDecorations(run.Style),
-                foregroundBrush: ResolveFill(run.Style, compileContext, chunkBounds),
-                cultureInfo: GetCulture(run.Style),
-                fontFeatures: CreateFontFeatures(run.Style)));
+                fontSize,
+                textDecorations: decorations,
+                foregroundBrush: foreground,
+                cultureInfo: culture,
+                fontFeatures: features));
         }
 
         var defaultStyle = segment[0].Style;
         var paragraphProperties = new GenericTextParagraphProperties(
-            new GenericTextRunProperties(CreateTypeface(defaultStyle), defaultStyle.FontSize));
+            new GenericTextRunProperties(CreateTypeface(defaultStyle), defaultStyle.GetEffectiveFontSize()));
 
         return TextFormatter.Current.FormatLine(source, 0, double.PositiveInfinity, paragraphProperties);
     }
@@ -906,6 +998,11 @@ internal static class SvgText
         if (!style.Underline && !style.Overline && !style.LineThrough)
             return null;
 
+        // Decoration geometry derives from the declaring element's font: when
+        // it differs from the run's, override the recommended thickness and
+        // shift the position from the run's metrics to the declaring font's.
+        var geometry = style.GetDecorationGeometry(style.GetEffectiveFontSize());
+
         var decorations = new TextDecorationCollection();
         if (style.Underline)
         {
@@ -913,6 +1010,10 @@ internal static class SvgText
             {
                 Location = TextDecorationLocation.Underline,
                 Stroke = style.UnderlineBrush,
+                StrokeThickness = geometry?.Thickness ?? 0,
+                StrokeThicknessUnit = geometry != null ? TextDecorationUnit.Pixel : TextDecorationUnit.FontRecommended,
+                StrokeOffset = geometry?.UnderlineOffset ?? 0,
+                StrokeOffsetUnit = TextDecorationUnit.Pixel,
             });
         }
 
@@ -922,6 +1023,10 @@ internal static class SvgText
             {
                 Location = TextDecorationLocation.Overline,
                 Stroke = style.OverlineBrush,
+                StrokeThickness = geometry?.Thickness ?? 0,
+                StrokeThicknessUnit = geometry != null ? TextDecorationUnit.Pixel : TextDecorationUnit.FontRecommended,
+                StrokeOffset = geometry?.OverlineOffset ?? 0,
+                StrokeOffsetUnit = TextDecorationUnit.Pixel,
             });
         }
 
@@ -931,6 +1036,10 @@ internal static class SvgText
             {
                 Location = TextDecorationLocation.Strikethrough,
                 Stroke = style.LineThroughBrush,
+                StrokeThickness = geometry?.Thickness ?? 0,
+                StrokeThicknessUnit = geometry != null ? TextDecorationUnit.Pixel : TextDecorationUnit.FontRecommended,
+                StrokeOffset = geometry?.StrikethroughOffset ?? 0,
+                StrokeOffsetUnit = TextDecorationUnit.Pixel,
             });
         }
 
@@ -964,7 +1073,8 @@ internal static class SvgText
     }
 
     private static void CompileTextPath(
-        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle parentStyle)
+        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle parentStyle,
+        double dy = 0)
     {
         var style = parentStyle;
         style.Apply(element);
@@ -1001,13 +1111,18 @@ internal static class SvgText
         if (brush == null)
             return;
 
+        // side=right renders on the other side of the path, which is the
+        // same as reversing the path's direction.
+        var reverse = element.GetAttribute("side") == "right";
+
         // Lay the text out through the full pipeline (fallback, shaping), then
         // place each glyph individually along the arc-length parameterization.
+        var fontSize = style.GetEffectiveFontSize();
         var pathSource = new SegmentTextSource();
-        pathSource.Add(text, new GenericTextRunProperties(CreateTypeface(style), style.FontSize));
+        pathSource.Add(text, new GenericTextRunProperties(CreateTypeface(style), fontSize));
         using var line = TextFormatter.Current.FormatLine(
             pathSource, 0, double.PositiveInfinity,
-            new GenericTextParagraphProperties(new GenericTextRunProperties(CreateTypeface(style), style.FontSize)));
+            new GenericTextParagraphProperties(new GenericTextRunProperties(CreateTypeface(style), fontSize)));
 
         if (line == null)
             return;
@@ -1034,8 +1149,12 @@ internal static class SvgText
                 if (midpoint > sampler.TotalLength)
                     return;
 
-                if (sampler.TryGetPointAtLength(midpoint, out var position, out var angle))
+                var sampleAt = reverse ? sampler.TotalLength - midpoint : midpoint;
+                if (sampler.TryGetPointAtLength(sampleAt, out var position, out var angle))
                 {
+                    if (reverse)
+                        angle += Math.PI;
+
                     var clusterStart = Math.Min(Math.Max(0, info.GlyphCluster - baseCluster), characters.Length);
                     var clusterEnd = i + 1 < glyphInfos.Count
                         ? Math.Min(Math.Max(clusterStart, glyphInfos[i + 1].GlyphCluster - baseCluster), characters.Length)
@@ -1048,9 +1167,10 @@ internal static class SvgText
                         new[] { info },
                         baselineOrigin: new Point(0, 0));
 
-                    // baseline-shift moves the glyph along the path normal.
+                    // baseline-shift and dy move the glyph along the path
+                    // normal.
                     var transform =
-                        Matrix.CreateTranslation(-advance / 2, -style.BaselineShift)
+                        Matrix.CreateTranslation(-advance / 2, dy - style.BaselineShift)
                         * Matrix.CreateRotation(angle)
                         * Matrix.CreateTranslation(position.X, position.Y);
 
