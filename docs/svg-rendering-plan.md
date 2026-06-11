@@ -1160,8 +1160,31 @@ already-known instance of this rule.
   composition); masking 89/93 (4 quarantined: `<image>` in masks/clip,
   linearRGB mask luminance); text 317/356 (39 quarantined: vertical
   writing modes ×16, font capabilities ×11, feFlood/span filters ×4,
-  tspan textLength and textPath details ×4, stroked decorations ×4)**
-  — overall 969/1035.
+  tspan textLength and textPath details ×4, stroked decorations ×4);
+  structure 219/247 (28 quarantined: transform-origin on
+  clip/pattern ×4, CSS engine limits ×6, use-site inheritance into
+  shared recordings ×5, nested-SVG image sizing ×4, strict funcIRI
+  errors ×2, zero-size canvases ×3, DTD entities ×4)** — overall
+  1188/1282.
+  The structure sweep brought `<image>` (data URIs incl. SVG-in-image
+  compiled inline with a depth guard, BaseUri-relative files, gzip,
+  format sniffing, the SVG 2 auto-sizing rules, image-rendering hints,
+  per-document decode caching), nested `<svg>` viewports (offset, clip
+  with overflow opt-out, viewBox mapping, percentage rebasing),
+  `<switch>` + conditional processing on every element
+  (requiredExtensions/systemLanguage; the root included), a minimal CSS
+  engine for `<style>` (compound selectors, specificity, !important,
+  document order — slotted between the style attribute and presentation
+  attributes), `transform-origin`/`transform-box` and the CSS transform
+  property (deg/px normalization), quoted funcIRI references, use
+  targeting svg elements (own x/y, viewport overrides) and
+  ancestor-recursion stops, symbol overflow/opacity, geometry
+  attributes no longer read from CSS (deliberate, like resvg), comment
+  stripping in inline styles, and zero/negative root sizes disabling
+  rendering. The vendored corpus gained the suite's `resources/` folder
+  for external image references, and two painting marker goldens
+  improved as side effects (CSS marker property now applies; recursive
+  marker uses stop).
   The text sweep grew the pipeline substantially. A glyph-placement
   layout path joins the segment pipeline: chunks shape normally, then
   typographic clusters place individually, which carries per-character
