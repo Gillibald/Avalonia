@@ -16,9 +16,18 @@ internal static class SvgPatterns
 {
     private const int MaxReferenceChain = 8;
 
-    public static IImmutableBrush? Resolve(SvgCompileContext context, SvgElement element, Rect bounds, double opacity)
+    public static IImmutableBrush? Resolve(
+        SvgCompileContext context, SvgElement element, Rect bounds, double opacity,
+        Rect? contextBounds = null, Matrix contextInverse = default)
     {
         var chain = BuildReferenceChain(context, element);
+
+        // Context patterns lay their tiles out in the context element's
+        // space: the geometry basis is the context bounds and the brush
+        // counters the consumer's transforms.
+        var shapeBounds = bounds;
+        if (contextBounds is { } contextRect)
+            bounds = contextRect;
 
         // Tile rectangle; patternUnits default to objectBoundingBox.
         var boxUnits = GetChained(chain, "patternUnits") != "userSpaceOnUse";
@@ -86,9 +95,18 @@ internal static class SvgPatterns
         if (sourceRect.Width <= 0 || sourceRect.Height <= 0)
             return null;
 
-        var destinationRect = boxUnits
-            ? new RelativeRect(x, y, width, height, RelativeUnit.Relative)
-            : new RelativeRect(x, y, width, height, RelativeUnit.Absolute);
+        // Context tiles resolve to an absolute destination in context space.
+        var destinationRect = contextBounds != null
+            ? new RelativeRect(
+                boxUnits
+                    ? new Rect(
+                        bounds.X + x * bounds.Width, bounds.Y + y * bounds.Height,
+                        width * bounds.Width, height * bounds.Height)
+                    : new Rect(x, y, width, height),
+                RelativeUnit.Absolute)
+            : boxUnits
+                ? new RelativeRect(x, y, width, height, RelativeUnit.Relative)
+                : new RelativeRect(x, y, width, height, RelativeUnit.Absolute);
 
         var brush = new DrawingRecordingBrush(recording)
         {
@@ -101,31 +119,41 @@ internal static class SvgPatterns
             Opacity = opacity,
         };
 
+        var userMatrix = Matrix.Identity;
         if (GetChained(chain, "patternTransform") is { } transformValue
             && SvgTransformParser.TryParse(transformValue.AsSpan(), out var transform)
             && !transform.IsIdentity)
         {
             // patternTransform (and its transform-origin) acts in user space,
-            // anchored at the user origin. The brush shader composes the
-            // transform about the target bounds position and then translates
-            // by the resolved destination position, so conjugating by the sum
-            // of the two yields the user-space behavior for both units modes.
-            transform = SvgCompiler.ApplyTransformOrigin(
+            // anchored at the user origin.
+            userMatrix = SvgCompiler.ApplyTransformOrigin(
                 element, transform, new Rect(context.Viewport), bounds);
+        }
 
+        // Context patterns counter the consumer's transforms so the tiles
+        // stay fixed in the context element's space.
+        if (contextBounds != null)
+            userMatrix *= contextInverse;
+
+        if (!userMatrix.IsIdentity)
+        {
+            // The brush shader composes the transform about the target bounds
+            // position and then translates by the resolved destination
+            // position, so conjugating by the sum of the two yields the
+            // user-space behavior for both units modes.
             var destinationPosition = boxUnits
                 ? new Point(bounds.X + x * bounds.Width, bounds.Y + y * bounds.Height)
                 : new Point(x, y);
-            var anchorX = bounds.X + destinationPosition.X;
-            var anchorY = bounds.Y + destinationPosition.Y;
+            var anchorX = shapeBounds.X + destinationPosition.X;
+            var anchorY = shapeBounds.Y + destinationPosition.Y;
             if (anchorX != 0 || anchorY != 0)
             {
-                transform = Matrix.CreateTranslation(anchorX, anchorY)
-                            * transform
-                            * Matrix.CreateTranslation(-anchorX, -anchorY);
+                userMatrix = Matrix.CreateTranslation(anchorX, anchorY)
+                             * userMatrix
+                             * Matrix.CreateTranslation(-anchorX, -anchorY);
             }
 
-            brush.Transform = new ImmutableTransform(transform);
+            brush.Transform = new ImmutableTransform(userMatrix);
         }
 
         // Snapshot to an immutable content brush: the live DrawingRecordingBrush

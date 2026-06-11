@@ -31,6 +31,10 @@ internal struct SvgStyle
     public SvgPaint ContextFill;
     public SvgPaint ContextStroke;
     public Rect ContextBounds;
+
+    // The accumulated transform from the compilation root down to the
+    // current element; context paint servers anchor through its inverse.
+    public Matrix ContextTransform;
     public double FillOpacity;
     public double StrokeOpacity;
     public double StrokeWidth;
@@ -108,6 +112,7 @@ internal struct SvgStyle
         Visible = true,
         PointerEvents = SvgPointerEvents.VisiblePainted,
         Viewport = viewport,
+        ContextTransform = Matrix.Identity,
     };
 
     /// <summary>

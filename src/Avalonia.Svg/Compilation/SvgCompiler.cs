@@ -211,6 +211,10 @@ internal static class SvgCompiler
             matrix = ApplyTransformOrigin(element, matrix, compileContext, style);
             localTransform = matrix;
             transformState = context.PushTransform(matrix);
+
+            // Context paint servers anchor in the context element's space:
+            // track the accumulated transform from the recording root.
+            style.ContextTransform = matrix * style.ContextTransform;
         }
 
         using (transformState)
@@ -709,14 +713,34 @@ internal static class SvgCompiler
             // element's own computed fill/stroke are the context values
             // (themselves substituted, so context chains resolve outward),
             // and context paint servers map onto the target's geometry.
-            var recording = compileContext.UsesContextPaint(target)
-                ? compileContext.GetContextRecording(
+            DrawingRecording? recording;
+            DrawingRecordingOwnership ownership;
+            SvgHitNode? hitSubtree;
+            if (compileContext.UsesContextPaint(target))
+            {
+                // The context element's box is the use's content box: the
+                // target's fill bounds carried through its own transform.
+                var contextBounds = GetFillBounds(target, compileContext, style);
+                if (GetTransformValue(target) is { } targetTransform
+                    && TryParseTransformValue(targetTransform, out var targetMatrix)
+                    && !targetMatrix.IsIdentity)
+                {
+                    targetMatrix = ApplyTransformOrigin(target, targetMatrix, compileContext, style);
+                    contextBounds = contextBounds.TransformToAABB(targetMatrix);
+                }
+
+                recording = compileContext.GetContextRecording(
                     target,
                     style.ResolveContextPaint(style.Fill),
                     style.ResolveContextPaint(style.Stroke),
-                    GetFillBounds(target, compileContext, style),
-                    out var ownership, out var hitSubtree)
-                : compileContext.GetSharedRecording(target, out ownership, out hitSubtree);
+                    contextBounds,
+                    out ownership, out hitSubtree);
+            }
+            else
+            {
+                recording = compileContext.GetSharedRecording(target, out ownership, out hitSubtree);
+            }
+
             if (recording == null)
                 return;
 
@@ -817,19 +841,25 @@ internal static class SvgCompiler
             return contextual.Kind == SvgPaintKind.None ? null : s_measuringFill;
 
         // Context paints substitute the context element's computed paint; a
-        // url() context resolves against the context element's geometry, so
-        // one gradient spans all the consuming shapes.
+        // url() context resolves against the context element's geometry and
+        // anchors in its coordinate space (through the inverse accumulated
+        // transform), so one gradient spans all the consuming shapes and
+        // stays fixed across their own transforms.
         var paint = style.ResolveContextPaint(contextual);
+        Rect? contextBounds = null;
+        var contextInverse = Matrix.Identity;
         if (contextual.Kind is SvgPaintKind.ContextFill or SvgPaintKind.ContextStroke
             && style.ContextBounds.Width > 0 && style.ContextBounds.Height > 0)
         {
-            bounds = style.ContextBounds;
+            contextBounds = style.ContextBounds;
+            if (style.ContextTransform.HasInverse)
+                contextInverse = style.ContextTransform.Invert();
         }
 
         if (paint.Kind == SvgPaintKind.Reference)
         {
             var brush = paint.Reference is { } id
-                ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity)
+                ? SvgPaintServers.Resolve(compileContext, id, style, bounds, opacity, contextBounds, contextInverse)
                 : null;
             if (brush != null)
                 return brush;

@@ -12,10 +12,6 @@
 # linear-space luminance option on the opacity-mask layer.
 
 # Text stroking is out of scope for the current text pipeline integration.
-painting/stroke/linear-gradient-on-text.svg -- text stroking not supported
-painting/stroke/pattern-on-text.svg -- text stroking not supported
-painting/stroke/radial-gradient-on-text.svg -- text stroking not supported
-painting/stroke-opacity/on-text.svg -- text stroking not supported
 
 # browsers keep the pattern orientation independent of it.
 
@@ -67,9 +63,6 @@ text/textPath/side=right.svg -- textPath side=right not supported
 
 # Decorations: the stroked variants need text stroking; style-resolving-4's
 # override semantics diverge.
-text/text-decoration/underline.svg -- text stroking not supported
-text/text-decoration/overline.svg -- text stroking not supported
-text/text-decoration/line-through.svg -- text stroking not supported
 text/text-decoration/style-resolving-4.svg -- decoration style resolution diverges (needs debugging)
 
 
@@ -166,10 +159,3 @@ filters/filter/in=FillPaint-with-gradient.svg -- the FillPaint/StrokePaint input
 filters/filter/in=FillPaint-with-pattern.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=FillPaint-with-target-on-g.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
 filters/filter/in=StrokePaint.svg -- the FillPaint/StrokePaint inputs are unsupported (no major renderer implements them)
-painting/context/with-gradient-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
-painting/context/with-gradient-and-gradient-transform.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
-painting/context/with-pattern-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
-painting/context/with-pattern-and-transform-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
-painting/context/with-pattern-objectBoundingBox-in-use.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
-painting/context/with-pattern-on-marker.svg -- context paint servers anchor in the context element's coordinate space; ours map per consuming shape (pending transform tracking)
-painting/context/with-text.svg -- text stroking not supported
