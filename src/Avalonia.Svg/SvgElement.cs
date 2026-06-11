@@ -13,6 +13,8 @@ public sealed class SvgElement
     private readonly List<SvgElement> _children = new();
     private List<object>? _content;
     private Dictionary<string, string>? _styleDeclarations;
+    private Dictionary<string, string>? _stylesheetValues;
+    private Dictionary<string, string>? _stylesheetImportant;
     private Dictionary<string, string>? _animatedValues;
     private bool _styleParsed;
 
@@ -67,14 +69,18 @@ public sealed class SvgElement
     internal string? Href => GetAttribute("href") ?? GetAttribute(SvgDocument.XlinkHrefAttribute);
 
     /// <summary>
-    /// Gets a style property value: an active SMIL animation override wins over
-    /// everything, then a declaration in the <c>style</c> attribute over the
-    /// presentation attribute of the same name, per the cascade.
+    /// Gets a style property value, per the cascade: an active SMIL animation
+    /// override wins over everything, then <c>!important</c> stylesheet rules,
+    /// the <c>style</c> attribute, normal stylesheet rules, and finally the
+    /// presentation attribute of the same name.
     /// </summary>
     internal string? GetStyleOrAttribute(string name)
     {
         if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
             return animated;
+
+        if (_stylesheetImportant != null && _stylesheetImportant.TryGetValue(name, out var important))
+            return important;
 
         if (!_styleParsed)
         {
@@ -86,19 +92,25 @@ public sealed class SvgElement
         if (_styleDeclarations != null && _styleDeclarations.TryGetValue(name, out var declared))
             return declared;
 
+        if (_stylesheetValues != null && _stylesheetValues.TryGetValue(name, out var sheet))
+            return sheet;
+
         return GetAttribute(name);
     }
 
     /// <summary>
-    /// Gets a CSS-only property from the <c>style</c> attribute (with an
-    /// animation override taking precedence). Properties like
-    /// <c>mix-blend-mode</c> and <c>isolation</c> have no presentation
-    /// attribute — an attribute of that name must be ignored.
+    /// Gets a CSS-only property (with an animation override taking
+    /// precedence). Properties like <c>mix-blend-mode</c> and
+    /// <c>isolation</c> have no presentation attribute — an attribute of that
+    /// name must be ignored.
     /// </summary>
     internal string? GetStyleProperty(string name)
     {
         if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
             return animated;
+
+        if (_stylesheetImportant != null && _stylesheetImportant.TryGetValue(name, out var important))
+            return important;
 
         if (!_styleParsed)
         {
@@ -107,9 +119,25 @@ public sealed class SvgElement
                 _styleDeclarations = ParseStyleDeclarations(style);
         }
 
-        return _styleDeclarations != null && _styleDeclarations.TryGetValue(name, out var declared)
-            ? declared
+        if (_styleDeclarations != null && _styleDeclarations.TryGetValue(name, out var declared))
+            return declared;
+
+        return _stylesheetValues != null && _stylesheetValues.TryGetValue(name, out var sheet)
+            ? sheet
             : null;
+    }
+
+    /// <summary>
+    /// Records a matched stylesheet declaration. Callers apply rules in
+    /// cascade order (specificity, then document order), so the last write for
+    /// a property wins.
+    /// </summary>
+    internal void SetStylesheetValue(string name, string value, bool important)
+    {
+        if (important)
+            (_stylesheetImportant ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
+        else
+            (_stylesheetValues ??= new Dictionary<string, string>(StringComparer.Ordinal))[name] = value;
     }
 
     /// <summary>Gets an attribute value, preferring an active SMIL animation override.</summary>
@@ -140,6 +168,14 @@ public sealed class SvgElement
     private static Dictionary<string, string>? ParseStyleDeclarations(string style)
     {
         Dictionary<string, string>? declarations = null;
+
+        // CSS comments may appear inside the declaration list.
+        int comment;
+        while ((comment = style.IndexOf("/*", StringComparison.Ordinal)) >= 0)
+        {
+            var end = style.IndexOf("*/", comment + 2, StringComparison.Ordinal);
+            style = end < 0 ? style.Substring(0, comment) : style.Remove(comment, end - comment + 2);
+        }
 
         foreach (var declaration in style.Split(';'))
         {

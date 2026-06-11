@@ -104,9 +104,9 @@ public class SvgRenderTestBase : IDisposable
     {
         private readonly SvgImage _image;
 
-        public SvgHost(string svg)
+        public SvgHost(string svg, Uri? baseUri = null)
         {
-            _image = new SvgImage(SvgDocument.Parse(svg));
+            _image = new SvgImage(SvgDocument.Parse(svg, baseUri));
             Width = _image.Size.Width;
             Height = _image.Size.Height;
         }
