@@ -57,6 +57,12 @@ public class ResvgCorpusTests : SvgRenderTestBase
     [MemberData(nameof(TextTests))]
     public Task Text(string test) => RunCorpusTest(test);
 
+    public static TheoryData<string> StructureTests { get; } = Discover("structure");
+
+    [Theory]
+    [MemberData(nameof(StructureTests))]
+    public Task Structure(string test) => RunCorpusTest(test);
+
     private static TheoryData<string> Discover(string category)
     {
         var data = new TheoryData<string>();
@@ -99,16 +105,17 @@ public class ResvgCorpusTests : SvgRenderTestBase
         if (s_quarantine.Value.TryGetValue(test, out var reason))
             Assert.Skip(reason);
 
-        var svg = await File.ReadAllTextAsync(
-            Path.Combine(CorpusRoot, test.Replace('/', Path.DirectorySeparatorChar)));
+        var path = Path.Combine(CorpusRoot, test.Replace('/', Path.DirectorySeparatorChar));
+        var svg = await File.ReadAllTextAsync(path);
 
         // Goldens live next to their test file; RenderToFile/CompareImages
-        // resolve testName relative to OutputPath (== CorpusRoot).
+        // resolve testName relative to OutputPath (== CorpusRoot). The file
+        // location doubles as the base for relative image references.
         var testName = test.Substring(0, test.Length - ".svg".Length)
             .Replace('/', Path.DirectorySeparatorChar);
         Directory.CreateDirectory(Path.Combine(OutputPath, Path.GetDirectoryName(testName)!));
 
-        await RenderToFile(new SvgHost(svg), testName);
+        await RenderToFile(new SvgHost(svg, new Uri(path)), testName);
         CompareImages(testName);
     }
 

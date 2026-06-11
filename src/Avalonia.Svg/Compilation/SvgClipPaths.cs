@@ -64,7 +64,8 @@ internal static class SvgClipPaths
             var close = trimmed.IndexOf(')');
             if (close > 4)
             {
-                var target = trimmed.Substring(4, close - 4).Trim();
+                // SVG 2 allows the reference to be quoted.
+                var target = trimmed.Substring(4, close - 4).Trim().Trim('\'', '"');
                 if (target.Length > 1 && target[0] == '#')
                 {
                     id = target.Substring(1);

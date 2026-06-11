@@ -43,8 +43,12 @@ internal static class SvgCompiler
     {
         var root = document.Root;
 
-        // display and opacity on the root element apply like on any container.
-        if (root.GetStyleOrAttribute("display") == "none")
+        // Stylesheet rules resolve onto the tree once, before any lookup.
+        SvgStylesheets.Apply(document);
+
+        // display, conditional attributes and opacity on the root element
+        // apply like on any container.
+        if (root.GetStyleOrAttribute("display") == "none" || !ConditionsPass(root))
             return;
 
         var rootOpacity = 1.0;
@@ -175,15 +179,20 @@ internal static class SvgCompiler
         if (element.GetStyleOrAttribute("display") == "none")
             return;
 
+        // Conditional processing applies to any element, not just switch children.
+        if (!ConditionsPass(element))
+            return;
+
         var style = parentStyle;
         style.Apply(element);
 
         var localTransform = Matrix.Identity;
         DrawingContext.PushedState? transformState = null;
-        if (element.GetAnimatedOrAttribute("transform") is { } transform
-            && SvgTransformParser.TryParse(transform.AsSpan(), out var matrix)
+        if (GetTransformValue(element) is { } transform
+            && TryParseTransformValue(transform, out var matrix)
             && !matrix.IsIdentity)
         {
+            matrix = ApplyTransformOrigin(element, matrix, compileContext, style);
             localTransform = matrix;
             transformState = context.PushTransform(matrix);
         }
@@ -307,12 +316,32 @@ internal static class SvgCompiler
         {
             case "g":
             case "a":
-            case "svg":
             {
                 foreach (var child in element.Children)
                     CompileElement(child, context, compileContext, style);
                 break;
             }
+            case "svg":
+                CompileNestedSvg(element, context, compileContext, style);
+                break;
+            case "switch":
+            {
+                // The first renderable child whose conditional attributes pass
+                // renders; unknown (non-SVG) children never win the pick.
+                foreach (var child in element.Children)
+                {
+                    if (IsRenderable(child.Name) && ConditionsPass(child))
+                    {
+                        CompileElement(child, context, compileContext, style);
+                        break;
+                    }
+                }
+
+                break;
+            }
+            case "image":
+                SvgImages.Compile(element, context, compileContext, style);
+                break;
             case "use":
                 CompileUse(element, context, compileContext, style);
                 break;
@@ -341,6 +370,223 @@ internal static class SvgCompiler
                 SvgText.Compile(element, context, compileContext, style);
                 break;
         }
+    }
+
+    /// <summary>
+    /// A nested <c>&lt;svg&gt;</c> establishes a new viewport: an x/y offset,
+    /// a size that clips by default (<c>overflow</c> opts out), an optional
+    /// viewBox mapping, and a new percentage-resolution context.
+    /// </summary>
+    private static void CompileNestedSvg(
+        SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
+    {
+        var x = GetSvgViewportLength(element, "x", SvgLengthAxis.Horizontal, style, 0);
+        var y = GetSvgViewportLength(element, "y", SvgLengthAxis.Vertical, style, 0);
+        var width = GetSvgViewportLength(element, "width", SvgLengthAxis.Horizontal, style, style.Viewport.Width);
+        var height = GetSvgViewportLength(element, "height", SvgLengthAxis.Vertical, style, style.Viewport.Height);
+        if (width <= 0 || height <= 0)
+            return;
+
+        using (context.PushTransform(Matrix.CreateTranslation(x, y)))
+        {
+            DrawingContext.PushedState? clipState = null;
+            if (element.GetStyleOrAttribute("overflow") is not ("visible" or "auto"))
+                clipState = context.PushClip(new Rect(0, 0, width, height));
+
+            using (clipState)
+            {
+                var contentViewport = new Size(width, height);
+                DrawingContext.PushedState? viewBoxState = null;
+
+                if (element.GetAttribute("viewBox") is { } viewBoxValue
+                    && SvgViewBox.TryParse(viewBoxValue.AsSpan(), out var viewBox))
+                {
+                    var preserveAspectRatio = SvgPreserveAspectRatio.Default;
+                    if (element.GetAttribute("preserveAspectRatio") is { } par)
+                        SvgPreserveAspectRatio.TryParse(par.AsSpan(), out preserveAspectRatio);
+
+                    var matrix = preserveAspectRatio.ComputeTransform(viewBox, contentViewport);
+                    if (!matrix.IsIdentity)
+                        viewBoxState = context.PushTransform(matrix);
+
+                    contentViewport = new Size(viewBox.Width, viewBox.Height);
+                }
+
+                using (viewBoxState)
+                {
+                    var childStyle = style;
+                    childStyle.Viewport = contentViewport;
+
+                    foreach (var child in element.Children)
+                        CompileElement(child, context, compileContext, childStyle);
+                }
+            }
+        }
+    }
+
+    private static double GetSvgViewportLength(
+        SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style, double fallback)
+    {
+        var value = element.GetStyleOrAttribute(name);
+        if (value != null && value != "auto" && SvgLength.TryParse(value.AsSpan(), out var length))
+            return style.ResolveLength(length, axis);
+        return fallback;
+    }
+
+    /// <summary>
+    /// The transform value: the animated override first, then the CSS
+    /// property (style attribute or stylesheet), then the presentation
+    /// attribute.
+    /// </summary>
+    private static string? GetTransformValue(SvgElement element)
+        => element.GetAnimatedValue("transform")
+           ?? element.GetStyleProperty("transform")
+           ?? element.GetAttribute("transform");
+
+    /// <summary>
+    /// Parses a transform list; the CSS property form carries <c>deg</c> and
+    /// <c>px</c> units the attribute grammar doesn't, which normalize away.
+    /// </summary>
+    private static bool TryParseTransformValue(string value, out Matrix matrix)
+    {
+        if (SvgTransformParser.TryParse(value.AsSpan(), out matrix))
+            return true;
+
+        var normalized = value.Replace("deg", string.Empty).Replace("px", string.Empty);
+        return SvgTransformParser.TryParse(normalized.AsSpan(), out matrix);
+    }
+
+    /// <summary>
+    /// Applies <c>transform-origin</c>: the transform conjugates around the
+    /// origin point, resolved against the viewport (the SVG default
+    /// <c>transform-box: view-box</c>) or the fill box.
+    /// </summary>
+    private static Matrix ApplyTransformOrigin(
+        SvgElement element, Matrix matrix, SvgCompileContext compileContext, in SvgStyle style)
+    {
+        if (element.GetStyleOrAttribute("transform-origin") is not { Length: > 0 } value)
+            return matrix;
+
+        var box = element.GetStyleOrAttribute("transform-box") == "fill-box"
+            ? GetFillBounds(element, compileContext, style)
+            : new Rect(style.Viewport);
+
+        if (!TryParseTransformOrigin(value, box, style, out var origin))
+            return matrix;
+
+        if (origin == default)
+            return matrix;
+
+        return Matrix.CreateTranslation(-origin.X, -origin.Y)
+               * matrix
+               * Matrix.CreateTranslation(origin.X, origin.Y);
+    }
+
+    private static bool TryParseTransformOrigin(string value, Rect box, in SvgStyle style, out Point origin)
+    {
+        origin = default;
+        var tokens = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length is < 1 or > 3)
+            return false;
+
+        if (!TryParseOriginComponent(tokens[0], box.X, box.Width, style, out var x))
+            return false;
+
+        double y;
+        if (tokens.Length >= 2)
+        {
+            // Keywords may swap the axes ("bottom left").
+            if (tokens[0] is "top" or "bottom" || tokens[1] is "left" or "right")
+            {
+                if (!TryParseOriginComponent(tokens[1], box.X, box.Width, style, out x)
+                    || !TryParseOriginComponent(tokens[0], box.Y, box.Height, style, out y))
+                {
+                    return false;
+                }
+            }
+            else if (!TryParseOriginComponent(tokens[1], box.Y, box.Height, style, out y))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            y = box.Y + box.Height / 2;
+        }
+
+        origin = new Point(x, y);
+        return true;
+    }
+
+    private static bool TryParseOriginComponent(string token, double start, double size, in SvgStyle style, out double result)
+    {
+        switch (token)
+        {
+            case "left":
+            case "top":
+                result = start;
+                return true;
+            case "center":
+                result = start + size / 2;
+                return true;
+            case "right":
+            case "bottom":
+                result = start + size;
+                return true;
+        }
+
+        var trimmed = token.EndsWith("px", StringComparison.Ordinal) ? token.Substring(0, token.Length - 2) : token;
+        if (SvgLength.TryParse(trimmed.AsSpan(), out var length))
+        {
+            result = length.Unit == SvgLengthUnit.Percent
+                ? start + length.Value / 100.0 * size
+                : start + style.ResolveLength(length, SvgLengthAxis.Other);
+            return true;
+        }
+
+        result = 0;
+        return false;
+    }
+
+    /// <summary>The graphics and container elements a <c>switch</c> may pick.</summary>
+    private static bool IsRenderable(string name) => name is
+        "g" or "a" or "svg" or "switch" or "use" or "image" or "text" or
+        "rect" or "circle" or "ellipse" or "line" or "polyline" or "polygon" or "path";
+
+    /// <summary>
+    /// SVG conditional processing: <c>requiredExtensions</c> must be empty,
+    /// <c>requiredFeatures</c> always passes (like browsers), and
+    /// <c>systemLanguage</c> must list a language matching the implementation
+    /// language (<c>en</c>).
+    /// </summary>
+    private static bool ConditionsPass(SvgElement element)
+    {
+        if (element.GetAttribute("requiredExtensions") is { } extensions
+            && extensions.Trim().Length > 0)
+        {
+            return false;
+        }
+
+        if (element.GetAttribute("systemLanguage") is { } languages)
+        {
+            var anyMatch = false;
+            foreach (var entry in languages.Split(','))
+            {
+                var language = entry.Trim();
+                if (language.Length >= 2
+                    && (language[0] is 'e' or 'E') && (language[1] is 'n' or 'N')
+                    && (language.Length == 2 || language[2] == '-'))
+                {
+                    anyMatch = true;
+                    break;
+                }
+            }
+
+            if (!anyMatch)
+                return false;
+        }
+
+        return true;
     }
 
     private static BitmapBlendingMode ParseBlendMode(string? value) => value switch
@@ -393,6 +639,14 @@ internal static class SvgCompiler
                 return;
         }
 
+        // A use targeting one of its own ancestors is recursive: it would
+        // re-render its containing subtree and renders nothing instead.
+        for (var ancestor = element.Parent; ancestor != null; ancestor = ancestor.Parent)
+        {
+            if (ancestor == target)
+                return;
+        }
+
         if (!compileContext.EnterUse(target))
             return;
 
@@ -403,6 +657,14 @@ internal static class SvgCompiler
             var recording = compileContext.GetSharedRecording(target, out var ownership, out var hitSubtree);
             if (recording == null)
                 return;
+
+            // A referenced svg element keeps its own x/y offset.
+            if (target.Name == "svg")
+            {
+                x += GetLength(target, "x", SvgLengthAxis.Horizontal, style);
+                y += GetLength(target, "y", SvgLengthAxis.Vertical, style);
+            }
+
             var placement = Matrix.CreateTranslation(x, y);
 
             if (target.Name is "symbol" or "svg")
@@ -423,12 +685,30 @@ internal static class SvgCompiler
                 }
 
                 // A symbol establishes a viewport: position it, clip to it
-                // (overflow defaults to hidden), and replay the shared content
-                // recording under the viewBox mapping.
-                using (context.PushTransform(placement))
-                using (context.PushClip(new Rect(0, 0, width, height)))
+                // (overflow defaults to hidden), apply the element's own group
+                // opacity, and replay the shared content recording under the
+                // viewBox mapping.
+                var opacity = 1.0;
+                if (target.GetStyleOrAttribute("opacity") is { } opacityValue
+                    && SvgStyle.TryParseOpacity(opacityValue, out var parsedOpacity))
                 {
-                    context.DrawRecording(recording, contentMatrix, ownership);
+                    opacity = parsedOpacity;
+                }
+
+                if (opacity <= 0)
+                    return;
+
+                using (context.PushTransform(placement))
+                {
+                    DrawingContext.PushedState? viewportClip = null;
+                    if (target.GetStyleOrAttribute("overflow") is not ("visible" or "auto"))
+                        viewportClip = context.PushClip(new Rect(0, 0, width, height));
+
+                    using (viewportClip)
+                    using (opacity < 1 ? context.PushOpacity(opacity) : default(DrawingContext.PushedState?))
+                    {
+                        context.DrawRecording(recording, contentMatrix, ownership);
+                    }
                 }
 
                 if (hitSubtree != null)
@@ -755,7 +1035,7 @@ internal static class SvgCompiler
     private static void CompilePath(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
-        var data = element.GetStyleOrAttribute("d");
+        var data = element.GetAnimatedOrAttribute("d");
         if (string.IsNullOrEmpty(data))
             return;
 
@@ -874,7 +1154,7 @@ internal static class SvgCompiler
             }
             case "path":
             {
-                if (element.GetStyleOrAttribute("d") is not { Length: > 0 } data)
+                if (element.GetAnimatedOrAttribute("d") is not { Length: > 0 } data)
                     return default;
                 var geometry = new StreamGeometry();
                 using (var geometryContext = geometry.Open())

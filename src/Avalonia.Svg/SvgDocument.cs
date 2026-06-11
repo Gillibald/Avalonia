@@ -24,6 +24,7 @@ public sealed class SvgDocument : IDisposable
     private readonly Dictionary<string, SvgElement> _elementsById;
     private Dictionary<(SvgElement Element, Size Viewport), DrawingRecording>? _sharedRecordings;
     private Dictionary<(SvgElement Element, Size Viewport), SvgHitNode>? _sharedHitSubtrees;
+    private Dictionary<string, object?>? _imageContent;
     private bool _disposed;
 
     private SvgDocument(SvgElement root, Dictionary<string, SvgElement> elementsById)
@@ -35,16 +36,50 @@ public sealed class SvgDocument : IDisposable
     /// <summary>The root <c>svg</c> element.</summary>
     public SvgElement Root { get; }
 
+    /// <summary>
+    /// The document's base location, when known: relative <c>&lt;image&gt;</c>
+    /// references resolve against it.
+    /// </summary>
+    public Uri? BaseUri { get; private set; }
+
+    /// <summary>Set once the stylesheet rules have been resolved onto the tree.</summary>
+    internal bool StylesheetApplied { get; set; }
+
     /// <summary>Looks up an element by id, or returns null.</summary>
     public SvgElement? GetElementById(string id) =>
         _elementsById.TryGetValue(id, out var element) ? element : null;
 
+    /// <summary>
+    /// Gets (decoding and caching on first use) the content of an
+    /// <c>&lt;image&gt;</c> reference; null entries cache failures.
+    /// </summary>
+    internal object? GetImageContent(string href, Func<SvgDocument, string, object?> loader)
+    {
+        _imageContent ??= new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (!_imageContent.TryGetValue(href, out var content))
+        {
+            content = loader(this, href);
+            _imageContent.Add(href, content);
+        }
+
+        return content;
+    }
+
     /// <summary>Parses an SVG document from a string.</summary>
     public static SvgDocument Parse(string xml)
+        => Parse(xml, baseUri: null);
+
+    /// <summary>
+    /// Parses an SVG document from a string, with a base location for
+    /// resolving relative <c>&lt;image&gt;</c> references.
+    /// </summary>
+    public static SvgDocument Parse(string xml, Uri? baseUri)
     {
         _ = xml ?? throw new ArgumentNullException(nameof(xml));
         using var reader = XmlReader.Create(new StringReader(xml), CreateReaderSettings());
-        return Load(reader);
+        var document = Load(reader);
+        document.BaseUri = baseUri;
+        return document;
     }
 
     /// <summary>Loads an SVG document from a stream.</summary>
@@ -63,7 +98,9 @@ public sealed class SvgDocument : IDisposable
     {
         _ = uri ?? throw new ArgumentNullException(nameof(uri));
         using var stream = uri.IsFile ? File.OpenRead(uri.LocalPath) : AssetLoader.Open(uri);
-        return Load(stream);
+        var document = Load(stream);
+        document.BaseUri = uri;
+        return document;
     }
 
     private static XmlReaderSettings CreateReaderSettings() => new()
@@ -191,10 +228,12 @@ public sealed class SvgDocument : IDisposable
     {
         if (attribute != null
             && SvgLength.TryParse(attribute.AsSpan(), out var length)
-            && length.Unit != SvgLengthUnit.Percent
-            && length.Resolve(SvgLengthAxis.Other, default) is var resolved and > 0)
+            && length.Unit != SvgLengthUnit.Percent)
         {
-            return resolved;
+            // An explicit zero (or negative, an error) disables rendering
+            // rather than falling back to the default size.
+            var resolved = length.Resolve(SvgLengthAxis.Other, default);
+            return resolved > 0 ? resolved : 0;
         }
 
         return fallback;
@@ -267,6 +306,17 @@ public sealed class SvgDocument : IDisposable
             foreach (var recording in _sharedRecordings.Values)
                 recording.Dispose();
             _sharedRecordings = null;
+        }
+
+        if (_imageContent != null)
+        {
+            foreach (var content in _imageContent.Values)
+            {
+                if (content is IDisposable disposable)
+                    disposable.Dispose();
+            }
+
+            _imageContent = null;
         }
 
         _sharedHitSubtrees = null;

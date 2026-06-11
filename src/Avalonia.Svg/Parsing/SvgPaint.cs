@@ -97,8 +97,10 @@ internal readonly struct SvgPaint
                 return false;
             }
 
-            var target = value.Substring(4, close - 4).Trim();
-            if (target.Length <= 1 || target[0] != '#')
+            // SVG 2 allows the reference to be quoted; stray characters inside
+            // make the whole reference invalid.
+            var target = value.Substring(4, close - 4).Trim().Trim('\'', '"');
+            if (target.Length <= 1 || target[0] != '#' || target.IndexOf(' ') >= 0)
             {
                 paint = default;
                 return false;
