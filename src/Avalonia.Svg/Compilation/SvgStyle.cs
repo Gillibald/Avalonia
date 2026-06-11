@@ -44,7 +44,28 @@ internal struct SvgStyle
     public double RootFontSize;
     public FontStyle FontStyle;
     public FontWeight FontWeight;
+    public FontStretch FontStretch;
     public SvgTextAnchor TextAnchor;
+    /// <summary>Extra advance after each typographic character, in pixels.</summary>
+    public double LetterSpacing;
+    /// <summary>Extra advance after each word separator, in pixels.</summary>
+    public double WordSpacing;
+    /// <summary>
+    /// The accumulated baseline offset in pixels; positive raises the text.
+    /// <c>baseline-shift</c> values add to the inherited shift.
+    /// </summary>
+    public double BaselineShift;
+    /// <summary>True when font kerning is disabled (<c>font-kerning: none</c>).</summary>
+    public bool KerningDisabled;
+    /// <summary>BCP-47 language of the content (<c>xml:lang</c>), for shaping.</summary>
+    public string? Language;
+    public bool Underline;
+    public bool Overline;
+    public bool LineThrough;
+    /// <summary>The fill that declared the decoration, captured per kind.</summary>
+    public IBrush? UnderlineBrush;
+    public IBrush? OverlineBrush;
+    public IBrush? LineThroughBrush;
     /// <summary>The CSS <c>visibility</c> property: hidden elements keep their layout
     /// and their children may re-enable visibility (unlike <c>display: none</c>).</summary>
     public bool Visible;
@@ -73,6 +94,7 @@ internal struct SvgStyle
         RootFontSize = 16,
         FontStyle = FontStyle.Normal,
         FontWeight = FontWeight.Normal,
+        FontStretch = FontStretch.Normal,
         TextAnchor = SvgTextAnchor.Start,
         Visible = true,
         PointerEvents = SvgPointerEvents.VisiblePainted,
@@ -130,19 +152,16 @@ internal struct SvgStyle
     /// </summary>
     public void Apply(SvgElement element)
     {
+        // The font shorthand applies before the longhand properties so explicit
+        // longhands on the same element win.
+        if (Get(element, "font") is { } fontShorthand)
+            ApplyFontShorthand(fontShorthand);
+
         // font-size computes first, like the CSS cascade: every other length
         // property on this element resolves em/ex/ch against the element's own
         // computed font size.
-        if (Get(element, "font-size") is { } fontSize
-            && SvgLength.TryParse(fontSize.AsSpan(), out var fontSizeLength))
-        {
-            // em/ex/ch and percentages resolve against the inherited font.
-            var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
-                ? fontSizeLength.Value / 100.0 * FontSize
-                : ResolveLength(fontSizeLength, SvgLengthAxis.Other);
-            if (resolved > 0)
-                FontSize = resolved;
-        }
+        if (Get(element, "font-size") is { } fontSize)
+            ApplyFontSize(fontSize);
 
         if (Get(element, "color") is { } colorValue && SvgColor.TryParse(colorValue, out var color))
             Color = color;
@@ -276,26 +295,68 @@ internal struct SvgStyle
         }
 
         if (Get(element, "font-weight") is { } fontWeight)
-        {
-            switch (fontWeight)
-            {
-                case "normal":
-                    FontWeight = FontWeight.Normal;
-                    break;
-                case "bold":
-                    FontWeight = FontWeight.Bold;
-                    break;
-                default:
-                    if (int.TryParse(fontWeight, System.Globalization.NumberStyles.Integer,
-                            System.Globalization.CultureInfo.InvariantCulture, out var weight)
-                        && weight is >= 1 and <= 1000)
-                    {
-                        FontWeight = (FontWeight)weight;
-                    }
+            ApplyFontWeight(fontWeight);
 
-                    break;
+        if (Get(element, "font-stretch") is { } fontStretch)
+            ApplyFontStretch(fontStretch);
+
+        if (Get(element, "letter-spacing") is { } letterSpacing)
+        {
+            if (letterSpacing == "normal")
+                LetterSpacing = 0;
+            else if (SvgLength.TryParse(letterSpacing.AsSpan(), out var spacingLength))
+                LetterSpacing = ResolveLength(spacingLength, SvgLengthAxis.Horizontal);
+        }
+
+        if (Get(element, "word-spacing") is { } wordSpacing)
+        {
+            if (wordSpacing == "normal")
+                WordSpacing = 0;
+            else if (SvgLength.TryParse(wordSpacing.AsSpan(), out var spacingLength))
+                WordSpacing = ResolveLength(spacingLength, SvgLengthAxis.Horizontal);
+        }
+
+        // The SVG 1.1 kerning property: 'auto' keeps font kerning, any length
+        // disables it and adds the value as extra inter-glyph spacing.
+        if (Get(element, "kerning") is { } kerning && kerning != "auto"
+            && SvgLength.TryParse(kerning.AsSpan(), out var kerningLength))
+        {
+            KerningDisabled = true;
+            LetterSpacing += ResolveLength(kerningLength, SvgLengthAxis.Horizontal);
+        }
+
+        if (Get(element, "font-kerning") is { } fontKerning)
+            KerningDisabled = fontKerning == "none";
+
+        // baseline-shift applies to spans only (not <text> or containers, per
+        // SVG 1.1), though the shifted baseline carries into nested spans.
+        if (element.Name is "tspan" or "textPath" or "tref"
+            && Get(element, "baseline-shift") is { } baselineShift && baselineShift != "baseline")
+        {
+            // Shifts accumulate through nested spans; sub/super use em-based
+            // approximations of the common OS/2 subscript/superscript offsets.
+            if (baselineShift == "sub")
+                BaselineShift -= 0.14 * FontSize;
+            else if (baselineShift == "super")
+                BaselineShift += 0.48 * FontSize;
+            else if (SvgLength.TryParse(baselineShift.AsSpan(), out var shiftLength))
+            {
+                BaselineShift += shiftLength.Unit == SvgLengthUnit.Percent
+                    ? shiftLength.Value / 100.0 * FontSize
+                    : ResolveLength(shiftLength, SvgLengthAxis.Vertical);
             }
         }
+
+        if (element.GetAttribute("xml:lang") is { } language && language.Length > 0)
+            Language = language;
+
+        // dominant-baseline and alignment-baseline both shift the run so the
+        // named baseline lands on the pen position; the named baselines are
+        // approximated from the font metrics.
+        if (Get(element, "dominant-baseline") is { } dominantBaseline)
+            ApplyNamedBaseline(dominantBaseline);
+        if (Get(element, "alignment-baseline") is { } alignmentBaseline)
+            ApplyNamedBaseline(alignmentBaseline);
 
         if (Get(element, "text-anchor") is { } textAnchor)
         {
@@ -362,6 +423,258 @@ internal struct SvgStyle
                     PointerEvents = SvgPointerEvents.VisibleStroke;
                     break;
             }
+        }
+
+        // Decorations parse last so they capture the declaring element's own
+        // computed fill — SVG paints each decoration with the paint of the
+        // element that declared it, and they accumulate through descendants.
+        if (Get(element, "text-decoration") is { } decoration)
+        {
+            var brush = ResolveBrush(Fill, FillOpacity);
+            if (decoration == "none")
+            {
+                Underline = Overline = LineThrough = false;
+                UnderlineBrush = OverlineBrush = LineThroughBrush = null;
+            }
+            else
+            {
+                if (decoration.Contains("underline"))
+                {
+                    Underline = true;
+                    UnderlineBrush = brush;
+                }
+
+                if (decoration.Contains("overline"))
+                {
+                    Overline = true;
+                    OverlineBrush = brush;
+                }
+
+                if (decoration.Contains("line-through"))
+                {
+                    LineThrough = true;
+                    LineThroughBrush = brush;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shifts the run so the named baseline sits at the pen position. The
+    /// named baselines are derived from the font metrics: ascent and descent
+    /// bound the edges, <c>hanging</c> and <c>mathematical</c> use the
+    /// customary ascent fractions, <c>middle</c> uses half the x-height and
+    /// <c>central</c> the em-box center.
+    /// </summary>
+    private void ApplyNamedBaseline(string value)
+    {
+        var metrics = GetFontMetrics();
+        if (metrics is not var (ascent, descent, xHeight))
+            return;
+
+        double? offset = value switch
+        {
+            "auto" or "baseline" or "alphabetic" or "no-change" or "reset-size" or "use-script" => 0,
+            "middle" => xHeight / 2,
+            "central" => (ascent - descent) / 2,
+            "hanging" => 0.8 * ascent,
+            "mathematical" => 0.5 * ascent,
+            "text-before-edge" or "before-edge" or "text-top" => ascent,
+            "text-after-edge" or "after-edge" or "text-bottom" or "ideographic" => -descent,
+            _ => null,
+        };
+
+        if (offset is { } resolved)
+            BaselineShift -= resolved;
+    }
+
+    /// <summary>Ascent, descent and x-height at the current font size, as positive extents.</summary>
+    private readonly (double Ascent, double Descent, double XHeight)? GetFontMetrics()
+    {
+        FontManager fontManager;
+        try
+        {
+            fontManager = FontManager.Current;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        var fontFamily = FontFamily is { } family ? Media.FontFamily.Parse(family) : Media.FontFamily.Default;
+        if (!fontManager.TryGetGlyphTypeface(new Typeface(fontFamily, FontStyle, FontWeight, FontStretch), out var glyphTypeface)
+            || glyphTypeface.Metrics.DesignEmHeight <= 0)
+        {
+            return null;
+        }
+
+        var metrics = glyphTypeface.Metrics;
+        var scale = FontSize / metrics.DesignEmHeight;
+
+        // Avalonia metrics are y-down: the ascent is negative. The metrics
+        // carry no x-height; 0.5em is the usual approximation.
+        return (-metrics.Ascent * scale, metrics.Descent * scale, 0.5 * FontSize);
+    }
+
+    private void ApplyFontSize(string value)
+    {
+        if (SvgLength.TryParse(value.AsSpan(), out var fontSizeLength))
+        {
+            // em/ex/ch and percentages resolve against the inherited font.
+            var resolved = fontSizeLength.Unit == SvgLengthUnit.Percent
+                ? fontSizeLength.Value / 100.0 * FontSize
+                : ResolveLength(fontSizeLength, SvgLengthAxis.Other);
+            if (resolved > 0)
+                FontSize = resolved;
+            return;
+        }
+
+        // CSS absolute sizes scale a 16px medium; relative sizes step the
+        // inherited size.
+        var keyword = value switch
+        {
+            "xx-small" => 16 * 3.0 / 5,
+            "x-small" => 16 * 3.0 / 4,
+            "small" => 16 * 8.0 / 9,
+            "medium" => 16,
+            "large" => 16 * 6.0 / 5,
+            "x-large" => 16 * 3.0 / 2,
+            "xx-large" => 16 * 2.0,
+            "xxx-large" => 16 * 3.0,
+            "smaller" => FontSize / 1.25,
+            "larger" => FontSize * 1.25,
+            _ => 0.0,
+        };
+        if (keyword > 0)
+            FontSize = keyword;
+    }
+
+    private void ApplyFontWeight(string value)
+    {
+        switch (value)
+        {
+            case "normal":
+                FontWeight = FontWeight.Normal;
+                break;
+            case "bold":
+                FontWeight = FontWeight.Bold;
+                break;
+            // The CSS relative weights step against the inherited weight.
+            case "bolder":
+                FontWeight = (int)FontWeight switch
+                {
+                    <= 300 => FontWeight.Normal,
+                    <= 500 => FontWeight.Bold,
+                    _ => FontWeight.Black,
+                };
+                break;
+            case "lighter":
+                FontWeight = (int)FontWeight switch
+                {
+                    <= 500 => FontWeight.Thin,
+                    <= 700 => FontWeight.Normal,
+                    _ => FontWeight.Bold,
+                };
+                break;
+            default:
+                if (int.TryParse(value, System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out var weight)
+                    && weight is >= 1 and <= 1000)
+                {
+                    FontWeight = (FontWeight)weight;
+                }
+
+                break;
+        }
+    }
+
+    private void ApplyFontStretch(string value)
+    {
+        switch (value)
+        {
+            case "ultra-condensed": FontStretch = FontStretch.UltraCondensed; break;
+            case "extra-condensed": FontStretch = FontStretch.ExtraCondensed; break;
+            case "condensed": FontStretch = FontStretch.Condensed; break;
+            case "semi-condensed": FontStretch = FontStretch.SemiCondensed; break;
+            case "normal": FontStretch = FontStretch.Normal; break;
+            case "semi-expanded": FontStretch = FontStretch.SemiExpanded; break;
+            case "expanded": FontStretch = FontStretch.Expanded; break;
+            case "extra-expanded": FontStretch = FontStretch.ExtraExpanded; break;
+            case "ultra-expanded": FontStretch = FontStretch.UltraExpanded; break;
+            case "narrower":
+                FontStretch = (FontStretch)Math.Max((int)FontStretch.UltraCondensed, (int)FontStretch - 1);
+                break;
+            case "wider":
+                FontStretch = (FontStretch)Math.Min((int)FontStretch.UltraExpanded, (int)FontStretch + 1);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Applies the CSS <c>font</c> shorthand:
+    /// <c>[style || weight]? size[/line-height]? family</c>. Unspecified
+    /// components reset to their initial values, per the shorthand rules.
+    /// </summary>
+    private void ApplyFontShorthand(string value)
+    {
+        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+            return;
+
+        FontStyle = FontStyle.Normal;
+        FontWeight = FontWeight.Normal;
+        FontStretch = FontStretch.Normal;
+
+        var index = 0;
+        for (; index < parts.Length - 1; index++)
+        {
+            switch (parts[index])
+            {
+                case "normal":
+                    continue;
+                case "italic":
+                case "oblique":
+                    FontStyle = parts[index] == "italic" ? FontStyle.Italic : FontStyle.Oblique;
+                    continue;
+                case "bold":
+                case "bolder":
+                case "lighter":
+                    ApplyFontWeight(parts[index]);
+                    continue;
+                case "small-caps":
+                    continue;
+                default:
+                    if (int.TryParse(parts[index], out var numericWeight)
+                        && numericWeight is >= 100 and <= 900 && numericWeight % 100 == 0)
+                    {
+                        FontWeight = (FontWeight)numericWeight;
+                        continue;
+                    }
+
+                    break;
+            }
+
+            break;
+        }
+
+        if (index >= parts.Length)
+            return;
+
+        // The size component, with an optional /line-height suffix.
+        var size = parts[index];
+        var slash = size.IndexOf('/');
+        if (slash >= 0)
+            size = size.Substring(0, slash);
+        ApplyFontSize(size);
+        index++;
+
+        if (index < parts.Length)
+        {
+            var family = string.Join(" ", parts, index, parts.Length - index);
+            var comma = family.IndexOf(',');
+            var first = (comma >= 0 ? family.Substring(0, comma) : family).Trim().Trim('\'', '"');
+            if (first.Length > 0)
+                FontFamily = first;
         }
     }
 

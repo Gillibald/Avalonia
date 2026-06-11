@@ -14,11 +14,21 @@
     <!-- Deterministic text rendering: SVG test content references this font via
          a resm: font-family URI. -->
     <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" Link="Assets\NotoMono-Regular.ttf" />
-    <!-- The resvg corpus' bundled fonts (OFL, see Assets/Noto-LICENSE-OFL.txt):
-         registered as a font collection so corpus tests resolve the plain
-         "Noto Sans" family deterministically on every machine. -->
+    <!-- The resvg corpus' bundled fonts (OFL, see the LICENSE files in Assets):
+         registered as a font collection so corpus tests resolve their plain
+         family names deterministically on every machine. -->
     <EmbeddedResource Include="Assets\NotoSans-Regular.ttf" />
     <EmbeddedResource Include="Assets\NotoSans-Bold.ttf" />
+    <EmbeddedResource Include="Assets\NotoSans-Italic.ttf" />
+    <EmbeddedResource Include="Assets\NotoSans-Light.ttf" />
+    <EmbeddedResource Include="Assets\NotoSans-Thin.ttf" />
+    <EmbeddedResource Include="Assets\NotoSans-Black.ttf" />
+    <EmbeddedResource Include="Assets\NotoSans-ExtraCondensed.ttf" />
+    <EmbeddedResource Include="Assets\Amiri-Regular.ttf" />
+    <EmbeddedResource Include="Assets\MPLUS1p-Regular.ttf" />
+    <EmbeddedResource Include="Assets\NotoSansDevanagari-Regular.ttf" />
+    <EmbeddedResource Include="Assets\SourceSansPro-Regular.ttf" />
+    <EmbeddedResource Include="Assets\NotoSerif-Regular.ttf" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />

@@ -42,3 +42,56 @@ painting/stroke-opacity/on-text.svg -- text stroking not supported
 # patternTransform composes with the referencing element's transform here;
 # browsers keep the pattern orientation independent of it.
 paint-servers/pattern/transform-and-patternTransform.svg -- patternTransform composition with the element transform diverges from browsers
+
+# Vertical writing modes (writing-mode: tb / vertical-*) are not implemented.
+text/writing-mode/tb.svg -- vertical writing modes not supported
+text/writing-mode/tb-rl.svg -- vertical writing modes not supported
+text/writing-mode/vertical-lr.svg -- vertical writing modes not supported
+text/writing-mode/vertical-rl.svg -- vertical writing modes not supported
+text/writing-mode/inheritance.svg -- vertical writing modes not supported
+text/writing-mode/japanese-with-tb.svg -- vertical writing modes not supported
+text/writing-mode/tb-with-alignment.svg -- vertical writing modes not supported
+text/writing-mode/tb-with-dx-on-tspan.svg -- vertical writing modes not supported
+text/writing-mode/tb-with-dx-on-second-tspan.svg -- vertical writing modes not supported
+text/writing-mode/tb-with-dy-on-second-tspan.svg -- vertical writing modes not supported
+text/writing-mode/mixed-languages-with-tb.svg -- vertical writing modes not supported
+text/writing-mode/mixed-languages-with-tb-and-underline.svg -- vertical writing modes not supported
+text/writing-mode/tb-and-punctuation.svg -- vertical writing modes not supported
+text/textPath/writing-mode=tb.svg -- vertical writing modes not supported
+text/lengthAdjust/vertical.svg -- vertical writing modes not supported
+text/alignment-baseline/hanging-on-vertical.svg -- vertical writing modes not supported
+
+# feFlood is not implemented yet (the filters category is pending).
+text/text/filter-bbox.svg -- feFlood not supported
+text/letter-spacing/filter-bbox.svg -- feFlood not supported
+
+# Chrome applies filters declared on tspan/textPath; we treat them as
+# non-applicable, like Firefox and resvg themselves.
+text/tspan/with-filter.svg -- filter on a text span not supported
+text/textPath/with-filter.svg -- filter on a text span not supported
+
+# Font capabilities.
+text/font/simple-case.svg -- no bold-italic face is bundled; synthetic slanting differs
+text/text/xml-lang=ja.svg -- language-dependent CJK glyph variants not supported
+text/font-variant/small-caps.svg -- small-caps not supported (no smcp synthesis)
+text/font-variant/inherit.svg -- small-caps not supported (no smcp synthesis)
+text/font-stretch/extra-condensed.svg -- condensed faces carry distinct family names; stretch matching not wired
+text/font-stretch/narrower.svg -- condensed faces carry distinct family names; stretch matching not wired
+text/font-stretch/inherit.svg -- condensed faces carry distinct family names; stretch matching not wired
+text/font-size-adjust/simple-case.svg -- font-size-adjust not supported
+text/text/emojis.svg -- color emoji font not bundled
+text/text/compound-emojis.svg -- color emoji font not bundled
+text/text/compound-emojis-and-coordinates-list.svg -- color emoji font not bundled
+
+# Text layout gaps.
+text/textLength/on-text-and-tspan.svg -- textLength on tspan not supported
+text/textLength/150-on-tspan.svg -- textLength on tspan not supported
+text/textPath/dy-with-tiny-coordinates.svg -- per-character dy on a text path not supported
+text/textPath/side=right.svg -- textPath side=right not supported
+
+# Decorations: the stroked variants need text stroking; style-resolving-4's
+# override semantics diverge.
+text/text-decoration/underline.svg -- text stroking not supported
+text/text-decoration/overline.svg -- text stroking not supported
+text/text-decoration/line-through.svg -- text stroking not supported
+text/text-decoration/style-resolving-4.svg -- decoration style resolution diverges (needs debugging)
