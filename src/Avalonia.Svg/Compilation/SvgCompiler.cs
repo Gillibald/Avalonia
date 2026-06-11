@@ -57,6 +57,16 @@ internal static class SvgCompiler
         if (rootOpacity <= 0)
             return;
 
+        // The document rasterizes onto a canvas of unknown opacity, and
+        // subpixel (LCD) glyph coverage is only well-defined over opaque
+        // pixels — blended into transparency it fattens the glyphs. Text
+        // therefore uses grayscale antialiasing, like browsers rasterizing
+        // SVG layers. Nested recording playback inherits this.
+        using var textRendering = context.PushRenderOptions(new RenderOptions
+        {
+            TextRenderingMode = TextRenderingMode.Antialias,
+        });
+
         DrawingContext.PushedState? rootOpacityState = rootOpacity < 1
             ? context.PushOpacity(rootOpacity)
             : null;
