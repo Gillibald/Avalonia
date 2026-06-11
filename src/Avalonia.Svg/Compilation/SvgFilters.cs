@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Parsing;
 
 namespace Avalonia.Svg.Compilation;
@@ -199,14 +200,15 @@ internal static class SvgFilters
 
         var primitiveBoxUnits = GetChained("primitiveUnits") == "objectBoundingBox";
         return TryBuildEffectGraph(
-            primitiveSource, style, bounds, region, compileContext.Viewport, primitiveBoxUnits, out effect);
+            primitiveSource, compileContext, style, bounds, region, primitiveBoxUnits, out effect);
     }
 
     private static bool TryBuildEffectGraph(
-        SvgElement filter, in SvgStyle style, Rect bounds, Rect region, Size viewport, bool boxUnits,
-        out IImmutableEffect? effect)
+        SvgElement filter, SvgCompileContext compileContext, in SvgStyle style, Rect bounds, Rect region,
+        bool boxUnits, out IImmutableEffect? effect)
     {
         effect = null;
+        var viewport = compileContext.Viewport;
 
         // primitiveUnits=objectBoundingBox makes primitive lengths and
         // subregions bounding-box fractions.
@@ -236,9 +238,11 @@ internal static class SvgFilters
 
         // The primitive subregion: per-component defaults come from the union
         // of the input subregions, falling back to the filter region, which
-        // also hard-clips every subregion.
-        Rect? GetSubregion(SvgElement primitive, Rect? inputUnion)
+        // also hard-clips every subregion. The unclamped rect is feImage's
+        // placement anchor.
+        Rect? GetSubregionWithRaw(SvgElement primitive, Rect? inputUnion, out Rect? raw)
         {
+            raw = null;
             var x = primitive.GetAttribute("x");
             var y = primitive.GetAttribute("y");
             var width = primitive.GetAttribute("width");
@@ -265,8 +269,13 @@ internal static class SvgFilters
             var ry = Resolve(y, defaults.Y, bounds.Y, bounds.Height, SvgLengthAxis.Vertical);
             var rw = Resolve(width, defaults.Width, 0, bounds.Width, SvgLengthAxis.Horizontal);
             var rh = Resolve(height, defaults.Height, 0, bounds.Height, SvgLengthAxis.Vertical);
-            return new Rect(rx, ry, Math.Max(0, rw), Math.Max(0, rh)).Intersect(region);
+            var rect = new Rect(rx, ry, Math.Max(0, rw), Math.Max(0, rh));
+            raw = rect;
+            return rect.Intersect(region);
         }
+
+        Rect? GetSubregion(SvgElement primitive, Rect? inputUnion) =>
+            GetSubregionWithRaw(primitive, inputUnion, out _);
 
         // A null subregion means the whole region, which absorbs the union.
         static Rect? UnionSubregions(Rect? a, Rect? b) =>
@@ -349,8 +358,9 @@ internal static class SvgFilters
             // feTile is excepted from the input-union default (its subregion
             // is the tile target) and generators reference no inputs; both
             // default to the whole region.
-            var subregion = primitive.Name is "feTile" or "feFlood"
-                ? GetSubregion(primitive, inputUnion: null)
+            Rect? rawSubregion = null;
+            var subregion = primitive.Name is "feTile" or "feFlood" or "feImage" or "feTurbulence"
+                ? GetSubregionWithRaw(primitive, inputUnion: null, out rawSubregion)
                 : GetSubregion(primitive, GetInputSubregion(primitive.GetAttribute("in")));
             var linear = UsesLinearSpace(primitive);
 
@@ -365,6 +375,62 @@ internal static class SvgFilters
                         GetFloodColor(primitive, style), GetFloodOpacity(primitive));
                     nodeLinear = false;
                     break;
+
+                case "feImage":
+                {
+                    // An unresolvable or cyclic feImage hides the element.
+                    // Fragments anchor at the unclamped subregion origin.
+                    var anchor = (rawSubregion ?? region).Position;
+                    if (!TryCreateImage(primitive, compileContext, subregion, region, anchor, out var image))
+                        return true;
+                    node = image;
+                    nodeLinear = false;
+                    break;
+                }
+
+                case "feTurbulence":
+                {
+                    // Frequencies are per user unit; objectBoundingBox units
+                    // divide by the box dimensions. Invalid values behave as
+                    // unspecified.
+                    var frequencyX = 0.0;
+                    var frequencyY = 0.0;
+                    if (primitive.GetAttribute("baseFrequency") is { } frequency)
+                    {
+                        var tokenizer = new SvgTokenizer(frequency.AsSpan());
+                        if (tokenizer.TryReadNumber(out frequencyX))
+                            frequencyY = tokenizer.TryReadNumber(out var second) ? second : frequencyX;
+                        if (frequencyX < 0 || frequencyY < 0 || !tokenizer.IsAtEnd)
+                        {
+                            frequencyX = 0;
+                            frequencyY = 0;
+                        }
+                    }
+
+                    if (boxUnits)
+                    {
+                        frequencyX /= bounds.Width;
+                        frequencyY /= bounds.Height;
+                    }
+
+                    var octaves = (int)GetStrictNumber(primitive, "numOctaves", 1);
+                    if (frequencyX <= 0 || frequencyY <= 0 || octaves < 1)
+                    {
+                        // No noise is transparent black.
+                        node = new ImmutableFloodEffect(Colors.Transparent, 0);
+                        nodeLinear = false;
+                        break;
+                    }
+
+                    // The noise generates directly in the working space.
+                    node = new ImmutableTurbulenceEffect(
+                        frequencyX, frequencyY, octaves,
+                        GetStrictNumber(primitive, "seed", 0),
+                        primitive.GetAttribute("type") == "fractalNoise",
+                        primitive.GetAttribute("stitchTiles") == "stitch",
+                        subregion ?? region);
+                    break;
+                }
 
                 case "feTile":
                 {
@@ -545,18 +611,41 @@ internal static class SvgFilters
 
                 case "feGaussianBlur":
                 {
-                    // Arbitrarily huge deviations cap at 500 (resvg parity);
-                    // the output is fully dissipated far earlier anyway.
-                    var sigma = Math.Min(500, ScaleOther(GetNumber(primitive, "stdDeviation", 0)));
-                    if (sigma > 0)
+                    // One or two sigmas; invalid values behave as unspecified
+                    // (no blur). Arbitrarily huge deviations cap at 500
+                    // (resvg parity) — the output dissipates far earlier.
+                    var sigmaX = 0.0;
+                    var sigmaY = 0.0;
+                    if (primitive.GetAttribute("stdDeviation") is { } deviation)
                     {
-                        node = Chain(ToSpace(input, inputLinear, linear),
-                            new ImmutableBlurEffect(SigmaToBlurRadius(sigma)));
+                        var tokenizer = new SvgTokenizer(deviation.AsSpan());
+                        if (tokenizer.TryReadNumber(out sigmaX))
+                            sigmaY = tokenizer.TryReadNumber(out var second) ? second : sigmaX;
+                        if (sigmaX < 0 || sigmaY < 0 || !tokenizer.IsAtEnd)
+                        {
+                            sigmaX = 0;
+                            sigmaY = 0;
+                        }
                     }
-                    else
+
+                    sigmaX = Math.Min(500, ScaleX(sigmaX));
+                    sigmaY = Math.Min(500, ScaleY(sigmaY));
+
+                    if (sigmaX <= 0 && sigmaY <= 0)
                     {
                         node = input;
                         nodeLinear = inputLinear;
+                    }
+                    else
+                    {
+                        var converted = ToSpace(input, inputLinear, linear);
+                        // ReSharper disable once CompareOfFloatsByEqualityOperator
+                        node = sigmaX == sigmaY
+                            ? Chain(converted, new ImmutableBlurEffect(SigmaToBlurRadius(sigmaX)))
+                            : Chain(converted, new ImmutableAnisotropicBlurEffect(
+                                sigmaX > 0 ? SigmaToBlurRadius(sigmaX) : 0,
+                                sigmaY > 0 ? SigmaToBlurRadius(sigmaY) : 0,
+                                input: null));
                     }
 
                     break;
@@ -851,6 +940,117 @@ internal static class SvgFilters
         return true;
     }
 
+    /// <summary>
+    /// Builds the feImage source: a document fragment renders through its
+    /// shared recording at its own position, translated by the subregion's
+    /// offset; raster (or nested SVG) content scales into the subregion via
+    /// preserveAspectRatio. False (unresolvable target, cycle, undecodable
+    /// content) hides the element.
+    /// </summary>
+    private static bool TryCreateImage(
+        SvgElement primitive, SvgCompileContext compileContext, Rect? subregion, Rect region,
+        Point anchor, out IImmutableEffect effect)
+    {
+        effect = null!;
+
+        if (primitive.Href is not { Length: > 0 } href)
+            return false;
+
+        if (href[0] == '#')
+        {
+            if (compileContext.Document.GetElementById(href.Substring(1)) is not { } target)
+                return false;
+
+            var recording = compileContext.GetSharedRecording(target, out _);
+            if (recording == null)
+                return false;
+
+            // The fragment renders at its own document position, translated
+            // by the unclamped subregion (or region) origin; the clamped
+            // subregion still crops.
+            if (anchor.X != 0 || anchor.Y != 0)
+            {
+                var inner = recording;
+                recording = DrawingRecording.Create(ctx =>
+                {
+                    using (ctx.PushTransform(Matrix.CreateTranslation(anchor.X, anchor.Y)))
+                        ctx.DrawRecording(inner);
+                });
+            }
+
+            effect = new ImmutableRecordingEffect(recording, subregion ?? region);
+            return true;
+        }
+
+        var content = compileContext.Document.GetImageContent(href, SvgImages.LoadContent);
+        var destination = subregion ?? region;
+
+        double intrinsicWidth;
+        double intrinsicHeight;
+        switch (content)
+        {
+            case Bitmap bitmap:
+                intrinsicWidth = bitmap.PixelSize.Width;
+                intrinsicHeight = bitmap.PixelSize.Height;
+                break;
+            case SvgDocument nested:
+                var intrinsic = nested.GetIntrinsicSize();
+                intrinsicWidth = intrinsic.Width;
+                intrinsicHeight = intrinsic.Height;
+                break;
+            default:
+                return false;
+        }
+
+        if (intrinsicWidth <= 0 || intrinsicHeight <= 0
+            || destination.Width <= 0 || destination.Height <= 0)
+        {
+            return false;
+        }
+
+        var preserveAspectRatio = SvgPreserveAspectRatio.Default;
+        if (primitive.GetAttribute("preserveAspectRatio") is { } par)
+            SvgPreserveAspectRatio.TryParse(par.AsSpan(), out preserveAspectRatio);
+
+        var contentMatrix = preserveAspectRatio.ComputeTransform(
+            new SvgViewBox(0, 0, intrinsicWidth, intrinsicHeight), destination.Size);
+
+        var imageRecording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushClip(destination))
+            using (ctx.PushTransform(Matrix.CreateTranslation(destination.X, destination.Y)))
+            {
+                if (content is Bitmap image)
+                {
+                    var mapped = new Rect(
+                        contentMatrix.M31,
+                        contentMatrix.M32,
+                        intrinsicWidth * contentMatrix.M11,
+                        intrinsicHeight * contentMatrix.M22);
+                    ctx.DrawImage(image, new Rect(image.Size), mapped);
+                }
+                else if (content is SvgDocument nestedDocument && SvgImages.EnterNested())
+                {
+                    try
+                    {
+                        using (ctx.PushTransform(contentMatrix))
+                        {
+                            SvgCompiler.CompileDocument(nestedDocument, ctx,
+                                new Size(intrinsicWidth, intrinsicHeight));
+                        }
+                    }
+                    finally
+                    {
+                        SvgImages.ExitNested();
+                    }
+                }
+            }
+        });
+
+        effect = new ImmutableRecordingEffect(imageRecording, destination);
+        return true;
+    }
+
     private static bool TryCreateLighting(
         SvgElement primitive, in SvgStyle style, bool linear,
         Func<double, double> positionX, Func<double, double> positionY, Func<double, double> scaleOther,
@@ -942,19 +1142,21 @@ internal static class SvgFilters
     private static Color ResolveFilterColor(
         SvgElement element, string property, Color initial, in SvgStyle style)
     {
+        // The property is not inherited: an unset value is the initial one,
+        // and an explicit "inherit" takes the parent's computed value — the
+        // walk only continues through explicit inherits.
         for (var current = element; current != null; current = current.Parent)
         {
             switch (current.GetStyleOrAttribute(property))
             {
-                case null when ReferenceEquals(current, element):
-                    return initial; // not inherited by default
-                case null:
                 case "inherit":
                     continue;
                 case "currentColor":
                     return ResolveCurrentColor(current, style);
                 case { } value:
                     return SvgColor.TryParse(value, out var parsed) ? parsed : initial;
+                case null:
+                    return initial;
             }
         }
 
