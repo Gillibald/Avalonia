@@ -18,6 +18,7 @@
          registered as a font collection so corpus tests resolve their plain
          family names deterministically on every machine. -->
     <EmbeddedResource Include="Assets\NotoSans-Regular.ttf" />
+    <EmbeddedResource Include="Assets\NotoColorEmoji.ttf" />
     <EmbeddedResource Include="Assets\NotoSans-Bold.ttf" />
     <EmbeddedResource Include="Assets\NotoSans-Italic.ttf" />
     <EmbeddedResource Include="Assets\NotoSans-Light.ttf" />
