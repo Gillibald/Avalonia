@@ -1155,12 +1155,10 @@ already-known instance of this rule.
   which make triage automatable: diff ours against the reference with a
   tolerance, review the outliers ("UB" references mark upstream-undecided
   behavior).
-  Scoreboard: **shapes 133/133; painting 293/304 (11 quarantined:
-  context paint servers anchored in the context element's space ×6,
-  text stroking ×5); paint-servers 149/149; masking 93/93; text
-  317/356 (39 quarantined: vertical writing modes ×16, font
-  capabilities ×11, feFlood/span filters ×4, tspan textLength and
-  textPath details ×4, stroked decorations ×4);
+  Scoreboard: **shapes 133/133; painting 304/304; paint-servers
+  149/149; masking 93/93; text 320/356 (36 quarantined: vertical
+  writing modes ×16, font capabilities ×11, feFlood/span filters ×4,
+  tspan textLength and textPath details ×4, decoration details ×1);
   structure 223/247 (24 quarantined: CSS engine limits ×6, use-site
   inheritance into shared recordings ×5, nested-SVG image sizing ×4,
   strict funcIRI errors ×2, zero-size canvases ×3, DTD entities ×4);
@@ -1168,9 +1166,24 @@ already-known instance of this rule.
   inputs ×21, feConvolveMatrix bias/edge sampling ×14,
   FillPaint/StrokePaint inputs ×6, feTile sampling ×5, feTurbulence
   stitching/zero-axis/oBB frequencies ×3, huge-sigma clamping ×1)**
-  — overall 1555/1679.
+  — overall 1569/1679. Four categories are complete: shapes, painting,
+  paint-servers and masking.
+  Context paint servers now anchor fully: the compiler tracks the
+  accumulated transform from each recording root, context gradients
+  resolve their coordinates absolutely in the context element's space
+  (the use content box, including the target's own transform) with the
+  gradient transform conjugated through that space and the inverse
+  accumulated transform countering the consumers' transforms — one
+  gradient spans every consuming shape and stays fixed across their
+  rotations. Context patterns lay tiles out the same way through an
+  absolute destination rect. Text stroking landed: stroked text draws
+  its shaped runs' glyph outlines with the resolved pen around the
+  filled line (paint-order honored, paint-server strokes resolved
+  against the chunk bounds), which also un-degraded the
+  decoration/paint-order/fill-opacity text tests whose strokes were
+  silently dropped before.
   The cross-category sweep after filters completed masking (93/93) and
-  brought painting to 293/304. SVG 2 context paint landed: context-fill
+  brought painting to 304/304. SVG 2 context paint landed: context-fill
   and context-stroke substitute the context element's computed paint at
   marker and use sites (chains resolve outward, so nested use contexts
   work), content consuming them compiles per site instead of through

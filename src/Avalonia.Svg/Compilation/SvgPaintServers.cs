@@ -17,21 +17,32 @@ internal static class SvgPaintServers
     public static IImmutableBrush? Resolve(SvgCompileContext context, string id, in SvgStyle style, Rect bounds)
         => Resolve(context, id, style, bounds, 1);
 
+    /// <summary>
+    /// Resolves a paint-server reference against the consuming shape's
+    /// <paramref name="bounds"/>. For context paints,
+    /// <paramref name="contextBounds"/> carries the context element's
+    /// geometry and <paramref name="contextInverse"/> the inverse of the
+    /// accumulated transform down to the consumer: coordinates resolve
+    /// absolutely in the context element's space and the brush counters the
+    /// consumer's transforms, so the paint stays fixed across all consumers.
+    /// </summary>
     public static IImmutableBrush? Resolve(
-        SvgCompileContext context, string id, in SvgStyle style, Rect bounds, double opacity)
+        SvgCompileContext context, string id, in SvgStyle style, Rect bounds, double opacity,
+        Rect? contextBounds = null, Matrix contextInverse = default)
     {
         var element = context.Document.GetElementById(id);
         return element?.Name switch
         {
-            "linearGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: false),
-            "radialGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: true),
-            "pattern" => SvgPatterns.Resolve(context, element, bounds, opacity),
+            "linearGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: false, contextBounds, contextInverse),
+            "radialGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: true, contextBounds, contextInverse),
+            "pattern" => SvgPatterns.Resolve(context, element, bounds, opacity, contextBounds, contextInverse),
             _ => null,
         };
     }
 
     private static IImmutableBrush? ResolveGradient(
-        SvgCompileContext context, SvgElement element, in SvgStyle style, Rect bounds, double opacity, bool radial)
+        SvgCompileContext context, SvgElement element, in SvgStyle style, Rect bounds, double opacity, bool radial,
+        Rect? contextBounds = null, Matrix contextInverse = default)
     {
         // href chains: unset attributes and missing stops inherit from the
         // referenced gradient (linear and radial may reference each other).
@@ -45,9 +56,13 @@ internal static class SvgPaintServers
 
         var objectBoundingBox = GetChained(chain, "gradientUnits") != "userSpaceOnUse";
 
+        // Context gradients map onto the context element's geometry instead
+        // of the consuming shape's.
+        var geometryBounds = contextBounds ?? bounds;
+
         // Per spec an objectBoundingBox gradient on a zero-area box disables
         // rendering of the element part using it.
-        if (objectBoundingBox && (bounds.Width <= 0 || bounds.Height <= 0))
+        if (objectBoundingBox && (geometryBounds.Width <= 0 || geometryBounds.Height <= 0))
             return null;
 
         var spreadMethod = GetChained(chain, "spreadMethod") switch
@@ -57,7 +72,9 @@ internal static class SvgPaintServers
             _ => GradientSpreadMethod.Pad,
         };
 
-        var transform = ParseGradientTransform(chain, objectBoundingBox, bounds, context.Viewport);
+        var transform = contextBounds is { } anchorBounds
+            ? BuildContextTransform(chain, objectBoundingBox, anchorBounds, contextInverse, bounds)
+            : ParseGradientTransform(chain, objectBoundingBox, bounds, context.Viewport);
 
         if (radial)
         {
@@ -92,6 +109,21 @@ internal static class SvgPaintServers
                 fr = r * 1e-6;
 
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
+
+            // Context coordinates resolve absolutely in the context space:
+            // unit fractions map through the context bounds.
+            if (contextBounds is { } radialContext && objectBoundingBox)
+            {
+                cx = radialContext.X + cx * radialContext.Width;
+                cy = radialContext.Y + cy * radialContext.Height;
+                fx = radialContext.X + fx * radialContext.Width;
+                fy = radialContext.Y + fy * radialContext.Height;
+                var diagonal = NormalizedDiagonal(radialContext);
+                r *= diagonal;
+                fr *= diagonal;
+                unit = RelativeUnit.Absolute;
+            }
+
             return new ImmutableRadialGradientBrush(
                 stops,
                 opacity,
@@ -112,6 +144,16 @@ internal static class SvgPaintServers
             var y2 = GetCoordinate(chain, "y2", "linearGradient", 0, objectBoundingBox, SvgLengthAxis.Vertical, context.Viewport);
 
             var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
+
+            if (contextBounds is { } linearContext && objectBoundingBox)
+            {
+                x1 = linearContext.X + x1 * linearContext.Width;
+                y1 = linearContext.Y + y1 * linearContext.Height;
+                x2 = linearContext.X + x2 * linearContext.Width;
+                y2 = linearContext.Y + y2 * linearContext.Height;
+                unit = RelativeUnit.Absolute;
+            }
+
             return new ImmutableLinearGradientBrush(
                 stops,
                 opacity,
@@ -120,6 +162,53 @@ internal static class SvgPaintServers
                 startPoint: new RelativePoint(x1, y1, unit),
                 endPoint: new RelativePoint(x2, y2, unit));
         }
+    }
+
+    private static double NormalizedDiagonal(Rect rect) =>
+        Math.Sqrt((rect.Width * rect.Width + rect.Height * rect.Height) / 2);
+
+    /// <summary>
+    /// The brush transform for a context gradient: the gradient transform
+    /// conjugated into the context element's space, composed with the inverse
+    /// accumulated transform down to the consumer, the whole conjugated about
+    /// the consuming shape's bounds position (the brush's transform origin).
+    /// </summary>
+    private static ImmutableTransform? BuildContextTransform(
+        List<SvgElement> chain, bool objectBoundingBox, Rect contextBounds, Matrix contextInverse,
+        Rect shapeBounds)
+    {
+        var user = Matrix.Identity;
+
+        if (GetChained(chain, "gradientTransform") is { } value
+            && SvgTransformParser.TryParse(value.AsSpan(), out var gradientMatrix)
+            && !gradientMatrix.IsIdentity)
+        {
+            if (objectBoundingBox)
+            {
+                // The gradient transform acts in the unit bounding-box space
+                // of the context element; conjugate it into context space.
+                user = Matrix.CreateTranslation(-contextBounds.X, -contextBounds.Y)
+                       * Matrix.CreateScale(1 / contextBounds.Width, 1 / contextBounds.Height)
+                       * gradientMatrix
+                       * Matrix.CreateScale(contextBounds.Width, contextBounds.Height)
+                       * Matrix.CreateTranslation(contextBounds.X, contextBounds.Y);
+            }
+            else
+            {
+                user = gradientMatrix;
+            }
+        }
+
+        user *= contextInverse;
+        if (user.IsIdentity)
+            return null;
+
+        // The brush conjugates its transform about the target bounds
+        // position; compensate so the matrix acts in the shape's user space.
+        var anchored = Matrix.CreateTranslation(shapeBounds.X, shapeBounds.Y)
+                       * user
+                       * Matrix.CreateTranslation(-shapeBounds.X, -shapeBounds.Y);
+        return new ImmutableTransform(anchored);
     }
 
     private static List<SvgElement> BuildReferenceChain(SvgCompileContext context, SvgElement element)
