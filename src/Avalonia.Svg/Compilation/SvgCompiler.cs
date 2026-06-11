@@ -62,7 +62,7 @@ internal static class SvgCompiler
         // pixels — blended into transparency it fattens the glyphs. Text
         // therefore uses grayscale antialiasing, like browsers rasterizing
         // SVG layers. Nested recording playback inherits this.
-        using var textRendering = context.PushRenderOptions(new RenderOptions
+        using var textRendering = context.PushTextOptions(new TextOptions
         {
             TextRenderingMode = TextRenderingMode.Antialias,
         });

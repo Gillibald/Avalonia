@@ -25,20 +25,55 @@ namespace Avalonia.Svg.Compilation;
 /// </remarks>
 internal static class SvgText
 {
+    /// <summary>Per-character placement resolved from x/y/dx/dy/rotate lists.</summary>
+    private struct CharPlacement
+    {
+        public double? X;
+        public double? Y;
+        public double Dx;
+        public double Dy;
+        public double? Rotate;
+    }
+
+    /// <summary>
+    /// The position lists of one element, indexed over the element's
+    /// character content (descendants included), per the SVG character
+    /// position resolution: the innermost list with a value at a character's
+    /// index wins, and a <c>rotate</c> list's last value persists.
+    /// </summary>
+    private sealed class PositionScope
+    {
+        public double[]? X;
+        public double[]? Y;
+        public double[]? Dx;
+        public double[]? Dy;
+        public double[]? Rotate;
+        public int Index;
+    }
+
     private sealed class StyledRun
     {
-        public StyledRun(string text, in SvgStyle style, double dx, double dy)
+        public StyledRun(string text, in SvgStyle style, double dx, double dy,
+            CharPlacement[]? chars = null, bool preservesWhitespace = false)
         {
             Text = text;
             Style = style;
             Dx = dx;
             Dy = dy;
+            Chars = chars;
+            PreservesWhitespace = preservesWhitespace;
         }
 
         public string Text { get; }
         public SvgStyle Style { get; }
         public double Dx { get; }
         public double Dy { get; }
+
+        /// <summary>Per-character placements; null when no lists are in scope.</summary>
+        public CharPlacement[]? Chars { get; }
+
+        /// <summary>True under <c>xml:space="preserve"</c>: exempt from trimming.</summary>
+        public bool PreservesWhitespace { get; }
     }
 
     /// <summary>An <see cref="ITextSource"/> over a segment's styled runs.</summary>
@@ -96,36 +131,220 @@ internal static class SvgText
         SvgElement element, DrawingContext? context, SvgCompileContext compileContext, in SvgStyle style,
         List<Geometry>? geometrySink)
     {
-        var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
-        var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
+        // A negative or zero font size is an error: the text is not rendered.
+        if (style.FontSize <= 0)
+            return;
+
+        var xList = ParseLengthList(element, "x", SvgLengthAxis.Horizontal, style);
+        var yList = ParseLengthList(element, "y", SvgLengthAxis.Vertical, style);
 
         var chunk = new List<StyledRun>();
-        var chunkOrigin = new Point(x, y);
+        // The element-level baseline shift (baseline-shift or a named baseline
+        // on the text element itself) moves the whole chunk; span-level shifts
+        // ride the segment mechanism as deltas.
+        var chunkOrigin = new Point(xList?[0] ?? 0, (yList?[0] ?? 0) - style.BaselineShift);
 
-        CollectContent(element, element, context, compileContext, style, isSpan: false, dx: 0, dy: 0, ref chunk, ref chunkOrigin, geometrySink);
-        FlushChunk(element, context, compileContext, chunk, chunkOrigin, geometrySink);
+        // textLength stretches or squeezes the laid-out chunk to a target
+        // advance; lengthAdjust selects whether glyphs scale along.
+        double? textLength = null;
+        var spacingAndGlyphs = false;
+        if (element.GetStyleOrAttribute("textLength") is { } textLengthValue
+            && SvgLength.TryParse(textLengthValue.AsSpan(), out var textLengthLength)
+            && style.ResolveLength(textLengthLength, SvgLengthAxis.Horizontal) is var resolvedLength and >= 0)
+        {
+            textLength = resolvedLength;
+            spacingAndGlyphs = element.GetStyleOrAttribute("lengthAdjust") == "spacingAndGlyphs";
+        }
+
+        var scopes = new List<PositionScope>();
+        if (CreatePositionScope(element, style, xList, yList, dxLegacy: out _, dyLegacy: out _, isText: true) is { } scope)
+            scopes.Add(scope);
+
+        CollectContent(element, element, context, compileContext, style, isSpan: false, dx: 0, dy: 0,
+            ref chunk, ref chunkOrigin, geometrySink, scopes);
+        FlushChunk(element, context, compileContext, chunk, chunkOrigin, geometrySink, textLength, spacingAndGlyphs);
+    }
+
+    /// <summary>
+    /// Builds the position-list scope of an element. Single-value x/y/dx/dy
+    /// stay with the legacy chunk handling (<paramref name="dxLegacy"/> /
+    /// <paramref name="dyLegacy"/> carry a scalar dx/dy); multi-value lists and
+    /// any <c>rotate</c> resolve per character.
+    /// </summary>
+    private static PositionScope? CreatePositionScope(
+        SvgElement element, in SvgStyle style, double[]? xList, double[]? yList,
+        out double dxLegacy, out double dyLegacy, bool isText, bool includeSingleXy = false)
+    {
+        var dxList = ParseLengthList(element, "dx", SvgLengthAxis.Horizontal, style);
+        var dyList = ParseLengthList(element, "dy", SvgLengthAxis.Vertical, style);
+        var rotateList = ParseRotateList(element);
+
+        dxLegacy = 0;
+        dyLegacy = 0;
+        if (!isText)
+        {
+            // tspan scalar dx/dy ride the segment mechanism for continuous shaping.
+            if (dxList is { Length: 1 })
+            {
+                dxLegacy = dxList[0];
+                dxList = null;
+            }
+
+            if (dyList is { Length: 1 })
+            {
+                dyLegacy = dyList[0];
+                dyList = null;
+            }
+        }
+
+        var x = xList is { Length: > 1 } || (includeSingleXy && xList != null) ? xList : null;
+        var y = yList is { Length: > 1 } || (includeSingleXy && yList != null) ? yList : null;
+
+        if (x == null && y == null && dxList == null && dyList == null && rotateList == null)
+            return null;
+
+        return new PositionScope { X = x, Y = y, Dx = dxList, Dy = dyList, Rotate = rotateList };
+    }
+
+    /// <summary>
+    /// Resolves one character's placement from the enclosing scopes — the
+    /// innermost list with a value at the character's index wins per attribute
+    /// — and advances every scope's character counter.
+    /// </summary>
+    private static CharPlacement ResolveCharPlacement(List<PositionScope> scopes)
+    {
+        var placement = new CharPlacement();
+        var dxSet = false;
+        var dySet = false;
+
+        for (var i = scopes.Count - 1; i >= 0; i--)
+        {
+            var scope = scopes[i];
+            if (placement.X is null && scope.X != null && scope.Index < scope.X.Length)
+                placement.X = scope.X[scope.Index];
+            if (placement.Y is null && scope.Y != null && scope.Index < scope.Y.Length)
+                placement.Y = scope.Y[scope.Index];
+            if (!dxSet && scope.Dx != null && scope.Index < scope.Dx.Length)
+            {
+                placement.Dx = scope.Dx[scope.Index];
+                dxSet = true;
+            }
+
+            if (!dySet && scope.Dy != null && scope.Index < scope.Dy.Length)
+            {
+                placement.Dy = scope.Dy[scope.Index];
+                dySet = true;
+            }
+
+            // A rotate list's last value persists for the remaining characters.
+            if (placement.Rotate is null && scope.Rotate is { Length: > 0 } rotate)
+                placement.Rotate = rotate[Math.Min(scope.Index, rotate.Length - 1)];
+        }
+
+        foreach (var scope in scopes)
+            scope.Index++;
+
+        return placement;
+    }
+
+    private static bool HasActiveLists(List<PositionScope> scopes)
+    {
+        foreach (var scope in scopes)
+        {
+            if (scope.X != null || scope.Y != null || scope.Dx != null || scope.Dy != null || scope.Rotate != null)
+                return true;
+        }
+
+        return false;
+    }
+
+    private static readonly char[] s_listSeparators = { ' ', '\t', '\r', '\n', ',' };
+
+    private static double[]? ParseLengthList(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)
+    {
+        if (element.GetStyleOrAttribute(name) is not { Length: > 0 } value)
+            return null;
+
+        List<double>? values = null;
+        foreach (var token in value.Split(s_listSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!SvgLength.TryParse(token.AsSpan(), out var length))
+                break;
+
+            (values ??= new List<double>()).Add(style.ResolveLength(length, axis));
+        }
+
+        return values?.ToArray();
+    }
+
+    private static double[]? ParseRotateList(SvgElement element)
+    {
+        if (element.GetStyleOrAttribute("rotate") is not { Length: > 0 } value)
+            return null;
+
+        List<double>? values = null;
+        foreach (var token in value.Split(s_listSeparators, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!double.TryParse(token, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var number))
+            {
+                break;
+            }
+
+            (values ??= new List<double>()).Add(number);
+        }
+
+        return values?.ToArray();
+    }
+
+    /// <summary>The effective <c>xml:space</c> at an element's tree position.</summary>
+    private static bool PreservesWhitespace(SvgElement element)
+    {
+        for (var current = element; current != null; current = current.Parent)
+        {
+            switch (current.GetAttribute("xml:space"))
+            {
+                case "preserve":
+                    return true;
+                case "default":
+                    return false;
+            }
+        }
+
+        return false;
     }
 
     private static void CollectContent(
         SvgElement textElement, SvgElement element, DrawingContext? context, SvgCompileContext compileContext,
         in SvgStyle style, bool isSpan, double dx, double dy, ref List<StyledRun> chunk, ref Point chunkOrigin,
-        List<Geometry>? geometrySink)
+        List<Geometry>? geometrySink, List<PositionScope> scopes)
     {
         if (element.Content == null)
             return;
 
         var pendingDx = dx;
         var pendingDy = dy;
+        var preserve = PreservesWhitespace(element);
 
         foreach (var item in element.Content)
         {
             if (item is string text)
             {
-                var normalized = NormalizeWhitespace(text, trimStart: chunk.Count == 0);
+                var normalized = preserve
+                    ? PreserveWhitespace(text)
+                    : NormalizeWhitespace(text, trimStart: chunk.Count == 0);
                 if (normalized.Length == 0)
                     continue;
 
-                chunk.Add(new StyledRun(normalized, style, pendingDx, pendingDy));
+                CharPlacement[]? chars = null;
+                if (HasActiveLists(scopes))
+                {
+                    chars = new CharPlacement[normalized.Length];
+                    for (var i = 0; i < normalized.Length; i++)
+                        chars[i] = ResolveCharPlacement(scopes);
+                }
+
+                chunk.Add(new StyledRun(normalized, style, pendingDx, pendingDy, chars, preserve));
                 pendingDx = 0;
                 pendingDy = 0;
             }
@@ -134,6 +353,7 @@ internal static class SvgText
                 if (child.GetStyleOrAttribute("display") == "none")
                     continue;
 
+                // tref was dropped from SVG 2 and browsers no longer render it.
                 switch (child.Name)
                 {
                     case "tspan":
@@ -141,25 +361,42 @@ internal static class SvgText
                         var childStyle = style;
                         childStyle.Apply(child);
 
-                        // An absolutely positioned tspan starts a new anchor chunk.
-                        var newX = child.GetAttribute("x");
-                        var newY = child.GetAttribute("y");
-                        if (newX != null || newY != null)
+                        var xList = ParseLengthList(child, "x", SvgLengthAxis.Horizontal, style);
+                        var yList = ParseLengthList(child, "y", SvgLengthAxis.Vertical, style);
+
+                        // An absolutely positioned tspan starts a new anchor
+                        // chunk — unless position lists are already in scope, in
+                        // which case its values resolve per character so an
+                        // enclosing list keeps applying to the following ones.
+                        var listsActive = HasActiveLists(scopes);
+                        if (!listsActive && (xList != null || yList != null))
                         {
                             FlushChunk(textElement, context, compileContext, chunk, chunkOrigin, geometrySink);
                             chunk = new List<StyledRun>();
-                            chunkOrigin = new Point(
-                                newX != null ? GetLength(child, "x", SvgLengthAxis.Horizontal, style) : chunkOrigin.X,
-                                newY != null ? GetLength(child, "y", SvgLengthAxis.Vertical, style) : chunkOrigin.Y);
+                            chunkOrigin = new Point(xList?[0] ?? chunkOrigin.X, yList?[0] ?? chunkOrigin.Y);
                         }
+
+                        var childScope = CreatePositionScope(child, style, xList, yList,
+                            out var dxLegacy, out var dyLegacy, isText: false, includeSingleXy: listsActive);
+                        if (childScope != null)
+                            scopes.Add(childScope);
+
+                        // baseline-shift moves the pen for the span's content and
+                        // moves it back afterwards, splitting layout segments at
+                        // the shift boundaries.
+                        var shiftDelta = childStyle.BaselineShift - style.BaselineShift;
 
                         CollectContent(
                             textElement, child, context, compileContext, childStyle, isSpan: true,
-                            dx: pendingDx + GetLength(child, "dx", SvgLengthAxis.Horizontal, style),
-                            dy: pendingDy + GetLength(child, "dy", SvgLengthAxis.Vertical, style),
-                            ref chunk, ref chunkOrigin, geometrySink);
+                            dx: pendingDx + dxLegacy,
+                            dy: pendingDy + dyLegacy - shiftDelta,
+                            ref chunk, ref chunkOrigin, geometrySink, scopes);
+
+                        if (childScope != null)
+                            scopes.Remove(childScope);
+
                         pendingDx = 0;
-                        pendingDy = 0;
+                        pendingDy = shiftDelta;
                         break;
                     }
                     case "textPath":
@@ -175,13 +412,17 @@ internal static class SvgText
 
     private static void FlushChunk(
         SvgElement textElement, DrawingContext? context, SvgCompileContext compileContext,
-        List<StyledRun> chunk, Point origin, List<Geometry>? geometrySink = null)
+        List<StyledRun> chunk, Point origin, List<Geometry>? geometrySink = null,
+        double? textLength = null, bool spacingAndGlyphs = false)
     {
         // Trailing collapsed whitespace does not render and contributes no
         // advance, per the SVG white-space processing rules.
         while (chunk.Count > 0)
         {
             var last = chunk[chunk.Count - 1];
+            if (last.PreservesWhitespace)
+                break;
+
             var trimmed = last.Text.TrimEnd(' ');
             if (trimmed.Length == last.Text.Length)
                 break;
@@ -189,13 +430,30 @@ internal static class SvgText
             chunk.RemoveAt(chunk.Count - 1);
             if (trimmed.Length > 0)
             {
-                chunk.Add(new StyledRun(trimmed, last.Style, last.Dx, last.Dy));
+                chunk.Add(new StyledRun(trimmed, last.Style, last.Dx, last.Dy,
+                    last.Chars is { } trimmedChars ? trimmedChars[..trimmed.Length] : null));
                 break;
             }
         }
 
         if (chunk.Count == 0)
             return;
+
+        // Per-character placement, letter/word spacing and textLength need the
+        // glyph-level layout path.
+        var glyphPlacement = textLength.HasValue;
+        foreach (var run in chunk)
+        {
+            if (run.Chars != null || run.Style.LetterSpacing != 0 || run.Style.WordSpacing != 0)
+                glyphPlacement = true;
+        }
+
+        if (glyphPlacement)
+        {
+            DrawChunkGlyphs(textElement, context, compileContext, chunk, origin,
+                textLength, spacingAndGlyphs, geometrySink);
+            return;
+        }
 
         // Split the chunk into layout segments at dx/dy adjustments; runs inside
         // a segment share one TextLayout so shaping continues across style-only
@@ -321,6 +579,276 @@ internal static class SvgText
         }
     }
 
+    /// <summary>One typographic cluster of a shaped segment, ready to place.</summary>
+    private sealed class ClusterDraw
+    {
+        public required GlyphRun Source;
+        public required int GlyphStart;
+        public required int GlyphLength;
+        public required int CharStart;
+        public required int CharLength;
+        public required double Advance;
+        public required StyledRun Run;
+        public required bool IsWordSeparator;
+        public required CharPlacement Placement;
+        public required int SegmentIndex;
+    }
+
+    /// <summary>
+    /// The glyph-level layout path: shapes the chunk through the normal
+    /// segment pipeline, then places each typographic cluster individually —
+    /// per-character x/y/dx/dy/rotate, letter and word spacing, and
+    /// textLength distribution all adjust the pen between clusters.
+    /// </summary>
+    private static void DrawChunkGlyphs(
+        SvgElement textElement, DrawingContext? context, SvgCompileContext compileContext,
+        List<StyledRun> chunk, Point origin, double? textLength, bool spacingAndGlyphs,
+        List<Geometry>? geometrySink)
+    {
+        var segments = new List<List<StyledRun>>();
+        foreach (var run in chunk)
+        {
+            if (segments.Count == 0 || run.Dx != 0 || run.Dy != 0)
+                segments.Add(new List<StyledRun>());
+            segments[segments.Count - 1].Add(run);
+        }
+
+        var lines = new List<TextLine?>(segments.Count);
+        try
+        {
+            foreach (var segment in segments)
+                lines.Add(FormatSegment(segment, compileContext, chunkBounds: null));
+
+            var clusters = BuildClusters(segments, lines);
+
+            // Measure: the natural advance including spacing feeds the anchor
+            // shift and the textLength distribution.
+            var natural = 0.0;
+            var maxHeight = 0.0;
+            foreach (var line in lines)
+                maxHeight = Math.Max(maxHeight, line?.Height ?? 0);
+            foreach (var segment in segments)
+                natural += segment[0].Dx;
+            foreach (var cluster in clusters)
+            {
+                natural += cluster.Advance + cluster.Run.Style.LetterSpacing
+                           + (cluster.IsWordSeparator ? cluster.Run.Style.WordSpacing : 0);
+            }
+
+            var gap = 0.0;
+            var scale = 1.0;
+            if (textLength is { } target && natural > 0 && clusters.Count > 0)
+            {
+                if (spacingAndGlyphs)
+                    scale = target / natural;
+                else if (clusters.Count > 1)
+                    gap = (target - natural) / (clusters.Count - 1);
+            }
+
+            var totalAdvance = textLength ?? natural;
+            var anchorShift = chunk[0].Style.TextAnchor switch
+            {
+                SvgTextAnchor.Middle => -totalAdvance / 2,
+                SvgTextAnchor.End => -totalAdvance,
+                _ => 0,
+            };
+
+            var chunkBounds = new Rect(origin.X + anchorShift, origin.Y - maxHeight, totalAdvance, maxHeight * 1.25);
+            var brushes = new Dictionary<StyledRun, IImmutableBrush?>();
+            if (geometrySink == null)
+            {
+                foreach (var run in chunk)
+                {
+                    if (!brushes.ContainsKey(run))
+                        brushes[run] = ResolveFill(run.Style, compileContext, chunkBounds);
+                }
+            }
+
+            var penX = origin.X + anchorShift;
+            var penY = origin.Y;
+            var segmentIndex = -1;
+
+            for (var i = 0; i < clusters.Count; i++)
+            {
+                var cluster = clusters[i];
+                if (cluster.SegmentIndex != segmentIndex)
+                {
+                    segmentIndex = cluster.SegmentIndex;
+                    penX += segments[segmentIndex][0].Dx;
+                    penY += segments[segmentIndex][0].Dy;
+                }
+
+                var placement = cluster.Placement;
+                if (placement.X is { } absoluteX)
+                    penX = absoluteX;
+                if (placement.Y is { } absoluteY)
+                    penY = absoluteY;
+                penX += placement.Dx;
+                penY += placement.Dy;
+
+                var brush = geometrySink == null ? brushes[cluster.Run] : null;
+                if (geometrySink != null || (brush != null && context != null))
+                {
+                    var rotate = placement.Rotate ?? 0;
+                    if (rotate != 0 || scale != 1)
+                    {
+                        var clusterRun = BuildClusterRun(cluster, default);
+                        var matrix = Matrix.CreateScale(scale, 1)
+                                     * Matrix.CreateRotation(Matrix.ToRadians(rotate))
+                                     * Matrix.CreateTranslation(penX, penY);
+                        if (geometrySink != null)
+                        {
+                            var geometry = clusterRun.BuildGeometry();
+                            geometry.Transform = new MatrixTransform(matrix);
+                            geometrySink.Add(geometry);
+                        }
+                        else
+                        {
+                            using (context!.PushTransform(matrix))
+                                context.DrawGlyphRun(brush, clusterRun);
+                        }
+                    }
+                    else
+                    {
+                        var clusterRun = BuildClusterRun(cluster, new Point(penX, penY));
+                        if (geometrySink != null)
+                            geometrySink.Add(clusterRun.BuildGeometry());
+                        else
+                            context!.DrawGlyphRun(brush, clusterRun);
+                    }
+                }
+
+                penX += (cluster.Advance + cluster.Run.Style.LetterSpacing
+                         + (cluster.IsWordSeparator ? cluster.Run.Style.WordSpacing : 0)) * scale;
+                if (i < clusters.Count - 1)
+                    penX += gap;
+            }
+
+            // One coarse hit box for the whole chunk.
+            if (geometrySink == null && maxHeight > 0)
+            {
+                var chunkStyle = chunk[0].Style;
+                compileContext.HitTree?.AddShape(
+                    textElement,
+                    new SvgHitShape
+                    {
+                        Kind = SvgHitShape.ShapeKind.Rectangle,
+                        Bounds = new Rect(origin.X + anchorShift, origin.Y - maxHeight, totalAdvance, maxHeight),
+                        HasFill = chunkStyle.Fill.Kind != SvgPaintKind.None,
+                    },
+                    chunkStyle.PointerEvents,
+                    chunkStyle.Visible);
+            }
+        }
+        finally
+        {
+            foreach (var line in lines)
+                line?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Slices the segments' shaped runs into typographic clusters (glyphs
+    /// sharing a cluster travel together, so marks stay on their base) and
+    /// resolves each cluster's styled run and placement.
+    /// </summary>
+    private static List<ClusterDraw> BuildClusters(List<List<StyledRun>> segments, List<TextLine?> lines)
+    {
+        var clusters = new List<ClusterDraw>();
+
+        for (var s = 0; s < segments.Count; s++)
+        {
+            if (lines[s] is not { } line)
+                continue;
+
+            var runs = segments[s];
+            var runStarts = new int[runs.Count];
+            var totalLength = 0;
+            for (var r = 0; r < runs.Count; r++)
+            {
+                runStarts[r] = totalLength;
+                totalLength += runs[r].Text.Length;
+            }
+
+            var shapedTextOffset = 0;
+            foreach (var textRun in line.TextRuns)
+            {
+                if (textRun is not ShapedTextRun shaped || shaped.GlyphRun.GlyphInfos.Count == 0)
+                {
+                    shapedTextOffset += textRun.Length;
+                    continue;
+                }
+
+                var glyphRun = shaped.GlyphRun;
+                var infos = glyphRun.GlyphInfos;
+                var baseCluster = infos[0].GlyphCluster;
+                foreach (var info in infos)
+                    baseCluster = Math.Min(baseCluster, info.GlyphCluster);
+
+                var g = 0;
+                while (g < infos.Count)
+                {
+                    var clusterValue = infos[g].GlyphCluster;
+                    var end = g + 1;
+                    var advance = infos[g].GlyphAdvance;
+                    while (end < infos.Count && infos[end].GlyphCluster == clusterValue)
+                    {
+                        advance += infos[end].GlyphAdvance;
+                        end++;
+                    }
+
+                    // Cluster values are relative to the shaped run's own text;
+                    // rebase them onto the segment to select the styled run and
+                    // its per-character placement.
+                    var segmentChar = shapedTextOffset + (clusterValue - baseCluster);
+                    var runIndex = runs.Count - 1;
+                    while (runIndex > 0 && runStarts[runIndex] > segmentChar)
+                        runIndex--;
+                    var run = runs[runIndex];
+                    var charInRun = Math.Min(Math.Max(0, segmentChar - runStarts[runIndex]), run.Text.Length - 1);
+
+                    var nextCluster = end < infos.Count ? infos[end].GlyphCluster : baseCluster + glyphRun.Characters.Length;
+                    var charStart = Math.Min(Math.Max(0, clusterValue - baseCluster), glyphRun.Characters.Length);
+                    var charEnd = Math.Min(Math.Max(charStart, nextCluster - baseCluster), glyphRun.Characters.Length);
+
+                    clusters.Add(new ClusterDraw
+                    {
+                        Source = glyphRun,
+                        GlyphStart = g,
+                        GlyphLength = end - g,
+                        CharStart = charStart,
+                        CharLength = charEnd - charStart,
+                        Advance = advance,
+                        Run = run,
+                        IsWordSeparator = run.Text[charInRun] == ' ',
+                        Placement = run.Chars is { } chars ? chars[Math.Min(charInRun, chars.Length - 1)] : default,
+                        SegmentIndex = s,
+                    });
+
+                    g = end;
+                }
+
+                shapedTextOffset += textRun.Length;
+            }
+        }
+
+        return clusters;
+    }
+
+    private static GlyphRun BuildClusterRun(ClusterDraw cluster, Point baselineOrigin)
+    {
+        var infos = new GlyphInfo[cluster.GlyphLength];
+        for (var i = 0; i < cluster.GlyphLength; i++)
+            infos[i] = cluster.Source.GlyphInfos[cluster.GlyphStart + i];
+
+        return new GlyphRun(
+            cluster.Source.GlyphTypeface,
+            cluster.Source.FontRenderingEmSize,
+            cluster.Source.Characters.Slice(cluster.CharStart, cluster.CharLength),
+            infos,
+            baselineOrigin: baselineOrigin);
+    }
+
     /// <summary>
     /// Formats one chunk segment into a single <see cref="TextLine"/> via
     /// <see cref="TextFormatter"/>'s <c>FormatLine</c> — the full pipeline
@@ -336,7 +864,10 @@ internal static class SvgText
             source.Add(run.Text, new GenericTextRunProperties(
                 CreateTypeface(run.Style),
                 run.Style.FontSize,
-                foregroundBrush: ResolveFill(run.Style, compileContext, chunkBounds)));
+                textDecorations: CreateDecorations(run.Style),
+                foregroundBrush: ResolveFill(run.Style, compileContext, chunkBounds),
+                cultureInfo: GetCulture(run.Style),
+                fontFeatures: CreateFontFeatures(run.Style)));
         }
 
         var defaultStyle = segment[0].Style;
@@ -349,7 +880,73 @@ internal static class SvgText
     private static Typeface CreateTypeface(in SvgStyle style)
     {
         var fontFamily = style.FontFamily is { } family ? FontFamily.Parse(family) : FontFamily.Default;
-        return new Typeface(fontFamily, style.FontStyle, style.FontWeight);
+        return new Typeface(fontFamily, style.FontStyle, style.FontWeight, style.FontStretch);
+    }
+
+    /// <summary>
+    /// SVG decorations paint with the fill of the element that declared them
+    /// and accumulate through descendants.
+    /// </summary>
+    private static TextDecorationCollection? CreateDecorations(in SvgStyle style)
+    {
+        if (!style.Underline && !style.Overline && !style.LineThrough)
+            return null;
+
+        var decorations = new TextDecorationCollection();
+        if (style.Underline)
+        {
+            decorations.Add(new TextDecoration
+            {
+                Location = TextDecorationLocation.Underline,
+                Stroke = style.UnderlineBrush,
+            });
+        }
+
+        if (style.Overline)
+        {
+            decorations.Add(new TextDecoration
+            {
+                Location = TextDecorationLocation.Overline,
+                Stroke = style.OverlineBrush,
+            });
+        }
+
+        if (style.LineThrough)
+        {
+            decorations.Add(new TextDecoration
+            {
+                Location = TextDecorationLocation.Strikethrough,
+                Stroke = style.LineThroughBrush,
+            });
+        }
+
+        return decorations;
+    }
+
+    private static System.Globalization.CultureInfo? GetCulture(in SvgStyle style)
+    {
+        if (style.Language is not { Length: > 0 } language)
+            return null;
+
+        try
+        {
+            return System.Globalization.CultureInfo.GetCultureInfo(language);
+        }
+        catch (System.Globalization.CultureNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    private static FontFeatureCollection? CreateFontFeatures(in SvgStyle style)
+    {
+        if (!style.KerningDisabled)
+            return null;
+
+        return new FontFeatureCollection
+        {
+            new FontFeature { Tag = "kern", Value = 0 },
+        };
     }
 
     private static void CompileTextPath(
@@ -437,8 +1034,9 @@ internal static class SvgText
                         new[] { info },
                         baselineOrigin: new Point(0, 0));
 
+                    // baseline-shift moves the glyph along the path normal.
                     var transform =
-                        Matrix.CreateTranslation(-advance / 2, 0)
+                        Matrix.CreateTranslation(-advance / 2, -style.BaselineShift)
                         * Matrix.CreateRotation(angle)
                         * Matrix.CreateTranslation(position.X, position.Y);
 
@@ -446,7 +1044,7 @@ internal static class SvgText
                         context.DrawGlyphRun(brush, singleGlyphRun);
                 }
 
-                distance += advance;
+                distance += advance + style.LetterSpacing;
             }
         }
     }
@@ -498,6 +1096,18 @@ internal static class SvgText
         if (pendingSpace)
             builder.Append(' ');
 
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// <c>xml:space="preserve"</c> processing: tabs and newlines become spaces
+    /// and nothing collapses or trims.
+    /// </summary>
+    private static string PreserveWhitespace(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        foreach (var c in text)
+            builder.Append(c is '\t' or '\n' or '\r' ? ' ' : c);
         return builder.ToString();
     }
 
