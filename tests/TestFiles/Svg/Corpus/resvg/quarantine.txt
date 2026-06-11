@@ -135,8 +135,4 @@ structure/svg/attribute-value-via-ENTITY-reference.svg -- DTD entities are delib
 # brush mapping; the origin conjugation there needs the same rework as the
 # patternTransform composition gap.
 
-# The objectBoundingBox pattern path resolves its destination relatively;
-# the brush transform composes with that mapping at a different stage than
-# the SVG user-space model. Needs the DrawingRecordingBrush tile lowering
 # to apply transforms after the relative resolution.
-structure/transform-origin/on-pattern-object-bounding-box.svg -- brush transform composes before the relative tile mapping

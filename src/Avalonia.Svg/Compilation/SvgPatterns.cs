@@ -106,16 +106,23 @@ internal static class SvgPatterns
             && !transform.IsIdentity)
         {
             // patternTransform (and its transform-origin) acts in user space,
-            // anchored at the user origin. The brush transform acts in the
-            // target-bounds-relative space, so the whole matrix conjugates by
-            // the bounds offset.
+            // anchored at the user origin. The brush shader composes the
+            // transform about the target bounds position and then translates
+            // by the resolved destination position, so conjugating by the sum
+            // of the two yields the user-space behavior for both units modes.
             transform = SvgCompiler.ApplyTransformOrigin(
                 element, transform, new Rect(context.Viewport), bounds);
-            if (bounds.X != 0 || bounds.Y != 0)
+
+            var destinationPosition = boxUnits
+                ? new Point(bounds.X + x * bounds.Width, bounds.Y + y * bounds.Height)
+                : new Point(x, y);
+            var anchorX = bounds.X + destinationPosition.X;
+            var anchorY = bounds.Y + destinationPosition.Y;
+            if (anchorX != 0 || anchorY != 0)
             {
-                transform = Matrix.CreateTranslation(bounds.X, bounds.Y)
+                transform = Matrix.CreateTranslation(anchorX, anchorY)
                             * transform
-                            * Matrix.CreateTranslation(-bounds.X, -bounds.Y);
+                            * Matrix.CreateTranslation(-anchorX, -anchorY);
             }
 
             brush.Transform = new ImmutableTransform(transform);
