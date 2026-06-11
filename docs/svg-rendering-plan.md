@@ -1190,10 +1190,16 @@ already-known instance of this rule.
   machine has a partial Noto Sans installed; NotoSans-Bold.ttf is now
   embedded alongside Regular). Six text goldens regenerated for the
   font/whitespace changes, verified against references.
-  Known issue for the text sweep: segments with multiple styled runs
-  draw overlapped by roughly a glyph (visible in the *-on-tspan
-  goldens; pre-existing, within reference tolerance, the cause is in
-  the run-advance accounting in FlushChunk/FormatSegment).
+  A long-standing text artifact also fell: glyphs on the transparent
+  canvas looked fattened/double-struck. That was subpixel (LCD/
+  ClearType) coverage blended into non-opaque pixels — only well-defined
+  over opaque ones — so the compiler now pushes
+  `TextRenderingMode.Antialias` render options around the document,
+  like browsers rasterizing SVG layers (nested recording playback
+  inherits it; brush-rasterized tiles already rendered LCD-free via
+  PictureRenderTarget). Seven text goldens regenerated; the previously
+  borderline tspan/text diffs all dropped to MATCH against the upstream
+  references.
   Paint-servers fixes: userSpaceOnUse gradient defaults are 50%
   percentages, geometry attributes inherit only across the same gradient
   kind, negative radius invalidates the paint, stop offsets accept only
