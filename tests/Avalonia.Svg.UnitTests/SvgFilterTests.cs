@@ -188,7 +188,7 @@ public class SvgFilterTests
     public void Unsupported_Primitive_Renders_Unfiltered()
     {
         Assert.False(Resolve(
-            """<filter id="f"><feTurbulence baseFrequency="0.05"/></filter>""",
+            """<filter id="f"><feDisplacementMap scale="20"/></filter>""",
             DefaultBounds, out _, out _));
     }
 

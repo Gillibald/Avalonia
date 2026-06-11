@@ -21,6 +21,20 @@ internal static class SvgImages
     [ThreadStatic]
     private static int t_nestedDepth;
 
+    /// <summary>
+    /// Guards nested SVG-in-image compilation depth (shared with feImage).
+    /// A successful enter must be paired with <see cref="ExitNested"/>.
+    /// </summary>
+    internal static bool EnterNested()
+    {
+        if (t_nestedDepth >= MaxNestedDepth)
+            return false;
+        t_nestedDepth++;
+        return true;
+    }
+
+    internal static void ExitNested() => t_nestedDepth--;
+
     public static void Compile(
         SvgElement element, DrawingContext context, SvgCompileContext compileContext, in SvgStyle style)
     {
@@ -98,9 +112,8 @@ internal static class SvgImages
                         intrinsicHeight * contentMatrix.M22);
                     context.DrawImage(image, new Rect(image.Size), destination);
                 }
-                else if (content is SvgDocument nestedDocument && t_nestedDepth < MaxNestedDepth)
+                else if (content is SvgDocument nestedDocument && EnterNested())
                 {
-                    t_nestedDepth++;
                     try
                     {
                         using (context.PushTransform(contentMatrix))
@@ -109,7 +122,7 @@ internal static class SvgImages
                     }
                     finally
                     {
-                        t_nestedDepth--;
+                        ExitNested();
                     }
                 }
             }
@@ -131,9 +144,9 @@ internal static class SvgImages
     /// Loads image content from a <c>data:</c> URI or a file next to the
     /// document. Returns a <see cref="Bitmap"/>, a nested
     /// <see cref="SvgDocument"/>, or null when unresolvable (remote
-    /// references are never fetched).
+    /// references are never fetched). Shared with feImage.
     /// </summary>
-    private static object? LoadContent(SvgDocument document, string href)
+    internal static object? LoadContent(SvgDocument document, string href)
     {
         try
         {
