@@ -164,6 +164,23 @@ public sealed class DrawingRecording : IDisposable
     }
 
     /// <summary>
+    /// Replays an immutable recording into a drawing context implementation.
+    /// Backends use this to rasterize recording-sourced effects (e.g. the
+    /// SVG feImage primitive).
+    /// </summary>
+    internal void Render(Avalonia.Platform.IDrawingContextImpl context)
+    {
+        ThrowIfDisposed();
+        if (_items == null)
+        {
+            throw new InvalidOperationException(
+                "Only immutable DrawingRecordings can render outside the compositor.");
+        }
+
+        _items.Render(context);
+    }
+
+    /// <summary>
     /// Hit tests the recorded content against a point.
     /// </summary>
     public bool HitTest(Point point)

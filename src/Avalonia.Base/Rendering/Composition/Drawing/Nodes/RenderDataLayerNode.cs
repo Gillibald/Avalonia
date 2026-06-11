@@ -24,13 +24,17 @@ internal class RenderDataLayerNode : RenderDataPushNode
             // is a backend hint for the compositor's offscreen buffer extent — it
             // does not by itself produce visible pixels and must not extend the
             // recorded bounds. Effect inflation (e.g. blur) does affect visible
-            // pixels and is included. An effect can paint without any content
-            // (a flood fills its whole layer), so an empty layer with an
-            // effect is as large as the layer itself.
+            // pixels and is included. An effect can paint beyond (or without)
+            // any content — floods and recording sources fill their layer —
+            // so with an effect attached the layer's own extent joins the
+            // union.
             var inner = base.Bounds;
             if (inner == null)
                 return Options.Effect != null ? Options.Bounds : null;
-            return InflateForEffect(inner.Value);
+            var inflated = InflateForEffect(inner.Value);
+            if (Options.Effect != null && Options.Bounds is { } layerBounds)
+                inflated = inflated.Union(layerBounds);
+            return inflated;
         }
     }
 
@@ -44,7 +48,10 @@ internal class RenderDataLayerNode : RenderDataPushNode
             var inner = base.ServerBounds;
             if (inner == null)
                 return Options.Effect != null ? Options.Bounds : null;
-            return InflateForEffect(inner.Value);
+            var inflated = InflateForEffect(inner.Value);
+            if (Options.Effect != null && Options.Bounds is { } layerBounds)
+                inflated = inflated.Union(layerBounds);
+            return inflated;
         }
     }
 
