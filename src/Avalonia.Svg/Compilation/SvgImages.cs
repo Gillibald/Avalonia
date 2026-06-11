@@ -85,8 +85,13 @@ internal static class SvgImages
         var contentMatrix = preserveAspectRatio.ComputeTransform(
             new SvgViewBox(0, 0, intrinsicWidth, intrinsicHeight), new Size(width, height));
 
-        // The image viewport clips its content (slice and stretched cases).
-        using (context.PushClip(new Rect(x, y, width, height)))
+        // The image viewport clips its content (slice and stretched cases);
+        // the legacy clip property insets that viewport per edge.
+        var viewportClip = new Rect(x, y, width, height);
+        if (element.GetStyleOrAttribute("clip") is { } clip && TryParseClipRect(clip, out var insets))
+            viewportClip = viewportClip.Deflate(insets);
+
+        using (context.PushClip(viewportClip))
         using (context.PushTransform(Matrix.CreateTranslation(x, y)))
         {
             // image-rendering speed hints opt out of smooth interpolation.
@@ -251,6 +256,42 @@ internal static class SvgImages
         while (start < bytes.Length && bytes[start] is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
             start++;
         return start < bytes.Length && bytes[start] == (byte)'<';
+    }
+
+    /// <summary>
+    /// Parses the legacy <c>clip</c> property's <c>rect(top right bottom
+    /// left)</c> form into per-edge viewport insets; <c>auto</c> components
+    /// leave their edge unclipped.
+    /// </summary>
+    private static bool TryParseClipRect(string value, out Thickness insets)
+    {
+        insets = default;
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith("rect(", StringComparison.Ordinal) || !trimmed.EndsWith(")", StringComparison.Ordinal))
+            return false;
+
+        var arguments = trimmed.Substring(5, trimmed.Length - 6)
+            .Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        if (arguments.Length != 4)
+            return false;
+
+        var edges = new double[4]; // top, right, bottom, left
+        for (var i = 0; i < 4; i++)
+        {
+            if (arguments[i] == "auto")
+                continue;
+            if (!SvgLength.TryParse(arguments[i].AsSpan(), out var length)
+                || length.Unit == SvgLengthUnit.Percent)
+            {
+                return false;
+            }
+
+            edges[i] = Math.Max(0, length.Resolve(
+                i % 2 == 0 ? SvgLengthAxis.Vertical : SvgLengthAxis.Horizontal, default));
+        }
+
+        insets = new Thickness(edges[3], edges[0], edges[1], edges[2]);
+        return true;
     }
 
     private static double GetLength(
