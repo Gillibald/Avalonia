@@ -268,10 +268,12 @@ internal static class SvgCompiler
                         var filterScope = default(SvgFilters.SvgFilterScope);
                         if (!compileContext.Measuring
                             && element.GetStyleOrAttribute("filter") is { } filterValue
-                            && SvgClipPaths.TryParseUrlReference(filterValue, out var filterId))
+                            && filterValue != "none")
                         {
                             var filterBounds = GetFillBounds(element, compileContext, style);
-                            filterScope = SvgFilters.Push(context, compileContext, filterId, filterBounds);
+                            filterScope = SvgClipPaths.TryParseUrlReference(filterValue, out var filterId)
+                                ? SvgFilters.Push(context, compileContext, filterId, filterBounds, style)
+                                : SvgFilters.PushFunctions(context, filterValue, filterBounds, style);
                         }
 
                         using (filterScope)
