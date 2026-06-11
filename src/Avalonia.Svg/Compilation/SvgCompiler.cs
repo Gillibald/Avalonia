@@ -451,7 +451,7 @@ internal static class SvgCompiler
     private static double GetSvgViewportLength(
         SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style, double fallback)
     {
-        var value = element.GetStyleOrAttribute(name);
+        var value = element.GetAnimatedOrAttribute(name);
         if (value != null && value != "auto" && SvgLength.TryParse(value.AsSpan(), out var length))
             return style.ResolveLength(length, axis);
         return fallback;
@@ -709,32 +709,47 @@ internal static class SvgCompiler
             var x = GetLength(element, "x", SvgLengthAxis.Horizontal, style);
             var y = GetLength(element, "y", SvgLengthAxis.Vertical, style);
 
-            // Content consuming context paints compiles per site — the use
-            // element's own computed fill/stroke are the context values
-            // (themselves substituted, so context chains resolve outward),
-            // and context paint servers map onto the target's geometry.
+            // Per the SVG use semantics the referenced content is a clone
+            // inheriting from this site. Sites whose inheritable style is
+            // the default share the document-cached recording (compiled with
+            // exactly that style); styled sites — and content consuming
+            // context paints — compile per site with the site's style.
+            var defaults = SvgStyle.CreateDefault(compileContext.Viewport);
+            defaults.RootFontSize = compileContext.RootFontSize;
+            var usesContextPaint = compileContext.UsesContextPaint(target);
+
             DrawingRecording? recording;
             DrawingRecordingOwnership ownership;
             SvgHitNode? hitSubtree;
-            if (compileContext.UsesContextPaint(target))
+            if (usesContextPaint || !style.InheritablesEqual(defaults))
             {
-                // The context element's box is the use's content box: the
-                // target's fill bounds carried through its own transform.
-                var contextBounds = GetFillBounds(target, compileContext, style);
-                if (GetTransformValue(target) is { } targetTransform
-                    && TryParseTransformValue(targetTransform, out var targetMatrix)
-                    && !targetMatrix.IsIdentity)
+                // The use element's own computed fill/stroke are the context
+                // values (themselves substituted, so context chains resolve
+                // outward); the accumulated transform restarts at the
+                // recording root.
+                var seed = style;
+                seed.ContextFill = style.ResolveContextPaint(style.Fill);
+                seed.ContextStroke = style.ResolveContextPaint(style.Stroke);
+                seed.ContextTransform = Matrix.Identity;
+                seed.ContextBounds = default;
+
+                if (usesContextPaint)
                 {
-                    targetMatrix = ApplyTransformOrigin(target, targetMatrix, compileContext, style);
-                    contextBounds = contextBounds.TransformToAABB(targetMatrix);
+                    // The context element's box is the use's content box: the
+                    // target's fill bounds carried through its own transform.
+                    var contextBounds = GetFillBounds(target, compileContext, style);
+                    if (GetTransformValue(target) is { } targetTransform
+                        && TryParseTransformValue(targetTransform, out var targetMatrix)
+                        && !targetMatrix.IsIdentity)
+                    {
+                        targetMatrix = ApplyTransformOrigin(target, targetMatrix, compileContext, style);
+                        contextBounds = contextBounds.TransformToAABB(targetMatrix);
+                    }
+
+                    seed.ContextBounds = contextBounds;
                 }
 
-                recording = compileContext.GetContextRecording(
-                    target,
-                    style.ResolveContextPaint(style.Fill),
-                    style.ResolveContextPaint(style.Stroke),
-                    contextBounds,
-                    out ownership, out hitSubtree);
+                recording = compileContext.GetSiteRecording(target, seed, out ownership, out hitSubtree);
             }
             else
             {
@@ -969,7 +984,7 @@ internal static class SvgCompiler
 
     private static double? GetCornerRadius(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)
     {
-        var value = element.GetStyleOrAttribute(name);
+        var value = element.GetAnimatedOrAttribute(name);
         if (value == null || value == "auto")
             return null;
         if (SvgLength.TryParse(value.AsSpan(), out var length)
@@ -1316,7 +1331,9 @@ internal static class SvgCompiler
 
     private static double GetLength(SvgElement element, string name, SvgLengthAxis axis, in SvgStyle style)
     {
-        var value = element.GetStyleOrAttribute(name);
+        // Geometry resolves from presentation attributes (and animation)
+        // only — CSS geometry properties are out of scope, like resvg.
+        var value = element.GetAnimatedOrAttribute(name);
         if (value != null && SvgLength.TryParse(value.AsSpan(), out var length))
             return style.ResolveLength(length, axis);
         return 0;

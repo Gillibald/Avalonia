@@ -110,8 +110,11 @@ public class SvgRenderTestBase : IDisposable
         public SvgHost(string svg, Uri? baseUri = null)
         {
             _image = new SvgImage(SvgDocument.Parse(svg, baseUri));
-            Width = _image.Size.Width;
-            Height = _image.Size.Height;
+
+            // A zero/negative-size document renders nothing; the render
+            // surface still needs a pixel to produce a comparable file.
+            Width = Math.Max(1, _image.Size.Width);
+            Height = Math.Max(1, _image.Size.Height);
         }
 
         public override void Render(DrawingContext context)
