@@ -36,6 +36,83 @@ public class SvgPathSamplerTests
     }
 
     [Fact]
+    public void Full_Circle_Arc_Samples_Stay_On_The_Circle()
+    {
+        // One arc command spanning a whole circle — the flattening must adapt
+        // to the length or the samples collapse onto a coarse polygon.
+        var sampler = SvgPathSampler.Parse("M 420 60 A 240 240 0 1 1 419.9 60".AsSpan());
+        var radius = sampler.TotalLength / (2 * Math.PI);
+
+        // The centroid of evenly spaced samples of a full circle is its center.
+        var count = 0;
+        double cx = 0, cy = 0;
+        for (var s = 0.0; s < sampler.TotalLength; s += 1.0, count++)
+        {
+            Assert.True(sampler.TryGetPointAtLength(s, out var point, out _));
+            cx += point.X;
+            cy += point.Y;
+        }
+
+        cx /= count;
+        cy /= count;
+
+        for (var s = 0.0; s < sampler.TotalLength; s += 1.0)
+        {
+            sampler.TryGetPointAtLength(s, out var point, out _);
+            var distance = Math.Sqrt((point.X - cx) * (point.X - cx) + (point.Y - cy) * (point.Y - cy));
+            Assert.InRange(distance, radius - 0.1, radius + 0.1);
+        }
+    }
+
+    [Fact]
+    public void Full_Circle_Arc_Tangents_Are_Smooth()
+    {
+        var sampler = SvgPathSampler.Parse("M 420 60 A 240 240 0 1 1 419.9 60".AsSpan());
+
+        // Walking the circle in glyph-sized strides, the tangent must advance
+        // gradually (true rate: stride/radius ≈ 0.021 rad) instead of holding
+        // still within a coarse chord and jumping at its end.
+        const double stride = 5.0;
+        var totalTurn = 0.0;
+        sampler.TryGetPointAtLength(0, out _, out var previousAngle);
+        for (var s = stride; s <= sampler.TotalLength - stride; s += stride)
+        {
+            Assert.True(sampler.TryGetPointAtLength(s, out _, out var angle));
+
+            var delta = angle - previousAngle;
+            while (delta > Math.PI)
+                delta -= 2 * Math.PI;
+            while (delta < -Math.PI)
+                delta += 2 * Math.PI;
+
+            Assert.InRange(Math.Abs(delta), 0.0, 0.06);
+            totalTurn += delta;
+            previousAngle = angle;
+        }
+
+        // The walk starts and ends a stride away from the path ends, so a
+        // couple of strides' worth of turning is unaccounted for.
+        Assert.InRange(Math.Abs(totalTurn), 2 * Math.PI - 4 * stride / 240, 2 * Math.PI + 0.05);
+    }
+
+    [Fact]
+    public void Long_Cubic_Tangents_Are_Smooth()
+    {
+        // A single ~470-unit cubic: the old fixed 24-step flattening made
+        // ~20-unit chords with stepped tangents.
+        var sampler = SvgPathSampler.Parse("M 0 0 C 200 0 300 200 500 200".AsSpan());
+
+        const double stride = 5.0;
+        sampler.TryGetPointAtLength(0, out _, out var previousAngle);
+        for (var s = stride; s <= sampler.TotalLength; s += stride)
+        {
+            Assert.True(sampler.TryGetPointAtLength(s, out _, out var angle));
+            Assert.InRange(Math.Abs(angle - previousAngle), 0.0, 0.06);
+            previousAngle = angle;
+        }
+    }
+
+    [Fact]
     public void Vertices_Carry_Tangent_Directions()
     {
         var sampler = SvgPathSampler.Parse("M 0 0 L 10 0 L 10 10".AsSpan());

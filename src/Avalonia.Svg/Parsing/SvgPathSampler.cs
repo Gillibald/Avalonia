@@ -49,12 +49,25 @@ internal readonly struct SvgPathVertex
 /// <summary>
 /// Receives parsed path commands (via <see cref="SvgPathParser"/>) and produces
 /// a flattened arc-length parameterization plus the vertex/tangent list — the
-/// inputs for marker placement and text-on-path layout. Curve flattening uses
-/// fixed subdivision, which is plenty for positioning (not for rendering).
+/// inputs for marker placement and text-on-path layout. Curve flattening
+/// adapts the subdivision to the curve's length: text-on-path takes both the
+/// position and the tangent from the flat chords, so a chord must stay well
+/// below a glyph advance even when a single command spans a whole circle.
 /// </summary>
 internal sealed class SvgPathSampler : IGeometryContext
 {
-    private const int CurveSteps = 24;
+    /// <summary>Target chord length, in user units.</summary>
+    private const double SampleSpacing = 2.0;
+    private const int MinCurveSteps = 8;
+    private const int MaxCurveSteps = 1024;
+
+    private static int StepsForLength(double estimatedLength)
+    {
+        if (double.IsNaN(estimatedLength) || estimatedLength <= SampleSpacing * MinCurveSteps)
+            return MinCurveSteps;
+
+        return (int)Math.Min(MaxCurveSteps, Math.Ceiling(estimatedLength / SampleSpacing));
+    }
 
     private readonly List<Point> _points = new();
     private readonly List<double> _lengths = new();
@@ -127,6 +140,9 @@ internal sealed class SvgPathSampler : IGeometryContext
         return length > 1e-9 ? v / length : null;
     }
 
+    private static double PointDistance(Point from, Point to)
+        => new Vector(to.X - from.X, to.Y - from.Y).Length;
+
     private void AddSamplePoint(Point point)
     {
         if (_points.Count == 0)
@@ -183,9 +199,13 @@ internal sealed class SvgPathSampler : IGeometryContext
     public void CubicBezierTo(Point controlPoint1, Point controlPoint2, Point endPoint, bool isStroked = true)
     {
         var p0 = _current;
-        for (var i = 1; i <= CurveSteps; i++)
+        // The control polygon length bounds the curve length from above.
+        var steps = StepsForLength(
+            PointDistance(p0, controlPoint1) + PointDistance(controlPoint1, controlPoint2)
+            + PointDistance(controlPoint2, endPoint));
+        for (var i = 1; i <= steps; i++)
         {
-            var t = (double)i / CurveSteps;
+            var t = (double)i / steps;
             var u = 1 - t;
             var point = new Point(
                 u * u * u * p0.X + 3 * u * u * t * controlPoint1.X + 3 * u * t * t * controlPoint2.X + t * t * t * endPoint.X,
@@ -202,9 +222,10 @@ internal sealed class SvgPathSampler : IGeometryContext
     public void QuadraticBezierTo(Point controlPoint, Point endPoint, bool isStroked = true)
     {
         var p0 = _current;
-        for (var i = 1; i <= CurveSteps; i++)
+        var steps = StepsForLength(PointDistance(p0, controlPoint) + PointDistance(controlPoint, endPoint));
+        for (var i = 1; i <= steps; i++)
         {
-            var t = (double)i / CurveSteps;
+            var t = (double)i / steps;
             var u = 1 - t;
             var point = new Point(
                 u * u * p0.X + 2 * u * t * controlPoint.X + t * t * endPoint.X,
@@ -270,8 +291,9 @@ internal sealed class SvgPathSampler : IGeometryContext
             return length > 1e-9 ? v / length : new Vector(1, 0);
         }
 
-        for (var i = 1; i <= CurveSteps; i++)
-            AddSamplePoint(At(theta1 + delta * i / CurveSteps));
+        var steps = StepsForLength(Math.Abs(delta) * Math.Max(rx, ry));
+        for (var i = 1; i <= steps; i++)
+            AddSamplePoint(At(theta1 + delta * i / steps));
 
         CompleteSegment(point, TangentAt(theta1), TangentAt(theta2));
     }
