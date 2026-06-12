@@ -1,0 +1,270 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="560" viewBox="0 0 840 560">
+  <!-- An animated orrery that leans on every part of the pipeline at once:
+       a reused star symbol replayed ~60 times from one shared recording,
+       gradient-shaded bodies, a blurred sun glow and comet tail, nested
+       structural rotations (moons orbit planets that orbit the sun), an
+       elliptical orbit from a static scale around an animated rotate,
+       text on a circular path, and both animation channels - the lamps at
+       the bottom run on paint (brush mutation) and structure (recompile). -->
+
+  <defs>
+    <radialGradient id="space" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#1e2746"/>
+      <stop offset="0.55" stop-color="#141b33"/>
+      <stop offset="1" stop-color="#0b1022"/>
+    </radialGradient>
+
+    <radialGradient id="sunCore" cx="0.42" cy="0.4" r="0.85">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset="0.45" stop-color="#ffd166"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </radialGradient>
+
+    <radialGradient id="rock" cx="0.35" cy="0.32" r="0.95">
+      <stop offset="0" stop-color="#cbd5e1"/>
+      <stop offset="1" stop-color="#64748b"/>
+    </radialGradient>
+
+    <radialGradient id="venus" cx="0.35" cy="0.32" r="0.95">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </radialGradient>
+
+    <radialGradient id="earth" cx="0.35" cy="0.32" r="0.95">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="0.55" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </radialGradient>
+
+    <radialGradient id="mars" cx="0.35" cy="0.32" r="0.95">
+      <stop offset="0" stop-color="#fca5a5"/>
+      <stop offset="1" stop-color="#b91c1c"/>
+    </radialGradient>
+
+    <radialGradient id="saturn" cx="0.35" cy="0.32" r="0.95">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#ca8a04"/>
+    </radialGradient>
+
+    <linearGradient id="tail" x1="1" y1="0.5" x2="0" y2="0.5">
+      <stop offset="0" stop-color="#a5f3fc"/>
+      <stop offset="0.35" stop-color="#67e8f9" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#67e8f9" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#c4b5fd"/>
+    </linearGradient>
+
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+
+    <symbol id="star" viewBox="-4 -4 8 8" overflow="visible">
+      <path d="M 0 -3.6 L 0.9 -0.9 L 3.6 0 L 0.9 0.9 L 0 3.6 L -0.9 0.9 L -3.6 0 L -0.9 -0.9 Z" fill="#e2e8f0"/>
+    </symbol>
+
+    <path id="labelOrbit" d="M 420 60 A 240 240 0 1 1 419.9 60"/>
+  </defs>
+
+  <!-- Deep space -->
+  <rect width="840" height="560" fill="url(#space)"/>
+  <ellipse cx="190" cy="430" rx="190" ry="90" fill="#7c3aed" opacity="0.10" filter="url(#glow)"/>
+  <ellipse cx="690" cy="120" rx="160" ry="80" fill="#0ea5e9" opacity="0.10" filter="url(#glow)"/>
+
+  <!-- Starfield: one shared recording, replayed per use site -->
+  <g opacity="0.9">
+    <use href="#star" x="36"  y="44"  width="6" height="6"/>
+    <use href="#star" x="92"  y="120" width="4" height="4"/>
+    <use href="#star" x="61"  y="236" width="5" height="5"/>
+    <use href="#star" x="33"  y="342" width="4" height="4"/>
+    <use href="#star" x="105" y="448" width="6" height="6"/>
+    <use href="#star" x="58"  y="514" width="4" height="4"/>
+    <use href="#star" x="148" y="58"  width="4" height="4"/>
+    <use href="#star" x="176" y="172" width="5" height="5"/>
+    <use href="#star" x="139" y="306" width="4" height="4"/>
+    <use href="#star" x="186" y="392" width="4" height="4"/>
+    <use href="#star" x="223" y="496" width="5" height="5"/>
+    <use href="#star" x="246" y="36"  width="5" height="5"/>
+    <use href="#star" x="262" y="132" width="4" height="4"/>
+    <use href="#star" x="300" y="74"  width="4" height="4"/>
+    <use href="#star" x="342" y="40"  width="6" height="6"/>
+    <use href="#star" x="396" y="92"  width="4" height="4"/>
+    <use href="#star" x="438" y="34"  width="4" height="4"/>
+    <use href="#star" x="492" y="66"  width="5" height="5"/>
+    <use href="#star" x="540" y="38"  width="4" height="4"/>
+    <use href="#star" x="588" y="84"  width="5" height="5"/>
+    <use href="#star" x="642" y="48"  width="4" height="4"/>
+    <use href="#star" x="694" y="96"  width="6" height="6"/>
+    <use href="#star" x="738" y="42"  width="4" height="4"/>
+    <use href="#star" x="788" y="88"  width="5" height="5"/>
+    <use href="#star" x="812" y="158" width="4" height="4"/>
+    <use href="#star" x="772" y="226" width="5" height="5"/>
+    <use href="#star" x="806" y="300" width="4" height="4"/>
+    <use href="#star" x="768" y="368" width="6" height="6"/>
+    <use href="#star" x="810" y="438" width="4" height="4"/>
+    <use href="#star" x="762" y="506" width="5" height="5"/>
+    <use href="#star" x="700" y="532" width="4" height="4"/>
+    <use href="#star" x="624" y="508" width="5" height="5"/>
+    <use href="#star" x="548" y="534" width="4" height="4"/>
+    <use href="#star" x="468" y="512" width="4" height="4"/>
+    <use href="#star" x="388" y="538" width="5" height="5"/>
+    <use href="#star" x="306" y="516" width="4" height="4"/>
+    <use href="#star" x="252" y="416" width="4" height="4"/>
+    <use href="#star" x="296" y="338" width="3" height="3"/>
+    <use href="#star" x="200" y="252" width="3" height="3"/>
+    <use href="#star" x="252" y="186" width="4" height="4"/>
+    <use href="#star" x="332" y="150" width="3" height="3"/>
+    <use href="#star" x="430" y="128" width="3" height="3"/>
+    <use href="#star" x="524" y="142" width="4" height="4"/>
+    <use href="#star" x="606" y="178" width="3" height="3"/>
+    <use href="#star" x="664" y="248" width="4" height="4"/>
+    <use href="#star" x="688" y="334" width="3" height="3"/>
+    <use href="#star" x="662" y="424" width="4" height="4"/>
+    <use href="#star" x="592" y="468" width="3" height="3"/>
+    <use href="#star" x="498" y="486" width="4" height="4"/>
+    <use href="#star" x="398" y="474" width="3" height="3"/>
+    <use href="#star" x="310" y="452" width="4" height="4"/>
+    <use href="#star" x="118" y="38"  width="3" height="3"/>
+    <use href="#star" x="212" y="92"  width="3" height="3"/>
+    <use href="#star" x="68"  y="160" width="3" height="3"/>
+    <use href="#star" x="156" y="226" width="3" height="3"/>
+    <use href="#star" x="96"  y="296" width="3" height="3"/>
+    <use href="#star" x="166" y="350" width="3" height="3"/>
+    <use href="#star" x="84"  y="396" width="3" height="3"/>
+    <use href="#star" x="160" y="462" width="3" height="3"/>
+    <use href="#star" x="744" y="142" width="3" height="3"/>
+    <use href="#star" x="800" y="372" width="3" height="3"/>
+    <use href="#star" x="726" y="464" width="3" height="3"/>
+
+    <!-- A few stars twinkle on the structural channel -->
+    <use href="#star" x="362" y="116" width="6" height="6">
+      <animate attributeName="opacity" values="1;0.15;1" dur="2.6s" repeatCount="indefinite"/>
+    </use>
+    <use href="#star" x="652" y="140" width="5" height="5">
+      <animate attributeName="opacity" values="0.2;1;0.2" dur="3.4s" repeatCount="indefinite"/>
+    </use>
+    <use href="#star" x="218" y="318" width="5" height="5">
+      <animate attributeName="opacity" values="1;0.25;1" dur="4.1s" repeatCount="indefinite"/>
+    </use>
+    <use href="#star" x="716" y="396" width="6" height="6">
+      <animate attributeName="opacity" values="0.3;1;0.3" dur="2.9s" repeatCount="indefinite"/>
+    </use>
+  </g>
+
+  <!-- A pulsar driven by the paint channel: only the brush mutates -->
+  <circle cx="84" cy="76" r="5" fill="#ffffff" filter="url(#soft)">
+    <animate attributeName="fill" values="#ffffff;#38bdf8;#ffffff" dur="1.8s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Orbit rings -->
+  <g fill="none" stroke="#94a3b8" stroke-opacity="0.28">
+    <circle cx="420" cy="300" r="70"  stroke-dasharray="3 5"/>
+    <circle cx="420" cy="300" r="110" stroke-dasharray="3 5"/>
+    <circle cx="420" cy="300" r="150" stroke-dasharray="3 5"/>
+    <circle cx="420" cy="300" r="195" stroke-dasharray="3 5"/>
+    <circle cx="420" cy="300" r="240" stroke-dasharray="2 7"/>
+  </g>
+
+  <!-- Sun: blurred glow halo under a gradient body, with a pulsing radius
+       and a slowly counter-rotating dashed corona -->
+  <circle cx="420" cy="300" r="40" fill="#fbbf24" opacity="0.55" filter="url(#glow)">
+    <animate attributeName="r" values="40;47;40" dur="5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="420" cy="300" r="30" fill="url(#sunCore)">
+    <animate attributeName="r" values="30;32.5;30" dur="5s" repeatCount="indefinite"/>
+  </circle>
+  <g fill="none" stroke="#fde68a" stroke-opacity="0.5">
+    <animateTransform attributeName="transform" type="rotate"
+                      from="360 420 300" to="0 420 300" dur="24s" repeatCount="indefinite"/>
+    <circle cx="420" cy="300" r="38" stroke-dasharray="2 10" stroke-width="3"/>
+  </g>
+
+  <!-- Inner rocky planet -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="40 420 300" to="400 420 300" dur="6s" repeatCount="indefinite"/>
+    <circle cx="490" cy="300" r="7" fill="url(#rock)"/>
+  </g>
+
+  <!-- Venus -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="200 420 300" to="560 420 300" dur="10s" repeatCount="indefinite"/>
+    <circle cx="530" cy="300" r="10" fill="url(#venus)"/>
+  </g>
+
+  <!-- Earth with an orbiting moon: nested structural rotations -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="320 420 300" to="680 420 300" dur="16s" repeatCount="indefinite"/>
+    <circle cx="570" cy="300" r="12" fill="url(#earth)"/>
+    <g>
+      <animateTransform attributeName="transform" type="rotate"
+                        from="0 570 300" to="360 570 300" dur="2.4s" repeatCount="indefinite"/>
+      <circle cx="590" cy="300" r="3.4" fill="#cbd5e1"/>
+    </g>
+  </g>
+
+  <!-- Mars with a blinking beacon (discrete sampling) -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="120 420 300" to="480 420 300" dur="21s" repeatCount="indefinite"/>
+    <circle cx="615" cy="300" r="9" fill="url(#mars)"/>
+    <circle cx="615" cy="287" r="1.8" fill="#f87171">
+      <animate attributeName="visibility" values="visible;hidden" dur="0.8s"
+               calcMode="discrete" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Ringed gas giant: ring arcs layered behind and in front of the body -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+                      from="20 420 300" to="380 420 300" dur="30s" repeatCount="indefinite"/>
+    <g transform="rotate(-18 660 300)">
+      <path d="M 632 300 A 28 9 0 0 1 688 300" fill="none" stroke="#eab308" stroke-width="4" stroke-opacity="0.7"/>
+      <circle cx="660" cy="300" r="15" fill="url(#saturn)"/>
+      <path d="M 688 300 A 28 9 0 0 1 632 300" fill="none" stroke="#facc15" stroke-width="4" stroke-opacity="0.9"/>
+    </g>
+  </g>
+
+  <!-- Comet: a static squash around an animated rotate makes the orbit
+       elliptical; the gradient tail blurs through a filter -->
+  <g transform="translate(420 300) scale(1 0.42) rotate(-14) translate(-420 -300)">
+    <g>
+      <animateTransform attributeName="transform" type="rotate"
+                        from="0 420 300" to="360 420 300" dur="13s" repeatCount="indefinite"/>
+      <g filter="url(#soft)">
+        <path d="M 700 300 L 624 291 Q 612 300 624 309 Z" fill="url(#tail)" transform="rotate(90 662 300)"/>
+        <circle cx="662" cy="238" r="5" fill="#cffafe"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Label riding the outer orbit -->
+  <text font-size="13" letter-spacing="6" fill="#94a3b8" fill-opacity="0.75" font-family="Verdana">
+    <textPath href="#labelOrbit" startOffset="320">RETAINED RECORDINGS · TWO ANIMATION CHANNELS · ONE DOCUMENT</textPath>
+  </text>
+
+  <!-- Title block -->
+  <text x="36" y="48" font-size="30" font-weight="bold" fill="url(#title)" font-family="Verdana">Orrery</text>
+  <text x="36" y="70" font-size="12" fill="#94a3b8" font-family="Verdana">~150 elements · 18 SMIL timelines · compiled once per tick</text>
+
+  <!-- Channel legend: the left lamp animates paint (brush mutation), the
+       right one structure (recompile) -->
+  <g font-family="Verdana" font-size="12">
+    <circle cx="46" cy="514" r="7" fill="#22d3ee">
+      <animate attributeName="fill" values="#22d3ee;#f472b6;#22d3ee" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <text x="62" y="518" fill="#cbd5e1">paint channel</text>
+    <circle cx="186" cy="514" r="7" fill="#a3e635">
+      <animate attributeName="r" values="7;4;7" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <text x="202" y="518" fill="#cbd5e1">structural channel</text>
+  </g>
+</svg>
