@@ -22,6 +22,14 @@ public partial class Compositor
     }
     
     public CompositionContainerVisual CreateContainerVisual() => new(this, new ServerCompositionContainerVisual(_server));
+
+    /// <summary>
+    /// Creates a visual that renders a compositor-bound
+    /// <see cref="DrawingRecording"/> behind its children; see
+    /// <see cref="CompositionRecordingVisual"/>.
+    /// </summary>
+    public CompositionRecordingVisual CreateRecordingVisual() =>
+        new(this, new ServerCompositionRecordingVisual(_server));
         
     public ExpressionAnimation CreateExpressionAnimation() => new ExpressionAnimation(this);
 
