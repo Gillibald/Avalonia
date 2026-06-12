@@ -1159,18 +1159,30 @@ already-known instance of this rule.
   tolerance, review the outliers ("UB" references mark upstream-undecided
   behavior).
   Scoreboard: **shapes 133/133; painting 304/304; paint-servers
-  149/149; masking 93/93; text 338/356 (18 quarantined: vertical
-  writing modes ×16, language-driven CJK glyph variants ×1,
-  tiny-coordinate textPath sampling ×1);
+  149/149; masking 93/93; text 339/356 (17 quarantined: vertical
+  writing modes ×16, tiny-coordinate textPath sampling ×1);
   structure 242/247 (5 quarantined: DTD entities ×4 and remote image
   fetching ×1, both by design);
   filters 369/397 (28 quarantined: enable-background + BackgroundImage
   inputs ×21, FillPaint/StrokePaint inputs ×6, huge-sigma clamping ×1)**
-  — overall 1628/1679. Four categories are complete (shapes, painting,
+  — overall 1629/1679. Four categories are complete (shapes, painting,
   paint-servers, masking); structure's and filters' remaining gaps are
   all deliberate policy (no DTD resolution, no remote fetches, no
   deprecated background-image or paint filter inputs, no
   consensus-style sigma bounding).
+  xml:lang-driven font selection works end to end: the recording branch
+  aligned the CJK fallback scoring with browser behavior (promiscuous
+  legacy code page declarations demote to a weak signal, name-table
+  languages score the whole parent chain plus same-language variants
+  and penalize cross-CJK localization, and language-less Han prefers a
+  font with Chinese design evidence instead of alphabetical order), the
+  corpus harness routes CJK through the embedded collection's
+  culture-aware matching (the coverage-only fallback list kept stealing
+  the lookup), and Noto Sans SC joined the corpus assets. The three
+  test rows now resolve [Chinese, Japanese, Chinese] exactly like the
+  reference's pattern; the residual refdiff is font-inventory (the
+  reference machine used Noto Sans CJK) and the render is goldened as
+  ours.
   Filters on text spans landed (SVG 2; the references follow
   Chrome/Safari — resvg fails its own tests here): runs remember the
   nearest span that declares a filter, layout segments split at filter
