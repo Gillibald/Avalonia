@@ -159,6 +159,39 @@
       </ScrollViewer>
     </TabItem>
 
+    <TabItem Header="Inline">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            SVG markup pasted straight into the XAML as CDATA content. The XAML compiler validates the
+            markup at build time — a typo here is a build error pointing at this file — and strips
+            comments, editor metadata and insignificant whitespace, so the runtime parses a compact
+            pre-checked string with no file or resource I/O.
+          </TextBlock>
+          <Border Classes="canvas">
+            <svg:Svg Width="160" Height="160">
+              <![CDATA[
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+                  <!-- this comment never reaches the runtime -->
+                  <defs>
+                    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0" stop-color="#7dd3fc"/>
+                      <stop offset="1" stop-color="#0ea5e9"/>
+                    </linearGradient>
+                  </defs>
+                  <rect width="64" height="64" rx="12" fill="url(#sky)"/>
+                  <circle cx="22" cy="22" r="8" fill="#fef9c3"/>
+                  <path d="M8 46 L24 30 L36 42 L46 32 L56 42 V56 H8 Z" fill="#166534"/>
+                  <path d="M8 50 L20 38 L30 48 L42 36 L56 50 V56 H8 Z" fill="#22c55e"/>
+                  <text x="32" y="61" font-size="5" text-anchor="middle" fill="#0c4a6e">inline svg</text>
+                </svg>
+              ]]>
+            </svg:Svg>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
     <TabItem Header="Interactivity">
       <ScrollViewer>
         <StackPanel Margin="16" Spacing="12">

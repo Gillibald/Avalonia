@@ -77,6 +77,11 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
             InsertBefore<ConvertPropertyValuesToAssignmentsTransformer>(
                 new AvaloniaXamlIlOptionMarkupExtensionTransformer());
 
+            // After content/property resolution, before XAML whitespace rules:
+            // SVG markup pasted as CDATA is validated and minified in place.
+            InsertBefore<ApplyWhitespaceNormalization>(
+                new AvaloniaXamlIlSvgContentTransformer());
+
             InsertAfter<TypeReferenceResolver>(
                 new XDataTypeTransformer());
 

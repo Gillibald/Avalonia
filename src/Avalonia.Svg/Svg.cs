@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Logging;
 using Avalonia.Media;
+using Avalonia.Metadata;
 using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Animation;
 
@@ -28,6 +29,12 @@ public class Svg : Control
     /// </summary>
     public static readonly StyledProperty<SvgDocument?> DocumentProperty =
         AvaloniaProperty.Register<Svg, SvgDocument?>(nameof(Document));
+
+    /// <summary>
+    /// Defines the <see cref="InlineSource"/> property.
+    /// </summary>
+    public static readonly StyledProperty<string?> InlineSourceProperty =
+        AvaloniaProperty.Register<Svg, string?>(nameof(InlineSource));
 
     /// <summary>
     /// Defines the <see cref="Stretch"/> property.
@@ -66,8 +73,10 @@ public class Svg : Control
 
     static Svg()
     {
-        AffectsRender<Svg>(SourceProperty, DocumentProperty, StretchProperty, StretchDirectionProperty);
-        AffectsMeasure<Svg>(SourceProperty, DocumentProperty, StretchProperty, StretchDirectionProperty);
+        AffectsRender<Svg>(SourceProperty, DocumentProperty, InlineSourceProperty, StretchProperty,
+            StretchDirectionProperty);
+        AffectsMeasure<Svg>(SourceProperty, DocumentProperty, InlineSourceProperty, StretchProperty,
+            StretchDirectionProperty);
     }
 
     /// <summary>
@@ -89,6 +98,22 @@ public class Svg : Control
     {
         get => GetValue(DocumentProperty);
         set => SetValue(DocumentProperty, value);
+    }
+
+    /// <summary>
+    /// Gets or sets SVG markup to display. This is the control's content
+    /// property: in XAML, paste the markup as CDATA content of the control
+    /// and the XAML compiler validates and minifies it at build time.
+    /// Ignored while <see cref="Document"/> is set; takes precedence over
+    /// <see cref="Source"/>. Markup set from code bypasses the compile-time
+    /// pass and must carry the SVG namespace on the root element.
+    /// </summary>
+    [Content]
+    [SvgContent]
+    public string? InlineSource
+    {
+        get => GetValue(InlineSourceProperty);
+        set => SetValue(InlineSourceProperty, value);
     }
 
     /// <summary>
@@ -200,7 +225,8 @@ public class Svg : Control
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == SourceProperty || change.Property == DocumentProperty)
+        if (change.Property == SourceProperty || change.Property == DocumentProperty
+            || change.Property == InlineSourceProperty)
             ReleaseImage();
     }
 
@@ -241,6 +267,21 @@ public class Svg : Control
             return _image;
 
         var document = Document ?? _ownedDocument;
+        if (document == null && !_loadFailed && InlineSource is { } markup)
+        {
+            try
+            {
+                _ownedDocument = SvgDocument.Parse(markup);
+                document = _ownedDocument;
+            }
+            catch (Exception exception)
+            {
+                _loadFailed = true;
+                Logger.TryGet(LogEventLevel.Error, LogArea.Control)?.Log(
+                    this, "Failed to parse inline SVG markup: {Error}", exception);
+            }
+        }
+
         if (document == null && !_loadFailed && Source is { } source)
         {
             try
