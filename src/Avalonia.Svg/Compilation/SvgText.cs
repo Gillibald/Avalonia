@@ -1266,7 +1266,21 @@ internal static class SvgText
             return;
         }
 
-        var sampler = SvgPathSampler.Parse(data.AsSpan());
+        // The referenced path's own transform (and transform-origin) applies
+        // to the path data before layout, per the SVG 2 text-on-path rules —
+        // the rendered path and the glyphs riding it must agree.
+        var pathTransform = Matrix.Identity;
+        if (SvgCompiler.GetTransformValue(pathElement) is { } transformValue
+            && SvgCompiler.TryParseTransformValue(transformValue, out var parsedTransform))
+        {
+            var fillBox = pathElement.GetStyleOrAttribute("transform-box") == "fill-box"
+                ? SvgPathSampler.Parse(data.AsSpan()).Bounds
+                : default;
+            pathTransform = SvgCompiler.ApplyTransformOrigin(
+                pathElement, parsedTransform, new Rect(style.Viewport), fillBox);
+        }
+
+        var sampler = SvgPathSampler.Parse(data.AsSpan(), pathTransform);
         if (sampler.TotalLength <= 0)
             return;
 
