@@ -1135,8 +1135,8 @@ Avalonia.Svg
 ├── SvgDocument           // Load/Parse; owns recordings; IDisposable. ✓
 ├── SvgElement            // Parsed element; hit-test results and event args. ✓
 ├── SvgImage : IImage     // Draws the recording; HitTestElements(Point). ✓
-├── Svg : Control         // DPs: Source (Uri), Document, Stretch,
-│                         //      StretchDirection; HitTestElements,
+├── Svg : Control         // DPs: Source (Uri), Document, InlineSource,
+│                         //      Stretch, StretchDirection; HitTestElements,
 │                         //      ElementPointer{Pressed,Released,Moved};
 │                         //      SMIL driver (paint + structural channels;
 │                         //      opt-in composition channel). ✓
@@ -1148,6 +1148,39 @@ Avalonia.Svg
 Note: the `Svg` control made `Avalonia.Svg` reference `Avalonia.Controls`
 (`Control` lives there); the compiler/image layers still depend on
 `Avalonia.Base` only.
+
+### Inline SVG in XAML
+
+SVG markup pastes straight into XAML as CDATA content of the `Svg` control
+(`[Content] InlineSource : string`):
+
+```xml
+<Svg Width="48" Height="48">
+  <![CDATA[ <svg xmlns="http://www.w3.org/2000/svg" …>…</svg> ]]>
+</Svg>
+```
+
+A XAML compiler transformer (`AvaloniaXamlIlSvgContentTransformer`, in
+`Avalonia.Markup.Xaml.Loader/CompilerExtensions`, linked into
+`Avalonia.Build.Tasks` like every other transformer) preprocesses literal
+values of properties marked `[SvgContent]` at **compile time**: the island is
+XML-validated (malformed markup or a non-`svg` root is a build error at the
+XAML position), minified (comments, DOCTYPE, editor-namespace cruft and
+insignificant whitespace dropped; `xml:space` and text-content scopes
+preserved), and a missing `xmlns` on the root is injected. The runtime then
+parses a compact interned string constant on first use — no I/O, no runtime
+XML error paths. The transformer resolves the marker attribute by full name,
+so the XAML compiler takes no reference on `Avalonia.Svg`.
+
+A literal XML island (`<svg>` as a XAML element subtree) is not possible:
+the vendored XamlX parser rejects `xmlns` declarations on non-root elements
+(`XDocumentXamlParser.ParseNewInstance`) and silently drops
+`http://www.w3.org/*`-namespaced attributes such as `xlink:href`, both before
+any transformer runs. Document resolution precedence on the control:
+`Document` → `InlineSource` → `Source`. Follow-ups (each blocked on the SVG
+parser core moving to netstandard-shared sources, since
+`Avalonia.Build.Tasks` cannot reference `Avalonia.Svg`): usvg-style
+normalization at build time, pre-tokenized path data, serialized recordings.
 
 **No additions to `Avalonia.Base` from the SVG branch.** Phases 1–6 consume
 the recording API exclusively. If a gap is discovered, the fix lands on the
