@@ -21,13 +21,6 @@ text/textPath/writing-mode=tb.svg -- vertical writing modes not supported
 text/lengthAdjust/vertical.svg -- vertical writing modes not supported
 text/alignment-baseline/hanging-on-vertical.svg -- vertical writing modes not supported
 
-# Font capabilities. Culture-aware matching reaches the shaper (the ja row
-# measurably differs) but font selection cannot differentiate with the
-# corpus fonts: M PLUS 1p falsely advertises the ChineseTraditional code
-# page (winning zh-Hant), Noto Sans SC falsely advertises JapaneseJis
-# (tying ja), and unmarked-Han ties break on alphabetical family order.
-text/text/xml-lang=ja.svg -- per-language font selection needs truthfully-labeled CJK fonts plus an unmarked-Han preference; the suite font's polluted OS/2 bits defeat the culture scoring
-
 # Text layout gaps.
 text/textPath/dy-with-tiny-coordinates.svg -- tiny-coordinate path sampling and dy interplay diverge (multiple compounding factors)
 
