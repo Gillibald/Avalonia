@@ -152,5 +152,8 @@ public class DrawingGroupTests
         protected override void PushTextOptionsCore(TextOptions textOptions) { }
         protected override void PopRenderOptionsCore() { }
         protected override void PopTextOptionsCore() { }
+        protected override void PushLayerCore(LayerOptions options) { }
+        protected override void PopLayerCore() { }
+        internal override void DrawRecordingCore(global::Avalonia.Rendering.Composition.DrawingRecording recording) { }
     }
 }
