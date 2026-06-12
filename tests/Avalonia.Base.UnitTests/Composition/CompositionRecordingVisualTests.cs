@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Server;
 using Avalonia.UnitTests;
@@ -17,34 +18,11 @@ public class CompositionRecordingVisualTests : ScopedTestBase
         base.Dispose();
     }
 
-    [Fact(Skip = "Upstream: container visuals attached via SetElementChildVisual never receive " +
-                 "transformed subtree bounds — the child's bounds compute, but the parent union in " +
-                 "the update walk's PostSubgraph is gated on a bounding-box flag the container no " +
-                 "longer carries, so the render walk skips the subtree. Reproduces with stock " +
-                 "CompositionContainerVisual + CompositionSolidColorVisual.")]
-    public void Stock_Container_Visual_Gets_Subtree_Bounds()
-    {
-        var container = _services.Compositor.CreateContainerVisual();
-        var solid = _services.Compositor.CreateSolidColorVisual();
-        solid.Size = new Vector(60, 60);
-        solid.Color = Colors.Lime;
-        container.Children.Add(solid);
-
-        var host = new Control { Width = 100, Height = 100 };
-        _services.TopLevel.Content = host;
-        _services.RunJobs();
-        ElementComposition.SetElementChildVisual(host, container);
-        _services.RunJobs();
-
-        _services.Compositor.Commit();
-        _services.Compositor.Server.Render(false);
-
-        var subtreeBounds = typeof(ServerCompositionVisual)
+    private static LtrbRect? GetTransformedSubtreeBounds(CompositionVisual visual) =>
+        (LtrbRect?)typeof(ServerCompositionVisual)
             .GetField("_transformedSubTreeBounds",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .GetValue(container.Server);
-        Assert.True(subtreeBounds != null, "the bounds pass never produced container subtree bounds");
-    }
+            .GetValue(visual.Server);
 
     [Fact]
     public void Recording_Reaches_The_Server_Visual()
@@ -67,15 +45,22 @@ public class CompositionRecordingVisualTests : ScopedTestBase
         // The recording's render data deserialized into the server visual and
         // the visual is part of the server tree.
         var server = (ServerCompositionRecordingVisual)visual.Server;
-        var bounds = server.ComputeOwnContentBounds();
-        Assert.NotNull(bounds);
-        Assert.Equal(20, bounds!.Value.Left);
-        Assert.Equal(80, bounds.Value.Right);
+        var contentBounds = server.ComputeOwnContentBounds();
+        Assert.NotNull(contentBounds);
+        Assert.Equal(20, contentBounds!.Value.Left);
+        Assert.Equal(80, contentBounds.Value.Right);
 
         var elementVisual = (CompositionContainerVisual)ElementComposition.GetElementVisual(host)!;
         Assert.True(elementVisual.Children.Contains(visual), "child visual not in client children");
         Assert.True(server.Parent != null, "server visual not parented");
         Assert.True(visual.Root != null, "client visual has no root");
+
+        // The bounds pass produced subtree bounds, so the render walk paints
+        // the visual instead of culling it.
+        var subtreeBounds = GetTransformedSubtreeBounds(visual);
+        Assert.NotNull(subtreeBounds);
+        Assert.Equal(20, subtreeBounds!.Value.Left);
+        Assert.Equal(80, subtreeBounds.Value.Right);
 
         recording.Dispose();
     }
