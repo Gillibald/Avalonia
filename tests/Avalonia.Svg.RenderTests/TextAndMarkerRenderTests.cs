@@ -46,6 +46,30 @@ public class TextAndMarkerRenderTests : SvgRenderTestBase
     }
 
     [Fact]
+    public async Task Text_On_A_Full_Circle_Path()
+    {
+        // One arc command spans the whole circle: the sampler must flatten
+        // adaptively or the glyphs share chord tangents and render as
+        // straight runs with 15° kinks (the orrery label-orbit regression).
+        var target = new SvgHost(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" font-family="{TestFont}">
+              <defs>
+                <path id="ring" d="M 110 20 A 90 90 0 1 1 109.99 20"/>
+              </defs>
+              <rect width="220" height="220" fill="white"/>
+              <circle cx="110" cy="110" r="90" fill="none" stroke="#dddddd"/>
+              <text font-size="14" letter-spacing="4" fill="darkblue">
+                <textPath href="#ring">RETAINED RECORDINGS ON ONE CIRCLE</textPath>
+              </text>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
+    [Fact]
     public async Task Text_On_Path()
     {
         var target = new SvgHost(
