@@ -13,6 +13,10 @@ namespace SvgDemo
 
         public override void OnFrameworkInitializationCompleted()
         {
+            // Drive SMIL transform/opacity timelines as composition key-frame
+            // animations; the showcase orrery is the stress case for it.
+            Avalonia.Svg.Svg.EnableExperimentalCompositionAnimations = true;
+
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
                 desktop.MainWindow = new MainWindow();
             base.OnFrameworkInitializationCompleted();
