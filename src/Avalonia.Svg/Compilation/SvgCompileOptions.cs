@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Avalonia.Media;
 
@@ -19,6 +20,15 @@ internal sealed class SvgCompileOptions
     /// recordings snapshot mutable brushes.
     /// </summary>
     public IReadOnlyCollection<(SvgElement Element, string Attribute)>? PaintAnimationTargets { get; init; }
+
+    /// <summary>
+    /// Restricts the render-tree walk to elements the predicate accepts; null
+    /// compiles everything. Reference-resolved content (defs, use targets,
+    /// paint servers) is unaffected. The animation composition channel uses
+    /// this to compile document slices that render as separate composition
+    /// visuals.
+    /// </summary>
+    public Func<SvgElement, bool>? ElementFilter { get; init; }
 
     /// <summary>The hit-test tree root, when <see cref="BuildHitTree"/> was set.</summary>
     public SvgHitNode? HitRoot { get; internal set; }

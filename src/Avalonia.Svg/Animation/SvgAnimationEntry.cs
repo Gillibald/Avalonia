@@ -57,6 +57,12 @@ internal sealed class SvgAnimationEntry
     public SvgAnimationTransformType? TransformType { get; init; }
 
     /// <summary>
+    /// True when the composition channel drives this entry through a server
+    /// key-frame animation; <see cref="SvgAnimator.Apply"/> skips it.
+    /// </summary>
+    public bool Claimed { get; set; }
+
+    /// <summary>
     /// The mutable brush this entry drives when it runs on the paint channel
     /// (compositor-bound recording); null on the structural channel.
     /// </summary>

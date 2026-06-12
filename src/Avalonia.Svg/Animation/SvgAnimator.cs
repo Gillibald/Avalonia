@@ -94,6 +94,27 @@ internal sealed class SvgAnimator
         && Array.IndexOf(s_shapeNames, entry.Target.Name) >= 0
         && entry.IsColor;
 
+    /// <summary>Whether an entry runs on the paint channel; see <see cref="IsPaintEligible"/>.</summary>
+    public bool IsPaintEntry(SvgAnimationEntry entry) => IsPaintEligible(entry);
+
+    /// <summary>
+    /// True while any entry still needs UI-thread ticking — claimed entries
+    /// run as server-side composition animations instead.
+    /// </summary>
+    public bool HasUnclaimedWork
+    {
+        get
+        {
+            foreach (var entry in _entries)
+            {
+                if (!entry.Claimed)
+                    return true;
+            }
+
+            return false;
+        }
+    }
+
     /// <summary>
     /// Applies all animations at <paramref name="time"/>. Paint-bound entries
     /// mutate their brushes; the rest write attribute overrides. Returns true
@@ -105,6 +126,9 @@ internal sealed class SvgAnimator
 
         foreach (var entry in _entries)
         {
+            if (entry.Claimed)
+                continue;
+
             var value = entry.Sample(time);
 
             if (entry.PaintBrush is { } brush)
