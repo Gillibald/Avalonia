@@ -27,6 +27,7 @@
     <EmbeddedResource Include="Assets\NotoSans-ExtraCondensed.ttf" />
     <EmbeddedResource Include="Assets\Amiri-Regular.ttf" />
     <EmbeddedResource Include="Assets\MPLUS1p-Regular.ttf" />
+    <EmbeddedResource Include="Assets\NotoSansSC-Regular.otf" />
     <EmbeddedResource Include="Assets\NotoSansDevanagari-Regular.ttf" />
     <EmbeddedResource Include="Assets\SourceSansPro-Regular.ttf" />
     <EmbeddedResource Include="Assets\NotoSerif-Regular.ttf" />
