@@ -70,6 +70,28 @@ public class TextAndMarkerRenderTests : SvgRenderTestBase
     }
 
     [Fact]
+    public async Task Text_On_A_Transformed_Path()
+    {
+        // The referenced path's own transform + transform-origin apply to the
+        // glyph layout, so the text rides the path exactly where it renders —
+        // including a non-uniform scale, which reshapes the arc.
+        var target = new SvgHost(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" font-family="{TestFont}">
+              <rect width="200" height="200" fill="white"/>
+              <path id="bent" d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="#cccccc"
+                    transform="scale(1 0.6) rotate(25)" transform-origin="center"/>
+              <text font-size="14" fill="darkblue">
+                <textPath href="#bent">follow the line</textPath>
+              </text>
+            </svg>
+            """);
+
+        await RenderToFile(target);
+        CompareImages();
+    }
+
+    [Fact]
     public async Task Text_On_Path()
     {
         var target = new SvgHost(

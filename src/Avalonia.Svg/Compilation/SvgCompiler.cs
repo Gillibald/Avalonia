@@ -474,7 +474,7 @@ internal static class SvgCompiler
     /// property (style attribute or stylesheet), then the presentation
     /// attribute.
     /// </summary>
-    private static string? GetTransformValue(SvgElement element)
+    internal static string? GetTransformValue(SvgElement element)
         => element.GetAnimatedValue("transform")
            ?? element.GetStyleProperty("transform")
            ?? element.GetAttribute("transform");
@@ -483,7 +483,7 @@ internal static class SvgCompiler
     /// Parses a transform list; the CSS property form carries <c>deg</c> and
     /// <c>px</c> units the attribute grammar doesn't, which normalize away.
     /// </summary>
-    private static bool TryParseTransformValue(string value, out Matrix matrix)
+    internal static bool TryParseTransformValue(string value, out Matrix matrix)
     {
         if (SvgTransformParser.TryParse(value.AsSpan(), out matrix))
             return true;
