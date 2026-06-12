@@ -339,7 +339,20 @@ internal static class SvgCompositionPartitioner
                     }
                 }
 
-                Partition(child, group.Children, compositionByElement, needsHandling, animator, ref anyComposition);
+                if (child.Name is "g" or "a" or "svg")
+                {
+                    Partition(child, group.Children, compositionByElement, needsHandling, animator, ref anyComposition);
+                }
+                else
+                {
+                    // A leaf (shape, text, use, image) renders itself: the
+                    // group's content is the element, compiled with its
+                    // animated transform/opacity suppressed.
+                    var self = new SvgStaticSlice();
+                    self.Roots.Add(child);
+                    group.Children.Add(self);
+                }
+
                 nodes.Add(group);
                 anyComposition = true;
                 continue;

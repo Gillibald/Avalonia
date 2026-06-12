@@ -55,12 +55,12 @@ public class Svg : Control
     /// <summary>
     /// Opt-in for the experimental animation composition channel: SMIL
     /// transform/opacity timelines run as server-side composition key-frame
-    /// animations on sliced child visuals instead of UI-thread ticks.
-    /// Disabled by default until the compositor computes subtree bounds for
-    /// container visuals attached via
-    /// <see cref="ElementComposition.SetElementChildVisual"/> (see the skipped
-    /// Stock_Container_Visual_Gets_Subtree_Bounds test); without those bounds
-    /// the render pass culls the sliced subtree.
+    /// animations on sliced child visuals instead of UI-thread ticks, so they
+    /// keep playing while the UI thread is busy. Paint and structural
+    /// timelines still tick on the UI thread. Opt-in because composition
+    /// animations follow the compositor clock rather than the control's SMIL
+    /// clock, which changes timing semantics for code that drives or observes
+    /// document time.
     /// </summary>
     public static bool EnableExperimentalCompositionAnimations { get; set; }
 

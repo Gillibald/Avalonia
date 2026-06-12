@@ -157,6 +157,31 @@ public class SvgCompositionChannelTests
     }
 
     [Fact]
+    public void Animated_Leaf_Carries_Itself_As_Content()
+    {
+        // The animated element is the shape itself, not a container: the
+        // group's content slice must be the element so its geometry compiles
+        // into the visual instead of leaving it empty.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <circle id="beacon" cx="30" cy="70" r="8" fill="#22d3ee">
+                <animate attributeName="opacity" values="1;0.2;1" dur="3s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        var root = SvgCompositionPartitioner.TryBuild(document, animator)!;
+        var group = Assert.IsType<SvgCompositionGroup>(Assert.Single(root.Children));
+        Assert.Equal("beacon", group.Element.Id);
+        Assert.True(group.SuppressOpacity);
+
+        var self = Assert.IsType<SvgStaticSlice>(Assert.Single(group.Children));
+        Assert.Equal("beacon", Assert.Single(self.Roots).Id);
+    }
+
+    [Fact]
     public void Paint_Only_Animations_Stay_In_Static_Slices()
     {
         using var document = SvgDocument.Parse(
