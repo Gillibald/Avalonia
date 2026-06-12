@@ -140,6 +140,25 @@
       </ScrollViewer>
     </TabItem>
 
+    <TabItem Header="Showcase">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            Everything at once: an animated orrery with roughly 150 elements and 18 SMIL timelines.
+            The starfield replays one shared star recording per use site, the sun pulses under a
+            blurred glow, moons ride nested structural rotations on top of their planets' orbits, the
+            comet's elliptical path is a static squash around an animated rotate, and a label runs
+            along the outer orbit on a textPath. The legend lamps show the two channels live: paint
+            animations mutate compositor brushes in place, structural ones recompile the document each
+            tick — for this scene that is well under a millisecond per frame.
+          </TextBlock>
+          <Border Classes="canvas" Background="#0b1022">
+            <svg:Svg Source="avares://SvgDemo/Assets/showcase.svg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
     <TabItem Header="Interactivity">
       <ScrollViewer>
         <StackPanel Margin="16" Spacing="12">
