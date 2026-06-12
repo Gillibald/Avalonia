@@ -18,6 +18,43 @@ public class CompositionChildVisualTests : ScopedTestBase
         base.Dispose();
     }
 
+    private class ClearingHost : Control
+    {
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            // Natural cleanup, symmetric with attaching in
+            // OnAttachedToVisualTree. Runs before DetachFromCompositor, which
+            // used to skip un-parenting the child visual once the property
+            // was cleared.
+            ElementComposition.SetElementChildVisual(this, null);
+        }
+    }
+
+    [Fact]
+    public void Child_Visual_Cleared_During_Detach_Can_Reattach()
+    {
+        var child = _services.Compositor.CreateContainerVisual();
+        var host = new ClearingHost { Width = 100, Height = 100 };
+        _services.TopLevel.Content = host;
+        _services.RunJobs();
+        ElementComposition.SetElementChildVisual(host, child);
+        _services.RunJobs();
+
+        _services.TopLevel.Content = null;
+        _services.RunJobs();
+        Assert.Null(child.Parent);
+
+        _services.TopLevel.Content = host;
+        _services.RunJobs();
+        ElementComposition.SetElementChildVisual(host, child);
+        _services.RunJobs();
+
+        var elementVisual = Assert.IsAssignableFrom<CompositionContainerVisual>(
+            ElementComposition.GetElementVisual(host));
+        Assert.Contains(child, elementVisual.Children);
+    }
+
     [Fact]
     public void Container_Child_Visual_Gets_Subtree_Bounds()
     {
