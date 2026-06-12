@@ -55,6 +55,12 @@ internal sealed class SvgCompileContext
     /// </summary>
     public IReadOnlyCollection<(SvgElement Element, string Attribute)>? PaintAnimationTargets { get; set; }
 
+    /// <summary>
+    /// Render-tree element filter for slice compilation; see
+    /// <see cref="SvgCompileOptions.ElementFilter"/>.
+    /// </summary>
+    public Func<SvgElement, bool>? ElementFilter { get; set; }
+
     /// <summary>The mutable brushes registered during compilation, keyed like the targets.</summary>
     public Dictionary<(SvgElement Element, string Attribute), SolidColorBrush>? AnimatedBrushes { get; private set; }
 
@@ -322,6 +328,11 @@ internal sealed class SvgCompileContext
     {
         var previousHitTree = _hitTree;
         _hitTree = hitTree;
+
+        // Shared content compiles whole reference targets; slice membership
+        // only partitions the main render tree.
+        var previousFilter = ElementFilter;
+        ElementFilter = null;
         try
         {
             if (target.Name is "symbol" or "svg" or "marker" or "pattern" or "mask")
@@ -342,6 +353,7 @@ internal sealed class SvgCompileContext
         finally
         {
             _hitTree = previousHitTree;
+            ElementFilter = previousFilter;
         }
     }
 }
