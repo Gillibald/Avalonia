@@ -10,31 +10,31 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
             """;
 
         [Fact]
-        public void Cdata_Content_Is_Validated_And_Minified()
+        public void Cdata_Content_Compiles_Into_A_Document()
         {
             var control = (Avalonia.Svg.Svg)AvaloniaRuntimeXamlLoader.Load(Wrap("""
                 <![CDATA[
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                     <!-- pasted from a design tool -->
-                    <path d="M12 2 2 7" fill="#3b82f6"/>
+                    <path id="hill" d="M12 2 2 7" fill="#3b82f6"/>
                   </svg>
                 ]]>
                 """));
 
-            Assert.Equal(
-                """<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2 2 7" fill="#3b82f6" /></svg>""",
-                control.InlineSource);
+            var document = Assert.IsType<Avalonia.Svg.SvgDocument>(control.Source);
+            Assert.Equal("svg", document.Root.Name);
+            Assert.Equal("0 0 24 24", document.Root.GetAttribute("viewBox"));
+            Assert.Equal("#3b82f6", document.GetElementById("hill")!.GetAttribute("fill"));
         }
 
         [Fact]
         public void Missing_Svg_Namespace_Is_Injected()
         {
             var control = (Avalonia.Svg.Svg)AvaloniaRuntimeXamlLoader.Load(Wrap(
-                "<![CDATA[ <svg width='10' height='10'><rect width='10' height='10'/></svg> ]]>"));
+                "<![CDATA[ <svg width='10' height='10'><rect id='r' width='10' height='10'/></svg> ]]>"));
 
-            Assert.Equal(
-                """<svg width="10" height="10" xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" /></svg>""",
-                control.InlineSource);
+            Assert.NotNull(control.Source);
+            Assert.Equal("rect", control.Source!.GetElementById("r")!.Name);
         }
 
         [Fact]
@@ -47,30 +47,15 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                        xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
                     <sodipodi:namedview xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.0.dtd" id="nv"/>
                     <rect id="r" inkscape:label="Layer" width="5" height="5"/>
-                    <use xlink:href="#r"/>
+                    <use id="u" xlink:href="#r"/>
                   </svg>
                 ]]>
                 """));
 
-            Assert.Equal(
-                """<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><rect id="r" width="5" height="5" /><use xlink:href="#r" /></svg>""",
-                control.InlineSource);
-        }
-
-        [Fact]
-        public void Text_Content_Whitespace_Is_Preserved()
-        {
-            var control = (Avalonia.Svg.Svg)AvaloniaRuntimeXamlLoader.Load(Wrap("""
-                <![CDATA[
-                  <svg xmlns="http://www.w3.org/2000/svg">
-                    <text x="1" y="1"> spaced  out </text>
-                  </svg>
-                ]]>
-                """));
-
-            Assert.Equal(
-                """<svg xmlns="http://www.w3.org/2000/svg"><text x="1" y="1"> spaced  out </text></svg>""",
-                control.InlineSource);
+            var document = control.Source!;
+            Assert.Null(document.GetElementById("nv"));
+            Assert.Null(document.GetElementById("r")!.GetAttribute("inkscape:label"));
+            Assert.Equal("#r", document.GetElementById("u")!.GetAttribute("xlink:href"));
         }
 
         [Fact]
@@ -92,17 +77,15 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         }
 
         [Fact]
-        public void Attribute_Syntax_Is_Processed_Too()
+        public void Attribute_Syntax_Compiles_Markup_Too()
         {
             var control = (Avalonia.Svg.Svg)AvaloniaRuntimeXamlLoader.Load(
                 """
                 <Svg xmlns="clr-namespace:Avalonia.Svg;assembly=Avalonia.Svg"
-                     InlineSource="&lt;svg xmlns='http://www.w3.org/2000/svg'&gt;&lt;circle r='4'/&gt;&lt;/svg&gt;"/>
+                     Source="&lt;svg xmlns='http://www.w3.org/2000/svg'&gt;&lt;circle id='c' r='4'/&gt;&lt;/svg&gt;"/>
                 """);
 
-            Assert.Equal(
-                """<svg xmlns="http://www.w3.org/2000/svg"><circle r="4" /></svg>""",
-                control.InlineSource);
+            Assert.Equal("circle", control.Source!.GetElementById("c")!.Name);
         }
     }
 }

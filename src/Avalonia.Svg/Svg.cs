@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Metadata;
 using Avalonia.Rendering.Composition;
@@ -21,20 +20,8 @@ public class Svg : Control
     /// <summary>
     /// Defines the <see cref="Source"/> property.
     /// </summary>
-    public static readonly StyledProperty<Uri?> SourceProperty =
-        AvaloniaProperty.Register<Svg, Uri?>(nameof(Source));
-
-    /// <summary>
-    /// Defines the <see cref="Document"/> property.
-    /// </summary>
-    public static readonly StyledProperty<SvgDocument?> DocumentProperty =
-        AvaloniaProperty.Register<Svg, SvgDocument?>(nameof(Document));
-
-    /// <summary>
-    /// Defines the <see cref="InlineSource"/> property.
-    /// </summary>
-    public static readonly StyledProperty<string?> InlineSourceProperty =
-        AvaloniaProperty.Register<Svg, string?>(nameof(InlineSource));
+    public static readonly StyledProperty<SvgDocument?> SourceProperty =
+        AvaloniaProperty.Register<Svg, SvgDocument?>(nameof(Source));
 
     /// <summary>
     /// Defines the <see cref="Stretch"/> property.
@@ -49,8 +36,6 @@ public class Svg : Control
         AvaloniaProperty.Register<Svg, StretchDirection>(nameof(StretchDirection), StretchDirection.Both);
 
     private SvgImage? _image;
-    private SvgDocument? _ownedDocument;
-    private bool _loadFailed;
     private SvgAnimator? _animator;
     private bool _animatorInitialized;
     private bool _animationRunning;
@@ -73,47 +58,25 @@ public class Svg : Control
 
     static Svg()
     {
-        AffectsRender<Svg>(SourceProperty, DocumentProperty, InlineSourceProperty, StretchProperty,
-            StretchDirectionProperty);
-        AffectsMeasure<Svg>(SourceProperty, DocumentProperty, InlineSourceProperty, StretchProperty,
-            StretchDirectionProperty);
+        AffectsRender<Svg>(SourceProperty, StretchProperty, StretchDirectionProperty);
+        AffectsMeasure<Svg>(SourceProperty, StretchProperty, StretchDirectionProperty);
     }
 
     /// <summary>
-    /// Gets or sets the URI the document is loaded from — an absolute
-    /// <c>avares://</c> resource or file URI. Ignored while <see cref="Document"/>
-    /// is set.
+    /// Gets or sets the document to display. This is the control's content
+    /// property, and XAML converts strings to documents: SVG markup — pasted
+    /// as CDATA content of the control — is validated, minified and turned
+    /// into a document factory at compile time, while URI strings
+    /// (<c>avares://</c> resources or files, relative against the XAML base
+    /// URI) load through <see cref="SvgDocumentTypeConverter"/>. Documents
+    /// created by XAML are disposed by the control when replaced; documents
+    /// assigned from code stay caller-owned.
     /// </summary>
-    public Uri? Source
+    [Content]
+    public SvgDocument? Source
     {
         get => GetValue(SourceProperty);
         set => SetValue(SourceProperty, value);
-    }
-
-    /// <summary>
-    /// Gets or sets the document to display. Takes precedence over
-    /// <see cref="Source"/>; the caller keeps ownership of the document.
-    /// </summary>
-    public SvgDocument? Document
-    {
-        get => GetValue(DocumentProperty);
-        set => SetValue(DocumentProperty, value);
-    }
-
-    /// <summary>
-    /// Gets or sets SVG markup to display. This is the control's content
-    /// property: in XAML, paste the markup as CDATA content of the control
-    /// and the XAML compiler validates and minifies it at build time.
-    /// Ignored while <see cref="Document"/> is set; takes precedence over
-    /// <see cref="Source"/>. Markup set from code bypasses the compile-time
-    /// pass and must carry the SVG namespace on the root element.
-    /// </summary>
-    [Content]
-    [SvgContent]
-    public string? InlineSource
-    {
-        get => GetValue(InlineSourceProperty);
-        set => SetValue(InlineSourceProperty, value);
     }
 
     /// <summary>
@@ -225,9 +188,15 @@ public class Svg : Control
     {
         base.OnPropertyChanged(change);
 
-        if (change.Property == SourceProperty || change.Property == DocumentProperty
-            || change.Property == InlineSourceProperty)
+        if (change.Property == SourceProperty)
+        {
             ReleaseImage();
+
+            // Documents created by XAML (inline markup or source strings)
+            // belong to the control; user-assigned documents stay theirs.
+            if (change.OldValue is SvgDocument { HostOwned: true } replaced)
+                replaced.Dispose();
+        }
     }
 
     /// <inheritdoc/>
@@ -266,40 +235,8 @@ public class Svg : Control
         if (_image != null)
             return _image;
 
-        var document = Document ?? _ownedDocument;
-        if (document == null && !_loadFailed && InlineSource is { } markup)
-        {
-            try
-            {
-                _ownedDocument = SvgDocument.Parse(markup);
-                document = _ownedDocument;
-            }
-            catch (Exception exception)
-            {
-                _loadFailed = true;
-                Logger.TryGet(LogEventLevel.Error, LogArea.Control)?.Log(
-                    this, "Failed to parse inline SVG markup: {Error}", exception);
-            }
-        }
-
-        if (document == null && !_loadFailed && Source is { } source)
-        {
-            try
-            {
-                _ownedDocument = SvgDocument.Load(source);
-                document = _ownedDocument;
-            }
-            catch (Exception exception)
-            {
-                // Remember the failure so a broken source is not re-loaded on
-                // every measure/render pass.
-                _loadFailed = true;
-                Logger.TryGet(LogEventLevel.Error, LogArea.Control)?.Log(
-                    this, "Failed to load SVG document from {Source}: {Error}", source, exception);
-            }
-        }
-
-        if (document == null)
+        var document = Source;
+        if (document == null || document.IsDisposed)
             return null;
 
         if (!_animatorInitialized)
@@ -472,9 +409,6 @@ public class Svg : Control
 
         _animator = null;
         _animatorInitialized = false;
-        _ownedDocument?.Dispose();
-        _ownedDocument = null;
-        _loadFailed = false;
     }
 
     private void ComputeStretchRects(SvgImage image, out Rect sourceRect, out Rect destRect, out Vector scale)

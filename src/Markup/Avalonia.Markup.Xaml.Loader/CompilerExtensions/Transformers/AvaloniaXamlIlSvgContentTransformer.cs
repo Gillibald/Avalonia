@@ -7,21 +7,51 @@ using System.Xml.Linq;
 using XamlX;
 using XamlX.Ast;
 using XamlX.Transform;
+using XamlX.TypeSystem;
 
 namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
 {
     /// <summary>
-    /// Preprocesses literal values of properties marked with
-    /// <c>Avalonia.Svg.SvgContentAttribute</c> (matched by name — the XAML
-    /// compiler takes no reference on Avalonia.Svg): the SVG markup, typically
-    /// pasted as CDATA content, is XML-validated at compile time so malformed
-    /// markup fails the build at the XAML position, and minified so the
-    /// runtime parses a compact string. Non-literal values (bindings, markup
-    /// extensions) pass through untouched.
+    /// Compiles SVG markup pasted into XAML (typically as CDATA content of a
+    /// property typed <c>Avalonia.Svg.SvgDocument</c>, matched by name — the
+    /// XAML compiler takes no reference on Avalonia.Svg) into a document
+    /// factory: the markup is XML-validated at compile time so malformed
+    /// content fails the build at the XAML position, minified, and emitted as
+    /// a <c>SvgDocument.FromXamlContent("…")</c> call. Runs before XAML
+    /// whitespace normalization so character data inside the markup survives
+    /// verbatim. Non-markup strings (URI sources) and non-literal values pass
+    /// through to the regular conversion pipeline.
     /// </summary>
     class AvaloniaXamlIlSvgContentTransformer : IXamlAstTransformer
     {
-        private const string AttributeFullName = "Avalonia.Svg.SvgContentAttribute";
+        public IXamlAstNode Transform(AstTransformationContext context, IXamlAstNode node)
+        {
+            if (node is not XamlAstXamlPropertyValueNode propertyValue
+                || propertyValue.Property is not XamlAstClrProperty clrProperty)
+                return node;
+
+            if (clrProperty.Getter?.ReturnType is not { } propertyType
+                || !SvgDocumentContentHelper.IsSvgDocumentType(propertyType))
+                return node;
+
+            if (propertyValue.Values.Count != 1 || propertyValue.Values[0] is not XamlAstTextNode text
+                || !SvgDocumentContentHelper.IsMarkup(text.Text))
+                return node;
+
+            propertyValue.Values[0] = SvgDocumentContentHelper.CreateFactoryNode(context, propertyType, text);
+            return node;
+        }
+    }
+
+    /// <summary>
+    /// Shared between <see cref="AvaloniaXamlIlSvgContentTransformer"/> (the
+    /// early content path) and the <c>CustomValueConverter</c> hook (attribute
+    /// values, setters — any string-to-SvgDocument conversion).
+    /// </summary>
+    internal static class SvgDocumentContentHelper
+    {
+        private const string DocumentTypeFullName = "Avalonia.Svg.SvgDocument";
+        private const string FactoryMethodName = "FromXamlContent";
 
         private static readonly XNamespace SvgNs = "http://www.w3.org/2000/svg";
         private static readonly XNamespace XlinkNs = "http://www.w3.org/1999/xlink";
@@ -36,18 +66,28 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             "text", "tspan", "textPath", "title", "desc", "style",
         };
 
-        public IXamlAstNode Transform(AstTransformationContext context, IXamlAstNode node)
+        public static bool IsSvgDocumentType(IXamlType type) => type.FullName == DocumentTypeFullName;
+
+        public static bool IsMarkup(string text)
         {
-            if (node is not XamlAstXamlPropertyValueNode propertyValue
-                || propertyValue.Property is not XamlAstClrProperty clrProperty)
-                return node;
+            foreach (var c in text)
+            {
+                if (c == '<')
+                    return true;
+                if (!char.IsWhiteSpace(c))
+                    return false;
+            }
 
-            if (!clrProperty.CustomAttributes.Any(a => a.Type.FullName == AttributeFullName))
-                return node;
+            return false;
+        }
 
-            if (propertyValue.Values.Count != 1 || propertyValue.Values[0] is not XamlAstTextNode text)
-                return node;
-
+        /// <summary>
+        /// Validates and minifies the markup and wraps it into a
+        /// <c>SvgDocument.FromXamlContent("…")</c> static call node.
+        /// </summary>
+        public static IXamlAstValueNode CreateFactoryNode(
+            AstTransformationContext context, IXamlType documentType, XamlAstTextNode text)
+        {
             string minified;
             try
             {
@@ -64,9 +104,17 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
                 throw new XamlTransformException(exception.Message, text);
             }
 
-            propertyValue.Values[0] = new XamlAstTextNode(text, minified, true,
-                context.Configuration.WellKnownTypes.String);
-            return node;
+            var stringType = context.Configuration.WellKnownTypes.String;
+            var factory = documentType.FindMethod(m =>
+                    m.IsPublic && m.IsStatic && m.Name == FactoryMethodName
+                    && m.ReturnType.Equals(documentType)
+                    && m.Parameters.Count == 1 && m.Parameters[0].Equals(stringType))
+                ?? throw new XamlTransformException(
+                    $"{DocumentTypeFullName}.{FactoryMethodName}(string) was not found; the referenced Avalonia.Svg version does not support inline content.",
+                    text);
+
+            return new XamlStaticOrTargetedReturnMethodCallNode(text, factory,
+                new[] { new XamlAstTextNode(text, minified, true, stringType) });
         }
 
         private sealed class InvalidSvgContentException : Exception

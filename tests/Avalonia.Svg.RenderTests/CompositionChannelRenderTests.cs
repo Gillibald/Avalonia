@@ -53,7 +53,7 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
 
         var control = new Svg
         {
-            Document = document,
+            Source = document,
             Width = 200,
             Height = 200,
         };
