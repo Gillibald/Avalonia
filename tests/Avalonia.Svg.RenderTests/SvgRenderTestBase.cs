@@ -41,12 +41,14 @@ public class SvgRenderTestBase : IDisposable
                 ["Noto Serif"] = new FontFamily("fonts:svg-corpus#Noto Serif"),
                 ["Noto Color Emoji"] = new FontFamily("fonts:svg-corpus#Noto Color Emoji"),
             },
-            // Missing glyphs (CJK and emoji in the corpus) fall back inside
-            // the embedded collection instead of machine-dependent system
-            // fonts.
+            // Emoji explicitly fall back to the embedded color font. CJK has
+            // no explicit fallback entry on purpose: the FontFallbacks list
+            // matches by coverage alone, while the embedded collection's
+            // TryMatchCharacter is culture-aware — it routes xml:lang="ja"
+            // runs to the Japanese M PLUS 1p and other Han to the Simplified
+            // Chinese font, mirroring how browsers pick per-language fonts.
             FontFallbacks = new[]
             {
-                new FontFallback { FontFamily = new FontFamily("fonts:svg-corpus#Mplus 1p") },
                 new FontFallback { FontFamily = new FontFamily("fonts:svg-corpus#Noto Color Emoji") },
             },
         });
