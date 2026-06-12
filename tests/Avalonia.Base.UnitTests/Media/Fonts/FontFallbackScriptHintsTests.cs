@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Globalization;
+using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting.Unicode;
 using Xunit;
@@ -103,6 +105,86 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         {
             Assert.False(FontFallbackScriptHints.TryGetOS2Bit(Script.Latin, out var bit));
             Assert.Equal(-1, bit);
+        }
+
+        [Theory]
+        [InlineData(FontCodePageCoverage.None, 0)]
+        [InlineData(FontCodePageCoverage.Latin1 | FontCodePageCoverage.Cyrillic, 0)]
+        [InlineData(FontCodePageCoverage.JapaneseJis, 1)]
+        [InlineData(FontCodePageCoverage.ChineseSimplified, 1)]
+        [InlineData(FontCodePageCoverage.KoreanWansung | FontCodePageCoverage.KoreanJohab, 1)]
+        [InlineData(FontCodePageCoverage.JapaneseJis | FontCodePageCoverage.ChineseTraditional, 2)]
+        [InlineData(FontCodePageCoverage.JapaneseJis | FontCodePageCoverage.ChineseSimplified
+                    | FontCodePageCoverage.ChineseTraditional | FontCodePageCoverage.KoreanWansung, 4)]
+        public void CountCjkCodePageGroups_Counts_Distinct_Groups(FontCodePageCoverage coverage, int expected)
+        {
+            Assert.Equal(expected, FontFallbackScriptHints.CountCjkCodePageGroups(coverage));
+        }
+
+        [Fact]
+        public void ScoreFamilyNames_Exact_Culture_Wins()
+        {
+            var names = Names("zh-CN", "en-US");
+
+            Assert.Equal(8, FontFallbackScriptHints.ScoreFamilyNames(names, CultureInfo.GetCultureInfo("zh-CN")));
+        }
+
+        [Fact]
+        public void ScoreFamilyNames_Parent_Culture_Scores_Below_Exact()
+        {
+            var names = Names("zh", "en-US");
+
+            Assert.Equal(4, FontFallbackScriptHints.ScoreFamilyNames(names, CultureInfo.GetCultureInfo("zh-CN")));
+        }
+
+        [Fact]
+        public void ScoreFamilyNames_Same_Language_Other_Region_Scores_Positive()
+        {
+            // A Simplified Chinese font (zh-CN names) asked for Traditional Chinese:
+            // same language, different region — the best available Chinese candidate.
+            var names = Names("zh-CN", "en-US");
+
+            Assert.Equal(3, FontFallbackScriptHints.ScoreFamilyNames(names, CultureInfo.GetCultureInfo("zh-HANT")));
+        }
+
+        [Fact]
+        public void ScoreFamilyNames_Other_Cjk_Language_Scores_Negative()
+        {
+            // A Chinese-named font asked for Japanese: CJK preference lists never
+            // cross languages, so the candidate is scored down.
+            var names = Names("zh-CN", "en-US");
+
+            Assert.Equal(-3, FontFallbackScriptHints.ScoreFamilyNames(names, CultureInfo.GetCultureInfo("ja-JP")));
+        }
+
+        [Fact]
+        public void ScoreFamilyNames_Non_Cjk_Mismatch_Is_Neutral()
+        {
+            var names = Names("en-US");
+
+            Assert.Equal(0, FontFallbackScriptHints.ScoreFamilyNames(names, CultureInfo.GetCultureInfo("ja-JP")));
+        }
+
+        [Fact]
+        public void ScoreFamilyNames_Invariant_Entries_Are_Ignored()
+        {
+            // Fonts without localized name records surface a single synthesized
+            // invariant entry; it carries no language signal.
+            var names = new Dictionary<CultureInfo, string> { [CultureInfo.InvariantCulture] = "Font" };
+
+            Assert.Equal(0, FontFallbackScriptHints.ScoreFamilyNames(names, CultureInfo.GetCultureInfo("ja-JP")));
+        }
+
+        private static Dictionary<CultureInfo, string> Names(params string[] cultures)
+        {
+            var names = new Dictionary<CultureInfo, string>();
+
+            foreach (var culture in cultures)
+            {
+                names[CultureInfo.GetCultureInfo(culture)] = "Font";
+            }
+
+            return names;
         }
     }
 }
