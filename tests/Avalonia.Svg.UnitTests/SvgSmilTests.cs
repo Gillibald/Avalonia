@@ -3,6 +3,7 @@ using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Animation;
 using Avalonia.Svg.Compilation;
+using Avalonia.Svg.Parsing;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;
@@ -114,6 +115,37 @@ public class SvgSmilTests
         Assert.Equal(new Rect(50, 0, 10, 10), BoundsAt(document, animator, 7.5));
     }
 
+    [Theory]
+    [InlineData(0.0, 0x22, 0xd3, 0xee)]   // exactly the first value
+    [InlineData(2.0, 0x8b, 0xa2, 0xd2)]   // halfway to the second value
+    public void Color_Interpolation_Round_Trips_Through_The_Css_Parser(
+        double seconds, byte r, byte g, byte b)
+    {
+        // Interpolated colors are written back as strings and re-parsed by the
+        // compiler. CSS hex carries alpha last while Color.ToString carries it
+        // first (and may emit known-color names), so use colors that are NOT
+        // known names to pin the round trip.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">
+              <rect id="a" width="10" height="10" fill="#22d3ee">
+                <animate attributeName="fill" from="#22d3ee" to="#f472b6" dur="4s"/>
+              </rect>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+        animator.Apply(TimeSpan.FromSeconds(seconds));
+
+        var target = document.GetElementById("a")!;
+        var sampled = target.GetAnimatedValue("fill");
+        Assert.NotNull(sampled);
+        Assert.True(SvgColor.TryParse(sampled!, out var color));
+        Assert.Equal(255, color.A);
+        Assert.Equal(r, color.R);
+        Assert.Equal(g, color.G);
+        Assert.Equal(b, color.B);
+    }
+
     [Fact]
     public void Discrete_Animation_Steps()
     {
@@ -217,7 +249,10 @@ public class SvgSmilTests
         var animator = SvgAnimator.TryCreate(document)!;
         var entry = animator.Entries[0];
 
-        Assert.True(Color.TryParse(entry.Sample(TimeSpan.FromSeconds(2))!, out var mid));
+        // Sampled values feed the compiler, so they must round-trip through
+        // the CSS parser the compiler uses (not Avalonia's Color.TryParse,
+        // whose 8-digit hex carries alpha first).
+        Assert.True(SvgColor.TryParse(entry.Sample(TimeSpan.FromSeconds(2))!, out var mid));
         Assert.Equal(255, mid.A);
         Assert.Equal(128, mid.R);
         Assert.Equal(0, mid.G);

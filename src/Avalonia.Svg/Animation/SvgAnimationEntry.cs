@@ -145,7 +145,7 @@ internal sealed class SvgAnimationEntry
             return InterpolateTransform(transformType, from, to, t);
 
         if (SvgColor.TryParse(from, out var fromColor) && SvgColor.TryParse(to, out var toColor))
-            return LerpColor(fromColor, toColor, t).ToString();
+            return FormatCssColor(LerpColor(fromColor, toColor, t));
 
         if (TryParseNumber(from, out var fromNumber) && TryParseNumber(to, out var toNumber))
             return (fromNumber + (toNumber - fromNumber) * t).ToString("G", CultureInfo.InvariantCulture);
@@ -159,6 +159,16 @@ internal sealed class SvgAnimationEntry
         LerpByte(from.R, to.R, t),
         LerpByte(from.G, to.G, t),
         LerpByte(from.B, to.B, t));
+
+    /// <summary>
+    /// Serializes an interpolated color the way the compiler parses it. CSS
+    /// hex carries alpha last (#RRGGBBAA) while <see cref="Color.ToString"/>
+    /// puts alpha first and may emit known-color names, so the round trip
+    /// must format explicitly.
+    /// </summary>
+    private static string FormatCssColor(Color color) =>
+        string.Create(CultureInfo.InvariantCulture,
+            $"#{color.R:x2}{color.G:x2}{color.B:x2}{color.A:x2}");
 
     private static byte LerpByte(byte from, byte to, double t) =>
         (byte)Math.Round(from + (to - from) * t);
