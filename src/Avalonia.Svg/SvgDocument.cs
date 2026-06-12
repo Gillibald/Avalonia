@@ -14,6 +14,7 @@ namespace Avalonia.Svg;
 /// no drawing resources are created until the document is compiled (e.g. by
 /// <see cref="SvgImage"/>).
 /// </summary>
+[System.ComponentModel.TypeConverter(typeof(SvgDocumentTypeConverter))]
 public sealed class SvgDocument : IDisposable
 {
     internal const string SvgNamespace = "http://www.w3.org/2000/svg";
@@ -45,6 +46,18 @@ public sealed class SvgDocument : IDisposable
     /// <summary>Set once the stylesheet rules have been resolved onto the tree.</summary>
     internal bool StylesheetApplied { get; set; }
 
+    /// <summary>
+    /// Set on documents created by XAML (inline content or source strings):
+    /// the consuming control owns the document and disposes it when its
+    /// <c>Source</c> changes. Documents created through the public
+    /// <see cref="Parse(string)"/>/<see cref="Load(Uri)"/> APIs stay
+    /// caller-owned.
+    /// </summary>
+    internal bool HostOwned { get; private set; }
+
+    /// <summary>Whether <see cref="Dispose"/> has run.</summary>
+    internal bool IsDisposed => _disposed;
+
     /// <summary>Looks up an element by id, or returns null.</summary>
     public SvgElement? GetElementById(string id) =>
         _elementsById.TryGetValue(id, out var element) ? element : null;
@@ -68,6 +81,29 @@ public sealed class SvgDocument : IDisposable
     /// <summary>Parses an SVG document from a string.</summary>
     public static SvgDocument Parse(string xml)
         => Parse(xml, baseUri: null);
+
+    /// <summary>
+    /// Creates a document from SVG markup embedded in XAML. Called by
+    /// compiled XAML for inline content; the document is marked as owned by
+    /// the consuming control, which disposes it when replaced.
+    /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static SvgDocument FromXamlContent(string markup)
+        => ParseHostOwned(markup, baseUri: null);
+
+    internal static SvgDocument ParseHostOwned(string markup, Uri? baseUri)
+    {
+        var document = Parse(markup, baseUri);
+        document.HostOwned = true;
+        return document;
+    }
+
+    internal static SvgDocument LoadHostOwned(Uri uri)
+    {
+        var document = Load(uri);
+        document.HostOwned = true;
+        return document;
+    }
 
     /// <summary>
     /// Parses an SVG document from a string, with a base location for
