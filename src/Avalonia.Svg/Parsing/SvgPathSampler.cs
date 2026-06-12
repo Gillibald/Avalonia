@@ -53,6 +53,10 @@ internal readonly struct SvgPathVertex
 /// adapts the subdivision to the curve's length: text-on-path takes both the
 /// position and the tangent from the flat chords, so a chord must stay well
 /// below a glyph advance even when a single command spans a whole circle.
+/// An optional transform (the referenced path's own <c>transform</c>, per the
+/// SVG 2 text-on-path rules) applies to the sampled output: curve math runs in
+/// raw path space, positions map through the full matrix, tangent directions
+/// through its linear part, and arc lengths are measured in transformed space.
 /// </summary>
 internal sealed class SvgPathSampler : IGeometryContext
 {
@@ -73,14 +77,30 @@ internal sealed class SvgPathSampler : IGeometryContext
     private readonly List<double> _lengths = new();
     private readonly List<SvgPathVertex> _vertices = new();
 
+    private readonly Matrix _transform;
+    private readonly bool _hasTransform;
+
     private Point _current;
     private Point _subpathStart;
     private int _subpathFirstVertex = -1;
     private Vector? _pendingIn;
+    private double _minX = double.PositiveInfinity;
+    private double _minY = double.PositiveInfinity;
+    private double _maxX = double.NegativeInfinity;
+    private double _maxY = double.NegativeInfinity;
+
+    private SvgPathSampler(Matrix transform)
+    {
+        _transform = transform;
+        _hasTransform = !transform.IsIdentity;
+    }
 
     public static SvgPathSampler Parse(ReadOnlySpan<char> data)
+        => Parse(data, Matrix.Identity);
+
+    public static SvgPathSampler Parse(ReadOnlySpan<char> data, Matrix transform)
     {
-        var sampler = new SvgPathSampler();
+        var sampler = new SvgPathSampler(transform);
         try
         {
             SvgPathParser.Parse(data, sampler);
@@ -96,6 +116,11 @@ internal sealed class SvgPathSampler : IGeometryContext
     public IReadOnlyList<SvgPathVertex> Vertices => _vertices;
 
     public double TotalLength => _lengths.Count > 0 ? _lengths[_lengths.Count - 1] : 0;
+
+    /// <summary>The bounding box of the sampled (transformed) geometry.</summary>
+    public Rect Bounds => _points.Count == 0
+        ? default
+        : new Rect(new Point(_minX, _minY), new Point(_maxX, _maxY));
 
     /// <summary>Samples the position and tangent angle at an arc-length distance.</summary>
     public bool TryGetPointAtLength(double length, out Point position, out double angle)
@@ -143,8 +168,37 @@ internal sealed class SvgPathSampler : IGeometryContext
     private static double PointDistance(Point from, Point to)
         => new Vector(to.X - from.X, to.Y - from.Y).Length;
 
+    private Point TransformPoint(Point point)
+        => _hasTransform ? point.Transform(_transform) : point;
+
+    private Vector? TransformDirection(Vector? direction)
+    {
+        if (!_hasTransform || direction is not { } raw)
+            return direction;
+
+        var v = new Vector(
+            raw.X * _transform.M11 + raw.Y * _transform.M21,
+            raw.X * _transform.M12 + raw.Y * _transform.M22);
+        var length = v.Length;
+        return length > 1e-9 ? v / length : null;
+    }
+
+    /// <summary>An upper-bound scale factor of the transform's linear part.</summary>
+    private double TransformScale()
+        => !_hasTransform
+            ? 1.0
+            : Math.Max(
+                new Vector(_transform.M11, _transform.M12).Length,
+                new Vector(_transform.M21, _transform.M22).Length);
+
     private void AddSamplePoint(Point point)
     {
+        point = TransformPoint(point);
+        _minX = Math.Min(_minX, point.X);
+        _minY = Math.Min(_minY, point.Y);
+        _maxX = Math.Max(_maxX, point.X);
+        _maxY = Math.Max(_maxY, point.Y);
+
         if (_points.Count == 0)
         {
             _points.Add(point);
@@ -166,6 +220,12 @@ internal sealed class SvgPathSampler : IGeometryContext
 
     private void CompleteSegment(Point end, Vector? startDirection, Vector? endDirection)
     {
+        // Directions are computed in raw path space; vertices store the
+        // transformed output. The raw end point stays current for the next
+        // segment's math.
+        startDirection = TransformDirection(startDirection);
+        endDirection = TransformDirection(endDirection);
+
         // Patch the previous vertex's out-direction (it was added before the
         // segment's direction was known).
         if (_vertices.Count > 0)
@@ -176,7 +236,7 @@ internal sealed class SvgPathSampler : IGeometryContext
         }
 
         _pendingIn = endDirection;
-        AddVertex(end, null);
+        AddVertex(TransformPoint(end), null);
         _current = end;
     }
 
@@ -186,7 +246,7 @@ internal sealed class SvgPathSampler : IGeometryContext
         _subpathFirstVertex = _vertices.Count;
         _pendingIn = null;
         AddSamplePoint(startPoint);
-        AddVertex(startPoint, null);
+        AddVertex(TransformPoint(startPoint), null);
     }
 
     public void LineTo(Point point, bool isStroked = true)
@@ -199,10 +259,11 @@ internal sealed class SvgPathSampler : IGeometryContext
     public void CubicBezierTo(Point controlPoint1, Point controlPoint2, Point endPoint, bool isStroked = true)
     {
         var p0 = _current;
-        // The control polygon length bounds the curve length from above.
+        // The control polygon length bounds the curve length from above;
+        // measured in output space so the chord target survives scaling.
         var steps = StepsForLength(
-            PointDistance(p0, controlPoint1) + PointDistance(controlPoint1, controlPoint2)
-            + PointDistance(controlPoint2, endPoint));
+            (PointDistance(p0, controlPoint1) + PointDistance(controlPoint1, controlPoint2)
+             + PointDistance(controlPoint2, endPoint)) * TransformScale());
         for (var i = 1; i <= steps; i++)
         {
             var t = (double)i / steps;
@@ -222,7 +283,8 @@ internal sealed class SvgPathSampler : IGeometryContext
     public void QuadraticBezierTo(Point controlPoint, Point endPoint, bool isStroked = true)
     {
         var p0 = _current;
-        var steps = StepsForLength(PointDistance(p0, controlPoint) + PointDistance(controlPoint, endPoint));
+        var steps = StepsForLength(
+            (PointDistance(p0, controlPoint) + PointDistance(controlPoint, endPoint)) * TransformScale());
         for (var i = 1; i <= steps; i++)
         {
             var t = (double)i / steps;
@@ -291,7 +353,7 @@ internal sealed class SvgPathSampler : IGeometryContext
             return length > 1e-9 ? v / length : new Vector(1, 0);
         }
 
-        var steps = StepsForLength(Math.Abs(delta) * Math.Max(rx, ry));
+        var steps = StepsForLength(Math.Abs(delta) * Math.Max(rx, ry) * TransformScale());
         for (var i = 1; i <= steps; i++)
             AddSamplePoint(At(theta1 + delta * i / steps));
 
@@ -313,7 +375,7 @@ internal sealed class SvgPathSampler : IGeometryContext
                 // trailing duplicate, so 'auto' markers bisect the closure.
                 var first = _vertices[_subpathFirstVertex];
                 _vertices[_subpathFirstVertex] = new SvgPathVertex(
-                    first.Position, direction, first.OutDirection);
+                    first.Position, TransformDirection(direction), first.OutDirection);
                 _vertices.RemoveAt(_vertices.Count - 1);
             }
 

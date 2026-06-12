@@ -113,6 +113,46 @@ public class SvgPathSamplerTests
     }
 
     [Fact]
+    public void Transform_Rotates_Samples_And_Tangents()
+    {
+        // The referenced path's transform applies to the sampled output:
+        // positions through the full matrix, tangents through its linear part.
+        var sampler = SvgPathSampler.Parse("M 0 0 L 100 0".AsSpan(), Matrix.CreateRotation(Math.PI / 2));
+
+        Assert.Equal(100, sampler.TotalLength, 9);
+        Assert.True(sampler.TryGetPointAtLength(50, out var point, out var angle));
+        Assert.Equal(0, point.X, 6);
+        Assert.Equal(50, point.Y, 6);
+        Assert.Equal(Math.PI / 2, angle, 6);
+
+        var vertex = sampler.Vertices[0];
+        Assert.NotNull(vertex.OutDirection);
+        Assert.Equal(0, vertex.OutDirection!.Value.X, 6);
+        Assert.Equal(1, vertex.OutDirection.Value.Y, 6);
+    }
+
+    [Fact]
+    public void Transform_Scales_Measured_Lengths()
+    {
+        // Non-uniform scale: a semicircle of radius 50 squashed to half
+        // height. The arc length is measured in transformed space — the
+        // ellipse perimeter bounds are π·b·... loosely; assert it lands
+        // between the squashed and unsquashed semicircle lengths.
+        var sampler = SvgPathSampler.Parse(
+            "M 0 0 A 50 50 0 0 1 100 0".AsSpan(), Matrix.CreateScale(1, 0.5));
+
+        Assert.InRange(sampler.TotalLength, Math.PI * 50 * 0.5, Math.PI * 50);
+
+        // The samples lie on the squashed ellipse: x in [0,100], y in [-25,0].
+        for (var s = 0.0; s < sampler.TotalLength; s += 2)
+        {
+            Assert.True(sampler.TryGetPointAtLength(s, out var point, out _));
+            Assert.InRange(point.X, -0.01, 100.01);
+            Assert.InRange(point.Y, -25.01, 0.01);
+        }
+    }
+
+    [Fact]
     public void Vertices_Carry_Tangent_Directions()
     {
         var sampler = SvgPathSampler.Parse("M 0 0 L 10 0 L 10 10".AsSpan());
