@@ -103,6 +103,7 @@ internal static class SvgCompiler
             var compileContext = new SvgCompileContext(document, contentViewport)
             {
                 PaintAnimationTargets = options.PaintAnimationTargets,
+                ElementFilter = options.ElementFilter,
             };
 
             SvgHitTreeBuilder? hitTree = null;
@@ -190,6 +191,17 @@ internal static class SvgCompiler
             case "set":
             case "animateTransform":
                 return;
+        }
+
+        // Slice compiles walk the same tree through a membership filter.
+        // Shared-content compiles and measuring passes walk defs subtrees that
+        // are outside any slice's membership, so the filter only gates the
+        // main render walk.
+        if (!compileContext.Measuring
+            && compileContext.ElementFilter is { } filter
+            && !filter(element))
+        {
+            return;
         }
 
         if (element.GetStyleOrAttribute("display") == "none")
