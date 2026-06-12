@@ -176,25 +176,20 @@ namespace Avalonia.Media.Fonts
         {
             var score = 0;
 
-            // Exact culture match in the font's name table.
-            if (culture != null && candidate.FamilyNames.ContainsKey(culture))
+            if (culture != null && culture != CultureInfo.InvariantCulture)
             {
-                score += 8;
+                // Name-table languages (exact culture, parent, same language under
+                // another region/script; penalized for cross-CJK localization) and
+                // the font's self-declared coverage (meta dlng/slng, or OS/2 code
+                // pages weighted by how targeted the declaration is).
+                score += FontFallbackScriptHints.ScoreFamilyNames(candidate.FamilyNames, culture);
+                score += FontFallbackScriptHints.ScoreDeclaredCoverage(candidate, culture);
             }
-            else if (culture != null)
+            else if (script == Script.Han && FontFallbackScriptHints.HasChineseDesignEvidence(candidate))
             {
-                var parent = culture.Parent;
-
-                if (parent != null && parent != CultureInfo.InvariantCulture && candidate.FamilyNames.ContainsKey(parent))
-                {
-                    score += 4;
-                }
-            }
-
-            // Self-declared culture coverage via OS/2 codepage bits or meta dlng/slng.
-            if (culture != null && FontFallbackScriptHints.IsFontCompatibleWithCulture(candidate, culture))
-            {
-                score += 4;
+                // Language-less Han defaults toward a Chinese font, mirroring the
+                // browser convention for unmarked CJK text.
+                score += 2;
             }
 
             // Font's primary script aligns with the requested script — ask the font directly.
