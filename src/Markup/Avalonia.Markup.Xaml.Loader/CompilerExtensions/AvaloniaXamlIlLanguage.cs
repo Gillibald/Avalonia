@@ -271,6 +271,12 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
                 return true;
             }
 
+            if (SvgDocumentContentHelper.IsSvgDocumentType(type)
+                && TryConvertSvgDocument(context, textNode, text, type, out result))
+            {
+                return true;
+            }
+
             if (type.Is("Avalonia", "AvaloniaProperty"))
             {
                 var attrType = context.GetAvaloniaTypes().InheritDataTypeFromAttribute;
@@ -302,6 +308,57 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
 
             result = null;
             return false;
+        }
+
+        // Kept out of the literal form the CompilerDynamicDependenciesGenerator
+        // scans for: Avalonia.Svg is an optional assembly, so no typeof()-based
+        // dependency on it may be generated. The emitted IL references the
+        // converter members directly, which keeps them rooted when trimming.
+        private const string SvgDocumentTypeConverterName = "Avalonia.Svg.SvgDocumentTypeConverter";
+
+        private static bool TryConvertSvgDocument(
+            AstTransformationContext context,
+            XamlAstTextNode textNode,
+            string text,
+            IXamlType type,
+            [NotNullWhen(true)] out IXamlAstValueNode? result)
+        {
+            result = null;
+
+            // Markup compiles into a document factory; everything else is a
+            // URI source string that converts through the runtime type
+            // converter so relative URIs resolve against the XAML base URI.
+            // Both are handled here because the Parse(string) convention
+            // would otherwise pick the URI string up and treat it as markup.
+            if (SvgDocumentContentHelper.IsMarkup(text))
+            {
+                result = SvgDocumentContentHelper.CreateFactoryNode(context, type, textNode);
+                return true;
+            }
+
+            var cfg = context.Configuration;
+            var converterType = cfg.TypeSystem.FindType(SvgDocumentTypeConverterName);
+            if (converterType == null || cfg.TypeMappings.TypeDescriptorContext is not { } typeDescriptorContext)
+                return false;
+
+            var converterMethod = converterType.GetMethod("ConvertFrom", cfg.WellKnownTypes.Object, false,
+                typeDescriptorContext, cfg.WellKnownTypes.CultureInfo, cfg.WellKnownTypes.Object);
+            var invariantCulture = new XamlStaticOrTargetedReturnMethodCallNode(textNode,
+                cfg.WellKnownTypes.CultureInfo.Methods.First(x =>
+                    x.IsPublic && x.IsStatic && x.Name == "get_InvariantCulture"), null);
+
+            result = new XamlAstNeedsParentStackValueNode(textNode,
+                new XamlAstRuntimeCastNode(textNode,
+                    new XamlStaticOrTargetedReturnMethodCallNode(textNode, converterMethod,
+                        new IXamlAstValueNode[]
+                        {
+                            new XamlAstNewClrObjectNode(textNode,
+                                new XamlAstClrTypeReference(textNode, converterType, false),
+                                converterType.GetConstructor(), new List<IXamlAstValueNode>()),
+                            new XamlAstContextLocalNode(textNode, typeDescriptorContext),
+                            invariantCulture, textNode
+                        }), new XamlAstClrTypeReference(textNode, type, false)));
+            return true;
         }
     }
 }
