@@ -30,6 +30,7 @@ internal static class AvaloniaXamlDiagnosticCodes
     public const string TemplatePartWrongType = "AVLN2207";
     public const string ItemContainerInsideTemplate = "AVLN2208";
     public const string InlineSvgUnresolvedReference = "AVLN2209";
+    public const string InlineSvgInvalidValue = "AVLN2210";
 
     // XAML emit errors 3000-3999.
     public const string EmitError = "AVLN3000";
