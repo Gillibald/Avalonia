@@ -172,6 +172,12 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
             }
         }
 
+        // Inline SVG markup is foreign XML embedded in XAML; the parser captures
+        // these subtrees verbatim as text (later validated and compiled by
+        // AvaloniaXamlIlSvgContentTransformer) instead of resolving SVG element
+        // and attribute names as CLR types.
+        internal static readonly string[] SvgContentRawNamespaces = { "http://www.w3.org/2000/svg" };
+
 #if !XAMLX_CECIL_INTERNAL
         [RequiresUnreferencedCode(XamlX.TrimmingMessages.DynamicXamlReference)]
 #endif
@@ -180,7 +186,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
             var parsed = XDocumentXamlParser.Parse(xaml, new Dictionary<string, string>
             {
                 {XamlNamespaces.Blend2008, XamlNamespaces.Blend2008}
-            });
+            }, SvgContentRawNamespaces);
 
             var rootObject = (XamlAstObjectNode)parsed.Root;
 

@@ -1154,9 +1154,13 @@ compiler/image layers still depend on `Avalonia.Base` only.
 
 The control has a single document property, `[Content] Source : SvgDocument?`,
 and XAML strings convert to documents (the `Image.Source` pattern). SVG markup
-pastes straight in as CDATA content:
+pastes straight in as a nested `<svg>` element — no CDATA wrapper — or as CDATA
+content when verbatim fidelity is required:
 
 ```xml
+<Svg Width="48" Height="48">
+  <svg xmlns="http://www.w3.org/2000/svg" …>…</svg>
+</Svg>
 <Svg Width="48" Height="48">
   <![CDATA[ <svg xmlns="http://www.w3.org/2000/svg" …>…</svg> ]]>
 </Svg>
@@ -1186,12 +1190,21 @@ be fed to `SvgDocument.Parse` as markup.
 `HostOwned`; the control disposes them when `Source` changes. Documents
 assigned from code stay caller-owned, matching the old `Document` semantics.
 
-A literal XML island (`<svg>` as a XAML element subtree) is not possible:
-the vendored XamlX parser rejects `xmlns` declarations on non-root elements
-(`XDocumentXamlParser.ParseNewInstance`) and silently drops
-`http://www.w3.org/*`-namespaced attributes such as `xlink:href`, both before
-any transformer runs. Follow-ups (each blocked on the SVG parser core moving
-to netstandard-shared sources, since `Avalonia.Build.Tasks` cannot reference
+A literal XML island (`<svg>` as a nested XAML element, no CDATA) is supported
+by capturing the subtree verbatim at parse time. `XDocumentXamlParser.Parse`
+takes an opt-in set of `rawContentNamespaces`, and Avalonia registers the SVG
+namespace at all three parser call sites (the build task, the runtime loader and
+the name-generator). When the parser meets an element in that namespace
+(`ParseValueNode`) it emits the subtree as a verbatim text node
+(`XElement.ToString()`) instead of recursing — so the SVG element and attribute
+names are never resolved as CLR types, the root-only `xmlns` restriction never
+fires (the inner `xmlns` is never walked as an attribute) and `xlink:href`
+survives. That text node flows into the same `AvaloniaXamlIlSvgContentTransformer`
+as the CDATA form, so both share one validate/minify/`FromXamlContent` path.
+CDATA remains the escape hatch for the rare content XAML's lexer would otherwise
+claim (an attribute value starting with `{`) or whitespace that must survive
+exactly. Follow-ups (each blocked on the SVG parser core moving to
+netstandard-shared sources, since `Avalonia.Build.Tasks` cannot reference
 `Avalonia.Svg`): full document construction at build time (serialized element
 tree instead of a parse call), usvg-style normalization, pre-tokenized path
 data, serialized recordings.

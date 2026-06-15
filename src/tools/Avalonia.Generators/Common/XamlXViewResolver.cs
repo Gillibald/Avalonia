@@ -13,6 +13,8 @@ namespace Avalonia.Generators.Common;
 
 internal class XamlXViewResolver(MiniCompiler compiler) : IViewResolver, IXamlAstVisitor
 {
+    private static readonly string[] s_rawContentNamespaces = { "http://www.w3.org/2000/svg" };
+
     private ResolvedViewDocument? _resolvedClass;
     private XamlDocument? _xaml;
     private CancellationToken _cancellationToken;
@@ -20,10 +22,12 @@ internal class XamlXViewResolver(MiniCompiler compiler) : IViewResolver, IXamlAs
     public ResolvedViewDocument? ResolveView(string xaml, CancellationToken cancellationToken)
     {
         _resolvedClass = null;
+        // Inline SVG markup is foreign XML embedded in XAML; capture these subtrees
+        // verbatim as text so name resolution does not trip over SVG element names.
         _xaml = XDocumentXamlParser.Parse(xaml, new Dictionary<string, string>
         {
             {XamlNamespaces.Blend2008, XamlNamespaces.Blend2008}
-        });
+        }, s_rawContentNamespaces);
 
         try
         {
