@@ -26,6 +26,10 @@ namespace Avalonia.Build.Tasks
     {
         private const string CompiledAvaloniaXamlNamespace = "CompiledAvaloniaXaml";
 
+        // Namespaces whose elements are foreign XML embedded in XAML (inline SVG),
+        // captured verbatim as text instead of being parsed as XAML object trees.
+        private static readonly string[] s_rawContentNamespaces = { "http://www.w3.org/2000/svg" };
+
         static bool CheckXamlName(IResource r)
         {
             var name = r.Name;
@@ -298,7 +302,10 @@ namespace Avalonia.Build.Tasks
                     {
                         // StreamReader is needed here to handle BOM
                         var xaml = new StreamReader(new MemoryStream(res.FileContents)).ReadToEnd();
-                        var parsed = XDocumentXamlParser.Parse(xaml);
+                        // Inline SVG markup is foreign XML embedded in XAML: the parser
+                        // captures these subtrees verbatim as text for the SVG content
+                        // transformer rather than resolving SVG names as CLR types.
+                        var parsed = XDocumentXamlParser.Parse(xaml, rawContentNamespaces: s_rawContentNamespaces);
                         parsed.Document = res.FilePath;
 
                         var initialRoot = (XamlAstObjectNode)parsed.Root;
