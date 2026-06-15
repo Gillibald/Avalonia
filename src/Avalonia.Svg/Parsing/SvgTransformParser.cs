@@ -105,7 +105,13 @@ internal static class SvgTransformParser
         {
             // SVG matrix(a b c d e f) maps (x, y) to (ax + cy + e, bx + dy + f),
             // which is exactly Avalonia's (M11, M12, M21, M22, M31, M32) order.
+#if NETSTANDARD2_0
+            // The build task links this parser as source under a System.Memory-free
+            // span shim that has no Span<T>/stackalloc; a tiny array is equivalent.
+            var values = new double[6];
+#else
             Span<double> values = stackalloc double[6];
+#endif
             for (var i = 0; i < 6; i++)
             {
                 if (!tokenizer.TryReadNumber(out values[i]))

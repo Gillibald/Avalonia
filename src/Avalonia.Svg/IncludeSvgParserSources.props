@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Avalonia-free pieces of the SVG value parser, shared as source into the XAML
+    compiler (Avalonia.Build.Tasks and Avalonia.Markup.Xaml.Loader) the same way
+    XamlX and the Avalonia.Base primitives are. This lets inline SVG be grammar-
+    validated at compile time against the exact parsers the renderer uses, without
+    the compiler taking a reference on Avalonia.Svg. Only files whose dependencies
+    already exist in the build task (Matrix, Color, Size, ...) may be listed here,
+    and span usage must compile under the build task's System.Memory-free shim
+    (no stackalloc; foreach-over-span is supported via the shim enumerator).
+  -->
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgTokenizer.cs"
+             Link="Svg/Parsing/SvgTokenizer.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgTransformParser.cs"
+             Link="Svg/Parsing/SvgTransformParser.cs" />
+  </ItemGroup>
+</Project>
