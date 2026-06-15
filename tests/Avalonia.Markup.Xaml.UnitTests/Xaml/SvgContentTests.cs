@@ -243,5 +243,36 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2209");
         }
+
+        [Fact]
+        public void Invalid_Transform_Reports_A_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <rect width="10" height="10" transform="rotate(oops)"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d =>
+                d.Id == "AVLN2210"
+                && d.Severity == RuntimeXamlDiagnosticSeverity.Warning
+                && d.Title.Contains("transform"));
+        }
+
+        [Fact]
+        public void Valid_Transform_With_Css_Units_And_None_Reports_No_Warning()
+        {
+            // 'none' and the deg/px-bearing CSS form are both honored by the
+            // renderer, so the check (which mirrors it) must not flag them.
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <g transform="translate(10px 4px) rotate(45deg)">
+                    <rect width="10" height="10" transform="none"/>
+                  </g>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
+        }
     }
 }

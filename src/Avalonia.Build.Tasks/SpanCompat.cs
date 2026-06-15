@@ -114,6 +114,26 @@ namespace System
         }
 
         public static implicit operator ReadOnlySpan<T>(char[] arr) => new ReadOnlySpan<T>(new string(arr));
+
+        // Enough to support `foreach (var c in span)` in linked parser source; the
+        // shim is char-backed, so the element type is always char.
+        public Enumerator GetEnumerator() => new Enumerator(this);
+
+        public struct Enumerator
+        {
+            private readonly ReadOnlySpan<T> _span;
+            private int _index;
+
+            public Enumerator(ReadOnlySpan<T> span)
+            {
+                _span = span;
+                _index = -1;
+            }
+
+            public bool MoveNext() => ++_index < _span.Length;
+
+            public char Current => _span[_index];
+        }
     }
 
     static class SpanCompatExtensions
