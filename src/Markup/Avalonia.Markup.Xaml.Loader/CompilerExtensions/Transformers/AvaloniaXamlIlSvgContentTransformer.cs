@@ -92,9 +92,10 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             AstTransformationContext context, IXamlType documentType, XamlAstTextNode text)
         {
             string minified;
+            var diagnostics = new List<SvgInlineDiagnostic>();
             try
             {
-                minified = MinifySvg(text.Text);
+                minified = MinifySvg(text.Text, diagnostics);
             }
             catch (XmlException exception)
             {
@@ -105,6 +106,21 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             catch (InvalidSvgContentException exception)
             {
                 throw new XamlTransformException(exception.Message, text);
+            }
+
+            // Reference-integrity findings are warnings: the markup is valid SVG
+            // and still compiles, but a reference resolves to nothing at runtime.
+            // The diagnostic anchors at the content in the XAML file; the message
+            // carries the position inside the SVG markup.
+            foreach (var diagnostic in diagnostics)
+            {
+                var message = diagnostic.Line > 0
+                    ? $"{diagnostic.Message} (inline SVG line {diagnostic.Line}, column {diagnostic.Column})"
+                    : diagnostic.Message;
+
+                context.ReportDiagnostic(new XamlDiagnostic(
+                    AvaloniaXamlDiagnosticCodes.InlineSvgUnresolvedReference,
+                    XamlDiagnosticSeverity.Warning, message, text));
             }
 
             var stringType = context.Configuration.WellKnownTypes.String;
@@ -127,7 +143,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             }
         }
 
-        private static string MinifySvg(string markup)
+        private static string MinifySvg(string markup, List<SvgInlineDiagnostic> diagnostics)
         {
             XDocument document;
             var settings = new XmlReaderSettings
@@ -141,13 +157,18 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             using (var stringReader = new StringReader(markup))
             using (var xmlReader = XmlReader.Create(stringReader, settings))
             {
-                document = XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace);
+                // SetLineInfo so reference diagnostics can point inside the markup.
+                document = XDocument.Load(xmlReader, LoadOptions.PreserveWhitespace | LoadOptions.SetLineInfo);
             }
 
             var root = document.Root;
             if (root == null || root.Name.LocalName != "svg")
                 throw new InvalidSvgContentException(
                     "Inline SVG content must have an <svg> root element.");
+
+            // Validate references against the authored document, before the strip
+            // drops editor cruft and whitespace.
+            SvgInlineValidator.CollectReferenceDiagnostics(document, diagnostics);
 
             // Fragments pasted without a namespace get the SVG namespace
             // injected so the runtime parser accepts them.
