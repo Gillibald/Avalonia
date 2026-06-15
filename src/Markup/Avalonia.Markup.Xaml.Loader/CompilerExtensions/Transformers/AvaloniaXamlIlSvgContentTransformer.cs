@@ -119,8 +119,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
                     : diagnostic.Message;
 
                 context.ReportDiagnostic(new XamlDiagnostic(
-                    AvaloniaXamlDiagnosticCodes.InlineSvgUnresolvedReference,
-                    XamlDiagnosticSeverity.Warning, message, text));
+                    diagnostic.Code, XamlDiagnosticSeverity.Warning, message, text));
             }
 
             var stringType = context.Configuration.WellKnownTypes.String;
@@ -166,9 +165,9 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
                 throw new InvalidSvgContentException(
                     "Inline SVG content must have an <svg> root element.");
 
-            // Validate references against the authored document, before the strip
-            // drops editor cruft and whitespace.
-            SvgInlineValidator.CollectReferenceDiagnostics(document, diagnostics);
+            // Validate the authored document (references, value grammar) before the
+            // strip drops editor cruft and whitespace.
+            SvgInlineValidator.Collect(document, diagnostics);
 
             // Fragments pasted without a namespace get the SVG namespace
             // injected so the runtime parser accepts them.
