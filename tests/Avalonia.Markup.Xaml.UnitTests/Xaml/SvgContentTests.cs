@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Xunit;
 
 namespace Avalonia.Markup.Xaml.UnitTests.Xaml
@@ -8,6 +9,24 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         private static string Wrap(string content) => $"""
             <Svg xmlns="clr-namespace:Avalonia.Svg;assembly=Avalonia.Svg">{content}</Svg>
             """;
+
+        private static Avalonia.Svg.Svg LoadCapturingDiagnostics(
+            string content, out List<RuntimeXamlDiagnostic> diagnostics)
+        {
+            var captured = new List<RuntimeXamlDiagnostic>();
+            var control = (Avalonia.Svg.Svg)AvaloniaRuntimeXamlLoader.Load(
+                new RuntimeXamlLoaderDocument(Wrap(content)),
+                new RuntimeXamlLoaderConfiguration
+                {
+                    DiagnosticHandler = diagnostic =>
+                    {
+                        captured.Add(diagnostic);
+                        return diagnostic.Severity;
+                    }
+                });
+            diagnostics = captured;
+            return control;
+        }
 
         [Fact]
         public void Cdata_Content_Compiles_Into_A_Document()
@@ -160,6 +179,69 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
             Assert.Equal(
                 cdata.Source!.GetElementById("hill")!.GetAttribute("fill"),
                 inline.Source!.GetElementById("hill")!.GetAttribute("fill"));
+        }
+
+        [Fact]
+        public void Unresolved_Url_Reference_Reports_A_Warning()
+        {
+            // The markup is valid SVG and still loads; the broken paint reference
+            // is surfaced as a warning the renderer otherwise paints as nothing.
+            var control = LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <rect width="24" height="24" fill="url(#missing)"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.NotNull(control.Source);
+            Assert.Contains(diagnostics, d =>
+                d.Id == "AVLN2209"
+                && d.Severity == RuntimeXamlDiagnosticSeverity.Warning
+                && d.Title.Contains("#missing"));
+        }
+
+        [Fact]
+        public void Unresolved_Href_Reference_Reports_A_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <use href="#nope"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d => d.Id == "AVLN2209" && d.Title.Contains("#nope"));
+        }
+
+        [Fact]
+        public void Forward_And_Resolved_References_Report_No_Warning()
+        {
+            // The <use> precedes its target, and the gradient is referenced before
+            // it is declared — both are valid (ids are collected document-wide).
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <rect width="24" height="24" fill="url(#sky)"/>
+                  <use href="#dot"/>
+                  <defs>
+                    <linearGradient id="sky"><stop offset="0" stop-color="#000"/></linearGradient>
+                    <circle id="dot" r="2"/>
+                  </defs>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2209");
+        }
+
+        [Fact]
+        public void Paint_Fallback_Does_Not_Report_A_Warning()
+        {
+            // 'url(#x) red' falls back to red when #x is absent, so it is not a
+            // broken reference — the conservative check must not flag it.
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <rect width="24" height="24" fill="url(#maybe) red"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2209");
         }
     }
 }
