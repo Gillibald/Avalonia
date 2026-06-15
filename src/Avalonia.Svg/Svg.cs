@@ -65,7 +65,8 @@ public class Svg : Control
     /// <summary>
     /// Gets or sets the document to display. This is the control's content
     /// property, and XAML converts strings to documents: SVG markup — pasted
-    /// as CDATA content of the control — is validated, minified and turned
+    /// directly as a nested <c>&lt;svg&gt;</c> element (no CDATA wrapper needed)
+    /// or as CDATA content of the control — is validated, minified and turned
     /// into a document factory at compile time, while URI strings
     /// (<c>avares://</c> resources or files, relative against the XAML base
     /// URI) load through <see cref="SvgDocumentTypeConverter"/>. Documents

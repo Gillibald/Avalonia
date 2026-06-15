@@ -12,12 +12,15 @@ using XamlX.TypeSystem;
 namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
 {
     /// <summary>
-    /// Compiles SVG markup pasted into XAML (typically as CDATA content of a
-    /// property typed <c>Avalonia.Svg.SvgDocument</c>, matched by name — the
-    /// XAML compiler takes no reference on Avalonia.Svg) into a document
-    /// factory: the markup is XML-validated at compile time so malformed
-    /// content fails the build at the XAML position, minified, and emitted as
-    /// a <c>SvgDocument.FromXamlContent("…")</c> call. Runs before XAML
+    /// Compiles SVG markup pasted into XAML into a document factory. The markup
+    /// reaches this transformer as a text value of a property typed
+    /// <c>Avalonia.Svg.SvgDocument</c> (matched by name — the XAML compiler takes
+    /// no reference on Avalonia.Svg), whether it was written as CDATA content, an
+    /// escaped attribute string, or a verbatim inline <c>&lt;svg&gt;</c> element
+    /// captured as raw content by the parser (see <c>rawContentNamespaces</c> in
+    /// <c>XDocumentXamlParser</c>). The markup is XML-validated at compile time so
+    /// malformed content fails the build at the XAML position, minified, and
+    /// emitted as a <c>SvgDocument.FromXamlContent("…")</c> call. Runs before XAML
     /// whitespace normalization so character data inside the markup survives
     /// verbatim. Non-markup strings (URI sources) and non-literal values pass
     /// through to the regular conversion pipeline.
