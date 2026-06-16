@@ -274,5 +274,62 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
         }
+
+        [Fact]
+        public void Invalid_Color_Reports_A_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <rect width="10" height="10" fill="#ggg"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d =>
+                d.Id == "AVLN2210" && d.Title.Contains("paint") && d.Title.Contains("#ggg"));
+        }
+
+        [Fact]
+        public void Valid_Paint_Forms_Report_No_Warning()
+        {
+            // currentColor, a url() reference, none and the CSS-wide 'inherit' are
+            // all honored by the renderer and must not be flagged as invalid paint.
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <defs><linearGradient id="g"><stop offset="0" stop-color="currentColor"/></linearGradient></defs>
+                  <rect width="10" height="10" fill="url(#g)" stroke="inherit"/>
+                  <circle r="2" fill="none"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
+        }
+
+        [Fact]
+        public void Invalid_Length_Reports_A_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="abc"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d =>
+                d.Id == "AVLN2210" && d.Title.Contains("length") && d.Title.Contains("abc"));
+        }
+
+        [Fact]
+        public void Valid_Lengths_And_List_Coordinates_Report_No_Warning()
+        {
+            // Units, percentages and 'auto' (rx) are valid; list-valued text x/y
+            // are not in the single-length set, so they are never misread.
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <rect width="50%" height="10px" rx="auto"/>
+                  <text x="2 6 10" y="8">hi</text>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
+        }
     }
 }

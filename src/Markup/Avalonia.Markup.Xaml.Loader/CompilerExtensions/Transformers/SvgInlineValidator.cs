@@ -27,21 +27,23 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
     }
 
     /// <summary>
-    /// Validates inline SVG for problems the runtime renderer cannot surface.
-    /// Two checks today, both against the authored document and both warnings,
-    /// never build errors:
+    /// Validates inline SVG for problems the runtime renderer cannot surface,
+    /// against the authored document, always as warnings, never build errors:
     /// <list type="bullet">
     /// <item>Local references (<c>url(#id)</c>, <c>href="#id"</c>) that resolve to
     /// no element — the renderer silently paints these as nothing. Targets may be
     /// declared after their use, so ids are collected in a first pass.</item>
-    /// <item>Malformed <c>transform</c> lists, validated through the very parser
-    /// the renderer uses (<see cref="SvgTransformParser"/>) so a finding here is
-    /// exactly what the renderer would fail to apply — no false positives.</item>
+    /// <item>Malformed values — <c>transform</c> lists, <c>fill</c>/<c>stroke</c>
+    /// and color/length attributes — each validated through the very parser the
+    /// renderer uses (<see cref="SvgTransformParser"/>, <see cref="SvgPaint"/>,
+    /// <see cref="SvgLength"/>), so a finding is exactly what the renderer would
+    /// fail to apply.</item>
     /// </list>
     /// Deliberately conservative: only fragment-only references are checked, a
     /// <c>url()</c> only when it is the attribute's whole value (so a paint fallback
-    /// like <c>url(#a) red</c> is never flagged), and the value grammar is checked
-    /// on presentation attributes only.
+    /// like <c>url(#a) red</c> is never flagged), value grammar on presentation
+    /// attributes only, CSS-wide keywords (<c>inherit</c>, ...) are skipped, and
+    /// the length set excludes list-valued and keyword-grammar attributes.
     /// </summary>
     internal static class SvgInlineValidator
     {
@@ -50,6 +52,31 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
         private static readonly HashSet<string> s_transformAttributes = new(StringComparer.Ordinal)
         {
             "transform", "gradientTransform", "patternTransform",
+        };
+
+        private static readonly HashSet<string> s_paintAttributes = new(StringComparer.Ordinal)
+        {
+            "fill", "stroke",
+        };
+
+        private static readonly HashSet<string> s_colorAttributes = new(StringComparer.Ordinal)
+        {
+            "stop-color", "flood-color", "lighting-color", "color",
+        };
+
+        // Single-valued geometric lengths only. Deliberately excludes x/y/dx/dy
+        // (lists on text), and font-size/letter-spacing/baseline-shift (their own
+        // keyword grammars), which would otherwise be false positives.
+        private static readonly HashSet<string> s_lengthAttributes = new(StringComparer.Ordinal)
+        {
+            "width", "height", "r", "cx", "cy", "rx", "ry", "x1", "y1", "x2", "y2", "stroke-width",
+        };
+
+        // CSS-wide keywords the cascade honors by keeping the inherited value;
+        // they fail value parsing but are not errors.
+        private static readonly HashSet<string> s_cssWideKeywords = new(StringComparer.Ordinal)
+        {
+            "inherit", "initial", "unset", "revert",
         };
 
         public static void Collect(XDocument document, List<SvgInlineDiagnostic> diagnostics)
@@ -83,9 +110,17 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
                     // optional paint fallback form is never a false positive.
                     CheckFunciri(attribute, ids, diagnostics);
 
-                    // transform-list grammar on the transform attributes.
-                    if (s_transformAttributes.Contains(name.LocalName))
+                    // Value grammar on the transform, paint/color and length
+                    // attributes — each reuses the renderer's own parser.
+                    var local = name.LocalName;
+                    if (s_transformAttributes.Contains(local))
                         CheckTransform(attribute, diagnostics);
+                    else if (s_paintAttributes.Contains(local))
+                        CheckPaint(attribute, "paint", diagnostics);
+                    else if (s_colorAttributes.Contains(local))
+                        CheckPaint(attribute, "color", diagnostics);
+                    else if (s_lengthAttributes.Contains(local))
+                        CheckLength(attribute, diagnostics);
                 }
             }
         }
@@ -147,6 +182,45 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             diagnostics.Add(new SvgInlineDiagnostic(line, column,
                 AvaloniaXamlDiagnosticCodes.InlineSvgInvalidValue,
                 $"Inline SVG '{attribute.Name.LocalName}' has an invalid transform value '{value}'."));
+        }
+
+        private static void CheckPaint(XAttribute attribute, string kind, List<SvgInlineDiagnostic> diagnostics)
+        {
+            var value = attribute.Value.Trim();
+
+            // The CSS-wide keywords parse as 'invalid' but the cascade honors them
+            // by keeping the inherited value, so they are not errors.
+            if (value.Length == 0 || s_cssWideKeywords.Contains(value))
+                return;
+
+            // SvgPaint.TryParse is the renderer's own paint parser; it recognizes
+            // none/currentColor/context-*/url()+fallback and every color form, so a
+            // failure here is exactly a paint the renderer would drop.
+            if (SvgPaint.TryParse(value, out _))
+                return;
+
+            var (line, column) = GetPosition(attribute);
+            diagnostics.Add(new SvgInlineDiagnostic(line, column,
+                AvaloniaXamlDiagnosticCodes.InlineSvgInvalidValue,
+                $"Inline SVG '{attribute.Name.LocalName}' has an invalid {kind} value '{value}'."));
+        }
+
+        private static void CheckLength(XAttribute attribute, List<SvgInlineDiagnostic> diagnostics)
+        {
+            var value = attribute.Value.Trim();
+
+            // 'auto' (rx/ry in SVG 2) and the CSS-wide keywords are valid here even
+            // though they are not lengths; the renderer keeps the inherited value.
+            if (value.Length == 0 || value == "auto" || s_cssWideKeywords.Contains(value))
+                return;
+
+            if (SvgLength.TryParse(value.AsSpan(), out _))
+                return;
+
+            var (line, column) = GetPosition(attribute);
+            diagnostics.Add(new SvgInlineDiagnostic(line, column,
+                AvaloniaXamlDiagnosticCodes.InlineSvgInvalidValue,
+                $"Inline SVG '{attribute.Name.LocalName}' has an invalid length value '{value}'."));
         }
 
         private static (int Line, int Column) GetPosition(XObject node)
