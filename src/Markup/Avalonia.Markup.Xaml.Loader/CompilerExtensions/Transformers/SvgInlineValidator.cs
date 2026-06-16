@@ -34,10 +34,10 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
     /// no element — the renderer silently paints these as nothing. Targets may be
     /// declared after their use, so ids are collected in a first pass.</item>
     /// <item>Malformed values — <c>transform</c> lists, <c>fill</c>/<c>stroke</c>
-    /// and color/length attributes — each validated through the very parser the
-    /// renderer uses (<see cref="SvgTransformParser"/>, <see cref="SvgPaint"/>,
-    /// <see cref="SvgLength"/>), so a finding is exactly what the renderer would
-    /// fail to apply.</item>
+    /// and color/length attributes, and <c>path</c> data — each validated through
+    /// the very parser the renderer uses (<see cref="SvgTransformParser"/>,
+    /// <see cref="SvgPaint"/>, <see cref="SvgLength"/>, <see cref="SvgPathParser"/>),
+    /// so a finding is exactly what the renderer would fail to apply.</item>
     /// </list>
     /// Deliberately conservative: only fragment-only references are checked, a
     /// <c>url()</c> only when it is the attribute's whole value (so a paint fallback
@@ -121,6 +121,8 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
                         CheckPaint(attribute, "color", diagnostics);
                     else if (s_lengthAttributes.Contains(local))
                         CheckLength(attribute, diagnostics);
+                    else if (local == "d" && element.Name.LocalName == "path")
+                        CheckPathData(attribute, diagnostics);
                 }
             }
         }
@@ -221,6 +223,28 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             diagnostics.Add(new SvgInlineDiagnostic(line, column,
                 AvaloniaXamlDiagnosticCodes.InlineSvgInvalidValue,
                 $"Inline SVG '{attribute.Name.LocalName}' has an invalid length value '{value}'."));
+        }
+
+        private static void CheckPathData(XAttribute attribute, List<SvgInlineDiagnostic> diagnostics)
+        {
+            var value = attribute.Value;
+            if (string.IsNullOrWhiteSpace(value))
+                return;
+
+            // SvgPathParser is the renderer's own path parser; it throws on malformed
+            // data (the renderer keeps the valid prefix). The emitted geometry is not
+            // needed for validation, so it goes to a no-op sink.
+            try
+            {
+                SvgPathParser.Parse(value.AsSpan(), NoOpGeometryContext.Instance);
+            }
+            catch (FormatException exception)
+            {
+                var (line, column) = GetPosition(attribute);
+                diagnostics.Add(new SvgInlineDiagnostic(line, column,
+                    AvaloniaXamlDiagnosticCodes.InlineSvgInvalidValue,
+                    $"Inline SVG path data is invalid: {exception.Message}"));
+            }
         }
 
         private static (int Line, int Column) GetPosition(XObject node)
