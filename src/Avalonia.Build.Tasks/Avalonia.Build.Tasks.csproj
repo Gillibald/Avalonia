@@ -114,6 +114,18 @@
       <Compile Include="../Avalonia.Base/Media/KnownColors.cs">
         <Link>Markup/%(RecursiveDir)%(FileName)%(Extension)</Link>
       </Compile>
+      <!-- IGeometryContext closure, so the build task can link SvgPathParser for
+           inline-SVG path validation. The runtime loader gets these from its
+           Avalonia.Base reference, so they are listed here, not in the shared props. -->
+      <Compile Include="../Avalonia.Base/Platform/IGeometryContext.cs">
+        <Link>Svg/Platform/IGeometryContext.cs</Link>
+      </Compile>
+      <Compile Include="../Avalonia.Base/Media/SweepDirection.cs">
+        <Link>Svg/Media/SweepDirection.cs</Link>
+      </Compile>
+      <Compile Include="../Avalonia.Base/Media/FillRule.cs">
+        <Link>Svg/Media/FillRule.cs</Link>
+      </Compile>
       <Compile Include="../Avalonia.Controls/GridLength.cs">
         <Link>Markup/%(RecursiveDir)%(FileName)%(Extension)</Link>
       </Compile>

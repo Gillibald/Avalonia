@@ -20,5 +20,7 @@
              Link="Svg/Parsing/SvgLength.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgPaint.cs"
              Link="Svg/Parsing/SvgPaint.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgPathParser.cs"
+             Link="Svg/Parsing/SvgPathParser.cs" />
   </ItemGroup>
 </Project>
