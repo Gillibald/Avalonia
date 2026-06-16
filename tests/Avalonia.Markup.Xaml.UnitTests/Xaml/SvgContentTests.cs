@@ -331,5 +331,32 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
         }
+
+        [Fact]
+        public void Invalid_Path_Data_Reports_A_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <path d="M0 0 L10 oops"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d =>
+                d.Id == "AVLN2210"
+                && d.Severity == RuntimeXamlDiagnosticSeverity.Warning
+                && d.Title.Contains("path data"));
+        }
+
+        [Fact]
+        public void Valid_Path_Data_Reports_No_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <path d="M8 46 L24 30 C36 42 46 32 56 42 A4 4 0 0 1 8 56 Z"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
+        }
     }
 }
