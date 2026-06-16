@@ -14,5 +14,11 @@
              Link="Svg/Parsing/SvgTokenizer.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgTransformParser.cs"
              Link="Svg/Parsing/SvgTransformParser.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgColor.cs"
+             Link="Svg/Parsing/SvgColor.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgLength.cs"
+             Link="Svg/Parsing/SvgLength.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Parsing/SvgPaint.cs"
+             Link="Svg/Parsing/SvgPaint.cs" />
   </ItemGroup>
 </Project>

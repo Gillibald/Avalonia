@@ -54,6 +54,28 @@ namespace System
                     return false;
             return true;
         }
+
+        public bool Equals(ReadOnlySpan<char> other, StringComparison comparisonType)
+        {
+            if (_length != other.Length)
+                return false;
+            var ignoreCase = comparisonType == StringComparison.OrdinalIgnoreCase
+                || comparisonType == StringComparison.InvariantCultureIgnoreCase
+                || comparisonType == StringComparison.CurrentCultureIgnoreCase;
+            for (var c = 0; c < _length; c++)
+            {
+                var a = this[c];
+                var b = other[c];
+                if (ignoreCase)
+                {
+                    a = char.ToLowerInvariant(a);
+                    b = char.ToLowerInvariant(b);
+                }
+                if (a != b)
+                    return false;
+            }
+            return true;
+        }
         
         public ReadOnlySpan<char> TrimStart()
         {
