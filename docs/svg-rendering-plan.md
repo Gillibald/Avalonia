@@ -1203,18 +1203,54 @@ survives. That text node flows into the same `AvaloniaXamlIlSvgContentTransforme
 as the CDATA form, so both share one validate/minify/`FromXamlContent` path.
 CDATA remains the escape hatch for the rare content XAML's lexer would otherwise
 claim (an attribute value starting with `{`) or whitespace that must survive
-exactly. Follow-ups (each blocked on the SVG parser core moving to
-netstandard-shared sources, since `Avalonia.Build.Tasks` cannot reference
-`Avalonia.Svg`): full document construction at build time (serialized element
-tree instead of a parse call), usvg-style normalization, pre-tokenized path
-data, serialized recordings.
+exactly. The shared-source move those follow-ups were blocked on — the leaf SVG parsers
+`<Compile Include>`-shared into the compiler — has since been made for the
+compile-time validation below; the rest build on it: full document construction
+at build time (serialized element tree instead of a parse call), usvg-style
+normalization, pre-tokenized path data, serialized recordings.
 
-**No additions to `Avalonia.Base` from the SVG branch.** Phases 1–6 consume
-the recording API exclusively. If a gap is discovered, the fix lands on the
-recording side (a commit or follow-up PR on `feature/drawing-recording`, or
+**Compile-time validation.** Beyond the XML/minify pass, the transformer runs the
+authored markup through the renderer's *own* parsers and reports what the runtime
+would otherwise silently swallow, positioned by line and column inside the SVG.
+Malformed XML or a non-`svg` root is a build **error** at the XAML position;
+everything else is a **warning** from `SvgInlineValidator`: an unresolved local
+reference (`AVLN2209` — a `url(#id)`/`href="#id"`/`<use>`/clip/mask/filter target
+with no matching `id`, which the renderer paints as nothing) and a malformed
+value (`AVLN2210`) for `transform`, `fill`/`stroke` and the color/length
+attributes, `path` data, `points` and `viewBox`. Each value check delegates to
+the parser the renderer itself uses (`SvgTransformParser`, `SvgPaint`,
+`SvgLength`, `SvgPathParser`, the `SvgTokenizer` for `points`/`viewBox`), so a
+finding is *exactly* a value the renderer would fail to apply — no second grammar
+to drift from, no false positives. Where the value space is ambiguous it stays
+conservative: CSS-wide keywords (`inherit`, …) are skipped, the length set
+excludes list-valued (`x`/`y`/`dx`/`dy` on text) and keyword-grammar
+(`font-size`) attributes, a paint fallback (`url(#a) red`) is never flagged, and
+each grammar check is gated to the elements where the renderer reads the
+attribute.
+
+The validators run in the build task **and** the runtime loader, so warnings
+surface at build and in design-time / hot reload (through XamlX's
+`ReportDiagnostic`). Reusing the renderer's parsers means sharing them as source —
+neither the build task (netstandard2.0) nor the loader may reference
+`Avalonia.Svg` — via `Avalonia.Svg/IncludeSvgParserSources.props`, exactly as
+XamlX and the `Avalonia.Base` primitives are shared. Three accommodations let them
+compile under the build task's `System.Memory`-free span shim: a
+`#if NETSTANDARD2_0` array fallback for the lone `stackalloc`, a `foreach`
+enumerator and a case-insensitive `Equals` on `SpanCompat`, and — for path data —
+`IGeometryContext` plus `SweepDirection`/`FillRule` shared under the `#if !BUILDTASK`
+guard so `SvgPathParser` links unchanged and validates through a no-op sink (a
+path's validity is the token stream, not the emitted geometry).
+
+**No runtime additions to `Avalonia.Base` from the SVG branch.** Phases 1–6
+consume the recording API exclusively. If a gap is discovered, the fix lands on
+the recording side (a commit or follow-up PR on `feature/drawing-recording`, or
 against `master` once it merges) and the SVG branch rebases onto it — never
 mixed into the SVG branch itself. The Phase 5 effect subtypes are the one
-already-known instance of this rule.
+already-known instance of this rule; the compile-time validation above is a
+second, benign one — `IGeometryContext` and the `SweepDirection`/`FillRule` enums
+gain the established `#if !BUILDTASK` accessibility guard (a no-op outside the
+build task) so they can be linked as source into `Avalonia.Build.Tasks`, the same
+pattern `Point`/`Matrix`/`Color` already follow.
 
 ---
 
