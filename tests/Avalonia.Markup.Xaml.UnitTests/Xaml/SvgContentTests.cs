@@ -358,5 +358,56 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
 
             Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
         }
+
+        [Fact]
+        public void Malformed_Points_Reports_A_Warning()
+        {
+            // An odd coordinate count (the renderer drops the unpaired tail).
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <polygon points="0,0 10,0 10"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d => d.Id == "AVLN2210" && d.Title.Contains("points"));
+        }
+
+        [Fact]
+        public void Valid_Points_Report_No_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <polyline points="0,0 10,0 10,10 0,10"/>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
+        }
+
+        [Fact]
+        public void Invalid_ViewBox_Reports_A_Warning()
+        {
+            // Negative width is rejected by SvgViewBox.TryParse, so the renderer
+            // ignores the viewBox entirely.
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg">
+                  <symbol id="s" viewBox="0 0 -5 10"><rect width="5" height="5"/></symbol>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.Contains(diagnostics, d => d.Id == "AVLN2210" && d.Title.Contains("viewBox"));
+        }
+
+        [Fact]
+        public void Valid_ViewBox_Reports_No_Warning()
+        {
+            LoadCapturingDiagnostics("""
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <pattern id="p" viewBox="0 0 4 4"><rect width="2" height="2"/></pattern>
+                </svg>
+                """, out var diagnostics);
+
+            Assert.DoesNotContain(diagnostics, d => d.Id == "AVLN2210");
+        }
     }
 }
