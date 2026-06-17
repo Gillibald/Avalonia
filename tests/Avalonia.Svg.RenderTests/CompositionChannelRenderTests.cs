@@ -1,4 +1,6 @@
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Media;
 using Xunit;
 
 namespace Avalonia.Svg.RenderTests;
@@ -51,7 +53,7 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
             </svg>
             """);
 
-        var control = new Svg
+        var control = new SvgControl
         {
             Source = document,
             Width = 200,
@@ -61,14 +63,14 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         // The immediate pipeline has no compositor, so the control renders
         // through the legacy image there; only the composited pipeline
         // exercises the channel.
-        Svg.EnableExperimentalCompositionAnimations = true;
+        SvgControl.EnableExperimentalCompositionAnimations = true;
         try
         {
             await RenderToFile(control);
         }
         finally
         {
-            Svg.EnableExperimentalCompositionAnimations = false;
+            SvgControl.EnableExperimentalCompositionAnimations = false;
         }
 
         CompareImages(skipImmediate: true);

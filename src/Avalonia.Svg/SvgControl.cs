@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
-using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Metadata;
 using Avalonia.Rendering.Composition;
+using Avalonia.Svg;
 using Avalonia.Svg.Animation;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Controls;
 
 /// <summary>
 /// Displays an SVG document and routes pointer events to the SVG elements under

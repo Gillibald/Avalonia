@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using Avalonia.Controls;
+using Avalonia.Media;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;
@@ -9,7 +11,7 @@ public class SvgSourceTests
     private const string RectMarkup =
         """<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect id="r" x="10" y="10" width="20" height="20" fill="red"/></svg>""";
 
-    private static Svg CreateMeasured(Svg control)
+    private static SvgControl CreateMeasured(SvgControl control)
     {
         control.Measure(new Size(100, 100));
         control.Arrange(new Rect(0, 0, 100, 100));
@@ -20,7 +22,7 @@ public class SvgSourceTests
     public void Source_Document_Renders_And_Hit_Tests()
     {
         using var document = SvgDocument.Parse(RectMarkup);
-        var control = CreateMeasured(new Svg
+        var control = CreateMeasured(new SvgControl
         {
             Source = document,
             Width = 100,
@@ -37,7 +39,7 @@ public class SvgSourceTests
         var inline = SvgDocument.FromXamlContent(RectMarkup);
         Assert.True(inline.HostOwned);
 
-        var control = CreateMeasured(new Svg { Source = inline, Width = 100, Height = 100 });
+        var control = CreateMeasured(new SvgControl { Source = inline, Width = 100, Height = 100 });
         Assert.NotEmpty(control.HitTestElements(new Point(15, 15)));
 
         control.Source = null;
@@ -49,7 +51,7 @@ public class SvgSourceTests
     public void Caller_Owned_Documents_Are_Not_Disposed()
     {
         using var document = SvgDocument.Parse(RectMarkup);
-        var control = CreateMeasured(new Svg { Source = document, Width = 100, Height = 100 });
+        var control = CreateMeasured(new SvgControl { Source = document, Width = 100, Height = 100 });
 
         control.Source = null;
 
@@ -59,7 +61,7 @@ public class SvgSourceTests
     [Fact]
     public void Changing_Source_Reloads()
     {
-        var control = CreateMeasured(new Svg
+        var control = CreateMeasured(new SvgControl
         {
             Source = SvgDocument.FromXamlContent(RectMarkup),
             Width = 100,

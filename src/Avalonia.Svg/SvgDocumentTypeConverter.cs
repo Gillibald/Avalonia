@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using Avalonia.Markup.Xaml;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Media;
 
 /// <summary>
 /// Converts XAML string values into <see cref="SvgDocument"/> instances:

@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using Avalonia.Harfbuzz;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Skia;

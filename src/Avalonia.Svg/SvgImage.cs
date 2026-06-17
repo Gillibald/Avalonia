@@ -4,7 +4,7 @@ using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Compilation;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Media.Imaging;
 
 /// <summary>
 /// An <see cref="IImage"/> that renders an SVG document. The document is compiled

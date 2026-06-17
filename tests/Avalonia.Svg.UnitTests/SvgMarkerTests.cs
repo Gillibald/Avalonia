@@ -1,3 +1,4 @@
+using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Compilation;
 using Xunit;
