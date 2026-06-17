@@ -1,7 +1,9 @@
 using System;
 using System.Linq;
 using Avalonia.Media;
-using Avalonia.Svg.Animation;
+using Avalonia.Media.Svg;
+using Avalonia.Media.Svg.Animation;
+using Avalonia.Media.Svg.Compilation;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;
@@ -256,9 +258,9 @@ public class SvgCompositionChannelTests
 
         static Rect CompileBounds(SvgDocument document, System.Collections.Generic.HashSet<SvgElement> membership)
         {
-            var options = new Compilation.SvgCompileOptions { ElementFilter = membership.Contains };
+            var options = new SvgCompileOptions { ElementFilter = membership.Contains };
             using var recording = Avalonia.Rendering.Composition.DrawingRecording.Create(
-                ctx => Compilation.SvgCompiler.CompileDocument(
+                ctx => SvgCompiler.CompileDocument(
                     document, ctx, document.GetIntrinsicSize(), options));
             return recording.Bounds;
         }

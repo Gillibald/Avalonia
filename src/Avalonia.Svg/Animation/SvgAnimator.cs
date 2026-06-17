@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Media;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Animation;
+namespace Avalonia.Media.Svg.Animation;
 
 /// <summary>
 /// Parses a document's SMIL animations and applies sampled values, splitting

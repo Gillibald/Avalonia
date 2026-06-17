@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 /// <summary>
 /// A forward-only tokenizer over SVG attribute micro-syntax (path data, transform

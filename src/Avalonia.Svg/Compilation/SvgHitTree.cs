@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>The SVG <c>pointer-events</c> property values.</summary>
 internal enum SvgPointerEvents

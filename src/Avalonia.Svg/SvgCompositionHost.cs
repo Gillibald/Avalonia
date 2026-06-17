@@ -5,11 +5,11 @@ using Avalonia.Animation.Easings;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Animations;
-using Avalonia.Svg.Animation;
-using Avalonia.Svg.Compilation;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Animation;
+using Avalonia.Media.Svg.Compilation;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Media.Svg;
 
 /// <summary>
 /// Hosts a partitioned document as a composition visual tree: static slices

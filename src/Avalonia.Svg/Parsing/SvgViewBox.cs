@@ -1,7 +1,7 @@
 using System;
 using Avalonia.Media;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 /// <summary>The <c>viewBox</c> attribute: a rectangle in user space.</summary>
 internal readonly struct SvgViewBox

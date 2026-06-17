@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>
 /// Emits SVG <c>&lt;mask&gt;</c> references: the mask content compiles once into

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Avalonia.Platform;
 using Avalonia.Media;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 /// <summary>A path vertex with its incoming and outgoing tangent directions.</summary>
 internal readonly struct SvgPathVertex

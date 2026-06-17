@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>How a <c>clip-path</c> value resolved.</summary>
 internal enum SvgClipPathResult
