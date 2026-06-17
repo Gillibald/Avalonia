@@ -30,6 +30,7 @@
     <Compile Include="MarkupExtensions\StaticResourceExtension.cs" />
     <Compile Include="Parsers\PropertyParser.cs" />
     <Compile Include="Converters\BitmapTypeConverter.cs" />
+    <Compile Include="Converters\SvgDocumentTypeConverter.cs" />
     <Compile Include="Converters\IconTypeConverter.cs" />
     <Compile Include="Converters\AvaloniaPropertyTypeConverter.cs" />
     <Compile Include="Converters\PointsListTypeConverter.cs" />

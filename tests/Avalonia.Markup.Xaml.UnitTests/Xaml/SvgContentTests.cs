@@ -182,6 +182,32 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         }
 
         [Fact]
+        public void Uri_Source_Loads_The_Resource_Rather_Than_Parsing_The_Uri()
+        {
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "svgcontrol-uri-" + Guid.NewGuid().ToString("N") + ".svg");
+            System.IO.File.WriteAllText(path,
+                """<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect id="r" width="10" height="10"/></svg>""");
+            try
+            {
+                var uri = new Uri(path).AbsoluteUri;
+
+                // Source is a URI string, not markup, so it must load the resource.
+                // Treating it as markup would feed the URI to SvgDocument.Parse and
+                // the element would be missing (or parsing would throw).
+                var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(
+                    $"""<SvgControl xmlns="clr-namespace:Avalonia.Controls;assembly=Avalonia.Svg" Source="{uri}"/>""");
+
+                Assert.NotNull(control.Source);
+                Assert.NotNull(control.Source!.GetElementById("r"));
+            }
+            finally
+            {
+                System.IO.File.Delete(path);
+            }
+        }
+
+        [Fact]
         public void Unresolved_Url_Reference_Reports_A_Warning()
         {
             // The markup is valid SVG and still loads; the broken paint reference
