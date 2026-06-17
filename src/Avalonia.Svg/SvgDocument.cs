@@ -80,10 +80,6 @@ public sealed class SvgDocument : IDisposable
         return content;
     }
 
-    /// <summary>Parses an SVG document from a string.</summary>
-    public static SvgDocument Parse(string xml)
-        => Parse(xml, baseUri: null);
-
     /// <summary>
     /// Creates a document from SVG markup embedded in XAML. Called by
     /// compiled XAML for inline content; the document is marked as owned by
@@ -166,10 +162,12 @@ public sealed class SvgDocument : IDisposable
     }
 
     /// <summary>
-    /// Parses an SVG document from a string, with a base location for
-    /// resolving relative <c>&lt;image&gt;</c> references.
+    /// Parses an SVG document from a markup string, with a base location for
+    /// resolving relative <c>&lt;image&gt;</c> references. Internal: XAML loads
+    /// documents through <see cref="Load(System.Uri)"/> and the type converter,
+    /// not a string parse convention.
     /// </summary>
-    public static SvgDocument Parse(string xml, Uri? baseUri)
+    internal static SvgDocument Parse(string xml, Uri? baseUri = null)
     {
         _ = xml ?? throw new ArgumentNullException(nameof(xml));
         using var reader = XmlReader.Create(new StringReader(xml), CreateReaderSettings());
