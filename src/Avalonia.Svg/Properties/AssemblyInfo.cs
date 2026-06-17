@@ -1,9 +1,8 @@
 using Avalonia.Metadata;
 
-// SvgControl, SvgImage and SvgDocument fold into the core Avalonia.Controls /
-// Avalonia.Media[.Imaging] namespaces (the Avalonia.Controls.ColorPicker pattern),
-// so map them onto the default Avalonia XML namespace — no clr-namespace prefix
-// needed to use <SvgControl> in XAML.
+// SvgControl lands in Avalonia.Controls and SvgImage in Avalonia.Media (the SVG
+// document model and internals live under Avalonia.Media.Svg). Map the two
+// namespaces that expose XAML-usable types onto the default Avalonia XML
+// namespace, so <SvgControl> needs no clr-namespace prefix.
 [assembly: XmlnsDefinition("https://github.com/avaloniaui", "Avalonia.Controls")]
 [assembly: XmlnsDefinition("https://github.com/avaloniaui", "Avalonia.Media")]
-[assembly: XmlnsDefinition("https://github.com/avaloniaui", "Avalonia.Media.Imaging")]

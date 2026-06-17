@@ -1,6 +1,6 @@
 using System;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 internal enum SvgLengthUnit
 {

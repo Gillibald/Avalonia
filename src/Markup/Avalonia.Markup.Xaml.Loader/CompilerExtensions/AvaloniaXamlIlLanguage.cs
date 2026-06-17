@@ -314,7 +314,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
         // scans for: Avalonia.Svg is an optional assembly, so no typeof()-based
         // dependency on it may be generated. The emitted IL references the
         // converter members directly, which keeps them rooted when trimming.
-        private const string SvgDocumentTypeConverterName = "Avalonia.Media.SvgDocumentTypeConverter";
+        private const string SvgDocumentTypeConverterName = "Avalonia.Media.Svg.SvgDocumentTypeConverter";
 
         private static bool TryConvertSvgDocument(
             AstTransformationContext context,

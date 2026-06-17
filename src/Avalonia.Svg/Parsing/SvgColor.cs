@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using Avalonia.Media;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 /// <summary>
 /// Parses CSS color values as SVG content uses them. Differs from

@@ -40,7 +40,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 ]]>
                 """));
 
-            var document = Assert.IsType<Avalonia.Media.SvgDocument>(control.Source);
+            var document = Assert.IsType<Avalonia.Media.Svg.SvgDocument>(control.Source);
             Assert.Equal("svg", document.Root.Name);
             Assert.Equal("0 0 24 24", document.Root.GetAttribute("viewBox"));
             Assert.Equal("#3b82f6", document.GetElementById("hill")!.GetAttribute("fill"));
@@ -119,7 +119,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 </svg>
                 """));
 
-            var document = Assert.IsType<Avalonia.Media.SvgDocument>(control.Source);
+            var document = Assert.IsType<Avalonia.Media.Svg.SvgDocument>(control.Source);
             Assert.Equal("svg", document.Root.Name);
             Assert.Equal("0 0 24 24", document.Root.GetAttribute("viewBox"));
             Assert.Equal("#3b82f6", document.GetElementById("hill")!.GetAttribute("fill"));

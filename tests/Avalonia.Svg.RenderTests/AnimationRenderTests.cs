@@ -1,8 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Avalonia.Media.Imaging;
-using Avalonia.Svg.Animation;
+using Avalonia.Media.Svg.Animation;
 using Xunit;
 
 namespace Avalonia.Svg.RenderTests;

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>
 /// A minimal CSS engine for <c>&lt;style&gt;</c> content: selector chains of
