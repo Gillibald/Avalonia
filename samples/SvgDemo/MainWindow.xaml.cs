@@ -16,7 +16,7 @@ namespace SvgDemo
         {
             InitializeComponent();
 
-            var interactiveSvg = this.FindControl<Avalonia.Svg.Svg>("InteractiveSvg")!;
+            var interactiveSvg = this.FindControl<Avalonia.Svg.SvgControl>("InteractiveSvg")!;
             _hoverChainText = this.FindControl<TextBlock>("HoverChainText")!;
             this.FindControl<ItemsControl>("ClickLog")!.ItemsSource = _clicks;
 
@@ -30,7 +30,7 @@ namespace SvgDemo
 
         private void OnSvgPointerMoved(object? sender, PointerEventArgs e)
         {
-            var svg = (Avalonia.Svg.Svg)sender!;
+            var svg = (Avalonia.Svg.SvgControl)sender!;
             var chain = svg.HitTestElements(e.GetPosition(svg));
             _hoverChainText.Text = chain.Count > 0 ? FormatChain(chain) : "—";
         }
