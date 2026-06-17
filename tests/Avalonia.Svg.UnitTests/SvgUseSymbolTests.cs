@@ -1,7 +1,8 @@
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Avalonia.Media.Imaging;
 using Avalonia.Rendering.Composition;
-using Avalonia.Svg.Compilation;
+using Avalonia.Media.Svg.Compilation;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;

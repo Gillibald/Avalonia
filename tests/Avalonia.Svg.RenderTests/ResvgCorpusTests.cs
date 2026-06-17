@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Avalonia.Media.Imaging;
 using Avalonia.Skia.RenderTests;
 using Xunit;

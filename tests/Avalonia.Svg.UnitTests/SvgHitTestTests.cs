@@ -1,5 +1,6 @@
 using System.Linq;
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Avalonia.Media.Imaging;
 using Xunit;
 

@@ -1,7 +1,7 @@
 using System;
 using Avalonia.Media;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 internal enum SvgPaintKind
 {

@@ -1,6 +1,6 @@
 using System;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 /// <summary>
 /// Parses SVG transform lists (<c>translate</c>, <c>scale</c>, <c>rotate</c>,

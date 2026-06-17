@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>
 /// Emits <c>marker-start</c>/<c>marker-mid</c>/<c>marker-end</c> placements for a

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Input;
-using Avalonia.Media;
+using Avalonia.Media.Svg;
 
 namespace Avalonia.Controls;
 

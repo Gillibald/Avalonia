@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using Avalonia.Media;
+using Avalonia.Media.Svg;
+using Avalonia.Media.Svg.Compilation;
 using Avalonia.Rendering.Composition;
-using Avalonia.Svg.Compilation;
 
-namespace Avalonia.Media.Imaging;
+namespace Avalonia.Media;
 
 /// <summary>
 /// An <see cref="IImage"/> that renders an SVG document. The document is compiled

@@ -3,9 +3,9 @@ using System.IO;
 using System.IO.Compression;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>
 /// Compiles <c>&lt;image&gt;</c> elements: raster content decodes to a
