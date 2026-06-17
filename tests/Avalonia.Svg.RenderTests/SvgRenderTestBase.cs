@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Skia.RenderTests;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;

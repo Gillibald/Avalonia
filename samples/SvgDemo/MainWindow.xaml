@@ -1,6 +1,5 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:svg="clr-namespace:Avalonia.Svg;assembly=Avalonia.Svg"
         x:Class="SvgDemo.MainWindow"
         Title="Avalonia.Svg Demo"
         Width="960" Height="700">
@@ -34,7 +33,7 @@
             paint-order are honored.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/shapes.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/shapes.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -50,7 +49,7 @@
             shared recording and paint as a tiled brush, including patternTransform.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/gradients.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/gradients.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -66,7 +65,7 @@
             polyline vertices, including orient="auto-start-reverse".
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/symbols.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/symbols.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -82,7 +81,7 @@
             textPath places glyphs along an arc-length parameterized path.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/text.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/text.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -97,7 +96,7 @@
             the two red pairs: group opacity flattens the overlap, per-shape opacity blends it.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/compositing.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/compositing.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -113,7 +112,7 @@
             drop-shadow effect at compile time.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/filters.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/filters.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -130,11 +129,11 @@
           </TextBlock>
           <TextBlock FontWeight="Bold">Paint channel — brush mutation only</TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/animation-paint.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/animation-paint.svg"/>
           </Border>
           <TextBlock FontWeight="Bold">Structural channel — re-emission over shared recordings</TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/animation-structural.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/animation-structural.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -153,7 +152,7 @@
             tick — for this scene that is well under a millisecond per frame.
           </TextBlock>
           <Border Classes="canvas" Background="#0b1022">
-            <svg:SvgControl Source="avares://SvgDemo/Assets/showcase.svg"/>
+            <SvgControl Source="avares://SvgDemo/Assets/showcase.svg"/>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -169,7 +168,7 @@
             so the runtime parses a compact pre-checked string with no file or resource I/O.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Width="160" Height="160">
+            <SvgControl Width="160" Height="160">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
                 <!-- this comment never reaches the runtime -->
                 <defs>
@@ -184,7 +183,7 @@
                 <path d="M8 50 L20 38 L30 48 L42 36 L56 50 V56 H8 Z" fill="#22c55e"/>
                 <text x="32" y="61" font-size="5" text-anchor="middle" fill="#0c4a6e">inline svg</text>
               </svg>
-            </svg:SvgControl>
+            </SvgControl>
           </Border>
         </StackPanel>
       </ScrollViewer>
@@ -201,7 +200,7 @@
             report the symbol content plus their use site.
           </TextBlock>
           <Border Classes="canvas">
-            <svg:SvgControl Name="InteractiveSvg" Source="avares://SvgDemo/Assets/interactive.svg"/>
+            <SvgControl Name="InteractiveSvg" Source="avares://SvgDemo/Assets/interactive.svg"/>
           </Border>
           <StackPanel Orientation="Horizontal" Spacing="8">
             <TextBlock FontWeight="Bold" Text="Under pointer:"/>

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Avalonia.Media;
 using Avalonia.Svg.Animation;
 using Xunit;
 

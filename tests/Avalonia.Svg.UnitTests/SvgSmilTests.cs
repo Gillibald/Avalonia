@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Animation;
 using Avalonia.Svg.Compilation;
