@@ -7,14 +7,14 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
     public class SvgContentTests : XamlTestBase
     {
         private static string Wrap(string content) => $"""
-            <SvgControl xmlns="clr-namespace:Avalonia.Svg;assembly=Avalonia.Svg">{content}</SvgControl>
+            <SvgControl xmlns="clr-namespace:Avalonia.Controls;assembly=Avalonia.Svg">{content}</SvgControl>
             """;
 
-        private static Avalonia.Svg.SvgControl LoadCapturingDiagnostics(
+        private static Avalonia.Controls.SvgControl LoadCapturingDiagnostics(
             string content, out List<RuntimeXamlDiagnostic> diagnostics)
         {
             var captured = new List<RuntimeXamlDiagnostic>();
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(
                 new RuntimeXamlLoaderDocument(Wrap(content)),
                 new RuntimeXamlLoaderConfiguration
                 {
@@ -31,7 +31,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         [Fact]
         public void Cdata_Content_Compiles_Into_A_Document()
         {
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
                 <![CDATA[
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                     <!-- pasted from a design tool -->
@@ -40,7 +40,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 ]]>
                 """));
 
-            var document = Assert.IsType<Avalonia.Svg.SvgDocument>(control.Source);
+            var document = Assert.IsType<Avalonia.Media.SvgDocument>(control.Source);
             Assert.Equal("svg", document.Root.Name);
             Assert.Equal("0 0 24 24", document.Root.GetAttribute("viewBox"));
             Assert.Equal("#3b82f6", document.GetElementById("hill")!.GetAttribute("fill"));
@@ -49,7 +49,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         [Fact]
         public void Missing_Svg_Namespace_Is_Injected()
         {
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap(
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap(
                 "<![CDATA[ <svg width='10' height='10'><rect id='r' width='10' height='10'/></svg> ]]>"));
 
             Assert.NotNull(control.Source);
@@ -59,7 +59,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         [Fact]
         public void Editor_Cruft_Is_Stripped_And_Xlink_Survives()
         {
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
                 <![CDATA[
                   <svg xmlns="http://www.w3.org/2000/svg"
                        xmlns:xlink="http://www.w3.org/1999/xlink"
@@ -98,9 +98,9 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         [Fact]
         public void Attribute_Syntax_Compiles_Markup_Too()
         {
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(
                 """
-                <SvgControl xmlns="clr-namespace:Avalonia.Svg;assembly=Avalonia.Svg"
+                <SvgControl xmlns="clr-namespace:Avalonia.Controls;assembly=Avalonia.Svg"
                             Source="&lt;svg xmlns='http://www.w3.org/2000/svg'&gt;&lt;circle id='c' r='4'/&gt;&lt;/svg&gt;"/>
                 """);
 
@@ -112,14 +112,14 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         {
             // The verbatim form of Cdata_Content_Compiles_Into_A_Document: the
             // <svg> subtree is pasted directly, with no CDATA wrapper.
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
                   <!-- pasted from a design tool -->
                   <path id="hill" d="M12 2 2 7" fill="#3b82f6"/>
                 </svg>
                 """));
 
-            var document = Assert.IsType<Avalonia.Svg.SvgDocument>(control.Source);
+            var document = Assert.IsType<Avalonia.Media.SvgDocument>(control.Source);
             Assert.Equal("svg", document.Root.Name);
             Assert.Equal("0 0 24 24", document.Root.GetAttribute("viewBox"));
             Assert.Equal("#3b82f6", document.GetElementById("hill")!.GetAttribute("fill"));
@@ -128,7 +128,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         [Fact]
         public void Inline_Element_With_Defs_And_Gradient_Compiles()
         {
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
                   <defs>
                     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
@@ -152,7 +152,7 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
             // A nested xmlns declaration on the inner <svg> is exactly what XamlX's
             // parser rejects on non-root elements — the reason CDATA was required.
             // Capturing the subtree verbatim sidesteps that and keeps xlink intact.
-            var control = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
+            var control = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap("""
                 <svg xmlns="http://www.w3.org/2000/svg"
                      xmlns:xlink="http://www.w3.org/1999/xlink">
                   <rect id="r" width="5" height="5"/>
@@ -172,8 +172,8 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 </svg>
                 """;
 
-            var inline = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap(markup));
-            var cdata = (Avalonia.Svg.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap($"<![CDATA[{markup}]]>"));
+            var inline = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap(markup));
+            var cdata = (Avalonia.Controls.SvgControl)AvaloniaRuntimeXamlLoader.Load(Wrap($"<![CDATA[{markup}]]>"));
 
             Assert.Equal(cdata.Source!.Root.GetAttribute("viewBox"), inline.Source!.Root.GetAttribute("viewBox"));
             Assert.Equal(

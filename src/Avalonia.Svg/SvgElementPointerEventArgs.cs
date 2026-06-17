@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Input;
+using Avalonia.Media;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Controls;
 
 /// <summary>
-/// Carries the SVG element chain hit by a pointer event on the <see cref="Svg"/>
-/// control, together with the originating pointer event.
+/// Carries the SVG element chain hit by a pointer event on the <see cref="SvgControl"/>,
+/// together with the originating pointer event.
 /// </summary>
 public class SvgElementPointerEventArgs : EventArgs
 {

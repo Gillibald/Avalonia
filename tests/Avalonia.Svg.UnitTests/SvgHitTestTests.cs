@@ -1,4 +1,6 @@
 using System.Linq;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;

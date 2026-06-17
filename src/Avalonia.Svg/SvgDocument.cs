@@ -7,12 +7,12 @@ using Avalonia.Rendering.Composition;
 using Avalonia.Svg.Compilation;
 using Avalonia.Svg.Parsing;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Media;
 
 /// <summary>
 /// A parsed SVG document: the element tree plus the id map. Parsing is pure —
 /// no drawing resources are created until the document is compiled (e.g. by
-/// <see cref="SvgImage"/>).
+/// <see cref="Imaging.SvgImage"/>).
 /// </summary>
 [System.ComponentModel.TypeConverter(typeof(SvgDocumentTypeConverter))]
 public sealed class SvgDocument : IDisposable

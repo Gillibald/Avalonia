@@ -3,7 +3,7 @@ using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
-using Avalonia.Svg;
+using Avalonia.Media;
 
 namespace SvgDemo
 {
@@ -16,7 +16,7 @@ namespace SvgDemo
         {
             InitializeComponent();
 
-            var interactiveSvg = this.FindControl<Avalonia.Svg.SvgControl>("InteractiveSvg")!;
+            var interactiveSvg = this.FindControl<SvgControl>("InteractiveSvg")!;
             _hoverChainText = this.FindControl<TextBlock>("HoverChainText")!;
             this.FindControl<ItemsControl>("ClickLog")!.ItemsSource = _clicks;
 
@@ -30,7 +30,7 @@ namespace SvgDemo
 
         private void OnSvgPointerMoved(object? sender, PointerEventArgs e)
         {
-            var svg = (Avalonia.Svg.SvgControl)sender!;
+            var svg = (SvgControl)sender!;
             var chain = svg.HitTestElements(e.GetPosition(svg));
             _hoverChainText.Text = chain.Count > 0 ? FormatChain(chain) : "—";
         }

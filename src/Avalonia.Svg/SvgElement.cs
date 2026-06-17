@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Avalonia.Svg;
+namespace Avalonia.Media;
 
 /// <summary>
 /// An element in a parsed SVG document. Holds the element name, raw attributes
