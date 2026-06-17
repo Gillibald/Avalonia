@@ -15,25 +15,25 @@ namespace Avalonia.Svg;
 /// <see cref="Rendering.Composition.DrawingRecording"/> (via <see cref="SvgImage"/>);
 /// rendering replays the recording under the control's stretch transform.
 /// </summary>
-public class Svg : Control
+public class SvgControl : Control
 {
     /// <summary>
     /// Defines the <see cref="Source"/> property.
     /// </summary>
     public static readonly StyledProperty<SvgDocument?> SourceProperty =
-        AvaloniaProperty.Register<Svg, SvgDocument?>(nameof(Source));
+        AvaloniaProperty.Register<SvgControl, SvgDocument?>(nameof(Source));
 
     /// <summary>
     /// Defines the <see cref="Stretch"/> property.
     /// </summary>
     public static readonly StyledProperty<Stretch> StretchProperty =
-        AvaloniaProperty.Register<Svg, Stretch>(nameof(Stretch), Stretch.Uniform);
+        AvaloniaProperty.Register<SvgControl, Stretch>(nameof(Stretch), Stretch.Uniform);
 
     /// <summary>
     /// Defines the <see cref="StretchDirection"/> property.
     /// </summary>
     public static readonly StyledProperty<StretchDirection> StretchDirectionProperty =
-        AvaloniaProperty.Register<Svg, StretchDirection>(nameof(StretchDirection), StretchDirection.Both);
+        AvaloniaProperty.Register<SvgControl, StretchDirection>(nameof(StretchDirection), StretchDirection.Both);
 
     private SvgImage? _image;
     private SvgAnimator? _animator;
@@ -56,10 +56,10 @@ public class Svg : Control
     /// </summary>
     public static bool EnableExperimentalCompositionAnimations { get; set; }
 
-    static Svg()
+    static SvgControl()
     {
-        AffectsRender<Svg>(SourceProperty, StretchProperty, StretchDirectionProperty);
-        AffectsMeasure<Svg>(SourceProperty, StretchProperty, StretchDirectionProperty);
+        AffectsRender<SvgControl>(SourceProperty, StretchProperty, StretchDirectionProperty);
+        AffectsMeasure<SvgControl>(SourceProperty, StretchProperty, StretchDirectionProperty);
     }
 
     /// <summary>
