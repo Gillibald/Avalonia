@@ -13,6 +13,8 @@ namespace Avalonia.Media;
 /// </summary>
 public sealed class SvgImage : IImage, IDisposable
 {
+    private readonly SvgDocument _document;
+    private readonly bool _ownsDocument;
     private readonly DrawingRecording _recording;
     private readonly SvgHitNode? _hitRoot;
     private readonly bool _hitTestNeedsFullWalk;
@@ -22,7 +24,7 @@ public sealed class SvgImage : IImage, IDisposable
     /// document's intrinsic size.
     /// </summary>
     public SvgImage(SvgDocument document)
-        : this(document, compositor: null, paintAnimationTargets: null)
+        : this(document, ownsDocument: false, compositor: null, paintAnimationTargets: null)
     {
     }
 
@@ -34,8 +36,18 @@ public sealed class SvgImage : IImage, IDisposable
         SvgDocument document,
         Compositor? compositor,
         IReadOnlyCollection<(SvgElement Element, string Attribute)>? paintAnimationTargets)
+        : this(document, ownsDocument: false, compositor, paintAnimationTargets)
     {
-        _ = document ?? throw new ArgumentNullException(nameof(document));
+    }
+
+    private SvgImage(
+        SvgDocument document,
+        bool ownsDocument,
+        Compositor? compositor,
+        IReadOnlyCollection<(SvgElement Element, string Attribute)>? paintAnimationTargets)
+    {
+        _document = document ?? throw new ArgumentNullException(nameof(document));
+        _ownsDocument = ownsDocument;
 
         Size = document.GetIntrinsicSize();
         var options = new SvgCompileOptions
@@ -64,6 +76,17 @@ public sealed class SvgImage : IImage, IDisposable
         // interactive somewhere in the tree.
         _hitTestNeedsFullWalk = _hitRoot != null && RequiresFullWalk(_hitRoot);
     }
+
+    /// <summary>
+    /// Loads an SVG from <paramref name="uri"/> — an <c>avares://</c> resource or
+    /// a local file — and wraps it in an image that owns the document, so
+    /// disposing the image disposes the document too. A relative
+    /// <paramref name="uri"/> is resolved against <paramref name="baseUri"/>.
+    /// </summary>
+    public static SvgImage Load(Uri uri, Uri? baseUri = null)
+        => new(
+            SvgDocument.Load(SvgDocument.ResolveUri(uri, baseUri)),
+            ownsDocument: true, compositor: null, paintAnimationTargets: null);
 
     /// <summary>
     /// The mutable brushes registered for the animation paint channel, keyed by
@@ -154,5 +177,10 @@ public sealed class SvgImage : IImage, IDisposable
     }
 
     /// <inheritdoc/>
-    public void Dispose() => _recording.Dispose();
+    public void Dispose()
+    {
+        _recording.Dispose();
+        if (_ownsDocument)
+            _document.Dispose();
+    }
 }

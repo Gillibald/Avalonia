@@ -14,7 +14,9 @@ namespace Avalonia.Media.Svg;
 /// no drawing resources are created until the document is compiled (e.g. by
 /// <see cref="SvgImage"/>).
 /// </summary>
-[System.ComponentModel.TypeConverter(typeof(SvgDocumentTypeConverter))]
+// String/URI -> SvgDocument conversion for XAML is registered by name in
+// AvaloniaXamlIlLanguage (Avalonia.Markup.Xaml), so no [TypeConverter] attribute
+// is needed here — which keeps SvgDocument free of any markup-assembly reference.
 public sealed class SvgDocument : IDisposable
 {
     internal const string SvgNamespace = "http://www.w3.org/2000/svg";
@@ -90,6 +92,64 @@ public sealed class SvgDocument : IDisposable
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public static SvgDocument FromXamlContent(string markup)
         => ParseHostOwned(markup, baseUri: null);
+
+    /// <summary>
+    /// Resolves a XAML <c>Source</c> string — SVG markup (anything starting with
+    /// <c>&lt;</c>) or a URI — into a host-owned document, resolving a relative
+    /// URI against <paramref name="baseUri"/>. The XAML type converter calls this
+    /// with the base URI taken from the markup context.
+    /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static SvgDocument FromXamlSource(string source, Uri? baseUri)
+    {
+        _ = source ?? throw new ArgumentNullException(nameof(source));
+
+        if (IsMarkup(source))
+            return ParseHostOwned(source, baseUri);
+
+        var uri = source.StartsWith("/", StringComparison.Ordinal)
+            ? new Uri(source, UriKind.Relative)
+            : new Uri(source, UriKind.RelativeOrAbsolute);
+        return FromXamlUri(uri, baseUri);
+    }
+
+    /// <summary>
+    /// Loads a host-owned document from <paramref name="uri"/>, resolving a
+    /// relative URI against <paramref name="baseUri"/>.
+    /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static SvgDocument FromXamlUri(Uri uri, Uri? baseUri)
+        => LoadHostOwned(ResolveUri(uri, baseUri));
+
+    private static bool IsMarkup(string text)
+    {
+        foreach (var c in text)
+        {
+            if (c == '<')
+                return true;
+            if (!char.IsWhiteSpace(c))
+                return false;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns <paramref name="uri"/> if absolute; otherwise resolves it against
+    /// <paramref name="baseUri"/>, throwing when no base URI is available.
+    /// </summary>
+    internal static Uri ResolveUri(Uri uri, Uri? baseUri)
+    {
+        _ = uri ?? throw new ArgumentNullException(nameof(uri));
+
+        if (uri.IsAbsoluteUri)
+            return uri;
+
+        return baseUri is null
+            ? throw new InvalidOperationException(
+                $"Cannot resolve the relative SVG source '{uri}' without a base URI.")
+            : new Uri(baseUri, uri);
+    }
 
     internal static SvgDocument ParseHostOwned(string markup, Uri? baseUri)
     {

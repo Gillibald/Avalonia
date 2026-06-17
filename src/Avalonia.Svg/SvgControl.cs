@@ -69,7 +69,7 @@ public class SvgControl : Control
     /// or as CDATA content of the control — is validated, minified and turned
     /// into a document factory at compile time, while URI strings
     /// (<c>avares://</c> resources or files, relative against the XAML base
-    /// URI) load through <see cref="SvgDocumentTypeConverter"/>. Documents
+    /// URI) load through the XAML <c>SvgDocumentTypeConverter</c>. Documents
     /// created by XAML are disposed by the control when replaced; documents
     /// assigned from code stay caller-owned.
     /// </summary>

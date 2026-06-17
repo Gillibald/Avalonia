@@ -1134,21 +1134,24 @@ not yet stable API):
 Avalonia.Svg
 ├── SvgDocument           // Load/Parse; owns recordings; IDisposable. ✓
 ├── SvgElement            // Parsed element; hit-test results and event args. ✓
-├── SvgImage : IImage     // Draws the recording; HitTestElements(Point). ✓
-├── Svg : Control         // DPs: Source (SvgDocument, [Content], converts
-│                         //      from markup/URI strings), Stretch,
-│                         //      StretchDirection; HitTestElements,
-│                         //      ElementPointer{Pressed,Released,Moved};
-│                         //      SMIL driver (paint + structural channels;
-│                         //      opt-in composition channel). ✓
-└── SvgDocumentTypeConverter // string/Uri → SvgDocument (markup sniff or
-                          // asset/file load against the XAML base URI). ✓
+├── SvgImage : IImage     // Draws the recording; HitTestElements(Point);
+│                         //      static Load(uri) used by the IImage converter. ✓
+└── SvgControl : Control  // DPs: Source (SvgDocument, [Content], converts
+                          //      from markup/URI strings), Stretch,
+                          //      StretchDirection; HitTestElements,
+                          //      ElementPointer{Pressed,Released,Moved};
+                          //      SMIL driver (paint + structural channels;
+                          //      opt-in composition channel). ✓
 ```
 
-Note: the `SvgControl` made `Avalonia.Svg` reference `Avalonia.Controls`
-(`Control` lives there), and `SvgDocumentTypeConverter` added
-`Avalonia.Markup.Xaml` (`IUriContext` for relative source resolution); the
-compiler/image layers still depend on `Avalonia.Base` only.
+Note: `SvgControl` makes `Avalonia.Svg` reference `Avalonia.Controls` (`Control`
+lives there); the image and parsing layers need `Avalonia.Base` only.
+`Avalonia.Svg` takes **no** reference on `Avalonia.Markup.Xaml` — the string/URI
+`SvgDocumentTypeConverter` lives there instead (it needs the XAML `IUriContext`
+to resolve relative sources) and threads the resolved base URI into
+`Avalonia.Svg` as a plain `Uri`. The dependency runs the other way:
+`Avalonia.Markup.Xaml` references `Avalonia.Svg` so its `IImage` converter can
+load an `.svg` URI as an `SvgImage` (e.g. `<Image Source="…/icon.svg"/>`).
 
 ### Inline SVG in XAML
 
@@ -1158,13 +1161,15 @@ pastes straight in as a nested `<svg>` element — no CDATA wrapper — or as CD
 content when verbatim fidelity is required:
 
 ```xml
-<Svg Width="48" Height="48">
+<SvgControl Width="48" Height="48">
   <svg xmlns="http://www.w3.org/2000/svg" …>…</svg>
-</Svg>
-<Svg Width="48" Height="48">
+</SvgControl>
+<SvgControl Width="48" Height="48">
   <![CDATA[ <svg xmlns="http://www.w3.org/2000/svg" …>…</svg> ]]>
-</Svg>
-<Svg Source="avares://MyApp/Assets/icon.svg"/>
+</SvgControl>
+<SvgControl Source="avares://MyApp/Assets/icon.svg"/>
+<!-- or, since SvgImage is an IImage, through a plain Image: -->
+<Image Source="avares://MyApp/Assets/icon.svg"/>
 ```
 
 **Markup strings compile into a document factory.** A XAML compiler
@@ -1179,9 +1184,10 @@ whitespace dropped; `xml:space` and text-content scopes preserved; a missing
 root `xmlns` injected) and emits a direct
 `SvgDocument.FromXamlContent("<minified>")` call into the compiled XAML.
 
-**URI strings convert through `SvgDocumentTypeConverter`** (compile-time
-emitted invocation, runtime execution with the XAML base URI from
-`IUriContext` — `avares://` resources, files, and relative paths). The
+**URI strings convert through `SvgDocumentTypeConverter`** (in
+`Avalonia.Markup.Xaml`; compile-time emitted invocation, runtime execution with
+the XAML base URI from `IUriContext` — `avares://` resources, files, and
+relative paths). The
 interception happens in Avalonia's `CustomValueConverter` hook, which runs
 before XamlX's `Parse(string)`-method convention; otherwise URI strings would
 be fed to `SvgDocument.Parse` as markup.

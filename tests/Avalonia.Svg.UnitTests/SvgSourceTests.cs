@@ -79,7 +79,11 @@ public class SvgSourceTests
     }
 }
 
-public class SvgDocumentTypeConverterTests
+// The XAML SvgDocumentTypeConverter (in Avalonia.Markup.Xaml) only reads the
+// base URI from the markup context and delegates here, so the conversion logic
+// is covered by exercising SvgDocument.FromXamlSource directly with an explicit
+// base URI.
+public class SvgDocumentSourceTests
 {
     private const string RectMarkup =
         """<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect id="r" width="10" height="10"/></svg>""";
@@ -87,9 +91,7 @@ public class SvgDocumentTypeConverterTests
     [Fact]
     public void Markup_Strings_Parse_As_Host_Owned_Documents()
     {
-        var converter = new SvgDocumentTypeConverter();
-
-        var document = Assert.IsType<SvgDocument>(converter.ConvertFrom(null, null, $"  {RectMarkup}"));
+        var document = SvgDocument.FromXamlSource($"  {RectMarkup}", baseUri: null);
 
         Assert.True(document.HostOwned);
         Assert.Equal("rect", document.GetElementById("r")!.Name);
@@ -102,10 +104,9 @@ public class SvgDocumentTypeConverterTests
         File.WriteAllText(path, RectMarkup);
         try
         {
-            var converter = new SvgDocumentTypeConverter();
             var uri = new Uri(path, UriKind.Absolute);
 
-            var document = Assert.IsType<SvgDocument>(converter.ConvertFrom(null, null, uri.AbsoluteUri));
+            var document = SvgDocument.FromXamlSource(uri.AbsoluteUri, baseUri: null);
 
             Assert.True(document.HostOwned);
             Assert.NotNull(document.GetElementById("r"));
@@ -119,9 +120,29 @@ public class SvgDocumentTypeConverterTests
     [Fact]
     public void Relative_Uri_Without_Base_Throws()
     {
-        var converter = new SvgDocumentTypeConverter();
-
         Assert.Throws<InvalidOperationException>(() =>
-            converter.ConvertFrom(null, null, "/Assets/icon.svg"));
+            SvgDocument.FromXamlSource("/Assets/icon.svg", baseUri: null));
+    }
+
+    [Fact]
+    public void Relative_Uri_Resolves_Against_The_Base_Uri()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"svg-base-{Guid.NewGuid():N}.svg");
+        File.WriteAllText(path, RectMarkup);
+        try
+        {
+            // The base URI is the file itself; the relative source (its file
+            // name) resolves back to the same file.
+            var baseUri = new Uri(path, UriKind.Absolute);
+
+            var document = SvgDocument.FromXamlSource(Path.GetFileName(path), baseUri);
+
+            Assert.True(document.HostOwned);
+            Assert.NotNull(document.GetElementById("r"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }
