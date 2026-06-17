@@ -310,11 +310,12 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
             return false;
         }
 
-        // Kept out of the literal form the CompilerDynamicDependenciesGenerator
-        // scans for: Avalonia.Svg is an optional assembly, so no typeof()-based
-        // dependency on it may be generated. The emitted IL references the
-        // converter members directly, which keeps them rooted when trimming.
-        private const string SvgDocumentTypeConverterName = "Avalonia.Media.Svg.SvgDocumentTypeConverter";
+        // The converter lives in Avalonia.Markup.Xaml (it needs the XAML
+        // IUriContext to resolve relative sources); this transform only runs when
+        // the target type is SvgDocument, i.e. Avalonia.Svg is referenced anyway.
+        // The emitted IL references the converter members directly, which keeps
+        // them rooted when trimming.
+        private const string SvgDocumentTypeConverterName = "Avalonia.Markup.Xaml.Converters.SvgDocumentTypeConverter";
 
         private static bool TryConvertSvgDocument(
             AstTransformationContext context,

@@ -212,5 +212,25 @@
       </ScrollViewer>
     </TabItem>
 
+    <TabItem Header="Image Source">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            An SVG resolves to an SvgImage through the same IImage type converter that loads raster
+            bitmaps, so it can be the Source of a plain Image control — no SvgControl required. A URI
+            ending in .svg routes to the vector loader; anything else stays a raster Bitmap. Both the
+            Source attribute and the element-content form work.
+          </TextBlock>
+          <Border Classes="canvas">
+            <Image Width="200" Height="200" Source="avares://SvgDemo/Assets/shapes.svg"/>
+          </Border>
+          <TextBlock Classes="caption">The same converter via element content (the URI is the Image's Content):</TextBlock>
+          <Border Classes="canvas">
+            <Image Width="200" Height="200">avares://SvgDemo/Assets/showcase.svg</Image>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
   </TabControl>
 </Window>
