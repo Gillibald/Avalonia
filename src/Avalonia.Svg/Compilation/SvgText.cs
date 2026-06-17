@@ -4,9 +4,9 @@ using System.Text;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>
 /// Lays out <c>&lt;text&gt;</c> content — plain runs, <c>&lt;tspan&gt;</c>s and

@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Input;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Metadata;
 using Avalonia.Rendering.Composition;
-using Avalonia.Svg;
-using Avalonia.Svg.Animation;
+using Avalonia.Media.Svg;
+using Avalonia.Media.Svg.Animation;
 
 namespace Avalonia.Controls;
 

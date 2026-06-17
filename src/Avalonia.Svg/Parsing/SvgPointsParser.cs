@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Platform;
 
-namespace Avalonia.Svg.Parsing;
+namespace Avalonia.Media.Svg.Parsing;
 
 /// <summary>
 /// Parses the <c>points</c> attribute of <c>polyline</c>/<c>polygon</c> into an

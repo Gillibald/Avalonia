@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Media;
 
-namespace Avalonia.Svg.Animation;
+namespace Avalonia.Media.Svg.Animation;
 
 /// <summary>The visual property a composition-channel animation drives.</summary>
 internal enum SvgCompositionAnimationKind

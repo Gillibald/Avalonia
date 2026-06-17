@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Xunit;
 
 namespace Avalonia.Svg.RenderTests;

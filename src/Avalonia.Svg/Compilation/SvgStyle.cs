@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Compilation;
+namespace Avalonia.Media.Svg.Compilation;
 
 /// <summary>
 /// The resolved, inheritable SVG style properties for one element. Inheritance is

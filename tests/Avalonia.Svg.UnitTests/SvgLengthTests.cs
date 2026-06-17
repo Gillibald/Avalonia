@@ -1,5 +1,5 @@
 using System;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;

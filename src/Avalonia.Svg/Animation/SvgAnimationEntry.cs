@@ -1,9 +1,9 @@
 using System;
 using System.Globalization;
 using Avalonia.Media;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Svg.Animation;
+namespace Avalonia.Media.Svg.Animation;
 
 /// <summary>The <c>animateTransform</c> transform kind.</summary>
 internal enum SvgAnimationTransformType

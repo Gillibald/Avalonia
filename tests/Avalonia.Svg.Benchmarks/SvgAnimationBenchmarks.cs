@@ -2,11 +2,12 @@ using System;
 using System.Text;
 using Avalonia.Harfbuzz;
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
 using Avalonia.Skia;
-using Avalonia.Svg.Animation;
-using Avalonia.Svg.Compilation;
+using Avalonia.Media.Svg.Animation;
+using Avalonia.Media.Svg.Compilation;
 using BenchmarkDotNet.Attributes;
 
 namespace Avalonia.Svg.Benchmarks;

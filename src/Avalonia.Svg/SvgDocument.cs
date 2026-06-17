@@ -4,15 +4,15 @@ using System.IO;
 using System.Xml;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
-using Avalonia.Svg.Compilation;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Compilation;
+using Avalonia.Media.Svg.Parsing;
 
-namespace Avalonia.Media;
+namespace Avalonia.Media.Svg;
 
 /// <summary>
 /// A parsed SVG document: the element tree plus the id map. Parsing is pure —
 /// no drawing resources are created until the document is compiled (e.g. by
-/// <see cref="Imaging.SvgImage"/>).
+/// <see cref="SvgImage"/>).
 /// </summary>
 [System.ComponentModel.TypeConverter(typeof(SvgDocumentTypeConverter))]
 public sealed class SvgDocument : IDisposable

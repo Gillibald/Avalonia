@@ -1,10 +1,11 @@
 using System;
 using Avalonia.Media;
+using Avalonia.Media.Svg;
 using Avalonia.Media.Imaging;
 using Avalonia.Rendering.Composition;
-using Avalonia.Svg.Animation;
-using Avalonia.Svg.Compilation;
-using Avalonia.Svg.Parsing;
+using Avalonia.Media.Svg.Animation;
+using Avalonia.Media.Svg.Compilation;
+using Avalonia.Media.Svg.Parsing;
 using Xunit;
 
 namespace Avalonia.Svg.UnitTests;

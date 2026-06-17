@@ -5,7 +5,7 @@ using Avalonia.Platform;
 namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
 {
     /// <summary>
-    /// A geometry sink that discards every segment. <see cref="Avalonia.Svg.Parsing.SvgPathParser"/>
+    /// A geometry sink that discards every segment. <see cref="Avalonia.Media.Svg.Parsing.SvgPathParser"/>
     /// decides a path's validity purely from the token stream — it throws a
     /// <see cref="System.FormatException"/> on malformed data — so the emitted
     /// geometry is not needed when validating, only the exception.
