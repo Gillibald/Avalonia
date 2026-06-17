@@ -61,6 +61,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
     <ProjectReference Include="..\..\Avalonia.Controls\Avalonia.Controls.csproj" />
+    <ProjectReference Include="..\..\Avalonia.Svg\Avalonia.Svg.csproj" />
     <ProjectReference Include="..\Avalonia.Markup\Avalonia.Markup.csproj" />
   </ItemGroup>
   <Import Project="..\..\..\build\DevAnalyzers.props" />
