@@ -897,12 +897,12 @@ and hit testing are tracked entirely in the SVG layer.
 - [x] Parse `pointer-events` (`none`, `all`, `visiblePainted`, …) and store
       on each `SvgElement` / `SvgHitNode`. *(Inherited via `SvgStyle`;
       never-hittable leaves are pruned at build time.)*
-- [x] `Svg` control: `HitTestElements(Point) : IEnumerable<SvgElement>`
+- [x] `SvgControl`: `HitTestElements(Point) : IEnumerable<SvgElement>`
       walks the `SvgHitNode` tree, inverting transforms and respecting
       clips at each level. Returns innermost-first (the SVG event-target
       order). Uses the recording's `HitTest(Point) : bool` as a cheap
-      early-out. *(Shipped on `SvgImage` (viewport space) and the `Svg`
-      control (control space, mapped through the stretch transform). The
+      early-out. *(Shipped on `SvgImage` (viewport space) and the `SvgControl`
+      (control space, mapped through the stretch transform). The
       recording early-out is skipped when `pointer-events` made unpainted
       or hidden geometry interactive anywhere in the tree.)*
 - [x] Route pointer events from the control to hit-tested elements; expose
@@ -911,7 +911,7 @@ and hit testing are tracked entirely in the SVG layer.
       in `SvgElementPointerEventArgs`; hit testing only runs while handlers
       are attached.)*
 - [x] Subscribe to `DrawingRecording.BoundsChanged` (Phase 0 R7) on the
-      `Svg` control to re-invalidate layout when animation changes the
+      `SvgControl` to re-invalidate layout when animation changes the
       bounding box. *(Subscribed when the recording is compositor-bound;
       immutable recordings never fire and throw on subscription.)*
 - [ ] Visibility toggling (gap 4.9):
@@ -951,7 +951,7 @@ and hit testing are tracked entirely in the SVG layer.
         shows the static color — the shared recording is immutable.)*
   - [x] **Structural animation** (`animateTransform` on elements/groups,
         `d` morphing, structural attribute changes): re-emitted at the
-        control level — the `Svg` control invalidates and re-issues cheap
+        control level — the `SvgControl` invalidates and re-issues cheap
         `DrawRecording(subRecording, matrix, Shared)` calls against the
         unchanged sub-recordings (the same mechanism as visibility
         toggling). *(Shipped: sampled values land as per-element overrides
@@ -1009,7 +1009,7 @@ All SVG-side. The recording exposes only `HitTest(Point) → bool` and
   marker suppression, getBBox inclusion, plus a regression test pinning
   that measuring-time `<use>` expansion does not pollute the document's
   shared-recording cache. Dynamic toggling lands with the driver.)*
-- `BoundsChangedTests` — `Svg` control re-measures when an animation
+- `BoundsChangedTests` — `SvgControl` re-measures when an animation
   extends bounds; subscribes to the compositor-bound recording's event
   exactly once and unsubscribes on control detach. *(Subscription logic
   shipped in the control; the event-level test needs the compositor test
@@ -1022,7 +1022,7 @@ All SVG-side. The recording exposes only `HitTest(Point) → bool` and
   bounds for the structural channel and brush mutation/restore for the
   paint channel.)*
 - `IntegrationTests` — complete interactive SVG (hover state + click)
-  round-trips through the `Svg` control. *(Deferred: needs a headless
+  round-trips through the `SvgControl`. *(Deferred: needs a headless
   app harness; the control's hit mapping and event raising are thin
   wrappers over the unit-tested `SvgImage` walk.)*
 - `RenderTests.Animation` — deterministic frames at sampled timestamps
@@ -1145,7 +1145,7 @@ Avalonia.Svg
                           // asset/file load against the XAML base URI). ✓
 ```
 
-Note: the `Svg` control made `Avalonia.Svg` reference `Avalonia.Controls`
+Note: the `SvgControl` made `Avalonia.Svg` reference `Avalonia.Controls`
 (`Control` lives there), and `SvgDocumentTypeConverter` added
 `Avalonia.Markup.Xaml` (`IUriContext` for relative source resolution); the
 compiler/image layers still depend on `Avalonia.Base` only.
