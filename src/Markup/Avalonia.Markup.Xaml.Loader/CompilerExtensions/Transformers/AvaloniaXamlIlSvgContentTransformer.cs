@@ -14,7 +14,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
     /// <summary>
     /// Compiles SVG markup pasted into XAML into a document factory. The markup
     /// reaches this transformer as a text value of a property typed
-    /// <c>Avalonia.Svg.SvgDocument</c> (matched by name — the XAML compiler takes
+    /// <c>Avalonia.Media.SvgDocument</c> (matched by name — the XAML compiler takes
     /// no reference on Avalonia.Svg), whether it was written as CDATA content, an
     /// escaped attribute string, or a verbatim inline <c>&lt;svg&gt;</c> element
     /// captured as raw content by the parser (see <c>rawContentNamespaces</c> in
@@ -53,7 +53,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
     /// </summary>
     internal static class SvgDocumentContentHelper
     {
-        private const string DocumentTypeFullName = "Avalonia.Svg.SvgDocument";
+        private const string DocumentTypeFullName = "Avalonia.Media.SvgDocument";
         private const string FactoryMethodName = "FromXamlContent";
 
         private static readonly XNamespace SvgNs = "http://www.w3.org/2000/svg";
