@@ -98,15 +98,31 @@ public sealed class SvgDocument : IDisposable
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public static SvgDocument FromCompiledBlob(ReadOnlySpan<byte> blob)
     {
+        var document = ReadCompiledBlob(blob);
+        document.HostOwned = true;
+        return document;
+    }
+
+    private static SvgDocument ReadCompiledBlob(ReadOnlySpan<byte> blob)
+    {
         var elementsById = new Dictionary<string, SvgElement>(StringComparer.Ordinal);
         var root = SvgBlobReader.Read(blob, elementsById);
         if (root.Name != "svg")
             throw new FormatException("The document root must be an 'svg' element.");
 
-        var document = new SvgDocument(root, elementsById);
-        document.HostOwned = true;
-        return document;
+        return new SvgDocument(root, elementsById);
     }
+
+    /// <summary>
+    /// Whether <paramref name="data"/> starts with the compiled-blob magic header.
+    /// SVG XML never begins with these bytes (it starts with whitespace, a BOM or
+    /// <c>&lt;</c>), so it cleanly distinguishes a pre-compiled resource from markup.
+    /// </summary>
+    private static bool IsCompiledBlob(ReadOnlySpan<byte> data)
+        => data.Length >= 3
+            && data[0] == SvgBlobFormat.Magic0
+            && data[1] == SvgBlobFormat.Magic1
+            && data[2] == SvgBlobFormat.Magic2;
 
     /// <summary>
     /// Resolves a XAML <c>Source</c> string — SVG markup (anything starting with
@@ -195,11 +211,25 @@ public sealed class SvgDocument : IDisposable
         return document;
     }
 
-    /// <summary>Loads an SVG document from a stream.</summary>
+    /// <summary>
+    /// Loads an SVG document from a stream — either SVG XML or a compiled blob
+    /// (see <see cref="FromCompiledBlob"/>). The blob's magic header, which XML
+    /// never starts with, selects the path, so a build step that pre-compiles
+    /// <c>.svg</c> resources is transparent to every caller.
+    /// </summary>
     public static SvgDocument Load(Stream stream)
     {
         _ = stream ?? throw new ArgumentNullException(nameof(stream));
-        using var reader = XmlReader.Create(stream, CreateReaderSettings());
+
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        var bytes = buffer.GetBuffer().AsSpan(0, (int)buffer.Length);
+
+        if (IsCompiledBlob(bytes))
+            return ReadCompiledBlob(bytes);
+
+        buffer.Position = 0;
+        using var reader = XmlReader.Create(buffer, CreateReaderSettings());
         return Load(reader);
     }
 

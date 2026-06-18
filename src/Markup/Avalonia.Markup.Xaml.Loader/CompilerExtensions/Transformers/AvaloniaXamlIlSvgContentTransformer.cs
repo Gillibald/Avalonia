@@ -143,6 +143,21 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             return new AvaloniaXamlIlSvgBlobAstNode(text, documentType, factory, blob);
         }
 
+        /// <summary>
+        /// Validates and strips SVG markup and serializes it to the compiled-blob
+        /// byte format — the resource-compilation counterpart of
+        /// <see cref="CreateFactoryNode"/>, used by the build task to pre-compile
+        /// <c>.svg</c> resources into <see cref="SvgBlobBuilder"/> blobs that the
+        /// runtime loads via <c>SvgDocument.FromCompiledBlob</c>. Throws on
+        /// malformed markup; reference-integrity findings are ignored here (a
+        /// resource is not authored in the XAML being compiled).
+        /// </summary>
+        public static byte[] CompileToBlob(string markup)
+        {
+            var root = ValidateAndStrip(markup, new List<SvgInlineDiagnostic>());
+            return SvgBlobBuilder.Write(root);
+        }
+
         private sealed class InvalidSvgContentException : Exception
         {
             public InvalidSvgContentException(string message) : base(message)
