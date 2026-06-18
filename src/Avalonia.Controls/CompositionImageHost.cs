@@ -30,6 +30,13 @@ internal sealed class CompositionImageHost
     /// <summary>Whether a composition instance is currently hosting the source.</summary>
     public bool IsHosting => _instance != null;
 
+    /// <summary>
+    /// The live instance while hosting, or null. Exposed so a source-aware owner
+    /// (e.g. the SVG control) can reach instance-specific services such as
+    /// animation-aware hit testing; null for a static source.
+    /// </summary>
+    public ICompositionImageInstance? Instance => _instance;
+
     /// <summary>Sets the current source, tearing down the instance built for any previous one.</summary>
     public void SetSource(IImage? source)
     {
