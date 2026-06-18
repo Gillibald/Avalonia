@@ -10,11 +10,11 @@ namespace Avalonia.Media.Svg;
 /// staying at the document's base state.
 /// </summary>
 /// <remarks>
-/// Only structural (geometry) animation is reflected: the per-instance
-/// <c>SvgAnimationState</c> the instance maintains already holds the current
-/// structural overrides. Transform/opacity timelines run as server-side
-/// composition animations with no UI-thread clock, so their current value is not
-/// available here and those elements still hit test at their base transform.
+/// Structural (geometry) animation is reflected through the per-instance
+/// <c>SvgAnimationState</c> the instance maintains; transform/opacity timelines
+/// run as server-side composition animations, so their current transform is read
+/// back from the compositor and folded into the hit tree. Both follow what is
+/// actually drawn, within a frame.
 /// </remarks>
 internal interface ISvgHitTestSource
 {
