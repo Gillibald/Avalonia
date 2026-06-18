@@ -195,17 +195,26 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
         var state = new SvgAnimationState();
         var host = new SvgCompositionHost(
             _document, compositor, animator, rootGroup, _document.GetIntrinsicSize(), state);
-        return new SvgCompositionInstance(host, animator, state);
+        return new SvgCompositionInstance(_document, host, animator, state);
     }
 
-    private sealed class SvgCompositionInstance : ICompositionImageInstance
+    private sealed class SvgCompositionInstance : ICompositionImageInstance, ISvgHitTestSource
     {
+        private readonly SvgDocument _document;
         private readonly SvgCompositionHost _host;
         private readonly SvgAnimator _animator;
         private readonly SvgAnimationState _state;
 
-        public SvgCompositionInstance(SvgCompositionHost host, SvgAnimator animator, SvgAnimationState state)
+        // A hit-test image compiled from the current structural overrides,
+        // rebuilt only after a structural tick changes geometry.
+        private SvgImage? _hitImage;
+        private int _structuralRevision;
+        private int _hitImageRevision = -1;
+
+        public SvgCompositionInstance(
+            SvgDocument document, SvgCompositionHost host, SvgAnimator animator, SvgAnimationState state)
         {
+            _document = document;
             _host = host;
             _animator = animator;
             _state = state;
@@ -223,10 +232,36 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
             // structural change re-compiles the affected slices into their
             // visuals, which the compositor repaints on its own.
             if (_animator.Apply(elapsed, _state))
+            {
                 _host.RecompileStructural();
+                _structuralRevision++; // the cached hit image is now stale
+            }
         }
 
-        public void Dispose() => _host.Dispose();
+        public IReadOnlyList<SvgElement> HitTest(Point point)
+        {
+            // Reuse the cached hit image until a structural tick changes
+            // geometry; the per-instance state already holds the current
+            // structural overrides, materialized for the synchronous compile.
+            // (Composition transforms run server-side and are not in the state,
+            // so those elements hit test at their base transform — see
+            // ISvgHitTestSource.)
+            if (_hitImage == null || _hitImageRevision != _structuralRevision)
+            {
+                _hitImage?.Dispose();
+                using (_state.Materialize())
+                    _hitImage = new SvgImage(_document);
+                _hitImageRevision = _structuralRevision;
+            }
+
+            return _hitImage.HitTestElements(point);
+        }
+
+        public void Dispose()
+        {
+            _hitImage?.Dispose();
+            _host.Dispose();
+        }
     }
 
     /// <inheritdoc/>
