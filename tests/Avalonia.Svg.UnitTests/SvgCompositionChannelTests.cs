@@ -294,14 +294,15 @@ public class SvgCompositionChannelTests
             """);
         var animator = SvgAnimator.TryCreate(document)!;
         var entry = animator.Entries[0];
+        var state = new SvgAnimationState();
 
         entry.Claimed = true;
-        Assert.False(animator.Apply(TimeSpan.FromSeconds(1)));
-        Assert.Null(document.GetElementById("orbit")!.GetAnimatedValue("transform"));
+        Assert.False(animator.Apply(TimeSpan.FromSeconds(1), state));
+        Assert.Null(state.Get(document.GetElementById("orbit")!, "transform"));
         Assert.False(animator.HasUnclaimedWork);
 
         entry.Claimed = false;
-        Assert.True(animator.Apply(TimeSpan.FromSeconds(1)));
-        Assert.NotNull(document.GetElementById("orbit")!.GetAnimatedValue("transform"));
+        Assert.True(animator.Apply(TimeSpan.FromSeconds(1), state));
+        Assert.NotNull(state.Get(document.GetElementById("orbit")!, "transform"));
     }
 }

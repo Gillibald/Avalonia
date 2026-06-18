@@ -37,6 +37,7 @@ public class SvgControl : Control
 
     private SvgImage? _image;
     private SvgAnimator? _animator;
+    private SvgAnimationState? _state;
     private bool _animatorInitialized;
     private bool _animationRunning;
     private Action<TimeSpan>? _animationFrame;
@@ -244,6 +245,7 @@ public class SvgControl : Control
         {
             _animatorInitialized = true;
             _animator = SvgAnimator.TryCreate(document);
+            _state = _animator != null ? new SvgAnimationState() : null;
         }
 
         // The composition channel hosts the document as a sliced visual tree:
@@ -251,26 +253,34 @@ public class SvgControl : Control
         // only the structural remainder (if any) keeps ticking. The control's
         // own image then serves measurement and hit testing.
         if (EnableExperimentalCompositionAnimations
-            && _animator != null && _compositionHost == null && GetCompositor() is { } hostCompositor
+            && _animator != null && _state != null && _compositionHost == null
+            && GetCompositor() is { } hostCompositor
             && SvgCompositionPartitioner.TryBuild(document, _animator) is { } rootGroup)
         {
             _compositionHost = new SvgCompositionHost(
-                document, hostCompositor, _animator, rootGroup, document.GetIntrinsicSize());
+                document, hostCompositor, _animator, rootGroup, document.GetIntrinsicSize(), _state);
         }
 
         // Paint-only animations compile once into a compositor-bound recording
         // with mutable brushes; the ticks then propagate through the
         // compositor's change tracking without ever re-compiling. Everything
         // else (or no compositor yet) compiles immutable; structural ticks
-        // re-compile against the document's cached shared sub-recordings.
+        // re-compile against the instance's animated overrides, materialized for
+        // the duration of the synchronous compile.
         if (_compositionHost != null)
         {
-            _image = new SvgImage(document);
+            using (_state!.Materialize())
+                _image = new SvgImage(document);
         }
         else if (_animator is { HasStructural: false } paintAnimator && GetCompositor() is { } compositor)
         {
             _image = new SvgImage(document, compositor, paintAnimator.GetPaintTargets());
             paintAnimator.BindPaintBrushes(_image.AnimatedBrushes);
+        }
+        else if (_state != null)
+        {
+            using (_state.Materialize())
+                _image = new SvgImage(document);
         }
         else
         {
@@ -357,13 +367,13 @@ public class SvgControl : Control
 
     private void OnAnimationTick(TimeSpan time)
     {
-        if (!_animationRunning || _animator == null)
+        if (!_animationRunning || _animator == null || _state == null)
             return;
 
         // The first tick anchors the document timeline.
         _animationStart ??= time;
 
-        if (_animator.Apply(time - _animationStart.Value))
+        if (_animator.Apply(time - _animationStart.Value, _state))
         {
             if (_compositionHost != null)
             {
@@ -409,6 +419,7 @@ public class SvgControl : Control
         DisposeImage();
 
         _animator = null;
+        _state = null;
         _animatorInitialized = false;
     }
 
