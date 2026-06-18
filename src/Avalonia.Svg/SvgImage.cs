@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media.Svg;
+using Avalonia.Media.Svg.Animation;
 using Avalonia.Media.Svg.Compilation;
 using Avalonia.Rendering.Composition;
 
@@ -11,7 +12,7 @@ namespace Avalonia.Media;
 /// once into an immutable <see cref="DrawingRecording"/> at construction time and
 /// replayed on every draw.
 /// </summary>
-public sealed class SvgImage : IImage, IDisposable
+public sealed class SvgImage : IImage, IDisposable, ICompositionImage
 {
     private readonly SvgDocument _document;
     private readonly bool _ownsDocument;
@@ -174,6 +175,58 @@ public sealed class SvgImage : IImage, IDisposable
 
         using (context.PushClip(destRect))
             context.DrawRecording(_recording, transform);
+    }
+
+    /// <summary>
+    /// Creates a render-thread animating visual subtree for this document, or
+    /// null when it has no animations the composition channel hosts (the caller
+    /// renders statically via <see cref="Draw"/>). Each call builds an
+    /// independent instance — see <see cref="ICompositionImage"/>.
+    /// </summary>
+    public ICompositionImageInstance? CreateInstance(Compositor compositor)
+    {
+        var animator = SvgAnimator.TryCreate(_document);
+        if (animator is null)
+            return null;
+
+        if (SvgCompositionPartitioner.TryBuild(_document, animator) is not { } rootGroup)
+            return null;
+
+        var state = new SvgAnimationState();
+        var host = new SvgCompositionHost(
+            _document, compositor, animator, rootGroup, _document.GetIntrinsicSize(), state);
+        return new SvgCompositionInstance(host, animator, state);
+    }
+
+    private sealed class SvgCompositionInstance : ICompositionImageInstance
+    {
+        private readonly SvgCompositionHost _host;
+        private readonly SvgAnimator _animator;
+        private readonly SvgAnimationState _state;
+
+        public SvgCompositionInstance(SvgCompositionHost host, SvgAnimator animator, SvgAnimationState state)
+        {
+            _host = host;
+            _animator = animator;
+            _state = state;
+        }
+
+        public CompositionVisual Visual => _host.RootVisual;
+
+        public void SetStretchTransform(Matrix transform) => _host.UpdateStretch(transform);
+
+        public bool NeedsClock => _animator.HasUnclaimedWork;
+
+        public void OnClock(TimeSpan elapsed)
+        {
+            // Paint entries mutate their compositor brushes inside Apply; a
+            // structural change re-compiles the affected slices into their
+            // visuals, which the compositor repaints on its own.
+            if (_animator.Apply(elapsed, _state))
+                _host.RecompileStructural();
+        }
+
+        public void Dispose() => _host.Dispose();
     }
 
     /// <inheritdoc/>
