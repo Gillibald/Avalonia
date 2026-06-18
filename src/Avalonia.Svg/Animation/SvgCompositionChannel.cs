@@ -245,8 +245,10 @@ internal sealed class SvgCompositionGroup : SvgCompositionNode
 /// <summary>
 /// Partitions the render tree into an ordered slice tree for the composition
 /// channel: static recordings, self-recompiling structural slices and
-/// composition groups whose motion runs entirely on the render thread.
-/// Returns null when the document gains nothing from the split.
+/// composition groups whose motion runs entirely on the render thread. Returns
+/// a partition for any animated document — composition, structural or paint —
+/// and null only when the document has no root or the root carries layer state
+/// (filter/clip/mask) that cannot be sliced.
 /// </summary>
 internal static class SvgCompositionPartitioner
 {
@@ -284,14 +286,16 @@ internal static class SvgCompositionPartitioner
             }
         }
 
-        if (needsHandling.Count == 0)
-            return null;
-
         var rootGroup = new SvgCompositionGroup(root);
-        var anyComposition = false;
-        Partition(root, rootGroup.Children, compositionByElement, needsHandling, animator, ref anyComposition);
+        Partition(root, rootGroup.Children, compositionByElement, needsHandling, animator);
 
-        return anyComposition ? rootGroup : null;
+        // One host serves every animated document, not just those with a
+        // server-side composition group: a paint-only document partitions into a
+        // single static slice whose mutable brushes the paint tick drives, and a
+        // structural-only document into self-recompiling structural slices. Both
+        // still need the partition — only the clock (HasUnclaimedWork) differs.
+        // The animator is non-null here, so there is always animation work.
+        return rootGroup;
     }
 
     private static void Partition(
@@ -299,8 +303,7 @@ internal static class SvgCompositionPartitioner
         List<SvgCompositionNode> nodes,
         Dictionary<SvgElement, List<SvgCompositionAnimation>> compositionByElement,
         HashSet<SvgElement> needsHandling,
-        SvgAnimator animator,
-        ref bool anyComposition)
+        SvgAnimator animator)
     {
         SvgStaticSlice? staticRun = null;
 
@@ -342,7 +345,7 @@ internal static class SvgCompositionPartitioner
 
                 if (child.Name is "g" or "a" or "svg")
                 {
-                    Partition(child, group.Children, compositionByElement, needsHandling, animator, ref anyComposition);
+                    Partition(child, group.Children, compositionByElement, needsHandling, animator);
                 }
                 else
                 {
@@ -355,7 +358,6 @@ internal static class SvgCompositionPartitioner
                 }
 
                 nodes.Add(group);
-                anyComposition = true;
                 continue;
             }
 
@@ -372,13 +374,13 @@ internal static class SvgCompositionPartitioner
                         StaticTransform = transform,
                         SuppressTransform = true,
                     };
-                    Partition(child, wrapper.Children, compositionByElement, needsHandling, animator, ref anyComposition);
+                    Partition(child, wrapper.Children, compositionByElement, needsHandling, animator);
                     nodes.Add(wrapper);
                 }
                 else
                 {
                     // No state to carry: splice the partition inline.
-                    Partition(child, nodes, compositionByElement, needsHandling, animator, ref anyComposition);
+                    Partition(child, nodes, compositionByElement, needsHandling, animator);
                     staticRun = null;
                 }
 

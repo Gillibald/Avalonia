@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
 using Avalonia.Media.Svg;
@@ -304,5 +305,48 @@ public class SvgCompositionChannelTests
         entry.Claimed = false;
         Assert.True(animator.Apply(TimeSpan.FromSeconds(1), state));
         Assert.NotNull(state.Get(document.GetElementById("orbit")!, "transform"));
+    }
+
+    [Fact]
+    public void Pure_Composition_Document_Leaves_No_Unclaimed_Work()
+    {
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <g>
+                <animateTransform attributeName="transform" type="rotate"
+                                  from="0 50 50" to="360 50 50" dur="4s" repeatCount="indefinite"/>
+                <rect x="45" y="20" width="10" height="10"/>
+              </g>
+              <circle cx="50" cy="50" r="10">
+                <animate attributeName="opacity" values="1;0" dur="3s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+        var root = SvgCompositionPartitioner.TryBuild(document, animator)!;
+
+        // Claiming exactly the composition animations the host starts (one per
+        // server-side key-frame timeline) accounts for every entry, so the
+        // residual UI-thread clock never runs — the point of the channel.
+        var claimed = 0;
+        foreach (var animation in CompositionAnimations(root))
+        {
+            animation.Entry.Claimed = true;
+            claimed++;
+        }
+
+        Assert.Equal(animator.Entries.Count, claimed);
+        Assert.False(animator.HasUnclaimedWork);
+
+        static IEnumerable<SvgCompositionAnimation> CompositionAnimations(SvgCompositionGroup group)
+        {
+            foreach (var animation in group.Animations)
+                yield return animation;
+            foreach (var child in group.Children)
+                if (child is SvgCompositionGroup nested)
+                    foreach (var nestedAnimation in CompositionAnimations(nested))
+                        yield return nestedAnimation;
+        }
     }
 }
