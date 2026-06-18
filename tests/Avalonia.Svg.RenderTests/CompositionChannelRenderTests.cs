@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -124,5 +125,79 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         using var composited = SixLabors.ImageSharp.Image.Load<Rgba32>(compositedPath);
         var error = TestRenderHelper.CompareImages(composited, expected);
         Assert.True(error <= 0.022, $"{compositedPath}: Error = {error}");
+    }
+
+    [Fact]
+    public async Task Image_Hosts_A_Paint_Only_Animation()
+    {
+        // No transform/opacity, so the partition has no composition group: the
+        // relaxed gate still hosts it as a single static slice whose mutable fill
+        // brush the paint tick drives.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="100" height="100" fill="#0b1022"/>
+              <circle cx="50" cy="50" r="30" fill="#22d3ee">
+                <animate attributeName="fill" values="#22d3ee;#f472b6" dur="10000s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
+            """);
+
+        await RenderHostedImage(document);
+    }
+
+    [Fact]
+    public async Task Image_Hosts_A_Structural_Only_Animation()
+    {
+        // A geometry timeline stays structural (no composition group); the
+        // relaxed gate hosts it as a self-recompiling structural slice.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="100" height="100" fill="#0b1022"/>
+              <rect x="40" y="40" width="20" height="20" fill="#f472b6">
+                <animate attributeName="width" values="20;20.01" dur="10000s" repeatCount="indefinite"/>
+              </rect>
+            </svg>
+            """);
+
+        await RenderHostedImage(document);
+    }
+
+    /// <summary>
+    /// Renders an animated document through the <see cref="Image"/> control with
+    /// the channel enabled, then asserts it is actually hosted (a child visual is
+    /// parented — the relaxed partitioner built a host) and that the composited
+    /// render matches the static immediate render: at t≈0 the hosted output holds
+    /// the document's base state, no golden required.
+    /// </summary>
+    private async Task RenderHostedImage(SvgDocument document, [CallerMemberName] string testName = "")
+    {
+        var svgImage = new SvgImage(document);
+        var image = new Image
+        {
+            Source = svgImage,
+            Width = svgImage.Size.Width,
+            Height = svgImage.Size.Height,
+        };
+
+        SvgControl.EnableExperimentalCompositionAnimations = true;
+        try
+        {
+            await RenderToFile(image, testName);
+        }
+        finally
+        {
+            SvgControl.EnableExperimentalCompositionAnimations = false;
+        }
+
+        Assert.NotNull(ElementComposition.GetElementChildVisual(image));
+
+        var immediatePath = Path.Combine(OutputPath, testName + ".immediate.out.png");
+        var compositedPath = Path.Combine(OutputPath, testName + ".composited.out.png");
+        using var immediate = SixLabors.ImageSharp.Image.Load<Rgba32>(immediatePath);
+        using var composited = SixLabors.ImageSharp.Image.Load<Rgba32>(compositedPath);
+        var error = TestRenderHelper.CompareImages(composited, immediate);
+        Assert.True(error <= 0.022, $"{compositedPath} vs immediate: Error = {error}");
     }
 }
