@@ -208,6 +208,42 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         }
 
         [Fact]
+        public void SvgImage_Resource_Is_A_Shared_Image()
+        {
+            // A .svg URI declared as an <SvgImage> resource resolves to one
+            // SvgImage that several Image controls can share — the registration
+            // that lets a single document drive several Image.Source bindings.
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "svgimage-res-" + Guid.NewGuid().ToString("N") + ".svg");
+            System.IO.File.WriteAllText(path,
+                """<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>""");
+            try
+            {
+                var uri = new Uri(path).AbsoluteUri;
+                var panel = (Avalonia.Controls.StackPanel)AvaloniaRuntimeXamlLoader.Load(
+                    $$"""
+                    <StackPanel xmlns="https://github.com/avaloniaui"
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                      <StackPanel.Resources>
+                        <SvgImage x:Key="Shared">{{uri}}</SvgImage>
+                      </StackPanel.Resources>
+                      <Image Source="{StaticResource Shared}"/>
+                      <Image Source="{StaticResource Shared}"/>
+                    </StackPanel>
+                    """);
+
+                var first = (Avalonia.Controls.Image)panel.Children[0];
+                var second = (Avalonia.Controls.Image)panel.Children[1];
+                var image = Assert.IsType<Avalonia.Media.SvgImage>(first.Source);
+                Assert.Same(image, second.Source);
+            }
+            finally
+            {
+                System.IO.File.Delete(path);
+            }
+        }
+
+        [Fact]
         public void Unresolved_Url_Reference_Reports_A_Warning()
         {
             // The markup is valid SVG and still loads; the broken paint reference
