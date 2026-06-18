@@ -14,8 +14,10 @@ public class SvgSmilTests
 {
     private static Rect BoundsAt(SvgDocument document, SvgAnimator animator, double seconds)
     {
-        animator.Apply(TimeSpan.FromSeconds(seconds));
+        var state = new SvgAnimationState();
+        animator.Apply(TimeSpan.FromSeconds(seconds), state);
         var size = document.GetIntrinsicSize();
+        using var scope = state.Materialize();
         using var recording = DrawingRecording.Create(ctx => SvgCompiler.CompileDocument(document, ctx, size));
         return recording.Bounds;
     }
@@ -136,10 +138,11 @@ public class SvgSmilTests
             </svg>
             """);
         var animator = SvgAnimator.TryCreate(document)!;
-        animator.Apply(TimeSpan.FromSeconds(seconds));
+        var state = new SvgAnimationState();
+        animator.Apply(TimeSpan.FromSeconds(seconds), state);
 
         var target = document.GetElementById("a")!;
-        var sampled = target.GetAnimatedValue("fill");
+        var sampled = state.Get(target, "fill");
         Assert.NotNull(sampled);
         Assert.True(SvgColor.TryParse(sampled!, out var color));
         Assert.Equal(255, color.A);
@@ -331,11 +334,12 @@ public class SvgSmilTests
             });
 
         // Paint-channel mutations never request a recompile.
-        Assert.False(animator.Apply(TimeSpan.FromSeconds(2)));
+        var state = new SvgAnimationState();
+        Assert.False(animator.Apply(TimeSpan.FromSeconds(2), state));
         Assert.Equal(Color.FromRgb(128, 0, 128), brush.Color);
 
         // Deactivation (no freeze) restores the bind-time base color.
-        Assert.False(animator.Apply(TimeSpan.FromSeconds(10)));
+        Assert.False(animator.Apply(TimeSpan.FromSeconds(10), state));
         Assert.Equal(Colors.Red, brush.Color);
     }
 
@@ -390,10 +394,11 @@ public class SvgSmilTests
             </svg>
             """);
         var animator = SvgAnimator.TryCreate(document)!;
+        var state = new SvgAnimationState();
 
-        Assert.True(animator.Apply(TimeSpan.FromSeconds(1)));
+        Assert.True(animator.Apply(TimeSpan.FromSeconds(1), state));
         // Same discrete step: no structural change, no recompile needed.
-        Assert.False(animator.Apply(TimeSpan.FromSeconds(2)));
-        Assert.True(animator.Apply(TimeSpan.FromSeconds(6)));
+        Assert.False(animator.Apply(TimeSpan.FromSeconds(2), state));
+        Assert.True(animator.Apply(TimeSpan.FromSeconds(6), state));
     }
 }

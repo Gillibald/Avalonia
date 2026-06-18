@@ -27,9 +27,15 @@ public class AnimationRenderTests : SvgRenderTestBase
         using var document = SvgDocument.Parse(svg);
         var animator = SvgAnimator.TryCreate(document);
         Assert.NotNull(animator);
-        animator.Apply(TimeSpan.FromSeconds(seconds));
+        var state = new SvgAnimationState();
+        animator.Apply(TimeSpan.FromSeconds(seconds), state);
 
-        var host = new SvgHost(new SvgImage(document));
+        // The animated overrides are live only while the recording compiles.
+        SvgImage image;
+        using (state.Materialize())
+            image = new SvgImage(document);
+
+        var host = new SvgHost(image);
         await RenderToFile(host, testName);
         CompareImages(testName);
     }

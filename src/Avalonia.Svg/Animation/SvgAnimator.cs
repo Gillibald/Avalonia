@@ -116,11 +116,12 @@ internal sealed class SvgAnimator
     }
 
     /// <summary>
-    /// Applies all animations at <paramref name="time"/>. Paint-bound entries
-    /// mutate their brushes; the rest write attribute overrides. Returns true
-    /// when any structural override changed, i.e. the host must re-compile.
+    /// Applies all animations at <paramref name="time"/> into the per-instance
+    /// <paramref name="state"/>. Paint-bound entries mutate their brushes; the
+    /// rest write attribute overrides into the state. Returns true when any
+    /// structural override changed, i.e. the host must re-compile.
     /// </summary>
-    public bool Apply(TimeSpan time)
+    public bool Apply(TimeSpan time, SvgAnimationState state)
     {
         var structuralChanged = false;
 
@@ -141,13 +142,12 @@ internal sealed class SvgAnimator
                 continue;
             }
 
-            var target = entry.Target;
-            var current = target.GetAnimatedValue(entry.AttributeName);
-            if (!string.Equals(current, value, StringComparison.Ordinal))
-            {
-                target.SetAnimatedValue(entry.AttributeName, value);
+            // Structural overrides live in the per-instance state, not on the
+            // shared element, so several hosts can animate the same document at
+            // different times; the state is materialized onto the elements only
+            // for the duration of each compile.
+            if (state.Set(entry.Target, entry.AttributeName, value))
                 structuralChanged = true;
-            }
         }
 
         return structuralChanged;
