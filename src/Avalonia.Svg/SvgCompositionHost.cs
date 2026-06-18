@@ -30,6 +30,7 @@ internal sealed class SvgCompositionHost : IDisposable
     private readonly List<DrawingRecording> _recordings = new();
     private readonly List<(CompositionRecordingVisual Visual, HashSet<SvgElement> Membership)> _structuralSlices = new();
     private readonly Dictionary<(SvgElement Element, string Attribute), SolidColorBrush> _brushes = new();
+    private readonly Dictionary<SvgElement, CompositionRecordingVisual> _compositionVisuals = new();
     private bool _disposed;
 
     public SvgCompositionHost(
@@ -61,6 +62,29 @@ internal sealed class SvgCompositionHost : IDisposable
 
     /// <summary>Maps control bounds onto the document viewport (stretch).</summary>
     public void UpdateStretch(Matrix transform) => RootVisual.Transform = transform;
+
+    /// <summary>Whether any group runs a server-side transform/opacity animation.</summary>
+    public bool HasServerAnimations => _compositionVisuals.Count > 0;
+
+    /// <summary>
+    /// The current (read-back) server transform of a composition-animated
+    /// element's visual — what the compositor is actually drawing it with. Used
+    /// to fold the live transform into hit testing. False when the element is not
+    /// composition-animated or has no readback yet (not rendered).
+    /// </summary>
+    public bool TryGetServerTransform(SvgElement element, out Matrix transform)
+    {
+        if (!_disposed
+            && _compositionVisuals.TryGetValue(element, out var visual)
+            && visual.TryGetValidReadback() is { } readback)
+        {
+            transform = readback.Matrix;
+            return true;
+        }
+
+        transform = default;
+        return false;
+    }
 
     /// <summary>
     /// Re-compiles the structural slices after a structural tick. Static and
@@ -147,6 +171,11 @@ internal sealed class SvgCompositionHost : IDisposable
                     BuildChildren(visual, group.Children);
                     StartAnimations(visual, group);
                     parent.Children.Add(visual);
+
+                    // Remember the visual of an actually-animated group so its
+                    // current server transform can be read back for hit testing.
+                    if (group.Animations.Count > 0)
+                        _compositionVisuals[group.Element] = visual;
                     break;
                 }
             }

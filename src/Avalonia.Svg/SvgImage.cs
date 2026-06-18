@@ -141,6 +141,31 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
     /// </summary>
     public bool HitTest(Point point) => HitTestElements(point).Count > 0;
 
+    /// <summary>
+    /// Overrides the local transform of hit-test nodes whose element the lookup
+    /// supplies a matrix for, leaving the rest untouched. Used to fold a
+    /// composition-animated element's current server transform into the hit tree
+    /// so it hit tests where it is drawn. The change is in place on this image's
+    /// hit tree, so callers re-apply it as the value changes.
+    /// </summary>
+    internal void ApplyHitTransformOverrides(Func<SvgElement, Matrix?> lookup)
+    {
+        if (_hitRoot != null)
+            ApplyTransformOverride(_hitRoot, lookup);
+    }
+
+    private static void ApplyTransformOverride(SvgHitNode node, Func<SvgElement, Matrix?> lookup)
+    {
+        if (node.Element is { } element && lookup(element) is { } matrix)
+            node.Transform = matrix;
+
+        if (node.Children is { } children)
+        {
+            foreach (var child in children)
+                ApplyTransformOverride(child, lookup);
+        }
+    }
+
     private static bool RequiresFullWalk(SvgHitNode node)
     {
         if (node.Shape != null && node.PointerEvents != SvgPointerEvents.VisiblePainted)
@@ -253,6 +278,14 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
                     _hitImage = new SvgImage(_document);
                 _hitImageRevision = _structuralRevision;
             }
+
+            // Transform/opacity timelines run server-side, so their current value
+            // is not in the state; read each animated visual's transform back from
+            // the compositor and fold it into the hit tree. Re-applied every call
+            // since the server animates continuously.
+            if (_host.HasServerAnimations)
+                _hitImage.ApplyHitTransformOverrides(
+                    element => _host.TryGetServerTransform(element, out var transform) ? transform : null);
 
             return _hitImage.HitTestElements(point);
         }
