@@ -2,6 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <PublishAot>true</PublishAot>
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets\**\*.svg" />
