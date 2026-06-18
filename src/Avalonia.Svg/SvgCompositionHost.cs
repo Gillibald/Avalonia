@@ -25,11 +25,10 @@ internal sealed class SvgCompositionHost : IDisposable
     private readonly SvgAnimator _animator;
     private readonly SvgCompositionGroup _rootGroup;
     private readonly Size _viewport;
+    private readonly SvgAnimationState _state;
     private readonly IReadOnlyCollection<(SvgElement Element, string Attribute)> _paintTargets;
     private readonly List<DrawingRecording> _recordings = new();
     private readonly List<(CompositionRecordingVisual Visual, HashSet<SvgElement> Membership)> _structuralSlices = new();
-    private readonly List<SvgElement> _suppressedTransforms = new();
-    private readonly List<SvgElement> _suppressedOpacities = new();
     private readonly Dictionary<(SvgElement Element, string Attribute), SolidColorBrush> _brushes = new();
     private bool _disposed;
 
@@ -38,13 +37,15 @@ internal sealed class SvgCompositionHost : IDisposable
         Compositor compositor,
         SvgAnimator animator,
         SvgCompositionGroup rootGroup,
-        Size viewport)
+        Size viewport,
+        SvgAnimationState state)
     {
         _document = document;
         _compositor = compositor;
         _animator = animator;
         _rootGroup = rootGroup;
         _viewport = viewport;
+        _state = state;
         _paintTargets = animator.GetPaintTargets();
 
         ApplySuppressions(rootGroup);
@@ -89,19 +90,15 @@ internal sealed class SvgCompositionHost : IDisposable
     private void ApplySuppressions(SvgCompositionGroup group)
     {
         // The element states the visuals carry (animated/static transforms,
-        // animated opacity) are suppressed in every slice compile through
-        // animated-value overrides; claimed entries never write these keys.
+        // animated opacity) are suppressed in every slice compile through the
+        // per-instance animated overrides; claimed entries never write these
+        // keys. The state is materialized only during a compile, so nothing
+        // leaks onto the shared document.
         if (group.SuppressTransform)
-        {
-            group.Element.SetAnimatedValue("transform", "");
-            _suppressedTransforms.Add(group.Element);
-        }
+            _state.Set(group.Element, "transform", "");
 
         if (group.SuppressOpacity)
-        {
-            group.Element.SetAnimatedValue("opacity", "1");
-            _suppressedOpacities.Add(group.Element);
-        }
+            _state.Set(group.Element, "opacity", "1");
 
         foreach (var child in group.Children)
         {
@@ -164,9 +161,16 @@ internal sealed class SvgCompositionHost : IDisposable
             PaintAnimationTargets = _paintTargets.Count > 0 ? _paintTargets : null,
         };
 
-        var recording = DrawingRecording.Create(
-            _compositor,
-            ctx => SvgCompiler.CompileDocument(_document, ctx, _viewport, options));
+        // DrawingRecording.Create compiles synchronously, so the instance's
+        // overrides need to be live on the elements only for this call.
+        DrawingRecording recording;
+        using (_state.Materialize())
+        {
+            recording = DrawingRecording.Create(
+                _compositor,
+                ctx => SvgCompiler.CompileDocument(_document, ctx, _viewport, options));
+        }
+
         _recordings.Add(recording);
 
         if (options.AnimatedBrushes != null)
@@ -274,11 +278,6 @@ internal sealed class SvgCompositionHost : IDisposable
             return;
 
         _disposed = true;
-
-        foreach (var element in _suppressedTransforms)
-            element.SetAnimatedValue("transform", null);
-        foreach (var element in _suppressedOpacities)
-            element.SetAnimatedValue("opacity", null);
 
         UnclaimEntries(_rootGroup);
 
