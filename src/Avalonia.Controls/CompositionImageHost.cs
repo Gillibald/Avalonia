@@ -56,11 +56,12 @@ internal sealed class CompositionImageHost
         StartClock();
     }
 
-    public void Detach()
-    {
-        StopClock();
-        DetachChildVisual();
-    }
+    /// <summary>
+    /// Releases the instance on detach (per the <see cref="ICompositionImage"/>
+    /// contract), freeing its composition visuals while off-screen. The source
+    /// is kept, so re-attaching rebuilds a fresh instance.
+    /// </summary>
+    public void Detach() => ReleaseInstance();
 
     /// <summary>
     /// Updates the hosted visual's stretch and returns true when a composition
