@@ -124,10 +124,16 @@ public class SvgControl : Control
             return;
 
         // An animated document renders through the child composition visual; the
-        // control then only contributes the stretch mapping (set inside TryHost)
-        // and remains a hit-testable surface. A static document falls through.
+        // control then only contributes the stretch mapping (set inside TryHost).
+        // The child visual is not a draw-list visual, so it never registers in
+        // the compositor hit test — the control must still paint a transparent
+        // surface over its bounds to stay hit-testable for pointer routing to the
+        // SVG elements. A static document falls through to the draw below.
         if (_host is { } host && host.TryHost(Bounds, image.Size, Stretch, StretchDirection))
+        {
+            context.DrawRectangle(Brushes.Transparent, null, new Rect(Bounds.Size));
             return;
+        }
 
         ComputeStretchRects(image, out var sourceRect, out var destRect, out _);
         if (destRect.Width <= 0 || destRect.Height <= 0)
