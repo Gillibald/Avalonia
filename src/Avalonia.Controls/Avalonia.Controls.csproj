@@ -12,6 +12,7 @@
 
   <ItemGroup Label="InternalsVisibleTo">
     <InternalsVisibleTo Include="Avalonia.Controls.ItemsRepeater, PublicKey=$(AvaloniaPublicKey)" />
+    <InternalsVisibleTo Include="Avalonia.Svg, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Skia.RenderTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Base.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
