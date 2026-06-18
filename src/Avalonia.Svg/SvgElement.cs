@@ -57,6 +57,12 @@ public sealed class SvgElement
         (_content ??= new List<object>()).Add(text);
     }
 
+    /// <summary>
+    /// All raw attributes by local name. Internal: consumed by the compiled-blob
+    /// serializer; runtime lookups go through <see cref="GetAttribute"/>.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> Attributes => _attributes;
+
     /// <summary>Gets a raw attribute value by local name, or null.</summary>
     public string? GetAttribute(string name) =>
         _attributes.TryGetValue(name, out var value) ? value : null;
