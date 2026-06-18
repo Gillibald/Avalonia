@@ -64,6 +64,9 @@
   <PropertyGroup>
     <BuildAvaloniaResourcesDependsOn>$(BuildAvaloniaResourcesDependsOn);AddAvaloniaResources;ResolveReferences;_GenerateAvaloniaResourcesDependencyCache</BuildAvaloniaResourcesDependsOn>
     <CompileAvaloniaXamlDependsOn>$(CompileAvaloniaXamlDependsOn);FindReferenceAssembliesForReferences</CompileAvaloniaXamlDependsOn>
+    <!-- Opt-in: pre-compile .svg AvaloniaResources to binary blobs so the runtime
+         skips XML parsing (SvgDocument.Load detects the blob by its magic header). -->
+    <AvaloniaCompileSvgResources Condition="'$(AvaloniaCompileSvgResources)' == ''">false</AvaloniaCompileSvgResources>
   </PropertyGroup>
 
   <Target Name="_GenerateAvaloniaResourcesDependencyCache" BeforeTargets="GenerateAvaloniaResources">
@@ -75,7 +78,7 @@
       <CustomAdditionalGenerateAvaloniaResourcesInputs Include="$(_AvaloniaResourcesInputsCacheFilePath)" />
     </ItemGroup>
     
-    <Hash ItemsToHash="@(AvaloniaResource);@(AvaloniaXaml);$(MSBuildAllProjects)">
+    <Hash ItemsToHash="@(AvaloniaResource);@(AvaloniaXaml);$(MSBuildAllProjects);$(AvaloniaCompileSvgResources)">
       <Output TaskParameter="HashResult" PropertyName="AvaloniaResourcesDependencyHash" />
     </Hash>
 
@@ -101,6 +104,7 @@
       Output="$(AvaloniaResourcesTemporaryFilePath)"
       Root="$(MSBuildProjectDirectory)"
       Resources="@(AvaloniaResource)"
+      CompileSvgResources="$(AvaloniaCompileSvgResources)"
       ReportImportance="$(AvaloniaXamlReportImportance)"/>
     <ItemGroup>
       <FileWrites Include="$(AvaloniaResourcesTemporaryFilePath)" />
