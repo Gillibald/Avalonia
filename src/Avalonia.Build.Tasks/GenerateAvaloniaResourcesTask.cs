@@ -6,6 +6,7 @@ using System.Runtime.Serialization;
 using System.Text;
 using Avalonia.Markup.Xaml.PortableXaml;
 using Avalonia.Markup.Xaml.XamlIl.CompilerExtensions;
+using Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers;
 using Avalonia.Utilities;
 using Microsoft.Build.Framework;
 using SPath = System.IO.Path;
@@ -21,6 +22,13 @@ namespace Avalonia.Build.Tasks
         public string Output { get; set; }
 
         public string ReportImportance { get; set; }
+
+        /// <summary>
+        /// Opt-in: pre-compile <c>.svg</c> resources into binary blobs so the
+        /// runtime reconstructs them via <c>SvgDocument.FromCompiledBlob</c>
+        /// instead of parsing XML. The avares path is unchanged.
+        /// </summary>
+        public bool CompileSvgResources { get; set; }
 
         private MessageImportance _reportImportance;
 
@@ -135,12 +143,45 @@ namespace Avalonia.Build.Tasks
             return true;
         }
 
+        // Replaces each .svg resource's XML payload with a compiled binary blob,
+        // keeping its avares path. The runtime distinguishes the two by the blob's
+        // magic header, so this is transparent to every consumer. A resource that
+        // fails to compile (malformed, or not really SVG) is left as XML — the
+        // optimization is best-effort and never breaks a build that worked before.
+        private void CompileSvg(List<Source> sources)
+        {
+            for (var i = 0; i < sources.Count; i++)
+            {
+                var source = sources[i];
+                if (!source.Path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                try
+                {
+                    var blob = SvgDocumentContentHelper.CompileToBlob(source.ReadAsString());
+                    sources[i] = new Source(source.Path, blob);
+                    BuildEngine.LogMessage(
+                        FormattableString.Invariant($"svg -> compiled blob: {source.Path}, {blob.Length} bytes"),
+                        _reportImportance);
+                }
+                catch (Exception e)
+                {
+                    BuildEngine.LogMessage(
+                        FormattableString.Invariant($"svg blob skipped for {source.Path}: {e.Message}"),
+                        MessageImportance.High);
+                }
+            }
+        }
+
         public bool Execute()
         {
             Enum.TryParse(ReportImportance, true, out _reportImportance);
 
             BuildEngine.LogMessage($"GenerateAvaloniaResourcesTask -> Root: {Root}, {Resources?.Count()} resources, Output:{Output}", _reportImportance < MessageImportance.Low ? MessageImportance.High : _reportImportance);
             var resources = BuildResourceSources();
+
+            if (CompileSvgResources)
+                CompileSvg(resources);
 
             if (!PreProcessXamlFiles(resources))
                 return false;

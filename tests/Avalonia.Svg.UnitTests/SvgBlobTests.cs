@@ -1,3 +1,5 @@
+using System.IO;
+using System.Text;
 using Avalonia.Media.Svg;
 using Xunit;
 
@@ -45,6 +47,25 @@ public class SvgBlobTests
 
         Assert.Equal("rect", original.GetElementById("dup")!.Name);
         Assert.Equal("rect", roundTrip.GetElementById("dup")!.Name);
+    }
+
+    [Fact]
+    public void Load_Stream_Reconstructs_A_Blob_And_Still_Parses_Xml()
+    {
+        using var original = SvgDocument.Parse(
+            """<svg xmlns="http://www.w3.org/2000/svg"><rect id="r" width="10" height="10"/></svg>""");
+        var blob = SvgBlobWriter.Write(original);
+
+        // A blob stream is recognized by its magic header and reconstructed...
+        using var blobStream = new MemoryStream(blob);
+        using var fromBlob = SvgDocument.Load(blobStream);
+        Assert.NotNull(fromBlob.GetElementById("r"));
+
+        // ...while an XML stream still parses through the same entry point.
+        using var xmlStream = new MemoryStream(
+            Encoding.UTF8.GetBytes("""<svg xmlns="http://www.w3.org/2000/svg"><circle id="c" r="4"/></svg>"""));
+        using var fromXml = SvgDocument.Load(xmlStream);
+        Assert.NotNull(fromXml.GetElementById("c"));
     }
 
     private static void AssertTreeEqual(SvgElement expected, SvgElement actual)
