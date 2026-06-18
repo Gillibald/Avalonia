@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Xml;
 using System.Xml.Linq;
+using Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.AstNodes;
 using XamlX;
 using XamlX.Ast;
 using XamlX.Transform;
@@ -54,7 +56,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
     internal static class SvgDocumentContentHelper
     {
         private const string DocumentTypeFullName = "Avalonia.Media.Svg.SvgDocument";
-        private const string FactoryMethodName = "FromXamlContent";
+        private const string FactoryMethodName = "FromCompiledBlob";
 
         private static readonly XNamespace SvgNs = "http://www.w3.org/2000/svg";
         private static readonly XNamespace XlinkNs = "http://www.w3.org/1999/xlink";
@@ -85,17 +87,20 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
         }
 
         /// <summary>
-        /// Validates and minifies the markup and wraps it into a
-        /// <c>SvgDocument.FromXamlContent("…")</c> static call node.
+        /// Validates and strips the markup, serializes it to the compiled-blob
+        /// byte format and wraps it into a node that emits a
+        /// <c>SvgDocument.FromCompiledBlob(ReadOnlySpan&lt;byte&gt;)</c> call.
         /// </summary>
+        [UnconditionalSuppressMessage("Trimming", "IL2122",
+            Justification = "Resolving well-known BCL types by name for IL emission.")]
         public static IXamlAstValueNode CreateFactoryNode(
             AstTransformationContext context, IXamlType documentType, XamlAstTextNode text)
         {
-            string minified;
+            XElement root;
             var diagnostics = new List<SvgInlineDiagnostic>();
             try
             {
-                minified = MinifySvg(text.Text, diagnostics);
+                root = ValidateAndStrip(text.Text, diagnostics);
             }
             catch (XmlException exception)
             {
@@ -122,17 +127,20 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
                     diagnostic.Code, XamlDiagnosticSeverity.Warning, message, text));
             }
 
-            var stringType = context.Configuration.WellKnownTypes.String;
+            var blob = SvgBlobBuilder.Write(root);
+
+            var typeSystem = context.Configuration.TypeSystem;
+            var spanOfByte = typeSystem.GetType("System.ReadOnlySpan`1")
+                .MakeGenericType(typeSystem.GetType("System.Byte"));
             var factory = documentType.FindMethod(m =>
                     m.IsPublic && m.IsStatic && m.Name == FactoryMethodName
                     && m.ReturnType.Equals(documentType)
-                    && m.Parameters.Count == 1 && m.Parameters[0].Equals(stringType))
+                    && m.Parameters.Count == 1 && m.Parameters[0].Equals(spanOfByte))
                 ?? throw new XamlTransformException(
-                    $"{DocumentTypeFullName}.{FactoryMethodName}(string) was not found; the referenced Avalonia.Svg version does not support inline content.",
+                    $"{DocumentTypeFullName}.{FactoryMethodName}(ReadOnlySpan<byte>) was not found; the referenced Avalonia.Svg version does not support compiled inline content.",
                     text);
 
-            return new XamlStaticOrTargetedReturnMethodCallNode(text, factory,
-                new[] { new XamlAstTextNode(text, minified, true, stringType) });
+            return new AvaloniaXamlIlSvgBlobAstNode(text, documentType, factory, blob);
         }
 
         private sealed class InvalidSvgContentException : Exception
@@ -142,7 +150,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             }
         }
 
-        private static string MinifySvg(string markup, List<SvgInlineDiagnostic> diagnostics)
+        private static XElement ValidateAndStrip(string markup, List<SvgInlineDiagnostic> diagnostics)
         {
             XDocument document;
             var settings = new XmlReaderSettings
@@ -186,14 +194,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions.Transformers
             }
 
             Strip(root, preserveWhitespace: false);
-
-            // Re-declare the namespaces that survived the strip; XLinq emits
-            // child elements prefix-free under the default declaration.
-            root.SetAttributeValue("xmlns", SvgNs.NamespaceName);
-            if (root.DescendantsAndSelf().Any(e => e.Attributes().Any(a => a.Name.Namespace == XlinkNs)))
-                root.SetAttributeValue(XNamespace.Xmlns + "xlink", XlinkNs.NamespaceName);
-
-            return root.ToString(SaveOptions.DisableFormatting);
+            return root;
         }
 
         private static void Strip(XElement element, bool preserveWhitespace)

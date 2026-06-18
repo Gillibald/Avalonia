@@ -199,6 +199,8 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
                 _avaloniaListConverter = typeSystem.GetType("Avalonia.Collections.AvaloniaListConverter`1");
             }
 
+            [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2122",
+                Justification = "The optional Avalonia.Svg converter is resolved by name at conversion time.")]
             IXamlType? LookupConverter(IXamlType type)
             {
                 foreach(var p in _converters)
