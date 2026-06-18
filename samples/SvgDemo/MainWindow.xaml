@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:svg="using:Avalonia.Media.Svg"
         x:Class="SvgDemo.MainWindow"
         Title="Avalonia.Svg Demo"
         Width="960" Height="700">
@@ -227,6 +228,57 @@
           <TextBlock Classes="caption">The same converter via element content (the URI is the Image's Content):</TextBlock>
           <Border Classes="canvas">
             <Image Width="200" Height="200">avares://SvgDemo/Assets/showcase.svg</Image>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
+    <TabItem Header="Multiple Instances">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <StackPanel.Resources>
+            <SvgImage x:Key="SharedImage">avares://SvgDemo/Assets/multi-instance.svg</SvgImage>
+            <svg:SvgDocument x:Key="SharedDocument">avares://SvgDemo/Assets/multi-instance.svg</svg:SvgDocument>
+          </StackPanel.Resources>
+          <TextBlock Classes="caption">
+            Animation state is per host instance, so the same animated SVG can play in many places at
+            once, each independent. The grid binds every Image to one shared SvgImage resource — an SVG
+            URI resolves to an SvgImage through the same IImage converter that loads bitmaps, so a
+            single SvgImage can be a shared resource. Each Image builds its own composition visual and
+            animation state from it: the ring and bar rotate and the halo pulses on the server-side
+            composition channel, while the core dot cycles its own brush on the paint channel.
+          </TextBlock>
+          <Border Classes="canvas">
+            <UniformGrid Columns="3">
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+              <Image Source="{StaticResource SharedImage}" Width="84" Height="84" Margin="6"/>
+            </UniformGrid>
+          </Border>
+          <TextBlock Classes="caption">The same shared SvgImage at different sizes:</TextBlock>
+          <Border Classes="canvas">
+            <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Bottom">
+              <Image Source="{StaticResource SharedImage}" Width="56" Height="56"/>
+              <Image Source="{StaticResource SharedImage}" Width="96" Height="96"/>
+              <Image Source="{StaticResource SharedImage}" Width="140" Height="140"/>
+            </StackPanel>
+          </Border>
+          <TextBlock Classes="caption">
+            SvgControl.Source is a typed SvgDocument rather than an IImage, so it shares a single
+            SvgDocument resource directly:
+          </TextBlock>
+          <Border Classes="canvas">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+              <SvgControl Source="{StaticResource SharedDocument}" Width="84" Height="84"/>
+              <SvgControl Source="{StaticResource SharedDocument}" Width="84" Height="84"/>
+              <SvgControl Source="{StaticResource SharedDocument}" Width="84" Height="84"/>
+            </StackPanel>
           </Border>
         </StackPanel>
       </ScrollViewer>
