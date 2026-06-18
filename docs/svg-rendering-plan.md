@@ -959,24 +959,28 @@ and hit testing are tracked entirely in the SVG layer.
         control re-compiles the root recording on change ticks; shared
         sub-recordings replay from the document cache. The root re-record
         is the v1 cost — R8 below if benchmarks demand better.)*
-  - [x] **Composition channel** (opt-in via
-        `Svg.EnableExperimentalCompositionAnimations`): rotate/translate/
-        scale `animateTransform` and `opacity` timelines with linear/
-        discrete calc modes run as server-side key-frame animations
-        (`RotationAngle`/`Offset`/`Scale`/`Opacity` on sliced
-        `CompositionRecordingVisual`s) — no UI-thread ticks while they
-        play. `SvgCompositionPartitioner` slices the document in paint
+  - [x] **Composition channel** (the default path for every animated
+        document): rotate/translate/scale `animateTransform` and `opacity`
+        timelines with linear/discrete calc modes run as server-side
+        key-frame animations (`RotationAngle`/`Offset`/`Scale`/`Opacity` on
+        sliced `CompositionRecordingVisual`s) — no UI-thread ticks while
+        they play. `SvgCompositionPartitioner` slices the document in paint
         order into static/structural/composition nodes;
         `SvgCompositionHost` compiles each slice through
         `SvgCompileOptions.ElementFilter` with the animated transform/
         opacity suppressed, hosts the tree via
         `ElementComposition.SetElementChildVisual`, and claims the entries
         so `Apply` skips them. Paint timelines keep mutating brushes;
-        structural remainders re-compile only their own slice. Opt-in
-        because the compositor clock, not the control's SMIL clock, drives
-        claimed timelines. Depends on the `ClipToBounds` schema-default
-        fix on `feature/drawing-recording` (directly-created visuals were
-        culled — see `CompositionChildVisualTests`).
+        structural remainders re-compile only their own slice; a paint-only,
+        structural-only or root-layer-state document still hosts (one static
+        or whole-document structural slice), so the channel covers every
+        animated document. `SvgImage` exposes it through `ICompositionImage`,
+        and both the `Image` control and `SvgControl` host it through the
+        shared `CompositionImageHost`; per-instance `SvgAnimationState` lets
+        the same document animate in several hosts at once. Depends on the
+        `ClipToBounds` schema-default fix on `feature/drawing-recording`
+        (directly-created visuals were culled — see
+        `CompositionChildVisualTests`).
 - [x] Animation targets resolve by element id through the
       `Dictionary<string, SvgElement>` the compiler maintains. *(Parent
       element by default, `href`/`xlink:href` through the id map.)*

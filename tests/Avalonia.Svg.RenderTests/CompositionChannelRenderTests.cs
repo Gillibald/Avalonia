@@ -71,17 +71,9 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         };
 
         // The immediate pipeline has no compositor, so the control renders
-        // through the legacy image there; only the composited pipeline
-        // exercises the channel.
-        SvgControl.EnableExperimentalCompositionAnimations = true;
-        try
-        {
-            await RenderToFile(control);
-        }
-        finally
-        {
-            SvgControl.EnableExperimentalCompositionAnimations = false;
-        }
+        // through the static image there; only the composited pipeline exercises
+        // the channel.
+        await RenderToFile(control);
 
         CompareImages(skipImmediate: true);
     }
@@ -98,15 +90,7 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
             Height = 200,
         };
 
-        SvgControl.EnableExperimentalCompositionAnimations = true;
-        try
-        {
-            await RenderToFile(image);
-        }
-        finally
-        {
-            SvgControl.EnableExperimentalCompositionAnimations = false;
-        }
+        await RenderToFile(image);
 
         // Proof the channel is actually engaged: the Image parents the channel's
         // visual subtree. A static fallback (whose first frame is pixel-identical
@@ -164,12 +148,32 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         await RenderHostedImage(document);
     }
 
+    [Fact]
+    public async Task Image_Hosts_An_Animation_Under_Root_Layer_State()
+    {
+        // A filter on the root can't be sliced, so the whole document hosts as a
+        // single structural slice; it must still render (with the filter applied)
+        // and be hosted rather than drawn statically.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" filter="url(#b)">
+              <defs><filter id="b"><feGaussianBlur stdDeviation="1"/></filter></defs>
+              <rect width="100" height="100" fill="#0b1022"/>
+              <rect x="40" y="40" width="20" height="20" fill="#f472b6">
+                <animate attributeName="width" values="20;20.01" dur="10000s" repeatCount="indefinite"/>
+              </rect>
+            </svg>
+            """);
+
+        await RenderHostedImage(document);
+    }
+
     /// <summary>
-    /// Renders an animated document through the <see cref="Image"/> control with
-    /// the channel enabled, then asserts it is actually hosted (a child visual is
-    /// parented — the relaxed partitioner built a host) and that the composited
-    /// render matches the static immediate render: at t≈0 the hosted output holds
-    /// the document's base state, no golden required.
+    /// Renders an animated document through the <see cref="Image"/> control, then
+    /// asserts it is actually hosted (a child visual is parented — the partitioner
+    /// built a host) and that the composited render matches the static immediate
+    /// render: at t≈0 the hosted output holds the document's base state, no golden
+    /// required.
     /// </summary>
     private async Task RenderHostedImage(SvgDocument document, [CallerMemberName] string testName = "")
     {
@@ -181,15 +185,7 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
             Height = svgImage.Size.Height,
         };
 
-        SvgControl.EnableExperimentalCompositionAnimations = true;
-        try
-        {
-            await RenderToFile(image, testName);
-        }
-        finally
-        {
-            SvgControl.EnableExperimentalCompositionAnimations = false;
-        }
+        await RenderToFile(image, testName);
 
         Assert.NotNull(ElementComposition.GetElementChildVisual(image));
 

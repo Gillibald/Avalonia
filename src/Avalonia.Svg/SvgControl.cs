@@ -3,17 +3,17 @@ using System.Collections.Generic;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Metadata;
-using Avalonia.Rendering.Composition;
 using Avalonia.Media.Svg;
-using Avalonia.Media.Svg.Animation;
 
 namespace Avalonia.Controls;
 
 /// <summary>
 /// Displays an SVG document and routes pointer events to the SVG elements under
-/// the pointer. The document compiles once into a retained
-/// <see cref="Rendering.Composition.DrawingRecording"/> (via <see cref="SvgImage"/>);
-/// rendering replays the recording under the control's stretch transform.
+/// the pointer. The document compiles into an <see cref="SvgImage"/>; an animated
+/// document renders through a render-thread composition visual (via the shared
+/// <see cref="CompositionImageHost"/>), a static one through a plain draw. The
+/// control adds the typed <see cref="SvgDocument"/> source, the stretch mapping
+/// and SVG hit testing on top of that shared hosting.
 /// </summary>
 public class SvgControl : Control
 {
@@ -36,26 +36,7 @@ public class SvgControl : Control
         AvaloniaProperty.Register<SvgControl, StretchDirection>(nameof(StretchDirection), StretchDirection.Both);
 
     private SvgImage? _image;
-    private SvgAnimator? _animator;
-    private SvgAnimationState? _state;
-    private bool _animatorInitialized;
-    private bool _animationRunning;
-    private Action<TimeSpan>? _animationFrame;
-    private TimeSpan? _animationStart;
-    private SvgCompositionHost? _compositionHost;
-    private bool _childVisualAttached;
-
-    /// <summary>
-    /// Opt-in for the experimental animation composition channel: SMIL
-    /// transform/opacity timelines run as server-side composition key-frame
-    /// animations on sliced child visuals instead of UI-thread ticks, so they
-    /// keep playing while the UI thread is busy. Paint and structural
-    /// timelines still tick on the UI thread. Opt-in because composition
-    /// animations follow the compositor clock rather than the control's SMIL
-    /// clock, which changes timing semantics for code that drives or observes
-    /// document time.
-    /// </summary>
-    public static bool EnableExperimentalCompositionAnimations { get; set; }
+    private CompositionImageHost? _host;
 
     static SvgControl()
     {
@@ -142,27 +123,15 @@ public class SvgControl : Control
         if (EnsureImage() is not { } image || Bounds.Width <= 0 || Bounds.Height <= 0)
             return;
 
-        ComputeStretchRects(image, out var sourceRect, out var destRect, out var scale);
+        // An animated document renders through the child composition visual; the
+        // control then only contributes the stretch mapping (set inside TryHost)
+        // and remains a hit-testable surface. A static document falls through.
+        if (_host is { } host && host.TryHost(Bounds, image.Size, Stretch, StretchDirection))
+            return;
+
+        ComputeStretchRects(image, out var sourceRect, out var destRect, out _);
         if (destRect.Width <= 0 || destRect.Height <= 0)
             return;
-
-        if (_compositionHost != null)
-        {
-            // The document renders through the child composition visual; the
-            // control itself only contributes a hit-testable surface and the
-            // stretch mapping. Attaching the child visual invalidates, so it
-            // never happens inside the render pass.
-            _compositionHost.UpdateStretch(
-                Matrix.CreateTranslation(-sourceRect.X, -sourceRect.Y)
-                * Matrix.CreateScale(scale.X, scale.Y)
-                * Matrix.CreateTranslation(destRect.X, destRect.Y));
-
-            if (!_childVisualAttached)
-                Threading.Dispatcher.UIThread.Post(AttachChildVisual, Threading.DispatcherPriority.Render);
-
-            context.DrawRectangle(Brushes.Transparent, null, new Rect(Bounds.Size));
-            return;
-        }
 
         context.DrawImage(image, sourceRect, destRect);
     }
@@ -175,7 +144,7 @@ public class SvgControl : Control
 
         // The layout pass is the safe place to attach the child visual; the
         // render pass must not invalidate.
-        AttachChildVisual();
+        _host?.EnsureAttached();
         return Stretch.CalculateSize(availableSize, image.Size, StretchDirection);
     }
 
@@ -199,6 +168,20 @@ public class SvgControl : Control
             if (change.OldValue is SvgDocument { HostOwned: true } replaced)
                 replaced.Dispose();
         }
+    }
+
+    /// <inheritdoc/>
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _host?.EnsureAttached();
+    }
+
+    /// <inheritdoc/>
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _host?.Detach();
     }
 
     /// <inheritdoc/>
@@ -241,186 +224,21 @@ public class SvgControl : Control
         if (document == null || document.IsDisposed)
             return null;
 
-        if (!_animatorInitialized)
-        {
-            _animatorInitialized = true;
-            _animator = SvgAnimator.TryCreate(document);
-            _state = _animator != null ? new SvgAnimationState() : null;
-        }
-
-        // The composition channel hosts the document as a sliced visual tree:
-        // transform/opacity timelines run as server key-frame animations and
-        // only the structural remainder (if any) keeps ticking. The control's
-        // own image then serves measurement and hit testing.
-        if (EnableExperimentalCompositionAnimations
-            && _animator != null && _state != null && _compositionHost == null
-            && GetCompositor() is { } hostCompositor
-            && SvgCompositionPartitioner.TryBuild(document, _animator) is { } rootGroup)
-        {
-            _compositionHost = new SvgCompositionHost(
-                document, hostCompositor, _animator, rootGroup, document.GetIntrinsicSize(), _state);
-        }
-
-        // Paint-only animations compile once into a compositor-bound recording
-        // with mutable brushes; the ticks then propagate through the
-        // compositor's change tracking without ever re-compiling. Everything
-        // else (or no compositor yet) compiles immutable; structural ticks
-        // re-compile against the instance's animated overrides, materialized for
-        // the duration of the synchronous compile.
-        if (_compositionHost != null)
-        {
-            using (_state!.Materialize())
-                _image = new SvgImage(document);
-        }
-        else if (_animator is { HasStructural: false } paintAnimator && GetCompositor() is { } compositor)
-        {
-            _image = new SvgImage(document, compositor, paintAnimator.GetPaintTargets());
-            paintAnimator.BindPaintBrushes(_image.AnimatedBrushes);
-        }
-        else if (_state != null)
-        {
-            using (_state.Materialize())
-                _image = new SvgImage(document);
-        }
-        else
-        {
-            _image = new SvgImage(document);
-        }
-
-        // Compositor-bound (animated) recordings report bounds changes; static
-        // immutable recordings never do (and throw on subscription).
-        if (_image.Recording.Compositor != null)
-            _image.Recording.BoundsChanged += OnRecordingBoundsChanged;
-
-        TryStartAnimation();
+        // One static compile feeds measurement, hit testing and the static draw;
+        // the host builds its own animating instance from the same document when
+        // the document is animated.
+        _image = new SvgImage(document);
+        _host = new CompositionImageHost(this);
+        _host.SetSource(_image);
         return _image;
-    }
-
-    private Compositor? GetCompositor() =>
-        VisualRoot is { } root ? ElementComposition.GetElementVisual(root)?.Compositor : null;
-
-    private void OnRecordingBoundsChanged(object? sender, Rect bounds) => InvalidateMeasure();
-
-    /// <inheritdoc/>
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-
-        // An animated image compiled before a compositor was available could
-        // not use the composition or paint channels; recompile now.
-        if (_animator != null && _compositionHost == null && _image != null && GetCompositor() != null
-            && (_animator.HasStructural || _image.Recording.Compositor == null))
-        {
-            DisposeImage();
-        }
-
-        AttachChildVisual();
-        TryStartAnimation();
-    }
-
-    /// <inheritdoc/>
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnDetachedFromVisualTree(e);
-        DetachChildVisual();
-        StopAnimation();
-    }
-
-    private void AttachChildVisual()
-    {
-        if (_compositionHost == null || _childVisualAttached || VisualRoot == null)
-            return;
-
-        ElementComposition.SetElementChildVisual(this, _compositionHost.RootVisual);
-        _childVisualAttached = true;
-    }
-
-    private void DetachChildVisual()
-    {
-        if (!_childVisualAttached)
-            return;
-
-        ElementComposition.SetElementChildVisual(this, null);
-        _childVisualAttached = false;
-    }
-
-    private void TryStartAnimation()
-    {
-        if (_animator == null || !_animator.HasUnclaimedWork || _animationRunning
-            || TopLevel.GetTopLevel(this) is not { } topLevel)
-        {
-            return;
-        }
-
-        _animationRunning = true;
-        _animationFrame ??= OnAnimationTick;
-        topLevel.RequestAnimationFrame(_animationFrame);
-    }
-
-    private void StopAnimation()
-    {
-        // The pending animation-frame callback checks the flag and stops
-        // re-requesting itself.
-        _animationRunning = false;
-        _animationStart = null;
-    }
-
-    private void OnAnimationTick(TimeSpan time)
-    {
-        if (!_animationRunning || _animator == null || _state == null)
-            return;
-
-        // The first tick anchors the document timeline.
-        _animationStart ??= time;
-
-        if (_animator.Apply(time - _animationStart.Value, _state))
-        {
-            if (_compositionHost != null)
-            {
-                // Only the structural slices re-compile; static and
-                // composition slices replay untouched.
-                _compositionHost.RecompileStructural();
-            }
-            else
-            {
-                // A structural value changed: re-compile the root recording. Shared
-                // sub-recordings (symbols, markers, patterns) stay cached on the
-                // document and are replayed, not rebuilt; the previous root keeps
-                // its shared children alive until the rendered frame releases it.
-                DisposeImage();
-                InvalidateVisual();
-            }
-        }
-
-        if (TopLevel.GetTopLevel(this) is { } topLevel)
-            topLevel.RequestAnimationFrame(_animationFrame!);
-        else
-            _animationRunning = false;
-    }
-
-    private void DisposeImage()
-    {
-        if (_image == null)
-            return;
-
-        if (_image.Recording.Compositor != null)
-            _image.Recording.BoundsChanged -= OnRecordingBoundsChanged;
-
-        _image.Dispose();
-        _image = null;
     }
 
     private void ReleaseImage()
     {
-        StopAnimation();
-        DetachChildVisual();
-        _compositionHost?.Dispose();
-        _compositionHost = null;
-        DisposeImage();
-
-        _animator = null;
-        _state = null;
-        _animatorInitialized = false;
+        _host?.Dispose();
+        _host = null;
+        _image?.Dispose();
+        _image = null;
     }
 
     private void ComputeStretchRects(SvgImage image, out Rect sourceRect, out Rect destRect, out Vector scale)
