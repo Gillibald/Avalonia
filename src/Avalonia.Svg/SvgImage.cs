@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Avalonia.Controls;
 using Avalonia.Media.Svg;
 using Avalonia.Media.Svg.Animation;
 using Avalonia.Media.Svg.Compilation;
@@ -185,6 +186,12 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
     /// </summary>
     public ICompositionImageInstance? CreateInstance(Compositor compositor)
     {
+        // The composition channel is opt-in while its clock semantics settle;
+        // the same switch gates SvgControl's own composition host. When off, the
+        // host falls back to static Draw.
+        if (!SvgControl.EnableExperimentalCompositionAnimations)
+            return null;
+
         var animator = SvgAnimator.TryCreate(_document);
         if (animator is null)
             return null;
