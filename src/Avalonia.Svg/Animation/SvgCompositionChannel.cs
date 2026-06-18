@@ -258,13 +258,18 @@ internal static class SvgCompositionPartitioner
         if (root == null)
             return null;
 
-        // Layer state on the root wraps the whole document; slicing under it
-        // would break the layer semantics.
+        // Layer state on the root wraps the whole document, so it can't be
+        // sliced. Host it as a single structural slice that recompiles the whole
+        // document on each structural tick (paint still mutates brushes in
+        // place), so every animated document stays hostable rather than falling
+        // back to a static draw.
         if (root.GetStyleOrAttribute("filter") != null
             || root.GetStyleOrAttribute("clip-path") != null
             || root.GetStyleOrAttribute("mask") != null)
         {
-            return null;
+            var whole = new SvgCompositionGroup(root);
+            whole.Children.Add(new SvgStructuralSlice(root));
+            return whole;
         }
 
         // Pre-classify: per element, its composition candidates and whether
