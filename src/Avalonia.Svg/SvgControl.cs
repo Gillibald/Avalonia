@@ -114,6 +114,12 @@ public class SvgControl : Control
         if (EnsureImage() is not { } image || !TryMapToViewport(image, point, out var viewportPoint))
             return Array.Empty<SvgElement>();
 
+        // While hosting an animated document, hit test against the instance's
+        // current frame so structural geometry follows the animation; a static
+        // document (no instance) tests against the compiled image directly.
+        if (_host?.Instance is ISvgHitTestSource hitSource)
+            return hitSource.HitTest(viewportPoint);
+
         return image.HitTestElements(viewportPoint);
     }
 
