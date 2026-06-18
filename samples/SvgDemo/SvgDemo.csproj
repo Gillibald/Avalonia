@@ -3,6 +3,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <PublishAot>true</PublishAot>
+    <!-- Embed the .svg assets as pre-compiled binary blobs (no runtime XML parsing). -->
+    <AvaloniaCompileSvgResources>true</AvaloniaCompileSvgResources>
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets\**\*.svg" />
