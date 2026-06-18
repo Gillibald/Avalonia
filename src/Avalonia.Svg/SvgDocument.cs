@@ -52,7 +52,7 @@ public sealed class SvgDocument : IDisposable
     /// Set on documents created by XAML (inline content or source strings):
     /// the consuming control owns the document and disposes it when its
     /// <c>Source</c> changes. Documents created through the public
-    /// <see cref="Parse(string)"/>/<see cref="Load(Uri)"/> APIs stay
+    /// <see cref="Load(Uri)"/> APIs stay
     /// caller-owned.
     /// </summary>
     internal bool HostOwned { get; private set; }
@@ -88,6 +88,25 @@ public sealed class SvgDocument : IDisposable
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public static SvgDocument FromXamlContent(string markup)
         => ParseHostOwned(markup, baseUri: null);
+
+    /// <summary>
+    /// Rebuilds a document from the compiled binary blob emitted for inline SVG
+    /// content (the field-RVA payload). Called by compiled XAML; the document is
+    /// marked host-owned like <see cref="FromXamlContent"/>, so the consuming
+    /// control disposes it when its source changes.
+    /// </summary>
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public static SvgDocument FromCompiledBlob(ReadOnlySpan<byte> blob)
+    {
+        var elementsById = new Dictionary<string, SvgElement>(StringComparer.Ordinal);
+        var root = SvgBlobReader.Read(blob, elementsById);
+        if (root.Name != "svg")
+            throw new FormatException("The document root must be an 'svg' element.");
+
+        var document = new SvgDocument(root, elementsById);
+        document.HostOwned = true;
+        return document;
+    }
 
     /// <summary>
     /// Resolves a XAML <c>Source</c> string — SVG markup (anything starting with
