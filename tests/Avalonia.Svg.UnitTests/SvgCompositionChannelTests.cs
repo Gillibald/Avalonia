@@ -349,4 +349,30 @@ public class SvgCompositionChannelTests
                         yield return nestedAnimation;
         }
     }
+
+    [Fact]
+    public void Root_Layer_State_Hosts_As_A_Whole_Document_Structural_Slice()
+    {
+        // A filter (or clip/mask) on the root wraps the whole document and can't
+        // be sliced — so even a composition-classifiable timeline under it hosts
+        // as a single whole-document structural slice rather than a server-side
+        // group, keeping the document animatable instead of falling back to a
+        // static draw.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" filter="url(#b)">
+              <defs><filter id="b"><feGaussianBlur stdDeviation="1"/></filter></defs>
+              <g>
+                <animateTransform attributeName="transform" type="rotate"
+                                  from="0 50 50" to="360 50 50" dur="4s" repeatCount="indefinite"/>
+                <rect x="45" y="20" width="10" height="10"/>
+              </g>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        var root = SvgCompositionPartitioner.TryBuild(document, animator)!;
+        var slice = Assert.IsType<SvgStructuralSlice>(Assert.Single(root.Children));
+        Assert.Same(document.Root, slice.Root);
+    }
 }
