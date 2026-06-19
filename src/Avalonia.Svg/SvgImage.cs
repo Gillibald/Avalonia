@@ -3,30 +3,43 @@ using System.Collections.Generic;
 using Avalonia.Media.Svg;
 using Avalonia.Media.Svg.Animation;
 using Avalonia.Media.Svg.Compilation;
+using Avalonia.Metadata;
 using Avalonia.Rendering.Composition;
 
 namespace Avalonia.Media;
 
 /// <summary>
 /// An <see cref="IImage"/> that renders an SVG document. The document is compiled
-/// once into an immutable <see cref="DrawingRecording"/> at construction time and
-/// replayed on every draw.
+/// into an immutable <see cref="DrawingRecording"/> when it is assigned — through a
+/// constructor or the <see cref="Document"/> content property — and replayed on
+/// every draw. Reassigning <see cref="Document"/> recompiles and raises
+/// <see cref="ICompositionImage.Invalidated"/> so any hosting control refreshes.
 /// </summary>
 public sealed class SvgImage : IImage, IDisposable, ICompositionImage
 {
-    private readonly SvgDocument _document;
-    private readonly bool _ownsDocument;
-    private readonly DrawingRecording _recording;
-    private readonly SvgHitNode? _hitRoot;
-    private readonly bool _hitTestNeedsFullWalk;
+    private SvgDocument? _document;
+    private bool _ownsDocument;
+    private DrawingRecording? _recording;
+    private SvgHitNode? _hitRoot;
+    private bool _hitTestNeedsFullWalk;
+
+    /// <summary>
+    /// Creates an empty image. Assign <see cref="Document"/> — the content
+    /// property — to compile a document into it; intended for XAML, where the
+    /// document is supplied as inline content or via a <c>Document</c> binding.
+    /// </summary>
+    public SvgImage()
+    {
+    }
 
     /// <summary>
     /// Compiles <paramref name="document"/> into a recording sized to the
     /// document's intrinsic size.
     /// </summary>
     public SvgImage(SvgDocument document)
-        : this(document, ownsDocument: false, compositor: null, paintAnimationTargets: null)
     {
+        Initialize(document ?? throw new ArgumentNullException(nameof(document)),
+            ownsDocument: false, compositor: null, paintAnimationTargets: null);
     }
 
     /// <summary>
@@ -37,17 +50,80 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
         SvgDocument document,
         Compositor? compositor,
         IReadOnlyCollection<(SvgElement Element, string Attribute)>? paintAnimationTargets)
-        : this(document, ownsDocument: false, compositor, paintAnimationTargets)
     {
+        Initialize(document ?? throw new ArgumentNullException(nameof(document)),
+            ownsDocument: false, compositor, paintAnimationTargets);
     }
 
-    private SvgImage(
+    /// <summary>
+    /// The SVG document this image renders. Assigning it compiles the document
+    /// into the replayed recording; this is the image's XAML content property, so
+    /// both <c>&lt;SvgImage&gt;&lt;svg .../&gt;&lt;/SvgImage&gt;</c> and
+    /// <c>&lt;SvgImage Document="{StaticResource Doc}"/&gt;</c> work. Reassigning it
+    /// recompiles and raises <see cref="ICompositionImage.Invalidated"/> so hosts
+    /// refresh, and assigning <c>null</c> clears the image. A document assigned here is not owned
+    /// by the image (not disposed when replaced or when the image is disposed); a
+    /// document loaded via <see cref="Load"/> is.
+    /// </summary>
+    [Content]
+    public SvgDocument? Document
+    {
+        get => _document;
+        set
+        {
+            if (ReferenceEquals(_document, value))
+                return;
+
+            // Hold the superseded compile (and the previous document, if this image
+            // owned it) until the replacement is in place, then release it. The
+            // static recording is immutable, so disposing it frees no in-flight
+            // server state — the last committed frame holds its own copy.
+            var previousRecording = _recording;
+            var previousOwnedDocument = _ownsDocument ? _document : null;
+
+            if (value is null)
+                Clear();
+            else
+                Initialize(value, ownsDocument: false, compositor: null, paintAnimationTargets: null);
+
+            previousRecording?.Dispose();
+            previousOwnedDocument?.Dispose();
+
+            _invalidated?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private EventHandler? _invalidated;
+
+    /// <inheritdoc />
+    event EventHandler? ICompositionImage.Invalidated
+    {
+        add => _invalidated += value;
+        remove => _invalidated -= value;
+    }
+
+    /// <summary>
+    /// Loads an SVG from <paramref name="uri"/> — an <c>avares://</c> resource or
+    /// a local file — and wraps it in an image that owns the document, so
+    /// disposing the image disposes the document too. A relative
+    /// <paramref name="uri"/> is resolved against <paramref name="baseUri"/>.
+    /// </summary>
+    public static SvgImage Load(Uri uri, Uri? baseUri = null)
+    {
+        var image = new SvgImage();
+        image.Initialize(
+            SvgDocument.Load(SvgDocument.ResolveUri(uri, baseUri)),
+            ownsDocument: true, compositor: null, paintAnimationTargets: null);
+        return image;
+    }
+
+    private void Initialize(
         SvgDocument document,
         bool ownsDocument,
         Compositor? compositor,
         IReadOnlyCollection<(SvgElement Element, string Attribute)>? paintAnimationTargets)
     {
-        _document = document ?? throw new ArgumentNullException(nameof(document));
+        _document = document;
         _ownsDocument = ownsDocument;
 
         Size = document.GetIntrinsicSize();
@@ -59,14 +135,15 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
 
         void Compile(DrawingContext ctx) => SvgCompiler.CompileDocument(document, ctx, Size, options);
 
-        _recording = compositor == null
+        var recording = compositor == null
             ? DrawingRecording.Create(Compile)
             : DrawingRecording.Create(compositor, Compile);
+        _recording = recording;
 
         // Without any size hints (width, height or viewBox) the canvas takes
         // the content's extent; the CSS 300×150 default only feeds the
         // compilation viewport.
-        if (!document.HasIntrinsicSizeHints && _recording.Bounds is { Width: > 0, Height: > 0 } contentBounds)
+        if (!document.HasIntrinsicSizeHints && recording.Bounds is { Width: > 0, Height: > 0 } contentBounds)
             Size = new Size(Math.Max(0, contentBounds.Right), Math.Max(0, contentBounds.Bottom));
 
         _hitRoot = options.HitRoot;
@@ -78,39 +155,47 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
         _hitTestNeedsFullWalk = _hitRoot != null && RequiresFullWalk(_hitRoot);
     }
 
-    /// <summary>
-    /// Loads an SVG from <paramref name="uri"/> — an <c>avares://</c> resource or
-    /// a local file — and wraps it in an image that owns the document, so
-    /// disposing the image disposes the document too. A relative
-    /// <paramref name="uri"/> is resolved against <paramref name="baseUri"/>.
-    /// </summary>
-    public static SvgImage Load(Uri uri, Uri? baseUri = null)
-        => new(
-            SvgDocument.Load(SvgDocument.ResolveUri(uri, baseUri)),
-            ownsDocument: true, compositor: null, paintAnimationTargets: null);
+    // Resets to the empty (no-document) state; the caller disposes the superseded
+    // recording and any owned document.
+    private void Clear()
+    {
+        _document = null;
+        _ownsDocument = false;
+        _recording = null;
+        _hitRoot = null;
+        _hitTestNeedsFullWalk = false;
+        AnimatedBrushes = null;
+        Size = default;
+    }
 
     /// <summary>
     /// The mutable brushes registered for the animation paint channel, keyed by
     /// (element, fill/stroke); null when the compile had no paint targets.
     /// </summary>
-    internal Dictionary<(SvgElement Element, string Attribute), SolidColorBrush>? AnimatedBrushes { get; }
+    internal Dictionary<(SvgElement Element, string Attribute), SolidColorBrush>? AnimatedBrushes { get; private set; }
 
     /// <inheritdoc/>
-    public Size Size { get; }
+    public Size Size { get; private set; }
 
-    /// <summary>The compiled recording; replayable directly via <see cref="DrawingContext.DrawRecording(DrawingRecording)"/>.</summary>
-    public DrawingRecording Recording => _recording;
+    /// <summary>
+    /// The compiled recording; replayable directly via
+    /// <see cref="DrawingContext.DrawRecording(DrawingRecording)"/>. Throws if no
+    /// <see cref="Document"/> has been assigned yet.
+    /// </summary>
+    public DrawingRecording Recording
+        => _recording ?? throw new InvalidOperationException("SvgImage has no Document.");
 
     /// <summary>
     /// The precise bounds of the drawn content in viewport space (the viewBox
     /// mapping is baked into the recording), backed by the recording's eager
-    /// bounds. Useful for tight layout measurement; <see cref="GetContentBounds"/>
-    /// gives per-item-tight bounds under an additional transform.
+    /// bounds; empty until a <see cref="Document"/> is assigned. Useful for tight
+    /// layout measurement; <see cref="GetContentBounds"/> gives per-item-tight
+    /// bounds under an additional transform.
     /// </summary>
-    public Rect ContentBounds => _recording.Bounds;
+    public Rect ContentBounds => _recording?.Bounds ?? default;
 
     /// <inheritdoc cref="ContentBounds"/>
-    public Rect GetContentBounds(Matrix transform) => _recording.GetBounds(transform);
+    public Rect GetContentBounds(Matrix transform) => _recording?.GetBounds(transform) ?? default;
 
     /// <summary>
     /// Hit tests the document at a point in viewport coordinates (the same space
@@ -121,7 +206,7 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
     /// </summary>
     public IReadOnlyList<SvgElement> HitTestElements(Point point)
     {
-        if (_hitRoot == null || _recording.IsDisposed)
+        if (_hitRoot == null || _recording is not { IsDisposed: false })
             return Array.Empty<SvgElement>();
 
         // Painted-content pre-filter: cheap recording-side rejection for
@@ -186,7 +271,7 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
     /// <inheritdoc/>
     public void Draw(DrawingContext context, Rect sourceRect, Rect destRect)
     {
-        if (_recording.IsDisposed
+        if (_recording is not { IsDisposed: false }
             || sourceRect.Width <= 0 || sourceRect.Height <= 0
             || destRect.Width <= 0 || destRect.Height <= 0)
         {
@@ -202,25 +287,23 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
             context.DrawRecording(_recording, transform);
     }
 
-    /// <summary>
-    /// Creates a render-thread animating visual subtree for this document, or
-    /// null when the document has no animations (the caller renders statically
-    /// via <see cref="Draw"/>). Each call builds an independent instance — see
-    /// <see cref="ICompositionImage"/>.
-    /// </summary>
-    public ICompositionImageInstance? CreateInstance(Compositor compositor)
+    /// <inheritdoc />
+    ICompositionImageInstance? ICompositionImage.CreateInstance(Compositor compositor)
     {
-        var animator = SvgAnimator.TryCreate(_document);
+        if (_document is not { } document)
+            return null;
+
+        var animator = SvgAnimator.TryCreate(document);
         if (animator is null)
             return null;
 
-        if (SvgCompositionPartitioner.TryBuild(_document, animator) is not { } rootGroup)
+        if (SvgCompositionPartitioner.TryBuild(document, animator) is not { } rootGroup)
             return null;
 
         var state = new SvgAnimationState();
         var host = new SvgCompositionHost(
-            _document, compositor, animator, rootGroup, _document.GetIntrinsicSize(), state);
-        return new SvgCompositionInstance(_document, host, animator, state);
+            document, compositor, animator, rootGroup, document.GetIntrinsicSize(), state);
+        return new SvgCompositionInstance(document, host, animator, state);
     }
 
     private sealed class SvgCompositionInstance : ICompositionImageInstance, ISvgHitTestSource
@@ -300,8 +383,8 @@ public sealed class SvgImage : IImage, IDisposable, ICompositionImage
     /// <inheritdoc/>
     public void Dispose()
     {
-        _recording.Dispose();
+        _recording?.Dispose();
         if (_ownsDocument)
-            _document.Dispose();
+            _document?.Dispose();
     }
 }

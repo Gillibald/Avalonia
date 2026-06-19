@@ -210,9 +210,9 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
         [Fact]
         public void SvgImage_Resource_Is_A_Shared_Image()
         {
-            // A .svg URI declared as an <SvgImage> resource resolves to one
-            // SvgImage that several Image controls can share — the registration
-            // that lets a single document drive several Image.Source bindings.
+            // One shared SvgDocument, wrapped into one shared SvgImage through its
+            // Document content property: both Image controls resolve to that single
+            // SvgImage, and the image wraps the same shared document.
             var path = System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(), "svgimage-res-" + Guid.NewGuid().ToString("N") + ".svg");
             System.IO.File.WriteAllText(path,
@@ -223,9 +223,11 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 var panel = (Avalonia.Controls.StackPanel)AvaloniaRuntimeXamlLoader.Load(
                     $$"""
                     <StackPanel xmlns="https://github.com/avaloniaui"
-                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                xmlns:svg="using:Avalonia.Media.Svg">
                       <StackPanel.Resources>
-                        <SvgImage x:Key="Shared">{{uri}}</SvgImage>
+                        <svg:SvgDocument x:Key="Doc">{{uri}}</svg:SvgDocument>
+                        <SvgImage x:Key="Shared" Document="{StaticResource Doc}"/>
                       </StackPanel.Resources>
                       <Image Source="{StaticResource Shared}"/>
                       <Image Source="{StaticResource Shared}"/>
@@ -236,11 +238,31 @@ namespace Avalonia.Markup.Xaml.UnitTests.Xaml
                 var second = (Avalonia.Controls.Image)panel.Children[1];
                 var image = Assert.IsType<Avalonia.Media.SvgImage>(first.Source);
                 Assert.Same(image, second.Source);
+
+                var document = Assert.IsType<Avalonia.Media.Svg.SvgDocument>(panel.Resources["Doc"]);
+                Assert.Same(document, image.Document);
             }
             finally
             {
                 System.IO.File.Delete(path);
             }
+        }
+
+        [Fact]
+        public void SvgImage_Content_Compiles_Into_The_Document()
+        {
+            // Document is SvgImage's content property, so inline SVG markup
+            // compiles straight into the wrapped document.
+            var image = (Avalonia.Media.SvgImage)AvaloniaRuntimeXamlLoader.Load("""
+                <SvgImage xmlns="https://github.com/avaloniaui">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+                    <rect width="10" height="10"/>
+                  </svg>
+                </SvgImage>
+                """);
+
+            Assert.NotNull(image.Document);
+            Assert.Equal(new Avalonia.Size(10, 10), image.Size);
         }
 
         [Fact]

@@ -213,12 +213,6 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
                 // name at lookup time (conversion time) rather than registering up front.
                 if (type.FullName == "Avalonia.Media.Svg.SvgDocument")
                     return _typeSystem.FindType("Avalonia.Markup.Xaml.Converters.SvgDocumentTypeConverter");
-                // SvgImage is a concrete IImage in the same optional assembly; it
-                // reuses the IImage converter, which loads a .svg URI as an
-                // SvgImage, so a single SvgImage can be declared as a shared
-                // resource (e.g. one document driving several Image controls).
-                if (type.FullName == "Avalonia.Media.SvgImage")
-                    return _typeSystem.FindType("Avalonia.Markup.Xaml.Converters.BitmapTypeConverter");
                 return null;
             }
 
