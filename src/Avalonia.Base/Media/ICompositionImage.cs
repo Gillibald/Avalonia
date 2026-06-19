@@ -11,7 +11,7 @@ namespace Avalonia.Media;
 /// transform up to date and pumps the clock while needed; any other surface falls
 /// back to <see cref="IImage.Draw"/>.
 /// </summary>
-public interface ICompositionImage : IImage
+internal interface ICompositionImage : IImage
 {
     /// <summary>
     /// Creates a server-side animating visual subtree for one host on
@@ -22,6 +22,15 @@ public interface ICompositionImage : IImage
     /// parent.
     /// </summary>
     ICompositionImageInstance? CreateInstance(Compositor compositor);
+
+    /// <summary>
+    /// Raised on the UI thread when the image's content has changed (for example a
+    /// new source document was assigned) so any live host must refresh: drop the
+    /// <see cref="ICompositionImageInstance"/> built from the previous content,
+    /// recreate it from the updated image, and repaint. The image's
+    /// <see cref="IImage.Size"/> may also have changed, so hosts re-measure.
+    /// </summary>
+    event EventHandler? Invalidated;
 }
 
 /// <summary>
@@ -31,7 +40,7 @@ public interface ICompositionImage : IImage
 /// <see cref="NeedsClock"/> is true, and dispose it when detached or when the
 /// source changes.
 /// </summary>
-public interface ICompositionImageInstance : IDisposable
+internal interface ICompositionImageInstance : IDisposable
 {
     /// <summary>The visual subtree to parent under the host.</summary>
     CompositionVisual Visual { get; }

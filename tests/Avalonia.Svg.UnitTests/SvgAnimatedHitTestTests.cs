@@ -27,7 +27,7 @@ public class SvgAnimatedHitTestTests
             </svg>
             """);
         using var image = new SvgImage(document);
-        using var instance = image.CreateInstance(services.Compositor)!;
+        using var instance = ((ICompositionImage)image).CreateInstance(services.Compositor)!;
         var hitSource = Assert.IsAssignableFrom<ISvgHitTestSource>(instance);
 
         // Base frame: the rect covers x in [10, 30].

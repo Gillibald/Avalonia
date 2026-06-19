@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
@@ -9,10 +10,13 @@ namespace Avalonia.Controls;
 /// Hosts an <see cref="ICompositionImage"/> source as a render-thread-animating
 /// child composition visual under a control: it materializes one instance per
 /// host, attaches the instance's visual, keeps its stretch transform current,
-/// and runs a per-frame clock only while the instance still needs one. Sources
-/// that are not composition images (or composition images with nothing to host)
-/// fall through, so the owner draws them statically via <see cref="IImage.Draw"/>.
-/// Shared by the <see cref="Image"/> control and the SVG control.
+/// and runs a per-frame clock only while the instance still needs one. While the
+/// owner is attached it listens for <see cref="ICompositionImage.Invalidated"/> and
+/// rebuilds the instance when the source's content changes (e.g. a swapped SVG
+/// document). Sources that are not composition images (or composition images with
+/// nothing to host) fall through, so the owner draws them statically via
+/// <see cref="IImage.Draw"/>. Shared by the <see cref="Image"/> control and the SVG
+/// control.
 /// </summary>
 internal sealed class CompositionImageHost
 {
@@ -21,6 +25,7 @@ internal sealed class CompositionImageHost
     private ICompositionImageInstance? _instance;
     private bool _instanceCreated;
     private bool _childVisualAttached;
+    private bool _subscribedToSource;
     private Action<TimeSpan>? _clockFrame;
     private bool _clockRunning;
     private TimeSpan? _clockStart;
@@ -43,9 +48,12 @@ internal sealed class CompositionImageHost
         if (ReferenceEquals(_source, source))
             return;
 
+        UnsubscribeFromSource();
         ReleaseInstance();
         _source = source;
         _instanceCreated = false;
+        // Subscription is (re)established by the next EnsureAttached, keeping it
+        // scoped to the time the owner is in the tree.
     }
 
     /// <summary>
@@ -56,6 +64,9 @@ internal sealed class CompositionImageHost
     /// </summary>
     public void EnsureAttached()
     {
+        // Listen for content changes only while attached, so a shared, long-lived
+        // image never keeps a detached owner alive through the event.
+        SubscribeToSource();
         EnsureInstance();
         AttachChildVisual();
         // Re-arm the residual clock after a detach/re-attach; idempotent while
@@ -68,7 +79,11 @@ internal sealed class CompositionImageHost
     /// contract), freeing its composition visuals while off-screen. The source
     /// is kept, so re-attaching rebuilds a fresh instance.
     /// </summary>
-    public void Detach() => ReleaseInstance();
+    public void Detach()
+    {
+        UnsubscribeFromSource();
+        ReleaseInstance();
+    }
 
     /// <summary>
     /// Updates the hosted visual's stretch and returns true when a composition
@@ -94,7 +109,41 @@ internal sealed class CompositionImageHost
         return true;
     }
 
-    public void Dispose() => ReleaseInstance();
+    public void Dispose()
+    {
+        UnsubscribeFromSource();
+        ReleaseInstance();
+    }
+
+    private void SubscribeToSource()
+    {
+        if (_subscribedToSource || _source is not ICompositionImage image)
+            return;
+
+        image.Invalidated += OnSourceInvalidated;
+        _subscribedToSource = true;
+    }
+
+    private void UnsubscribeFromSource()
+    {
+        if (!_subscribedToSource || _source is not ICompositionImage image)
+            return;
+
+        image.Invalidated -= OnSourceInvalidated;
+        _subscribedToSource = false;
+    }
+
+    // The source's content changed (e.g. a swapped SVG document): the instance was
+    // built from the now-stale content, so drop it and let the next layout/render
+    // rebuild from the updated image. Measure is invalidated too, since the image's
+    // size may have changed.
+    private void OnSourceInvalidated(object? sender, EventArgs e)
+    {
+        ReleaseInstance();
+        _owner.InvalidateVisual();
+        if (_owner is Layoutable layoutable)
+            layoutable.InvalidateMeasure();
+    }
 
     private void EnsureInstance()
     {
