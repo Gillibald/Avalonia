@@ -168,7 +168,7 @@ internal sealed class SvgAnimationEntry
 
     /// <summary>
     /// Serializes an interpolated color the way the compiler parses it. CSS
-    /// hex carries alpha last (#RRGGBBAA) while <see cref="Color.ToString"/>
+    /// hex carries alpha last (#RRGGBBAA) while <see cref="Color.ToString()"/>
     /// puts alpha first and may emit known-color names, so the round trip
     /// must format explicitly.
     /// </summary>
