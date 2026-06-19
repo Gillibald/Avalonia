@@ -237,16 +237,16 @@
       <ScrollViewer>
         <StackPanel Margin="16" Spacing="12">
           <StackPanel.Resources>
-            <SvgImage x:Key="SharedImage">avares://SvgDemo/Assets/multi-instance.svg</SvgImage>
             <svg:SvgDocument x:Key="SharedDocument">avares://SvgDemo/Assets/multi-instance.svg</svg:SvgDocument>
+            <SvgImage x:Key="SharedImage" Document="{StaticResource SharedDocument}"/>
           </StackPanel.Resources>
           <TextBlock Classes="caption">
             Animation state is per host instance, so the same animated SVG can play in many places at
-            once, each independent. The grid binds every Image to one shared SvgImage resource — an SVG
-            URI resolves to an SvgImage through the same IImage converter that loads bitmaps, so a
-            single SvgImage can be a shared resource. Each Image builds its own composition visual and
-            animation state from it: the ring and bar rotate and the halo pulses on the server-side
-            composition channel, while the core dot cycles its own brush on the paint channel.
+            once, each independent. One shared SvgDocument is wrapped into one shared SvgImage through
+            its Document content property, and every Image below binds that single SvgImage resource.
+            Each Image builds its own composition visual and animation state from it: the ring and bar
+            rotate and the halo pulses on the server-side composition channel, while the core dot cycles
+            its own brush on the paint channel.
           </TextBlock>
           <Border Classes="canvas">
             <UniformGrid Columns="3">
@@ -270,8 +270,8 @@
             </StackPanel>
           </Border>
           <TextBlock Classes="caption">
-            SvgControl.Source is a typed SvgDocument rather than an IImage, so it shares a single
-            SvgDocument resource directly:
+            SvgControl.Source is a typed SvgDocument rather than an IImage, so it binds the very same
+            SharedDocument resource the SvgImage above wraps:
           </TextBlock>
           <Border Classes="canvas">
             <StackPanel Orientation="Horizontal" Spacing="16">
