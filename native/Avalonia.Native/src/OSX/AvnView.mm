@@ -20,6 +20,7 @@
     AvnPlatformResizeReason _resizeReason;
     NSRect _cursorRect;
     NSMutableAttributedString* _text;
+    NSString* _markedText;
     NSRange _selectedRange;
     NSRange _markedRange;
     NSEvent* _lastKeyDownEvent;
@@ -388,6 +389,15 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
        [self inputContext] != nil)
     {
         handledByInputContext = [[self inputContext] handleEvent:event];
+
+        if(!handledByInputContext && [self hasMarkedText] && _markedText != nil)
+        {
+            // Some system IMEs (e.g. the macOS Japanese IME) ignore mouse events during
+            // composition: handleEvent returns NO and the marked text is left dangling. Match
+            // native macOS behaviour by committing the current composition instead of dropping it,
+            // then let the click fall through to move the caret.
+            [self insertText:_markedText replacementRange:NSMakeRange(NSNotFound, 0)];
+        }
     }
 
     auto parent = _parent.tryGet();
@@ -801,6 +811,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     }
     
     _markedRange = NSMakeRange(_selectedRange.location, [markedText length]);
+    _markedText = markedText;
 
     if (parent != nullptr && parent->InputMethod->IsActive())
     {
@@ -816,6 +827,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
         parent->InputMethod->Client->SetPreeditText(nullptr, -1);
     }
 
+    _markedText = nil;
     _markedRange = NSMakeRange(_selectedRange.location, 0);
 
     if([self inputContext]) {
@@ -838,10 +850,10 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     // In this case, you should return the intersection of the document's range and aRange.
     // If the location of aRange is completely outside of the document's range, return nil.
     auto finalRange = NSIntersectionRange(range, NSMakeRange(0, _text.length));
-    
+
     if (finalRange.length == 0)
         return nil;
-    
+
     NSAttributedString* subString = [_text attributedSubstringFromRange:finalRange];
     return subString;
 }
@@ -872,9 +884,9 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     }
     
     [self unmarkText];
-        
+
     uint64_t timestamp = static_cast<uint64_t>([NSDate timeIntervalSinceReferenceDate] * 1000);
-        
+
     parent->TopLevelEvents->RawTextInputEvent(timestamp, [text UTF8String]);
 }
 

@@ -180,14 +180,20 @@ namespace Avalonia.Controls
 
             var hit = _presenter.TextLayout.HitTestPoint(point);
 
-            if (!hit.IsInside)
+            var lineStart = GetCurrentLineStart();
+
+            // hit.TextPosition is the nearest character index in the layout (which includes the
+            // active preedit). NSTextInputClient.characterIndexForPoint: wants the nearest index,
+            // not strict containment, so we deliberately do not gate on hit.IsInside. The index is
+            // expressed relative to the current line to match the IME's marked-range coordinates.
+            var index = hit.TextPosition - lineStart;
+
+            if (index < 0)
             {
                 return -1;
             }
 
-            var lineStart = GetCurrentLineStart();
-
-            return Math.Max(0, hit.TextPosition - lineStart);
+            return index;
         }
 
         public override Rect? GetTextRectForRange(int start, int end)
