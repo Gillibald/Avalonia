@@ -23,6 +23,9 @@
     NSString* _markedText;
     NSRange _selectedRange;
     NSRange _markedRange;
+    // True while the input context is processing an event (handleEvent:). Selection updates that
+    // happen as a side effect of the IME's own composition must NOT be reported back to it.
+    BOOL _imeProcessingEvent;
     NSEvent* _lastKeyDownEvent;
     NSMutableArray* _accessibilityChildren;
 }
@@ -388,15 +391,46 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
         type == XButton1Down || type == XButton2Down) &&
        [self inputContext] != nil)
     {
-        handledByInputContext = [[self inputContext] handleEvent:event];
+        // Hit-test the click against the active composition (marked text).
+        NSPoint screenPoint = [[self window] convertPointToScreen:[event locationInWindow]];
+        NSUInteger clickedIndex = [self characterIndexForPoint:screenPoint];
 
-        if(!handledByInputContext && [self hasMarkedText] && _markedText != nil)
+        BOOL insideComposition = clickedIndex != NSNotFound &&
+            clickedIndex >= _markedRange.location &&
+            clickedIndex <= _markedRange.location + _markedRange.length;
+
+        if(insideComposition && _markedText != nil)
         {
-            // Some system IMEs (e.g. the macOS Japanese IME) ignore mouse events during
-            // composition: handleEvent returns NO and the marked text is left dangling. Match
-            // native macOS behaviour by committing the current composition instead of dropping it,
-            // then let the click fall through to move the caret.
-            [self insertText:_markedText replacementRange:NSMakeRange(NSNotFound, 0)];
+            // Click landed inside the composition. Move the preedit caret to the clicked offset and
+            // report the new selection to the input context. IMEs that honour out-of-band selection
+            // changes will move their composition insertion point to match; the system Japanese IME
+            // currently only moves the visible caret, but the state flow is correct either way.
+            NSUInteger offsetWithinMarked = clickedIndex - _markedRange.location;
+            _selectedRange = NSMakeRange(clickedIndex, 0);
+
+            auto imParent = _parent.tryGet();
+            if(imParent != nullptr && imParent->InputMethod->IsActive())
+            {
+                imParent->InputMethod->Client->SetPreeditText((char*)[_markedText UTF8String], (int)offsetWithinMarked);
+            }
+
+            [self notifySelectionDidUpdate];
+
+            // Consume the click so Avalonia doesn't also move the caret in the committed buffer.
+            handledByInputContext = true;
+        }
+        else
+        {
+            _imeProcessingEvent = YES;
+            handledByInputContext = [[self inputContext] handleEvent:event];
+            _imeProcessingEvent = NO;
+
+            if(!handledByInputContext && [self hasMarkedText] && _markedText != nil)
+            {
+                // IME declined and the click is outside the composition: commit the current
+                // composition instead of dropping it, then let the click move the caret.
+                [self insertText:_markedText replacementRange:NSMakeRange(NSNotFound, 0)];
+            }
         }
     }
 
@@ -661,7 +695,9 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
     _modifierState = newModifierState;
 
+    _imeProcessingEvent = YES;
     [[self inputContext] handleEvent:event];
+    _imeProcessingEvent = NO;
     [super flagsChanged:event];
 }
 
@@ -703,9 +739,13 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
             }
         }
         
-        if([[self inputContext] handleEvent:event] == NO){
+        _imeProcessingEvent = YES;
+        BOOL keyHandledByInputContext = [[self inputContext] handleEvent:event];
+        _imeProcessingEvent = NO;
+
+        if(keyHandledByInputContext == NO){
             //KeyDown has not been consumed by the input context
-                
+
             //Only raise a keyDown if we don't have a modifier
             if(!hasInputModifier){
                 [self handleKeyDown:timestamp withKey:key withPhysicalKey:physicalKey withModifiers:modifiers withKeySymbol:keySymbol];
@@ -942,6 +982,24 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     return viewRectOnScreen;
 }
 
+// macOS 14+ queries these in response to textInputClientDidUpdateSelection (selection affordances /
+// Writing Tools). They must exist on the client or AppKit raises an unrecognized-selector exception.
+- (NSRect)unionRectInVisibleSelectedRange
+{
+    // Bounding rect of the current selection in screen coordinates. The caret/selection rect we
+    // already track for the IME is a good approximation.
+    return _cursorRect;
+}
+
+- (NSRect)documentVisibleRect
+{
+    if([self window] == nil){
+        return [self visibleRect];
+    }
+
+    return [[self window] convertRectToScreen:[self convertRect:[self visibleRect] toView:nil]];
+}
+
 - (NSDragOperation)triggerAvnDragEvent: (AvnDragEventType) type info: (id <NSDraggingInfo>)info
 {
     NSPoint eventLocation = [info draggingLocation];
@@ -1097,6 +1155,28 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void) setSelection:(int)start :(int)end{
     _selectedRange = NSMakeRange(start, end - start);
+
+    // Report out-of-band selection changes (caret moved by Avalonia, not by the IME) to the input
+    // context. Suppressed while the IME is processing its own event to avoid echoing its updates.
+    if(!_imeProcessingEvent){
+        [self notifySelectionDidUpdate];
+    }
+}
+
+- (void) notifySelectionDidUpdate{
+    // Tell the input context that the client's selection changed out-of-band (i.e. not as a
+    // result of the IME itself). Available on macOS 14+, so probe for it.
+    // Guarded with _imeProcessingEvent: notifying can make the IME call back into us (e.g.
+    // setMarkedText -> setSelection), which would otherwise recurse into another notification.
+    if(_imeProcessingEvent){
+        return;
+    }
+
+    if([self inputContext] != nil && [[self inputContext] respondsToSelector:@selector(textInputClientDidUpdateSelection)]){
+        _imeProcessingEvent = YES;
+        [[self inputContext] textInputClientDidUpdateSelection];
+        _imeProcessingEvent = NO;
+    }
 }
 
 - (void) resetInputMethod{
