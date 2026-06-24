@@ -171,6 +171,53 @@ namespace Avalonia.Controls
             _presenter.SetCurrentValue(TextPresenter.PreeditTextCursorPositionProperty, cursorPos);
         }
 
+        public override int GetCharacterIndexFromPoint(Point point)
+        {
+            if (_presenter is null || _parent is null)
+            {
+                return -1;
+            }
+
+            var hit = _presenter.TextLayout.HitTestPoint(point);
+
+            if (!hit.IsInside)
+            {
+                return -1;
+            }
+
+            var lineStart = GetCurrentLineStart();
+
+            return Math.Max(0, hit.TextPosition - lineStart);
+        }
+
+        public override Rect? GetTextRectForRange(int start, int end)
+        {
+            if (_presenter is null || _parent is null)
+            {
+                return null;
+            }
+
+            var lineStart = GetCurrentLineStart();
+            var absoluteStart = lineStart + start;
+            var length = Math.Max(1, end - start);
+
+            foreach (var rect in _presenter.TextLayout.HitTestTextRange(absoluteStart, length))
+            {
+                // The first rectangle is enough to satisfy NSTextInputClient firstRectForCharacterRange:.
+                return rect;
+            }
+
+            return null;
+        }
+
+        private int GetCurrentLineStart()
+        {
+            var lineIndex = _presenter!.TextLayout.GetLineIndexFromCharacterIndex(_parent!.CaretIndex, false);
+            var textLine = _presenter.TextLayout.TextLines[lineIndex];
+
+            return textLine.FirstTextSourceIndex;
+        }
+
         private static string GetTextLineText(TextLine textLine)
         {
             if (textLine.Length == 0)

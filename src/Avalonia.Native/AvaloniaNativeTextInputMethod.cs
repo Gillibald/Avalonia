@@ -136,11 +136,11 @@ namespace Avalonia.Native
                 _client = client;
             }
 
-            public void SetPreeditText(string preeditText)
+            public void SetPreeditText(string preeditText, int cursorPos)
             {
                 if (_client.SupportsPreedit)
                 {
-                    _client.SetPreeditText(preeditText);
+                    _client.SetPreeditText(preeditText, cursorPos < 0 ? (int?)null : cursorPos);
                 }
             }
 
@@ -150,6 +150,50 @@ namespace Avalonia.Native
                 {
                     _client.Selection = new TextSelection(start, end);
                 }
+            }
+
+            public int GetCharacterIndexFromPoint(AvnPoint point)
+            {
+                var visual = _client.TextViewVisual;
+
+                if (visual?.VisualRoot is not Visual root)
+                {
+                    return -1;
+                }
+
+                // point arrives in the top level (root) coordinate space; map it to the text visual.
+                var transform = root.TransformToVisual(visual);
+
+                if (transform == null)
+                {
+                    return -1;
+                }
+
+                var localPoint = point.ToAvaloniaPoint().Transform(transform.Value);
+
+                return _client.GetCharacterIndexFromPoint(localPoint);
+            }
+
+            public unsafe void GetTextRectForRange(int start, int end, AvnRect* rect)
+            {
+                var local = _client.GetTextRectForRange(start, end);
+                var visual = _client.TextViewVisual;
+
+                if (local is null || visual?.VisualRoot is not Visual root)
+                {
+                    *rect = default;
+                    return;
+                }
+
+                var transform = visual.TransformToVisual(root);
+
+                if (transform == null)
+                {
+                    *rect = default;
+                    return;
+                }
+
+                *rect = local.Value.TransformToAABB(transform.Value).ToAvnRect();
             }
         }
     }

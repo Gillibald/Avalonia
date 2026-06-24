@@ -871,8 +871,15 @@ interface IAvnWindowEvents : IAvnWindowBaseEvents
 [uuid(f2079145-a2d9-42b8-a85e-2732e3c2b055)]
 interface IAvnTextInputMethodClient : IUnknown
 {
-    void SetPreeditText(char* preeditText);
+    void SetPreeditText(char* preeditText, int cursorPos);
     void SelectInSurroundingText(int start, int end);
+    // Returns the character index (relative to the current surrounding-text line) whose
+    // glyph contains the given point, or -1 when the point is outside the text. The point is
+    // expressed in the top level's coordinate space (same space as raw pointer events).
+    int GetCharacterIndexFromPoint(AvnPoint point);
+    // Returns the bounding rectangle (top level coordinate space) of the given line-relative
+    // character range. Used to answer NSTextInputClient firstRectForCharacterRange:.
+    HRESULT GetTextRectForRange(int start, int end, AvnRect* rect);
 }
 
 [uuid(1382a29f-e260-4c7a-b83f-c99fc72e27c2)]

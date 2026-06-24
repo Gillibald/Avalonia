@@ -82,6 +82,20 @@ namespace Avalonia.Input.TextInput
         {
             SetPreeditText(preeditText);
         }
+
+        /// <summary>
+        /// Returns the character index (relative to the start of the current <see cref="SurroundingText"/>
+        /// line) whose glyph contains <paramref name="point"/>, or -1 when the point is outside the text.
+        /// The point is expressed in <see cref="TextViewVisual"/> coordinates. Used by IMEs to hit-test
+        /// pointer events against the active composition (e.g. to move the caret inside it).
+        /// </summary>
+        public virtual int GetCharacterIndexFromPoint(Point point) => -1;
+
+        /// <summary>
+        /// Returns the bounding rectangle, in <see cref="TextViewVisual"/> coordinates, of the given
+        /// line-relative character range, or null when geometry isn't available.
+        /// </summary>
+        public virtual Rect? GetTextRectForRange(int start, int end) => null;
         
         protected virtual void RaiseTextViewVisualChanged()
         {
