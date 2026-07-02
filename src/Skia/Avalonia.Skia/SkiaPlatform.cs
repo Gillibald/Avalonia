@@ -22,6 +22,8 @@ namespace Avalonia.Skia
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(renderInterface)
                 .Bind<IFontManagerImpl>().ToConstant(new FontManagerImpl());
+
+            ImagingBackend.Register(new Imaging.SkiaImagingBackend(), isDefault: true);
         }
 
         /// <summary>
