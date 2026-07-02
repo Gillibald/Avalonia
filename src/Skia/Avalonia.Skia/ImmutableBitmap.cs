@@ -121,6 +121,64 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
+        /// Create an immutable bitmap over the framebuffer's pixels without copying them.
+        /// The view is disposed when the bitmap is torn down, so the underlying memory
+        /// must stay valid until then.
+        /// </summary>
+        /// <param name="framebuffer">The pixel view to install.</param>
+        public ImmutableBitmap(ILockedFramebuffer framebuffer)
+        {
+            SKImageInfo info;
+
+            try
+            {
+                info = new SKImageInfo(
+                    framebuffer.Size.Width,
+                    framebuffer.Size.Height,
+                    framebuffer.Format.ToSkColorType(),
+                    framebuffer.AlphaFormat.ToSkAlphaType());
+            }
+            catch
+            {
+                // Ownership of the view transfers to this constructor; when the pixels
+                // never reach Skia the view must be released here.
+                framebuffer.Dispose();
+                throw;
+            }
+
+            _bitmap = new SKBitmap();
+
+            // On failure Skia has already invoked the release delegate, so the view is
+            // not leaked either way.
+            if (!_bitmap.InstallPixels(info, framebuffer.Address, framebuffer.RowBytes,
+                    s_framebufferReleaseDelegate, framebuffer))
+            {
+                _bitmap.Dispose();
+                _bitmap = null;
+
+                throw new ArgumentException("Unable to install the framebuffer pixels into a bitmap.");
+            }
+
+            _bitmap.SetImmutable();
+            _image = SKImage.FromBitmap(_bitmap);
+
+            if (_image == null)
+            {
+                // Disposing the bitmap fires the release delegate, freeing the view.
+                _bitmap.Dispose();
+                _bitmap = null;
+
+                throw new ArgumentException("Unable to create bitmap from provided data");
+            }
+
+            PixelSize = framebuffer.Size;
+            Dpi = framebuffer.Dpi;
+        }
+
+        private static readonly SKBitmapReleaseDelegate s_framebufferReleaseDelegate =
+            static (_, context) => ((ILockedFramebuffer)context!).Dispose();
+
+        /// <summary>
         /// Create immutable bitmap from given pixel data copy.
         /// </summary>
         /// <param name="size">Size of the bitmap.</param>

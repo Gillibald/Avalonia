@@ -124,6 +124,16 @@ namespace Avalonia.Headless
             return new HeadlessBitmapStub(new Size(1, 1), new Vector(96, 96));
         }
 
+        public IBitmapImpl LoadBitmap(ILockedFramebuffer framebuffer)
+        {
+            // The headless backend keeps no pixels; take ownership of the view and
+            // release it immediately, matching the render bridge contract.
+            using (framebuffer)
+            {
+                return new HeadlessBitmapStub(framebuffer.Size, framebuffer.Dpi);
+            }
+        }
+
         public IBitmapImpl LoadBitmapToWidth(Stream stream, int width, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
         {
             return new HeadlessBitmapStub(new Size(width, width), new Vector(96, 96));
