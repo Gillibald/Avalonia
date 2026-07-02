@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Platform.Internal;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Bmp;
@@ -12,7 +13,9 @@ using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Tiff;
 using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Metadata;
+using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using ISImage = SixLabors.ImageSharp.Image;
 using ISSize = SixLabors.ImageSharp.Size;
 
@@ -170,28 +173,63 @@ namespace Avalonia.Imaging.ImageSharp
             }
 
             // The header facts are taken before the decode plan is applied, so the
-            // decoder's Info reports pre-plan source values.
+            // decoder's Info reports pre-plan source values (raw stored dimensions).
             var headerInfo = Describe(imageInfo)!.Value;
-            var nativeSize = headerInfo.PixelSize;
-            var fusedTarget = ResolveFusedTarget(codecInfo, options, nativeSize);
+
+            var orientation = options?.RespectExifOrientation ?? true
+                ? ReadOrientation(imageInfo)
+                : PixelOrientation.Normal;
+
+            // The decode plan is expressed in oriented display space.
+            var orientedSize = FusedPixelPipeline.GetOrientedSize(headerInfo.PixelSize, orientation);
+            var fusedTarget = ResolveFusedTarget(codecInfo, options, orientedSize);
+
+            // The loader resizes the raw image before any orientation applies, so a
+            // transposing orientation swaps the requested axes.
+            var loaderTarget = fusedTarget is { } target
+                ? FusedPixelPipeline.GetOrientedSize(target, orientation)
+                : (PixelSize?)null;
 
             var decoderOptions = new DecoderOptions
             {
                 Configuration = s_configuration,
                 MaxFrames = (codecInfo.Capabilities & BitmapCodecCapabilities.MultiFrame) != 0 ? uint.MaxValue : 1,
-                TargetSize = fusedTarget is { } target ? new ISSize(target.Width, target.Height) : null,
+                TargetSize = loaderTarget is { } raw ? new ISSize(raw.Width, raw.Height) : null,
             };
 
             buffered.Position = 0;
 
-            var image = ISImage.Load(decoderOptions, buffered);
+            ISImage image;
+
+            // ImageSharp decodes eagerly here, so the concurrency gate covers the load
+            // and the fused orientation pass.
+            using (DecodeConcurrencyLimiter.Enter(options?.Cancellation ?? default))
+            {
+                image = ISImage.Load(decoderOptions, buffered);
+
+                if (orientation != PixelOrientation.Normal)
+                {
+                    try
+                    {
+                        // The loaded image becomes display-oriented; AutoOrient also
+                        // resets the stored orientation tag.
+                        image.Mutate(context => context.AutoOrient());
+                    }
+                    catch
+                    {
+                        image.Dispose();
+                        throw;
+                    }
+                }
+            }
 
             try
             {
                 var usedDecodeScale = fusedTarget is not null &&
-                    (image.Width != nativeSize.Width || image.Height != nativeSize.Height);
+                    (image.Width != orientedSize.Width || image.Height != orientedSize.Height);
 
-                return new ImageSharpBitmapDecoder(image, codecInfo, headerInfo, options, Allocator, usedDecodeScale);
+                return new ImageSharpBitmapDecoder(image, codecInfo, headerInfo, options, Allocator,
+                    orientation, usedDecodeScale);
             }
             catch
             {
@@ -333,8 +371,25 @@ namespace Avalonia.Imaging.ImageSharp
             return null;
         }
 
+        private static PixelOrientation ReadOrientation(ImageInfo imageInfo)
+        {
+            var exif = imageInfo.Metadata.ExifProfile;
+
+            if (exif is null && imageInfo.FrameMetadataCollection is { Count: > 0 } frames)
+                exif = frames[0].ExifProfile;
+
+            if (exif is not null && exif.TryGetValue(ExifTag.Orientation, out var value) &&
+                value.Value is >= 1 and <= 8)
+            {
+                return (PixelOrientation)value.Value;
+            }
+
+            return PixelOrientation.Normal;
+        }
+
+        // Both the requested target and the result are in oriented display space.
         private static PixelSize? ResolveFusedTarget(ImageSharpBitmapCodecInfo codecInfo,
-            BitmapDecodeOptions? options, PixelSize nativeSize)
+            BitmapDecodeOptions? options, PixelSize orientedSize)
         {
             if ((codecInfo.Capabilities & BitmapCodecCapabilities.FusedDecode) == 0 ||
                 options?.TargetSize is null || options.SourceRegion is not null)
@@ -342,12 +397,12 @@ namespace Avalonia.Imaging.ImageSharp
                 return null;
             }
 
-            var target = ImageSharpBitmapFrameSource.ResolveTargetSize(options.TargetSize, nativeSize);
+            var target = ImageSharpBitmapFrameSource.ResolveTargetSize(options.TargetSize, orientedSize);
 
             // Decode reduced only when the target shrinks the frame; the pipeline covers
             // everything else from the native decode, it should not enlarge a reduced one.
-            if (target == nativeSize ||
-                target.Width > nativeSize.Width || target.Height > nativeSize.Height)
+            if (target == orientedSize ||
+                target.Width > orientedSize.Width || target.Height > orientedSize.Height)
             {
                 return null;
             }
