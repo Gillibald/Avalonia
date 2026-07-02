@@ -406,6 +406,91 @@ namespace Avalonia.Skia.UnitTests.Imaging
             frame.Dispose();
         }
 
+        /// <summary>
+        /// Inserts a minimal EXIF APP1 segment (one IFD entry: orientation) after the
+        /// JPEG SOI marker, since SkiaSharp cannot write EXIF itself.
+        /// </summary>
+        private static byte[] InjectExifOrientation(byte[] jpeg, byte orientation)
+        {
+            var app1 = new byte[]
+            {
+                0xFF, 0xE1, 0x00, 0x22,                                 // APP1, length 34
+                (byte)'E', (byte)'x', (byte)'i', (byte)'f', 0x00, 0x00, // Exif\0\0
+                0x49, 0x49, 0x2A, 0x00,                                 // TIFF header, little endian
+                0x08, 0x00, 0x00, 0x00,                                 // IFD0 offset
+                0x01, 0x00,                                             // one directory entry
+                0x12, 0x01, 0x03, 0x00,                                 // tag 0x0112, type SHORT
+                0x01, 0x00, 0x00, 0x00,                                 // count 1
+                orientation, 0x00, 0x00, 0x00,                          // value
+                0x00, 0x00, 0x00, 0x00,                                 // next IFD offset
+            };
+
+            var result = new byte[jpeg.Length + app1.Length];
+
+            result[0] = jpeg[0];
+            result[1] = jpeg[1];
+            app1.CopyTo(result, 2);
+            Array.Copy(jpeg, 2, result, 2 + app1.Length, jpeg.Length - 2);
+
+            return result;
+        }
+
+        private static MemoryStream CreateOrientedJpeg(byte orientation)
+        {
+            // 8x4, left half red, right half green; strongly distinct through JPEG loss.
+            using var bitmap = new SKBitmap(new SKImageInfo(8, 4, SKColorType.Bgra8888, SKAlphaType.Opaque));
+
+            for (var y = 0; y < 4; y++)
+            {
+                for (var x = 0; x < 8; x++)
+                {
+                    bitmap.SetPixel(x, y, x < 4 ? new SKColor(255, 0, 0) : new SKColor(0, 255, 0));
+                }
+            }
+
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Jpeg, 100);
+
+            return new MemoryStream(InjectExifOrientation(data.ToArray(), orientation));
+        }
+
+        [Fact]
+        public void Exif_Orientation_Is_Applied_By_Default()
+        {
+            var backend = new SkiaImagingBackend();
+
+            using var stream = CreateOrientedJpeg(orientation: 6);   // rotate 90 clockwise
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false);
+            using var frame = decoder.ReadNextFrame();
+
+            // The 8x4 raw image displays as 4x8; raw left half (red) lands on top.
+            Assert.Equal(new PixelSize(4, 8), frame!.PixelSize);
+
+            using var framebuffer = frame.Lock();
+
+            var pixels = ReadPixels(framebuffer);
+            var top = GetBgra(pixels, framebuffer.RowBytes, 1, 1);
+            var bottom = GetBgra(pixels, framebuffer.RowBytes, 1, 6);
+
+            Assert.True(top.R > 200 && top.G < 80, $"expected red on top, got {top}");
+            Assert.True(bottom.G > 200 && bottom.R < 80, $"expected green at the bottom, got {bottom}");
+        }
+
+        [Fact]
+        public void Exif_Orientation_Can_Be_Ignored()
+        {
+            var backend = new SkiaImagingBackend();
+
+            using var stream = CreateOrientedJpeg(orientation: 6);
+
+            var options = new BitmapDecodeOptions { RespectExifOrientation = false };
+
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false, options);
+            using var frame = decoder.ReadNextFrame();
+
+            Assert.Equal(new PixelSize(8, 4), frame!.PixelSize);
+        }
+
         [Fact]
         public void Encode_Png_Round_Trips()
         {
