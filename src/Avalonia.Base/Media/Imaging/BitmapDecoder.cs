@@ -24,15 +24,25 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
-        /// Reads header-only image facts without decoding pixels. Returns false when the
-        /// active backend does not recognize the format.
+        /// Reads header-only image facts without decoding pixels. The stream must be
+        /// seekable (its position is restored); for a forward-only stream create a
+        /// decoder and read <see cref="Info"/> instead. Returns false when the active
+        /// backend does not recognize the format.
         /// </summary>
         public static bool TryIdentify(Stream stream, out BitmapImageInfo info) =>
             ImagingBackend.Current.TryIdentify(stream, out info);
 
         /// <summary>
+        /// Reads header-only image facts from in-memory encoded data: a complete payload
+        /// or a prefix of at least the active backend's identify prefix length. Returns
+        /// false when the format is not recognized.
+        /// </summary>
+        public static bool TryIdentify(ReadOnlySpan<byte> data, out BitmapImageInfo info) =>
+            ImagingBackend.Current.TryIdentify(data, out info);
+
+        /// <summary>
         /// Reads header-only image facts without decoding pixels, throwing when the
-        /// active backend does not recognize the format.
+        /// active backend does not recognize the format. The stream must be seekable.
         /// </summary>
         public static BitmapImageInfo Identify(Stream stream)
         {
@@ -53,6 +63,12 @@ namespace Avalonia.Media.Imaging
         /// <param name="ownsStream">
         /// When true the decoder takes ownership of the stream and disposes it with itself.
         /// </param>
+        /// <remarks>
+        /// The decoder owns a stable encoded source from creation: unless the stream is
+        /// seekable and owned (in which case it belongs to the decoder from this call
+        /// on), the backend secures its own copy of the encoded data before returning,
+        /// and the caller may dispose or reuse the stream immediately.
+        /// </remarks>
         public static BitmapDecoder Create(Stream stream, BitmapDecodeOptions? options = null,
             bool ownsStream = false)
         {
@@ -84,6 +100,13 @@ namespace Avalonia.Media.Imaging
         /// Gets the codec descriptor for the detected container format.
         /// </summary>
         public BitmapCodecInfo CodecInfo => _codecInfo ??= new BitmapCodecInfo(_impl.CodecInfo);
+
+        /// <summary>
+        /// Gets the source header facts (pre-plan container/first-frame values) without
+        /// advancing the frame cursor or decoding pixels - the identify path for
+        /// forward-only input.
+        /// </summary>
+        public BitmapImageInfo Info => _impl.Info;
 
         /// <summary>
         /// Gets the number of frames, or null while unknown for forward-only formats.

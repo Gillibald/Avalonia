@@ -17,7 +17,15 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             public IReadOnlyList<IBitmapCodecInfo> SupportedCodecs { get; } = Array.Empty<IBitmapCodecInfo>();
 
+            public int IdentifyPrefixLength => 4096;
+
             public bool TryIdentify(Stream stream, out BitmapImageInfo info)
+            {
+                info = default;
+                return false;
+            }
+
+            public bool TryIdentify(ReadOnlySpan<byte> data, out BitmapImageInfo info)
             {
                 info = default;
                 return false;

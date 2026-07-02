@@ -18,14 +18,12 @@ namespace Avalonia.Skia.UnitTests.Imaging
                 {
                     Decode = true,
                     Encode = true,
-                    NonSeekableDecode = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
                 },
                 new FormatManifest("BMP")
                 {
                     Decode = true,
-                    NonSeekableDecode = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
                 },
@@ -33,7 +31,6 @@ namespace Avalonia.Skia.UnitTests.Imaging
                 {
                     Decode = true,
                     Encode = true,
-                    NonSeekableDecode = true,
                     FusedParts = FusedDecodeParts.Scale,
                     CopyBudget = 0,
                     PixelTolerance = 3,
@@ -42,7 +39,6 @@ namespace Avalonia.Skia.UnitTests.Imaging
                 {
                     Decode = true,
                     Encode = true,
-                    NonSeekableDecode = true,
                     FusedParts = FusedDecodeParts.Scale,
                     CopyBudget = 0,
                     PixelTolerance = 3,

@@ -21,16 +21,19 @@ namespace Avalonia.Skia.Imaging
         private int _cursor;
 
         public SkiaBitmapDecoder(SKCodec codec, SKData data, SkiaBitmapCodecInfo codecInfo,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapImageInfo headerInfo, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
         {
             _codec = codec;
             _data = data;
             _options = options;
             CodecInfo = codecInfo;
+            Info = headerInfo;
             Allocator = allocator;
         }
 
         public IBitmapCodecInfo CodecInfo { get; }
+
+        public BitmapImageInfo Info { get; }
 
         // Animated containers currently surface their first frame only.
         public int? FrameCount => 1;

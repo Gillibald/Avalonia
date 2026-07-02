@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media.Imaging;
 using Avalonia.Metadata;
 
 namespace Avalonia.Platform
@@ -12,6 +13,9 @@ namespace Avalonia.Platform
     /// <remarks>
     /// A decoder and its frames are not thread-safe for arbitrary concurrent access;
     /// creating decoders concurrently through <see cref="IImagingBackend"/> is safe.
+    /// From creation on, the decoder owns a stable, rewindable encoded source (see
+    /// <see cref="IImagingBackend.CreateDecoder"/>), so header facts and lazily decoded
+    /// frames never depend on the caller's stream.
     /// </remarks>
     [Unstable]
     public interface IBitmapDecoder : IDisposable
@@ -20,6 +24,15 @@ namespace Avalonia.Platform
         /// Gets the codec descriptor for the detected container format.
         /// </summary>
         IBitmapCodecInfo CodecInfo { get; }
+
+        /// <summary>
+        /// Gets the source header facts: container/first-frame values BEFORE any decode
+        /// plan is applied, available without advancing the frame cursor or decoding
+        /// pixels. A planned decode reports its post-plan values on the frames instead.
+        /// <see cref="BitmapImageInfo.FrameCount"/> is what the header declares (null when
+        /// the container needs a full walk); <see cref="FrameCount"/> is the cursor truth.
+        /// </summary>
+        BitmapImageInfo Info { get; }
 
         /// <summary>
         /// Gets the number of frames, or null while unknown for forward-only formats

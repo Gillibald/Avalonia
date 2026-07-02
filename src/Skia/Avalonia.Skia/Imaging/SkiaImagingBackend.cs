@@ -45,33 +45,46 @@ namespace Avalonia.Skia.Imaging
         public IReadOnlyList<IBitmapCodecInfo> SupportedCodecs => SkiaCodecCatalog.All;
 
         /// <inheritdoc />
+        public int IdentifyPrefixLength => IdentifyPrefixBytes;
+
+        /// <inheritdoc />
         public bool TryIdentify(Stream stream, out BitmapImageInfo info)
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
-            if (stream.CanSeek)
+            if (!stream.CanSeek)
             {
-                var position = stream.Position;
-
-                try
-                {
-                    var prefix = ImagingStreamPrefix.ReadPrefix(stream, IdentifyPrefixBytes);
-
-                    return TryIdentifyPrefix(prefix, out info);
-                }
-                finally
-                {
-                    stream.Position = position;
-                }
+                throw new ArgumentException(
+                    "Identify requires a seekable stream, because reading a forward-only stream would consume it. " +
+                    "Create a decoder instead and read its Info, or identify from bytes.",
+                    nameof(stream));
             }
-            else
+
+            var position = stream.Position;
+
+            try
             {
-                var prefix = ImagingStreamPrefix.ReadPrefix(stream, IdentifyPrefixBytes);
+                var prefix = ImagingStreamHelper.ReadPrefix(stream, IdentifyPrefixBytes);
 
-                ImagingStreamPrefix.RememberConsumed(stream, prefix);
-
-                return TryIdentifyPrefix(prefix, out info);
+                return TryIdentify(prefix, out info);
             }
+            finally
+            {
+                stream.Position = position;
+            }
+        }
+
+        /// <inheritdoc />
+        public bool TryIdentify(ReadOnlySpan<byte> data, out BitmapImageInfo info)
+        {
+            using var skData = SKData.CreateCopy(data);
+            using var codec = SKCodec.Create(skData);
+
+            var described = Describe(codec);
+
+            info = described ?? default;
+
+            return described is not null;
         }
 
         /// <inheritdoc />
@@ -79,11 +92,11 @@ namespace Avalonia.Skia.Imaging
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
-            var effectiveStream = ImagingStreamPrefix.ResolveForDecode(stream);
-
             // Skia needs the full encoded data with a known length; Stream.CopyTo also
             // handles streams that serve partial reads, which SKManagedStream does not.
-            var data = ReadToSkData(effectiveStream);
+            // This is also what secures the decoder's own encoded source: the caller's
+            // stream is free once this method returns.
+            var data = ReadToSkData(stream);
 
             if (ownsStream)
                 stream.Dispose();
@@ -104,6 +117,8 @@ namespace Avalonia.Skia.Imaging
                     throw new NotSupportedException(
                         $"The '{Name}' imaging backend does not support decoding '{codec.EncodedFormat}' images.");
 
+                var headerInfo = Describe(codec)!.Value;
+
                 if (options is JpegDecodeOptions && codec.EncodedFormat != SKEncodedImageFormat.Jpeg)
                 {
                     throw new ArgumentException(
@@ -121,7 +136,7 @@ namespace Avalonia.Skia.Imaging
                         $"exceeding the configured limit of {maxPixels:N0} pixels.");
                 }
 
-                return new SkiaBitmapDecoder(codec, data, codecInfo, options, Allocator);
+                return new SkiaBitmapDecoder(codec, data, codecInfo, headerInfo, options, Allocator);
             }
             catch
             {
@@ -147,37 +162,26 @@ namespace Avalonia.Skia.Imaging
             return new SkiaBitmapEncoderImpl(codecInfo.EncodedFormat, Allocator);
         }
 
-        private static bool TryIdentifyPrefix(byte[] prefix, out BitmapImageInfo info)
+        internal static BitmapImageInfo? Describe(SKCodec? codec)
         {
-            using var data = SKData.CreateCopy(prefix);
-            using var codec = SKCodec.Create(data);
-
             if (codec is null)
-            {
-                info = default;
-                return false;
-            }
+                return null;
 
             var codecInfo = SkiaCodecCatalog.FromEncodedFormat(codec.EncodedFormat);
 
             if (codecInfo is null)
-            {
-                info = default;
-                return false;
-            }
+                return null;
 
             var skInfo = codec.Info;
             var isAnimatedContainer = codec.EncodedFormat is SKEncodedImageFormat.Gif or SKEncodedImageFormat.Webp;
 
-            info = new BitmapImageInfo(
+            return new BitmapImageInfo(
                 codecInfo.FormatName,
                 new PixelSize(skInfo.Width, skInfo.Height),
                 Dpi: null,
                 skInfo.ColorType.ToAvalonia(),
                 isAnimatedContainer ? null : 1,
                 skInfo.AlphaType != SKAlphaType.Opaque);
-
-            return true;
         }
 
         private static SKData ReadToSkData(Stream stream)
