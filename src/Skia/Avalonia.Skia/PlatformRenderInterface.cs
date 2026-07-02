@@ -126,7 +126,37 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public IBitmapImpl LoadBitmap(Stream stream)
         {
-            return new ImmutableBitmap(stream);
+            return DecodeBitmap(stream, options: null);
+        }
+
+        /// <summary>
+        /// Decodes through the active imaging backend, installing the frame's pooled
+        /// pixels zero-copy; falls back to the direct Skia decode when no backend is
+        /// bound (a render interface created without platform initialization).
+        /// </summary>
+        private IBitmapImpl DecodeBitmap(Stream stream, Media.Imaging.BitmapDecodeOptions? options)
+        {
+            if (ImagingBackend.CurrentOrNull is not { } backend)
+            {
+                return options?.TargetSize is { } legacySize
+                    ? new ImmutableBitmap(stream, Math.Max(legacySize.Width, legacySize.Height),
+                        legacySize.Width > 0, options.Interpolation)
+                    : new ImmutableBitmap(stream);
+            }
+
+            try
+            {
+                using var decoder = backend.CreateDecoder(stream, ownsStream: false, options);
+                using var frame = decoder.ReadNextFrame() ??
+                    throw new ArgumentException("Unable to load bitmap from provided data");
+
+                return new ImmutableBitmap(frame.Lock());
+            }
+            catch (NotSupportedException e)
+            {
+                // The historical contract of the stream decode methods.
+                throw new ArgumentException("Unable to load bitmap from provided data", e);
+            }
         }
 
         public IWriteableBitmapImpl LoadWriteableBitmapToWidth(Stream stream, int width,
@@ -169,13 +199,21 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public IBitmapImpl LoadBitmapToWidth(Stream stream, int width, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
         {
-            return new ImmutableBitmap(stream, width, true, interpolationMode);
+            return DecodeBitmap(stream, new Media.Imaging.BitmapDecodeOptions
+            {
+                TargetSize = new PixelSize(width, 0),
+                Interpolation = interpolationMode,
+            });
         }
 
         /// <inheritdoc />
         public IBitmapImpl LoadBitmapToHeight(Stream stream, int height, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
         {
-            return new ImmutableBitmap(stream, height, false, interpolationMode);
+            return DecodeBitmap(stream, new Media.Imaging.BitmapDecodeOptions
+            {
+                TargetSize = new PixelSize(0, height),
+                Interpolation = interpolationMode,
+            });
         }
 
         /// <inheritdoc />
