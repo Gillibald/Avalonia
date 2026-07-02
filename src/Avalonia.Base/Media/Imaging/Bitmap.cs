@@ -1,6 +1,9 @@
 using System;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Platform;
 using Avalonia.Utilities;
 
@@ -12,6 +15,49 @@ namespace Avalonia.Media.Imaging
     public class Bitmap : IBitmap, IImageBrushSource
     {
         private readonly bool _isTranscoded;
+        /// <summary>
+        /// Creates a decoder over the stream through the active imaging backend, giving
+        /// access to header-only facts, frames and codec capabilities.
+        /// </summary>
+        /// <param name="stream">The encoded image stream.</param>
+        /// <param name="options">The decode plan applied to all frames of the decoder.</param>
+        /// <param name="ownsStream">When true the decoder takes ownership of the stream.</param>
+        public static BitmapDecoder CreateDecoder(Stream stream, BitmapDecodeOptions? options = null,
+            bool ownsStream = false)
+        {
+            return BitmapDecoder.Create(stream, options, ownsStream);
+        }
+
+        /// <summary>
+        /// Decodes the first frame of the stream with a decode plan applied, e.g. a
+        /// target size, source region or target pixel format.
+        /// </summary>
+        /// <param name="stream">The encoded image stream.</param>
+        /// <param name="options">The decode plan.</param>
+        public static Bitmap Decode(Stream stream, BitmapDecodeOptions? options = null)
+        {
+            using var decoder = BitmapDecoder.Create(stream, options);
+            using var frame = decoder.ReadNextFrame() ??
+                throw new ArgumentException("Unable to load bitmap from provided data");
+
+            return frame.ToBitmap();
+        }
+
+        /// <summary>
+        /// Decodes the first frame of the stream on a background thread. The token flows
+        /// into the decode where the active backend supports cooperative cancellation.
+        /// </summary>
+        public static Task<Bitmap> DecodeAsync(Stream stream, BitmapDecodeOptions? options = null,
+            CancellationToken cancellationToken = default)
+        {
+            var effectiveOptions = options ?? new BitmapDecodeOptions();
+
+            if (cancellationToken.CanBeCanceled && !effectiveOptions.Cancellation.CanBeCanceled)
+                effectiveOptions.Cancellation = cancellationToken;
+
+            return Task.Run(() => Decode(stream, effectiveOptions), cancellationToken);
+        }
+
         /// <summary>
         /// Loads a Bitmap from a stream and decodes at the desired width. Aspect ratio is maintained.
         /// This is more efficient than loading and then resizing.
@@ -71,9 +117,11 @@ namespace Avalonia.Media.Imaging
         /// Initializes a new instance of the <see cref="Bitmap"/> class.
         /// </summary>
         /// <param name="impl">A platform-specific bitmap implementation.</param>
-        internal Bitmap(IRef<IBitmapImpl> impl)
+        /// <param name="metadata">The metadata carried over from the decoded frame.</param>
+        internal Bitmap(IRef<IBitmapImpl> impl, BitmapMetadata? metadata = null)
         {
             PlatformImpl = impl.Clone();
+            Metadata = metadata;
         }
 
         /// <summary>
@@ -165,13 +213,57 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         /// <param name="stream">The stream.</param>
         /// <param name="quality">
-        /// The optional quality for compression. 
-        /// The quality value is interpreted from 0 - 100. If quality is null the default quality 
+        /// The optional quality for compression.
+        /// The quality value is interpreted from 0 - 100. If quality is null the default quality
         /// setting is applied.
         /// </param>
         public void Save(Stream stream, int? quality = null)
         {
             PlatformImpl.Item.Save(stream, quality);
+        }
+
+        /// <summary>
+        /// Encodes this bitmap to the stream with a configured encoder, e.g.
+        /// <c>new JpegBitmapEncoder { Quality = 92 }</c>. The bitmap is appended to the
+        /// encoder's frames; encoding a format the active imaging backend cannot write
+        /// fails fast naming the backend.
+        /// </summary>
+        public void Save(Stream stream, BitmapEncoder encoder)
+        {
+            _ = stream ?? throw new ArgumentNullException(nameof(stream));
+            _ = encoder ?? throw new ArgumentNullException(nameof(encoder));
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = ToPixelBufferCore() });
+            encoder.Save(stream);
+        }
+
+        /// <summary>
+        /// Gets the metadata carried over from the decoded frame, or null when the image
+        /// was not produced by a metadata-capable decode.
+        /// </summary>
+        public BitmapMetadata? Metadata { get; }
+
+        private PixelBuffer ToPixelBufferCore()
+        {
+            var format = Format ?? PixelFormat.Bgra8888;
+            var alphaFormat = AlphaFormat ?? Platform.AlphaFormat.Premul;
+            var stride = (PixelSize.Width * format.BitsPerPixel + 7) / 8;
+            var pixels = new byte[checked(stride * PixelSize.Height)];
+            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+
+            try
+            {
+                var target = new LockedFramebuffer(handle.AddrOfPinnedObject(), PixelSize,
+                    stride, Dpi, format, alphaFormat, null);
+
+                CopyPixels(target);
+            }
+            finally
+            {
+                handle.Free();
+            }
+
+            return PixelBuffer.TakeOwnership(pixels, PixelSize, stride, format, alphaFormat, Dpi);
         }
 
         public virtual PixelFormat? Format => (PlatformImpl.Item as IReadableBitmapImpl)?.Format;
