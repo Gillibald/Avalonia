@@ -48,6 +48,13 @@ namespace Avalonia.Skia.UnitTests.Imaging
         };
 
         public override IImagingBackend CreateBackend() => new SkiaImagingBackend(Allocator);
+
+        public override OrientedImageFixture? CreateOrientedFixture()
+        {
+            var encoded = ExifJpegHelper.CreateHalvedOrientation6Jpeg(out var rawSize, out var orientedRgba);
+
+            return new OrientedImageFixture("JPEG", encoded, rawSize, orientedRgba, pixelTolerance: 8);
+        }
     }
 
     public class SkiaDecoderDiscoveryContractTests : DecoderDiscoveryContractTests<SkiaCodecFixture> { }

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Text;
 
 namespace Avalonia.Imaging.TestKit.Fixtures
 {
@@ -32,6 +33,28 @@ namespace Avalonia.Imaging.TestKit.Fixtures
                     row[offset + 2] = b;
                 }
             });
+        }
+
+        /// <summary>Writes an 8-bit RGB (color type 2) PNG carrying one tEXt entry.</summary>
+        public static byte[] WriteRgbWithText(int width, int height,
+            Func<int, int, (byte R, byte G, byte B)> pixelAt, string keyword, string text)
+        {
+            _ = pixelAt ?? throw new ArgumentNullException(nameof(pixelAt));
+            _ = keyword ?? throw new ArgumentNullException(nameof(keyword));
+            _ = text ?? throw new ArgumentNullException(nameof(text));
+
+            return Write(width, height, colorType: 2, bytesPerPixel: 3, (row, y) =>
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    var (r, g, b) = pixelAt(x, y);
+                    var offset = 1 + x * 3;
+
+                    row[offset] = r;
+                    row[offset + 1] = g;
+                    row[offset + 2] = b;
+                }
+            }, (keyword, text));
         }
 
         /// <summary>Writes an 8-bit RGBA (color type 6) PNG.</summary>
@@ -112,7 +135,8 @@ namespace Avalonia.Imaging.TestKit.Fixtures
             return result;
         }
 
-        private static byte[] Write(int width, int height, byte colorType, int bytesPerPixel, Action<byte[], int> fillRow)
+        private static byte[] Write(int width, int height, byte colorType, int bytesPerPixel,
+            Action<byte[], int> fillRow, (string Keyword, string Text)? textChunk = null)
         {
             if (width < 1)
                 throw new ArgumentOutOfRangeException(nameof(width));
@@ -130,6 +154,9 @@ namespace Avalonia.Imaging.TestKit.Fixtures
             ihdr[8] = 8;         // bit depth
             ihdr[9] = colorType; // 2 = RGB, 6 = RGBA; compression, filter and interlace stay 0
             WriteChunk(output, "IHDR", ihdr);
+
+            if (textChunk is { } entry)
+                WriteChunk(output, "tEXt", BuildTextData(entry.Keyword, entry.Text));
 
             using (var idat = new MemoryStream())
             {
@@ -182,6 +209,19 @@ namespace Avalonia.Imaging.TestKit.Fixtures
             }
 
             throw new InvalidOperationException("The PNG has no IDAT chunk.");
+        }
+
+        // tEXt data: a Latin-1 keyword, a null separator, then Latin-1 text.
+        private static byte[] BuildTextData(string keyword, string text)
+        {
+            var keywordBytes = Encoding.Latin1.GetBytes(keyword);
+            var textBytes = Encoding.Latin1.GetBytes(text);
+            var data = new byte[keywordBytes.Length + 1 + textBytes.Length];
+
+            keywordBytes.CopyTo(data, 0);
+            textBytes.CopyTo(data, keywordBytes.Length + 1);
+
+            return data;
         }
 
         private static void WriteChunk(Stream output, string type, byte[] data)

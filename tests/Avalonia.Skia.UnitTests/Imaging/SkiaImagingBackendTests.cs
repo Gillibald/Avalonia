@@ -406,35 +406,6 @@ namespace Avalonia.Skia.UnitTests.Imaging
             frame.Dispose();
         }
 
-        /// <summary>
-        /// Inserts a minimal EXIF APP1 segment (one IFD entry: orientation) after the
-        /// JPEG SOI marker, since SkiaSharp cannot write EXIF itself.
-        /// </summary>
-        private static byte[] InjectExifOrientation(byte[] jpeg, byte orientation)
-        {
-            var app1 = new byte[]
-            {
-                0xFF, 0xE1, 0x00, 0x22,                                 // APP1, length 34
-                (byte)'E', (byte)'x', (byte)'i', (byte)'f', 0x00, 0x00, // Exif\0\0
-                0x49, 0x49, 0x2A, 0x00,                                 // TIFF header, little endian
-                0x08, 0x00, 0x00, 0x00,                                 // IFD0 offset
-                0x01, 0x00,                                             // one directory entry
-                0x12, 0x01, 0x03, 0x00,                                 // tag 0x0112, type SHORT
-                0x01, 0x00, 0x00, 0x00,                                 // count 1
-                orientation, 0x00, 0x00, 0x00,                          // value
-                0x00, 0x00, 0x00, 0x00,                                 // next IFD offset
-            };
-
-            var result = new byte[jpeg.Length + app1.Length];
-
-            result[0] = jpeg[0];
-            result[1] = jpeg[1];
-            app1.CopyTo(result, 2);
-            Array.Copy(jpeg, 2, result, 2 + app1.Length, jpeg.Length - 2);
-
-            return result;
-        }
-
         private static MemoryStream CreateOrientedJpeg(byte orientation)
         {
             // 8x4, left half red, right half green; strongly distinct through JPEG loss.
@@ -451,7 +422,7 @@ namespace Avalonia.Skia.UnitTests.Imaging
             using var image = SKImage.FromBitmap(bitmap);
             using var data = image.Encode(SKEncodedImageFormat.Jpeg, 100);
 
-            return new MemoryStream(InjectExifOrientation(data.ToArray(), orientation));
+            return new MemoryStream(ExifJpegHelper.InjectExifOrientation(data.ToArray(), orientation));
         }
 
         [Fact]

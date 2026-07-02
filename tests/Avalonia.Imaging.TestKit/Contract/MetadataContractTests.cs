@@ -1,34 +1,68 @@
 using Avalonia.Imaging.TestKit.Fixtures;
+using Avalonia.Platform;
 using Xunit;
 
 namespace Avalonia.Imaging.TestKit.Contract
 {
     /// <summary>
-    /// Metadata exposure and round-tripping through
-    /// <see cref="Avalonia.Platform.IMetadataSource"/> and encoder metadata.
+    /// Metadata exposure through <see cref="IMetadataSource"/> and the shared PNG text
+    /// query path; EXIF specifics are covered per backend.
     /// </summary>
     public abstract class MetadataContractTests<TFixture> : ImagingContractTests<TFixture>
         where TFixture : CodecBackendFixture, new()
     {
-        /// <summary>Why these tests are skipped for now.</summary>
-        protected const string SkipReason =
-            "Needs metadata-bearing fixtures (EXIF orientation, XMP); the generated PNG/BMP " +
-            "fixtures carry none. Backend test projects supply them together with their " +
-            "metadata codec support.";
+        private const string NoPngMetadata = "The manifest does not declare PNG metadata support.";
 
-        [Fact(Skip = SkipReason)]
-        public void DeclaredMetadataFormats_ExposeMetadataSource()
+        private static string TextQuery => "/text/{str=" + FixtureImages.PngTextKeyword + "}";
+
+        [Fact]
+        public void DeclaredMetadata_ExposesMetadataSource()
         {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true, Metadata: true },
+                NoPngMetadata);
+
+            using var decoder = CreateDecoder(FixtureImages.PngWithTextMetadata);
+            using var frame = ReadFirstFrame(decoder);
+
+            var source = Assert.IsAssignableFrom<IMetadataSource>(frame);
+
+            Assert.Equal(FixtureImages.PngFormatName, source.Metadata.Format);
         }
 
-        [Fact(Skip = SkipReason)]
-        public void MetadataQueries_ReadWellKnownPaths()
+        [Fact]
+        public void QueryPath_ReadsBack()
         {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true, Metadata: true },
+                NoPngMetadata);
+
+            using var decoder = CreateDecoder(FixtureImages.PngWithTextMetadata);
+            using var frame = ReadFirstFrame(decoder);
+
+            var metadata = Assert.IsAssignableFrom<IMetadataSource>(frame).Metadata;
+
+            Assert.True(metadata.ContainsQuery(TextQuery));
+            Assert.Equal(FixtureImages.PngTextValue, metadata.GetQuery(TextQuery));
+
+            Assert.False(metadata.ContainsQuery("/text/{str=Missing}"));
+            Assert.Null(metadata.GetQuery("/text/{str=Missing}"));
         }
 
-        [Fact(Skip = SkipReason)]
-        public void Metadata_RoundTripsThroughEncode()
+        [Fact]
+        public void MissingMetadata_TryGetFalse()
         {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true, Metadata: true },
+                NoPngMetadata);
+
+            using var decoder = CreateDecoder(FixtureImages.Rgb4x4Png);
+            using var frame = ReadFirstFrame(decoder);
+
+            // A plain image exposes no metadata: either the capability interface is
+            // absent, or its queries answer empty.
+            if (frame is IMetadataSource source)
+            {
+                Assert.False(source.Metadata.ContainsQuery(TextQuery));
+                Assert.Null(source.Metadata.GetQuery(TextQuery));
+            }
         }
     }
 }
