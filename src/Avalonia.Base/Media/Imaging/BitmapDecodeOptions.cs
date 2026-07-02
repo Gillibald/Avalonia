@@ -61,9 +61,17 @@ namespace Avalonia.Media.Imaging
 
         /// <summary>
         /// Gets or sets a token the decode observes between rows, strips or frames where
-        /// the backend supports cooperative cancellation.
+        /// the backend supports cooperative cancellation, and while the decoder
+        /// materializes its copy of the encoded data.
         /// </summary>
         public CancellationToken Cancellation { get; set; }
+
+        /// <summary>
+        /// Forces the decoder to materialize its own copy of the encoded data at
+        /// creation even when it could defer reads to an owned seekable stream,
+        /// releasing the input (e.g. a file lock) immediately.
+        /// </summary>
+        public bool MaterializeSource { get; set; }
 
         /// <summary>
         /// Gets the effective decompression-bomb guard for these options.

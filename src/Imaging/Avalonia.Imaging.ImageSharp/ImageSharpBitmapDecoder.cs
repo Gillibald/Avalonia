@@ -21,19 +21,21 @@ namespace Avalonia.Imaging.ImageSharp
         private int _cursor;
 
         public ImageSharpBitmapDecoder(ISImage image, ImageSharpBitmapCodecInfo codecInfo,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator,
-            PixelSize nativeSize, bool usedDecodeScale)
+            BitmapImageInfo headerInfo, BitmapDecodeOptions? options,
+            IBitmapMemoryAllocator allocator, bool usedDecodeScale)
         {
             _image = image;
             _options = options;
             Codec = codecInfo;
+            Info = headerInfo;
             Allocator = allocator;
-            NativeSize = nativeSize;
             UsedDecodeScale = usedDecodeScale;
             FrameCount = image.Frames.Count;
         }
 
         public IBitmapCodecInfo CodecInfo => Codec;
+
+        public BitmapImageInfo Info { get; }
 
         /// <inheritdoc cref="ISeekableFrameDecoder.FrameCount" />
         public int FrameCount { get; }
@@ -49,7 +51,7 @@ namespace Avalonia.Imaging.ImageSharp
         /// <summary>
         /// Gets the source size before the decode plan, as declared by the header.
         /// </summary>
-        internal PixelSize NativeSize { get; }
+        internal PixelSize NativeSize => Info.PixelSize;
 
         /// <summary>
         /// Gets whether the image was loaded with a decode-time target size, so it is

@@ -41,8 +41,9 @@ namespace Avalonia.Platform
 
         /// <summary>
         /// Returns a transient view over the frame's decoded pixels for zero-copy interop
-        /// (render install, transcode, encode). Decodes on first call. The frame owns the
-        /// memory; disposing the view releases one use.
+        /// (render install, transcode, encode). Decodes on first call - deferral is sound
+        /// because the decoder owns a stable encoded source independent of the caller's
+        /// stream. The frame owns the memory; disposing the view releases one use.
         /// </summary>
         ILockedFramebuffer Lock();
     }

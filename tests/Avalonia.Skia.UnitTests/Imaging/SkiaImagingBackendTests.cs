@@ -251,7 +251,7 @@ namespace Avalonia.Skia.UnitTests.Imaging
         }
 
         [Fact]
-        public void Identify_Then_Decode_NonSeekable_Stream_Loses_No_Data()
+        public void TryIdentify_On_A_NonSeekable_Stream_Throws()
         {
             var backend = new SkiaImagingBackend();
 
@@ -259,15 +259,88 @@ namespace Avalonia.Skia.UnitTests.Imaging
             using var encoded = EncodeToStream(bitmap, SKEncodedImageFormat.Png);
             using var stream = new NonSeekableStream(encoded);
 
-            Assert.True(backend.TryIdentify(stream, out var info));
-            Assert.Equal(new PixelSize(4, 4), info.PixelSize);
+            Assert.Throws<ArgumentException>(() => backend.TryIdentify(stream, out _));
+        }
 
+        [Fact]
+        public void TryIdentify_From_Bytes_Works()
+        {
+            var backend = new SkiaImagingBackend();
+
+            using var bitmap = CreateTestBitmap(5, 3);
+            using var encoded = EncodeToStream(bitmap, SKEncodedImageFormat.Png);
+
+            Assert.True(backend.TryIdentify(encoded.ToArray(), out var info));
+            Assert.Equal("PNG", info.FormatName);
+            Assert.Equal(new PixelSize(5, 3), info.PixelSize);
+
+            Assert.False(backend.TryIdentify(new byte[] { 1, 2, 3, 4 }, out _));
+        }
+
+        [Fact]
+        public void Decoder_Info_Serves_Identify_For_ForwardOnly_Streams()
+        {
+            var backend = new SkiaImagingBackend();
+
+            using var bitmap = CreateTestBitmap(4, 4);
+            using var encoded = EncodeToStream(bitmap, SKEncodedImageFormat.Png);
+            using var stream = new NonSeekableStream(encoded);
             using var decoder = backend.CreateDecoder(stream, ownsStream: false);
+
+            Assert.Equal("PNG", decoder.Info.FormatName);
+            Assert.Equal(new PixelSize(4, 4), decoder.Info.PixelSize);
+
+            // Reading Info did not advance the cursor: frame 0 still decodes correctly.
             using var frame = decoder.ReadNextFrame();
             using var framebuffer = frame!.Lock();
 
             var expected = bitmap.GetPixel(1, 2);
             var actual = GetBgra(ReadPixels(framebuffer), framebuffer.RowBytes, 1, 2);
+
+            Assert.Equal((expected.Blue, expected.Green, expected.Red, expected.Alpha), actual);
+        }
+
+        [Fact]
+        public void Decoder_Info_Reports_PrePlan_Source_Values()
+        {
+            var backend = new SkiaImagingBackend();
+
+            using var bitmap = CreateTestBitmap(8, 8);
+            using var stream = EncodeToStream(bitmap, SKEncodedImageFormat.Png);
+
+            var options = new BitmapDecodeOptions { TargetSize = new PixelSize(4, 4) };
+
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false, options);
+            using var frame = decoder.ReadNextFrame();
+
+            Assert.Equal(new PixelSize(8, 8), decoder.Info.PixelSize);
+            Assert.Equal(new PixelSize(4, 4), frame!.PixelSize);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public void Decoder_Owns_Its_Encoded_Data_After_Create(bool seekable)
+        {
+            var backend = new SkiaImagingBackend();
+
+            using var bitmap = CreateTestBitmap(4, 4);
+            using var encoded = EncodeToStream(bitmap, SKEncodedImageFormat.Png);
+
+            var callerStream = seekable
+                ? (Stream)new MemoryStream(encoded.ToArray())
+                : new NonSeekableStream(new MemoryStream(encoded.ToArray()));
+
+            using var decoder = backend.CreateDecoder(callerStream, ownsStream: false);
+
+            // The decoder secured its own copy; the caller's stream is free immediately.
+            callerStream.Dispose();
+
+            using var frame = decoder.ReadNextFrame();
+            using var framebuffer = frame!.Lock();
+
+            var expected = bitmap.GetPixel(2, 1);
+            var actual = GetBgra(ReadPixels(framebuffer), framebuffer.RowBytes, 2, 1);
 
             Assert.Equal((expected.Blue, expected.Green, expected.Red, expected.Alpha), actual);
         }

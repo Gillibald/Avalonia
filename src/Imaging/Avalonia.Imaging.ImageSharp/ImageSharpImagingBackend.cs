@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using Avalonia.Platform.Internal;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Bmp;
@@ -63,31 +62,60 @@ namespace Avalonia.Imaging.ImageSharp
         public IReadOnlyList<IBitmapCodecInfo> SupportedCodecs => ImageSharpCodecCatalog.All;
 
         /// <inheritdoc />
+        // Complete payloads always identify; a prefix identifies as long as the
+        // container's chunk chain fits, because ImageSharp walks it for frame counts
+        // and trailing metadata.
+        public int IdentifyPrefixLength => IdentifyPrefixBytes;
+
+        /// <inheritdoc />
         public bool TryIdentify(Stream stream, out BitmapImageInfo info)
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
-            if (stream.CanSeek)
+            if (!stream.CanSeek)
             {
-                var position = stream.Position;
-
-                try
-                {
-                    return TryIdentifyCore(stream, out info);
-                }
-                finally
-                {
-                    stream.Position = position;
-                }
+                throw new ArgumentException(
+                    "Identify requires a seekable stream, because reading a forward-only stream would consume it. " +
+                    "Create a decoder instead and read its Info, or identify from bytes.",
+                    nameof(stream));
             }
 
-            var prefix = ImagingStreamPrefix.ReadPrefix(stream, IdentifyPrefixBytes);
+            var position = stream.Position;
 
-            ImagingStreamPrefix.RememberConsumed(stream, prefix);
+            try
+            {
+                // Identification walks the whole chunk chain (frame counts, trailing
+                // metadata), so the stream is handed over directly rather than as a
+                // prefix; only headers are read and no pixels decode.
+                return TryIdentifyCore(stream, out info);
+            }
+            finally
+            {
+                stream.Position = position;
+            }
+        }
 
-            using var prefixStream = new MemoryStream(prefix, writable: false);
+        /// <inheritdoc />
+        public bool TryIdentify(ReadOnlySpan<byte> data, out BitmapImageInfo info)
+        {
+            ImageInfo imageInfo;
 
-            return TryIdentifyCore(prefixStream, out info);
+            try
+            {
+                imageInfo = ISImage.Identify(new DecoderOptions { Configuration = s_configuration }, data);
+            }
+            catch (ImageFormatException)
+            {
+                // Unknown magic, or headers the prefix cannot satisfy.
+                info = default;
+                return false;
+            }
+
+            var described = Describe(imageInfo);
+
+            info = described ?? default;
+
+            return described is not null;
         }
 
         /// <inheritdoc />
@@ -95,11 +123,12 @@ namespace Avalonia.Imaging.ImageSharp
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
-            var effectiveStream = ImagingStreamPrefix.ResolveForDecode(stream);
+            // ImageSharp decodes eagerly, so the encoded data is materialized up front
+            // regardless of MaterializeSource and the caller's stream is entirely free
+            // once this method returns. Buffering also covers partial reads.
+            using var buffered = ReadToMemory(stream);
 
-            // ImageSharp seeks while decoding; buffering the encoded bytes also covers
-            // partial reads and lets the input stream go as soon as it is drained.
-            using var buffered = ReadToMemory(effectiveStream);
+            options?.Cancellation.ThrowIfCancellationRequested();
 
             if (ownsStream)
                 stream.Dispose();
@@ -140,7 +169,10 @@ namespace Avalonia.Imaging.ImageSharp
                     $"exceeding the configured limit of {maxPixels:N0} pixels.");
             }
 
-            var nativeSize = new PixelSize(imageInfo.Width, imageInfo.Height);
+            // The header facts are taken before the decode plan is applied, so the
+            // decoder's Info reports pre-plan source values.
+            var headerInfo = Describe(imageInfo)!.Value;
+            var nativeSize = headerInfo.PixelSize;
             var fusedTarget = ResolveFusedTarget(codecInfo, options, nativeSize);
 
             var decoderOptions = new DecoderOptions
@@ -159,7 +191,7 @@ namespace Avalonia.Imaging.ImageSharp
                 var usedDecodeScale = fusedTarget is not null &&
                     (image.Width != nativeSize.Width || image.Height != nativeSize.Height);
 
-                return new ImageSharpBitmapDecoder(image, codecInfo, options, Allocator, nativeSize, usedDecodeScale);
+                return new ImageSharpBitmapDecoder(image, codecInfo, headerInfo, options, Allocator, usedDecodeScale);
             }
             catch
             {
@@ -215,28 +247,31 @@ namespace Avalonia.Imaging.ImageSharp
             }
             catch (ImageFormatException)
             {
-                // Unknown magic, or headers a non-seekable prefix cannot satisfy.
                 info = default;
                 return false;
             }
 
+            var described = Describe(imageInfo);
+
+            info = described ?? default;
+
+            return described is not null;
+        }
+
+        internal static BitmapImageInfo? Describe(ImageInfo imageInfo)
+        {
             var codecInfo = ImageSharpCodecCatalog.FromImageFormat(imageInfo.Metadata.DecodedImageFormat);
 
             if (codecInfo is null)
-            {
-                info = default;
-                return false;
-            }
+                return null;
 
-            info = new BitmapImageInfo(
+            return new BitmapImageInfo(
                 codecInfo.FormatName,
                 new PixelSize(imageInfo.Width, imageInfo.Height),
                 TryGetDpi(imageInfo.Metadata),
                 TryMapNativeFormat(imageInfo.PixelType),
                 GetFrameCount(imageInfo, codecInfo),
                 imageInfo.PixelType.AlphaRepresentation != PixelAlphaRepresentation.None);
-
-            return true;
         }
 
         private static int? GetFrameCount(ImageInfo imageInfo, ImageSharpBitmapCodecInfo codecInfo)

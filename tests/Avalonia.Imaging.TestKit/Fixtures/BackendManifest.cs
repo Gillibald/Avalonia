@@ -88,9 +88,6 @@ namespace Avalonia.Imaging.TestKit.Fixtures
         /// <summary>Gets whether the backend encodes more than one frame for this format.</summary>
         public bool MultiFrameEncode { get; init; }
 
-        /// <summary>Gets whether the backend decodes this format from a non-seekable stream.</summary>
-        public bool NonSeekableDecode { get; init; }
-
         /// <summary>Gets the decode plan parts the backend executes natively for this format.</summary>
         public FusedDecodeParts FusedParts { get; init; }
 

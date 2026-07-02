@@ -4,22 +4,20 @@ using Xunit;
 namespace Avalonia.Imaging.TestKit.Contract
 {
     /// <summary>
-    /// Stream handling: non-seekable and partial-read streams decode where declared,
-    /// and stream ownership is honored exactly.
+    /// Stream handling: the decoder secures its own stable encoded source at creation,
+    /// so non-seekable and partial-read streams decode universally, the caller's stream
+    /// is free once CreateDecoder returns, and ownership is honored exactly.
     /// </summary>
     public abstract class StreamContractTests<TFixture> : ImagingContractTests<TFixture>
         where TFixture : CodecBackendFixture, new()
     {
         [Fact]
-        public void NonSeekable_DecodesStreamableFormats()
+        public void NonSeekable_Decodes()
         {
             var tested = 0;
 
             foreach (var fixture in DecodableReferenceFixtures())
             {
-                if (TryGetFormat(fixture.ExpectedFormatName) is not { NonSeekableDecode: true })
-                    continue;
-
                 tested++;
 
                 using var stream = new NonSeekableStream(fixture.OpenRead());
@@ -29,7 +27,7 @@ namespace Avalonia.Imaging.TestKit.Contract
                 AssertFrameMatchesReference(fixture, frame);
             }
 
-            Assert.SkipWhen(tested == 0, "The manifest declares no generated format decodable from a non-seekable stream.");
+            Assert.SkipWhen(tested == 0, NoDecodableReferenceFixtures);
         }
 
         [Fact]
@@ -49,6 +47,38 @@ namespace Avalonia.Imaging.TestKit.Contract
             }
 
             Assert.SkipWhen(tested == 0, NoDecodableReferenceFixtures);
+        }
+
+        [Fact]
+        public void EncodedOwnership_SeekableCallerStreamFreeAfterCreate()
+        {
+            var fixture = RequireAnyDecodableReferenceFixture();
+            var stream = fixture.OpenRead();
+
+            using var decoder = Backend.CreateDecoder(stream, ownsStream: false);
+
+            // The decoder owns a stable copy of the encoded data; the caller's stream
+            // is entirely free once CreateDecoder returns.
+            stream.Dispose();
+
+            using var frame = ReadFirstFrame(decoder);
+
+            AssertFrameMatchesReference(fixture, frame);
+        }
+
+        [Fact]
+        public void EncodedOwnership_NonSeekableCallerStreamFreeAfterCreate()
+        {
+            var fixture = RequireAnyDecodableReferenceFixture();
+            var stream = new NonSeekableStream(fixture.OpenRead());
+
+            using var decoder = Backend.CreateDecoder(stream, ownsStream: false);
+
+            stream.Dispose();
+
+            using var frame = ReadFirstFrame(decoder);
+
+            AssertFrameMatchesReference(fixture, frame);
         }
 
         [Fact]

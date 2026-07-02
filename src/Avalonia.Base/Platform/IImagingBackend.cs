@@ -15,8 +15,9 @@ namespace Avalonia.Platform
     /// The backend is render-independent: pixels only ever cross this boundary as
     /// <see cref="ILockedFramebuffer"/> views or <see cref="PixelBuffer"/> snapshots,
     /// never as <see cref="IBitmapImpl"/>. Implementations must be immutable after
-    /// startup; <see cref="TryIdentify"/>, <see cref="CreateDecoder"/> and
-    /// <see cref="CreateEncoder"/> are safe to call concurrently.
+    /// startup; <see cref="TryIdentify(Stream, out BitmapImageInfo)"/>,
+    /// <see cref="CreateDecoder"/> and <see cref="CreateEncoder"/> are safe to call
+    /// concurrently.
     /// </remarks>
     [Unstable]
     public interface IImagingBackend
@@ -32,12 +33,31 @@ namespace Avalonia.Platform
         IReadOnlyList<IBitmapCodecInfo> SupportedCodecs { get; }
 
         /// <summary>
-        /// Reads header-only image facts without decoding pixels. Must not allocate
-        /// frame-sized memory and must not lose data from a non-seekable stream (a
-        /// subsequent <see cref="CreateDecoder"/> over the same stream still decodes).
-        /// Returns false when the format is not recognized.
+        /// Gets the prefix length in bytes that suffices to identify every format this
+        /// backend supports. <see cref="TryIdentify(ReadOnlySpan{byte}, out BitmapImageInfo)"/>
+        /// is defined for complete payloads or prefixes of at least this length.
         /// </summary>
+        int IdentifyPrefixLength { get; }
+
+        /// <summary>
+        /// Reads header-only image facts without decoding pixels or allocating
+        /// frame-sized memory. The stream must be seekable; its position is restored, so
+        /// identify is repeatable and consumes nothing. Returns false only when the
+        /// format is not recognized.
+        /// </summary>
+        /// <exception cref="ArgumentException">
+        /// The stream is not seekable. Identify cannot read a forward-only stream
+        /// without consuming it - create a decoder instead and read
+        /// <see cref="IBitmapDecoder.Info"/>, or identify from bytes.
+        /// </exception>
         bool TryIdentify(Stream stream, out BitmapImageInfo info);
+
+        /// <summary>
+        /// Reads header-only image facts from in-memory encoded data: a complete payload
+        /// or a prefix of at least <see cref="IdentifyPrefixLength"/> bytes. Returns
+        /// false only when the format is not recognized.
+        /// </summary>
+        bool TryIdentify(ReadOnlySpan<byte> data, out BitmapImageInfo info);
 
         /// <summary>
         /// Detects the container format from the stream header and returns a decoder for it.
@@ -49,6 +69,19 @@ namespace Avalonia.Platform
         /// When true the decoder takes ownership of the stream and disposes it with itself.
         /// </param>
         /// <param name="options">The decode plan applied to all frames of this decoder.</param>
+        /// <remarks>
+        /// From creation on, the decoder owns a stable, rewindable encoded source. When
+        /// the stream is seekable and owned, the decoder may keep it and read on demand;
+        /// the stream belongs to the decoder from this call on. In every other case the
+        /// backend materializes an owned stable copy of the remaining encoded data before
+        /// returning (a memory buffer, a duplicated file handle or a temporary file), and
+        /// the caller's stream is entirely free once this method returns. This is what
+        /// makes deferred frame decoding sound: a frame's pixels can be produced at any
+        /// later time without touching the caller's stream. Materialization observes
+        /// <see cref="BitmapDecodeOptions.Cancellation"/>;
+        /// <see cref="BitmapDecodeOptions.MaterializeSource"/> forces it even when
+        /// deferral would be allowed.
+        /// </remarks>
         IBitmapDecoder CreateDecoder(Stream stream, bool ownsStream, BitmapDecodeOptions? options = null);
 
         /// <summary>

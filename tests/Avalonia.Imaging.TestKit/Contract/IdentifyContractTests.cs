@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Imaging.TestKit.Fixtures;
 using Xunit;
 
@@ -5,7 +6,8 @@ namespace Avalonia.Imaging.TestKit.Contract
 {
     /// <summary>
     /// Header-only identification: size and format come from the header, never from a
-    /// pixel decode, and identification does not lose a non-seekable stream's data.
+    /// pixel decode. Identify requires a seekable source or in-memory bytes; a
+    /// forward-only stream answers through the decoder's Info instead.
     /// </summary>
     public abstract class IdentifyContractTests<TFixture> : ImagingContractTests<TFixture>
         where TFixture : CodecBackendFixture, new()
@@ -33,6 +35,27 @@ namespace Avalonia.Imaging.TestKit.Contract
         }
 
         [Fact]
+        public void SpanIdentify_ReturnsDescriptor()
+        {
+            var tested = 0;
+
+            foreach (var fixture in DecodableReferenceFixtures())
+            {
+                tested++;
+
+                Assert.True(Backend.TryIdentify(fixture.EncodedBytes.Span, out var info),
+                    $"TryIdentify must recognize {fixture.Name} from bytes.");
+                Assert.Equal(fixture.ExpectedFormatName, info.FormatName);
+                Assert.Equal(fixture.ExpectedSize, info.PixelSize);
+
+                if (info.HasAlpha is { } hasAlpha)
+                    Assert.Equal(fixture.ExpectedHasAlpha, hasAlpha);
+            }
+
+            Assert.SkipWhen(tested == 0, NoDecodableReferenceFixtures);
+        }
+
+        [Fact]
         public void HugeDims_InfoWithoutDecode()
         {
             Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true },
@@ -48,22 +71,25 @@ namespace Avalonia.Imaging.TestKit.Contract
         }
 
         [Fact]
-        public void NonSeekable_Identify()
+        public void NonSeekable_IdentifyThrows_DecoderInfoAnswers()
         {
-            var format = TryGetFormat(FixtureImages.PngFormatName);
-
-            Assert.SkipWhen(format is not { Decode: true }, "The manifest does not declare PNG decoding.");
-            Assert.SkipWhen(!format!.NonSeekableDecode, "The manifest does not declare non-seekable PNG decoding.");
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true },
+                "The manifest does not declare PNG decoding.");
 
             var fixture = FixtureImages.Rgb4x4Png;
 
             using var stream = new NonSeekableStream(fixture.OpenRead());
 
-            Assert.True(Backend.TryIdentify(stream, out var info), "TryIdentify must work on a non-seekable stream.");
-            Assert.Equal(fixture.ExpectedSize, info.PixelSize);
+            // Identify cannot read a forward-only stream without consuming it.
+            Assert.Throws<ArgumentException>(() => Backend.TryIdentify(stream, out _));
 
-            // Identification must not consume the data: the same stream still decodes.
+            // The header facts come from a decoder instead, without advancing the frame
+            // cursor: frame 0 still decodes afterwards.
             using var decoder = Backend.CreateDecoder(stream, ownsStream: false);
+
+            Assert.Equal(fixture.ExpectedFormatName, decoder.Info.FormatName);
+            Assert.Equal(fixture.ExpectedSize, decoder.Info.PixelSize);
+
             using var frame = ReadFirstFrame(decoder);
 
             AssertFrameMatchesReference(fixture, frame);

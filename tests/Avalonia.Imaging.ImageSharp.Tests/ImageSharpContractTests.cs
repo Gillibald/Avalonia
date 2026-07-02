@@ -23,7 +23,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                     Decode = true,
                     Encode = true,
                     Metadata = true,
-                    NonSeekableDecode = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
                 },
@@ -32,7 +31,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                     Decode = true,
                     Encode = true,
                     Metadata = true,
-                    NonSeekableDecode = true,
                     FusedParts = FusedDecodeParts.Scale,
                     CopyBudget = 0,
                     PixelTolerance = 3,
@@ -41,7 +39,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
-                    NonSeekableDecode = true,
                     SeekableFrames = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
@@ -50,7 +47,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
-                    NonSeekableDecode = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
                 },
@@ -59,7 +55,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                     Decode = true,
                     Encode = true,
                     Metadata = true,
-                    NonSeekableDecode = true,
                     SeekableFrames = true,
                     MultiFrameEncode = true,
                     CopyBudget = 0,
@@ -69,7 +64,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
-                    NonSeekableDecode = true,
                     CopyBudget = 0,
                     PixelTolerance = 3,
                 },
