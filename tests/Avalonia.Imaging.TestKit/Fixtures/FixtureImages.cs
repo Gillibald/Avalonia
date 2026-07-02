@@ -73,8 +73,41 @@ namespace Avalonia.Imaging.TestKit.Fixtures
             expectedRgba: null,
             BuildNotAnImage);
 
+        /// <summary>The tEXt keyword stored in <see cref="PngWithTextMetadata"/>.</summary>
+        public const string PngTextKeyword = "Title";
+
+        /// <summary>The tEXt value stored in <see cref="PngWithTextMetadata"/>.</summary>
+        public const string PngTextValue = "Hello tEXt";
+
+        /// <summary>The pattern of <see cref="Rgb4x4Png"/> plus one tEXt metadata entry.</summary>
+        public static ImageFixture PngWithTextMetadata { get; } = new(
+            nameof(PngWithTextMetadata), PngFormatName, new PixelSize(4, 4), expectedHasAlpha: false,
+            BuildRgbaReference(4, 4, (x, y) => WithOpaqueAlpha(Rgb4x4Pixel(x, y))),
+            () => PngFixtureWriter.WriteRgbWithText(4, 4, Rgb4x4Pixel, PngTextKeyword, PngTextValue));
+
+        /// <summary>A 16x16 8-bit RGB PNG gradient with a distinct color per pixel.</summary>
+        public static ImageFixture Gradient16Png { get; } = new(
+            nameof(Gradient16Png), PngFormatName, new PixelSize(16, 16), expectedHasAlpha: false,
+            BuildRgbaReference(16, 16, (x, y) => WithOpaqueAlpha(Gradient16Pixel(x, y))),
+            () => PngFixtureWriter.WriteRgb(16, 16, Gradient16Pixel));
+
+        /// <summary>
+        /// A 128x128 RGB PNG for tests where frame-sized buffers must dominate scratch
+        /// memory; no pixel reference, its content is never compared.
+        /// </summary>
+        public static ImageFixture Gradient128Png { get; } = new(
+            nameof(Gradient128Png), PngFormatName, new PixelSize(128, 128), expectedHasAlpha: false,
+            expectedRgba: null,
+            () => PngFixtureWriter.WriteRgb(128, 128, Gradient128Pixel));
+
         private static (byte R, byte G, byte B) Rgb4x4Pixel(int x, int y) =>
             ((byte)(x * 85), (byte)(y * 85), (byte)((x ^ y) * 85));
+
+        private static (byte R, byte G, byte B) Gradient16Pixel(int x, int y) =>
+            ((byte)(x * 17), (byte)(y * 17), (byte)((x + y) * 8));
+
+        private static (byte R, byte G, byte B) Gradient128Pixel(int x, int y) =>
+            ((byte)(x * 2), (byte)(y * 2), (byte)((x ^ y) * 2));
 
         private static (byte R, byte G, byte B, byte A) AlphaGradientPixel(int x, int y) =>
             (GradientLevel(x), GradientLevel(y), GradientLevel(3 - x), (byte)((y * 4 + x) * 17));

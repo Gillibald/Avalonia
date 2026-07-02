@@ -30,5 +30,18 @@ namespace Avalonia.Imaging.TestKit.Fixtures
         /// Creates the backend under test, wired to <see cref="Allocator"/>.
         /// </summary>
         public abstract IImagingBackend CreateBackend();
+
+        /// <summary>
+        /// Creates an encoded fixture tagged with EXIF orientation 6, or null when the
+        /// backend project supplies none; the orientation contract tests skip then.
+        /// </summary>
+        public virtual OrientedImageFixture? CreateOrientedFixture() => null;
+
+        /// <summary>
+        /// Creates an encoded multi-frame fixture with distinguishable frames, or null
+        /// when the backend project supplies none; the frame cursor contract tests
+        /// skip then.
+        /// </summary>
+        public virtual MultiFrameImageFixture? CreateMultiFrameFixture() => null;
     }
 }
