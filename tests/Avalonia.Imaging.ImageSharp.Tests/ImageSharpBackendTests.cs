@@ -14,6 +14,7 @@ using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using SixLabors.ImageSharp.Metadata.Profiles.Icc;
 using SixLabors.ImageSharp.Metadata.Profiles.Xmp;
 using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using Xunit;
 using ISImage = SixLabors.ImageSharp.Image;
 
@@ -22,10 +23,129 @@ namespace Avalonia.Imaging.ImageSharp.Tests
     /// <summary>
     /// Backend-specific behavior beyond the shared contract suite: high bit depth,
     /// metadata and color profiles, multi-page TIFF, transform-on-encode, DPI, straight
-    /// alpha and the measured fused-decode behavior.
+    /// alpha, EXIF orientation, the decode concurrency gate and the measured
+    /// fused-decode behavior.
     /// </summary>
     public class ImageSharpBackendTests
     {
+        [Fact]
+        public void OrientedJpeg_DefaultDecode_AppliesExifOrientation()
+        {
+            var jpeg = CreateOrientedJpeg();
+            var backend = new ImageSharpImagingBackend();
+
+            using var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true);
+
+            // Info reports the raw stored size; the frame is display-oriented.
+            Assert.Equal(new PixelSize(8, 4), decoder.Info.PixelSize);
+
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(new PixelSize(4, 8), frame.PixelSize);
+
+            var fused = Assert.IsAssignableFrom<ISupportsFusedDecode>(frame);
+
+            Assert.True((fused.FusedParts & FusedDecodeParts.Orientation) != 0);
+
+            // The frame's pixels must match ImageSharp's own oriented decode exactly.
+            using var reference = ISImage.Load<Rgb24>(jpeg);
+
+            reference.Mutate(context => context.AutoOrient());
+
+            Assert.Equal(PixelFormats.Rgb24, frame.PixelFormat);
+
+            var bytes = ReadPixelBytes(frame);
+
+            for (var y = 0; y < 8; y++)
+            {
+                for (var x = 0; x < 4; x++)
+                {
+                    var offset = (y * 4 + x) * 3;
+                    var expected = reference[x, y];
+
+                    Assert.Equal((expected.R, expected.G, expected.B),
+                        (bytes[offset], bytes[offset + 1], bytes[offset + 2]));
+                }
+            }
+        }
+
+        [Fact]
+        public void OrientedJpeg_RespectExifOrientationFalse_KeepsRawDimensions()
+        {
+            var jpeg = CreateOrientedJpeg();
+            var backend = new ImageSharpImagingBackend();
+            var options = new BitmapDecodeOptions { RespectExifOrientation = false };
+
+            using var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true, options);
+
+            Assert.Equal(new PixelSize(8, 4), decoder.Info.PixelSize);
+
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(new PixelSize(8, 4), frame.PixelSize);
+
+            var fused = Assert.IsAssignableFrom<ISupportsFusedDecode>(frame);
+
+            Assert.Equal(FusedDecodeParts.None, fused.FusedParts & FusedDecodeParts.Orientation);
+
+            using var view = frame.Lock();
+
+            Assert.Equal(new PixelSize(8, 4), view.Size);
+        }
+
+        [Fact]
+        public void OrientedJpeg_TargetSizeComposesInOrientedSpace()
+        {
+            // Raw 8x4 with orientation 6 displays as 4x8; the plan target is oriented.
+            // The loader resizes the raw image before orientation, so the backend swaps
+            // the axes on the way in and the frame lands exactly on the oriented target.
+            var jpeg = CreateOrientedJpeg();
+            var backend = new ImageSharpImagingBackend();
+            var options = new BitmapDecodeOptions { TargetSize = new PixelSize(2, 4) };
+
+            using var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true, options);
+
+            Assert.Equal(new PixelSize(8, 4), decoder.Info.PixelSize);
+
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(new PixelSize(2, 4), frame.PixelSize);
+
+            var fused = Assert.IsAssignableFrom<ISupportsFusedDecode>(frame);
+
+            Assert.Equal(FusedDecodeParts.Scale | FusedDecodeParts.Orientation, fused.FusedParts);
+
+            using var view = frame.Lock();
+
+            Assert.Equal(new PixelSize(2, 4), view.Size);
+        }
+
+        [Fact]
+        public void ConcurrencyLimiter_SingleSlotDecodesComplete()
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            AvaloniaLocator.CurrentMutable.Bind<ImagingOptions>()
+                .ToConstant(new ImagingOptions { MaxConcurrentDecodes = 1 });
+
+            var backend = new ImageSharpImagingBackend();
+
+            using var source = new Image<Rgb24>(8, 8);
+
+            var png = EncodeImage(source, new PngEncoder());
+
+            // Two sequential decodes through a single slot must neither deadlock nor
+            // leak the slot.
+            for (var i = 0; i < 2; i++)
+            {
+                using var decoder = backend.CreateDecoder(new MemoryStream(png), ownsStream: true);
+                using var frame = decoder.ReadNextFrame()!;
+                using var view = frame.Lock();
+
+                Assert.Equal(new PixelSize(8, 8), view.Size);
+            }
+        }
+
         [Fact]
         public void SixteenBitPng_DecodesToRgba64_PreservingDepth()
         {
@@ -427,6 +547,31 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             exif.SetValue(ExifTag.Copyright, "(c) test");
             exif.SetValue(ExifTag.DateTimeOriginal, "2026:07:02 12:34:56");
 
+            source.Metadata.ExifProfile = exif;
+
+            return EncodeImage(source, new JpegEncoder());
+        }
+
+        private static byte[] CreateOrientedJpeg()
+        {
+            // Raw 8x4, left half dark and right half bright, tagged EXIF orientation 6
+            // (the raw image must rotate 90 degrees clockwise to display upright).
+            using var source = new Image<Rgb24>(8, 4);
+
+            source.ProcessPixelRows(accessor =>
+            {
+                for (var y = 0; y < accessor.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+
+                    for (var x = 0; x < row.Length; x++)
+                        row[x] = x < 4 ? new Rgb24(10, 10, 10) : new Rgb24(240, 240, 240);
+                }
+            });
+
+            var exif = new ExifProfile();
+
+            exif.SetValue(ExifTag.Orientation, (ushort)6);
             source.Metadata.ExifProfile = exif;
 
             return EncodeImage(source, new JpegEncoder());

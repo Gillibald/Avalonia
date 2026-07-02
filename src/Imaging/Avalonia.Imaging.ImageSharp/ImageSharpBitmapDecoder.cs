@@ -22,13 +22,15 @@ namespace Avalonia.Imaging.ImageSharp
 
         public ImageSharpBitmapDecoder(ISImage image, ImageSharpBitmapCodecInfo codecInfo,
             BitmapImageInfo headerInfo, BitmapDecodeOptions? options,
-            IBitmapMemoryAllocator allocator, bool usedDecodeScale)
+            IBitmapMemoryAllocator allocator, PixelOrientation appliedOrientation,
+            bool usedDecodeScale)
         {
             _image = image;
             _options = options;
             Codec = codecInfo;
             Info = headerInfo;
             Allocator = allocator;
+            AppliedOrientation = appliedOrientation;
             UsedDecodeScale = usedDecodeScale;
             FrameCount = image.Frames.Count;
         }
@@ -49,13 +51,26 @@ namespace Avalonia.Imaging.ImageSharp
         internal IBitmapMemoryAllocator Allocator { get; }
 
         /// <summary>
-        /// Gets the source size before the decode plan, as declared by the header.
+        /// Gets the raw source size before the decode plan, as declared by the header.
         /// </summary>
         internal PixelSize NativeSize => Info.PixelSize;
 
         /// <summary>
+        /// Gets the EXIF orientation fused into the loaded image; Normal when the file
+        /// carries none or the plan disabled it. The image pixels are already oriented.
+        /// </summary>
+        internal PixelOrientation AppliedOrientation { get; }
+
+        /// <summary>
+        /// Gets the display-space source size (<see cref="NativeSize"/> with
+        /// <see cref="AppliedOrientation"/> applied); the decode plan is expressed in it.
+        /// </summary>
+        internal PixelSize OrientedSize =>
+            FusedPixelPipeline.GetOrientedSize(NativeSize, AppliedOrientation);
+
+        /// <summary>
         /// Gets whether the image was loaded with a decode-time target size, so it is
-        /// already scaled relative to <see cref="NativeSize"/>.
+        /// already scaled relative to <see cref="OrientedSize"/>.
         /// </summary>
         internal bool UsedDecodeScale { get; }
 

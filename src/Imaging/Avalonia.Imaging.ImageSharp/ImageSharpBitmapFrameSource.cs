@@ -20,7 +20,7 @@ namespace Avalonia.Imaging.ImageSharp
         private readonly int _frameIndex;
         private readonly BitmapDecodeOptions? _options;
         private readonly object _sync = new();
-        private readonly PixelSize _nativeSize;
+        private readonly PixelSize _orientedSize;
         private readonly PixelSize _decodedSize;
         private readonly PixelRect _region;
         private readonly bool _hasRegion;
@@ -37,11 +37,13 @@ namespace Avalonia.Imaging.ImageSharp
             _frameIndex = frameIndex;
             _options = options;
 
+            // The loaded image is already display-oriented (a stored EXIF orientation
+            // is fused at load), so the plan needs no oriented-space arithmetic here.
             var image = owner.Image;
 
-            _nativeSize = owner.NativeSize;
+            _orientedSize = owner.OrientedSize;
             _decodedSize = new PixelSize(image.Width, image.Height);
-            _region = ClampRegion(options?.SourceRegion, _nativeSize, out _hasRegion);
+            _region = ClampRegion(options?.SourceRegion, _orientedSize, out _hasRegion);
             _decodeFormat = TryMapPixelFormat(image) ?? PixelFormats.Rgba8888;
             _decodeAlpha = image.PixelType.AlphaRepresentation switch
             {
@@ -65,17 +67,21 @@ namespace Avalonia.Imaging.ImageSharp
         public AlphaFormat AlphaFormat { get; }
 
         public FusedDecodeParts FusedParts =>
-            _owner.UsedDecodeScale ? FusedDecodeParts.Scale : FusedDecodeParts.None;
+            (_owner.UsedDecodeScale ? FusedDecodeParts.Scale : FusedDecodeParts.None) |
+            (_owner.AppliedOrientation != PixelOrientation.Normal
+                ? FusedDecodeParts.Orientation
+                : FusedDecodeParts.None);
 
         public PixelSize GetNearestDecodeSize(PixelSize target)
         {
-            // The decoder resizes to the exact target while loading, but only shrinking
-            // and only for formats where that reduces the decode itself.
+            // Target and result are in oriented space. The decoder resizes to the exact
+            // target while loading, but only shrinking and only for formats where that
+            // reduces the decode itself.
             if ((_owner.Codec.Capabilities & BitmapCodecCapabilities.FusedDecode) == 0 ||
                 target.Width <= 0 || target.Height <= 0 ||
-                target.Width > _nativeSize.Width || target.Height > _nativeSize.Height)
+                target.Width > _orientedSize.Width || target.Height > _orientedSize.Height)
             {
-                return _nativeSize;
+                return _orientedSize;
             }
 
             return target;
@@ -169,7 +175,7 @@ namespace Avalonia.Imaging.ImageSharp
             _options?.Cancellation.ThrowIfCancellationRequested();
 
             var allocator = _owner.Allocator;
-            var targetRowBytes = (PixelSize.Width * PixelFormat.BitsPerPixel + 7) / 8;
+            var targetRowBytes = PixelFormatHelper.GetMinRowBytes(PixelFormat, PixelSize.Width);
             var targetMemory = allocator.Rent((long)targetRowBytes * PixelSize.Height);
 
             try
@@ -273,14 +279,17 @@ namespace Avalonia.Imaging.ImageSharp
             var source = new LockedFramebuffer(sourceAddress, _decodedSize, sourceRowBytes,
                 Dpi, _decodeFormat, _decodeAlpha, null);
 
-            // A region is only decoded at native size, so its coordinates are valid;
-            // without a region the plan covers the whole (possibly scaled) decode.
+            // The decoded image is already display-oriented, so the plan orientation
+            // stays Normal. A region is only decoded at full oriented size, so its
+            // coordinates are valid; without a region the plan covers the whole
+            // (possibly scaled) decode.
             var planRegion = _hasRegion ? _region : new PixelRect(_decodedSize);
 
             var plan = new FusedPlanExecution(planRegion, PixelSize, PixelFormat, AlphaFormat,
                 _options?.Interpolation ?? BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(source, plan, destination, destRowBytes, allocator);
+            FusedPixelPipeline.Run(source, plan, destination, destRowBytes, allocator,
+                _options?.Cancellation ?? default);
         }
 
         private static PixelFormat? TryMapPixelFormat(ISImage image) => image switch
