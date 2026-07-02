@@ -24,13 +24,41 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
-        /// Reads header-only image facts without decoding pixels. The stream must be
-        /// seekable (its position is restored); for a forward-only stream create a
-        /// decoder and read <see cref="Info"/> instead. Returns false when the active
-        /// backend does not recognize the format.
+        /// Reads header-only image facts without decoding pixels. Returns false when the
+        /// active backend does not recognize the format.
         /// </summary>
-        public static bool TryIdentify(Stream stream, out BitmapImageInfo info) =>
-            ImagingBackend.Current.TryIdentify(stream, out info);
+        /// <param name="stream">The encoded image stream.</param>
+        /// <param name="info">The header facts.</param>
+        /// <param name="behavior">
+        /// How a forward-only stream is treated. With the default,
+        /// <see cref="IdentifyStreamBehavior.RequireSeekable"/>, a seekable stream is
+        /// position-restored (identify is repeatable and consumes nothing) and a
+        /// forward-only stream throws <see cref="ArgumentException"/>.
+        /// <see cref="IdentifyStreamBehavior.ConsumePrefix"/> opts in to reading a
+        /// bounded prefix from a forward-only stream instead - suited to sniff-only
+        /// flows; when the image is decoded afterwards, create a decoder and read
+        /// <see cref="Info"/> instead, which owns its data.
+        /// </param>
+        public static bool TryIdentify(Stream stream, out BitmapImageInfo info,
+            IdentifyStreamBehavior behavior = IdentifyStreamBehavior.RequireSeekable)
+        {
+            _ = stream ?? throw new ArgumentNullException(nameof(stream));
+
+            var backend = ImagingBackend.Current;
+
+            if (!stream.CanSeek && behavior == IdentifyStreamBehavior.ConsumePrefix)
+            {
+                // The caller opted in to consumption: identify from a bounded prefix.
+                // The backend SPI itself stays seekable-only; this is sugar over the
+                // span overload.
+                var prefix = Platform.Internal.ImagingStreamHelper.ReadPrefix(
+                    stream, backend.IdentifyPrefixLength);
+
+                return backend.TryIdentify(prefix, out info);
+            }
+
+            return backend.TryIdentify(stream, out info);
+        }
 
         /// <summary>
         /// Reads header-only image facts from in-memory encoded data: a complete payload
@@ -42,11 +70,17 @@ namespace Avalonia.Media.Imaging
 
         /// <summary>
         /// Reads header-only image facts without decoding pixels, throwing when the
-        /// active backend does not recognize the format. The stream must be seekable.
+        /// active backend does not recognize the format.
         /// </summary>
-        public static BitmapImageInfo Identify(Stream stream)
+        /// <param name="stream">The encoded image stream.</param>
+        /// <param name="behavior">
+        /// How a forward-only stream is treated; see
+        /// <see cref="TryIdentify(Stream, out BitmapImageInfo, IdentifyStreamBehavior)"/>.
+        /// </param>
+        public static BitmapImageInfo Identify(Stream stream,
+            IdentifyStreamBehavior behavior = IdentifyStreamBehavior.RequireSeekable)
         {
-            if (!TryIdentify(stream, out var info))
+            if (!TryIdentify(stream, out var info, behavior))
             {
                 throw new NotSupportedException(
                     $"The '{ImagingBackend.Current.Name}' imaging backend does not recognize the image data.");

@@ -61,6 +61,62 @@ namespace Avalonia.Skia.UnitTests.Imaging
             Assert.Equal(0, stream.Position);
         }
 
+        private sealed class ForwardOnlyStream : Stream
+        {
+            private readonly Stream _inner;
+
+            public ForwardOnlyStream(Stream inner) => _inner = inner;
+
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position
+            {
+                get => throw new NotSupportedException();
+                set => throw new NotSupportedException();
+            }
+
+            public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+            public override void Flush() { }
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
+
+        [Fact]
+        public void Identify_On_A_ForwardOnly_Stream_Throws_By_Default()
+        {
+            using var scope = BindPlatform();
+            using var encoded = CreatePng(4, 4);
+            using var stream = new ForwardOnlyStream(encoded);
+
+            Assert.Throws<ArgumentException>(() => BitmapDecoder.TryIdentify(stream, out _));
+        }
+
+        [Fact]
+        public void Identify_ConsumePrefix_Opts_In_To_Sniffing_A_ForwardOnly_Stream()
+        {
+            using var scope = BindPlatform();
+            using var encoded = CreatePng(6, 3);
+            using var stream = new ForwardOnlyStream(encoded);
+
+            Assert.True(BitmapDecoder.TryIdentify(stream, out var info, IdentifyStreamBehavior.ConsumePrefix));
+
+            Assert.Equal("PNG", info.FormatName);
+            Assert.Equal(new PixelSize(6, 3), info.PixelSize);
+        }
+
+        [Fact]
+        public void Identify_ConsumePrefix_Does_Not_Consume_A_Seekable_Stream()
+        {
+            using var scope = BindPlatform();
+            using var stream = CreatePng(6, 3);
+
+            Assert.True(BitmapDecoder.TryIdentify(stream, out _, IdentifyStreamBehavior.ConsumePrefix));
+            Assert.Equal(0, stream.Position);
+        }
+
         [Fact]
         public void Decoder_Exposes_CodecInfo_And_Frames()
         {
