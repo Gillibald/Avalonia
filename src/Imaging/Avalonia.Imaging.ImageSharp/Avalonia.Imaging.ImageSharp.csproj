@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>$(AvsCurrentTargetFramework);$(AvsLegacyTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Avalonia.Imaging.ImageSharp</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- ImageSharp 4.x validates a commercial license at build time; the key comes from the environment. -->
+    <SixLaborsLicenseKey>$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The central 2.1.x pin serves unrelated test dependencies; this backend targets the 4.x API. -->
+    <PackageReference Include="SixLabors.ImageSharp" VersionOverride="4.0.0" />
+  </ItemGroup>
+
+  <Import Project="..\..\..\build\Base.props" />
+  <Import Project="..\..\..\build\NullableEnable.props" />
+  <Import Project="..\..\..\build\TrimmingEnable.props" />
+  <Import Project="..\..\..\build\DevAnalyzers.props" />
+
+  <ItemGroup Label="InternalsVisibleTo">
+    <InternalsVisibleTo Include="Avalonia.Imaging.ImageSharp.Tests, PublicKey=$(AvaloniaPublicKey)" />
+  </ItemGroup>
+</Project>

@@ -14,6 +14,9 @@
     <Project Path="src/Headless/Avalonia.Headless.XUnit/Avalonia.Headless.XUnit.csproj" />
     <Project Path="src/Headless/Avalonia.Headless/Avalonia.Headless.csproj" />
   </Folder>
+  <Folder Name="/Imaging/">
+    <Project Path="src/Imaging/Avalonia.Imaging.ImageSharp/Avalonia.Imaging.ImageSharp.csproj" />
+  </Folder>
   <Folder Name="/iOS/">
     <Project Path="src/iOS/Avalonia.iOS/Avalonia.iOS.csproj" />
   </Folder>
@@ -148,6 +151,8 @@
     <Project Path="tests/Avalonia.Headless.NUnit.PerTest.UnitTests/Avalonia.Headless.NUnit.PerTest.UnitTests.csproj" />
     <Project Path="tests/Avalonia.Headless.XUnit.PerAssembly.UnitTests/Avalonia.Headless.XUnit.PerAssembly.UnitTests.csproj" />
     <Project Path="tests/Avalonia.Headless.XUnit.PerTest.UnitTests/Avalonia.Headless.XUnit.PerTest.UnitTests.csproj" />
+    <Project Path="tests/Avalonia.Imaging.ImageSharp.Tests/Avalonia.Imaging.ImageSharp.Tests.csproj" />
+    <Project Path="tests/Avalonia.Imaging.TestKit/Avalonia.Imaging.TestKit.csproj" />
     <Project Path="tests/Avalonia.IntegrationTests.Appium/Avalonia.IntegrationTests.Appium.csproj" />
     <Project Path="tests/Avalonia.IntegrationTests.Win32/Avalonia.IntegrationTests.Win32.csproj" />
     <Project Path="tests/Avalonia.LeakTests/Avalonia.LeakTests.csproj" />
