@@ -164,6 +164,19 @@ namespace Avalonia.Platform
         IBitmapImpl LoadBitmap(PixelFormat format, AlphaFormat alphaFormat, IntPtr data, PixelSize size, Vector dpi, int stride);
 
         /// <summary>
+        /// Creates an immutable bitmap over the framebuffer's pixels without copying them.
+        /// </summary>
+        /// <param name="framebuffer">The pixel view to install.</param>
+        /// <remarks>
+        /// The render backend takes ownership of the view, including on failure, and
+        /// disposes it once it no longer needs the pixels - at the latest when the bitmap
+        /// is torn down. The underlying memory must stay valid until the view is disposed.
+        /// The framebuffer's pixel format must be natively supported by the backend.
+        /// </remarks>
+        /// <returns>An <see cref="IBitmapImpl"/>.</returns>
+        IBitmapImpl LoadBitmap(ILockedFramebuffer framebuffer);
+
+        /// <summary>
         /// Creates a platform implementation of a glyph run.
         /// </summary>
         /// <param name="glyphTypeface">The glyph typeface.</param>

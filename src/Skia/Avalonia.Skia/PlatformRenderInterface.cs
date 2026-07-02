@@ -161,6 +161,12 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
+        public IBitmapImpl LoadBitmap(ILockedFramebuffer framebuffer)
+        {
+            return new ImmutableBitmap(framebuffer);
+        }
+
+        /// <inheritdoc />
         public IBitmapImpl LoadBitmapToWidth(Stream stream, int width, BitmapInterpolationMode interpolationMode = BitmapInterpolationMode.HighQuality)
         {
             return new ImmutableBitmap(stream, width, true, interpolationMode);
