@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <!--
+      A class library of abstract, backend-agnostic contract tests. Backend test
+      projects subclass the contract classes with a concrete fixture; only those
+      projects are runnable, so this library opts out of the test-project defaults
+      from tests/Directory.Build.props.
+    -->
+    <IsTestProject>false</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>false</UseMicrosoftTestingPlatformRunner>
+    <IsPackable>false</IsPackable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Added by tests/Directory.Build.props for runnable test projects; this library has no runner. -->
+    <PackageReference Remove="Microsoft.Testing.Extensions.TrxReport" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- xunit attributes and asserts only; the MTP runner comes from the consuming test project. -->
+    <PackageReference Include="xunit.v3.extensibility.core" />
+    <!-- Not centrally pinned (only the runner meta-package is); keep in sync with xunit.v3.mtp-v2. -->
+    <PackageReference Include="xunit.v3.assert" VersionOverride="3.2.2" />
+  </ItemGroup>
+  <Import Project="..\..\build\Base.props" />
+  <Import Project="..\..\build\NullableEnable.props" />
+</Project>
