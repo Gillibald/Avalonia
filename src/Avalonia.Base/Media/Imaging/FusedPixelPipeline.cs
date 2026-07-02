@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using Avalonia.Platform;
 using Avalonia.Platform.Internal;
 
@@ -7,28 +8,35 @@ namespace Avalonia.Media.Imaging;
 /// <summary>
 /// The software part of a decode plan, fully resolved: the crop window is already
 /// clamped to the source bounds, the target size is absolute and the formats are the
-/// ones the destination stores.
+/// ones the destination stores. <see cref="SourceRegion"/> and <see cref="TargetSize"/>
+/// are in oriented (display) space: for the transposing orientations the oriented
+/// source swaps width and height relative to the raw framebuffer.
 /// </summary>
-/// <param name="SourceRegion">The crop window in source pixels; the whole frame when there is no crop.</param>
+/// <param name="SourceRegion">The crop window in oriented source pixels; the whole oriented frame when there is no crop.</param>
 /// <param name="TargetSize">The output size; equals the region size when there is no scaling.</param>
 /// <param name="TargetFormat">The pixel format the destination stores.</param>
 /// <param name="TargetAlphaFormat">The alpha format the destination stores.</param>
 /// <param name="Interpolation">The interpolation used when resampling is required.</param>
+/// <param name="Orientation">The transform that turns the raw source into the oriented image.</param>
 internal readonly record struct FusedPlanExecution(
     PixelRect SourceRegion,
     PixelSize TargetSize,
     PixelFormat TargetFormat,
     AlphaFormat TargetAlphaFormat,
-    BitmapInterpolationMode Interpolation);
+    BitmapInterpolationMode Interpolation,
+    PixelOrientation Orientation = PixelOrientation.Normal);
 
 /// <summary>
 /// Executes the software stage of a decode plan in one pass over the source rows:
-/// crop, resample, then pixel and alpha format conversion. The working set is bounded
-/// by a few rows; a full-frame staging buffer is never allocated.
+/// orientation, crop, resample, then pixel and alpha format conversion. The working
+/// set is bounded by a few rows; a full-frame staging buffer is never allocated.
 /// </summary>
 internal static unsafe class FusedPixelPipeline
 {
     private const double CoverageEpsilon = 1e-9;
+
+    // Cancellation is observed between rows at this granularity.
+    private const int CancellationCheckRows = 16;
 
     private enum FilterKind
     {
@@ -46,48 +54,67 @@ internal static unsafe class FusedPixelPipeline
     /// destination is partially written while source rows are still being read.
     /// </remarks>
     public static void Run(ILockedFramebuffer source, in FusedPlanExecution plan,
-        IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator? allocator = null)
+        IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator? allocator = null,
+        CancellationToken cancellation = default)
     {
         if (source is null)
             throw new ArgumentNullException(nameof(source));
         if (destAddress == IntPtr.Zero)
             throw new ArgumentException("A valid destination address is required.", nameof(destAddress));
+        if (plan.Orientation < PixelOrientation.Normal || plan.Orientation > PixelOrientation.Rotate270)
+            throw new ArgumentException($"Orientation {plan.Orientation} is not a valid EXIF orientation.", nameof(plan));
 
         var region = plan.SourceRegion;
         var target = plan.TargetSize;
+        var orientedSize = GetOrientedSize(source.Size, plan.Orientation);
 
         if (region.X < 0 || region.Y < 0 ||
-            region.Right > source.Size.Width || region.Bottom > source.Size.Height)
-            throw new ArgumentException("The source region must lie within the source bounds.", nameof(plan));
+            region.Right > orientedSize.Width || region.Bottom > orientedSize.Height)
+            throw new ArgumentException("The source region must lie within the oriented source bounds.", nameof(plan));
 
         if (region.Width <= 0 || region.Height <= 0 || target.Width <= 0 || target.Height <= 0)
             return;
 
-        if (destRowBytes < (target.Width * plan.TargetFormat.BitsPerPixel + 7) / 8)
+        if (destRowBytes < PixelFormatHelper.GetMinRowBytes(plan.TargetFormat, target.Width))
             throw new ArgumentOutOfRangeException(nameof(destRowBytes));
+
+        cancellation.ThrowIfCancellationRequested();
 
         allocator ??= BitmapMemoryPool.Shared;
 
+        var context = new PipelineContext(source, plan, cancellation);
+
         if (target == region.Size)
         {
-            RunIdentity(source, region, plan, destAddress, destRowBytes, allocator);
+            RunIdentity(context, plan, destAddress, destRowBytes, allocator);
         }
         else
         {
             switch (GetFilter(plan.Interpolation, region.Size, target))
             {
                 case FilterKind.Nearest:
-                    RunNearest(source, region, plan, destAddress, destRowBytes, allocator);
+                    RunNearest(context, plan, destAddress, destRowBytes, allocator);
                     break;
                 case FilterKind.Bilinear:
-                    RunBilinear(source, region, plan, destAddress, destRowBytes, allocator);
+                    RunBilinear(context, plan, destAddress, destRowBytes, allocator);
                     break;
                 default:
-                    RunBox(source, region, plan, destAddress, destRowBytes, allocator);
+                    RunBox(context, plan, destAddress, destRowBytes, allocator);
                     break;
             }
         }
     }
+
+    /// <summary>
+    /// Gets the source size in oriented (display) space.
+    /// </summary>
+    public static PixelSize GetOrientedSize(PixelSize rawSize, PixelOrientation orientation)
+        => IsColumnMajor(orientation) ? new PixelSize(rawSize.Height, rawSize.Width) : rawSize;
+
+    // The transposing orientations turn raw columns into oriented rows.
+    private static bool IsColumnMajor(PixelOrientation orientation)
+        => orientation is PixelOrientation.Transpose or PixelOrientation.Rotate90
+            or PixelOrientation.Transverse or PixelOrientation.Rotate270;
 
     // None and LowQuality sample nearest. MediumQuality and HighQuality use bilinear
     // when any axis grows and the streaming box filter otherwise; Unspecified follows
@@ -103,47 +130,154 @@ internal static unsafe class FusedPixelPipeline
             FilterKind.Box;
     }
 
-    // Formats narrower than a byte cannot be addressed mid-row, so cropped reads of
-    // such formats start at the row origin and skip the crop prefix in the staging row.
-    private readonly struct SourceRowLayout
+    // Everything the row producers share, computed once per run. The mapping from
+    // oriented coordinates back to raw coordinates decomposes into three switches:
+    // whether oriented rows follow raw rows or raw columns (ColumnMajor), whether the
+    // raw major index runs opposite to the oriented row index (FlipMajor), and whether
+    // the produced row must be reversed (Mirror).
+    private readonly struct PipelineContext
     {
-        public SourceRowLayout(PixelFormat format, PixelRect region)
+        public PipelineContext(ILockedFramebuffer source, in FusedPlanExecution plan, CancellationToken cancellation)
         {
-            var bitsPerPixel = format.BitsPerPixel;
+            Source = source;
+            Region = plan.SourceRegion;
+            Cancellation = cancellation;
 
-            if (bitsPerPixel % 8 == 0)
+            // Formats without an alpha channel always read back as opaque pixels,
+            // matching the alpha normalization the Bitmap constructor applies before
+            // transcoding.
+            SourceAlpha = source.Format.HasAlpha ? source.AlphaFormat : AlphaFormat.Opaque;
+
+            // Filtering mixes neighboring pixels; on unassociated alpha that bleeds the
+            // color of fully transparent pixels into their neighbors, so the filtering
+            // paths premultiply rows and convert to the requested alpha on write.
+            Premultiply = SourceAlpha == AlphaFormat.Unpremul;
+            FilterAlpha = Premultiply ? AlphaFormat.Premul : SourceAlpha;
+
+            var bitsPerPixel = source.Format.BitsPerPixel;
+
+            BytesPerPixel = bitsPerPixel % 8 == 0 ? bitsPerPixel / 8 : 0;
+
+            ColumnMajor = IsColumnMajor(plan.Orientation);
+
+            FlipMajor = plan.Orientation is PixelOrientation.Rotate180 or PixelOrientation.FlipVertical
+                or PixelOrientation.Rotate270 or PixelOrientation.Transverse;
+
+            Mirror = plan.Orientation is PixelOrientation.FlipHorizontal or PixelOrientation.Rotate180
+                or PixelOrientation.Rotate90 or PixelOrientation.Transverse;
+
+            var minorLength = ColumnMajor ? source.Size.Height : source.Size.Width;
+
+            MinorStart = Mirror ? minorLength - Region.X - Region.Width : Region.X;
+
+            if (ColumnMajor)
             {
-                RowByteOffset = region.X * (bitsPerPixel / 8);
-                PixelOffset = 0;
-                ReadWidth = region.Width;
+                // Sub-byte columns are produced by decoding each raw row up to the
+                // needed column, so the staging tail must hold that prefix.
+                var maxColumn = FlipMajor ? source.Size.Width - 1 - Region.Y : Region.Y + Region.Height - 1;
+
+                StagingWidth = Region.Width + (BytesPerPixel > 0 ? 0 : maxColumn + 1);
             }
             else
             {
-                RowByteOffset = 0;
-                PixelOffset = region.X;
-                ReadWidth = region.X + region.Width;
+                // Sub-byte rows cannot be addressed mid-row, so cropped reads start at
+                // the row origin and skip the crop prefix in the staging row.
+                StagingWidth = BytesPerPixel > 0 ? Region.Width : MinorStart + Region.Width;
             }
         }
 
-        public int RowByteOffset { get; }
-        public int PixelOffset { get; }
-        public int ReadWidth { get; }
+        public ILockedFramebuffer Source { get; }
+        public PixelRect Region { get; }
+        public CancellationToken Cancellation { get; }
+        public AlphaFormat SourceAlpha { get; }
+        public bool Premultiply { get; }
+        public AlphaFormat FilterAlpha { get; }
+        public int BytesPerPixel { get; }
+        public bool ColumnMajor { get; }
+        public bool FlipMajor { get; }
+        public bool Mirror { get; }
+        public int MinorStart { get; }
+        public int StagingWidth { get; }
     }
 
-    private static Span<Rgba8888Pixel> ReadSourceRow(
-        ILockedFramebuffer source, scoped in PixelRect region, scoped in SourceRowLayout layout, int rowIndex, Span<Rgba8888Pixel> buffer)
+    // Produces oriented-space row rowIndex of the crop window as canonical Rgba8888
+    // pixels, reading the appropriate raw row, reversed raw row or strided raw column.
+    // The staging span must hold StagingWidth pixels.
+    private static Span<Rgba8888Pixel> ReadOrientedRow(scoped in PipelineContext context, int rowIndex, Span<Rgba8888Pixel> staging)
     {
-        var address = source.Address + (nint)(region.Y + rowIndex) * source.RowBytes + layout.RowByteOffset;
+        var source = context.Source;
+        var width = context.Region.Width;
+        var majorIndex = context.Region.Y + rowIndex;
 
-        PixelFormatTranscoder.ReadRow(address, source.Format, buffer);
+        Span<Rgba8888Pixel> row;
 
-        return buffer.Slice(layout.PixelOffset, region.Width);
+        if (!context.ColumnMajor)
+        {
+            var rawRow = context.FlipMajor ? source.Size.Height - 1 - majorIndex : majorIndex;
+            var rowAddress = source.Address + (nint)rawRow * source.RowBytes;
+
+            if (context.BytesPerPixel > 0)
+            {
+                row = staging.Slice(0, width);
+
+                PixelFormatTranscoder.ReadRow(rowAddress + (nint)context.MinorStart * context.BytesPerPixel, source.Format, row);
+            }
+            else
+            {
+                var prefixed = staging.Slice(0, context.MinorStart + width);
+
+                PixelFormatTranscoder.ReadRow(rowAddress, source.Format, prefixed);
+
+                row = prefixed.Slice(context.MinorStart);
+            }
+        }
+        else
+        {
+            var rawColumn = context.FlipMajor ? source.Size.Width - 1 - majorIndex : majorIndex;
+
+            row = staging.Slice(0, width);
+
+            if (context.BytesPerPixel > 0)
+            {
+                for (var i = 0; i < width; i++)
+                {
+                    var address = source.Address + (nint)(context.MinorStart + i) * source.RowBytes + (nint)rawColumn * context.BytesPerPixel;
+
+                    PixelFormatTranscoder.ReadRow(address, source.Format, row.Slice(i, 1));
+                }
+            }
+            else
+            {
+                // Sub-byte formats cannot be addressed mid-row: decode the raw row up to
+                // the needed column and keep its last pixel.
+                var scratch = staging.Slice(width, rawColumn + 1);
+
+                for (var i = 0; i < width; i++)
+                {
+                    var address = source.Address + (nint)(context.MinorStart + i) * source.RowBytes;
+
+                    PixelFormatTranscoder.ReadRow(address, source.Format, scratch);
+
+                    row[i] = scratch[rawColumn];
+                }
+            }
+        }
+
+        if (context.Mirror)
+            row.Reverse();
+
+        return row;
     }
 
-    // Formats without an alpha channel always read back as opaque pixels, matching the
-    // alpha normalization the Bitmap constructor applies before transcoding.
-    private static AlphaFormat GetEffectiveSourceAlpha(ILockedFramebuffer source)
-        => source.Format.HasAlpha ? source.AlphaFormat : AlphaFormat.Opaque;
+    private static Span<Rgba8888Pixel> ReadFilteredRow(scoped in PipelineContext context, int rowIndex, Span<Rgba8888Pixel> staging)
+    {
+        var row = ReadOrientedRow(context, rowIndex, staging);
+
+        if (context.Premultiply)
+            PremultiplyRow(row);
+
+        return row;
+    }
 
     private static void PremultiplyRow(Span<Rgba8888Pixel> row)
     {
@@ -153,24 +287,27 @@ internal static unsafe class FusedPixelPipeline
         }
     }
 
-    private static void RunIdentity(ILockedFramebuffer source, PixelRect region, in FusedPlanExecution plan,
+    private static void RunIdentity(in PipelineContext context, in FusedPlanExecution plan,
         IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator allocator)
     {
-        var sourceAlpha = GetEffectiveSourceAlpha(source);
-        var bitsPerPixel = source.Format.BitsPerPixel;
+        var source = context.Source;
+        var region = context.Region;
 
-        // No conversion requested: copy the rows verbatim instead of round-tripping
-        // every pixel through the canonical format.
-        if (source.Format == plan.TargetFormat &&
-            bitsPerPixel % 8 == 0 &&
-            (sourceAlpha == plan.TargetAlphaFormat || !source.Format.HasAlpha))
+        // No transform and no conversion requested: copy the rows verbatim instead of
+        // round-tripping every pixel through the canonical format.
+        if (plan.Orientation == PixelOrientation.Normal &&
+            source.Format == plan.TargetFormat &&
+            context.BytesPerPixel > 0 &&
+            (context.SourceAlpha == plan.TargetAlphaFormat || !source.Format.HasAlpha))
         {
-            var bytesPerPixel = bitsPerPixel / 8;
-            var rowBytes = region.Width * bytesPerPixel;
+            var rowBytes = PixelFormatHelper.GetMinRowBytes(source.Format, region.Width);
 
             for (var y = 0; y < region.Height; y++)
             {
-                var sourceRow = source.Address + (nint)(region.Y + y) * source.RowBytes + region.X * bytesPerPixel;
+                if (y % CancellationCheckRows == 0)
+                    context.Cancellation.ThrowIfCancellationRequested();
+
+                var sourceRow = source.Address + (nint)(region.Y + y) * source.RowBytes + (nint)region.X * context.BytesPerPixel;
                 var destRow = destAddress + (nint)y * destRowBytes;
 
                 Buffer.MemoryCopy((void*)sourceRow, (void*)destRow, rowBytes, rowBytes);
@@ -179,27 +316,26 @@ internal static unsafe class FusedPixelPipeline
             return;
         }
 
-        var layout = new SourceRowLayout(source.Format, region);
+        using var readStaging = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
 
-        using var readStaging = allocator.Rent(layout.ReadWidth * sizeof(Rgba8888Pixel));
-
-        var readBuffer = new Span<Rgba8888Pixel>((void*)readStaging.Address, layout.ReadWidth);
+        var staging = new Span<Rgba8888Pixel>((void*)readStaging.Address, context.StagingWidth);
 
         for (var y = 0; y < region.Height; y++)
         {
-            var row = ReadSourceRow(source, region, layout, y, readBuffer);
+            if (y % CancellationCheckRows == 0)
+                context.Cancellation.ThrowIfCancellationRequested();
 
-            PixelFormatTranscoder.WriteRow(row, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, sourceAlpha);
+            var row = ReadOrientedRow(context, y, staging);
+
+            PixelFormatTranscoder.WriteRow(row, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.SourceAlpha);
         }
     }
 
-    private static void RunNearest(ILockedFramebuffer source, PixelRect region, in FusedPlanExecution plan,
+    private static void RunNearest(in PipelineContext context, in FusedPlanExecution plan,
         IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator allocator)
     {
-        var layout = new SourceRowLayout(source.Format, region);
-        var sourceAlpha = GetEffectiveSourceAlpha(source);
-        var srcWidth = region.Width;
-        var srcHeight = region.Height;
+        var srcWidth = context.Region.Width;
+        var srcHeight = context.Region.Height;
         var destWidth = plan.TargetSize.Width;
         var destHeight = plan.TargetSize.Height;
 
@@ -211,10 +347,10 @@ internal static unsafe class FusedPixelPipeline
             columnMap[x] = Math.Min(srcWidth - 1, (int)((x + 0.5) * srcWidth / destWidth));
         }
 
-        using var readStaging = allocator.Rent(layout.ReadWidth * sizeof(Rgba8888Pixel));
+        using var readStaging = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
         using var destStaging = allocator.Rent(destWidth * sizeof(Rgba8888Pixel));
 
-        var readBuffer = new Span<Rgba8888Pixel>((void*)readStaging.Address, layout.ReadWidth);
+        var staging = new Span<Rgba8888Pixel>((void*)readStaging.Address, context.StagingWidth);
         var destRow = new Span<Rgba8888Pixel>((void*)destStaging.Address, destWidth);
 
         var loadedRow = -1;
@@ -222,11 +358,14 @@ internal static unsafe class FusedPixelPipeline
 
         for (var y = 0; y < destHeight; y++)
         {
+            if (y % CancellationCheckRows == 0)
+                context.Cancellation.ThrowIfCancellationRequested();
+
             var sourceY = Math.Min(srcHeight - 1, (int)((y + 0.5) * srcHeight / destHeight));
 
             if (sourceY != loadedRow)
             {
-                row = ReadSourceRow(source, region, layout, sourceY, readBuffer);
+                row = ReadOrientedRow(context, sourceY, staging);
                 loadedRow = sourceY;
             }
 
@@ -235,25 +374,17 @@ internal static unsafe class FusedPixelPipeline
                 destRow[x] = row[columnMap[x]];
             }
 
-            PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, sourceAlpha);
+            PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.SourceAlpha);
         }
     }
 
-    private static void RunBilinear(ILockedFramebuffer source, PixelRect region, in FusedPlanExecution plan,
+    private static void RunBilinear(in PipelineContext context, in FusedPlanExecution plan,
         IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator allocator)
     {
-        var layout = new SourceRowLayout(source.Format, region);
-        var sourceAlpha = GetEffectiveSourceAlpha(source);
-        var srcWidth = region.Width;
-        var srcHeight = region.Height;
+        var srcWidth = context.Region.Width;
+        var srcHeight = context.Region.Height;
         var destWidth = plan.TargetSize.Width;
         var destHeight = plan.TargetSize.Height;
-
-        // Interpolation mixes neighboring pixels; on unassociated alpha that bleeds the
-        // color of fully transparent pixels into their neighbors, so rows are filtered
-        // premultiplied and converted to the requested alpha on write.
-        var premultiply = sourceAlpha == AlphaFormat.Unpremul;
-        var rowAlpha = premultiply ? AlphaFormat.Premul : sourceAlpha;
 
         var leftMap = new int[destWidth];
         var rightMap = new int[destWidth];
@@ -269,75 +400,60 @@ internal static unsafe class FusedPixelPipeline
             fractionMap[x] = (float)(position - left);
         }
 
-        using var stagingA = allocator.Rent(layout.ReadWidth * sizeof(Rgba8888Pixel));
-        using var stagingB = allocator.Rent(layout.ReadWidth * sizeof(Rgba8888Pixel));
+        using var stagingA = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
+        using var stagingB = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
         using var destStaging = allocator.Rent(destWidth * sizeof(Rgba8888Pixel));
 
-        var bufferA = new Span<Rgba8888Pixel>((void*)stagingA.Address, layout.ReadWidth);
-        var bufferB = new Span<Rgba8888Pixel>((void*)stagingB.Address, layout.ReadWidth);
+        var topBuffer = new Span<Rgba8888Pixel>((void*)stagingA.Address, context.StagingWidth);
+        var bottomBuffer = new Span<Rgba8888Pixel>((void*)stagingB.Address, context.StagingWidth);
         var destRow = new Span<Rgba8888Pixel>((void*)destStaging.Address, destWidth);
 
-        var loadedA = -1;
-        var loadedB = -1;
-        Span<Rgba8888Pixel> rowA = default;
-        Span<Rgba8888Pixel> rowB = default;
+        var loadedTop = -1;
+        var loadedBottom = -1;
+        Span<Rgba8888Pixel> topRow = default;
+        Span<Rgba8888Pixel> bottomRow = default;
 
         for (var y = 0; y < destHeight; y++)
         {
+            if (y % CancellationCheckRows == 0)
+                context.Cancellation.ThrowIfCancellationRequested();
+
             var position = MapToSource(y, srcHeight, destHeight);
             var topIndex = (int)position;
             var bottomIndex = Math.Min(topIndex + 1, srcHeight - 1);
             var fy = (float)(position - topIndex);
 
-            Span<Rgba8888Pixel> top;
+            // The top tap advances monotonically, so the previous bottom row can slide
+            // into the top slot and at most one new row is read per destination row.
+            if (loadedTop != topIndex)
+            {
+                if (loadedBottom == topIndex)
+                {
+                    var swapBuffer = topBuffer;
+                    topBuffer = bottomBuffer;
+                    bottomBuffer = swapBuffer;
 
-            if (loadedA == topIndex)
-            {
-                top = rowA;
-            }
-            else if (loadedB == topIndex)
-            {
-                top = rowB;
-            }
-            else if (loadedA == bottomIndex)
-            {
-                rowB = ReadFilteredRow(source, region, layout, topIndex, bufferB, premultiply);
-                loadedB = topIndex;
-                top = rowB;
-            }
-            else
-            {
-                rowA = ReadFilteredRow(source, region, layout, topIndex, bufferA, premultiply);
-                loadedA = topIndex;
-                top = rowA;
+                    var swapRow = topRow;
+                    topRow = bottomRow;
+                    bottomRow = swapRow;
+
+                    (loadedTop, loadedBottom) = (loadedBottom, loadedTop);
+                }
+                else
+                {
+                    topRow = ReadFilteredRow(context, topIndex, topBuffer);
+                    loadedTop = topIndex;
+                }
             }
 
-            Span<Rgba8888Pixel> bottom;
+            if (bottomIndex != topIndex && loadedBottom != bottomIndex)
+            {
+                bottomRow = ReadFilteredRow(context, bottomIndex, bottomBuffer);
+                loadedBottom = bottomIndex;
+            }
 
-            if (bottomIndex == topIndex)
-            {
-                bottom = top;
-            }
-            else if (loadedA == bottomIndex)
-            {
-                bottom = rowA;
-            }
-            else if (loadedB == bottomIndex)
-            {
-                bottom = rowB;
-            }
-            else if (loadedA == topIndex)
-            {
-                rowB = ReadFilteredRow(source, region, layout, bottomIndex, bufferB, premultiply);
-                loadedB = bottomIndex;
-                bottom = rowB;
-            }
-            else
-            {
-                rowA = ReadFilteredRow(source, region, layout, bottomIndex, bufferA, premultiply);
-                loadedA = bottomIndex;
-                bottom = rowA;
-            }
+            var top = topRow;
+            var bottom = bottomIndex == topIndex ? topRow : bottomRow;
 
             for (var x = 0; x < destWidth; x++)
             {
@@ -354,20 +470,8 @@ internal static unsafe class FusedPixelPipeline
                     Blend(topLeft.A, topRight.A, bottomLeft.A, bottomRight.A, fx, fy));
             }
 
-            PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, rowAlpha);
+            PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.FilterAlpha);
         }
-    }
-
-    private static Span<Rgba8888Pixel> ReadFilteredRow(
-        ILockedFramebuffer source, scoped in PixelRect region, scoped in SourceRowLayout layout, int rowIndex,
-        Span<Rgba8888Pixel> buffer, bool premultiply)
-    {
-        var row = ReadSourceRow(source, region, layout, rowIndex, buffer);
-
-        if (premultiply)
-            PremultiplyRow(row);
-
-        return row;
     }
 
     // Center-aligned sample mapping, clamped to the source range.
@@ -392,33 +496,25 @@ internal static unsafe class FusedPixelPipeline
         return (byte)(top + (bottom - top) * fy + 0.5f);
     }
 
-    private static void RunBox(ILockedFramebuffer source, PixelRect region, in FusedPlanExecution plan,
+    private static void RunBox(in PipelineContext context, in FusedPlanExecution plan,
         IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator allocator)
     {
-        var layout = new SourceRowLayout(source.Format, region);
-        var sourceAlpha = GetEffectiveSourceAlpha(source);
-        var srcWidth = region.Width;
-        var srcHeight = region.Height;
+        var srcWidth = context.Region.Width;
+        var srcHeight = context.Region.Height;
         var destWidth = plan.TargetSize.Width;
         var destHeight = plan.TargetSize.Height;
-
-        // Averaging unassociated alpha bleeds the color of fully transparent pixels into
-        // their neighbors, so accumulation happens on premultiplied rows and the result
-        // converts to the requested alpha on write.
-        var premultiply = sourceAlpha == AlphaFormat.Unpremul;
-        var rowAlpha = premultiply ? AlphaFormat.Premul : sourceAlpha;
 
         var scaleY = srcHeight / (double)destHeight;
 
         BuildCoverage(srcWidth, destWidth, out var segmentOffsets, out var segmentColumns, out var segmentWeights, out var columnWeightSums);
 
-        using var readStaging = allocator.Rent(layout.ReadWidth * sizeof(Rgba8888Pixel));
+        using var readStaging = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
         using var horizontalStaging = allocator.Rent(destWidth * 4 * sizeof(double));
         using var currentStaging = allocator.Rent(destWidth * 4 * sizeof(double));
         using var nextStaging = allocator.Rent(destWidth * 4 * sizeof(double));
         using var destStaging = allocator.Rent(destWidth * sizeof(Rgba8888Pixel));
 
-        var readBuffer = new Span<Rgba8888Pixel>((void*)readStaging.Address, layout.ReadWidth);
+        var staging = new Span<Rgba8888Pixel>((void*)readStaging.Address, context.StagingWidth);
         var horizontal = new Span<double>((void*)horizontalStaging.Address, destWidth * 4);
         var current = new Span<double>((void*)currentStaging.Address, destWidth * 4);
         var next = new Span<double>((void*)nextStaging.Address, destWidth * 4);
@@ -433,7 +529,10 @@ internal static unsafe class FusedPixelPipeline
 
         for (var sourceY = 0; sourceY < srcHeight && destY < destHeight; sourceY++)
         {
-            var row = ReadFilteredRow(source, region, layout, sourceY, readBuffer, premultiply);
+            if (sourceY % CancellationCheckRows == 0)
+                context.Cancellation.ThrowIfCancellationRequested();
+
+            var row = ReadFilteredRow(context, sourceY, staging);
 
             // Reduce the source row horizontally into raw weighted channel sums.
             horizontal.Clear();
@@ -484,7 +583,7 @@ internal static unsafe class FusedPixelPipeline
             {
                 EmitBoxRow(current, currentWeight, columnWeightSums, destRow);
 
-                PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)destY * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, rowAlpha);
+                PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)destY * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.FilterAlpha);
 
                 var completed = current;
                 current = next;

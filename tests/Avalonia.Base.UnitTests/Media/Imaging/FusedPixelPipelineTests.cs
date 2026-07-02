@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Xunit;
@@ -54,7 +55,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 targetAlpha,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, piped.Address, piped.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, piped.Address, piped.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             var usableRowBytes = size.Width * ((piped.Format.BitsPerPixel + 7) / 8);
 
@@ -92,7 +94,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             Assert.Equal(new[] { Pixel(1, 1), Pixel(1, 2) }, GetRow(destMemory, 0));
             Assert.Equal(new[] { Pixel(2, 1), Pixel(2, 2) }, GetRow(destMemory, 1));
@@ -123,7 +126,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.None);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             // Center-aligned nearest sampling duplicates each source pixel into a 2x2 block.
             Assert.Equal(new[] { topLeft, topLeft, topRight, topRight }, GetRow(destMemory, 0));
@@ -152,7 +156,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             for (var y = 0; y < 4; y++)
             {
@@ -221,7 +226,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             // Each destination pixel covers exactly one flat quadrant, so the box average
             // reproduces the quadrant color exactly.
@@ -253,7 +259,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             // Scale factor 1.5: destination cell (0,0) covers columns {0 at 1, 1 at 0.5}
             // and rows {0 at 1, 1 at 0.5}, total weight 2.25:
@@ -288,7 +295,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             Assert.Equal(0xF800, ReadUInt16(destMemory.Address, 0));
             Assert.Equal(0x07E0, ReadUInt16(destMemory.Address, 1));
@@ -324,7 +332,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 destMemory.AlphaFormat,
                 BitmapInterpolationMode.HighQuality);
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
 
             for (var y = 0; y < 2; y++)
             {
@@ -356,7 +365,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             var allocator = new CountingAllocator();
 
-            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes, allocator);
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes, allocator,
+                TestContext.Current.CancellationToken);
 
             var sourceRowBytes = sourceSize.Width * 4;
 
@@ -364,6 +374,224 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.All(allocator.Rentals, byteCount => Assert.True(byteCount <= 4 * sourceRowBytes,
                 $"Rental of {byteCount} bytes exceeds a few source rows ({4 * sourceRowBytes} bytes)."));
             Assert.Equal(0, allocator.Outstanding);
+        }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(2)]
+        [InlineData(3)]
+        [InlineData(4)]
+        [InlineData(5)]
+        [InlineData(6)]
+        [InlineData(7)]
+        [InlineData(8)]
+        public void Orientation_Produces_The_Expected_Layout(int orientationValue)
+        {
+            using var sourceMemory = CreateOrientationSource(out var pixels);
+
+            var expected = GetExpectedGrid(orientationValue, pixels);
+            var destSize = new PixelSize(expected[0].Length, expected.Length);
+
+            using var destMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, destSize);
+            using var framebuffer = Lock(sourceMemory);
+
+            var plan = new FusedPlanExecution(
+                new PixelRect(0, 0, destSize.Width, destSize.Height),
+                destSize,
+                destMemory.Format,
+                destMemory.AlphaFormat,
+                BitmapInterpolationMode.HighQuality,
+                (PixelOrientation)orientationValue);
+
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
+
+            for (var y = 0; y < destSize.Height; y++)
+            {
+                Assert.Equal(expected[y], GetRow(destMemory, y));
+            }
+        }
+
+        [Fact]
+        public void Orientation_Composes_With_Crop()
+        {
+            using var sourceMemory = CreateOrientationSource(out var p);
+            using var destMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(2, 2));
+            using var framebuffer = Lock(sourceMemory);
+
+            // Rotate90 orients the source to D A / E B / F C; the oriented-space region
+            // selects the bottom two oriented rows.
+            var plan = new FusedPlanExecution(
+                new PixelRect(0, 1, 2, 2),
+                new PixelSize(2, 2),
+                destMemory.Format,
+                destMemory.AlphaFormat,
+                BitmapInterpolationMode.HighQuality,
+                PixelOrientation.Rotate90);
+
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
+
+            Assert.Equal(new[] { p[4], p[1] }, GetRow(destMemory, 0));
+            Assert.Equal(new[] { p[5], p[2] }, GetRow(destMemory, 1));
+        }
+
+        [Fact]
+        public void Orientation_Composes_With_Scale()
+        {
+            using var sourceMemory = CreateOrientationSource(out var p);
+            using var destMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(4, 6));
+            using var framebuffer = Lock(sourceMemory);
+
+            // Rotate90 orients the source to 2x3 (D A / E B / F C); the nearest 2x
+            // upscale then duplicates every oriented pixel into a 2x2 block.
+            var plan = new FusedPlanExecution(
+                new PixelRect(0, 0, 2, 3),
+                new PixelSize(4, 6),
+                destMemory.Format,
+                destMemory.AlphaFormat,
+                BitmapInterpolationMode.None,
+                PixelOrientation.Rotate90);
+
+            FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes,
+                cancellation: TestContext.Current.CancellationToken);
+
+            var oriented = new[] { new[] { p[3], p[0] }, new[] { p[4], p[1] }, new[] { p[5], p[2] } };
+
+            for (var y = 0; y < 6; y++)
+            {
+                var source = oriented[y / 2];
+
+                Assert.Equal(new[] { source[0], source[0], source[1], source[1] }, GetRow(destMemory, y));
+            }
+        }
+
+        [Fact]
+        public void Rotate90_Swaps_The_Source_Bounds()
+        {
+            using var sourceMemory = CreateOrientationSource(out _);
+            using var destMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(3, 2));
+            using var framebuffer = Lock(sourceMemory);
+
+            // The oriented bounds of the rotated 3x2 source are 2x3, so the raw-bounds
+            // region no longer fits.
+            var rawBoundsPlan = new FusedPlanExecution(
+                new PixelRect(0, 0, 3, 2),
+                new PixelSize(3, 2),
+                destMemory.Format,
+                destMemory.AlphaFormat,
+                BitmapInterpolationMode.HighQuality,
+                PixelOrientation.Rotate90);
+
+            Assert.Throws<ArgumentException>(() =>
+                FusedPixelPipeline.Run(framebuffer, rawBoundsPlan, destMemory.Address, destMemory.RowBytes,
+                    cancellation: TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void Cancellation_Before_Run_Throws_Without_Renting()
+        {
+            using var sourceMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(4, 4));
+            using var destMemory = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Premul, new PixelSize(4, 4));
+            using var framebuffer = Lock(sourceMemory);
+            using var cancellation = new CancellationTokenSource();
+
+            var allocator = new CountingAllocator();
+
+            var plan = new FusedPlanExecution(
+                new PixelRect(0, 0, 4, 4),
+                new PixelSize(4, 4),
+                destMemory.Format,
+                destMemory.AlphaFormat,
+                BitmapInterpolationMode.HighQuality);
+
+            cancellation.Cancel();
+
+            Assert.Throws<OperationCanceledException>(() =>
+                FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes, allocator, cancellation.Token));
+
+            Assert.Empty(allocator.Rentals);
+        }
+
+        [Fact]
+        public void Cancellation_During_Run_Returns_All_Rentals()
+        {
+            using var sourceMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(64, 64));
+            using var destMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(8, 8));
+
+            FillDeterministic(sourceMemory);
+
+            var destByteCount = destMemory.RowBytes * destMemory.Size.Height;
+
+            Marshal.Copy(new byte[destByteCount], 0, destMemory.Address, destByteCount);
+
+            using var framebuffer = Lock(sourceMemory);
+            using var cancellation = new CancellationTokenSource();
+
+            // The staging rentals happen before the first row, so cancelling from the
+            // allocator makes the first between-rows check throw before any output.
+            var allocator = new CountingAllocator { RentCallback = cancellation.Cancel };
+
+            var plan = new FusedPlanExecution(
+                new PixelRect(0, 0, 64, 64),
+                new PixelSize(8, 8),
+                destMemory.Format,
+                destMemory.AlphaFormat,
+                BitmapInterpolationMode.HighQuality);
+
+            Assert.Throws<OperationCanceledException>(() =>
+                FusedPixelPipeline.Run(framebuffer, plan, destMemory.Address, destMemory.RowBytes, allocator, cancellation.Token));
+
+            Assert.NotEmpty(allocator.Rentals);
+            Assert.Equal(0, allocator.Outstanding);
+            Assert.All(GetBytes(destMemory.Address, destByteCount), value => Assert.Equal(0, value));
+        }
+
+        // Raw 3x2 source with six distinct pixels:
+        //   A B C
+        //   D E F
+        private static BitmapMemory CreateOrientationSource(out Rgba8888Pixel[] pixels)
+        {
+            pixels = new Rgba8888Pixel[6];
+
+            for (var i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = new Rgba8888Pixel((byte)(10 + 40 * i), (byte)(15 + 30 * i), (byte)(20 + 20 * i), 255);
+            }
+
+            var memory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(3, 2));
+
+            SetRow(memory, 0, pixels[0], pixels[1], pixels[2]);
+            SetRow(memory, 1, pixels[3], pixels[4], pixels[5]);
+
+            return memory;
+        }
+
+        // Expected oriented layouts of the raw 3x2 source A B C / D E F, where the
+        // orientation names the transform applied to the raw pixels to display them
+        // upright (EXIF numbering):
+        //   1 Normal          A B C / D E F
+        //   2 FlipHorizontal  C B A / F E D
+        //   3 Rotate180       F E D / C B A
+        //   4 FlipVertical    D E F / A B C
+        //   5 Transpose       A D / B E / C F
+        //   6 Rotate90        D A / E B / F C
+        //   7 Transverse      F C / E B / D A
+        //   8 Rotate270       C F / B E / A D
+        private static Rgba8888Pixel[][] GetExpectedGrid(int orientation, Rgba8888Pixel[] p)
+        {
+            return orientation switch
+            {
+                1 => new[] { new[] { p[0], p[1], p[2] }, new[] { p[3], p[4], p[5] } },
+                2 => new[] { new[] { p[2], p[1], p[0] }, new[] { p[5], p[4], p[3] } },
+                3 => new[] { new[] { p[5], p[4], p[3] }, new[] { p[2], p[1], p[0] } },
+                4 => new[] { new[] { p[3], p[4], p[5] }, new[] { p[0], p[1], p[2] } },
+                5 => new[] { new[] { p[0], p[3] }, new[] { p[1], p[4] }, new[] { p[2], p[5] } },
+                6 => new[] { new[] { p[3], p[0] }, new[] { p[4], p[1] }, new[] { p[5], p[2] } },
+                7 => new[] { new[] { p[5], p[2] }, new[] { p[4], p[1] }, new[] { p[3], p[0] } },
+                8 => new[] { new[] { p[2], p[5] }, new[] { p[1], p[4] }, new[] { p[0], p[3] } },
+                _ => throw new ArgumentOutOfRangeException(nameof(orientation))
+            };
         }
 
         private static LockedFramebuffer Lock(BitmapMemory memory) =>
@@ -409,10 +637,14 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             public int Outstanding { get; private set; }
 
+            public Action? RentCallback { get; init; }
+
             public IBitmapMemory Rent(long byteCount)
             {
                 Rentals.Add(byteCount);
                 Outstanding++;
+
+                RentCallback?.Invoke();
 
                 return new CountedMemory(this, byteCount);
             }

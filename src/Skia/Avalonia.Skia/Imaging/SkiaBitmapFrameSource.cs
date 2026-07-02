@@ -17,7 +17,9 @@ namespace Avalonia.Skia.Imaging
         private readonly SkiaBitmapDecoder _owner;
         private readonly BitmapDecodeOptions? _options;
         private readonly object _sync = new();
-        private readonly PixelSize _nativeSize;
+        private readonly PixelSize _rawSize;
+        private readonly PixelSize _orientedSize;
+        private readonly PixelOrientation _orientation;
         private readonly PixelRect _region;
         private readonly bool _hasRegion;
         private readonly AlphaFormat _decodeAlpha;
@@ -32,8 +34,14 @@ namespace Avalonia.Skia.Imaging
 
             var info = owner.Codec.Info;
 
-            _nativeSize = new PixelSize(info.Width, info.Height);
-            _region = ClampRegion(options?.SourceRegion, _nativeSize, out _hasRegion);
+            _rawSize = new PixelSize(info.Width, info.Height);
+            _orientation = options?.RespectExifOrientation ?? true
+                ? ToPixelOrientation(owner.Codec.EncodedOrigin)
+                : PixelOrientation.Normal;
+            _orientedSize = FusedPixelPipeline.GetOrientedSize(_rawSize, _orientation);
+
+            // The plan is expressed in oriented (display) space.
+            _region = ClampRegion(options?.SourceRegion, _orientedSize, out _hasRegion);
             _decodeAlpha = info.AlphaType == SKAlphaType.Opaque ? AlphaFormat.Opaque : AlphaFormat.Premul;
 
             PixelSize = ResolveTargetSize(options?.TargetSize, _region.Size);
@@ -55,13 +63,14 @@ namespace Avalonia.Skia.Imaging
 
         public PixelSize GetNearestDecodeSize(PixelSize target)
         {
+            // Target and result are in oriented space; the codec scales the raw image.
             var scale = Math.Min(1f, Math.Max(
-                (float)target.Width / _nativeSize.Width,
-                (float)target.Height / _nativeSize.Height));
+                (float)target.Width / _orientedSize.Width,
+                (float)target.Height / _orientedSize.Height));
 
             var nearest = _owner.Codec.GetScaledDimensions(scale);
 
-            return new PixelSize(nearest.Width, nearest.Height);
+            return FusedPixelPipeline.GetOrientedSize(new PixelSize(nearest.Width, nearest.Height), _orientation);
         }
 
         public ILockedFramebuffer Lock()
@@ -97,14 +106,17 @@ namespace Avalonia.Skia.Imaging
         {
             _options?.Cancellation.ThrowIfCancellationRequested();
 
-            var allocator = _owner.Allocator;
-            var decodeSize = UsesFusedScale(out var nearest) ? nearest : _nativeSize;
+            // Bounds peak native memory when many frames decode in parallel.
+            using var slot = DecodeConcurrencyLimiter.Enter(_options?.Cancellation ?? default);
 
-            var decodeInfo = new SKImageInfo(decodeSize.Width, decodeSize.Height,
+            var allocator = _owner.Allocator;
+            var decodeRawSize = UsesFusedScale(out var nearestRaw) ? nearestRaw : _rawSize;
+
+            var decodeInfo = new SKImageInfo(decodeRawSize.Width, decodeRawSize.Height,
                 SKColorType.Bgra8888, _decodeAlpha.ToSkAlphaType());
             var decodeRowBytes = decodeInfo.RowBytes;
 
-            var decodeMemory = allocator.Rent((long)decodeRowBytes * decodeSize.Height);
+            var decodeMemory = allocator.Rent((long)decodeRowBytes * decodeRawSize.Height);
 
             try
             {
@@ -119,7 +131,8 @@ namespace Avalonia.Skia.Imaging
                 _options?.Cancellation.ThrowIfCancellationRequested();
 
                 var isPlanOutput = !_hasRegion &&
-                    decodeSize == PixelSize &&
+                    _orientation == PixelOrientation.Normal &&
+                    decodeRawSize == PixelSize &&
                     PixelFormat == PixelFormats.Bgra8888 &&
                     AlphaFormat == _decodeAlpha;
 
@@ -131,22 +144,27 @@ namespace Avalonia.Skia.Imaging
                     return;
                 }
 
-                var targetRowBytes = (PixelSize.Width * PixelFormat.BitsPerPixel + 7) / 8;
+                var targetRowBytes = PixelFormatHelper.GetMinRowBytes(PixelFormat, PixelSize.Width);
                 var targetMemory = allocator.Rent((long)targetRowBytes * PixelSize.Height);
 
                 try
                 {
-                    var source = new LockedFramebuffer(decodeMemory.Address, decodeSize,
+                    var source = new LockedFramebuffer(decodeMemory.Address, decodeRawSize,
                         decodeRowBytes, Dpi, PixelFormats.Bgra8888, _decodeAlpha, null);
 
-                    // A region is decoded at native size, so its coordinates are valid;
-                    // without a region the plan covers the whole (possibly scaled) decode.
-                    var planRegion = _hasRegion ? _region : new PixelRect(decodeSize);
+                    // The plan region is in oriented space: with an explicit region the
+                    // decode ran at raw full size (its oriented space is _orientedSize);
+                    // without one the plan covers the whole, possibly scaled, decode.
+                    var planRegion = _hasRegion
+                        ? _region
+                        : new PixelRect(FusedPixelPipeline.GetOrientedSize(decodeRawSize, _orientation));
 
                     var plan = new FusedPlanExecution(planRegion, PixelSize, PixelFormat,
-                        AlphaFormat, _options?.Interpolation ?? BitmapInterpolationMode.HighQuality);
+                        AlphaFormat, _options?.Interpolation ?? BitmapInterpolationMode.HighQuality,
+                        _orientation);
 
-                    FusedPixelPipeline.Run(source, plan, targetMemory.Address, targetRowBytes, allocator);
+                    FusedPixelPipeline.Run(source, plan, targetMemory.Address, targetRowBytes,
+                        allocator, _options?.Cancellation ?? default);
 
                     _pixels = new SharedBitmapMemory(targetMemory);
                     _rowBytes = targetRowBytes;
@@ -165,28 +183,42 @@ namespace Avalonia.Skia.Imaging
             }
         }
 
-        private bool UsesFusedScale(out PixelSize nearest)
+        private bool UsesFusedScale(out PixelSize nearestRaw)
         {
-            nearest = _nativeSize;
+            nearestRaw = _rawSize;
 
-            if (_hasRegion || _options?.TargetSize is null || PixelSize == _nativeSize)
+            if (_hasRegion || _options?.TargetSize is null || PixelSize == _orientedSize)
                 return false;
 
             if ((SkiaCodecCatalog.FromEncodedFormat(_owner.Codec.EncodedFormat)?.Capabilities
                  & BitmapCodecCapabilities.FusedDecode) == 0)
                 return false;
 
-            var candidate = GetNearestDecodeSize(PixelSize);
+            var scale = Math.Min(1f, Math.Max(
+                (float)PixelSize.Width / _orientedSize.Width,
+                (float)PixelSize.Height / _orientedSize.Height));
+
+            var candidateRaw = _owner.Codec.GetScaledDimensions(scale);
+            var candidateOriented = FusedPixelPipeline.GetOrientedSize(
+                new PixelSize(candidateRaw.Width, candidateRaw.Height), _orientation);
 
             // Only decode reduced when the nearest size still covers the target on both
             // axes; the pipeline shrinks the remainder, it should not enlarge.
-            if (candidate.Width < PixelSize.Width || candidate.Height < PixelSize.Height ||
-                candidate == _nativeSize)
+            if (candidateOriented.Width < PixelSize.Width || candidateOriented.Height < PixelSize.Height ||
+                new PixelSize(candidateRaw.Width, candidateRaw.Height) == _rawSize)
                 return false;
 
-            nearest = candidate;
+            nearestRaw = new PixelSize(candidateRaw.Width, candidateRaw.Height);
 
             return true;
+        }
+
+        private static PixelOrientation ToPixelOrientation(SKEncodedOrigin origin)
+        {
+            // SKEncodedOrigin values match the EXIF orientation numbering 1-8 exactly.
+            var value = (int)origin;
+
+            return value is >= 1 and <= 8 ? (PixelOrientation)value : PixelOrientation.Normal;
         }
 
         private static PixelRect ClampRegion(PixelRect? requested, PixelSize native, out bool hasRegion)
