@@ -463,6 +463,36 @@ namespace Avalonia.Skia.UnitTests.Imaging
         }
 
         [Fact]
+        public void TargetSize_Peak_Stays_Below_Full_Decode()
+        {
+            var allocator = new Avalonia.Imaging.TestKit.Instrumentation.CountingAllocator();
+            var backend = new SkiaImagingBackend(allocator);
+
+            using var bitmap = CreateTestBitmap(1024, 1024);
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+            using var stream = new MemoryStream(data.ToArray());
+
+            var options = new BitmapDecodeOptions { TargetSize = new PixelSize(64, 64) };
+
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false, options);
+            using var frame = decoder.ReadNextFrame();
+
+            Assert.Equal(new PixelSize(64, 64), frame!.PixelSize);
+
+            using (frame.Lock())
+            {
+            }
+
+            // A full 1024x1024 Bgra8888 decode is 4 MiB; JPEG's fused nearest scale
+            // (1/8 = 128x128 = 64 KiB) plus the 16 KiB target must peak far below it.
+            const long fullDecodeBytes = 1024L * 1024 * 4;
+
+            Assert.True(allocator.PeakLiveBytes < fullDecodeBytes,
+                $"peak {allocator.PeakLiveBytes} bytes is not below the {fullDecodeBytes} byte full decode");
+        }
+
+        [Fact]
         public void Encode_Png_Round_Trips()
         {
             var backend = new SkiaImagingBackend();

@@ -11,6 +11,9 @@
     <UseMicrosoftTestingPlatformRunner>false</UseMicrosoftTestingPlatformRunner>
     <IsPackable>false</IsPackable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!-- Avalonia.Base grants this assembly InternalsVisibleTo by public key. -->
+    <AssemblyOriginatorKeyFile>..\..\build\avalonia.snk</AssemblyOriginatorKeyFile>
+    <SignAssembly>true</SignAssembly>
   </PropertyGroup>
   <ItemGroup>
     <!-- Added by tests/Directory.Build.props for runnable test projects; this library has no runner. -->

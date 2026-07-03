@@ -5,17 +5,23 @@ using Avalonia.Platform;
 namespace Avalonia.Imaging.TestKit.Contract
 {
     /// <summary>
-    /// Temporarily binds a backend as the application's imaging backend for code paths
-    /// that resolve it through the locator. The locator is process-global, so entries
-    /// are serialized across parallel test collections.
+    /// Temporarily binds a backend (and optionally a render interface) for code paths
+    /// that resolve them through the locator. The locator is process-global, so entries
+    /// are serialized across parallel test collections; the gate is a semaphore so a
+    /// scope opened before an await can be released from another thread.
     /// </summary>
     internal static class LocatorScope
     {
-        private static readonly object s_gate = new();
+        private static readonly SemaphoreSlim s_gate = new(1, 1);
 
-        public static IDisposable With(IImagingBackend backend)
+        public static IDisposable With(IImagingBackend backend) => WithCore(backend, null);
+
+        public static IDisposable With(IImagingBackend backend, IPlatformRenderInterface renderInterface) =>
+            WithCore(backend, renderInterface ?? throw new ArgumentNullException(nameof(renderInterface)));
+
+        private static IDisposable WithCore(IImagingBackend backend, IPlatformRenderInterface? renderInterface)
         {
-            Monitor.Enter(s_gate);
+            s_gate.Wait();
 
             try
             {
@@ -23,6 +29,13 @@ namespace Avalonia.Imaging.TestKit.Contract
 
                 try
                 {
+                    if (renderInterface is not null)
+                    {
+                        AvaloniaLocator.CurrentMutable
+                            .Bind<IPlatformRenderInterface>()
+                            .ToConstant(renderInterface);
+                    }
+
                     ImagingBackend.Register(backend);
                     return new Releaser(scope);
                 }
@@ -34,7 +47,7 @@ namespace Avalonia.Imaging.TestKit.Contract
             }
             catch
             {
-                Monitor.Exit(s_gate);
+                s_gate.Release();
                 throw;
             }
         }
@@ -53,7 +66,7 @@ namespace Avalonia.Imaging.TestKit.Contract
                     return;
 
                 scope.Dispose();
-                Monitor.Exit(s_gate);
+                s_gate.Release();
             }
         }
     }
