@@ -13,6 +13,7 @@ namespace Avalonia.Imaging.TestKit.Fixtures
         protected CodecBackendFixture()
         {
             Allocator = new CountingAllocator();
+            RenderInstall = new FakeRenderInstall();
         }
 
         /// <summary>
@@ -20,6 +21,12 @@ namespace Avalonia.Imaging.TestKit.Fixtures
         /// encode buffers, so the contract tests can assert rent counts and balance.
         /// </summary>
         public CountingAllocator Allocator { get; }
+
+        /// <summary>
+        /// Gets the recorder a <see cref="FakeRenderInterface"/> reports zero-copy
+        /// installs to, so tests can assert install identity and release counts.
+        /// </summary>
+        public FakeRenderInstall RenderInstall { get; }
 
         /// <summary>
         /// Gets the capability declarations the contract tests assert against.

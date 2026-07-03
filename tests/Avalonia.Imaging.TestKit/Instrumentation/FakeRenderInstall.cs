@@ -4,61 +4,75 @@ using Avalonia.Platform;
 namespace Avalonia.Imaging.TestKit.Instrumentation
 {
     /// <summary>
-    /// Stands in for the render-backend side of a zero-copy install: captures the
-    /// <see cref="ILockedFramebuffer"/> view a frame hands out, records its address and
-    /// descriptor, and releases the view on demand. Lets tests verify install identity
-    /// and lifetime without any render backend.
+    /// Records the zero-copy installs a <see cref="FakeRenderInterface"/> performs: how
+    /// many framebuffer views were installed and released, and the descriptor of the
+    /// most recent one. Lets tests verify install identity and lifetime without any
+    /// render backend.
     /// </summary>
     public sealed class FakeRenderInstall
     {
-        private ILockedFramebuffer? _view;
+        private readonly object _gate = new();
+        private int _installCount;
+        private int _releaseCount;
+        private IntPtr _address;
+        private PixelSize _size;
+        private int _rowBytes;
+        private PixelFormat _format;
 
         /// <summary>Gets how many views were installed.</summary>
-        public int InstallCount { get; private set; }
-
-        /// <summary>Gets how many views were released.</summary>
-        public int ReleaseCount { get; private set; }
-
-        /// <summary>Gets the address of the most recently installed view.</summary>
-        public IntPtr Address { get; private set; }
-
-        /// <summary>Gets the size of the most recently installed view.</summary>
-        public PixelSize Size { get; private set; }
-
-        /// <summary>Gets the stride of the most recently installed view.</summary>
-        public int RowBytes { get; private set; }
-
-        /// <summary>Gets the pixel format of the most recently installed view.</summary>
-        public PixelFormat Format { get; private set; }
-
-        /// <summary>Gets whether a view is currently held.</summary>
-        public bool HasInstalledView => _view is not null;
-
-        /// <summary>Captures a framebuffer view, taking over the obligation to dispose it.</summary>
-        public void Install(ILockedFramebuffer framebuffer)
+        public int InstallCount
         {
-            _ = framebuffer ?? throw new ArgumentNullException(nameof(framebuffer));
-
-            if (_view is not null)
-                throw new InvalidOperationException("A framebuffer is already installed; release it first.");
-
-            _view = framebuffer;
-            Address = framebuffer.Address;
-            Size = framebuffer.Size;
-            RowBytes = framebuffer.RowBytes;
-            Format = framebuffer.Format;
-            InstallCount++;
+            get { lock (_gate) return _installCount; }
         }
 
-        /// <summary>Disposes the captured view, releasing its use of the frame's memory.</summary>
-        public void Release()
+        /// <summary>Gets how many installed views were released.</summary>
+        public int ReleaseCount
         {
-            if (_view is null)
-                throw new InvalidOperationException("No framebuffer is installed.");
+            get { lock (_gate) return _releaseCount; }
+        }
 
-            _view.Dispose();
-            _view = null;
-            ReleaseCount++;
+        /// <summary>Gets the address of the most recently installed view.</summary>
+        public IntPtr Address
+        {
+            get { lock (_gate) return _address; }
+        }
+
+        /// <summary>Gets the size of the most recently installed view.</summary>
+        public PixelSize Size
+        {
+            get { lock (_gate) return _size; }
+        }
+
+        /// <summary>Gets the stride of the most recently installed view.</summary>
+        public int RowBytes
+        {
+            get { lock (_gate) return _rowBytes; }
+        }
+
+        /// <summary>Gets the pixel format of the most recently installed view.</summary>
+        public PixelFormat Format
+        {
+            get { lock (_gate) return _format; }
+        }
+
+        internal void OnInstalled(ILockedFramebuffer framebuffer)
+        {
+            lock (_gate)
+            {
+                _installCount++;
+                _address = framebuffer.Address;
+                _size = framebuffer.Size;
+                _rowBytes = framebuffer.RowBytes;
+                _format = framebuffer.Format;
+            }
+        }
+
+        internal void OnReleased()
+        {
+            lock (_gate)
+            {
+                _releaseCount++;
+            }
         }
     }
 }

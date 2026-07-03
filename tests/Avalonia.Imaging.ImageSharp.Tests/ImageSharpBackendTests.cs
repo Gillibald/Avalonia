@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Avalonia.Imaging.TestKit.Instrumentation;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using SixLabors.ImageSharp;
@@ -118,6 +119,37 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using var view = frame.Lock();
 
             Assert.Equal(new PixelSize(2, 4), view.Size);
+        }
+
+        [Fact]
+        public void TargetSize_PeakBelowFullDecode()
+        {
+            // Decoding a 1024x1024 JPEG to a 64x64 target must not pay for a full-size
+            // frame in pooled memory: a full Bgra frame would be 1024 * 1024 * 4 = 4 MiB,
+            // while the fused IDCT decode only rents the small destination (64 * 64
+            // pixels at up to 4 bytes each, 16 KiB).
+            var allocator = new CountingAllocator();
+            var backend = new ImageSharpImagingBackend(allocator);
+
+            using var source = new Image<Rgb24>(1024, 1024);
+
+            var jpeg = EncodeImage(source, new JpegEncoder());
+            var options = new BitmapDecodeOptions { TargetSize = new PixelSize(64, 64) };
+
+            using (var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true, options))
+            using (var frame = decoder.ReadNextFrame()!)
+            using (var view = frame.Lock())
+            {
+                Assert.Equal(new PixelSize(64, 64), view.Size);
+            }
+
+            var fullFrameBytes = 1024L * 1024 * 4;
+
+            Assert.True(allocator.PeakLiveBytes < fullFrameBytes,
+                $"Peak pooled bytes {allocator.PeakLiveBytes} must stay below a full-size " +
+                $"frame of {fullFrameBytes} bytes.");
+
+            allocator.AssertBalanced();
         }
 
         [Fact]
