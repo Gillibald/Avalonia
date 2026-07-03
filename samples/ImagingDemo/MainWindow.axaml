@@ -1,0 +1,217 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ImagingDemo.MainWindow"
+        Width="1120" Height="820"
+        MinWidth="900" MinHeight="640"
+        Title="Universal Bitmap Infrastructure demo">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, monospace"/>
+        </Style>
+        <Style Selector="SelectableTextBlock.mono">
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, monospace"/>
+        </Style>
+        <Style Selector="TextBox.mono">
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas, Menlo, monospace"/>
+        </Style>
+        <Style Selector="TextBlock.h">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,2,0,4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="BorderBrush" Value="#40808080"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="Width" Value="128"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.note">
+            <Setter Property="Opacity" Value="0.7"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- Header: active backend + capability matrix -->
+        <Border Grid.Row="0" Classes="card" Margin="12,10,12,4">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Universal Bitmap Infrastructure — cross-backend demo"
+                           FontSize="16" FontWeight="SemiBold"/>
+                <SelectableTextBlock x:Name="BackendText" Classes="mono" TextWrapping="Wrap"/>
+                <Expander Header="Backend capability matrix (active backend)" Margin="0,4,0,0">
+                    <SelectableTextBlock x:Name="CapabilityText" Classes="mono" TextWrapping="NoWrap"/>
+                </Expander>
+            </StackPanel>
+        </Border>
+
+        <!-- Main: source panel + operations -->
+        <Grid Grid.Row="1" ColumnDefinitions="400,*">
+
+            <!-- Source -->
+            <ScrollViewer Grid.Column="0" Margin="12,4,6,4">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="h" Text="1. Source image"/>
+                    <TextBlock Classes="note" TextWrapping="Wrap"
+                               Text="Open a PNG/JPEG/WebP/GIF/BMP file, or generate one from a managed PixelBuffer. Header facts below come from BitmapDecoder.Identify — no pixels are decoded."/>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,4,0,0">
+                        <Button x:Name="OpenButton" Content="Open image…" Click="OnOpenImage"/>
+                        <Button x:Name="GradientButton" Content="Gradient" Click="OnGenerateGradient"/>
+                        <Button x:Name="CheckerButton" Content="Checkerboard" Click="OnGenerateCheckerboard"/>
+                    </StackPanel>
+
+                    <Border Classes="card" Margin="0,6,0,8">
+                        <SelectableTextBlock x:Name="SourceInfo" Classes="mono" TextWrapping="Wrap"/>
+                    </Border>
+
+                    <Border Classes="card" Background="#22808080" Padding="6">
+                        <Image x:Name="SourcePreview" Stretch="Uniform" Height="300"/>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Operations -->
+            <TabControl Grid.Column="1" Margin="6,4,12,4">
+
+                <!-- Decode plan -->
+                <TabItem Header="2. Decode plan">
+                    <ScrollViewer>
+                        <StackPanel Spacing="6" Margin="4,8,4,4">
+                            <TextBlock Classes="note" TextWrapping="Wrap"
+                                       Text="Every option below is guaranteed on both backends: a backend either fuses it into the decode pass or the shared pixel pipeline applies it. The plan runs in one pass."/>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                                <TextBlock Classes="lbl" Text="Target size"/>
+                                <NumericUpDown x:Name="TargetWidth" Width="110" Minimum="0" Maximum="8192"
+                                               Increment="16" Value="0" FormatString="0"/>
+                                <TextBlock Classes="note" Text="×"/>
+                                <NumericUpDown x:Name="TargetHeight" Width="110" Minimum="0" Maximum="8192"
+                                               Increment="16" Value="0" FormatString="0"/>
+                                <TextBlock Classes="note" Text="0 = source; one 0 keeps aspect"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="Crop region"/>
+                                <CheckBox x:Name="CropEnabled" Content="Enable"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="128,0,0,0">
+                                <TextBlock Classes="note" Text="x"/>
+                                <NumericUpDown x:Name="CropX" Width="90" Minimum="0" Maximum="100000" Value="0" FormatString="0"/>
+                                <TextBlock Classes="note" Text="y"/>
+                                <NumericUpDown x:Name="CropY" Width="90" Minimum="0" Maximum="100000" Value="0" FormatString="0"/>
+                                <TextBlock Classes="note" Text="w"/>
+                                <NumericUpDown x:Name="CropW" Width="90" Minimum="1" Maximum="100000" Value="100" FormatString="0"/>
+                                <TextBlock Classes="note" Text="h"/>
+                                <NumericUpDown x:Name="CropH" Width="90" Minimum="1" Maximum="100000" Value="100" FormatString="0"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="Target format"/>
+                                <ComboBox x:Name="TargetFormatCombo" Width="160"/>
+                                <TextBlock Classes="note" Text="pixel + alpha the frame produces"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="Interpolation"/>
+                                <ComboBox x:Name="InterpolationCombo" Width="160"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="EXIF"/>
+                                <CheckBox x:Name="RespectExif" Content="Respect orientation tag" IsChecked="True"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="Max pixels"/>
+                                <NumericUpDown x:Name="MaxPixels" Width="130" Minimum="0" Maximum="1000000000"
+                                               Increment="1000000" Value="0" FormatString="0"/>
+                                <TextBlock Classes="note" Text="0 = default guard; small values trip the bomb guard"/>
+                            </StackPanel>
+
+                            <Button x:Name="DecodeButton" Content="Decode with plan" Click="OnDecodeWithPlan"
+                                    HorizontalAlignment="Left" Margin="128,6,0,0"/>
+
+                            <Border Classes="card" Background="#22808080" Padding="6" Margin="0,8,0,0">
+                                <Image x:Name="DecodeResult" Stretch="Uniform" HorizontalAlignment="Center"
+                                       MaxHeight="360"/>
+                            </Border>
+                            <SelectableTextBlock x:Name="DecodeInfo" Classes="mono" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Transform & encode -->
+                <TabItem Header="3. Transform &amp; encode">
+                    <ScrollViewer>
+                        <StackPanel Spacing="6" Margin="4,8,4,4">
+                            <TextBlock Classes="note" TextWrapping="Wrap"
+                                       Text="Encode is restricted to PNG/JPEG/WebP — the formats both backends can write. The orthogonal transform is guaranteed on both (native on ImageSharp, shared software pass on Skia)."/>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                                <TextBlock Classes="lbl" Text="Transform"/>
+                                <ComboBox x:Name="RotationCombo" Width="150"/>
+                                <CheckBox x:Name="FlipH" Content="Flip H"/>
+                                <CheckBox x:Name="FlipV" Content="Flip V"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="Encode format"/>
+                                <ComboBox x:Name="EncodeFormatCombo" Width="150" SelectionChanged="OnEncodeFormatChanged"/>
+                            </StackPanel>
+
+                            <StackPanel x:Name="PngPanel" Orientation="Horizontal" Spacing="8">
+                                <TextBlock Classes="lbl" Text="PNG level"/>
+                                <NumericUpDown x:Name="PngCompression" Width="110" Minimum="0" Maximum="9"
+                                               Increment="1" Value="6" FormatString="0"/>
+                                <TextBlock Classes="note" Text="0 = none, 9 = best. PNG interlace is not offered: Skia cannot encode Adam7."/>
+                            </StackPanel>
+
+                            <StackPanel x:Name="JpegPanel" Orientation="Horizontal" Spacing="8" IsVisible="False">
+                                <TextBlock Classes="lbl" Text="JPEG quality"/>
+                                <NumericUpDown x:Name="JpegQuality" Width="110" Minimum="1" Maximum="100"
+                                               Increment="1" Value="90" FormatString="0"/>
+                            </StackPanel>
+
+                            <StackPanel x:Name="WebpPanel" Orientation="Horizontal" Spacing="8" IsVisible="False">
+                                <TextBlock Classes="lbl" Text="WebP"/>
+                                <CheckBox x:Name="WebpLossless" Content="Lossless"/>
+                                <TextBlock Classes="note" Text="quality"/>
+                                <NumericUpDown x:Name="WebpQuality" Width="110" Minimum="1" Maximum="100"
+                                               Increment="1" Value="75" FormatString="0"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="128,4,0,0">
+                                <Button x:Name="EncodeButton" Content="Encode &amp; round-trip" Click="OnEncodeRoundTrip"/>
+                                <Button x:Name="SaveButton" Content="Save to file…" Click="OnSaveToFile"/>
+                                <Button x:Name="VerifyButton" Content="Lossless PNG check" Click="OnLosslessCheck"/>
+                            </StackPanel>
+
+                            <Border Classes="card" Background="#22808080" Padding="6" Margin="0,8,0,0">
+                                <Image x:Name="EncodeResult" Stretch="Uniform" HorizontalAlignment="Center"
+                                       MaxHeight="360"/>
+                            </Border>
+                            <SelectableTextBlock x:Name="EncodeInfo" Classes="mono" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </Grid>
+
+        <!-- Log -->
+        <Border Grid.Row="2" Classes="card" Margin="12,4,12,10">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Classes="h" Text="Operation log"/>
+                <TextBox x:Name="LogBox" Classes="mono" IsReadOnly="True" AcceptsReturn="True"
+                         TextWrapping="NoWrap" Height="120"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

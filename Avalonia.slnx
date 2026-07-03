@@ -75,6 +75,7 @@
     </Project>
     <Project Path="samples/Generators.Sandbox/Generators.Sandbox.csproj" />
     <Project Path="samples/GpuInterop/GpuInterop.csproj" />
+    <Project Path="samples/ImagingDemo/ImagingDemo.csproj" />
     <Project Path="samples/IntegrationTestApp/IntegrationTestApp.csproj" />
     <Project Path="samples/MiniMvvm/MiniMvvm.csproj" />
     <Project Path="samples/PlatformSanityChecks/PlatformSanityChecks.csproj" />

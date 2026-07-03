@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <IncludeAvaloniaGenerators>true</IncludeAvaloniaGenerators>
+  </PropertyGroup>
+
+  <!--
+    The ImageSharp imaging backend is referenced only when a SixLabors license key is
+    present. ImageSharp 4.x validates a commercial license at build time and the
+    property is not transitive, so a consumer must restate it. Gating the reference on
+    the key keeps the sample building (Skia-only) on a clean checkout without the key;
+    the imagesharp switch then reports that the backend was not compiled in.
+  -->
+  <PropertyGroup Condition="'$(SIXLABORS_LICENSE_KEY)' != ''">
+    <SixLaborsLicenseKey>$(SIXLABORS_LICENSE_KEY)</SixLaborsLicenseKey>
+    <DefineConstants>$(DefineConstants);IMAGESHARP_BACKEND</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(SIXLABORS_LICENSE_KEY)' != ''">
+    <ProjectReference Include="..\..\src\Imaging\Avalonia.Imaging.ImageSharp\Avalonia.Imaging.ImageSharp.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\build\SampleApp.props" />
+  <Import Project="..\..\build\ReferenceCoreLibraries.props" />
+  <Import Project="..\..\build\BuildTargets.targets" />
+  <Import Project="..\..\build\SourceGenerators.props" />
+</Project>
