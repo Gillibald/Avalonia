@@ -190,16 +190,40 @@ namespace Avalonia.Skia
         }
 
         public static SKColorType ToSkColorType(this PixelFormat fmt)
+            => fmt.TryToSkColorType(out var colorType)
+                ? colorType
+                : throw new ArgumentException("Unknown pixel format: " + fmt);
+
+        /// <summary>
+        /// Maps a pixel format to the Skia color type Skia can install directly, without
+        /// a conversion pass. Returns false for formats Skia has no matching color type
+        /// for (e.g. Rgb24), which the bitmap install path transcodes to Bgra8888.
+        /// </summary>
+        public static bool TryToSkColorType(this PixelFormat fmt, out SKColorType colorType)
         {
             if (fmt == PixelFormat.Rgb565)
-                return SKColorType.Rgb565;
+            {
+                colorType = SKColorType.Rgb565;
+                return true;
+            }
             if (fmt == PixelFormat.Bgra8888)
-                return SKColorType.Bgra8888;
+            {
+                colorType = SKColorType.Bgra8888;
+                return true;
+            }
             if (fmt == PixelFormat.Rgba8888)
-                return SKColorType.Rgba8888;
+            {
+                colorType = SKColorType.Rgba8888;
+                return true;
+            }
             if (fmt == PixelFormat.Rgb32)
-                return SKColorType.Rgb888x;
-            throw new ArgumentException("Unknown pixel format: " + fmt);
+            {
+                colorType = SKColorType.Rgb888x;
+                return true;
+            }
+
+            colorType = SKColorType.Unknown;
+            return false;
         }
 
         public static PixelFormat? ToAvalonia(this SKColorType colorType)
