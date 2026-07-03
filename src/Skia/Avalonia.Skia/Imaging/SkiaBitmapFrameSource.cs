@@ -104,10 +104,10 @@ namespace Avalonia.Skia.Imaging
 
         private void Decode()
         {
-            _options?.Cancellation.ThrowIfCancellationRequested();
+            _options?.CancellationToken.ThrowIfCancellationRequested();
 
             // Bounds peak native memory when many frames decode in parallel.
-            using var slot = DecodeConcurrencyLimiter.Enter(_options?.Cancellation ?? default);
+            using var slot = DecodeConcurrencyLimiter.Enter(_options?.CancellationToken ?? default);
 
             var allocator = _owner.Allocator;
             var decodeRawSize = UsesFusedScale(out var nearestRaw) ? nearestRaw : _rawSize;
@@ -128,7 +128,7 @@ namespace Avalonia.Skia.Imaging
                         $"Decoding failed: {result}.");
                 }
 
-                _options?.Cancellation.ThrowIfCancellationRequested();
+                _options?.CancellationToken.ThrowIfCancellationRequested();
 
                 var isPlanOutput = !_hasRegion &&
                     _orientation == PixelOrientation.Normal &&
@@ -164,7 +164,7 @@ namespace Avalonia.Skia.Imaging
                         _orientation);
 
                     FusedPixelPipeline.Run(source, plan, targetMemory.Address, targetRowBytes,
-                        allocator, _options?.Cancellation ?? default);
+                        allocator, _options?.CancellationToken ?? default);
 
                     _pixels = new SharedBitmapMemory(targetMemory);
                     _rowBytes = targetRowBytes;

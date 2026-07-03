@@ -118,5 +118,61 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 handle.Free();
             }
         }
+
+        [Fact]
+        public void Create_Copies_Raw_Bytes_And_Descriptor()
+        {
+            var source = CreateSourcePixels();
+
+            var buffer = PixelBuffer.Create(source, new PixelSize(2, 2), stride: 8,
+                PixelFormat.Bgra8888, AlphaFormat.Premul, new Vector(120, 120));
+
+            Assert.Equal(new PixelSize(2, 2), buffer.Size);
+            Assert.Equal(8, buffer.Stride);
+            Assert.Equal(new Vector(120, 120), buffer.Dpi);
+            Assert.Equal(source, buffer.Pixels.ToArray());
+
+            // The input was copied: mutating it afterwards must not show in the buffer.
+            var expected = (byte[])source.Clone();
+
+            source[0] = 200;
+
+            Assert.Equal(expected, buffer.Pixels.ToArray());
+        }
+
+        [Fact]
+        public void Create_Defaults_Dpi_To_96()
+        {
+            var buffer = PixelBuffer.Create(new byte[4], new PixelSize(1, 1), 4,
+                PixelFormat.Bgra8888, AlphaFormat.Premul);
+
+            Assert.Equal(new Vector(96, 96), buffer.Dpi);
+        }
+
+        [Fact]
+        public void Create_Accepts_A_Last_Row_Without_Stride_Padding()
+        {
+            // 1x2 Bgra8888 with stride 8: full first row, unpadded last row.
+            var source = new byte[] { 1, 2, 3, 255, 0, 0, 0, 0, 4, 5, 6, 255 };
+
+            var buffer = PixelBuffer.Create(source, new PixelSize(1, 2), stride: 8,
+                PixelFormat.Bgra8888, AlphaFormat.Premul);
+
+            Assert.Equal(16, buffer.Pixels.Length);
+            Assert.Equal(new byte[] { 4, 5, 6, 255 }, buffer.Pixels.Slice(8, 4).ToArray());
+        }
+
+        [Fact]
+        public void Create_Rejects_Invalid_Input()
+        {
+            Assert.Throws<ArgumentException>(() => PixelBuffer.Create(new byte[16],
+                new PixelSize(0, 1), 4, PixelFormat.Bgra8888, AlphaFormat.Premul));
+
+            Assert.Throws<ArgumentException>(() => PixelBuffer.Create(new byte[16],
+                new PixelSize(2, 1), stride: 4, PixelFormat.Bgra8888, AlphaFormat.Premul));
+
+            Assert.Throws<ArgumentException>(() => PixelBuffer.Create(new byte[7],
+                new PixelSize(1, 2), stride: 4, PixelFormat.Bgra8888, AlphaFormat.Premul));
+        }
     }
 }

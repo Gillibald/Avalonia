@@ -520,7 +520,7 @@ namespace Avalonia.Skia.UnitTests.Imaging
 
             using var encoded = new MemoryStream();
 
-            encoder.Save(encoded);
+            encoder.Save(encoded, TestContext.Current.CancellationToken);
 
             Assert.NotEqual(0, encoded.Length);
 

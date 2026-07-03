@@ -50,10 +50,7 @@ namespace Avalonia.Media.Imaging
         public static Task<Bitmap> DecodeAsync(Stream stream, BitmapDecodeOptions? options = null,
             CancellationToken cancellationToken = default)
         {
-            var effectiveOptions = options ?? new BitmapDecodeOptions();
-
-            if (cancellationToken.CanBeCanceled && !effectiveOptions.Cancellation.CanBeCanceled)
-                effectiveOptions.Cancellation = cancellationToken;
+            var effectiveOptions = BitmapDecoder.WithCancellation(options, cancellationToken);
 
             return Task.Run(() => Decode(stream, effectiveOptions), cancellationToken);
         }
@@ -261,17 +258,28 @@ namespace Avalonia.Media.Imaging
 
         /// <summary>
         /// Encodes this bitmap to the stream with a configured encoder, e.g.
-        /// <c>new JpegBitmapEncoder { Quality = 92 }</c>. The bitmap is appended to the
-        /// encoder's frames; encoding a format the active imaging backend cannot write
-        /// fails fast naming the backend.
+        /// <c>new JpegBitmapEncoder { Quality = 92 }</c>. The encoder is pure
+        /// configuration here - its frame list is left as it was, so the same encoder
+        /// instance can save several bitmaps. Encoding a format the active imaging
+        /// backend cannot write fails fast naming the backend.
         /// </summary>
         public void Save(Stream stream, BitmapEncoder encoder)
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
             _ = encoder ?? throw new ArgumentNullException(nameof(encoder));
 
-            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = ToPixelBufferCore() });
-            encoder.Save(stream);
+            var frame = new BitmapEncoderFrame { Pixels = ToPixelBufferCore() };
+
+            encoder.Frames.Add(frame);
+
+            try
+            {
+                encoder.Save(stream);
+            }
+            finally
+            {
+                encoder.Frames.Remove(frame);
+            }
         }
 
         /// <summary>

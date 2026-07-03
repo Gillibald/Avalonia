@@ -47,7 +47,8 @@ namespace Avalonia.Imaging.TestKit.Contract
 
                 using var stream = new MemoryStream();
 
-                Backend.CreateEncoder(entry.ContainerFormat).Encode(encoder, stream);
+                Backend.CreateEncoder(entry.ContainerFormat).Encode(encoder, stream,
+                    TestContext.Current.CancellationToken);
 
                 Assert.True(stream.Length > 0, $"Encoding {entry.FormatName} produced no bytes.");
 
@@ -82,7 +83,7 @@ namespace Avalonia.Imaging.TestKit.Contract
             using var scope = LocatorScope.With(Backend);
             using var stream = new MemoryStream();
 
-            encoder.Save(stream);
+            encoder.Save(stream, TestContext.Current.CancellationToken);
 
             stream.Position = 0;
 

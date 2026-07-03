@@ -58,7 +58,9 @@ namespace Avalonia.Platform
         int FrameCount { get; }
 
         /// <summary>
-        /// Returns the frame at the given index.
+        /// Returns the frame at the given index. Every call returns a new, independently
+        /// owned frame source - callers wrap each result in an owning frame and dispose
+        /// them independently.
         /// </summary>
         IBitmapFrameSource GetFrame(int index);
     }

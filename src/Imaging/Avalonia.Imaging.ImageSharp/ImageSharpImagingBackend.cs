@@ -131,7 +131,7 @@ namespace Avalonia.Imaging.ImageSharp
             // once this method returns. Buffering also covers partial reads.
             using var buffered = ReadToMemory(stream);
 
-            options?.Cancellation.ThrowIfCancellationRequested();
+            options?.CancellationToken.ThrowIfCancellationRequested();
 
             if (ownsStream)
                 stream.Dispose();
@@ -203,7 +203,7 @@ namespace Avalonia.Imaging.ImageSharp
 
             // ImageSharp decodes eagerly here, so the concurrency gate covers the load
             // and the fused orientation pass.
-            using (DecodeConcurrencyLimiter.Enter(options?.Cancellation ?? default))
+            using (DecodeConcurrencyLimiter.Enter(options?.CancellationToken ?? default))
             {
                 image = ISImage.Load(decoderOptions, buffered);
 

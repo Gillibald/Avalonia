@@ -64,7 +64,7 @@ namespace Avalonia.Media.Imaging
         /// the backend supports cooperative cancellation, and while the decoder
         /// materializes its copy of the encoded data.
         /// </summary>
-        public CancellationToken Cancellation { get; set; }
+        public CancellationToken CancellationToken { get; set; }
 
         /// <summary>
         /// Forces the decoder to materialize its own copy of the encoded data at
@@ -77,6 +77,12 @@ namespace Avalonia.Media.Imaging
         /// Gets the effective decompression-bomb guard for these options.
         /// </summary>
         internal long EffectiveMaxPixels => MaxPixels ?? ImagingOptions.Effective.DefaultMaxPixels;
+
+        /// <summary>
+        /// Returns a shallow copy preserving the runtime type, so async entry points can
+        /// inject a token without mutating the caller's instance.
+        /// </summary>
+        internal BitmapDecodeOptions Clone() => (BitmapDecodeOptions)MemberwiseClone();
     }
 
     /// <summary>

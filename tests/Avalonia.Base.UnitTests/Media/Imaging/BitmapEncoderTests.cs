@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Xunit;
@@ -26,9 +27,12 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         {
             public BitmapEncoder? Encoded { get; private set; }
 
-            public void Encode(BitmapEncoder encoder, Stream stream)
+            public CancellationToken Token { get; private set; }
+
+            public void Encode(BitmapEncoder encoder, Stream stream, CancellationToken cancellationToken)
             {
                 Encoded = encoder;
+                Token = cancellationToken;
                 stream.WriteByte(42);
             }
         }
@@ -218,10 +222,128 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
 
             encoder.Frames.Add(CreateFrame());
-            encoder.Save(stream);
+            encoder.Save(stream, TestContext.Current.CancellationToken);
 
             Assert.Same(encoder, backend.EncoderImpl.Encoded);
             Assert.Equal(1, stream.Length);
+        }
+
+        [Fact]
+        public void Palette_Without_Capability_Throws()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.Palette);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
+            var frame = CreateFrame();
+
+            frame.Palette = new BitmapPalette(new[] { Avalonia.Media.Colors.Black });
+
+            encoder.Frames.Add(frame);
+
+            Assert.Throws<NotSupportedException>(() => encoder.Save(stream));
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Fact]
+        public void Palette_Without_Backend_Capability_Throws_Naming_The_Backend()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.Palette);
+            var frame = CreateFrame();
+
+            frame.Palette = new BitmapPalette(new[] { Avalonia.Media.Colors.Black });
+
+            encoder.Frames.Add(frame);
+
+            var exception = Assert.Throws<NotSupportedException>(() => encoder.Save(stream));
+
+            Assert.Contains("Fake", exception.Message);
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(101)]
+        public void Jpeg_Quality_Out_Of_Range_Throws_Before_Writing(int quality)
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new JpegBitmapEncoder { Quality = quality };
+
+            encoder.Frames.Add(CreateFrame());
+
+            Assert.Throws<InvalidOperationException>(() => encoder.Save(stream));
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(10)]
+        public void Png_CompressionLevel_Out_Of_Range_Throws_Before_Writing(int level)
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new PngBitmapEncoder { CompressionLevel = level };
+
+            encoder.Frames.Add(CreateFrame());
+
+            Assert.Throws<InvalidOperationException>(() => encoder.Save(stream));
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Fact]
+        public void Save_With_Canceled_Token_Throws_Before_Writing()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
+
+            encoder.Frames.Add(CreateFrame());
+
+            Assert.Throws<OperationCanceledException>(() => encoder.Save(stream, new CancellationToken(true)));
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Fact]
+        public void Save_Forwards_The_Token_To_The_Backend()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+            using var cts = new CancellationTokenSource();
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
+
+            encoder.Frames.Add(CreateFrame());
+            encoder.Save(stream, cts.Token);
+
+            Assert.Equal(cts.Token, backend.EncoderImpl.Token);
+        }
+
+        [Fact]
+        public void Base_Metadata_Rejects_Xmp_Writes_Instead_Of_Dropping_Them()
+        {
+            var metadata = new TestMetadata();
+
+            Assert.Null(metadata.XmpPacket);
+            Assert.Throws<NotSupportedException>(() => metadata.XmpPacket = "<xmp/>");
         }
     }
 }

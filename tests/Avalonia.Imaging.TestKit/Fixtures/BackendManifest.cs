@@ -20,7 +20,7 @@ namespace Avalonia.Imaging.TestKit.Fixtures
 
         /// <summary>
         /// Gets whether the backend observes
-        /// <see cref="Avalonia.Media.Imaging.BitmapDecodeOptions.Cancellation"/>.
+        /// <see cref="Avalonia.Media.Imaging.BitmapDecodeOptions.CancellationToken"/>.
         /// </summary>
         public bool SupportsCancellation { get; init; }
 

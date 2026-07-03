@@ -44,12 +44,15 @@ namespace Avalonia.Media.Imaging
         public virtual ReadOnlyMemory<byte>? IccProfile => null;
 
         /// <summary>
-        /// Gets or sets the XMP packet, or null when the image carries none.
+        /// Gets or sets the XMP packet, or null when the image carries none. Setting
+        /// throws <see cref="NotSupportedException"/> when this metadata implementation
+        /// cannot store XMP - a write is never silently dropped.
         /// </summary>
         public virtual string? XmpPacket
         {
             get => null;
-            set { }
+            set => throw new NotSupportedException(
+                $"{GetType().Name} does not support writing an XMP packet.");
         }
 
         /// <summary>

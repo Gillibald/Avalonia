@@ -92,6 +92,48 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
+        /// Creates a buffer by copying raw pixel bytes, e.g. generated or computed
+        /// content destined for an encoder. The input is copied, so the caller's buffer
+        /// stays the caller's.
+        /// </summary>
+        /// <param name="pixels">
+        /// The pixel bytes, row-major with <paramref name="stride"/> bytes per row. Must
+        /// cover at least stride * (height - 1) plus one row of pixels; the last row's
+        /// stride padding may be omitted.
+        /// </param>
+        /// <param name="size">The size in device pixels.</param>
+        /// <param name="stride">The number of bytes per row, at least one row of pixels.</param>
+        /// <param name="format">The pixel format.</param>
+        /// <param name="alphaFormat">The alpha format.</param>
+        /// <param name="dpi">The DPI; null uses 96.</param>
+        public static PixelBuffer Create(ReadOnlySpan<byte> pixels, PixelSize size, int stride,
+            PixelFormat format, AlphaFormat alphaFormat, Vector? dpi = null)
+        {
+            if (size.Width <= 0 || size.Height <= 0)
+                throw new ArgumentException("The size is empty.", nameof(size));
+
+            var minStride = (size.Width * format.BitsPerPixel + 7) / 8;
+
+            if (stride < minStride)
+                throw new ArgumentException("The stride is smaller than one row of pixels.", nameof(stride));
+
+            var readableBytes = checked(stride * (size.Height - 1) + minStride);
+
+            if (pixels.Length < readableBytes)
+            {
+                throw new ArgumentException(
+                    "The pixel data is smaller than stride * (height - 1) plus one row of pixels.",
+                    nameof(pixels));
+            }
+
+            var copy = new byte[checked(stride * size.Height)];
+
+            pixels.Slice(0, readableBytes).CopyTo(copy);
+
+            return new PixelBuffer(copy, size, stride, format, alphaFormat, dpi ?? new Vector(96, 96));
+        }
+
+        /// <summary>
         /// Wraps an existing byte array without copying. The array must not be mutated afterwards.
         /// </summary>
         internal static PixelBuffer TakeOwnership(byte[] pixels, PixelSize size, int stride,

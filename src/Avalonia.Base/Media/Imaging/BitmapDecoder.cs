@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -108,26 +109,52 @@ namespace Avalonia.Media.Imaging
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
+            if (options is JpegDecodeOptions { ScaleDenominator: { } denominator and not (2 or 4 or 8) })
+            {
+                throw new ArgumentException(
+                    $"{nameof(JpegDecodeOptions)}.{nameof(JpegDecodeOptions.ScaleDenominator)} must be 2, 4 or 8; got {denominator}.",
+                    nameof(options));
+            }
+
             return new BitmapDecoder(ImagingBackend.Current.CreateDecoder(stream, ownsStream, options));
         }
 
         /// <summary>
         /// Creates a decoder on a background thread. The token flows into
-        /// <see cref="BitmapDecodeOptions.Cancellation"/> (of a fresh options instance
-        /// when none is supplied) so backends that support cooperative cancellation
-        /// observe it during decoding.
+        /// <see cref="BitmapDecodeOptions.CancellationToken"/> (of a copy of the options,
+        /// so the caller's instance is never mutated) so backends that support
+        /// cooperative cancellation observe it during decoding.
         /// </summary>
         public static Task<BitmapDecoder> CreateAsync(Stream stream, BitmapDecodeOptions? options = null,
             bool ownsStream = false, CancellationToken cancellationToken = default)
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
-            var effectiveOptions = options ?? new BitmapDecodeOptions();
-
-            if (cancellationToken.CanBeCanceled && !effectiveOptions.Cancellation.CanBeCanceled)
-                effectiveOptions.Cancellation = cancellationToken;
+            var effectiveOptions = WithCancellation(options, cancellationToken);
 
             return Task.Run(() => Create(stream, effectiveOptions, ownsStream), cancellationToken);
+        }
+
+        /// <summary>
+        /// Combines caller options with an async entry point's token, copying the options
+        /// when a token has to be injected so the caller's instance stays untouched.
+        /// </summary>
+        internal static BitmapDecodeOptions? WithCancellation(BitmapDecodeOptions? options,
+            CancellationToken cancellationToken)
+        {
+            if (!cancellationToken.CanBeCanceled)
+                return options;
+
+            if (options is null)
+                return new BitmapDecodeOptions { CancellationToken = cancellationToken };
+
+            if (options.CancellationToken.CanBeCanceled)
+                return options;
+
+            var copy = options.Clone();
+            copy.CancellationToken = cancellationToken;
+
+            return copy;
         }
 
         /// <summary>
@@ -165,25 +192,23 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
-        /// Enumerates the remaining frames of the cursor. The sequence can be enumerated
-        /// once; frames are yielded lazily and owned by the caller.
+        /// Reads the remaining frames of the cursor. The sequence can be obtained once -
+        /// it consumes the forward-only cursor; frames are yielded lazily and owned by
+        /// the caller.
         /// </summary>
-        public IEnumerable<BitmapFrame> Frames
+        public IEnumerable<BitmapFrame> ReadFrames()
         {
-            get
+            ThrowIfDisposed();
+
+            if (_framesEnumerated)
             {
-                ThrowIfDisposed();
-
-                if (_framesEnumerated)
-                {
-                    throw new InvalidOperationException(
-                        $"{nameof(Frames)} enumerates a forward-only cursor and can be enumerated once.");
-                }
-
-                _framesEnumerated = true;
-
-                return EnumerateFrames();
+                throw new InvalidOperationException(
+                    $"{nameof(ReadFrames)} consumes a forward-only cursor and can be called once.");
             }
+
+            _framesEnumerated = true;
+
+            return EnumerateFrames();
         }
 
         /// <summary>
@@ -208,15 +233,17 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets the container-level metadata when the active backend exposes it.
         /// </summary>
-        public bool TryGetMetadata(out BitmapMetadata metadata)
+        public bool TryGetMetadata([NotNullWhen(true)] out BitmapMetadata? metadata)
         {
+            ThrowIfDisposed();
+
             if (_impl is IMetadataSource source)
             {
                 metadata = source.Metadata;
                 return true;
             }
 
-            metadata = null!;
+            metadata = null;
             return false;
         }
 
@@ -225,6 +252,8 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public bool IsAnimated(out int loopCount)
         {
+            ThrowIfDisposed();
+
             if (_impl is IAnimatedDecoder animated)
             {
                 loopCount = animated.LoopCount;

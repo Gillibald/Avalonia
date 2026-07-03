@@ -172,7 +172,7 @@ namespace Avalonia.Imaging.ImageSharp
 
         private void Decode()
         {
-            _options?.Cancellation.ThrowIfCancellationRequested();
+            _options?.CancellationToken.ThrowIfCancellationRequested();
 
             var allocator = _owner.Allocator;
             var targetRowBytes = PixelFormatHelper.GetMinRowBytes(PixelFormat, PixelSize.Width);
@@ -182,7 +182,7 @@ namespace Avalonia.Imaging.ImageSharp
             {
                 TransferPixels(targetMemory.Address, targetRowBytes, allocator);
 
-                _options?.Cancellation.ThrowIfCancellationRequested();
+                _options?.CancellationToken.ThrowIfCancellationRequested();
 
                 _pixels = new SharedBitmapMemory(targetMemory);
                 _rowBytes = targetRowBytes;
@@ -289,7 +289,7 @@ namespace Avalonia.Imaging.ImageSharp
                 _options?.Interpolation ?? BitmapInterpolationMode.HighQuality);
 
             FusedPixelPipeline.Run(source, plan, destination, destRowBytes, allocator,
-                _options?.Cancellation ?? default);
+                _options?.CancellationToken ?? default);
         }
 
         private static PixelFormat? TryMapPixelFormat(ISImage image) => image switch

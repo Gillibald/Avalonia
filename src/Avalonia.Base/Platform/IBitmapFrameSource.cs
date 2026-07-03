@@ -108,7 +108,7 @@ namespace Avalonia.Platform
         /// <summary>
         /// Gets how this frame blends onto the composited result of the previous frames.
         /// </summary>
-        BitmapBlendMode Blend { get; }
+        FrameBlendMode Blend { get; }
     }
 
     /// <summary>

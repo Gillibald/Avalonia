@@ -24,6 +24,10 @@ namespace Avalonia.Media.Imaging
         public PngFilterMode Filter { get; set; }
 
         /// <inheritdoc />
+        protected override void ValidateOptions() =>
+            RequireRange(CompressionLevel, 0, 9, nameof(PngBitmapEncoder), nameof(CompressionLevel));
+
+        /// <inheritdoc />
         protected override Guid ContainerFormat => BitmapContainerFormats.Png;
 
         /// <inheritdoc />

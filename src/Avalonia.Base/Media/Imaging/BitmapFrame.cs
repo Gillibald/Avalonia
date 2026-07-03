@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia.Platform;
 using Avalonia.Utilities;
 
@@ -21,6 +22,7 @@ namespace Avalonia.Media.Imaging
         private readonly IBitmapFrameSource _source;
         private readonly object _sync = new();
         private IRef<IBitmapImpl>? _realized;
+        private BitmapFrame? _thumbnail;
         private bool _disposed;
 
         internal BitmapFrame(IBitmapFrameSource source)
@@ -51,7 +53,7 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets the frame's metadata when the active backend exposes it.
         /// </summary>
-        public bool TryGetMetadata(out BitmapMetadata metadata)
+        public bool TryGetMetadata([NotNullWhen(true)] out BitmapMetadata? metadata)
         {
             if (_source is IMetadataSource source)
             {
@@ -59,14 +61,14 @@ namespace Avalonia.Media.Imaging
                 return true;
             }
 
-            metadata = null!;
+            metadata = null;
             return false;
         }
 
         /// <summary>
         /// Gets the frame's palette when it decodes from an indexed format.
         /// </summary>
-        public bool TryGetPalette(out BitmapPalette palette)
+        public bool TryGetPalette([NotNullWhen(true)] out BitmapPalette? palette)
         {
             if (_source is IIndexedFrame indexed)
             {
@@ -74,7 +76,7 @@ namespace Avalonia.Media.Imaging
                 return true;
             }
 
-            palette = null!;
+            palette = null;
             return false;
         }
 
@@ -95,18 +97,22 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
-        /// Gets the embedded thumbnail when the file carries one.
+        /// Gets the embedded thumbnail when the file carries one. The thumbnail is owned
+        /// by this frame - repeated calls return the same instance and it is disposed
+        /// with this frame, so do not dispose it separately.
         /// </summary>
-        public bool TryGetThumbnail(out BitmapFrame thumbnail)
+        public bool TryGetThumbnail([NotNullWhen(true)] out BitmapFrame? thumbnail)
         {
-            if (_source is IThumbnailSource { Thumbnail: { } source })
+            lock (_sync)
             {
-                thumbnail = new BitmapFrame(source);
-                return true;
-            }
+                ThrowIfDisposed();
 
-            thumbnail = null!;
-            return false;
+                if (_thumbnail is null && _source is IThumbnailSource { Thumbnail: { } source })
+                    _thumbnail = new BitmapFrame(source);
+
+                thumbnail = _thumbnail;
+                return thumbnail is not null;
+            }
         }
 
         /// <summary>
@@ -165,6 +171,8 @@ namespace Avalonia.Media.Imaging
                 _disposed = true;
                 _realized?.Dispose();
                 _realized = null;
+                _thumbnail?.Dispose();
+                _thumbnail = null;
                 _source.Dispose();
             }
         }
