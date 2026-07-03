@@ -174,5 +174,86 @@ namespace Avalonia.Skia.UnitTests.Imaging
                 File.Delete(path);
             }
         }
+
+        [Fact]
+        public void LoadBitmap_Framebuffer_Transcodes_An_Unsupported_Format()
+        {
+            // Rgb24 has no Skia color type. Realizing a bitmap must never require the
+            // caller to pre-select a render-compatible format, so the render bridge
+            // transcodes the pixels to Bgra8888 instead of throwing.
+            const int width = 3;
+            const int height = 2;
+            var stride = width * 3;
+            var pixels = new byte[stride * height];
+
+            for (var i = 0; i < pixels.Length; i += 3)
+            {
+                pixels[i + 0] = 10; // R
+                pixels[i + 1] = 20; // G
+                pixels[i + 2] = 30; // B
+            }
+
+            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+
+            try
+            {
+                var framebuffer = new LockedFramebuffer(handle.AddrOfPinnedObject(),
+                    new PixelSize(width, height), stride, new Vector(96, 96),
+                    PixelFormats.Rgb24, AlphaFormat.Opaque, null);
+
+                using var impl = CreateRenderInterface().LoadBitmap(framebuffer);
+
+                Assert.Equal(new PixelSize(width, height), impl.PixelSize);
+
+                var readable = Assert.IsAssignableFrom<IReadableBitmapImpl>(impl);
+                Assert.Equal(PixelFormats.Bgra8888, readable.Format);
+
+                using var locked = readable.Lock();
+
+                // Bgra8888 memory order is B, G, R, A.
+                var first = new byte[4];
+                Marshal.Copy(locked.Address, first, 0, 4);
+
+                Assert.Equal(new byte[] { 30, 20, 10, 255 }, first);
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
+
+        [Fact]
+        public void LoadBitmap_PixelData_Transcodes_An_Unsupported_Format()
+        {
+            const int width = 2;
+            const int height = 2;
+            var stride = width * 3;
+            var pixels = new byte[stride * height];
+
+            for (var i = 0; i < pixels.Length; i += 3)
+            {
+                pixels[i + 0] = 200; // R
+                pixels[i + 1] = 100; // G
+                pixels[i + 2] = 50;  // B
+            }
+
+            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+
+            try
+            {
+                using var impl = CreateRenderInterface().LoadBitmap(
+                    PixelFormats.Rgb24, AlphaFormat.Opaque, handle.AddrOfPinnedObject(),
+                    new PixelSize(width, height), new Vector(96, 96), stride);
+
+                Assert.Equal(new PixelSize(width, height), impl.PixelSize);
+
+                var readable = Assert.IsAssignableFrom<IReadableBitmapImpl>(impl);
+                Assert.Equal(PixelFormats.Bgra8888, readable.Format);
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
     }
 }

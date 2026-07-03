@@ -128,6 +128,43 @@ namespace Avalonia.Skia
         /// <param name="framebuffer">The pixel view to install.</param>
         public ImmutableBitmap(ILockedFramebuffer framebuffer)
         {
+            if (!framebuffer.Format.TryToSkColorType(out var colorType))
+            {
+                // Skia cannot install this pixel format directly (e.g. Rgb24 from an
+                // ImageSharp decode of an alpha-less image). Transcode a copy to
+                // Bgra8888, which it always supports, and release the source view, so a
+                // caller never has to pre-select a render-compatible target format just
+                // to realize a bitmap for display.
+                var convertedSize = framebuffer.Size;
+                var convertedDpi = framebuffer.Dpi;
+
+                try
+                {
+                    _bitmap = TranscodeToBgra8888(framebuffer.Address, convertedSize,
+                        framebuffer.RowBytes, framebuffer.Format, framebuffer.AlphaFormat);
+                }
+                finally
+                {
+                    framebuffer.Dispose();
+                }
+
+                _bitmap.SetImmutable();
+                _image = SKImage.FromBitmap(_bitmap);
+
+                if (_image == null)
+                {
+                    _bitmap.Dispose();
+                    _bitmap = null;
+
+                    throw new ArgumentException("Unable to create bitmap from provided data");
+                }
+
+                PixelSize = convertedSize;
+                Dpi = convertedDpi;
+
+                return;
+            }
+
             SKImageInfo info;
 
             try
@@ -135,7 +172,7 @@ namespace Avalonia.Skia
                 info = new SKImageInfo(
                     framebuffer.Size.Width,
                     framebuffer.Size.Height,
-                    framebuffer.Format.ToSkColorType(),
+                    colorType,
                     framebuffer.AlphaFormat.ToSkAlphaType());
             }
             catch
@@ -179,6 +216,40 @@ namespace Avalonia.Skia
             static (_, context) => ((ILockedFramebuffer)context!).Dispose();
 
         /// <summary>
+        /// Copies pixels of an arbitrary format into a freshly allocated Bgra8888 bitmap,
+        /// so a format Skia has no color type for can still be realized for display.
+        /// </summary>
+        private static SKBitmap TranscodeToBgra8888(IntPtr source, PixelSize size, int stride,
+            PixelFormat format, AlphaFormat alphaFormat)
+        {
+            var info = new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888,
+                alphaFormat.ToSkAlphaType());
+            var bitmap = new SKBitmap();
+
+            if (!bitmap.TryAllocPixels(info))
+            {
+                bitmap.Dispose();
+
+                throw new ArgumentException("Unable to allocate a bitmap for the converted pixels.");
+            }
+
+            try
+            {
+                PixelFormatTranscoder.Transcode(
+                    source, size, stride, format, alphaFormat,
+                    bitmap.GetPixels(), bitmap.RowBytes, PixelFormats.Bgra8888, alphaFormat);
+            }
+            catch
+            {
+                bitmap.Dispose();
+
+                throw;
+            }
+
+            return bitmap;
+        }
+
+        /// <summary>
         /// Create immutable bitmap from given pixel data copy.
         /// </summary>
         /// <param name="size">Size of the bitmap.</param>
@@ -189,19 +260,27 @@ namespace Avalonia.Skia
         /// <param name="data">Data pixels.</param>
         public ImmutableBitmap(PixelSize size, Vector dpi, int stride, PixelFormat format, AlphaFormat alphaFormat, IntPtr data)
         {
-            var info = new SKImageInfo(size.Width, size.Height, format.ToSkColorType(), alphaFormat.ToSkAlphaType());
-
-            _bitmap = new SKBitmap();
-            if (!_bitmap.TryAllocPixels(info))
+            if (format.TryToSkColorType(out var colorType))
             {
-                _bitmap.Dispose();
-                throw new ArgumentException("Unable to create bitmap from provided data");
-            }
+                var info = new SKImageInfo(size.Width, size.Height, colorType, alphaFormat.ToSkAlphaType());
 
-            // Our CopyPixels is 6-15x  faster than SKBitmap.Copy(), which internally spins up an
-            // SKCanvas and draws the source bitmap by assigning it as a shader on an SKPaint
-            Bitmap.CopyPixelsCore(new PixelRect(size), data, stride, format, _bitmap.GetPixels(),
-                _bitmap.RowBytes * size.Height, _bitmap.RowBytes);
+                _bitmap = new SKBitmap();
+                if (!_bitmap.TryAllocPixels(info))
+                {
+                    _bitmap.Dispose();
+                    throw new ArgumentException("Unable to create bitmap from provided data");
+                }
+
+                // Our CopyPixels is 6-15x  faster than SKBitmap.Copy(), which internally spins up an
+                // SKCanvas and draws the source bitmap by assigning it as a shader on an SKPaint
+                Bitmap.CopyPixelsCore(new PixelRect(size), data, stride, format, _bitmap.GetPixels(),
+                    _bitmap.RowBytes * size.Height, _bitmap.RowBytes);
+            }
+            else
+            {
+                // Skia has no color type for this format; transcode a copy to Bgra8888.
+                _bitmap = TranscodeToBgra8888(data, size, stride, format, alphaFormat);
+            }
 
             _bitmap.SetImmutable();
             _image = SKImage.FromBitmap(_bitmap);
