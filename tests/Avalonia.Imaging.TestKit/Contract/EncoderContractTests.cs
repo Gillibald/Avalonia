@@ -62,6 +62,100 @@ namespace Avalonia.Imaging.TestKit.Contract
             Assert.SkipWhen(tested == 0, "The manifest declares no lossless encode format with a generated reference.");
         }
 
+        [Theory]
+        [InlineData(BitmapRotation.Rotate90, false, false)]
+        [InlineData(BitmapRotation.None, true, false)]
+        public void EncodeTransform_TransformsPixels(BitmapRotation rotation, bool flipHorizontal, bool flipVertical)
+        {
+            // Transform-on-encode is guaranteed on every backend: natively where the
+            // codec can, through the shared software path otherwise. PNG keeps the
+            // comparison lossless.
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Encode: true, Decode: true },
+                "The manifest does not declare PNG encode plus decode.");
+
+            var source = FixtureImages.Rgb4x4Png;
+            var transform = new BitmapTransform(rotation, flipHorizontal, flipVertical);
+            var encoder = new PngBitmapEncoder { Transform = transform };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(source) });
+
+            using var scope = LocatorScope.With(Backend);
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream);
+
+            stream.Position = 0;
+
+            using var decoder = Backend.CreateDecoder(stream, ownsStream: false);
+            using var frame = ReadFirstFrame(decoder);
+            using var view = frame.Lock();
+
+            var expected = TransformReference(source.ExpectedRgba.Span, source.ExpectedSize,
+                rotation, flipHorizontal, flipVertical, out var expectedSize);
+
+            Assert.Equal(expectedSize, view.Size);
+
+            var actual = FramebufferPixels.ReadRgba(view);
+
+            Assert.Equal(expected, actual);
+        }
+
+        private static byte[] TransformReference(ReadOnlySpan<byte> rgba, PixelSize size,
+            BitmapRotation rotation, bool flipHorizontal, bool flipVertical, out PixelSize resultSize)
+        {
+            // Reference implementation of the documented order: rotation, then the
+            // horizontal flip, then the vertical flip.
+            var (width, height, pixels) = (size.Width, size.Height, rgba.ToArray());
+
+            for (var steps = (int)rotation / 90; steps > 0; steps--)
+            {
+                var rotated = new byte[pixels.Length];
+
+                for (var y = 0; y < height; y++)
+                {
+                    for (var x = 0; x < width; x++)
+                    {
+                        // (x, y) lands at (height - 1 - y, x) in the rotated image.
+                        Array.Copy(pixels, (y * width + x) * 4, rotated, ((x * height) + (height - 1 - y)) * 4, 4);
+                    }
+                }
+
+                pixels = rotated;
+                (width, height) = (height, width);
+            }
+
+            if (flipHorizontal)
+            {
+                var flipped = new byte[pixels.Length];
+
+                for (var y = 0; y < height; y++)
+                {
+                    for (var x = 0; x < width; x++)
+                    {
+                        Array.Copy(pixels, (y * width + x) * 4, flipped, (y * width + (width - 1 - x)) * 4, 4);
+                    }
+                }
+
+                pixels = flipped;
+            }
+
+            if (flipVertical)
+            {
+                var flipped = new byte[pixels.Length];
+
+                for (var y = 0; y < height; y++)
+                {
+                    Array.Copy(pixels, y * width * 4, flipped, (height - 1 - y) * width * 4, width * 4);
+                }
+
+                pixels = flipped;
+            }
+
+            resultSize = new PixelSize(width, height);
+
+            return pixels;
+        }
+
         [Fact]
         public void UnsupportedEncode_FailsFastNamingBackend()
         {

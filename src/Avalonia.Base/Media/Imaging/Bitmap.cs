@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -199,9 +200,9 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         /// <param name="fileName">The filename.</param>
         /// <param name="quality">
-        /// The optional quality for compression. 
-        /// The quality value is interpreted from 0 - 100. If quality is null the default quality 
-        /// setting is applied.
+        /// The optional quality for compression.
+        /// The quality value is interpreted from 0 - 100. PNG ignores it, matching the
+        /// historical behavior of this method.
         /// </param>
         [Obsolete($"Use the overload accepting {nameof(BitmapEncoderOptions)} instead.")]
         public void Save(string fileName, int? quality = null)
@@ -228,19 +229,56 @@ namespace Avalonia.Media.Imaging
         /// <param name="stream">The stream.</param>
         /// <param name="quality">
         /// The optional quality for compression.
-        /// The quality value is interpreted from 0 - 100. If quality is null the default quality
-        /// setting is applied.
+        /// The quality value is interpreted from 0 - 100. PNG ignores it, matching the
+        /// historical behavior of this method.
         /// </param>
         [Obsolete($"Use the overload accepting {nameof(BitmapEncoderOptions)} instead.")]
         public void Save(Stream stream, int? quality = null)
         {
-            PlatformImpl.Item.Save(stream, PngBitmapEncoderOptions.Default);
+            Save(stream, PngBitmapEncoderOptions.Default);
         }
 
         /// <inheritdoc />
         public void Save(Stream stream, BitmapEncoderOptions options)
         {
+            if (options is PngBitmapEncoderOptions pngOptions && CanSaveThroughImagingBackend())
+            {
+                Save(stream, new PngBitmapEncoder { CompressionLevel = ToZlibLevel(pngOptions.CompressionLevel) });
+
+                return;
+            }
+
             PlatformImpl.Item.Save(stream, options);
+        }
+
+        private static int ToZlibLevel(CompressionLevel level) => level switch
+        {
+            CompressionLevel.Optimal => 6,
+            CompressionLevel.Fastest => 1,
+            CompressionLevel.NoCompression => 0,
+            CompressionLevel.SmallestSize => 9,
+            _ => throw new ArgumentOutOfRangeException(nameof(level), level, "Unknown compression level")
+        };
+
+        private bool CanSaveThroughImagingBackend()
+        {
+            // Routing PNG saves through the active imaging backend decouples them from the
+            // render backend.
+            // Unreadable impls (render targets) keep the platform path, which reads the
+            // rendered surface directly, and without a bound backend nothing changes.
+            if (ImagingBackend.CurrentOrNull is not { } backend)
+                return false;
+
+            if (PlatformImpl.Item is not IReadableBitmapImpl { Format: not null })
+                return false;
+
+            foreach (var codec in backend.SupportedCodecs)
+            {
+                if (codec.ContainerFormat == BitmapContainerFormats.Png)
+                    return (codec.Capabilities & BitmapCodecCapabilities.Encode) != 0;
+            }
+
+            return false;
         }
 
         /// <summary>

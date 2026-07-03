@@ -24,12 +24,6 @@ namespace Avalonia.Skia.Imaging
 
         public void Encode(BitmapEncoder encoder, Stream stream)
         {
-            if (!encoder.Transform.IsIdentity)
-            {
-                throw new NotSupportedException(
-                    "The 'SkiaSharp' imaging backend does not support transforming while encoding.");
-            }
-
             if (encoder is PngBitmapEncoder { Interlace: PngInterlaceMode.Adam7 })
             {
                 throw new NotSupportedException(
@@ -37,6 +31,10 @@ namespace Avalonia.Skia.Imaging
             }
 
             var pixels = encoder.Frames[0].Pixels;
+
+            // Skia cannot transform while encoding; the shared software path can.
+            if (!encoder.Transform.IsIdentity)
+                pixels = EncoderTransform.Apply(pixels, encoder.Transform);
 
             using var framebuffer = pixels.Lock();
 
