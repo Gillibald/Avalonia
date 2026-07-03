@@ -102,13 +102,13 @@
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="128,0,0,0">
                                 <TextBlock Classes="note" Text="x"/>
-                                <NumericUpDown x:Name="CropX" Width="90" Minimum="0" Maximum="100000" Value="0" FormatString="0"/>
+                                <NumericUpDown x:Name="CropX" Minimum="0" Maximum="100000" Value="0" FormatString="0"/>
                                 <TextBlock Classes="note" Text="y"/>
-                                <NumericUpDown x:Name="CropY" Width="90" Minimum="0" Maximum="100000" Value="0" FormatString="0"/>
+                                <NumericUpDown x:Name="CropY" Minimum="0" Maximum="100000" Value="0" FormatString="0"/>
                                 <TextBlock Classes="note" Text="w"/>
-                                <NumericUpDown x:Name="CropW" Width="90" Minimum="1" Maximum="100000" Value="100" FormatString="0"/>
+                                <NumericUpDown x:Name="CropW" Minimum="1" Maximum="100000" Value="100" FormatString="0"/>
                                 <TextBlock Classes="note" Text="h"/>
-                                <NumericUpDown x:Name="CropH" Width="90" Minimum="1" Maximum="100000" Value="100" FormatString="0"/>
+                                <NumericUpDown x:Name="CropH" Minimum="1" Maximum="100000" Value="100" FormatString="0"/>
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Spacing="8">
