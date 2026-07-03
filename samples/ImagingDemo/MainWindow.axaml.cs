@@ -151,10 +151,10 @@ namespace ImagingDemo
 
                 SourceInfo.Text = FormatInfo(label, info);
 
-                // Decode to a render-ready format for the preview: ImageSharp exposes an
-                // image's native format (e.g. Rgb24 for a JPEG), which the render backend
-                // cannot install, so displayed decodes always request Bgra8888.
-                ReplacePreview(ref _sourcePreview, DecodeToBitmap(bytes, RenderReadyOptions()), SourcePreview);
+                // Decode with no target format: the frame keeps the file's native pixel
+                // format, and realizing the bitmap transcodes it to a render-installable
+                // format when needed, so displaying never requires pre-selecting one.
+                ReplacePreview(ref _sourcePreview, DecodeToBitmap(bytes, null), SourcePreview);
 
                 // Default the crop box to the whole image.
                 CropW.Value = info.PixelSize.Width;
@@ -272,16 +272,16 @@ namespace ImagingDemo
 
             try
             {
-                using var source = DecodeToBitmap(_sourceBytes, RenderReadyOptions());
+                using var source = DecodeToBitmap(_sourceBytes, null);
                 var encoder = BuildEncoder(out var formatName);
 
                 using var encoded = new MemoryStream();
                 source.Save(encoded, encoder);
                 var bytes = encoded.ToArray();
 
-                // Re-decode to a render-ready format so the round-tripped result displays
-                // on either backend (a JPEG re-decodes to Rgb24 on ImageSharp otherwise).
-                var roundTripped = DecodeToBitmap(bytes, RenderReadyOptions());
+                // Re-decode with no target format; realizing the bitmap transcodes the
+                // native format (a JPEG re-decodes to Rgb24 on ImageSharp) when it must.
+                var roundTripped = DecodeToBitmap(bytes, null);
                 ReplacePreview(ref _encodeResult, roundTripped, EncodeResult);
 
                 EncodeInfo.Text =
@@ -327,7 +327,7 @@ namespace ImagingDemo
                 if (file is null)
                     return;
 
-                using var source = DecodeToBitmap(_sourceBytes, RenderReadyOptions());
+                using var source = DecodeToBitmap(_sourceBytes, null);
                 var encoder = BuildEncoder(out var formatName);
 
                 await using var stream = await file.OpenWriteAsync();
@@ -433,16 +433,6 @@ namespace ImagingDemo
         }
 
         // --- Shared imaging helpers -----------------------------------------
-
-        private static BitmapDecodeOptions RenderReadyOptions() => new()
-        {
-            // A fixed, render-installable target format. Skia decodes to Bgra8888
-            // natively, but ImageSharp exposes an image's own native format (Rgb24 for a
-            // JPEG, etc.) which the render backend cannot install and which would make the
-            // encoded content backend-dependent. Forcing Bgra8888 fixes both.
-            TargetFormat = PixelFormats.Bgra8888,
-            TargetAlphaFormat = AlphaFormat.Premul,
-        };
 
         private static Bitmap DecodeToBitmap(byte[] bytes, BitmapDecodeOptions? options)
         {

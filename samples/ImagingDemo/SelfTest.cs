@@ -117,18 +117,27 @@ namespace ImagingDemo
 
                     encoded.Position = 0;
 
-                    // Re-decode to a render-ready format: a JPEG re-decodes to Rgb24 on
-                    // ImageSharp, which the render backend cannot install.
-                    using var back = Bitmap.Decode(encoded, new BitmapDecodeOptions
-                    {
-                        TargetFormat = PixelFormats.Bgra8888,
-                        TargetAlphaFormat = AlphaFormat.Premul,
-                    });
+                    // Re-decode with no target format: a JPEG re-decodes to Rgb24 on
+                    // ImageSharp, and realizing the bitmap must transcode it rather than
+                    // require the caller to pick a render-compatible format.
+                    using var back = Bitmap.Decode(encoded);
 
                     // Rotate 90 swaps the 200x120 source to 120x200.
                     return back.PixelSize == new PixelSize(120, 200);
                 });
             }
+
+            Check("Bitmap.Decode with no options realizes a native-format frame", () =>
+            {
+                // A JPEG is alpha-less, so ImageSharp decodes it to Rgb24 - a format the
+                // render backend has no color type for. Realizing it without a target
+                // format must still succeed (the render path transcodes it).
+                using var source = Decode(png, PixelFormats.Bgra8888, AlphaFormat.Premul);
+                var jpeg = SaveToBytes(source, new JpegBitmapEncoder { Quality = 90 });
+
+                using var realized = Decode(jpeg);
+                return realized.PixelSize == new PixelSize(200, 120);
+            });
 
             Check("Lossless PNG round-trip preserves pixels exactly", () =>
             {
@@ -167,10 +176,23 @@ namespace ImagingDemo
             return stream.ToArray();
         }
 
+        private static Bitmap Decode(byte[] bytes)
+        {
+            using var stream = new MemoryStream(bytes);
+            return Bitmap.Decode(stream);
+        }
+
         private static Bitmap Decode(byte[] bytes, PixelFormat format, AlphaFormat alpha)
         {
             using var stream = new MemoryStream(bytes);
             return Bitmap.Decode(stream, new BitmapDecodeOptions { TargetFormat = format, TargetAlphaFormat = alpha });
+        }
+
+        private static byte[] SaveToBytes(Bitmap bitmap, BitmapEncoder encoder)
+        {
+            using var stream = new MemoryStream();
+            bitmap.Save(stream, encoder);
+            return stream.ToArray();
         }
 
         private static PixelBuffer DecodeBuffer(byte[] bytes, PixelFormat format, AlphaFormat alpha)
