@@ -56,11 +56,15 @@ namespace Avalonia.Media.Imaging
         protected abstract BitmapCodecCapabilities Capabilities { get; }
 
         /// <summary>
-        /// Encodes the frames to the stream. Validation runs before any byte is written.
+        /// Encodes the frames to the stream. Validation runs before any byte is written;
+        /// the token is observed between frames where the backend supports cooperative
+        /// cancellation.
         /// </summary>
-        public void Save(Stream stream)
+        public void Save(Stream stream, CancellationToken cancellationToken = default)
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             var backend = ImagingBackend.Current;
 
@@ -68,14 +72,16 @@ namespace Avalonia.Media.Imaging
 
             var impl = backend.CreateEncoder(ContainerFormat);
 
-            impl.Encode(this, stream);
+            impl.Encode(this, stream, cancellationToken);
         }
 
         /// <summary>
-        /// Encodes the frames to the stream on a background thread.
+        /// Encodes the frames to the stream on a background thread. The token gates the
+        /// start and is observed between frames where the backend supports cooperative
+        /// cancellation.
         /// </summary>
         public Task SaveAsync(Stream stream, CancellationToken cancellationToken = default)
-            => Task.Run(() => Save(stream), cancellationToken);
+            => Task.Run(() => Save(stream, cancellationToken), cancellationToken);
 
         /// <summary>
         /// Creates the encoder for a well-known format.
@@ -91,11 +97,29 @@ namespace Avalonia.Media.Imaging
             _ => throw new ArgumentOutOfRangeException(nameof(format)),
         };
 
+        /// <summary>
+        /// Validates this encoder's option values, called from <see cref="Save"/> before
+        /// any byte is written. Concrete encoders override to range-check their options
+        /// and throw <see cref="InvalidOperationException"/> on invalid values.
+        /// </summary>
+        protected virtual void ValidateOptions()
+        {
+        }
+
+        private protected static void RequireRange(int value, int min, int max, string encoder, string option)
+        {
+            if (value < min || value > max)
+                throw new InvalidOperationException(
+                    $"{encoder}.{option} must be between {min} and {max}; got {value}.");
+        }
+
         private void Validate(IImagingBackend backend)
         {
             if (Frames.Count == 0)
                 throw new InvalidOperationException(
                     $"{GetType().Name} has no frames to encode; add at least one to {nameof(Frames)}.");
+
+            ValidateOptions();
 
             var backendCapabilities = GetBackendCapabilities(backend);
 
@@ -107,6 +131,9 @@ namespace Avalonia.Media.Imaging
 
             if (ColorProfile is not null)
                 RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.ColorProfile, "embedding a color profile");
+
+            if (HasFramePalette())
+                RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.Palette, "encoding a palette");
         }
 
         private void RequireCapability(IImagingBackend backend, BitmapCodecCapabilities? backendCapabilities,
@@ -126,6 +153,17 @@ namespace Avalonia.Media.Imaging
             for (var i = 0; i < Frames.Count; i++)
             {
                 if (Frames[i].Metadata is not null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool HasFramePalette()
+        {
+            for (var i = 0; i < Frames.Count; i++)
+            {
+                if (Frames[i].Palette is not null)
                     return true;
             }
 

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Internal;
@@ -22,8 +23,10 @@ namespace Avalonia.Skia.Imaging
             _allocator = allocator;
         }
 
-        public void Encode(BitmapEncoder encoder, Stream stream)
+        public void Encode(BitmapEncoder encoder, Stream stream, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (encoder is PngBitmapEncoder { Interlace: PngInterlaceMode.Adam7 })
             {
                 throw new NotSupportedException(

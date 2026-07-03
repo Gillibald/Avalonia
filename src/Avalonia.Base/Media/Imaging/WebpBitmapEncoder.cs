@@ -19,6 +19,10 @@ namespace Avalonia.Media.Imaging
         public int Quality { get; set; } = 75;
 
         /// <inheritdoc />
+        protected override void ValidateOptions() =>
+            RequireRange(Quality, 1, 100, nameof(WebpBitmapEncoder), nameof(Quality));
+
+        /// <inheritdoc />
         protected override Guid ContainerFormat => BitmapContainerFormats.Webp;
 
         /// <inheritdoc />

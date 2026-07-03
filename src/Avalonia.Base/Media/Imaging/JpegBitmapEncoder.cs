@@ -14,6 +14,10 @@ namespace Avalonia.Media.Imaging
         public int Quality { get; set; } = 90;
 
         /// <inheritdoc />
+        protected override void ValidateOptions() =>
+            RequireRange(Quality, 1, 100, nameof(JpegBitmapEncoder), nameof(Quality));
+
+        /// <inheritdoc />
         protected override Guid ContainerFormat => BitmapContainerFormats.Jpeg;
 
         /// <inheritdoc />

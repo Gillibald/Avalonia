@@ -78,7 +78,7 @@ namespace Avalonia.Platform
         /// the caller's stream is entirely free once this method returns. This is what
         /// makes deferred frame decoding sound: a frame's pixels can be produced at any
         /// later time without touching the caller's stream. Materialization observes
-        /// <see cref="BitmapDecodeOptions.Cancellation"/>;
+        /// <see cref="BitmapDecodeOptions.CancellationToken"/>;
         /// <see cref="BitmapDecodeOptions.MaterializeSource"/> forces it even when
         /// deferral would be allowed.
         /// </remarks>
@@ -104,7 +104,7 @@ namespace Avalonia.Platform
             AvaloniaLocator.Current.GetService<IImagingBackend>() ??
             throw new InvalidOperationException(
                 "No imaging backend is configured. The default backend is bound by UseSkia; " +
-                "select one explicitly with an UseXxxImaging AppBuilder extension.");
+                "select one explicitly with a UseXxxImaging AppBuilder extension.");
 
         /// <summary>
         /// Gets the active imaging backend, or null when none is configured.

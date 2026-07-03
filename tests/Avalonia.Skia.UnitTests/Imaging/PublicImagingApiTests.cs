@@ -130,7 +130,7 @@ namespace Avalonia.Skia.UnitTests.Imaging
 
             var count = 0;
 
-            foreach (var frame in decoder.Frames)
+            foreach (var frame in decoder.ReadFrames())
             {
                 using (frame)
                 {
@@ -143,15 +143,66 @@ namespace Avalonia.Skia.UnitTests.Imaging
         }
 
         [Fact]
-        public void Frames_Can_Only_Be_Enumerated_Once()
+        public void ReadFrames_Can_Only_Be_Called_Once()
         {
             using var scope = BindPlatform();
             using var stream = CreatePng(4, 4);
             using var decoder = BitmapDecoder.Create(stream);
 
-            _ = decoder.Frames;
+            _ = decoder.ReadFrames();
 
-            Assert.Throws<InvalidOperationException>(() => decoder.Frames);
+            Assert.Throws<InvalidOperationException>(() => decoder.ReadFrames());
+        }
+
+        [Fact]
+        public void Save_Leaves_The_Encoder_Reusable()
+        {
+            using var scope = BindPlatform();
+            using var stream = CreatePng(4, 4);
+            using var bitmap = Bitmap.Decode(stream);
+
+            var encoder = new PngBitmapEncoder();
+
+            using var first = new MemoryStream();
+            using var second = new MemoryStream();
+
+            bitmap.Save(first, encoder);
+
+            Assert.Empty(encoder.Frames);
+
+            bitmap.Save(second, encoder);
+
+            first.Position = 0;
+            second.Position = 0;
+
+            Assert.Equal(new PixelSize(4, 4), BitmapDecoder.Identify(first).PixelSize);
+            Assert.Equal(new PixelSize(4, 4), BitmapDecoder.Identify(second).PixelSize);
+        }
+
+        [Fact]
+        public async Task DecodeAsync_Does_Not_Mutate_The_Caller_Options()
+        {
+            using var scope = BindPlatform();
+            using var stream = CreatePng(4, 4);
+            using var cts = new CancellationTokenSource();
+
+            var options = new BitmapDecodeOptions();
+
+            using var bitmap = await Bitmap.DecodeAsync(stream, options, cts.Token);
+
+            Assert.Equal(CancellationToken.None, options.CancellationToken);
+            Assert.Equal(new PixelSize(4, 4), bitmap.PixelSize);
+        }
+
+        [Fact]
+        public void Invalid_Jpeg_ScaleDenominator_Is_Rejected_Up_Front()
+        {
+            using var scope = BindPlatform();
+            using var stream = CreatePng(4, 4);
+
+            var options = new JpegDecodeOptions { ScaleDenominator = 3 };
+
+            Assert.Throws<ArgumentException>(() => BitmapDecoder.Create(stream, options));
         }
 
         [Fact]

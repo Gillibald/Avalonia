@@ -256,7 +256,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
             using var stream = new MemoryStream();
 
-            backend.CreateEncoder(BitmapContainerFormats.Jpeg).Encode(encoder, stream);
+            backend.CreateEncoder(BitmapContainerFormats.Jpeg).Encode(encoder, stream, TestContext.Current.CancellationToken);
             stream.Position = 0;
 
             using var roundTripped = backend.CreateDecoder(stream, ownsStream: false);
@@ -301,7 +301,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
             using var stream = new MemoryStream();
 
-            backend.CreateEncoder(BitmapContainerFormats.Jpeg).Encode(encoder, stream);
+            backend.CreateEncoder(BitmapContainerFormats.Jpeg).Encode(encoder, stream, TestContext.Current.CancellationToken);
             stream.Position = 0;
 
             using var roundTripped = backend.CreateDecoder(stream, ownsStream: false);
@@ -336,7 +336,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
             using var stream = new MemoryStream();
 
-            backend.CreateEncoder(BitmapContainerFormats.Png).Encode(encoder, stream);
+            backend.CreateEncoder(BitmapContainerFormats.Png).Encode(encoder, stream, TestContext.Current.CancellationToken);
             stream.Position = 0;
 
             using var roundTripped = backend.CreateDecoder(stream, ownsStream: false);
@@ -404,7 +404,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
             using var stream = new MemoryStream();
 
-            encoder.Save(stream);
+            encoder.Save(stream, TestContext.Current.CancellationToken);
             stream.Position = 0;
 
             using var decoder = backend.CreateDecoder(stream, ownsStream: false);
@@ -439,7 +439,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
             using var stream = new MemoryStream();
 
-            backend.CreateEncoder(BitmapContainerFormats.Png).Encode(encoder, stream);
+            backend.CreateEncoder(BitmapContainerFormats.Png).Encode(encoder, stream, TestContext.Current.CancellationToken);
             stream.Position = 0;
 
             using var decoder = backend.CreateDecoder(stream, ownsStream: false);

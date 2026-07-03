@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using SixLabors.ImageSharp;
@@ -40,8 +41,10 @@ namespace Avalonia.Imaging.ImageSharp
             _allocator = allocator;
         }
 
-        public void Encode(BitmapEncoder encoder, Stream stream)
+        public void Encode(BitmapEncoder encoder, Stream stream, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var frames = encoder.Frames;
             var isMultiFrame = (_codecInfo.Capabilities & BitmapCodecCapabilities.MultiFrameEncode) != 0;
 
@@ -53,6 +56,8 @@ namespace Avalonia.Imaging.ImageSharp
             {
                 for (var i = 1; i < frames.Count; i++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     using var page = CreateImage(frames[i].Pixels);
 
                     var added = image.Frames.AddFrame(page.Frames.RootFrame);
@@ -60,6 +65,8 @@ namespace Avalonia.Imaging.ImageSharp
                     ApplyFrameMetadata(added.Metadata, frames[i].Metadata);
                 }
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             ApplyContainerMetadata(encoder, image);
             ApplyTransform(encoder.Transform, image);

@@ -13,7 +13,7 @@ namespace Avalonia.Media.Imaging
         TimeSpan Delay,
         FrameDisposalMethod Disposal,
         PixelPoint Origin,
-        BitmapBlendMode Blend);
+        FrameBlendMode Blend);
 
     /// <summary>
     /// How an animation frame is disposed before the next frame is composited.
@@ -36,7 +36,7 @@ namespace Avalonia.Media.Imaging
     /// <summary>
     /// How an animation frame blends onto the composited result of the previous frames.
     /// </summary>
-    public enum BitmapBlendMode
+    public enum FrameBlendMode
     {
         /// <summary>Replace the pixels in the frame's area.</summary>
         Source,

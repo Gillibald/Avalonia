@@ -229,7 +229,7 @@ namespace Avalonia.Imaging.TestKit.Contract
 
             Assert.True(frame.TryGetMetadata(out var metadata));
             Assert.Equal(FixtureImages.PngTextValue,
-                metadata.GetQuery("/text/{str=" + FixtureImages.PngTextKeyword + "}"));
+                metadata!.GetQuery("/text/{str=" + FixtureImages.PngTextKeyword + "}"));
 
             // The metadata rides along onto the realized bitmap.
             using var bitmap = frame.ToBitmap();
