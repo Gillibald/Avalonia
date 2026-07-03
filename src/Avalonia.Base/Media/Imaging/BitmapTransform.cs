@@ -2,7 +2,8 @@ namespace Avalonia.Media.Imaging
 {
     /// <summary>
     /// An orthogonal transform (rotation in 90 degree steps plus flips) applied on encode,
-    /// or natively by a backend that supports it.
+    /// or natively by a backend that supports it. The parts apply in a fixed order:
+    /// rotation first, then the horizontal flip, then the vertical flip.
     /// </summary>
     /// <param name="Rotation">The clockwise rotation.</param>
     /// <param name="FlipHorizontal">Whether to mirror horizontally.</param>

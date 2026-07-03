@@ -195,31 +195,68 @@ namespace Avalonia.Media.Imaging
         IRef<IBitmapImpl> IBitmap.PlatformImpl => PlatformImpl;
 
         /// <summary>
-        /// Saves the bitmap to a file.
+        /// Saves the bitmap to a file as PNG.
         /// </summary>
         /// <param name="fileName">The filename.</param>
         /// <param name="quality">
-        /// The optional quality for compression. 
-        /// The quality value is interpreted from 0 - 100. If quality is null the default quality 
-        /// setting is applied.
+        /// The optional quality for compression.
+        /// The quality value is interpreted from 0 - 100. PNG ignores it, matching the
+        /// historical behavior of this method.
         /// </param>
         public void Save(string fileName, int? quality = null)
         {
+            if (CanSaveThroughImagingBackend())
+            {
+                using var stream = File.Create(fileName);
+
+                Save(stream, new PngBitmapEncoder());
+
+                return;
+            }
+
             PlatformImpl.Item.Save(fileName, quality);
         }
 
         /// <summary>
-        /// Saves the bitmap to a stream.
+        /// Saves the bitmap to a stream as PNG.
         /// </summary>
         /// <param name="stream">The stream.</param>
         /// <param name="quality">
         /// The optional quality for compression.
-        /// The quality value is interpreted from 0 - 100. If quality is null the default quality
-        /// setting is applied.
+        /// The quality value is interpreted from 0 - 100. PNG ignores it, matching the
+        /// historical behavior of this method.
         /// </param>
         public void Save(Stream stream, int? quality = null)
         {
+            if (CanSaveThroughImagingBackend())
+            {
+                Save(stream, new PngBitmapEncoder());
+
+                return;
+            }
+
             PlatformImpl.Item.Save(stream, quality);
+        }
+
+        private bool CanSaveThroughImagingBackend()
+        {
+            // The legacy overloads always produced PNG; routing them through the active
+            // imaging backend keeps that while decoupling save from the render backend.
+            // Unreadable impls (render targets) keep the platform path, which reads the
+            // rendered surface directly, and without a bound backend nothing changes.
+            if (ImagingBackend.CurrentOrNull is not { } backend)
+                return false;
+
+            if (PlatformImpl.Item is not IReadableBitmapImpl { Format: not null })
+                return false;
+
+            foreach (var codec in backend.SupportedCodecs)
+            {
+                if (codec.ContainerFormat == BitmapContainerFormats.Png)
+                    return (codec.Capabilities & BitmapCodecCapabilities.Encode) != 0;
+            }
+
+            return false;
         }
 
         /// <summary>

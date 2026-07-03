@@ -284,6 +284,64 @@ namespace Avalonia.Skia.UnitTests.Imaging
         }
 
         [Fact]
+        public void Legacy_Save_Routes_Through_The_Backend_And_Round_Trips()
+        {
+            using var scope = BindPlatform();
+            using var source = CreatePng(4, 4);
+            using var original = Bitmap.Decode(source);
+            using var saved = new MemoryStream();
+
+            original.Save(saved);
+
+            saved.Position = 0;
+
+            using var roundTripped = Bitmap.Decode(saved);
+
+            Assert.Equal(original.PixelSize, roundTripped.PixelSize);
+            Assert.Equal(ReadPixels(original), ReadPixels(roundTripped));
+        }
+
+        [Fact]
+        public void Legacy_Save_Without_A_Backend_Falls_Back_To_The_Platform_Path()
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            AvaloniaLocator.CurrentMutable
+                .Bind<IPlatformRenderInterface>()
+                .ToConstant(new Avalonia.Skia.PlatformRenderInterface(null));
+
+            using var source = CreatePng(4, 4);
+            using var bitmap = new Bitmap(source);
+            using var saved = new MemoryStream();
+
+            bitmap.Save(saved);
+
+            Assert.NotEqual(0, saved.Length);
+        }
+
+        [Fact]
+        public void Save_With_Transform_Rotates_On_Every_Backend()
+        {
+            using var scope = BindPlatform();
+            using var source = CreatePng(4, 2);
+            using var bitmap = Bitmap.Decode(source);
+            using var saved = new MemoryStream();
+
+            // The Skia encoder has no native transform; the shared software path
+            // guarantees the semantics anyway.
+            bitmap.Save(saved, new PngBitmapEncoder
+            {
+                Transform = new BitmapTransform(BitmapRotation.Rotate90, false, false),
+            });
+
+            saved.Position = 0;
+
+            using var rotated = Bitmap.Decode(saved);
+
+            Assert.Equal(new PixelSize(2, 4), rotated.PixelSize);
+        }
+
+        [Fact]
         public void Bitmap_Save_With_Unsupported_Encoder_Names_The_Backend()
         {
             using var scope = BindPlatform();
