@@ -158,6 +158,52 @@ namespace Avalonia.Imaging.TestKit.Contract
         }
 
         [Fact]
+        public void EncodeFromFrame_RoundTripsWithoutASnapshot()
+        {
+            // A decoded frame is a pixel source in its own right: the encoder locks the
+            // frame's pooled pixels directly, so encoding a decode result never forces a
+            // PixelBuffer snapshot copy. PNG keeps the comparison lossless.
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Encode: true, Decode: true },
+                "The manifest does not declare PNG encode plus decode.");
+
+            var source = FixtureImages.Rgb4x4Png;
+
+            using var scope = LocatorScope.With(Backend);
+            using var decoder = BitmapDecoder.Create(source.OpenRead(), ownsStream: true);
+            using var frame = decoder.ReadNextFrame()!;
+
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Frame = frame });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+
+            stream.Position = 0;
+
+            using var redecoded = Backend.CreateDecoder(stream, ownsStream: false);
+            using var back = ReadFirstFrame(redecoded);
+
+            AssertFrameMatchesReference(source, back);
+        }
+
+        [Fact]
+        public void Frame_WithoutAPixelSource_ThrowsBeforeWriting()
+        {
+            using var scope = LocatorScope.With(Backend);
+
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame());
+
+            using var stream = new MemoryStream();
+
+            Assert.Throws<InvalidOperationException>(() => encoder.Save(stream));
+            Assert.Equal(0L, stream.Length);
+        }
+
+        [Fact]
         public void UnsupportedEncode_FailsFastNamingBackend()
         {
             // A fixed container GUID no backend knows.

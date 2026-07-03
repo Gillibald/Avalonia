@@ -345,5 +345,60 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Null(metadata.XmpPacket);
             Assert.Throws<NotSupportedException>(() => metadata.XmpPacket = "<xmp/>");
         }
+
+        [Fact]
+        public void Frame_Without_A_Pixel_Source_Throws_Before_Writing()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
+
+            encoder.Frames.Add(new BitmapEncoderFrame());
+
+            Assert.Throws<InvalidOperationException>(() => encoder.Save(stream));
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Fact]
+        public void Frame_With_Both_Pixel_Sources_Throws_Before_Writing()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+            using var frame = new BitmapFrame(new FakeFrameSource());
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
+
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = PixelBuffer.TakeOwnership(new byte[4], new PixelSize(1, 1), 4,
+                    PixelFormat.Bgra8888, AlphaFormat.Premul, new Vector(96, 96)),
+                Frame = frame,
+            });
+
+            Assert.Throws<InvalidOperationException>(() => encoder.Save(stream));
+            Assert.Equal(0, stream.Length);
+        }
+
+        private sealed class FakeFrameSource : IBitmapFrameSource
+        {
+            public PixelSize PixelSize => new(1, 1);
+
+            public Vector Dpi => new(96, 96);
+
+            public PixelFormat PixelFormat => PixelFormat.Bgra8888;
+
+            public AlphaFormat AlphaFormat => AlphaFormat.Premul;
+
+            public ILockedFramebuffer Lock() => throw new NotSupportedException();
+
+            public void Dispose()
+            {
+            }
+        }
     }
 }

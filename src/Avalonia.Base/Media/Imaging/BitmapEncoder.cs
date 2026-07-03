@@ -119,6 +119,18 @@ namespace Avalonia.Media.Imaging
                 throw new InvalidOperationException(
                     $"{GetType().Name} has no frames to encode; add at least one to {nameof(Frames)}.");
 
+            for (var i = 0; i < Frames.Count; i++)
+            {
+                var frame = Frames[i];
+
+                if (frame.Pixels is null == frame.Frame is null)
+                {
+                    throw new InvalidOperationException(
+                        $"A {nameof(BitmapEncoderFrame)} needs exactly one pixel source: set either " +
+                        $"{nameof(BitmapEncoderFrame.Pixels)} or {nameof(BitmapEncoderFrame.Frame)}.");
+                }
+            }
+
             ValidateOptions();
 
             var backendCapabilities = GetBackendCapabilities(backend);

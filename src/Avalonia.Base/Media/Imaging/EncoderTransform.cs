@@ -6,23 +6,40 @@ namespace Avalonia.Media.Imaging
 {
     /// <summary>
     /// The shared software path for <see cref="BitmapEncoder.Transform"/>: applies an
-    /// orthogonal transform to a pixel snapshot in one pipeline pass, so every backend
+    /// orthogonal transform to the source pixels in one pipeline pass, so every backend
     /// honors transform-on-encode whether or not its codec can transform natively.
     /// </summary>
     internal static class EncoderTransform
     {
+        /// <summary>
+        /// Applies the transform to a snapshot, returning the same instance when the
+        /// transform changes nothing.
+        /// </summary>
         public static PixelBuffer Apply(PixelBuffer source, BitmapTransform transform)
         {
-            if (transform.IsIdentity)
+            if (transform.IsIdentity || PixelOrientations.FromTransform(transform) == PixelOrientation.Normal)
                 return source;
+
+            using var framebuffer = source.Lock();
+
+            return Apply(framebuffer, transform)!;
+        }
+
+        /// <summary>
+        /// Applies the transform to a framebuffer view, returning a new snapshot holding
+        /// the transformed pixels - or null when the transform changes nothing and the
+        /// source view can be consumed as is.
+        /// </summary>
+        public static PixelBuffer? Apply(ILockedFramebuffer source, BitmapTransform transform)
+        {
+            if (transform.IsIdentity)
+                return null;
 
             var orientation = PixelOrientations.FromTransform(transform);
 
             // Combinations can cancel out (a 180 degree rotation plus both flips).
             if (orientation == PixelOrientation.Normal)
-                return source;
-
-            using var framebuffer = source.Lock();
+                return null;
 
             var orientedSize = FusedPixelPipeline.GetOrientedSize(source.Size, orientation);
             var stride = PixelFormatArithmetic.GetMinRowBytes(source.Format, orientedSize.Width);
@@ -35,7 +52,7 @@ namespace Avalonia.Media.Imaging
                     source.Format, source.AlphaFormat, BitmapInterpolationMode.HighQuality,
                     orientation);
 
-                FusedPixelPipeline.Run(framebuffer, plan, handle.AddrOfPinnedObject(), stride);
+                FusedPixelPipeline.Run(source, plan, handle.AddrOfPinnedObject(), stride);
             }
             finally
             {

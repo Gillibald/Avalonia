@@ -48,7 +48,7 @@ namespace Avalonia.Imaging.ImageSharp
             var frames = encoder.Frames;
             var isMultiFrame = (_codecInfo.Capabilities & BitmapCodecCapabilities.MultiFrameEncode) != 0;
 
-            using var image = CreateImage(frames[0].Pixels);
+            using var image = CreateImage(frames[0]);
 
             ApplyFrameMetadata(image.Frames.RootFrame.Metadata, frames[0].Metadata);
 
@@ -58,7 +58,7 @@ namespace Avalonia.Imaging.ImageSharp
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    using var page = CreateImage(frames[i].Pixels);
+                    using var page = CreateImage(frames[i]);
 
                     var added = image.Frames.AddFrame(page.Frames.RootFrame);
 
@@ -74,9 +74,9 @@ namespace Avalonia.Imaging.ImageSharp
             image.Save(stream, CreateEncoder(encoder));
         }
 
-        private unsafe Image<Bgra32> CreateImage(PixelBuffer pixels)
+        private unsafe Image<Bgra32> CreateImage(BitmapEncoderFrame frame)
         {
-            using var source = pixels.Lock();
+            using var source = frame.LockPixels();
 
             var size = source.Size;
             var rowBytes = size.Width * 4;
@@ -114,7 +114,7 @@ namespace Avalonia.Imaging.ImageSharp
                 }
             }
 
-            var dpi = pixels.Dpi;
+            var dpi = source.Dpi;
 
             if (dpi.X > 0 && dpi.Y > 0)
             {
