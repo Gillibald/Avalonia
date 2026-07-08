@@ -810,7 +810,15 @@ namespace Avalonia.Media.TextFormatting
 
                     case DrawableTextRun drawableTextRun:
                         {
-                            if (MathUtilities.GreaterThan(currentWidth + drawableTextRun.Size.Width, paragraphWidth))
+                            // A drawable run is atomic: it cannot be broken to fit the line.
+                            // Only wrap it to the next line when something already occupies the
+                            // current one. When it is the first run we place it even though it
+                            // overflows (the same "include at least one cluster" rule applied to
+                            // shaped text above). Returning a zero length here instead pushes the
+                            // run onto a line of its own and defers any following zero-width run
+                            // (notably the end-of-paragraph terminator) onto a spurious empty line.
+                            if (measuredLength > 0 &&
+                                MathUtilities.GreaterThan(currentWidth + drawableTextRun.Size.Width, paragraphWidth))
                             {
                                 return measuredLength;
                             }
