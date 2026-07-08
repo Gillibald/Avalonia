@@ -1032,6 +1032,31 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             }
         }
 
+        [Theory]
+        [InlineData(TextWrapping.Wrap), InlineData(TextWrapping.WrapWithOverflow)]
+        public void TextLayout_With_FullWidth_Embedded_Run_And_EndOfParagraph_Produces_Single_Line(
+            TextWrapping wrapping)
+        {
+            var defaultRunProperties = new GenericTextRunProperties(Typeface.Default, foregroundBrush: Brushes.Black);
+            var paragraphProperties = new GenericTextParagraphProperties(defaultRunProperties, textWrapping: wrapping);
+
+            using (Start())
+            {
+                // A drawable that fills (here exceeds) the whole line width, followed only by the
+                // paragraph terminator. Mirrors an image-only paragraph whose image is shrunk to
+                // the content width: the atomic drawable cannot wrap, so it and the trailing
+                // end-of-paragraph run must share a single line instead of the terminator being
+                // deferred onto spurious empty lines beneath the image.
+                var source = new DrawableThenEndOfParagraphTextSource(
+                    new RectangleRun(new Rect(0, 0, 200, 100), Brushes.Aqua));
+
+                using var layout = new TextLayout(source, paragraphProperties, maxWidth: 100);
+
+                Assert.Single(layout.TextLines);
+                Assert.Equal(200d, layout.TextLines[0].WidthIncludingTrailingWhitespace);
+            }
+        }
+
         class IncrementalTabProperties : TextParagraphProperties
         {
             public IncrementalTabProperties(TextRunProperties defaultTextRunProperties)
@@ -1255,6 +1280,22 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             {
                 return new TextEndOfLine();
             }
+        }
+
+        // Yields a single drawable at index 0 and a fresh end-of-paragraph run for every
+        // index past it, matching how a document text source terminates an image-only
+        // paragraph (an embedded run followed by the paragraph terminator).
+        private class DrawableThenEndOfParagraphTextSource : ITextSource
+        {
+            private readonly DrawableTextRun _drawable;
+
+            public DrawableThenEndOfParagraphTextSource(DrawableTextRun drawable)
+            {
+                _drawable = drawable;
+            }
+
+            public TextRun? GetTextRun(int textSourceIndex)
+                => textSourceIndex == 0 ? _drawable : new TextEndOfParagraph();
         }
 
         private class CustomTextSource : ITextSource
