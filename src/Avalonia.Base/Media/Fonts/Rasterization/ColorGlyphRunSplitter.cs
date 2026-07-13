@@ -26,25 +26,38 @@ namespace Avalonia.Media.Fonts.Rasterization
         public static bool TryDraw(DrawingContext context, GlyphRun glyphRun, IBrush foreground)
         {
             var typeface = glyphRun.GlyphTypeface;
+            var colr = typeface.ColorTable;
+            var bitmaps = typeface.BitmapTable;
 
-            if (typeface.ColorTable is not { } colr)
+            if (colr is null && bitmaps is null)
             {
                 return false;
             }
 
-            var includeV0 = !IsManagedTextRasterization();
+            // Managed rasterization composes v0 layers AND bitmap strikes server-side; only v1
+            // paint graphs need the drawing split there. Backend rasterization splits all of
+            // them, so the backend never rasterizes color or bitmap glyph content itself.
+            var includeServerSideKinds = !IsManagedTextRasterization();
 
-            if (!includeV0 && !colr.HasV1Data)
+            if (!includeServerSideKinds && colr is not { HasV1Data: true })
             {
                 return false;
             }
+
+            bool IsSplitGlyph(ushort glyph)
+                => includeServerSideKinds
+                    ? (colr is not null &&
+                       (colr.HasColorLayers(glyph) ||
+                        (colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _)))) ||
+                      (bitmaps?.HasGlyphImage(glyph) ?? false)
+                    : colr!.TryGetBaseGlyphV1Record(glyph, out _) && !colr.TryGetBaseGlyphRecord(glyph, out _);
 
             var infos = glyphRun.GlyphInfos;
             var hasSplitGlyph = false;
 
             for (var i = 0; i < infos.Count; i++)
             {
-                if (IsSplitGlyph(colr, infos[i].GlyphIndex, includeV0) &&
+                if (IsSplitGlyph(infos[i].GlyphIndex) &&
                     typeface.GetGlyphDrawing(infos[i].GlyphIndex) is not null)
                 {
                     hasSplitGlyph = true;
@@ -85,7 +98,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (i < infos.Count)
                 {
                     info = infos[i];
-                    splitHere = IsSplitGlyph(colr, info.GlyphIndex, includeV0) &&
+                    splitHere = IsSplitGlyph(info.GlyphIndex) &&
                         typeface.GetGlyphDrawing(info.GlyphIndex) is not null;
                 }
 
@@ -124,12 +137,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             return true;
         }
-
-        private static bool IsSplitGlyph(Fonts.Tables.Colr.ColrTable colr, ushort glyph, bool includeV0)
-            => includeV0
-                ? colr.HasColorLayers(glyph) || (colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _))
-                : colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _) &&
-                  !colr.TryGetBaseGlyphRecord(glyph, out _);
 
         private static void FlushSegment(DrawingContext context, IBrush foreground, GlyphRun run,
             int start, int end, double startX)

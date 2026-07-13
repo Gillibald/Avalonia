@@ -351,10 +351,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                    if (TryGetBitmapRect(indices[i], penX, penY, out var img, out var bx, out var by, out var bw, out var bh))
+                    if (TryGetBitmapRect(indices[i], penX, penY, out _, out var bx, out var by, out var bw, out var bh))
                     {
-                        // Strike bitmap: decode (cold path) and blit scaled, source-over.
-                        if (decoder!.TryDecode(img.PngData, out var decoded))
+                        // Strike bitmap: decoded once per (glyph, strike) via the table's memo,
+                        // then blitted scaled, source-over.
+                        if (bitmapTable!.TryGetDecodedGlyph(strike, indices[i], decoder!, out _, out var decoded))
                         {
                             RunMaskComposer.ComposeBitmap(decoded, bx - minX, by - minY, bw, bh,
                                 span, width, height, framebuffer.RowBytes);
