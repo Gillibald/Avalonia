@@ -153,13 +153,63 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
         public void FillConicGradient(Point center, double startAngle, double endAngle, GradientStop[] stops, GradientSpreadMethod extend)
         {
-            if (_pendingGlyph != null)
+            if (_pendingGlyph != null && stops.Length > 0)
             {
-                var gradientStops = new ImmutableGradientStop[stops.Length];
+                // A negative sweep runs the color line the other way around; normalize to a
+                // positive arc with the line reversed so one mapping below covers both.
+                var sweep = endAngle - startAngle;
 
-                for (var i = 0; i < stops.Length; i++)
+                if (sweep < 0)
                 {
-                    gradientStops[i] = new ImmutableGradientStop(stops[i].Offset, stops[i].Color);
+                    startAngle = endAngle;
+                    sweep = -sweep;
+
+                    var reversed = new GradientStop[stops.Length];
+
+                    for (var i = 0; i < stops.Length; i++)
+                    {
+                        var source = stops[stops.Length - 1 - i];
+                        reversed[i] = new GradientStop(1.0 - source.Offset, source.Color);
+                    }
+
+                    stops = reversed;
+                }
+
+                ImmutableGradientStop[] gradientStops;
+
+                if (sweep >= 359.99)
+                {
+                    // Full turn: the color line spans the whole circle, direct mapping.
+                    gradientStops = new ImmutableGradientStop[stops.Length];
+
+                    for (var i = 0; i < stops.Length; i++)
+                    {
+                        gradientStops[i] = new ImmutableGradientStop(stops[i].Offset, stops[i].Color);
+                    }
+                }
+                else
+                {
+                    // Avalonia's conic brush always sweeps a full turn from its Angle, so the
+                    // color line is rescaled into the arc's fraction of the circle and the
+                    // remainder is padded with the nearest boundary color (last color after the
+                    // arc, first color before it, hard seam midway between end and start+360) —
+                    // the pad extend of the sweep spec. The brush itself pads before the first
+                    // and after the last stop, which keeps the two constant regions flat.
+                    var arc = Math.Clamp(sweep / 360.0, 0.0, 1.0);
+                    var seam = (arc + 1.0) / 2.0;
+                    var last = stops[stops.Length - 1].Color;
+                    var first = stops[0].Color;
+
+                    gradientStops = new ImmutableGradientStop[stops.Length + 3];
+
+                    for (var i = 0; i < stops.Length; i++)
+                    {
+                        gradientStops[i] = new ImmutableGradientStop(stops[i].Offset * arc, stops[i].Color);
+                    }
+
+                    gradientStops[stops.Length] = new ImmutableGradientStop(seam, last);
+                    gradientStops[stops.Length + 1] = new ImmutableGradientStop(seam, first);
+                    gradientStops[stops.Length + 2] = new ImmutableGradientStop(1.0, first);
                 }
 
                 var brush = new ImmutableConicGradientBrush(
