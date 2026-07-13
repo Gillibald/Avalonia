@@ -170,7 +170,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Equal_Brush_Values_Reuse_The_Cached_Mask_While_A_Color_Change_Mints_A_Variant()
+        public void Cpu_Contexts_Keep_Tinted_Masks_And_The_Alpha_Implementation_Stays_Correct()
         {
             using var scope = CreateEnvironment(out var typeface);
 
@@ -184,19 +184,34 @@ namespace Avalonia.Skia.UnitTests.Media
                 using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
 
                 var managedRun = (ManagedGlyphRunImpl)run;
+                var alphaContext = (IAlphaGlyphMaskContext)context;
 
-                // Two draws with distinct-but-equal black brushes share one cached variant
-                // (value-keyed, not brush-identity-keyed); a red draw adds a second variant.
+                // A raster canvas reports no alpha-mask preference (the CPU pipeline draws
+                // color-modulated A8 ~6x slower than pre-tinted BGRA), so the renderer keeps
+                // per-color tinted variants here; only GPU contexts take the untinted path.
+                Assert.False(alphaContext.PrefersAlphaMasks);
+
                 context.DrawGlyphRun(Brushes.Black, run);
-                context.DrawGlyphRun(new ImmutableSolidColorBrush(Colors.Black), run);
-
-                Assert.True(IsTintCached(managedRun, Colors.Black));
-                Assert.False(IsTintCached(managedRun, Colors.Red));
-
                 context.DrawGlyphRun(Brushes.Red, run);
 
                 Assert.True(IsTintCached(managedRun, Colors.Black));
                 Assert.True(IsTintCached(managedRun, Colors.Red));
+
+                var alphaKey = new RunMaskKey(GlyphMaskKey.QuantizeScale(16f), 0, GlyphMaskMode.Antialiased, 0u);
+                Assert.False(managedRun.RunMasks.TryGet(alphaKey, out _));
+
+                // The implementation itself works on any context (the GPU path relies on it):
+                // a full-coverage mask tinted green must land green pixels.
+                var maskBytes = new byte[8 * 8];
+                maskBytes.AsSpan().Fill(255);
+
+                using var handle = alphaContext.CreateAlphaMask(maskBytes, 8, 8);
+                alphaContext.DrawAlphaMask(handle, new Rect(0, 0, 8, 8), new Rect(200, 40, 8, 8), 0xFF00FF00);
+
+                var pixels = bitmap.GetPixelSpan();
+                var index = (44 * Width + 204) * 4;
+                Assert.True(pixels[index + 1] > 200 && pixels[index + 2] < 60,
+                    "the drawn alpha mask did not render with its green tint");
             }
             finally
             {
