@@ -20,11 +20,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// all contours in one pass.
         /// </summary>
         public static void ComposeAlpha(GlyphMask mask, int penX, int penY,
-            Span<byte> destination, int destWidth, int destHeight)
+            Span<byte> destination, int destWidth, int destHeight, int destStride = 0)
         {
             if (mask.IsEmpty)
             {
                 return;
+            }
+
+            // Stride in bytes per destination row; zero means tightly packed. Non-tight strides
+            // let compose write straight into a locked framebuffer — no staging copy.
+            if (destStride == 0)
+            {
+                destStride = destWidth;
             }
 
             ClipMask(mask, penX, penY, destWidth, destHeight,
@@ -38,7 +45,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var y = 0; y < height; y++)
             {
                 var src = mask.Alpha.AsSpan((srcY + y) * mask.Width + srcX, width);
-                var dst = destination.Slice((dstY + y) * destWidth + dstX, width);
+                var dst = destination.Slice((dstY + y) * destStride + dstX, width);
 
                 for (var x = 0; x < width; x++)
                 {
@@ -54,11 +61,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// rides the eventual bitmap draw call, so animating it reuses the composed buffer.
         /// </summary>
         public static void ComposeTinted(GlyphMask mask, int penX, int penY, uint tintBgra,
-            Span<byte> destination, int destWidth, int destHeight)
+            Span<byte> destination, int destWidth, int destHeight, int destStride = 0)
         {
             if (mask.IsEmpty)
             {
                 return;
+            }
+
+            if (destStride == 0)
+            {
+                destStride = destWidth * 4;
             }
 
             ClipMask(mask, penX, penY, destWidth, destHeight,
@@ -77,7 +89,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var y = 0; y < height; y++)
             {
                 var src = mask.Alpha.AsSpan((srcY + y) * mask.Width + srcX, width);
-                var dst = destination.Slice(((dstY + y) * destWidth + dstX) * 4, width * 4);
+                var dst = destination.Slice((dstY + y) * destStride + dstX * 4, width * 4);
 
                 for (var x = 0; x < width; x++)
                 {
