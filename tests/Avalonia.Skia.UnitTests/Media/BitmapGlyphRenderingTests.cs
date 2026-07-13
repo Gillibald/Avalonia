@@ -185,7 +185,47 @@ namespace Avalonia.Skia.UnitTests.Media
             run.Dispose();
         }
 
-        private static GlyphTypeface CreateSbixTypeface(out ushort bitmapGlyph)
+        [Fact]
+        public void Jpeg_Sbix_Records_Decode_Through_The_Seam()
+        {
+            using var scope = CreateEnvironment();
+
+            // Format capability lives with the decoder: Skia's codec handles 'jpg ' records
+            // today; 'tiff' would take the same route once a TIFF-capable decoder (the
+            // universal bitmap infrastructure) owns the binding.
+            using var source = new SKBitmap(new SKImageInfo(16, 16, SKColorType.Bgra8888, SKAlphaType.Premul));
+            source.Erase(SKColors.Lime);
+            using var image = SKImage.FromBitmap(source);
+            using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, 95);
+
+            var typeface = CreateSbixTypeface(out var bitmapGlyph, "jpg ", encoded.ToArray());
+            var run = CreateRun(typeface, new[] { bitmapGlyph }, emSize: 32);
+
+            var info = new SKImageInfo(72, 56, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            canvas.Clear(SKColors.White);
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, aliased: false));
+
+            var pixels = bitmap.GetPixelSpan();
+            var green = 0;
+
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                if (pixels[i + 1] > 150 && pixels[i + 2] < 120 && pixels[i] < 120)
+                {
+                    green++;
+                }
+            }
+
+            Assert.True(green > 20, $"expected green jpeg pixels, found {green}");
+            run.Dispose();
+        }
+
+        private static GlyphTypeface CreateSbixTypeface(out ushort bitmapGlyph,
+            string graphicType = "png ", byte[]? imageBytes = null)
         {
             var font = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = font.TryCreateGlyphTypeface();
@@ -193,7 +233,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             bitmapGlyph = probe!.CharacterToGlyphMap['H'];
             var glyphCount = probe.GlyphCount;
-            var png = EncodeSolidPng(16, 16, SKColors.Lime);
+            var png = imageBytes ?? EncodeSolidPng(16, 16, SKColors.Lime);
 
             // sbix: header + one 32ppem strike; per-glyph offsets relative to the strike start,
             // one 'png ' record for the target glyph (originOffsetX/Y = 0).
@@ -212,7 +252,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             sbix.Int16(0).Int16(0);
-            sbix.UInt8((byte)'p').UInt8((byte)'n').UInt8((byte)'g').UInt8((byte)' ');
+            foreach (var c in graphicType) sbix.UInt8((byte)c);
             foreach (var b in png) sbix.UInt8(b);
 
             var grafted = font.Replace("sbix", sbix.ToArray()).ToBytes();

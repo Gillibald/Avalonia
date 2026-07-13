@@ -8,16 +8,22 @@ using Avalonia.Media.Fonts.Rasterization;
 namespace Avalonia.Media.Fonts.Tables.Bitmaps
 {
     /// <summary>
-    /// The Apple color bitmap format: per-strike PNG glyph records. Supported subset: 'png '
-    /// graphics and one 'dupe' indirection; 'jpg '/'tiff' degrade to no-image. Offsets are
-    /// validated in long arithmetic; strike counts are capped; malformed shapes never throw —
-    /// the same hardening rules as the CBDT facade.
+    /// The Apple color bitmap format: per-strike encoded glyph records ('png ', 'jpg ',
+    /// 'tiff') plus one 'dupe' indirection. Format capability lives with the registered
+    /// <see cref="IBitmapGlyphDecoder"/>, not here: the table hands every image payload
+    /// through, so the Skia decoder covers PNG/JPEG today and TIFF lights up when a codec
+    /// that handles it (the universal bitmap infrastructure) takes over the binding — an
+    /// undecodable payload degrades to no-image and the outline fallback renders. Offsets
+    /// are validated in long arithmetic; strike counts are capped; malformed shapes never
+    /// throw — the same hardening rules as the CBDT facade.
     /// </summary>
     internal sealed class SbixTable : IBitmapGlyphSource
     {
         private const int MaxStrikes = 64;
         private const int DecodedBudgetBytes = 4 * 1024 * 1024;
         private const uint PngTag = 0x706E6720;    // 'png '
+        private const uint JpgTag = 0x6A706720;    // 'jpg '
+        private const uint TiffTag = 0x74696666;   // 'tiff'
         private const uint DupeTag = 0x64757065;   // 'dupe'
 
         internal static OpenTypeTag Tag { get; } = OpenTypeTag.Parse("sbix");
@@ -199,9 +205,9 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
                         out png, out originX, out originY);
             }
 
-            if (graphicType != PngTag)
+            if (graphicType != PngTag && graphicType != JpgTag && graphicType != TiffTag)
             {
-                return false;   // 'jpg '/'tiff' are out of the supported subset
+                return false;   // unknown graphic types stay opaque — future tags are not images
             }
 
             originX = BinaryPrimitives.ReadInt16BigEndian(record);
