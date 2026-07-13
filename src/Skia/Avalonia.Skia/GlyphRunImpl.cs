@@ -144,6 +144,12 @@ namespace Avalonia.Skia
         }
 
         private SKFont CreateFont(TextOptions textOptions)
+            => CreateFont(_glyphTypefaceImpl, (float)FontRenderingEmSize, _fontSimulations, textOptions);
+
+        // Shared with the managed run impl's native fallback, which builds blobs from the same
+        // options mapping without owning a GlyphRunImpl.
+        internal static SKFont CreateFont(SkiaTypeface glyphTypefaceImpl, float fontRenderingEmSize,
+            FontSimulations simulations, TextOptions textOptions)
         {
             // Determine edging from TextRenderingMode
             var edging = textOptions.TextRenderingMode switch
@@ -172,7 +178,7 @@ namespace Avalonia.Skia
             // Baseline snap defaults to true unless explicitly disabled.
             var baselineSnap = textOptions.BaselinePixelAlignment != BaselinePixelAlignment.Unaligned;
 
-            var font = _glyphTypefaceImpl.CreateSKFont((float)FontRenderingEmSize, _fontSimulations);
+            var font = glyphTypefaceImpl.CreateSKFont(fontRenderingEmSize, simulations);
 
             font.ForceAutoHinting = forceAutoHinting;
             font.Hinting = hinting;

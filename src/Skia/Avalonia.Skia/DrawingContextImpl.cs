@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Platform;
 using Avalonia.Rendering.Utilities;
 using Avalonia.Skia.Helpers;
@@ -601,34 +602,53 @@ namespace Avalonia.Skia
                 return;
             }
 
+            // Determine effective TextOptions for text rendering. Start with current pushed TextOptions.
+            var effectiveTextOptions = TextOptions;
+
+            // If subpixel rendering is disabled globally, map subpixel modes to grayscale.
+            if (_disableSubpixelTextRendering)
+            {
+                var mode = effectiveTextOptions.TextRenderingMode;
+
+                if (mode == TextRenderingMode.SubpixelAntialias ||
+                    (mode == TextRenderingMode.Unspecified && (RenderOptions.EdgeMode == EdgeMode.Antialias || RenderOptions.EdgeMode == EdgeMode.Unspecified)))
+                {
+                    effectiveTextOptions = effectiveTextOptions with { TextRenderingMode = TextRenderingMode.Antialias };
+                }
+            }
+
+            var renderOptions = RenderOptions;
+
+            // If TextRenderingMode is unspecified in TextOptions, use the one from RenderOptions.
+#pragma warning disable CS0618
+            if (effectiveTextOptions.TextRenderingMode == TextRenderingMode.Unspecified && renderOptions.TextRenderingMode != TextRenderingMode.Unspecified)
+            {
+                effectiveTextOptions = effectiveTextOptions with { TextRenderingMode = renderOptions.TextRenderingMode };
+            }
+#pragma warning restore CS0618
+
+            // Managed rasterization path: decided before any Skia paint exists, so mask-path
+            // draws build no unused paint. Falls back to the run's own native blob when the
+            // triage rejects this draw (transform class, size, foreground kind).
+            if (glyphRun is ManagedGlyphRunImpl managedRun)
+            {
+                if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
+                        effectiveTextOptions.TextRenderingMode == TextRenderingMode.Alias))
+                {
+                    return;
+                }
+
+                using var fallbackPaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds);
+                var fallbackBlob = ((SkiaManagedGlyphRunImpl)managedRun).GetTextBlob(effectiveTextOptions, RenderOptions);
+
+                Canvas.DrawText(fallbackBlob, (float)glyphRun.BaselineOrigin.X,
+                    (float)glyphRun.BaselineOrigin.Y, fallbackPaint.Paint);
+                return;
+            }
+
             using (var paintWrapper = CreatePaint(_fillPaint, foreground, glyphRun.Bounds))
             {
                 var glyphRunImpl = (GlyphRunImpl)glyphRun;
-
-                // Determine effective TextOptions for text rendering. Start with current pushed TextOptions.
-                var effectiveTextOptions = TextOptions;
-
-                // If subpixel rendering is disabled globally, map subpixel modes to grayscale.
-                if (_disableSubpixelTextRendering)
-                {
-                    var mode = effectiveTextOptions.TextRenderingMode;
-
-                    if (mode == TextRenderingMode.SubpixelAntialias ||
-                        (mode == TextRenderingMode.Unspecified && (RenderOptions.EdgeMode == EdgeMode.Antialias || RenderOptions.EdgeMode == EdgeMode.Unspecified)))
-                    {
-                        effectiveTextOptions = effectiveTextOptions with { TextRenderingMode = TextRenderingMode.Antialias };
-                    }
-                }
-
-                var renderOptions = RenderOptions;
-
-                // If TextRenderingMode is unspecified in TextOptions, use the one from RenderOptions.
-#pragma warning disable CS0618
-                if (effectiveTextOptions.TextRenderingMode == TextRenderingMode.Unspecified && renderOptions.TextRenderingMode != TextRenderingMode.Unspecified)
-                {
-                    effectiveTextOptions = effectiveTextOptions with { TextRenderingMode = renderOptions.TextRenderingMode };
-                }
-#pragma warning restore CS0618
 
                 var textBlob = glyphRunImpl.GetTextBlob(effectiveTextOptions, RenderOptions);
 
