@@ -1759,19 +1759,35 @@ namespace Avalonia.Media
         /// </returns>
         public IGlyphDrawing? GetGlyphDrawing(ushort glyphIndex, GlyphDrawingOptions? options)
         {
-            if (glyphIndex >= GlyphCount || _colrTable is null || _cpalTable is null)
+            if (glyphIndex >= GlyphCount)
             {
                 return null;
             }
 
             // Probe the colour-glyph kind up front so plain outline glyphs (the bulk of a text run)
-            // never create a colour-cache entry. A v1 record wins over v0 layers for the same glyph.
-            var isColorGlyph =
-                (_colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out _)) ||
-                _colrTable.HasColorLayers(glyphIndex);
+            // never create a colour-cache entry. A v1 record wins over v0 layers for the same glyph;
+            // COLR wins over bitmap strikes.
+            var isColorGlyph = _colrTable is not null && _cpalTable is not null &&
+                ((_colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out _)) ||
+                 _colrTable.HasColorLayers(glyphIndex));
 
             if (!isColorGlyph)
             {
+                // Bitmap strikes: when the font carries an image for the glyph and a decoder is
+                // available, hand out a bitmap drawing (record-time path; the mask renderer
+                // composes strikes server-side without ever coming here). PixelSize selects the
+                // strike; without it the largest strike wins — best quality, callers downscale.
+                if (_cbdtTable is not null &&
+                    AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is { } bitmapDecoder)
+                {
+                    var strike = _cbdtTable.SelectStrike(options?.PixelSize ?? int.MaxValue);
+
+                    if (_cbdtTable.TryGetDecodedGlyph(strike, glyphIndex, bitmapDecoder, out var metrics, out var decoded))
+                    {
+                        return new BitmapGlyphDrawing(this, decoded, metrics, strike.PpemY);
+                    }
+                }
+
                 return null;   // outline-only glyph — caller should use GetGlyphOutline()
             }
 
