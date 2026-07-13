@@ -21,16 +21,20 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     internal sealed class RunMask : IDisposable
     {
-        public RunMask(IBitmapImpl bitmap, int offsetX, int offsetY, int width, int height)
+        public RunMask(IDisposable handle, int offsetX, int offsetY, int width, int height)
         {
-            Bitmap = bitmap;
+            Handle = handle;
             OffsetX = offsetX;
             OffsetY = offsetY;
             Width = width;
             Height = height;
         }
 
-        public IBitmapImpl Bitmap { get; }
+        /// <summary>
+        /// The realized drawable: a pre-tinted <see cref="IBitmapImpl"/> on the portable floor,
+        /// or a backend alpha-mask handle from <see cref="IAlphaGlyphMaskContext"/>.
+        /// </summary>
+        public IDisposable Handle { get; }
 
         /// <summary>Mask top-left relative to the run's snapped origin pixel, device px.</summary>
         public int OffsetX { get; }
@@ -41,7 +45,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public int Height { get; }
 
-        public void Dispose() => Bitmap.Dispose();
+        public void Dispose() => Handle.Dispose();
     }
 
     /// <summary>
