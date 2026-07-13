@@ -130,6 +130,12 @@ namespace Avalonia.Media
         /// </summary>
         internal float[]? ActiveVariationCoords => _activeCoords;
 
+        /// <summary>The parsed COLR table, if the font carries one. Managed-rasterization use.</summary>
+        internal Fonts.Tables.Colr.ColrTable? ColorTable => _colrTable;
+
+        /// <summary>The parsed CPAL table, if the font carries one. Managed-rasterization use.</summary>
+        internal Fonts.Tables.Colr.CpalTable? ColorPaletteTable => _cpalTable;
+
         // Pre-computed per-region scaler arrays for each variation table's
         // ItemVariationStore. Built once at clone construction so per-glyph delta
         // lookups become array indices instead of per-axis F2DOT14 ramps. The active
