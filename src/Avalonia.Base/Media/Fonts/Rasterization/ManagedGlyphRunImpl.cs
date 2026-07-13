@@ -120,60 +120,263 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The per-run composed-mask cache; created on first use by the renderer.</summary>
         internal RunMaskCache RunMasks => _runMasks ??= new RunMaskCache();
 
+        [ThreadStatic]
+        private static GlyphPathBuilder? t_intersectionScratch;
+
         public virtual IReadOnlyList<float> GetIntersections(float lowerLimit, float upperLimit)
         {
-            // Box-derived intervals: for each glyph whose scaled ink box crosses the band,
-            // contribute [left, right]; merge overlaps. Wider than outline-exact intercepts, but
-            // correct for gap detection. Backend subclasses override with exact machinery until
-            // the managed analytic intercepts land.
+            // Analytic intercepts from the same table walk the rasterizer uses: each glyph's
+            // contours are captured, flattened, clipped to the horizontal band, and their
+            // x-extents unioned — outline-exact gaps for decoration ink-skipping with no backend
+            // text object involved. Coordinates are baseline-relative (y = 0 on the baseline),
+            // matching the SKTextBlob.GetIntercepts contract the decoration code was written
+            // against. Rare path (decorated text at record time), so plain list allocations are
+            // fine; the walk scratch is reused per thread.
             var scale = (float)(FontRenderingEmSize / _glyphTypeface.Metrics.DesignEmHeight);
-            var bounds = _count <= 256 ? stackalloc GlyphBounds[_count] : new GlyphBounds[_count];
+            var scratch = t_intersectionScratch ??= new GlyphPathBuilder();
+            var intervals = new List<(float Start, float End)>();
 
-            if (!_glyphTypeface.TryGetGlyphBounds(GlyphIndices, bounds))
+            // Cheap pre-filter: only glyphs whose ink box crosses the band get walked.
+            var bounds = _count <= 256 ? stackalloc GlyphBounds[_count] : new GlyphBounds[_count];
+            var hasBounds = _glyphTypeface.TryGetGlyphBounds(GlyphIndices, bounds);
+
+            for (var i = 0; i < _count; i++)
+            {
+                if (hasBounds)
+                {
+                    var box = bounds[i];
+
+                    if (box.XMax <= box.XMin ||
+                        _positions[i * 2 + 1] - box.YMin * scale < lowerLimit ||
+                        _positions[i * 2 + 1] - box.YMax * scale > upperLimit)
+                    {
+                        continue;
+                    }
+                }
+
+                scratch.Reset();
+
+                var transform = new Matrix(scale, 0, 0, -scale,
+                    _positions[i * 2], _positions[i * 2 + 1]);
+
+                if (!_glyphTypeface.TryBuildGlyphContours(_indices[i], transform, scratch))
+                {
+                    continue;
+                }
+
+                CollectBandExtents(scratch, lowerLimit, upperLimit, intervals);
+            }
+
+            if (intervals.Count == 0)
             {
                 return Array.Empty<float>();
             }
 
-            var baselineX = (float)BaselineOrigin.X;
-            var baselineY = (float)BaselineOrigin.Y;
-            var result = new List<float>();
+            intervals.Sort(static (a, b) => a.Start.CompareTo(b.Start));
 
-            for (var i = 0; i < _count; i++)
+            var result = new List<float>(intervals.Count * 2);
+            var (currentStart, currentEnd) = intervals[0];
+
+            for (var i = 1; i < intervals.Count; i++)
             {
-                var box = bounds[i];
+                var (start, end) = intervals[i];
 
-                if (box.XMax <= box.XMin || box.YMax <= box.YMin)
+                if (start <= currentEnd + 0.01f)
                 {
-                    continue;
-                }
-
-                var top = baselineY + _positions[i * 2 + 1] - box.YMax * scale;
-                var bottom = baselineY + _positions[i * 2 + 1] - box.YMin * scale;
-
-                if (bottom < lowerLimit || top > upperLimit)
-                {
-                    continue;
-                }
-
-                var left = baselineX + _positions[i * 2] + box.XMin * scale;
-                var right = baselineX + _positions[i * 2] + box.XMax * scale;
-
-                if (result.Count >= 2 && left <= result[^1])
-                {
-                    // Merge with the previous interval (positions are monotone in x).
-                    if (right > result[^1])
-                    {
-                        result[^1] = right;
-                    }
+                    currentEnd = Math.Max(currentEnd, end);
                 }
                 else
                 {
-                    result.Add(left);
-                    result.Add(right);
+                    result.Add(currentStart);
+                    result.Add(currentEnd);
+                    (currentStart, currentEnd) = (start, end);
                 }
             }
 
+            result.Add(currentStart);
+            result.Add(currentEnd);
             return result;
+        }
+
+        /// <summary>
+        /// Flattens the captured contours and accumulates the x-extent of every piece that lies
+        /// within the horizontal band, one interval per contour crossing region — conservative
+        /// merging happens later across all glyphs.
+        /// </summary>
+        private static void CollectBandExtents(GlyphPathBuilder path, float lower, float upper,
+            List<(float Start, float End)> intervals)
+        {
+            var verbs = path.Verbs;
+            var points = path.Points;
+            var p = 0;
+            float startX = 0, startY = 0, curX = 0, curY = 0;
+            var min = float.MaxValue;
+            var max = float.MinValue;
+
+            void Segment(float x0, float y0, float x1, float y1)
+            {
+                if (Math.Max(y0, y1) < lower || Math.Min(y0, y1) > upper)
+                {
+                    return;
+                }
+
+                // Clip the segment to the band and take the x-extent of the clipped portion.
+                var a = x0;
+                var b = x1;
+
+                if (y0 != y1)
+                {
+                    var invDy = 1f / (y1 - y0);
+
+                    if (y0 < lower != y1 < lower)
+                    {
+                        var t = (lower - y0) * invDy;
+                        var x = x0 + (x1 - x0) * t;
+
+                        if (y0 < lower)
+                        {
+                            a = x;
+                        }
+                        else
+                        {
+                            b = x;
+                        }
+                    }
+
+                    if (y0 > upper != y1 > upper)
+                    {
+                        var t = (upper - y0) * invDy;
+                        var x = x0 + (x1 - x0) * t;
+
+                        if (y0 > upper)
+                        {
+                            a = x;
+                        }
+                        else
+                        {
+                            b = x;
+                        }
+                    }
+                }
+
+                min = Math.Min(min, Math.Min(a, b));
+                max = Math.Max(max, Math.Max(a, b));
+            }
+
+            void Flatten(float c1X, float c1Y, float c2X, float c2Y, float x1, float y1, bool cubic)
+            {
+                var d1X = curX - 2f * c1X + (cubic ? c2X : x1);
+                var d1Y = curY - 2f * c1Y + (cubic ? c2Y : y1);
+                var dd = MathF.Sqrt(d1X * d1X + d1Y * d1Y);
+
+                if (cubic)
+                {
+                    var d2X = c1X - 2f * c2X + x1;
+                    var d2Y = c1Y - 2f * c2Y + y1;
+                    dd = MathF.Max(dd, MathF.Sqrt(d2X * d2X + d2Y * d2Y));
+                }
+
+                var n = Math.Min(1 + (int)MathF.Sqrt(dd), 64);
+                float prevX = curX, prevY = curY;
+
+                for (var s = 1; s <= n; s++)
+                {
+                    float nx, ny;
+
+                    if (s == n)
+                    {
+                        nx = x1;
+                        ny = y1;
+                    }
+                    else
+                    {
+                        var t = s / (float)n;
+                        var mt = 1f - t;
+
+                        if (cubic)
+                        {
+                            var a0 = mt * mt * mt;
+                            var a1 = 3f * mt * mt * t;
+                            var a2 = 3f * mt * t * t;
+                            var a3 = t * t * t;
+                            nx = a0 * curX + a1 * c1X + a2 * c2X + a3 * x1;
+                            ny = a0 * curY + a1 * c1Y + a2 * c2Y + a3 * y1;
+                        }
+                        else
+                        {
+                            var a0 = mt * mt;
+                            var a1 = 2f * mt * t;
+                            var a2 = t * t;
+                            nx = a0 * curX + a1 * c1X + a2 * x1;
+                            ny = a0 * curY + a1 * c1Y + a2 * y1;
+                        }
+                    }
+
+                    Segment(prevX, prevY, nx, ny);
+                    prevX = nx;
+                    prevY = ny;
+                }
+            }
+
+            void CloseContour()
+            {
+                Segment(curX, curY, startX, startY);
+
+                if (min <= max)
+                {
+                    intervals.Add((min, max));
+                }
+
+                min = float.MaxValue;
+                max = float.MinValue;
+            }
+
+            for (var v = 0; v < verbs.Length; v++)
+            {
+                switch ((GlyphPathVerb)verbs[v])
+                {
+                    case GlyphPathVerb.MoveTo:
+                        startX = curX = points[p++];
+                        startY = curY = points[p++];
+                        break;
+                    case GlyphPathVerb.LineTo:
+                    {
+                        var x = points[p++];
+                        var y = points[p++];
+                        Segment(curX, curY, x, y);
+                        curX = x;
+                        curY = y;
+                        break;
+                    }
+                    case GlyphPathVerb.QuadTo:
+                    {
+                        var cX = points[p++];
+                        var cY = points[p++];
+                        var x = points[p++];
+                        var y = points[p++];
+                        Flatten(cX, cY, 0, 0, x, y, cubic: false);
+                        curX = x;
+                        curY = y;
+                        break;
+                    }
+                    case GlyphPathVerb.CubicTo:
+                    {
+                        var c1X = points[p++];
+                        var c1Y = points[p++];
+                        var c2X = points[p++];
+                        var c2Y = points[p++];
+                        var x = points[p++];
+                        var y = points[p++];
+                        Flatten(c1X, c1Y, c2X, c2Y, x, y, cubic: true);
+                        curX = x;
+                        curY = y;
+                        break;
+                    }
+                    case GlyphPathVerb.Close:
+                        CloseContour();
+                        break;
+                }
+            }
         }
 
         public virtual void Dispose()
