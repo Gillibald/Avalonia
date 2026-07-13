@@ -20,7 +20,8 @@ namespace Avalonia.Skia
             var renderInterface = new PlatformRenderInterface(options.MaxGpuResourceSizeBytes, options.UseStencilBuffers);
 
             AvaloniaLocator.CurrentMutable
-                .Bind<IPlatformRenderInterface>().ToConstant(renderInterface);
+                .Bind<IPlatformRenderInterface>().ToConstant(renderInterface)
+                .Bind<Media.Fonts.Rasterization.IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
         }
 
         /// <summary>

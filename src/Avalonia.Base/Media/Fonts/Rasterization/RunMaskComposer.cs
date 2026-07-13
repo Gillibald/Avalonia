@@ -115,6 +115,59 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// Draws a decoded strike bitmap into a premultiplied BGRA run buffer, source-over,
+        /// scaled to the destination rectangle by nearest-neighbor sampling (strike-exact draws
+        /// are 1:1; scaled draws happen when no strike matches the requested ppem — bilinear is
+        /// a follow-up if the visual review asks for it).
+        /// </summary>
+        public static void ComposeBitmap(in DecodedGlyphBitmap source, int destX, int destY,
+            int destWidth, int destHeight, Span<byte> destination, int bufferWidth, int bufferHeight,
+            int destStride = 0)
+        {
+            if (source.Width <= 0 || source.Height <= 0 || destWidth <= 0 || destHeight <= 0)
+            {
+                return;
+            }
+
+            if (destStride == 0)
+            {
+                destStride = bufferWidth * 4;
+            }
+
+            var x0 = Math.Max(destX, 0);
+            var y0 = Math.Max(destY, 0);
+            var x1 = Math.Min(destX + destWidth, bufferWidth);
+            var y1 = Math.Min(destY + destHeight, bufferHeight);
+
+            for (var y = y0; y < y1; y++)
+            {
+                var srcY = (y - destY) * source.Height / destHeight;
+                var srcRow = source.Bgra.AsSpan(srcY * source.Width * 4);
+                var dst = destination.Slice(y * destStride + x0 * 4, (x1 - x0) * 4);
+
+                for (var x = x0; x < x1; x++)
+                {
+                    var srcX = (x - destX) * source.Width / destWidth;
+                    var s = srcRow.Slice(srcX * 4, 4);
+                    var sa = s[3];
+
+                    if (sa == 0)
+                    {
+                        continue;
+                    }
+
+                    var d = (x - x0) * 4;
+                    var inv = 255 - sa;
+
+                    dst[d] = (byte)(s[0] + Div255(dst[d] * inv));
+                    dst[d + 1] = (byte)(s[1] + Div255(dst[d + 1] * inv));
+                    dst[d + 2] = (byte)(s[2] + Div255(dst[d + 2] * inv));
+                    dst[d + 3] = (byte)(sa + Div255(dst[d + 3] * inv));
+                }
+            }
+        }
+
         /// <summary>Premultiplies a straight-alpha BGRA color into the compose tint format.</summary>
         public static uint MakeTint(byte alpha, byte red, byte green, byte blue)
         {
