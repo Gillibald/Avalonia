@@ -96,10 +96,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             // Backend fast path: untinted alpha masks, tinted per draw — color leaves the cache
-            // identity, so a foreground animation reuses one mask. COLR-bearing typefaces stay
-            // on the pre-tinted BGRA floor (v0 layer colors are baked into the composed mask),
-            // and so do contexts that report no benefit (CPU raster: see PrefersAlphaMasks).
+            // identity, so a foreground animation reuses one mask. Typefaces with intrinsic
+            // color (COLR layers, bitmap strikes) stay on the pre-tinted BGRA floor, and so do
+            // contexts that report no benefit (CPU raster: see PrefersAlphaMasks).
             var alphaContext = run.GlyphTypeface.ColorTable is null &&
+                run.GlyphTypeface.BitmapTable is null &&
                 context is IAlphaGlyphMaskContext { PrefersAlphaMasks: true } preferring
                     ? preferring
                     : null;
@@ -239,6 +240,45 @@ namespace Avalonia.Media.Fonts.Rasterization
             var cpal = typeface.ColorPaletteTable;
             var state = (typeface, scratch);
 
+            // Bitmap strikes: pick once per compose; glyphs the strike covers draw as scaled
+            // decoded images, everything else falls through to outlines/COLR. Without a decoder
+            // registered the strike data is ignored entirely (outline fallback keeps rendering).
+            var bitmapTable = typeface.BitmapTable;
+            var decoder = bitmapTable is not null
+                ? AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>()
+                : null;
+            var strike = default(Fonts.Tables.Bitmaps.BitmapStrike);
+            var strikeScale = 0f;
+
+            if (bitmapTable is not null && decoder is not null)
+            {
+                var pixelsPerEm = key.ScaleQ / GlyphMaskKey.ScaleQuantum;
+                strike = bitmapTable.SelectStrike(pixelsPerEm);
+                strikeScale = pixelsPerEm / strike.PpemY;
+            }
+            else
+            {
+                bitmapTable = null;
+            }
+
+            bool TryGetBitmapRect(ushort glyph, int penX, int penY,
+                out Fonts.Tables.Bitmaps.BitmapGlyphImage img, out int x, out int y, out int w, out int h)
+            {
+                img = default;
+                x = y = w = h = 0;
+
+                if (bitmapTable is null || !bitmapTable.TryGetGlyphImage(strike, glyph, out img))
+                {
+                    return false;
+                }
+
+                w = Math.Max(1, (int)MathF.Round(img.Width * strikeScale));
+                h = Math.Max(1, (int)MathF.Round(img.Height * strikeScale));
+                x = penX + (int)MathF.Round(img.BearingX * strikeScale);
+                y = penY - (int)MathF.Round(img.BearingY * strikeScale);
+                return true;
+            }
+
             GlyphMask GetMask(ushort glyph, byte phase)
                 => maskCache.GetOrBuild(new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode), state, s_buildMask);
 
@@ -260,7 +300,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
+                if (TryGetBitmapRect(indices[i], penX, penY, out _, out var bx, out var by, out var bw, out var bh))
+                {
+                    minX = Math.Min(minX, bx);
+                    minY = Math.Min(minY, by);
+                    maxX = Math.Max(maxX, bx + bw);
+                    maxY = Math.Max(maxY, by + bh);
+                }
+                else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                 {
                     for (var layer = 0; layer < baseRecord.NumLayers; layer++)
                     {
@@ -304,7 +351,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                     GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                    if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
+                    if (TryGetBitmapRect(indices[i], penX, penY, out var img, out var bx, out var by, out var bw, out var bh))
+                    {
+                        // Strike bitmap: decode (cold path) and blit scaled, source-over.
+                        if (decoder!.TryDecode(img.PngData, out var decoded))
+                        {
+                            RunMaskComposer.ComposeBitmap(decoded, bx - minX, by - minY, bw, bh,
+                                span, width, height, framebuffer.RowBytes);
+                        }
+                    }
+                    else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                     {
                         // COLR v0: flat-color layers composed bottom-to-top in record order. The
                         // 0xFFFF palette sentinel means "use the text foreground" — the run's
