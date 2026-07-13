@@ -153,7 +153,14 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 stopPos = Math.Clamp(stopPos, 0.0, 1.0);
                 alpha = Math.Clamp(alpha, 0.0, 1.0);
 
-                if (!context.CpalTable.TryGetColor(context.PaletteIndex, paletteIndex, out var color))
+                Color color;
+
+                if (paletteIndex == 0xFFFF && context.Foreground is { } foreground)
+                {
+                    // CPAL sentinel: this stop follows the text foreground.
+                    color = foreground;
+                }
+                else if (!context.CpalTable.TryGetColor(context.PaletteIndex, paletteIndex, out color))
                 {
                     color = Colors.Black;
                 }

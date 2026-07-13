@@ -1768,6 +1768,16 @@ namespace Avalonia.Media
                 return null;   // outline-only glyph — caller should use GetGlyphOutline()
             }
 
+            // A foreground-substituting drawing (CPAL 0xFFFF entries follow the text color) is
+            // built uncached: the drawing cache keys by (glyph, palette) only, and widening every
+            // key for the rare foreground-tinted glyph costs more than a per-record parse.
+            if (options?.Foreground is { } fg &&
+                _colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out var v1Record))
+            {
+                return new ColorGlyphV1Drawing(this, _colrTable, _cpalTable, glyphIndex, v1Record,
+                    NormalizePaletteIndex(options), fg);
+            }
+
             // Normalize the palette before keying the cache, so every out-of-range request shares the
             // default palette's entry instead of minting one junk entry per bogus index.
             var palette = NormalizePaletteIndex(options);
@@ -2649,9 +2659,9 @@ namespace Avalonia.Media
         private readonly ushort[] _dependencies;
 
         public ColorGlyphV1Drawing(GlyphTypeface glyphTypeface, ColrTable colrTable, CpalTable cpalTable,
-            ushort glyphIndex, BaseGlyphV1Record record, int paletteIndex = 0)
+            ushort glyphIndex, BaseGlyphV1Record record, int paletteIndex = 0, Color? foreground = null)
         {
-            _context = new ColrContext(glyphTypeface, colrTable, cpalTable, paletteIndex);
+            _context = new ColrContext(glyphTypeface, colrTable, cpalTable, paletteIndex, foreground);
             _glyphIndex = glyphIndex;
             _paletteIndex = paletteIndex;
 

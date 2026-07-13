@@ -55,6 +55,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             var segmentStart = 0;
             var segmentStartX = 0.0;
 
+            // A solid foreground rides into the paint resolver so CPAL 0xFFFF entries follow the
+            // text color (with the brush opacity folded into its alpha); built once per run.
+            GlyphDrawingOptions? drawingOptions = null;
+
+            if (foreground is ISolidColorBrush solid)
+            {
+                var color = solid.Color;
+                var alpha = (byte)Math.Clamp(color.A * solid.Opacity + 0.5, 0, 255);
+                drawingOptions = new GlyphDrawingOptions
+                {
+                    Foreground = Color.FromArgb(alpha, color.R, color.G, color.B),
+                };
+            }
+
             for (var i = 0; i <= infos.Count; i++)
             {
                 var splitHere = false;
@@ -80,10 +94,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     break;
                 }
 
-                // The drawing is cached on the typeface's glyph cache, so this second fetch is
-                // a hit. Drawings render in font design units (the Y-flip is internal): scale to
-                // the run's em size and land the local origin on the pen.
-                var drawing = typeface.GetGlyphDrawing(info.GlyphIndex)!;
+                // Fetched with the run's foreground so sentinel palette entries resolve to it
+                // (foreground-bearing drawings build uncached; the plain probe above stayed on
+                // the cached path). Drawings render in font design units (the Y-flip is
+                // internal): scale to the run's em size and land the local origin on the pen.
+                var drawing = typeface.GetGlyphDrawing(info.GlyphIndex, drawingOptions)!;
                 var pen = new Point(
                     baseline.X + currentX + info.GlyphOffset.X,
                     baseline.Y + info.GlyphOffset.Y);
