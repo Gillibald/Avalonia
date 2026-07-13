@@ -217,7 +217,8 @@ namespace Avalonia.Skia
             var options = AvaloniaLocator.Current.GetService<FontManagerOptions>();
 
             if (options?.TextRasterizationMode == TextRasterizationMode.Managed &&
-                glyphTypeface.OutlineType != GlyphOutlineType.None)
+                glyphTypeface.OutlineType != GlyphOutlineType.None &&
+                glyphTypeface.PlatformTypeface is SkiaTypeface)
             {
                 return new SkiaManagedGlyphRunImpl(glyphTypeface, fontRenderingEmSize, glyphInfos, baselineOrigin);
             }
