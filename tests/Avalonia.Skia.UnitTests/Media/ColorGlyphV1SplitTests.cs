@@ -66,6 +66,55 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void V1_Foreground_Sentinel_Follows_The_Brush()
+        {
+            using var scope = CreateEnvironment();
+            var typeface = CreateV1Typeface(out var v1Glyph, paletteIndex: 0xFFFF);
+
+            var green = RenderSingle(typeface, v1Glyph, Brushes.Green);
+            var red = RenderSingle(typeface, v1Glyph, Brushes.Red);
+
+            // The paint's palette entry is the CPAL sentinel: the same glyph must track the
+            // run's foreground across draws (R13 for the v1 drawing path).
+            Assert.True(green.green > 8 && green.red <= 2,
+                $"expected green sentinel paint, found green={green.green} red={green.red}");
+            Assert.True(red.red > 8 && red.green <= 2,
+                $"expected red sentinel paint, found red={red.red} green={red.green}");
+        }
+
+        private static (int red, int green) RenderSingle(GlyphTypeface typeface, ushort glyph, ISolidColorBrush brush)
+        {
+            var run = CreateRun(typeface, new[] { glyph });
+
+            var info = new SKImageInfo(72, 56, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var contextImpl = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+            using var context = new PlatformDrawingContext(contextImpl, ownsImpl: false);
+
+            canvas.Clear(SKColors.White);
+            Assert.True(ColorGlyphRunSplitter.TryDraw(context, run, brush));
+
+            var pixels = bitmap.GetPixelSpan();
+            var red = 0;
+            var green = 0;
+
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                if (pixels[i + 2] > 150 && pixels[i + 1] < 100 && pixels[i] < 100)
+                {
+                    red++;
+                }
+                else if (pixels[i + 1] > 100 && pixels[i + 2] < 100 && pixels[i] < 100)
+                {
+                    green++;
+                }
+            }
+
+            return (red, green);
+        }
+
+        [Fact]
         public void Runs_Without_V1_Content_Decline_The_Split()
         {
             using var scope = CreateEnvironment();
@@ -104,7 +153,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return new GlyphRun(typeface, 32, default, infos, new Point(8, 44));
         }
 
-        private static GlyphTypeface CreateV1Typeface(out ushort v1Glyph)
+        private static GlyphTypeface CreateV1Typeface(out ushort v1Glyph, int paletteIndex = 0)
         {
             var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = baseFont.TryCreateGlyphTypeface();
@@ -117,7 +166,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // our tables parse the same bytes for the COLR side.
             var grafted = ColrTestFont.Graft(
                 baseFont,
-                BuildColrV1GlyphSolid(baseGlyph, outlineGlyph),
+                BuildColrV1GlyphSolid(baseGlyph, outlineGlyph, paletteIndex),
                 ColrTestFont.Cpal(new[] { new[] { Colors.Red } })).ToBytes();
 
             using var skData = SKData.CreateCopy(grafted);
@@ -132,7 +181,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// COLR v1: base glyph → PaintGlyph(outlineGlyph) → PaintSolid on palette entry 0 —
         /// the same sequential layout the COLR characterization tests use.
         /// </summary>
-        private static byte[] BuildColrV1GlyphSolid(ushort baseGlyph, ushort outlineGlyph)
+        private static byte[] BuildColrV1GlyphSolid(ushort baseGlyph, ushort outlineGlyph, int paletteIndex = 0)
         {
             var colr = new BigEndianBuffer();
 
@@ -159,7 +208,7 @@ namespace Avalonia.Skia.UnitTests.Media
             colr.UInt16(outlineGlyph);
 
             colr.UInt8(2);
-            colr.UInt16(0);
+            colr.UInt16(paletteIndex);
             colr.F2Dot14(1.0);
 
             return colr.ToArray();

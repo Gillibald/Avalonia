@@ -23,6 +23,13 @@ namespace Avalonia.Media
         private readonly int? _pixelSize;
 
         /// <summary>
+        /// Gets the text foreground color substituted for CPAL's 0xFFFF "use text color"
+        /// palette sentinel. When <c>null</c>, sentinel entries render black (the historical
+        /// fallback for callers that have no foreground at hand).
+        /// </summary>
+        public Color? Foreground { get; init; }
+
+        /// <summary>
         /// Gets the optional <c>CPAL</c> palette index used to resolve colors for
         /// COLR v0 / COLR v1 glyphs.
         /// </summary>

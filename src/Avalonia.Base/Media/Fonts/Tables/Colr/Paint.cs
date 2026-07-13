@@ -100,7 +100,14 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             var alphaFixed = BinaryPrimitives.ReadInt16BigEndian(span.Slice(3));
             var alpha = PaintParsingHelpers.F2Dot14ToDouble(alphaFixed);
 
-            if (!context.CpalTable.TryGetColor(context.PaletteIndex, paletteIndex, out var color))
+            Color color;
+
+            if (paletteIndex == 0xFFFF && context.Foreground is { } foreground)
+            {
+                // CPAL sentinel: this entry follows the text foreground.
+                color = foreground;
+            }
+            else if (!context.CpalTable.TryGetColor(context.PaletteIndex, paletteIndex, out color))
             {
                 color = Colors.Black;
             }

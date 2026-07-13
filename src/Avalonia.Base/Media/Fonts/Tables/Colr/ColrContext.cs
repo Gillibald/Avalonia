@@ -14,13 +14,15 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             GlyphTypeface glyphTypeface,
             ColrTable colrTable,
             CpalTable cpalTable,
-            int paletteIndex)
+            int paletteIndex,
+            Color? foreground = null)
         {
             GlyphTypeface = glyphTypeface;
             ColrData = colrTable.ColrData;
             ColrTable = colrTable;
             CpalTable = cpalTable;
             PaletteIndex = paletteIndex;
+            Foreground = foreground;
         }
 
         public GlyphTypeface GlyphTypeface { get; }
@@ -28,6 +30,12 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         public ColrTable ColrTable { get; }
         public CpalTable CpalTable { get; }
         public int PaletteIndex { get; }
+
+        /// <summary>
+        /// The text foreground color substituted for the CPAL 0xFFFF palette sentinel, when the
+        /// caller provided one. Null keeps the historical black fallback.
+        /// </summary>
+        public Color? Foreground { get; }
 
         /// <summary>The instance's normalized variation coordinates (empty at the default instance).</summary>
         public ReadOnlySpan<float> ActiveCoords => GlyphTypeface.ActiveVariationCoords;
