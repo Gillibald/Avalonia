@@ -20,8 +20,8 @@ namespace Avalonia.Skia.UnitTests.Media
     /// </summary>
     public class ManagedGlyphRunRenderingTests
     {
-        private const int Width = 240;
-        private const int Height = 48;
+        private const int Width = 480;
+        private const int Height = 96;
 
         [Fact]
         public void Managed_And_Backend_Paths_Render_The_Same_Scene_Within_Render_Test_Tolerance()
@@ -41,6 +41,80 @@ namespace Avalonia.Skia.UnitTests.Media
             // gate has headroom for font/runtime drift but still fails instantly on placement,
             // scale, or color errors (a one-pixel shift alone measures far above 0.08).
             Assert.True(rmse <= 0.045, $"managed vs backend RMSE {rmse:0.0000} exceeds 0.045");
+        }
+
+        [Theory]
+        [InlineData(1.0)]
+        [InlineData(1.5)]
+        [InlineData(2.0)]
+        public void Managed_And_Backend_Agree_Across_Device_Scales(double scale)
+        {
+            using var scope = CreateEnvironment(out var typeface);
+
+            // Each scale hits a different mask size bucket; agreement across the matrix verifies
+            // the DPI story end to end (triage scale extraction, bucket quantization, placement).
+            var managed = RenderScene(typeface, TextRasterizationMode.Managed, rotate: false, scale);
+            var backend = RenderScene(typeface, TextRasterizationMode.Backend, rotate: false, scale);
+
+            var rmse = Rmse(managed, backend);
+
+            Assert.True(rmse <= 0.045, $"scale {scale}: managed vs backend RMSE {rmse:0.0000} exceeds 0.045");
+        }
+
+        [Fact]
+        public void Managed_Intersections_Match_The_Backend_Exactly()
+        {
+            using var scope = CreateEnvironment(out var typeface);
+
+            using var managed = (SkiaManagedGlyphRunImpl)CreateRun(typeface, TextRasterizationMode.Managed);
+            using var backend = (GlyphRunImpl)CreateRun(typeface, TextRasterizationMode.Backend);
+
+            // The Skia subclass answers through the same native blob machinery as the backend
+            // impl, so decoration ink-skipping sees identical intercepts (no regression window).
+            foreach (var (lower, upper) in new[] { (34f, 38f), (26f, 28f) })
+            {
+                var managedHits = managed.GetIntersections(lower, upper);
+                var backendHits = backend.GetIntersections(lower, upper);
+
+                Assert.Equal(backendHits, managedHits);
+            }
+        }
+
+        [Fact]
+        public void Base_Box_Intersections_Cover_The_Exact_Ones()
+        {
+            using var scope = CreateEnvironment(out var typeface);
+
+            using var boxBased = (ManagedGlyphRunImpl)CreateBaseRun(typeface);
+            using var exact = (GlyphRunImpl)CreateRun(typeface, TextRasterizationMode.Backend);
+
+            // The backend-free fallback derives intervals from ink boxes: wider is acceptable
+            // (slightly larger skip gaps), but every exact intercept must fall inside a box
+            // interval — a decoration may never be painted through real ink.
+            var bands = new[] { (34f, 38f), (26f, 28f) };
+
+            foreach (var (lower, upper) in bands)
+            {
+                var boxHits = boxBased.GetIntersections(lower, upper);
+                var exactHits = exact.GetIntersections(lower, upper);
+
+                for (var i = 0; i < exactHits.Count; i += 2)
+                {
+                    var covered = false;
+
+                    for (var j = 0; j < boxHits.Count; j += 2)
+                    {
+                        if (boxHits[j] <= exactHits[i] + 0.01f && exactHits[i + 1] <= boxHits[j + 1] + 0.01f)
+                        {
+                            covered = true;
+                            break;
+                        }
+                    }
+
+                    Assert.True(covered,
+                        $"exact interval [{exactHits[i]}, {exactHits[i + 1]}] not covered by the box intervals");
+                }
+            }
         }
 
         [Fact]
@@ -138,7 +212,8 @@ namespace Avalonia.Skia.UnitTests.Media
             return run.RunMasks.TryGet(key, out _);
         }
 
-        private static byte[] RenderScene(GlyphTypeface typeface, TextRasterizationMode mode, bool rotate)
+        private static byte[] RenderScene(GlyphTypeface typeface, TextRasterizationMode mode, bool rotate,
+            double scale = 1.0)
         {
             var run = CreateRun(typeface, mode);
 
@@ -162,6 +237,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     context.Transform = Matrix.CreateRotation(0.2) * Matrix.CreateTranslation(10, 6);
                 }
+                else if (scale != 1.0)
+                {
+                    context.Transform = Matrix.CreateScale(scale, scale);
+                }
 
                 context.DrawGlyphRun(Brushes.Black, run);
 
@@ -171,6 +250,23 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 run.Dispose();
             }
+        }
+
+        private static IGlyphRunImpl CreateBaseRun(GlyphTypeface typeface)
+        {
+            const double emSize = 16;
+            var scale = emSize / typeface.Metrics.DesignEmHeight;
+            var infos = new List<GlyphInfo>();
+            var cluster = 0;
+
+            foreach (var c in "Managed glyphs 123")
+            {
+                var glyph = typeface.CharacterToGlyphMap[c];
+                typeface.TryGetGlyphMetrics(glyph, out var metrics);
+                infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
+            }
+
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 32));
         }
 
         private static IGlyphRunImpl CreateRun(GlyphTypeface typeface, TextRasterizationMode mode)
