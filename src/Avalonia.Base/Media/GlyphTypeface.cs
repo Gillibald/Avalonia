@@ -1946,39 +1946,7 @@ namespace Avalonia.Media
 
                 // Build the outline in font design-unit space (identity transform); callers apply
                 // the scale / position. Wrapped so the shared, cacheable result is immutable.
-                // glyf (TrueType), CFF and CFF2 (PostScript) are mutually exclusive outline formats.
-                bool built;
-                if (_glyfTable is not null)
-                {
-                    // The active variation coords are precomputed once at clone time and stored
-                    // on the typeface — see _activeCoords. Static fonts and default-instance
-                    // lookups (where _activeCoords is null) pass an empty span and skip the
-                    // gvar deformation path entirely.
-                    ReadOnlySpan<float> activeCoords = _gvarTable is not null && _activeCoords is not null
-                        ? _activeCoords
-                        : default;
-
-                    built = _glyfTable.TryBuildGlyphGeometry(
-                        (int)glyphIndex,
-                        Matrix.Identity,
-                        counting,
-                        _gvarTable,
-                        activeCoords);
-                }
-                else if (_cff2Table is not null)
-                {
-                    // CFF2 blends are intrinsic to the charstring and must be evaluated even for the
-                    // default instance. A null _activeCoords (source / default-instance clone) means the
-                    // origin — all-zero normalized coords — at which the blends yield the default master.
-                    Span<float> zeroCoords = stackalloc float[_fvarTable?.Axes.Length ?? 0];
-                    ReadOnlySpan<float> activeCoords = _activeCoords is not null ? _activeCoords : zeroCoords;
-
-                    built = _cff2Table.TryBuildGlyphGeometry((int)glyphIndex, Matrix.Identity, counting, activeCoords);
-                }
-                else
-                {
-                    built = _cffTable!.TryBuildGlyphGeometry((int)glyphIndex, Matrix.Identity, counting);
-                }
+                var built = TryBuildGlyphContours(glyphIndex, Matrix.Identity, counting);
 
                 if (built)
                 {
@@ -1989,6 +1957,55 @@ namespace Avalonia.Media
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Builds the glyph's outline contours into an arbitrary geometry sink from whichever
+        /// outline table the font carries — <c>glyf</c> (with gvar deformation at this instance's
+        /// variation point), CFF or CFF2 — applying <paramref name="transform"/> to every emitted
+        /// point. No render backend is involved: the sink receives raw contour commands, which is
+        /// what the managed rasterization path consumes (a font-unit → device transform baked into
+        /// the walk yields device-space contours directly). Returns <c>false</c> for an
+        /// out-of-range glyph, an outline-less font, or a malformed glyph the walker rejects.
+        /// </summary>
+        internal bool TryBuildGlyphContours(ushort glyphIndex, Matrix transform, IGeometryContext sink)
+        {
+            if (glyphIndex >= GlyphCount)
+            {
+                return false;
+            }
+
+            // glyf (TrueType), CFF and CFF2 (PostScript) are mutually exclusive outline formats.
+            if (_glyfTable is not null)
+            {
+                // The active variation coords are precomputed once at clone time and stored
+                // on the typeface — see _activeCoords. Static fonts and default-instance
+                // lookups (where _activeCoords is null) pass an empty span and skip the
+                // gvar deformation path entirely.
+                ReadOnlySpan<float> activeCoords = _gvarTable is not null && _activeCoords is not null
+                    ? _activeCoords
+                    : default;
+
+                return _glyfTable.TryBuildGlyphGeometry((int)glyphIndex, transform, sink, _gvarTable, activeCoords);
+            }
+
+            if (_cff2Table is not null)
+            {
+                // CFF2 blends are intrinsic to the charstring and must be evaluated even for the
+                // default instance. A null _activeCoords (source / default-instance clone) means the
+                // origin — all-zero normalized coords — at which the blends yield the default master.
+                Span<float> zeroCoords = stackalloc float[_fvarTable?.Axes.Length ?? 0];
+                ReadOnlySpan<float> activeCoords = _activeCoords is not null ? _activeCoords : zeroCoords;
+
+                return _cff2Table.TryBuildGlyphGeometry((int)glyphIndex, transform, sink, activeCoords);
+            }
+
+            if (_cffTable is not null)
+            {
+                return _cffTable.TryBuildGlyphGeometry((int)glyphIndex, transform, sink);
+            }
+
+            return false;
         }
 
         /// <summary>
