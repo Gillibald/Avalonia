@@ -4,12 +4,13 @@ using Avalonia.Media.TextFormatting;
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// Record-time split for COLR v1: glyphs whose color comes from a v1 paint graph draw
-    /// through the typeface's own drawing (geometry and gradient render data — the "prefer our
-    /// implementation" rule), while every other stretch keeps an ordinary glyph-run node.
-    /// v0-only color glyphs stay in the run: the mask renderer composes them server-side, and
-    /// direct <see cref="GlyphRun"/> draws that bypass this splitter still render correctly via
-    /// the renderer's native fallback for v1 content.
+    /// Record-time split: COLR glyphs draw through the typeface's own drawings (the "prefer our
+    /// implementation" rule holds in every rasterization mode), while other stretches keep an
+    /// ordinary glyph-run node. Scope differs by mode only for v0: under managed rasterization
+    /// v0 stays in the run because the mask renderer composes those layers server-side more
+    /// cheaply; under backend rasterization the blob would rasterize COLR itself, so v0 splits
+    /// to drawings too. Direct <see cref="GlyphRun"/> draws that bypass this splitter still
+    /// render correctly via the renderer's or backend's native handling.
     /// </summary>
     internal static class ColorGlyphRunSplitter
     {
@@ -18,33 +19,40 @@ namespace Avalonia.Media.Fonts.Rasterization
                 == TextRasterizationMode.Managed;
 
         /// <summary>
-        /// Draws <paramref name="glyphRun"/> with v1 color glyphs replaced by their drawings.
-        /// Returns <c>false</c> without drawing anything when the run contains no v1-only glyph
-        /// (or none with a resolvable drawing), so the caller keeps its single glyph-run node
-        /// and the cheaper v0/mask handling.
+        /// Draws <paramref name="glyphRun"/> with its color glyphs replaced by their drawings.
+        /// Returns <c>false</c> without drawing anything when the run contains no glyph this
+        /// mode splits (or none with a resolvable drawing), so the caller keeps its single node.
         /// </summary>
         public static bool TryDraw(DrawingContext context, GlyphRun glyphRun, IBrush foreground)
         {
             var typeface = glyphRun.GlyphTypeface;
 
-            if (typeface.ColorTable is not { HasV1Data: true } colr)
+            if (typeface.ColorTable is not { } colr)
+            {
+                return false;
+            }
+
+            var includeV0 = !IsManagedTextRasterization();
+
+            if (!includeV0 && !colr.HasV1Data)
             {
                 return false;
             }
 
             var infos = glyphRun.GlyphInfos;
-            var hasV1 = false;
+            var hasSplitGlyph = false;
 
             for (var i = 0; i < infos.Count; i++)
             {
-                if (IsV1Only(colr, infos[i].GlyphIndex) && typeface.GetGlyphDrawing(infos[i].GlyphIndex) is not null)
+                if (IsSplitGlyph(colr, infos[i].GlyphIndex, includeV0) &&
+                    typeface.GetGlyphDrawing(infos[i].GlyphIndex) is not null)
                 {
-                    hasV1 = true;
+                    hasSplitGlyph = true;
                     break;
                 }
             }
 
-            if (!hasV1)
+            if (!hasSplitGlyph)
             {
                 return false;
             }
@@ -77,7 +85,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (i < infos.Count)
                 {
                     info = infos[i];
-                    splitHere = IsV1Only(colr, info.GlyphIndex) &&
+                    splitHere = IsSplitGlyph(colr, info.GlyphIndex, includeV0) &&
                         typeface.GetGlyphDrawing(info.GlyphIndex) is not null;
                 }
 
@@ -117,8 +125,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             return true;
         }
 
-        private static bool IsV1Only(Fonts.Tables.Colr.ColrTable colr, ushort glyph)
-            => colr.TryGetBaseGlyphV1Record(glyph, out _) && !colr.TryGetBaseGlyphRecord(glyph, out _);
+        private static bool IsSplitGlyph(Fonts.Tables.Colr.ColrTable colr, ushort glyph, bool includeV0)
+            => includeV0
+                ? colr.HasColorLayers(glyph) || (colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _))
+                : colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _) &&
+                  !colr.TryGetBaseGlyphRecord(glyph, out _);
 
         private static void FlushSegment(DrawingContext context, IBrush foreground, GlyphRun run,
             int start, int end, double startX)

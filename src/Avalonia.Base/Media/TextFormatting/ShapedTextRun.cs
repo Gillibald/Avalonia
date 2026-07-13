@@ -88,11 +88,10 @@ namespace Avalonia.Media.TextFormatting
                     drawingContext.DrawRectangle(Properties.BackgroundBrush, null, GlyphRun.Bounds);
                 }
 
-                // When the managed rasterizer owns text, COLR v1 glyphs draw through the
-                // typeface's own paint graphs instead of the backend's color rendering; runs
-                // without v1 content keep their single node (v0 composes server-side).
-                if (GlyphRun.GlyphTypeface.ColorTable is { HasV1Data: true } &&
-                    Fonts.Rasterization.ColorGlyphRunSplitter.IsManagedTextRasterization() &&
+                // COLR glyphs draw through the typeface's own implementation in every
+                // rasterization mode; the splitter decides scope per mode (v0 stays in the run
+                // under managed rasterization, where server-side masks compose it cheaper).
+                if (GlyphRun.GlyphTypeface.ColorTable is not null &&
                     Fonts.Rasterization.ColorGlyphRunSplitter.TryDraw(drawingContext, GlyphRun, Properties.ForegroundBrush))
                 {
                 }

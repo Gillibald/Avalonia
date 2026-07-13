@@ -115,6 +115,84 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Backend_Mode_Splits_V0_Glyphs_Through_Our_Drawings()
+        {
+            // No FontManagerOptions registered: default Backend mode, where the blob would
+            // otherwise rasterize COLR itself — so v0 splits to our layer drawings too.
+            using var scope = CreateEnvironment(managed: false);
+            var typeface = CreateV0Typeface(out var v0Glyph);
+
+            var run = CreateRun(typeface, new[] { v0Glyph });
+
+            var info = new SKImageInfo(72, 56, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var contextImpl = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+            using var context = new PlatformDrawingContext(contextImpl, ownsImpl: false);
+
+            canvas.Clear(SKColors.White);
+
+            Assert.True(ColorGlyphRunSplitter.TryDraw(context, run, Brushes.Black),
+                "backend mode declined a v0 color run");
+
+            var pixels = bitmap.GetPixelSpan();
+            var red = 0;
+
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                if (pixels[i + 2] > 150 && pixels[i] < 100 && pixels[i + 1] < 100)
+                {
+                    red++;
+                }
+            }
+
+            Assert.True(red > 8, $"expected red v0 layer pixels via our drawing, found {red}");
+        }
+
+        [Fact]
+        public void Managed_Mode_Keeps_V0_Runs_For_The_Mask_Renderer()
+        {
+            using var scope = CreateEnvironment();
+            var typeface = CreateV0Typeface(out var v0Glyph);
+
+            var run = CreateRun(typeface, new[] { v0Glyph });
+
+            var info = new SKImageInfo(48, 48, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var contextImpl = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+            using var context = new PlatformDrawingContext(contextImpl, ownsImpl: false);
+
+            Assert.False(ColorGlyphRunSplitter.TryDraw(context, run, Brushes.Black));
+        }
+
+        private static GlyphTypeface CreateV0Typeface(out ushort v0Glyph)
+        {
+            var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
+            var probe = baseFont.TryCreateGlyphTypeface();
+            Assert.NotNull(probe);
+
+            var baseGlyph = probe!.CharacterToGlyphMap['H'];
+            var layerGlyph = probe.CharacterToGlyphMap['A'];
+
+            // COLR v0: one base record, one layer on palette 0 (red).
+            var colr = new BigEndianBuffer();
+            colr.UInt16(0).UInt16(1).UInt32(14).UInt32(20).UInt16(1)
+                .UInt16(baseGlyph).UInt16(0).UInt16(1)
+                .UInt16(layerGlyph).UInt16(0);
+
+            var grafted = ColrTestFont.Graft(
+                baseFont, colr.ToArray(), ColrTestFont.Cpal(new[] { new[] { Colors.Red } })).ToBytes();
+
+            using var skData = SKData.CreateCopy(grafted);
+            var skTypeface = SKTypeface.FromData(skData);
+            Assert.NotNull(skTypeface);
+
+            v0Glyph = baseGlyph;
+            return new GlyphTypeface(new SkiaTypeface(skTypeface!, FontSimulations.None));
+        }
+
+        [Fact]
         public void Runs_Without_V1_Content_Decline_The_Split()
         {
             using var scope = CreateEnvironment();
@@ -214,17 +292,21 @@ namespace Avalonia.Skia.UnitTests.Media
             return colr.ToArray();
         }
 
-        private static IDisposable CreateEnvironment()
+        private static IDisposable CreateEnvironment(bool managed = true)
         {
             var scope = AvaloniaLocator.EnterScope();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
-            AvaloniaLocator.CurrentMutable
-                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
-                {
-                    TextRasterizationMode = TextRasterizationMode.Managed,
-                });
+
+            if (managed)
+            {
+                AvaloniaLocator.CurrentMutable
+                    .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                    {
+                        TextRasterizationMode = TextRasterizationMode.Managed,
+                    });
+            }
 
             return scope;
         }
