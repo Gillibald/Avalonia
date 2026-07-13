@@ -10,8 +10,8 @@ namespace Avalonia.Skia
     /// <summary>
     /// The managed glyph run on the Skia backend: mask-path drawing comes from the base class;
     /// this subclass adds a lazily built native <see cref="SKTextBlob"/> so triage-rejected
-    /// draws (rotated, oversized, non-solid foreground) and outline-exact
-    /// <see cref="GetIntersections"/> keep today's behavior until the managed equivalents land.
+    /// draws (rotated, oversized, non-solid foreground) keep today's behavior until the
+    /// managed equivalents land.
     /// </summary>
     internal sealed class SkiaManagedGlyphRunImpl : ManagedGlyphRunImpl
     {
@@ -75,15 +75,9 @@ namespace Avalonia.Skia
             });
         }
 
-        public override IReadOnlyList<float> GetIntersections(float lowerLimit, float upperLimit)
-        {
-            // Outline-exact intercepts via the native blob (identical to GlyphRunImpl) until the
-            // managed analytic intercepts replace it — the base box-derived implementation would
-            // widen ink-skipping gaps.
-            var textBlob = GetTextBlob(default, default);
-
-            return textBlob.GetIntercepts(lowerLimit, upperLimit);
-        }
+        // GetIntersections deliberately not overridden: the base analytic intercepts are
+        // outline-exact from the managed path data, so the native blob here exists only for
+        // triage-rejected draws (rotated, oversized, non-solid foreground).
 
         public override void Dispose()
         {
