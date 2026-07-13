@@ -245,6 +245,65 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             return false;
         }
 
+        /// <summary>Whether any strike carries an image for the glyph (no decoding).</summary>
+        public bool HasGlyphImage(ushort glyphIndex)
+        {
+            for (var i = 0; i < _strikes.Length; i++)
+            {
+                if (TryGetGlyphImage(new BitmapStrike(i, _strikes[i].PpemX, _strikes[i].PpemY), glyphIndex, out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private System.Collections.Concurrent.ConcurrentDictionary<uint, Rasterization.DecodedGlyphBitmap>? _decoded;
+        private int _decodedBytes;
+
+        private const int DecodedBudgetBytes = 4 * 1024 * 1024;
+
+        /// <summary>
+        /// Decoded-pixel access with per-table memoisation, so compose misses do not re-decode
+        /// (the F3 rule: pay the decode once per glyph and strike). The budget is enforced by a
+        /// full flush — emoji working sets are small and repopulate in one compose; a finer
+        /// eviction ring is not worth its weight here yet.
+        /// </summary>
+        public bool TryGetDecodedGlyph(in BitmapStrike strike, ushort glyphIndex,
+            Rasterization.IBitmapGlyphDecoder decoder,
+            out BitmapGlyphImage metrics, out Rasterization.DecodedGlyphBitmap decoded)
+        {
+            decoded = default;
+
+            if (!TryGetGlyphImage(strike, glyphIndex, out metrics))
+            {
+                return false;
+            }
+
+            var cache = _decoded ??= new();
+            var key = (uint)strike.Index << 16 | glyphIndex;
+
+            if (cache.TryGetValue(key, out decoded))
+            {
+                return true;
+            }
+
+            if (!decoder.TryDecode(metrics.PngData, out decoded))
+            {
+                return false;
+            }
+
+            if (System.Threading.Interlocked.Add(ref _decodedBytes, decoded.Bgra.Length) > DecodedBudgetBytes)
+            {
+                cache.Clear();
+                System.Threading.Interlocked.Exchange(ref _decodedBytes, decoded.Bgra.Length);
+            }
+
+            cache.TryAdd(key, decoded);
+            return true;
+        }
+
         private bool TryReadImage(int imageFormat, long offset, long length, out BitmapGlyphImage image)
         {
             image = default;
