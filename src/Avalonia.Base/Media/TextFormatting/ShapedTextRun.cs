@@ -92,7 +92,7 @@ namespace Avalonia.Media.TextFormatting
                 // rasterization mode; the splitter decides scope per mode (v0 stays in the run
                 // under managed rasterization, where server-side masks compose it cheaper).
                 if ((GlyphRun.GlyphTypeface.ColorTable is not null ||
-                     GlyphRun.GlyphTypeface.BitmapTable is not null) &&
+                     GlyphRun.GlyphTypeface.BitmapSource is not null) &&
                     Fonts.Rasterization.ColorGlyphRunSplitter.TryDraw(drawingContext, GlyphRun, Properties.ForegroundBrush))
                 {
                 }

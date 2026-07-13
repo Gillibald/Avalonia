@@ -52,7 +52,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
     /// offsets are validated in long arithmetic against both tables' lengths, per the table
     /// hardening rules the outline stack established.
     /// </summary>
-    internal sealed class CbdtTable
+    internal sealed class CbdtTable : IBitmapGlyphSource
     {
         private const int CblcHeaderSize = 8;
         private const int BitmapSizeRecordSize = 48;
@@ -301,6 +301,21 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             }
 
             cache.TryAdd(key, decoded);
+            return true;
+        }
+
+        /// <summary>CBDT bearings normalized to the pipeline's pen-relative y-down placement.</summary>
+        public bool TryGetPlacement(in BitmapStrike strike, ushort glyphIndex, Rasterization.IBitmapGlyphDecoder decoder,
+            out BitmapGlyphPlacement placement)
+        {
+            placement = default;
+
+            if (!TryGetDecodedGlyph(strike, glyphIndex, decoder, out var metrics, out var decoded))
+            {
+                return false;
+            }
+
+            placement = new BitmapGlyphPlacement(decoded, metrics.BearingX, -metrics.BearingY);
             return true;
         }
 

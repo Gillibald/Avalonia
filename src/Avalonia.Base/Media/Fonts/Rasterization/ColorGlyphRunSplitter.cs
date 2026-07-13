@@ -27,7 +27,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var typeface = glyphRun.GlyphTypeface;
             var colr = typeface.ColorTable;
-            var bitmaps = typeface.BitmapTable;
+            var bitmaps = typeface.BitmapSource;
 
             if (colr is null && bitmaps is null)
             {
