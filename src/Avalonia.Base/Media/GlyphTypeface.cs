@@ -2736,13 +2736,30 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Emits a glyph's outline, with this face's simulations applied, in font design-unit space.
-        /// glyf (TrueType), CFF and CFF2 (PostScript) are mutually exclusive outline formats.
         /// </summary>
         private bool TryBuildOutline(ushort glyphIndex, IGeometryContext context)
-        {
-            var transform = SimulationTransform;
-            var emboldenStrength = EmboldenStrength;
+            => TryBuildGlyphContours(glyphIndex, SimulationTransform, context, EmboldenStrength);
 
+        /// <summary>
+        /// Builds the glyph's outline contours into an arbitrary geometry sink from whichever
+        /// outline table the font carries — <c>glyf</c> (with gvar deformation at this instance's
+        /// variation point), CFF or CFF2 — applying <paramref name="transform"/> to every emitted
+        /// point. No render backend is involved: the sink receives raw contour commands, which is
+        /// what the managed rasterization path consumes (a font-unit → device transform baked into
+        /// the walk yields device-space contours directly). A positive
+        /// <paramref name="emboldenStrength"/> (design units) emboldens the outline before the
+        /// transform applies. Returns <c>false</c> for an out-of-range glyph, an outline-less font,
+        /// or a malformed glyph the walker rejects.
+        /// </summary>
+        internal bool TryBuildGlyphContours(ushort glyphIndex, Matrix transform, IGeometryContext sink,
+            double emboldenStrength = 0)
+        {
+            if (glyphIndex >= GlyphCount)
+            {
+                return false;
+            }
+
+            // glyf (TrueType), CFF and CFF2 (PostScript) are mutually exclusive outline formats.
             if (_glyfTable is not null)
             {
                 // The active variation coords are precomputed once at clone time and stored
@@ -2753,14 +2770,19 @@ namespace Avalonia.Media
                     ? _activeCoords
                     : default;
 
-                return _glyfTable.TryBuildGlyphGeometry(glyphIndex, transform, context, _gvarTable, glyfCoords,
+                return _glyfTable.TryBuildGlyphGeometry(glyphIndex, transform, sink, _gvarTable, glyfCoords,
                     emboldenStrength);
+            }
+
+            if (_cff2Table is null && _cffTable is null)
+            {
+                return false;
             }
 
             // Charstrings emit curves rather than points, so a bold outline is collected whole and
             // emboldened before the transform applies, the way glyf points are.
             var emboldening = emboldenStrength > 0 ? new EmboldeningGeometryContext() : null;
-            IGeometryContext target = (IGeometryContext?)emboldening ?? context;
+            IGeometryContext target = (IGeometryContext?)emboldening ?? sink;
             var targetTransform = emboldening is null ? transform : Matrix.Identity;
 
             bool built;
@@ -2781,7 +2803,7 @@ namespace Avalonia.Media
 
             if (built && emboldening is not null)
             {
-                emboldening.Emit(context, transform, emboldenStrength);
+                emboldening.Emit(sink, transform, emboldenStrength);
             }
 
             return built;
