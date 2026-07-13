@@ -95,7 +95,18 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;   // fully transparent — nothing to draw, but handled
             }
 
-            var tint = RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B);
+            // Backend fast path: untinted alpha masks, tinted per draw — color leaves the cache
+            // identity, so a foreground animation reuses one mask. COLR-bearing typefaces stay
+            // on the pre-tinted BGRA floor (v0 layer colors are baked into the composed mask),
+            // and so do contexts that report no benefit (CPU raster: see PrefersAlphaMasks).
+            var alphaContext = run.GlyphTypeface.ColorTable is null &&
+                context is IAlphaGlyphMaskContext { PrefersAlphaMasks: true } preferring
+                    ? preferring
+                    : null;
+
+            var tint = alphaContext is null
+                ? RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B)
+                : 0u;   // the documented alpha-variant sentinel
 
             var deviceX = (float)(run.BaselineOrigin.X * scaleX + transform.M31);
             var deviceY = run.BaselineOrigin.Y * scaleY + transform.M32;
@@ -110,7 +121,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!cache.TryGet(key, out var runMask))
             {
-                var composed = Compose(run, key, (float)scaleX, (float)scaleY);
+                var composed = alphaContext is null
+                    ? Compose(run, key, (float)scaleX, (float)scaleY)
+                    : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY);
 
                 if (composed is null)
                 {
@@ -129,10 +142,88 @@ namespace Avalonia.Media.Fonts.Rasterization
             var sourceRect = new Rect(0, 0, runMask.Width, runMask.Height);
             var destRect = sourceRect.Translate(new Vector(originX + runMask.OffsetX, originY + runMask.OffsetY));
 
-            context.DrawBitmap(runMask.Bitmap, 1, sourceRect, destRect);
+            if (alphaContext is not null)
+            {
+                var straightTint = ((uint)alpha << 24) |
+                    ((uint)solid.Color.R << 16) | ((uint)solid.Color.G << 8) | solid.Color.B;
+
+                alphaContext.DrawAlphaMask(runMask.Handle, sourceRect, destRect, straightTint);
+            }
+            else
+            {
+                context.DrawBitmap((IBitmapImpl)runMask.Handle, 1, sourceRect, destRect);
+            }
+
             context.Transform = oldTransform;
 
             return true;
+        }
+
+        /// <summary>
+        /// The alpha-context compose: coverage only, into a pooled staging buffer realized as a
+        /// backend mask. Only reachable for COLR-free typefaces, so no layer expansion here.
+        /// </summary>
+        private static RunMask? ComposeAlphaMask(ManagedGlyphRunImpl run, RunMaskKey key,
+            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY)
+        {
+            var typeface = run.GlyphTypeface;
+            var maskCache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var count = run.GlyphCount;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
+            var state = (typeface, scratch);
+
+            var minX = int.MaxValue;
+            var minY = int.MaxValue;
+            var maxX = int.MinValue;
+            var maxY = int.MinValue;
+
+            for (var i = 0; i < count; i++)
+            {
+                var relativeX = originFraction + positions[i * 2] * scaleX;
+                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode),
+                    state, s_buildMask);
+
+                UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+            }
+
+            if (minX >= maxX || minY >= maxY)
+            {
+                return null;
+            }
+
+            var width = maxX - minX;
+            var height = maxY - minY;
+            var staging = ArrayPool<byte>.Shared.Rent(width * height);
+
+            try
+            {
+                var span = staging.AsSpan(0, width * height);
+                span.Clear();
+
+                for (var i = 0; i < count; i++)
+                {
+                    var relativeX = originFraction + positions[i * 2] * scaleX;
+                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                    var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode),
+                        state, s_buildMask);
+
+                    RunMaskComposer.ComposeAlpha(mask, penX - minX, penY - minY, span, width, height);
+                }
+
+                return new RunMask(alphaContext.CreateAlphaMask(span, width, height), minX, minY, width, height);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(staging);
+            }
         }
 
         private static unsafe RunMask? Compose(ManagedGlyphRunImpl run, RunMaskKey key, float scaleX, float scaleY)

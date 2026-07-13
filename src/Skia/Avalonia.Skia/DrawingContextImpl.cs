@@ -19,7 +19,8 @@ namespace Avalonia.Skia
     /// </summary>
     internal partial class DrawingContextImpl : IDrawingContextImpl,
         IDrawingContextWithAcrylicLikeSupport,
-        IDrawingContextImplWithEffects
+        IDrawingContextImplWithEffects,
+        IAlphaGlyphMaskContext
     {
         private IDisposable?[]? _disposables;
         // TODO: Get rid of this value, it's currently used to calculate intermediate sizes for tile brushes
@@ -256,6 +257,35 @@ namespace Avalonia.Skia
             paint.IsAntialias = RenderOptions.EdgeMode != EdgeMode.Aliased;
 
             drawableImage.Draw(this, s, d, samplingOptions, paint);
+            SKPaintCache.Shared.ReturnReset(paint);
+        }
+
+        bool IAlphaGlyphMaskContext.PrefersAlphaMasks => GrContext is not null;
+
+        IDisposable IAlphaGlyphMaskContext.CreateAlphaMask(ReadOnlySpan<byte> alpha, int width, int height)
+        {
+            // An immutable alpha-only image owning a copy of the pixels: its identity is stable,
+            // so the GPU texture cache uploads it once, and drawing modulates it by paint color.
+            var info = new SKImageInfo(width, height, SKColorType.Alpha8, SKAlphaType.Premul);
+
+            return SKImage.FromPixelCopy(info, alpha, width);
+        }
+
+        void IAlphaGlyphMaskContext.DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb)
+        {
+            CheckLease();
+
+            var image = (SKImage)mask;
+            var paint = SKPaintCache.Shared.Get();
+
+            paint.Color = new SKColor(
+                (byte)(tintArgb >> 16),
+                (byte)(tintArgb >> 8),
+                (byte)tintArgb,
+                (byte)((tintArgb >> 24) * _currentOpacity));
+
+            // Masks are drawn 1:1 at device pixels; nearest sampling keeps coverage exact.
+            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), new SKSamplingOptions(), paint);
             SKPaintCache.Shared.ReturnReset(paint);
         }
 
