@@ -51,6 +51,7 @@ namespace Avalonia.Media
         private readonly GlyfTable? _glyfTable;
         private readonly ColrTable? _colrTable;
         private readonly CpalTable? _cpalTable;
+        private readonly Fonts.Tables.Bitmaps.CbdtTable? _cbdtTable;
 
         // CFF table — PostScript / Type 2 outlines (the .otf flavour). Null for TrueType (glyf)
         // fonts. A font carries exactly one outline format, so _glyfTable and _cffTable are mutually
@@ -146,6 +147,9 @@ namespace Avalonia.Media
 
         /// <summary>The parsed CPAL table, if the font carries one. Managed-rasterization use.</summary>
         internal Fonts.Tables.Colr.CpalTable? ColorPaletteTable => _cpalTable;
+
+        /// <summary>The parsed CBLC/CBDT strike tables, if the font carries them.</summary>
+        internal Fonts.Tables.Bitmaps.CbdtTable? BitmapTable => _cbdtTable;
 
         // Pre-computed per-region scaler arrays for each variation table's
         // ItemVariationStore. Built once at clone construction so per-glyph delta
@@ -329,6 +333,9 @@ namespace Avalonia.Media
                 // Load COLR and CPAL tables for color glyph support
                 ColrTable.TryLoad(this, out _colrTable);
                 CpalTable.TryLoad(this, out _cpalTable);
+
+                // Color bitmap strikes (CBLC/CBDT) for the managed bitmap-glyph path.
+                Fonts.Tables.Bitmaps.CbdtTable.TryLoad(this, out _cbdtTable);
             }
 
             IsLastResort = (headTable is not null && (headTable.Flags & HeadFlags.LastResortFont) != 0) ||
@@ -636,6 +643,7 @@ namespace Avalonia.Media
             _glyfTable = source._glyfTable;
             _colrTable = source._colrTable;
             _cpalTable = source._cpalTable;
+            _cbdtTable = source._cbdtTable;
             _cffTable = source._cffTable;
             _cff2Table = source._cff2Table;
             _fvarTable = source._fvarTable;
