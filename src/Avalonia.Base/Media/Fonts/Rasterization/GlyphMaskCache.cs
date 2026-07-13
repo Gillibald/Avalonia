@@ -69,6 +69,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// is memoised as <see cref="GlyphMask.Empty"/> so it is never rebuilt.
         /// </summary>
         public GlyphMask GetOrBuild(in GlyphMaskKey key, Func<GlyphMaskKey, GlyphMask> build)
+            => GetOrBuild(key, build, static (k, b) => b(k));
+
+        /// <summary>
+        /// State-passing variant of <see cref="GetOrBuild(in GlyphMaskKey, Func{GlyphMaskKey, GlyphMask})"/>
+        /// so hot callers can use a static build delegate — the compose loop must not allocate a
+        /// closure per glyph.
+        /// </summary>
+        public GlyphMask GetOrBuild<TState>(in GlyphMaskKey key, TState state,
+            Func<GlyphMaskKey, TState, GlyphMask> build)
         {
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
@@ -76,7 +85,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return hit;
             }
 
-            var built = build(key) ?? GlyphMask.Empty;
+            var built = build(key, state) ?? GlyphMask.Empty;
 
             lock (_lock)
             {

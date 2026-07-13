@@ -62,6 +62,7 @@ namespace Avalonia.Media
         // CLOCK eviction. Null until first use; per instance, so a variation clone caches its own boxes
         // and outlines at its own variation point. The delegate is cached to keep the hot path alloc-free.
         private GlyphCache? _glyphCache;
+        private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildGlyphGeometry;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildColorDrawing;
 
@@ -1671,6 +1672,22 @@ namespace Avalonia.Media
 
             // First publisher wins; later racers reuse it.
             return Interlocked.CompareExchange(ref _glyphCache, created, null) ?? created;
+        }
+
+        /// <summary>
+        /// The per-instance rasterized-mask cache used by the managed text rasterization path —
+        /// the sibling of the outline cache, keyed by (glyph, scale bucket, phase, mode). Created
+        /// on first use; a variation clone caches masks at its own variation point like every
+        /// other per-instance cache here.
+        /// </summary>
+        internal Fonts.Rasterization.GlyphMaskCache MaskCache =>
+            _glyphMaskCache ?? GetOrCreateGlyphMaskCache();
+
+        private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
+        {
+            var created = new Fonts.Rasterization.GlyphMaskCache();
+
+            return Interlocked.CompareExchange(ref _glyphMaskCache, created, null) ?? created;
         }
 
         /// <summary>

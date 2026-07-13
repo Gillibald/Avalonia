@@ -24,5 +24,15 @@ namespace Avalonia.Media
         /// A font family mapping is used if a requested family name can't be resolved.
         /// </remarks>
         public IReadOnlyDictionary<string, FontFamily>? FontFamilyMappings { get; set; }
+
+        /// <summary>
+        /// Gets or sets which engine rasterizes glyphs. Experimental.
+        /// </summary>
+        /// <remarks>
+        /// Application-global and read when glyph runs are created: set it at startup (alongside
+        /// the other options here) before the first text renders. Fonts without outline tables
+        /// always use <see cref="TextRasterizationMode.Backend"/> regardless of this setting.
+        /// </remarks>
+        public TextRasterizationMode TextRasterizationMode { get; set; }
     }
 }
