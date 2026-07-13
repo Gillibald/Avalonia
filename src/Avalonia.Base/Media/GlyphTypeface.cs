@@ -47,6 +47,7 @@ namespace Avalonia.Media
         private readonly ColrTable? _colrTable;
         private readonly CpalTable? _cpalTable;
         private readonly Fonts.Tables.Bitmaps.CbdtTable? _cbdtTable;
+        private readonly Fonts.Tables.Bitmaps.SbixTable? _sbixTable;
 
         // CFF table — PostScript / Type 2 outlines (the .otf flavour). Null for TrueType (glyf)
         // fonts. A font carries exactly one outline format, so _glyfTable and _cffTable are mutually
@@ -139,6 +140,10 @@ namespace Avalonia.Media
 
         /// <summary>The parsed CBLC/CBDT strike tables, if the font carries them.</summary>
         internal Fonts.Tables.Bitmaps.CbdtTable? BitmapTable => _cbdtTable;
+
+        /// <summary>The font's bitmap strike source (CBDT or sbix), if it carries one.</summary>
+        internal Fonts.Tables.Bitmaps.IBitmapGlyphSource? BitmapSource =>
+            _cbdtTable ?? (Fonts.Tables.Bitmaps.IBitmapGlyphSource?)_sbixTable;
 
         // Pre-computed per-region scaler arrays for each variation table's
         // ItemVariationStore. Built once at clone construction so per-glyph delta
@@ -286,8 +291,12 @@ namespace Avalonia.Media
                 ColrTable.TryLoad(this, out _colrTable);
                 CpalTable.TryLoad(this, out _cpalTable);
 
-                // Color bitmap strikes (CBLC/CBDT) for the managed bitmap-glyph path.
-                Fonts.Tables.Bitmaps.CbdtTable.TryLoad(this, out _cbdtTable);
+                // Color bitmap strikes for the managed bitmap-glyph path: CBLC/CBDT (Google)
+                // first, sbix (Apple) as the alternative — real fonts carry one or the other.
+                if (!Fonts.Tables.Bitmaps.CbdtTable.TryLoad(this, out _cbdtTable))
+                {
+                    Fonts.Tables.Bitmaps.SbixTable.TryLoad(this, out _sbixTable);
+                }
             }
 
             IsLastResort = (headTable is not null && (headTable.Flags & HeadFlags.LastResortFont) != 0) ||
@@ -1777,14 +1786,14 @@ namespace Avalonia.Media
                 // available, hand out a bitmap drawing (record-time path; the mask renderer
                 // composes strikes server-side without ever coming here). PixelSize selects the
                 // strike; without it the largest strike wins — best quality, callers downscale.
-                if (_cbdtTable is not null &&
+                if (BitmapSource is { } bitmapSource &&
                     AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is { } bitmapDecoder)
                 {
-                    var strike = _cbdtTable.SelectStrike(options?.PixelSize ?? int.MaxValue);
+                    var strike = bitmapSource.SelectStrike(options?.PixelSize ?? int.MaxValue);
 
-                    if (_cbdtTable.TryGetDecodedGlyph(strike, glyphIndex, bitmapDecoder, out var metrics, out var decoded))
+                    if (bitmapSource.TryGetPlacement(strike, glyphIndex, bitmapDecoder, out var placement))
                     {
-                        return new BitmapGlyphDrawing(this, decoded, metrics, strike.PpemY);
+                        return new BitmapGlyphDrawing(this, placement, strike.PpemY);
                     }
                 }
 

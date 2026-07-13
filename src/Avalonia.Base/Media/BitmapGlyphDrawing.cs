@@ -17,15 +17,16 @@ namespace Avalonia.Media
         private readonly Rect _sourceRect;
         private readonly Rect _bounds;
 
-        public unsafe BitmapGlyphDrawing(GlyphTypeface glyphTypeface, in DecodedGlyphBitmap decoded,
-            in BitmapGlyphImage metrics, int strikePpem)
+        public unsafe BitmapGlyphDrawing(GlyphTypeface glyphTypeface, in BitmapGlyphPlacement placement,
+            int strikePpem)
         {
             // Font units per strike pixel: the strike is a fixed-ppem raster of the em square.
             var unitsPerPixel = glyphTypeface.Metrics.DesignEmHeight / (double)strikePpem;
+            var decoded = placement.Bitmap;
 
             _bounds = new Rect(
-                metrics.BearingX * unitsPerPixel,
-                -metrics.BearingY * unitsPerPixel,
+                placement.Left * unitsPerPixel,
+                placement.Top * unitsPerPixel,
                 decoded.Width * unitsPerPixel,
                 decoded.Height * unitsPerPixel);
 

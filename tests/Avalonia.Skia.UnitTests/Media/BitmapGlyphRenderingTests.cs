@@ -136,6 +136,97 @@ namespace Avalonia.Skia.UnitTests.Media
             run.Dispose();
         }
 
+        [Fact]
+        public void Sbix_Strikes_Render_With_Y_Up_Origin_Placement()
+        {
+            using var scope = CreateEnvironment();
+            var typeface = CreateSbixTypeface(out var bitmapGlyph);
+
+            var run = CreateRun(typeface, new[] { bitmapGlyph }, emSize: 32);
+
+            var info = new SKImageInfo(72, 56, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            canvas.Clear(SKColors.White);
+
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, aliased: false));
+
+            var pixels = bitmap.GetPixelSpan();
+            var greenAbove = 0;
+            var greenBelow = 0;
+
+            for (var y = 0; y < info.Height; y++)
+            {
+                for (var x = 0; x < info.Width; x++)
+                {
+                    var i = (y * info.Width + x) * 4;
+
+                    if (pixels[i + 1] > 150 && pixels[i + 2] < 100 && pixels[i] < 100)
+                    {
+                        if (y < 40)
+                        {
+                            greenAbove++;
+                        }
+                        else
+                        {
+                            greenBelow++;
+                        }
+                    }
+                }
+            }
+
+            // sbix origin offsets are y-up from the pen: with originOffsetY = 0 the image's
+            // bottom sits on the baseline (pen y = 40), so all ink lands above it.
+            Assert.True(greenAbove > 20, $"expected green sbix pixels above the baseline, found {greenAbove}");
+            Assert.Equal(0, greenBelow);
+
+            run.Dispose();
+        }
+
+        private static GlyphTypeface CreateSbixTypeface(out ushort bitmapGlyph)
+        {
+            var font = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
+            var probe = font.TryCreateGlyphTypeface();
+            Assert.NotNull(probe);
+
+            bitmapGlyph = probe!.CharacterToGlyphMap['H'];
+            var glyphCount = probe.GlyphCount;
+            var png = EncodeSolidPng(16, 16, SKColors.Lime);
+
+            // sbix: header + one 32ppem strike; per-glyph offsets relative to the strike start,
+            // one 'png ' record for the target glyph (originOffsetX/Y = 0).
+            var strikeHeaderSize = 4 + (glyphCount + 1) * 4;
+            var recordSize = 8 + png.Length;
+
+            var sbix = new BigEndianBuffer();
+            sbix.UInt16(1).UInt16(0).UInt32(1).UInt32(12);
+
+            sbix.UInt16(32).UInt16(72);
+
+            for (ushort g = 0; g <= glyphCount; g++)
+            {
+                var offset = g <= bitmapGlyph ? strikeHeaderSize : strikeHeaderSize + recordSize;
+                sbix.UInt32((uint)offset);
+            }
+
+            sbix.Int16(0).Int16(0);
+            sbix.UInt8((byte)'p').UInt8((byte)'n').UInt8((byte)'g').UInt8((byte)' ');
+            foreach (var b in png) sbix.UInt8(b);
+
+            var grafted = font.Replace("sbix", sbix.ToArray()).ToBytes();
+
+            using var skData = SKData.CreateCopy(grafted);
+            var skTypeface = SKTypeface.FromData(skData);
+            Assert.NotNull(skTypeface);
+
+            var typeface = new GlyphTypeface(new SkiaTypeface(skTypeface!, FontSimulations.None));
+            Assert.Null(typeface.BitmapTable);
+            Assert.NotNull(typeface.BitmapSource);
+            return typeface;
+        }
+
         private sealed class CountingDecoder : IBitmapGlyphDecoder
         {
             private readonly IBitmapGlyphDecoder _inner;

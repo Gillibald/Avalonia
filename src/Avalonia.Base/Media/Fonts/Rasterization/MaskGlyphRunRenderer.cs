@@ -100,7 +100,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // color (COLR layers, bitmap strikes) stay on the pre-tinted BGRA floor, and so do
             // contexts that report no benefit (CPU raster: see PrefersAlphaMasks).
             var alphaContext = run.GlyphTypeface.ColorTable is null &&
-                run.GlyphTypeface.BitmapTable is null &&
+                run.GlyphTypeface.BitmapSource is null &&
                 context is IAlphaGlyphMaskContext { PrefersAlphaMasks: true } preferring
                     ? preferring
                     : null;
@@ -240,42 +240,45 @@ namespace Avalonia.Media.Fonts.Rasterization
             var cpal = typeface.ColorPaletteTable;
             var state = (typeface, scratch);
 
-            // Bitmap strikes: pick once per compose; glyphs the strike covers draw as scaled
-            // decoded images, everything else falls through to outlines/COLR. Without a decoder
-            // registered the strike data is ignored entirely (outline fallback keeps rendering).
-            var bitmapTable = typeface.BitmapTable;
-            var decoder = bitmapTable is not null
+            // Bitmap strikes (CBDT or sbix): pick once per compose; glyphs the strike covers
+            // draw as scaled decoded images, everything else falls through to outlines/COLR.
+            // Without a decoder registered the strike data is ignored entirely (outline
+            // fallback keeps rendering). Placement lookups decode once per (glyph, strike) —
+            // the sources memoise — so calling from both passes is a warm hit the second time.
+            var bitmapSource = typeface.BitmapSource;
+            var decoder = bitmapSource is not null
                 ? AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>()
                 : null;
             var strike = default(Fonts.Tables.Bitmaps.BitmapStrike);
             var strikeScale = 0f;
 
-            if (bitmapTable is not null && decoder is not null)
+            if (bitmapSource is not null && decoder is not null)
             {
                 var pixelsPerEm = key.ScaleQ / GlyphMaskKey.ScaleQuantum;
-                strike = bitmapTable.SelectStrike(pixelsPerEm);
+                strike = bitmapSource.SelectStrike(pixelsPerEm);
                 strikeScale = pixelsPerEm / strike.PpemY;
             }
             else
             {
-                bitmapTable = null;
+                bitmapSource = null;
             }
 
             bool TryGetBitmapRect(ushort glyph, int penX, int penY,
-                out Fonts.Tables.Bitmaps.BitmapGlyphImage img, out int x, out int y, out int w, out int h)
+                out Fonts.Tables.Bitmaps.BitmapGlyphPlacement placement,
+                out int x, out int y, out int w, out int h)
             {
-                img = default;
+                placement = default;
                 x = y = w = h = 0;
 
-                if (bitmapTable is null || !bitmapTable.TryGetGlyphImage(strike, glyph, out img))
+                if (bitmapSource is null || !bitmapSource.TryGetPlacement(strike, glyph, decoder!, out placement))
                 {
                     return false;
                 }
 
-                w = Math.Max(1, (int)MathF.Round(img.Width * strikeScale));
-                h = Math.Max(1, (int)MathF.Round(img.Height * strikeScale));
-                x = penX + (int)MathF.Round(img.BearingX * strikeScale);
-                y = penY - (int)MathF.Round(img.BearingY * strikeScale);
+                w = Math.Max(1, (int)MathF.Round(placement.Bitmap.Width * strikeScale));
+                h = Math.Max(1, (int)MathF.Round(placement.Bitmap.Height * strikeScale));
+                x = penX + (int)MathF.Round(placement.Left * strikeScale);
+                y = penY + (int)MathF.Round(placement.Top * strikeScale);
                 return true;
             }
 
@@ -351,15 +354,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                     GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                    if (TryGetBitmapRect(indices[i], penX, penY, out _, out var bx, out var by, out var bw, out var bh))
+                    if (TryGetBitmapRect(indices[i], penX, penY, out var placement, out var bx, out var by, out var bw, out var bh))
                     {
-                        // Strike bitmap: decoded once per (glyph, strike) via the table's memo,
+                        // Strike bitmap: decoded once per (glyph, strike) via the source's memo,
                         // then blitted scaled, source-over.
-                        if (bitmapTable!.TryGetDecodedGlyph(strike, indices[i], decoder!, out _, out var decoded))
-                        {
-                            RunMaskComposer.ComposeBitmap(decoded, bx - minX, by - minY, bw, bh,
-                                span, width, height, framebuffer.RowBytes);
-                        }
+                        RunMaskComposer.ComposeBitmap(placement.Bitmap, bx - minX, by - minY, bw, bh,
+                            span, width, height, framebuffer.RowBytes);
                     }
                     else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                     {
