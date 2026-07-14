@@ -131,6 +131,113 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(0, grayFringes);
         }
 
+        [Theory]
+        [InlineData(Backend.NativeGl)]
+        [InlineData(Backend.Angle)]
+        public void Per_Glyph_Lcd_Cost_Is_Measured(Backend backend)
+        {
+            using var gpu = GpuHarness.TryCreate(backend, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
+
+            const int frames = 40;
+            const double emSize = 16;
+            const string paragraph =
+                "The quick brown fox jumps over the lazy dog while every glyph of this body " +
+                "copy paragraph blends per channel through the runtime blender.";
+
+            var typeface = LoadTypeface();
+
+            using var run = CreateRun(typeface, paragraph, emSize);
+
+            var info = new SKImageInfo(1100, 60, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu!.GrContext, true, info, 0, GRSurfaceOrigin.TopLeft,
+                new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal), false);
+
+            Assert.SkipWhen(surface is null, "GPU surface creation failed.");
+
+            using var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+            {
+                Surface = surface,
+                GrContext = gpu.GrContext,
+                Dpi = new Vector(96, 96),
+            });
+
+            using var fenceBitmap = new SKBitmap(new SKImageInfo(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            void Fence()
+            {
+                surface!.Canvas.Flush();
+                gpu.GrContext.Flush();
+
+                using var snapshot = surface.Snapshot();
+
+                snapshot.ReadPixels(fenceBitmap.Info, fenceBitmap.GetPixels(), fenceBitmap.RowBytes, 0, 0);
+            }
+
+            double MeasureFrames(Action drawFrame)
+            {
+                drawFrame();   // warm
+                drawFrame();
+                Fence();
+
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                for (var frame = 0; frame < frames; frame++)
+                {
+                    drawFrame();
+                    surface!.Canvas.Flush();
+                }
+
+                Fence();
+                stopwatch.Stop();
+
+                return stopwatch.Elapsed.TotalMilliseconds / frames;
+            }
+
+            var glyphCount = run.GlyphCount;
+
+            // LCD warm frames: the composed stripe mask is cached, each frame is one image
+            // draw through the per-tint cached blender.
+            var lcdMs = MeasureFrames(() =>
+            {
+                surface!.Canvas.Clear(SKColors.White);
+                context.DrawGlyphRun(Brushes.Black, run);
+            });
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+
+            surface!.Canvas.Clear(SKColors.White);
+            context.DrawGlyphRun(Brushes.Black, run);
+
+            var allocsPerFrame = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            // The grayscale A8 incumbent on the same surface for scale.
+            context.PushRenderOptions(new RenderOptions { TextRenderingMode = TextRenderingMode.Antialias });
+
+            var grayMs = MeasureFrames(() =>
+            {
+                surface!.Canvas.Clear(SKColors.White);
+                context.DrawGlyphRun(Brushes.Black, run);
+            });
+
+            context.PopRenderOptions();
+
+            var line = FormattableString.Invariant(
+                $"{backend}: {glyphCount} glyphs {emSize}px axis-aligned | lcd {lcdMs:0.000} ms/frame ({lcdMs * 1000 / glyphCount:0.00} us/glyph, {allocsPerFrame} B/frame) | grayscale {grayMs:0.000} ms/frame");
+
+            if (Environment.GetEnvironmentVariable("LCD_GPU_REPORT") is { Length: > 0 } reportPath)
+            {
+                File.AppendAllLines(reportPath, new[] { line });
+            }
+
+            // Warm LCD frames hold the mask-path bars: allocation-free, and nowhere near a
+            // frame budget even on the destination-read lowering.
+            Assert.True(allocsPerFrame == 0, line);
+            Assert.True(lcdMs < 10, line);
+        }
+
         private static int RenderAndCountFringes(GpuHarness gpu, SKSurface surface, SKImageInfo info,
             ManagedGlyphRunImpl run, TextRenderingMode mode, out int warmLeft, out int coolRight)
         {

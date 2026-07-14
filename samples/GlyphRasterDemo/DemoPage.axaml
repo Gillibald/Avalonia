@@ -36,6 +36,18 @@
           <TextBlock FontSize="24" Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl (24 px)" />
           <TextBlock FontSize="48" Text="Grumpy wizards — AVTA fi (48 px)" />
           <TextBlock FontSize="96" Text="Quartz 12 (96 px)" />
+          <TextBlock Classes="expect" Margin="0,12,0,0"
+                     Text="Rendering modes at 16 px — TextRenderingMode picks the mask format: Alias (hard edges), Antialias (grayscale), SubpixelAntialias (LCD stripes; also what Unspecified means on an eligible surface). The last row sits inside an opacity-mask layer, where subpixel degrades to grayscale by policy — per-channel coverage would bake fringes against the layer's transparent backdrop." />
+          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="Alias"
+                     Text="Alias — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
+          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="Antialias"
+                     Text="Antialias — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
+          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="SubpixelAntialias"
+                     Text="SubpixelAntialias — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
+          <Border OpacityMask="White" HorizontalAlignment="Left">
+            <TextBlock FontSize="16" RenderOptions.TextRenderingMode="SubpixelAntialias"
+                       Text="Inside a layer — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
+          </Border>
         </StackPanel>
       </Border>
 
