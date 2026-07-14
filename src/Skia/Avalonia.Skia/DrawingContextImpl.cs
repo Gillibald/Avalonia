@@ -287,6 +287,13 @@ namespace Avalonia.Skia
                 (byte)tintArgb,
                 (byte)((tintArgb >> 24) * _currentOpacity));
 
+            // Coverage lands in the alpha channel here (A8 image modulated by the paint), so
+            // the gamma/contrast table rides a color filter. Exact for opaque foregrounds; a
+            // translucent one folds its alpha into the table input, the platform-typical
+            // approximation.
+            paint.ColorFilter = MaskGammaFilters.Get(
+                (byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb);
+
             // Masks are drawn 1:1 at device pixels; nearest sampling keeps coverage exact.
             Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), new SKSamplingOptions(), paint);
             SKPaintCache.Shared.ReturnReset(paint);
