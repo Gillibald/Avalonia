@@ -63,9 +63,14 @@
                     break;
 
                 case Composite comp:
-                    painter.PushLayer(comp.Mode);
+                    // A COLR composite is an isolated group: backdrop and source render into it,
+                    // the source blends onto the backdrop with the composite mode, and the finished
+                    // group composites onto whatever lies outside as a single unit.
+                    painter.PushLayer(CompositeMode.SrcOver);
                     Traverse(comp.Backdrop, painter, currentMatrix);
+                    painter.PushLayer(comp.Mode);
                     Traverse(comp.Source, painter, currentMatrix);
+                    painter.PopLayer();
                     painter.PopLayer();
                     break;
             }
