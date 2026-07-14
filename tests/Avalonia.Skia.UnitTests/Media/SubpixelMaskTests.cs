@@ -91,6 +91,21 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Byte_Cost_Follows_The_Three_Channel_Payload()
+        {
+            var typeface = LoadTypeface();
+            var glyph = typeface.CharacterToGlyphMap['H'];
+            var scratch = new GlyphPathBuilder();
+
+            var lcd = GlyphMasks.Build(typeface, scratch,
+                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(32), 0, GlyphMaskMode.Subpixel));
+
+            // The cache budget counts actual payload bytes, so subpixel entries weigh three
+            // channels — capacity shrinks instead of the budget silently inflating.
+            Assert.Equal(lcd.Width * lcd.Height * 3 + 48, lcd.ByteCost);
+        }
+
+        [Fact]
         public void Stripe_Edges_Ramp_Across_Channels()
         {
             var typeface = LoadTypeface();
