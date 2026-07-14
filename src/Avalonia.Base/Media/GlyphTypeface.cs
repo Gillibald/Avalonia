@@ -257,6 +257,23 @@ namespace Avalonia.Media
                 descent = -_os2Table.TypoDescender;
                 lineGap = _os2Table.TypoLineGap;
             }
+            else if (_hasOs2Table && (_os2Table.WinAscent != 0 || _os2Table.WinDescent != 0))
+            {
+                // Without USE_TYPO_METRICS the Windows stacks size the text cell by the win
+                // metrics — they are the font's clipping region, and fonts like Segoe UI Emoji
+                // paint above the hhea ascender on that contract. Any hhea overshoot beyond the
+                // cell becomes external leading, the GDI mapping DirectWrite reports and the
+                // platform font stacks mirror.
+                ascent = -_os2Table.WinAscent;
+                descent = _os2Table.WinDescent;
+
+                if (_hasHorizontalMetrics)
+                {
+                    lineGap = Math.Max(0,
+                        _hhTable.Ascender - _hhTable.Descender + _hhTable.LineGap -
+                        (_os2Table.WinAscent + _os2Table.WinDescent));
+                }
+            }
             else
             {
                 if (_hasHorizontalMetrics)
