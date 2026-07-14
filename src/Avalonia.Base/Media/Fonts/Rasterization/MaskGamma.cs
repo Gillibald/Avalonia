@@ -72,17 +72,37 @@ namespace Avalonia.Media.Fonts.Rasterization
             return GetTable(r, g, b);
         }
 
+        /// <summary>
+        /// The correction as analytic parameters for a shader implementation: the GPU LCD
+        /// blender computes the identical curve per stripe channel instead of sampling the
+        /// 8-bit table, keyed by the same luminance bucket.
+        /// </summary>
+        internal readonly record struct GammaShaderParameters(
+            float Contrast, float LumSrc, float LumDst, float LinSrc, float LinDst, bool NearEqual);
+
+        internal static GammaShaderParameters GetShaderParameters(byte r, byte g, byte b)
+        {
+            var src = ReplicateBucket(GetBucket(r, g, b)) / 255.0;
+            var dst = 1.0 - src;
+            var linSrc = Math.Pow(src, Gamma);
+            var linDst = Math.Pow(dst, Gamma);
+
+            return new GammaShaderParameters(
+                (float)(Contrast * linDst), (float)src, (float)dst, (float)linSrc, (float)linDst,
+                Math.Abs(src - dst) < 1.0 / 256.0);
+        }
+
+        // Replicate the bucket bits across the byte so bucket 0 keys pure black and the last
+        // bucket pure white.
+        private static int ReplicateBucket(int bucket) => (bucket << 5) | (bucket << 2) | (bucket >> 1);
+
         private static byte[][] BuildTables()
         {
             var tables = new byte[TableCount][];
 
             for (var i = 0; i < TableCount; i++)
             {
-                // Replicate the bucket bits across the byte so bucket 0 keys pure black and the
-                // last bucket pure white.
-                var srcLuminance = (i << 5) | (i << 2) | (i >> 1);
-
-                tables[i] = BuildTable((byte)srcLuminance);
+                tables[i] = BuildTable((byte)ReplicateBucket(i));
             }
 
             return tables;
