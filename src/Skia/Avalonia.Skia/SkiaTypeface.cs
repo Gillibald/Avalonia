@@ -39,19 +39,54 @@ namespace Avalonia.Skia
             };
         }
 
+        // SkiaFontData once created, or the unavailable sentinel after a failed attempt.
+        private object? _fontData;
+        private static readonly object s_fontDataUnavailable = new();
+
         public bool TryGetTable(OpenTypeTag tag, out ReadOnlyMemory<byte> table)
         {
             table = default;
 
-            if (SKTypeface.TryGetTableData(tag, out var data))
-            {
-                table = data;
+            var data = _fontData;
 
-                return true;
+            if (data is null)
+            {
+                data = (object?)SkiaFontData.TryCreate(SKTypeface) ?? s_fontDataUnavailable;
+                data = System.Threading.Interlocked.CompareExchange(ref _fontData, data, null) ?? data;
             }
 
-            return false;
+            bool found;
+
+            if (data is SkiaFontData fontData)
+            {
+                // The parsed directory is authoritative for the file — a miss here is a miss.
+                found = fontData.TryGetTable(tag, out table);
+            }
+            else if (SKTypeface.TryGetTableData(tag, out var copied))
+            {
+                // Unparseable font data (or no stream): per-table managed copies, the old cost.
+                table = copied;
+                found = true;
+            }
+            else
+            {
+                found = false;
+            }
+
+            if (found && Environment.GetEnvironmentVariable("FONT_TABLE_TALLY") == "1")
+            {
+                var length = table.Length;
+
+                s_tableTally.AddOrUpdate(tag.ToString(), _ => (1, length),
+                    (_, prev) => (prev.Count + 1, prev.Bytes + (long)length));
+            }
+
+            return found;
         }
+
+        // Diagnostic tally of served table sizes, keyed by tag; enabled by FONT_TABLE_TALLY=1.
+        internal static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, long Bytes)>
+            s_tableTally = new();
 
         public bool TryGetStream([NotNullWhen(true)] out Stream? stream)
         {
