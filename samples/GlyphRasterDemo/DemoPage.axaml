@@ -29,8 +29,8 @@
         <StackPanel>
           <TextBlock Classes="h" Text="1 — Size waterfall" />
           <TextBlock Classes="expect"
-                     Text="Axis-aligned static text on the mask path, rendered with Strong hinting: vertical zones snap to pixel rows and every pen rounds to a whole pixel, so identical glyphs rasterize identically — the GDI-classic crispness trade. The modes block below compares against Light (subpixel positioning) and the other rendering modes." />
-          <StackPanel TextOptions.TextHintingMode="Strong">
+                     Text="Axis-aligned static text on the mask path, rendered with the Rendering/Hinting modes selected in the header: Strong snaps zones, pens, and stems (GDI-classic); Light keeps subpixel positioning (DirectWrite-natural); None scales outlines only. The modes block below keeps fixed per-row settings as a reference." />
+          <StackPanel>
           <TextBlock FontSize="9"  Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl 0123456789 (9 px)" />
           <TextBlock FontSize="12" Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl 0123456789 (12 px)" />
           <TextBlock FontSize="16" Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl 0123456789 (16 px)" />
@@ -40,16 +40,16 @@
           </StackPanel>
           <TextBlock Classes="expect" Margin="0,12,0,0"
                      Text="Rendering modes at 16 px — TextRenderingMode picks the mask format: Alias (hard edges), Antialias (grayscale), SubpixelAntialias (LCD stripes; also what Unspecified means on an eligible surface). The last row sits inside an opacity-mask layer, where subpixel degrades to grayscale by policy — per-channel coverage would bake fringes against the layer's transparent backdrop." />
-          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="Alias"
+          <TextBlock FontSize="16" TextOptions.TextRenderingMode="Alias"
                      Text="Alias — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
-          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="Antialias"
+          <TextBlock FontSize="16" TextOptions.TextRenderingMode="Antialias"
                      Text="Antialias — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
-          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="SubpixelAntialias"
+          <TextBlock FontSize="16" TextOptions.TextRenderingMode="SubpixelAntialias"
                      Text="SubpixelAntialias — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
-          <TextBlock FontSize="16" RenderOptions.TextRenderingMode="SubpixelAntialias" TextOptions.TextHintingMode="Strong"
+          <TextBlock FontSize="16" TextOptions.TextRenderingMode="SubpixelAntialias" TextOptions.TextHintingMode="Strong"
                      Text="Strong hinting — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
           <Border OpacityMask="White" HorizontalAlignment="Left">
-            <TextBlock FontSize="16" RenderOptions.TextRenderingMode="SubpixelAntialias"
+            <TextBlock FontSize="16" TextOptions.TextRenderingMode="SubpixelAntialias"
                        Text="Inside a layer — Grumpy wizards make toxic brew, AVTA fi ffl 0123456789" />
           </Border>
         </StackPanel>
