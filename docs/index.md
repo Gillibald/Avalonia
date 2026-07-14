@@ -11,6 +11,7 @@ This documentation covers Avalonia framework development. For user documentation
 ## Development
 
 - [Debugging the XAML Compiler](debug-xaml-compiler.md)
+- [Managed Glyph Rasterization](glyph-rasterization/README.md) describes the managed text rendering stack (masks, hinting, subpixel, color and bitmap glyphs, the GPU vector tier)
 - [Porting Code from 3rd Party Sources](porting-code-from-3rd-party-sources.md)
 - [Building Local NuGet Packages](nuget.md)
 
