@@ -65,6 +65,7 @@ namespace Avalonia.Media
         // and outlines at its own variation point. The delegate is cached to keep the hot path alloc-free.
         private GlyphCache? _glyphCache;
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
+        private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
         private Fonts.Rasterization.Slug.SlugGlyphCache? _slugGlyphCache;
         private Fonts.Rasterization.Slug.SlugTexelStore? _slugTexelStore;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildGlyphGeometry;
@@ -1886,6 +1887,13 @@ namespace Avalonia.Media
         /// </summary>
         internal Fonts.Rasterization.GlyphMaskCache MaskCache =>
             _glyphMaskCache ?? GetOrCreateGlyphMaskCache();
+
+        /// <summary>
+        /// The vertical grid-fit zones for the mask pipeline, measured lazily once. A benign
+        /// create race hands identical zones to whichever instance wins.
+        /// </summary>
+        internal Fonts.Rasterization.VerticalGridFit GridFit =>
+            _verticalGridFit ??= Fonts.Rasterization.VerticalGridFit.Create(this);
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
