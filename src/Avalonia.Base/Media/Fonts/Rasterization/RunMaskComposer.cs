@@ -61,7 +61,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// rides the eventual bitmap draw call, so animating it reuses the composed buffer.
         /// </summary>
         public static void ComposeTinted(GlyphMask mask, int penX, int penY, uint tintBgra,
-            Span<byte> destination, int destWidth, int destHeight, int destStride = 0)
+            Span<byte> destination, int destWidth, int destHeight, int destStride = 0,
+            byte[]? coverageTable = null)
         {
             if (mask.IsEmpty)
             {
@@ -94,6 +95,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var x = 0; x < width; x++)
                 {
                     var coverage = src[x];
+
+                    if (coverageTable is not null)
+                    {
+                        coverage = coverageTable[coverage];
+                    }
 
                     if (coverage == 0)
                     {

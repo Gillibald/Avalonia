@@ -394,8 +394,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
                     else
                     {
+                        // Monochrome text takes the gamma/contrast coverage correction; the
+                        // color layers above must not — the transform is non-linear, so
+                        // abutting layers whose coverages sum to full would show seams.
                         RunMaskComposer.ComposeTinted(GetMask(indices[i], glyphPhase),
-                            penX - minX, penY - minY, key.Tint, span, width, height, framebuffer.RowBytes);
+                            penX - minX, penY - minY, key.Tint, span, width, height, framebuffer.RowBytes,
+                            MaskGamma.GetTableForPremulBgra(key.Tint));
                     }
                 }
             }
