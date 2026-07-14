@@ -938,7 +938,7 @@ namespace Avalonia.Skia
             if (glyphRun is ManagedGlyphRunImpl managedRun)
             {
                 if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
-                        effectiveTextOptions.TextRenderingMode))
+                        effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode))
                 {
                     return;
                 }

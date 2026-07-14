@@ -161,6 +161,48 @@ namespace Avalonia.Skia.UnitTests.Media
                 $"expected a hard grid-fit top row at {size}px, got {warpedTop.Max}");
         }
 
+        [Fact]
+        public void Hinting_None_Bypasses_The_Warp_And_Keys_Separately()
+        {
+            var typeface = LoadTypeface();
+            var glyph = typeface.CharacterToGlyphMap['z'];
+
+            Assert.True(typeface.TryGetGlyphInkBounds(glyph, out var box));
+
+            var size = 0.0;
+
+            for (var candidate = 11.0; candidate <= 17.0; candidate += 0.5)
+            {
+                var s = candidate / typeface.Metrics.DesignEmHeight;
+                var fraction = box.YMax * s - Math.Floor(box.YMax * s);
+
+                if (fraction is > 0.35 and < 0.65)
+                {
+                    size = candidate;
+                    break;
+                }
+            }
+
+            Assert.True(size > 0, "no suitably fractional size found in the body range");
+
+            var scratch = new GlyphPathBuilder();
+            var scaleQ = GlyphMaskKey.QuantizeScale((float)size);
+
+            var fit = GlyphMasks.Build(typeface, scratch,
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased));
+            var unfit = GlyphMasks.Build(typeface, scratch,
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: false));
+
+            // TextHintingMode.None means outlines scaled only: the top row keeps its smear.
+            Assert.True(TopRowMax(unfit.Alpha, unfit.Width, unfit.Height).Max < 210);
+            Assert.True(TopRowMax(fit.Alpha, fit.Width, fit.Height).Max >= 240);
+
+            // And the two variants are distinct cache identities.
+            Assert.NotEqual(
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased),
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: false));
+        }
+
         private static (int Row, int Max) TopRowMax(byte[] alpha, int width, int height)
         {
             for (var y = 0; y < height; y++)

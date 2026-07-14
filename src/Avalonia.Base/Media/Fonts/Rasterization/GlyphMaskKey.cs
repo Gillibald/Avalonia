@@ -24,7 +24,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// parameter and tint variants are a run-mask concern, so animating either never touches
     /// this cache.
     /// </summary>
-    internal readonly record struct GlyphMaskKey(ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode)
+    internal readonly record struct GlyphMaskKey(
+        ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true)
     {
         /// <summary>Number of subpixel x-phase buckets.</summary>
         public const int PhaseCount = 4;

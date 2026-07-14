@@ -58,8 +58,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // Vertical grid fit: font zones snap onto pixel rows so horizontal features render
             // hard; identical per (typeface, scale), so every glyph and every layer of a color
-            // glyph warps consistently. Horizontal geometry is untouched.
-            var warp = typeface.GridFit.GetWarp(key.ScaleQ);
+            // glyph warps consistently. Horizontal geometry is untouched. TextHintingMode.None
+            // opts a draw out (outlines scaled only), keyed separately in the cache.
+            var warp = key.GridFit ? typeface.GridFit.GetWarp(key.ScaleQ) : VerticalWarp.Identity;
 
             if (key.Mode == GlyphMaskMode.Subpixel)
             {
