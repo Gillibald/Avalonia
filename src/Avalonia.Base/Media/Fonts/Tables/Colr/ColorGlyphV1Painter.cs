@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Platform;
 
@@ -87,13 +88,52 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
         public void PushLayer(CompositeMode mode)
         {
-            // COLR v1 composite modes are not fully supported in the base drawing context
-            // For now, we use opacity layers to provide basic composition support
-            // TODO: Implement proper blend mode support when available
-            _pushedStates.Push(_drawingContext.PushOpacity(1.0));
+            // Composite groups are isolated per the COLR spec: the group's content blends within
+            // itself and the finished group composites onto the destination as a unit, so every
+            // layer is pushed isolated with its blend mode.
+            _pushedStates.Push(_drawingContext.PushLayer(new LayerOptions
+            {
+                BlendMode = ToBlendMode(mode),
+                Isolate = true,
+            }));
         }
 
         public void PopLayer() => PopState();
+
+        private static BitmapBlendingMode ToBlendMode(CompositeMode mode) => mode switch
+        {
+            // Clear (both erased) has no blending-mode equivalent; Source at least drops the
+            // backdrop, which is the closer of the available approximations.
+            CompositeMode.Clear => BitmapBlendingMode.Source,
+            CompositeMode.Src => BitmapBlendingMode.Source,
+            CompositeMode.Dest => BitmapBlendingMode.Destination,
+            CompositeMode.SrcOver => BitmapBlendingMode.SourceOver,
+            CompositeMode.DestOver => BitmapBlendingMode.DestinationOver,
+            CompositeMode.SrcIn => BitmapBlendingMode.SourceIn,
+            CompositeMode.DestIn => BitmapBlendingMode.DestinationIn,
+            CompositeMode.SrcOut => BitmapBlendingMode.SourceOut,
+            CompositeMode.DestOut => BitmapBlendingMode.DestinationOut,
+            CompositeMode.SrcAtop => BitmapBlendingMode.SourceAtop,
+            CompositeMode.DestAtop => BitmapBlendingMode.DestinationAtop,
+            CompositeMode.Xor => BitmapBlendingMode.Xor,
+            CompositeMode.Plus => BitmapBlendingMode.Plus,
+            CompositeMode.Screen => BitmapBlendingMode.Screen,
+            CompositeMode.Overlay => BitmapBlendingMode.Overlay,
+            CompositeMode.Darken => BitmapBlendingMode.Darken,
+            CompositeMode.Lighten => BitmapBlendingMode.Lighten,
+            CompositeMode.ColorDodge => BitmapBlendingMode.ColorDodge,
+            CompositeMode.ColorBurn => BitmapBlendingMode.ColorBurn,
+            CompositeMode.HardLight => BitmapBlendingMode.HardLight,
+            CompositeMode.SoftLight => BitmapBlendingMode.SoftLight,
+            CompositeMode.Difference => BitmapBlendingMode.Difference,
+            CompositeMode.Exclusion => BitmapBlendingMode.Exclusion,
+            CompositeMode.Multiply => BitmapBlendingMode.Multiply,
+            CompositeMode.HslHue => BitmapBlendingMode.Hue,
+            CompositeMode.HslSaturation => BitmapBlendingMode.Saturation,
+            CompositeMode.HslColor => BitmapBlendingMode.Color,
+            CompositeMode.HslLuminosity => BitmapBlendingMode.Luminosity,
+            _ => BitmapBlendingMode.SourceOver,
+        };
 
         public void PushClip(Rect clipBox)
         {
