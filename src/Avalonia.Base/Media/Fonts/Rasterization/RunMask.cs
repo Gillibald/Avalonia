@@ -19,6 +19,30 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// before first draw) and never mutated afterwards, which is what makes the backend's
     /// image-identity caching turn it into a GPU-resident texture after the first draw (D8).
     /// </summary>
+    /// <summary>
+    /// The portable subpixel draw payload: per-channel blending without backend support
+    /// decomposes into two standard blits — a Multiply pass carrying the inverse corrected
+    /// coverage and a Plus pass carrying the pre-tinted corrected coverage.
+    /// </summary>
+    internal sealed class LcdRunBitmaps : IDisposable
+    {
+        public LcdRunBitmaps(IDisposable multiply, IDisposable plus)
+        {
+            Multiply = multiply;
+            Plus = plus;
+        }
+
+        public IDisposable Multiply { get; }
+
+        public IDisposable Plus { get; }
+
+        public void Dispose()
+        {
+            Multiply.Dispose();
+            Plus.Dispose();
+        }
+    }
+
     internal sealed class RunMask : IDisposable
     {
         public RunMask(IDisposable handle, int offsetX, int offsetY, int width, int height)
