@@ -18,11 +18,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The shared no-ink mask (whitespace, malformed, or degenerate glyphs).</summary>
         public static readonly GlyphMask Empty = new(Array.Empty<byte>(), 0, 0, 0, 0);
 
-        public GlyphMask(byte[] alpha, int width, int height, int left, int top)
+        public GlyphMask(byte[] alpha, int width, int height, int left, int top, int channels = 1)
         {
-            if (alpha.Length != width * height)
+            if (alpha.Length != width * height * channels)
             {
-                throw new ArgumentException("Alpha length must equal width * height.", nameof(alpha));
+                throw new ArgumentException("Alpha length must equal width * height * channels.", nameof(alpha));
             }
 
             Alpha = alpha;
@@ -30,9 +30,17 @@ namespace Avalonia.Media.Fonts.Rasterization
             Height = height;
             Left = left;
             Top = top;
+            Channels = channels;
         }
 
         public byte[] Alpha { get; }
+
+        /// <summary>
+        /// Coverage channels per pixel: 1 for grayscale/aliased, 3 for subpixel (interleaved
+        /// RGB stripe coverage; a BGR destination swaps at consumption, so the cache stays
+        /// geometry-agnostic). Row stride is <see cref="Width"/> * Channels bytes.
+        /// </summary>
+        public int Channels { get; }
 
         public int Width { get; }
 
