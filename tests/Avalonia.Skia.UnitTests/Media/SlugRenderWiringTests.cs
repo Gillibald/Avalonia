@@ -13,10 +13,10 @@ namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
     /// The Slug render wiring: triage decisions of <see cref="SlugGlyphRunRenderer"/> against a
-    /// recording context, the GPU gate on real raster contexts, and the production
-    /// <see cref="ISlugGlyphRunContext.DrawSlugGlyph"/> implementation validated against the
-    /// reference evaluator — called directly so the exact production matrix, apron, and premul
-    /// tint math runs on a CPU canvas without a GrContext.
+    /// recording context, the GPU gate on real raster contexts, the run-artifact rebuild
+    /// policy, and the production <see cref="ISlugGlyphRunContext.TryDrawSlugRun"/>
+    /// implementation validated against the reference evaluator — called directly so the exact
+    /// production matrix, apron, and tint math runs on a CPU canvas without a GrContext.
     /// </summary>
     public class SlugRenderWiringTests
     {
@@ -24,15 +24,19 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             public bool SupportsSlugRendering { get; set; } = true;
 
-            public List<(double X, double Y, double EmSize, uint Tint)> Draws { get; } = new();
+            public bool Result { get; set; } = true;
 
-            public void DrawSlugGlyph(SlugTexelStore store, in SlugGlyphPlacement placement,
-                double baselineX, double baselineY, double fontRenderingEmSize, uint tintArgb)
-                => Draws.Add((baselineX, baselineY, fontRenderingEmSize, tintArgb));
+            public List<(int GlyphCount, uint Tint)> Draws { get; } = new();
+
+            public bool TryDrawSlugRun(ManagedGlyphRunImpl run, SlugTexelStore store, uint tintArgb)
+            {
+                Draws.Add((run.GlyphCount, tintArgb));
+                return Result;
+            }
         }
 
         [Fact]
-        public void Slug_Takes_Rotated_Runs_And_Draws_Every_Inked_Glyph()
+        public void Slug_Takes_Rotated_Runs_And_Hands_The_Whole_Run_To_The_Context()
         {
             var typeface = LoadTypeface();
 
@@ -43,12 +47,18 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(SlugGlyphRunRenderer.TryDraw(
                 context, Matrix.CreateRotation(Math.PI / 6), run, Brushes.Black));
 
-            // Two inked glyphs; the space realizes as empty and draws nothing.
-            Assert.Equal(2, context.Draws.Count);
-            Assert.True(context.Draws[1].X > context.Draws[0].X);
-            Assert.Equal(16, context.Draws[0].EmSize);
-            Assert.Equal(0xFF000000u, context.Draws[0].Tint);
+            // The whole run crosses the seam once; the renderer realized the two inked glyphs
+            // (the space realizes as empty) before committing.
+            Assert.Equal(1, context.Draws.Count);
+            Assert.Equal((3, 0xFF000000u), context.Draws[0]);
             Assert.Equal(2, typeface.SlugStore.Version);
+
+            // A context that fails to realize its resources declines the run, so the caller
+            // falls back to its native path instead of rendering nothing.
+            var failing = new RecordingSlugContext { Result = false };
+
+            Assert.False(SlugGlyphRunRenderer.TryDraw(
+                failing, Matrix.CreateRotation(Math.PI / 6), run, Brushes.Black));
         }
 
         [Fact]
@@ -115,6 +125,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(store.TryRealize(typeface, glyph, out var placement));
             Assert.True(placement.HorizontalBandCount > 0);
 
+            using var run = CreateRun(typeface, "g", emSize, new Point(baselineX, baselineY));
+
             var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
 
             using var bitmap = new SKBitmap(info);
@@ -128,8 +140,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             context.Transform = transform;
 
-            ((ISlugGlyphRunContext)context).DrawSlugGlyph(
-                store, in placement, baselineX, baselineY, emSize, tint);
+            Assert.True(((ISlugGlyphRunContext)context).TryDrawSlugRun(run, store, tint));
 
             // Recompute exactly what the draw derived: em → local, concatenated with the canvas
             // matrix, inverted for sampling and the fwidth-replacement footprints.
@@ -179,9 +190,52 @@ namespace Avalonia.Skia.UnitTests.Media
                 FormattableString.Invariant($"mean {mean:0.00000}, worst {worst:0.00000}"));
         }
 
-        private static ManagedGlyphRunImpl CreateRun(GlyphTypeface typeface, string text)
+        [Fact]
+        public void The_Run_Artifact_Rebuilds_Only_When_The_Bucket_Or_The_Store_Moves()
         {
-            const double emSize = 16;
+            var typeface = LoadTypeface();
+            var store = typeface.SlugStore;
+
+            using var run = CreateRun(typeface, "go");
+
+            var info = new SKImageInfo(64, 64, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (Avalonia.Skia.DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(
+                canvas, new Vector(96, 96));
+
+            var slug = (ISlugGlyphRunContext)context;
+
+            context.Transform = Matrix.CreateRotation(Math.PI / 18) * Matrix.CreateTranslation(50, 30);
+            Assert.True(slug.TryDrawSlugRun(run, store, 0xFF000000));
+
+            var artifact = Assert.IsType<Avalonia.Skia.SlugRunArtifact>(run.SlugRunArtifact);
+
+            Assert.Equal(1, artifact.BuildCount);
+
+            // Same transform and a pure translation keep the pixel-footprint bucket: no rebuild,
+            // and a foreground change rides the paint filter without touching the artifact.
+            Assert.True(slug.TryDrawSlugRun(run, store, 0xFF000000));
+            context.Transform = Matrix.CreateRotation(Math.PI / 18) * Matrix.CreateTranslation(90, 60);
+            Assert.True(slug.TryDrawSlugRun(run, store, 0xFF0000FF));
+            Assert.Equal(1, artifact.BuildCount);
+
+            // A zoom step crosses the bucket: one rebuild.
+            context.Transform = Matrix.CreateRotation(Math.PI / 18) * Matrix.CreateScale(2, 2) *
+                Matrix.CreateTranslation(50, 30);
+            Assert.True(slug.TryDrawSlugRun(run, store, 0xFF000000));
+            Assert.Equal(2, artifact.BuildCount);
+
+            // New texels in the store (another glyph realized): one rebuild on the next draw.
+            Assert.True(store.TryRealize(typeface, typeface.CharacterToGlyphMap['x'], out _));
+            Assert.True(slug.TryDrawSlugRun(run, store, 0xFF000000));
+            Assert.Equal(3, artifact.BuildCount);
+        }
+
+        private static ManagedGlyphRunImpl CreateRun(GlyphTypeface typeface, string text,
+            double emSize = 16, Point? origin = null)
+        {
             var scale = emSize / typeface.Metrics.DesignEmHeight;
             var infos = new List<GlyphInfo>();
             var cluster = 0;
@@ -194,7 +248,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
             }
 
-            return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 32));
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, origin ?? new Point(8, 32));
         }
 
         private static GlyphTypeface LoadTypeface()

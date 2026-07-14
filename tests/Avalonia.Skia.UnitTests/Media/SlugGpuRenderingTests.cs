@@ -119,6 +119,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(store.TryRealize(typeface, glyph, out var placement));
 
+            using var run = CreateRun(typeface, "g", emSize, new Point(baselineX, baselineY));
+
             var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
 
             using var surface = SKSurface.Create(gpu!.GrContext, true, info, 0, origin);
@@ -138,8 +140,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 surface!.Canvas.Clear(SKColors.Transparent);
                 context.Transform = transform;
 
-                ((ISlugGlyphRunContext)context).DrawSlugGlyph(
-                    store, in placement, baselineX, baselineY, emSize, 0xFFFFFFFF);
+                Assert.True(((ISlugGlyphRunContext)context).TryDrawSlugRun(run, store, 0xFFFFFFFF));
             }
 
             gpu.GrContext.Flush();
@@ -154,8 +155,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(emToDevice.TryInvert(out var deviceToEm));
 
-            var emsPerPixelX = Math.Abs(deviceToEm.ScaleX) + Math.Abs(deviceToEm.SkewX);
-            var emsPerPixelY = Math.Abs(deviceToEm.SkewY) + Math.Abs(deviceToEm.ScaleY);
+            // Production bakes the bucketed footprint (1/8 px grid); the evaluator must use
+            // the same values or the AA ramp width differs by the quantization delta.
+            var emsPerPixelX = GlyphMaskKey.ScaleQuantum /
+                (float)GlyphMaskKey.QuantizeScale(1f / (Math.Abs(deviceToEm.ScaleX) + Math.Abs(deviceToEm.SkewX)));
+            var emsPerPixelY = GlyphMaskKey.ScaleQuantum /
+                (float)GlyphMaskKey.QuantizeScale(1f / (Math.Abs(deviceToEm.SkewY) + Math.Abs(deviceToEm.ScaleY)));
 
             var sum = 0.0;
             var worst = 0.0;
@@ -264,8 +269,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var glyphCount = managedRun.GlyphCount;
 
-            // A: the v1 production path — mask triage declines the rotation, Slug takes it.
-            var productionMs = MeasureFrames(() =>
+            // A: warm frames — the run artifact is cached, frames only bind and draw.
+            var warmMs = MeasureFrames(() =>
             {
                 surface!.Canvas.Clear(SKColors.White);
                 context.DrawGlyphRun(Brushes.Black, managedRun);
@@ -278,104 +283,42 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var allocsPerFrame = GC.GetAllocatedBytesForCurrentThread() - before;
 
-            // B: cached-shader emulation of the per-run instance cache — per-glyph shaders
-            // built once, frames only bind and draw.
-            var store = typeface.SlugStore;
-            var effect = Avalonia.Skia.SlugGlyphEffect.Effect!;
-
-            Assert.True(Avalonia.Skia.SlugGlyphEffect.TryGetShaders(store, out var curves, out var bands));
-
-            var totalMatrix = surface.Canvas.TotalMatrix;
-            var cachedShaders = new List<(SKShader Shader, SKRect Rect)>();
-            var indices = managedRun.GlyphIndices;
-            var positions = managedRun.GlyphPositions;
-
-            for (var i = 0; i < glyphCount; i++)
+            // B: zoom — the scale moves every frame, crossing the footprint bucket, so every
+            // frame pays the builder rebuild. This is the worst continuous-gesture shape.
+            var zoomFrame = 0;
+            var zoomMs = MeasureFrames(() =>
             {
-                if (!store.TryRealize(typeface, indices[i], out var placement) ||
-                    placement.HorizontalBandCount == 0)
-                {
-                    continue;
-                }
+                zoomFrame++;
 
-                var penX = (float)(managedRun.BaselineOrigin.X + positions[i * 2]);
-                var penY = (float)(managedRun.BaselineOrigin.Y + positions[i * 2 + 1]);
-                var localMatrix = new SKMatrix((float)emSize, 0, penX, 0, -(float)emSize, penY, 0, 0, 1);
-                var emToDevice = SKMatrix.Concat(totalMatrix, localMatrix);
+                var factor = 1 + (zoomFrame % 60) * 0.01;
 
-                Assert.True(emToDevice.TryInvert(out var deviceToEm));
-
-                var emsPerPixelX = Math.Abs(deviceToEm.ScaleX) + Math.Abs(deviceToEm.SkewX);
-                var emsPerPixelY = Math.Abs(deviceToEm.SkewY) + Math.Abs(deviceToEm.ScaleY);
-
-                var uniforms = new SKRuntimeEffectUniforms(effect)
-                {
-                    ["pixelsPerEm"] = new[] { 1f / emsPerPixelX, 1f / emsPerPixelY },
-                    ["glyphLoc"] = new[] { (float)placement.GlyphLocX, (float)placement.GlyphLocY },
-                    ["bandCounts"] = new[] { (float)placement.HorizontalBandCount, (float)placement.VerticalBandCount },
-                    ["bandTransform"] = new[]
-                    {
-                        placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY,
-                    },
-                    ["evenOdd"] = 0f,
-                    ["tint"] = new[] { 0f, 0f, 0f, 1f },
-                };
-                var children = new SKRuntimeEffectChildren(effect)
-                {
-                    ["curveTex"] = curves!,
-                    ["bandTex"] = bands!,
-                };
-
-                var apronX = emsPerPixelX * 1.5f;
-                var apronY = emsPerPixelY * 1.5f;
-
-                cachedShaders.Add((
-                    effect.ToShader(uniforms, children, localMatrix),
-                    new SKRect(
-                        penX + (placement.MinX - apronX) * (float)emSize,
-                        penY - (placement.MaxY + apronY) * (float)emSize,
-                        penX + (placement.MaxX + apronX) * (float)emSize,
-                        penY - (placement.MinY - apronY) * (float)emSize)));
-            }
-
-            using var cachedPaint = new SKPaint();
-
-            var cachedMs = MeasureFrames(() =>
-            {
-                surface.Canvas.Clear(SKColors.White);
-
-                foreach (var (shader, rect) in cachedShaders)
-                {
-                    cachedPaint.Shader = shader;
-                    surface.Canvas.DrawRect(rect, cachedPaint);
-                }
-
-                cachedPaint.Shader = null;
+                context.Transform = Matrix.CreateRotation(Math.PI / 12) *
+                    Matrix.CreateScale(factor, factor) * Matrix.CreateTranslation(40, 80);
+                surface!.Canvas.Clear(SKColors.White);
+                context.DrawGlyphRun(Brushes.Black, managedRun);
             });
 
-            foreach (var (shader, _) in cachedShaders)
-            {
-                shader.Dispose();
-            }
+            context.Transform = Matrix.CreateRotation(Math.PI / 12) * Matrix.CreateTranslation(40, 80);
 
             // C: the incumbent — the native blob the fallback draws.
             var blobMs = MeasureFrames(() =>
             {
-                surface.Canvas.Clear(SKColors.White);
+                surface!.Canvas.Clear(SKColors.White);
                 context.DrawGlyphRun(Brushes.Black, backendRun);
             });
 
             var line = FormattableString.Invariant(
-                $"{backend}: {glyphCount} glyphs rot15 {emSize}px | slug v1 {productionMs:0.000} ms/frame ({productionMs * 1000 / glyphCount:0.0} us/glyph, {allocsPerFrame} B) | cached shaders {cachedMs:0.000} ms/frame ({cachedMs * 1000 / glyphCount:0.0} us/glyph) | native blob {blobMs:0.000} ms/frame");
+                $"{backend}: {glyphCount} glyphs rot15 {emSize}px | warm {warmMs:0.000} ms/frame ({warmMs * 1000 / glyphCount:0.00} us/glyph, {allocsPerFrame} B) | zoom-rebuild {zoomMs:0.000} ms/frame ({zoomMs * 1000 / glyphCount:0.0} us/glyph) | native blob {blobMs:0.000} ms/frame");
 
             if (Environment.GetEnvironmentVariable("SLUG_GPU_REPORT") is { Length: > 0 } reportPath)
             {
                 File.AppendAllLines(reportPath, new[] { line });
             }
 
-            // Sanity only — this is a measurement, not a gate: a gesture frame must stay far
-            // from unusable even in the unbatched v1 shape.
-            Assert.True(productionMs < 50, line);
+            // Warm frames must be allocation-free (the mask path holds the same bar) and a
+            // rebuild-every-frame zoom must stay far from unusable.
+            Assert.True(allocsPerFrame == 0, line);
+            Assert.True(zoomMs < 50, line);
         }
 
         private static List<GlyphInfo> CreateInfos(GlyphTypeface typeface, string text, double emSize)
@@ -612,7 +555,8 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private static ManagedGlyphRunImpl CreateRun(GlyphTypeface typeface, string text, double emSize)
+        private static ManagedGlyphRunImpl CreateRun(GlyphTypeface typeface, string text, double emSize,
+            Point? origin = null)
         {
             var scale = emSize / typeface.Metrics.DesignEmHeight;
             var infos = new List<GlyphInfo>();
@@ -626,7 +570,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
             }
 
-            return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(10, 60));
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, origin ?? new Point(10, 60));
         }
 
         private static GlyphTypeface LoadTypeface()
