@@ -62,6 +62,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 var capture = new GlyphPathBuilder();
                 var glyph = typeface.CharacterToGlyphMap[chars[i]];
                 Assert.True(typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, -scale, 0, 0), capture));
+
+                // The cached masks are grid-fit; give the direct path the identical warp so
+                // this stays a composition test, not a hinting test.
+                capture.ApplyVerticalWarp(typeface.GridFit.GetWarp(GlyphMaskKey.QuantizeScale(ppem)));
                 Replay(capture, combined, pens[i], penY);
             }
 
