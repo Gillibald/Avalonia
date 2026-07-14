@@ -203,6 +203,103 @@ namespace Avalonia.Skia.UnitTests.Media
                 new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: false));
         }
 
+        [Fact]
+        public void Crossbars_Render_Thickness_True_And_Crisp()
+        {
+            var typeface = LoadTypeface();
+            var glyph = typeface.CharacterToGlyphMap['e'];
+            var scratch = new GlyphPathBuilder();
+            var probed = false;
+
+            for (var size = 11.0; size <= 16.0; size += 0.5)
+            {
+                var scaleQ = GlyphMaskKey.QuantizeScale((float)size);
+                var scale = (float)size / typeface.Metrics.DesignEmHeight;
+
+                scratch.Reset();
+                Assert.True(typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, -scale, 0, 0), scratch));
+
+                var zones = typeface.GridFit.GetWarp(scaleQ);
+
+                Span<float> knotFrom = stackalloc float[16];
+                Span<float> knotTo = stackalloc float[16];
+                var knots = StemFit.CollectStrokeKnots(scratch, zones.From, 0.75f, knotFrom, knotTo);
+
+                if (knots < 2)
+                {
+                    continue;
+                }
+
+                // Thickness-true: every snapped pair is exactly max(1, round(raw thickness)).
+                for (var k = 0; k + 1 < knots; k += 2)
+                {
+                    var raw = knotFrom[k + 1] - knotFrom[k];
+                    var snapped = knotTo[k + 1] - knotTo[k];
+
+                    Assert.Equal(Math.Max(1, Math.Round(raw)), snapped, 3);
+                }
+
+                // Probe the bar: wherever the unwarped raster smears it over two partial
+                // rows, the fit must render it as hard rows.
+                var rawThickness = knotFrom[1] - knotFrom[0];
+
+                var fit = GlyphMasks.Build(typeface, scratch,
+                    new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased));
+
+                scratch.Reset();
+                Assert.True(typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, -scale, 0, 0), scratch));
+
+                var raster = new byte[fit.Width * fit.Height];
+
+                GlyphRasterizer.Rasterize(scratch, fit.Width, fit.Height, -fit.Left, -fit.Top, false, raster);
+
+                // Count partial rows in the bar band only (one pixel of margin around it).
+                var bandTop = (int)Math.Floor(knotFrom[0]) - 1;
+                var bandBottom = (int)Math.Ceiling(knotFrom[1]) + 1;
+                var column = fit.Width / 2;
+
+                var fitPartials = CountPartialRows(fit.Alpha, fit.Width, fit.Height, fit.Top, column, bandTop, bandBottom);
+                var rawPartials = CountPartialRows(raster, fit.Width, fit.Height, fit.Top, column, bandTop, bandBottom);
+
+                if (rawPartials < 2)
+                {
+                    continue;   // this size did not smear — not a probing case
+                }
+
+                probed = true;
+
+                Assert.True(fitPartials <= 1,
+                    $"{size}px: bar {rawThickness:0.00}px renders {fitPartials} partial rows after the fit (raw {rawPartials}) — washed");
+            }
+
+            Assert.True(probed, "no probing size found for the e crossbar");
+        }
+
+        private static int CountPartialRows(byte[] alpha, int width, int height, int top,
+            int column, int bandTop, int bandBottom)
+        {
+            var partials = 0;
+
+            for (var y = 0; y < height; y++)
+            {
+                var deviceRow = top + y;
+
+                if (deviceRow < bandTop || deviceRow > bandBottom)
+                {
+                    continue;
+                }
+
+                var coverage = alpha[y * width + column];
+
+                if (coverage is > 40 and < 216)
+                {
+                    partials++;
+                }
+            }
+
+            return partials;
+        }
+
         private static (int Row, int Max) TopRowMax(byte[] alpha, int width, int height)
         {
             for (var y = 0; y < height; y++)

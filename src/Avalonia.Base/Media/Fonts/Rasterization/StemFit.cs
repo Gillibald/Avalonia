@@ -45,7 +45,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             Span<float> edgeX = stackalloc float[MaxEdges];
             Span<float> edgeWeight = stackalloc float[MaxEdges];
             Span<float> edgeDirection = stackalloc float[MaxEdges];
-            var edgeCount = CollectEdges(contours, subpixelFactor, edgeX, edgeWeight, edgeDirection);
+            var edgeCount = CollectEdges(contours, subpixelFactor, vertical: false, edgeX, edgeWeight, edgeDirection);
 
             if (edgeCount < 2)
             {
@@ -116,7 +116,82 @@ namespace Avalonia.Media.Fonts.Rasterization
             return new AxisWarp(fromArray, toArray);
         }
 
-        private static int CollectEdges(GlyphPathBuilder contours, float subpixelFactor,
+        /// <summary>
+        /// Detects horizontal strokes (crossbars, arms, bowl waists) as paired opposite-winding
+        /// edges along Y and emits snap knots preserving each stroke's thickness: position
+        /// rounds to a row, thickness to whole rows with a one-row floor. Zone-adjacent edges
+        /// are skipped — the zone knots own those. This is what keeps interior strokes crisp
+        /// instead of washing out under between-zone interpolation.
+        /// </summary>
+        public static int CollectStrokeKnots(GlyphPathBuilder contours,
+            ReadOnlySpan<float> zoneSources, float zoneExclusion,
+            Span<float> knotFrom, Span<float> knotTo)
+        {
+            Span<float> edgeY = stackalloc float[MaxEdges];
+            Span<float> edgeWeight = stackalloc float[MaxEdges];
+            Span<float> edgeDirection = stackalloc float[MaxEdges];
+            var edgeCount = CollectEdges(contours, 1f, vertical: true, edgeY, edgeWeight, edgeDirection);
+            var knots = 0;
+
+            for (var i = 0; i + 1 < edgeCount && knots + 1 < knotFrom.Length; i++)
+            {
+                var thickness = edgeY[i + 1] - edgeY[i];
+
+                if (thickness < MinStemWidth || thickness > MaxStemWidth)
+                {
+                    continue;
+                }
+
+                if (edgeDirection[i] * edgeDirection[i + 1] >= 0)
+                {
+                    continue;
+                }
+
+                var weaker = Math.Min(edgeWeight[i], edgeWeight[i + 1]);
+                var stronger = Math.Max(edgeWeight[i], edgeWeight[i + 1]);
+
+                if (weaker < stronger * 0.3f)
+                {
+                    continue;
+                }
+
+                // A stroke edge inside a zone capture band belongs to that zone instead.
+                if (NearAny(zoneSources, edgeY[i], zoneExclusion) ||
+                    NearAny(zoneSources, edgeY[i + 1], zoneExclusion))
+                {
+                    i++;
+                    continue;
+                }
+
+                var top = MathF.Round(edgeY[i]);
+                var snappedThickness = MathF.Max(1f, MathF.Round(thickness));
+
+                knotFrom[knots] = edgeY[i];
+                knotTo[knots] = top;
+                knots++;
+                knotFrom[knots] = edgeY[i + 1];
+                knotTo[knots] = top + snappedThickness;
+                knots++;
+                i++;
+            }
+
+            return knots;
+        }
+
+        private static bool NearAny(ReadOnlySpan<float> positions, float value, float distance)
+        {
+            for (var i = 0; i < positions.Length; i++)
+            {
+                if (MathF.Abs(positions[i] - value) <= distance)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int CollectEdges(GlyphPathBuilder contours, float subpixelFactor, bool vertical,
             Span<float> edgeX, Span<float> edgeWeight, Span<float> edgeDirection)
         {
             var verbs = contours.Verbs;
@@ -133,21 +208,23 @@ namespace Avalonia.Media.Fonts.Rasterization
             float currentX = 0, currentY = 0, startX = 0, startY = 0;
 
             static void Consider(Span<float> sampleX, Span<float> sampleWeight, Span<float> sampleDy,
-                ref int samples, float subpixelFactor, float x0, float y0, float x1, float y1)
+                ref int samples, float subpixelFactor, bool vertical, float x0, float y0, float x1, float y1)
             {
                 if (samples >= 64)
                 {
                     return;
                 }
 
-                var dx = MathF.Abs(x1 - x0) / subpixelFactor;
-                var dy = y1 - y0;
+                // Along-axis drift must stay small and the cross-axis run long: vertical stems
+                // are (dx small, dy long); horizontal strokes swap the roles.
+                var drift = vertical ? MathF.Abs(y1 - y0) : MathF.Abs(x1 - x0) / subpixelFactor;
+                var run = vertical ? (x1 - x0) / subpixelFactor : y1 - y0;
 
-                if (dx <= MaxFlankDrift && MathF.Abs(dy) >= MinFlankLength)
+                if (drift <= MaxFlankDrift && MathF.Abs(run) >= MinFlankLength)
                 {
-                    sampleX[samples] = (x0 + x1) * 0.5f / subpixelFactor;
-                    sampleWeight[samples] = MathF.Abs(dy);
-                    sampleDy[samples] = dy;
+                    sampleX[samples] = vertical ? (y0 + y1) * 0.5f : (x0 + x1) * 0.5f / subpixelFactor;
+                    sampleWeight[samples] = MathF.Abs(run);
+                    sampleDy[samples] = run;
                     samples++;
                 }
             }
@@ -162,7 +239,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         pointIndex += 2;
                         break;
                     case GlyphPathVerb.LineTo:
-                        Consider(sampleX, sampleWeight, sampleDy, ref samples, subpixelFactor, currentX, currentY, points[pointIndex], points[pointIndex + 1]);
+                        Consider(sampleX, sampleWeight, sampleDy, ref samples, subpixelFactor, vertical, currentX, currentY, points[pointIndex], points[pointIndex + 1]);
                         currentX = points[pointIndex];
                         currentY = points[pointIndex + 1];
                         pointIndex += 2;
@@ -178,7 +255,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         pointIndex += 6;
                         break;
                     case GlyphPathVerb.Close:
-                        Consider(sampleX, sampleWeight, sampleDy, ref samples, subpixelFactor, currentX, currentY, startX, startY);
+                        Consider(sampleX, sampleWeight, sampleDy, ref samples, subpixelFactor, vertical, currentX, currentY, startX, startY);
                         currentX = startX;
                         currentY = startY;
                         break;
