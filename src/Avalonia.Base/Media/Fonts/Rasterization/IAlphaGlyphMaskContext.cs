@@ -40,6 +40,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         void DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb);
 
         /// <summary>
+        /// Realizes an immutable subpixel coverage mask: RGBA8888 rows holding the three
+        /// filtered stripe coverages in the destination's channel positions plus their maximum
+        /// in alpha. Same ownership contract as <see cref="CreateAlphaMask"/>.
+        /// </summary>
+        IDisposable CreateLcdMask(ReadOnlySpan<byte> rgba, int width, int height);
+
+        /// <summary>
+        /// Draws a realized subpixel mask blended per channel with a straight ARGB tint; the
+        /// context's ambient opacity applies on top. Only called when
+        /// <see cref="TryGetLcdGeometry"/> reported eligibility for this draw.
+        /// </summary>
+        void DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb);
+
+        /// <summary>
         /// Whether this draw may render subpixel (LCD) text right now, and with which stripe
         /// order. False whenever a platform stack would degrade to grayscale: unknown or
         /// vertical pixel geometry, a target that disables subpixel text, or drawing inside

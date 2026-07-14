@@ -280,8 +280,45 @@ namespace Avalonia.Skia
 
             // Eligible only on a surface that declares horizontal stripes, outside every
             // composited layer, on targets that permit subpixel text at all. Inside a layer
-            // the backdrop is transparent, and per-channel coverage would bake fringes.
-            return _lcdMaskGeometry.HasValue && !_disableSubpixelTextRendering && _saveLayerDepth == 0;
+            // the backdrop is transparent, and per-channel coverage would bake fringes. A GPU
+            // context additionally needs the per-channel blender to have compiled.
+            return _lcdMaskGeometry.HasValue && !_disableSubpixelTextRendering && _saveLayerDepth == 0 &&
+                   (GrContext is null || LcdTextBlender.IsSupported);
+        }
+
+        IDisposable IAlphaGlyphMaskContext.CreateLcdMask(ReadOnlySpan<byte> rgba, int width, int height)
+        {
+            // Alpha carries the channel maximum but stays below every channel only when all
+            // channels are equal — declare premul so Skia leaves the payload untouched (each
+            // channel is at most the max, which is a valid premultiplied relationship).
+            var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+            return SKImage.FromPixelCopy(info, rgba, width * 4);
+        }
+
+        void IAlphaGlyphMaskContext.DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb)
+        {
+            CheckLease();
+
+            var image = (SKImage)mask;
+            var alpha = (byte)((tintArgb >> 24) * _currentOpacity);
+            var blender = LcdTextBlender.Get(((uint)alpha << 24) | (tintArgb & 0x00FFFFFF));
+
+            if (blender is null)
+            {
+                // Unreachable by policy — eligibility requires the compiled blender — but a
+                // driver losing the effect must not erase text silently.
+                ((IAlphaGlyphMaskContext)this).DrawAlphaMask(mask, sourceRect, destRect, tintArgb);
+                return;
+            }
+
+            var paint = SKPaintCache.Shared.Get();
+
+            paint.Blender = blender;
+
+            // Masks are drawn 1:1 at device pixels; nearest sampling keeps coverage exact.
+            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), new SKSamplingOptions(), paint);
+            SKPaintCache.Shared.ReturnReset(paint);
         }
 
         IDisposable IAlphaGlyphMaskContext.CreateAlphaMask(ReadOnlySpan<byte> alpha, int width, int height)
