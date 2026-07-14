@@ -1,0 +1,24 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="GlyphRasterDemo.MainWindow"
+        Title="Managed Glyph Rendering Demo"
+        Width="1150" Height="950"
+        FontFamily="Inter, Segoe UI">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#20808080" Padding="14,10">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock x:Name="ModeText" VerticalAlignment="Center" FontWeight="SemiBold" />
+          <Button x:Name="ToggleButton" Content="Toggle rasterization mode" Click="OnToggleMode" />
+        </StackPanel>
+        <StackPanel>
+          <TextBlock Text="Managed glyph rendering — capability tour and visual validation"
+                     FontSize="18" FontWeight="SemiBold" />
+          <TextBlock Opacity="0.7" FontSize="12"
+                     Text="Each section names the pipeline it exercises. Toggle the mode and compare identical content on the backend stack; differences beyond hinting are defects." />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+    <ContentControl x:Name="Host" />
+  </DockPanel>
+</Window>

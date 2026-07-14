@@ -6,6 +6,7 @@
       "samples\\AppWithoutLifetime\\AppWithoutLifetime.csproj",
       "samples\\ControlCatalog.Desktop\\ControlCatalog.Desktop.csproj",
       "samples\\ControlCatalog\\ControlCatalog.csproj",
+      "samples\\GlyphRasterDemo\\GlyphRasterDemo.csproj",
       "samples\\GpuInterop\\GpuInterop.csproj",
       "samples\\IntegrationTestApp\\IntegrationTestApp.csproj",
       "samples\\MiniMvvm\\MiniMvvm.csproj",
