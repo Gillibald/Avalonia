@@ -70,7 +70,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// stored as interleaved x,y pairs, so this touches the odd slots only; control points
         /// warp with the same map, which keeps curves attached to their snapped extremes.
         /// </summary>
-        internal void ApplyVerticalWarp(in VerticalWarp warp)
+        internal void ApplyVerticalWarp(in AxisWarp warp)
         {
             if (warp.IsIdentity)
             {
@@ -78,6 +78,23 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             for (var i = 1; i < _pointCount; i += 2)
+            {
+                _points[i] = warp.Apply(_points[i]);
+            }
+        }
+
+        /// <summary>
+        /// Remaps every captured X through a horizontal warp, in place — the stem-snapping
+        /// pass under Strong hinting. Even slots are the x values.
+        /// </summary>
+        internal void ApplyHorizontalWarp(in AxisWarp warp)
+        {
+            if (warp.IsIdentity)
+            {
+                return;
+            }
+
+            for (var i = 0; i < _pointCount; i += 2)
             {
                 _points[i] = warp.Apply(_points[i]);
             }

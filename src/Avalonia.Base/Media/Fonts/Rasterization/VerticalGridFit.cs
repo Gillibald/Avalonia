@@ -8,18 +8,18 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// glyph zone positions move onto pixel boundaries and everything between interpolates.
     /// Identity outside the outer knots (slope one), so extreme points never drift.
     /// </summary>
-    internal readonly struct VerticalWarp
+    internal readonly struct AxisWarp
     {
         private readonly float[]? _from;
         private readonly float[]? _to;
 
-        public VerticalWarp(float[] from, float[] to)
+        public AxisWarp(float[] from, float[] to)
         {
             _from = from;
             _to = to;
         }
 
-        public static VerticalWarp Identity => default;
+        public static AxisWarp Identity => default;
 
         public bool IsIdentity => _from is null || _from.Length < 2;
 
@@ -89,7 +89,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly float _ascender;
         private readonly float _descender;
         private readonly float _roundOvershoot;
-        private readonly ConcurrentDictionary<ushort, VerticalWarp> _warps = new();
+        private readonly ConcurrentDictionary<ushort, AxisWarp> _warps = new();
 
         private VerticalGridFit(float designEmHeight, float xHeight, float capHeight,
             float ascender, float descender, float roundOvershoot)
@@ -139,10 +139,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>The warp for a quantized mask scale; identity when no zones measured.</summary>
-        public VerticalWarp GetWarp(ushort scaleQ)
+        public AxisWarp GetWarp(ushort scaleQ)
             => _warps.GetOrAdd(scaleQ, static (key, self) => self.BuildWarp(key), this);
 
-        private VerticalWarp BuildWarp(ushort scaleQ)
+        private AxisWarp BuildWarp(ushort scaleQ)
         {
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * _designEmHeight);
 
@@ -247,13 +247,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (knots < 2)
             {
-                return VerticalWarp.Identity;
+                return AxisWarp.Identity;
             }
 
             Array.Resize(ref from, knots);
             Array.Resize(ref to, knots);
 
-            return new VerticalWarp(from, to);
+            return new AxisWarp(from, to);
         }
 
         /// <summary>
