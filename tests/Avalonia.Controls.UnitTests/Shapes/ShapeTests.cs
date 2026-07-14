@@ -226,6 +226,14 @@ public class ShapeTests : ScopedTestBase
         {
         }
 
+        protected override void PushLayerCore(LayerOptions options)
+        {
+        }
+
+        protected override void PopLayerCore()
+        {
+        }
+
         protected override void DisposeCore()
         {
         }
