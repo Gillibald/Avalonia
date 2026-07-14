@@ -82,6 +82,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (hasBounds)
                 {
                     var box = bounds[i];
+
+                    // Color ink is not the base outline: swap in the clip-box / layer-union
+                    // extent so partial redraws never clip color glyphs.
+                    if (glyphTypeface.ColorTable is not null &&
+                        glyphTypeface.TryGetColorGlyphInkBounds(glyphInfo.GlyphIndex, out var colorBox))
+                    {
+                        box = colorBox;
+                    }
+
                     runBounds = runBounds.Union(new Rect(
                         x + box.XMin * scale,
                         y - box.YMax * scale,
