@@ -186,6 +186,215 @@ namespace Avalonia.Skia.UnitTests.Media
                 FormattableString.Invariant($"{backend}/{origin} vs evaluator: mean {mean:0.00000}, worst {worst:0.00000}"));
         }
 
+        /// <summary>
+        /// Measures a rotated paragraph frame three ways on a real GPU context: the v1
+        /// production path (per-glyph uniforms + shader + rect through DrawGlyphRun), a
+        /// cached-shader loop emulating the deferred per-run instance cache, and the native
+        /// blob fallback as the incumbent. Report-only (SLUG_GPU_REPORT); the numbers decide
+        /// whether the batching work is worth scheduling. Wall time includes a one-pixel
+        /// readback fence per measurement so GPU execution is inside the clock.
+        /// </summary>
+        [Theory]
+        [InlineData(Backend.NativeGl)]
+        [InlineData(Backend.Angle)]
+        public void Per_Glyph_Gpu_Cost_Is_Measured(Backend backend)
+        {
+            using var gpu = GpuContext.TryCreate(backend, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
+
+            const int frames = 40;
+            const double emSize = 32;
+            const string paragraph =
+                "The quick brown fox jumps over the lazy dog and the slug renders every glyph " +
+                "of this rotated paragraph analytically from one size independent payload set.";
+
+            var typeface = LoadTypeface();
+
+            using var managedRun = CreateRun(typeface, paragraph, emSize);
+            using var backendRun = new GlyphRunImpl(typeface,
+                emSize, CreateInfos(typeface, paragraph, emSize), new Point(10, 60));
+
+            var info = new SKImageInfo(900, 700, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu!.GrContext, true, info);
+
+            Assert.SkipWhen(surface is null, "GPU surface creation failed.");
+
+            using var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+            {
+                Surface = surface,
+                GrContext = gpu.GrContext,
+                Dpi = new Vector(96, 96),
+            });
+
+            context.Transform = Matrix.CreateRotation(Math.PI / 12) * Matrix.CreateTranslation(40, 80);
+
+            using var fenceBitmap = new SKBitmap(new SKImageInfo(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            void Fence()
+            {
+                surface!.Canvas.Flush();
+                gpu.GrContext.Flush();
+
+                using var snapshot = surface.Snapshot();
+
+                snapshot.ReadPixels(fenceBitmap.Info, fenceBitmap.GetPixels(), fenceBitmap.RowBytes, 0, 0);
+            }
+
+            double MeasureFrames(Action drawFrame)
+            {
+                drawFrame();   // warm
+                drawFrame();
+                Fence();
+
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                for (var frame = 0; frame < frames; frame++)
+                {
+                    drawFrame();
+                    surface!.Canvas.Flush();
+                }
+
+                Fence();
+                stopwatch.Stop();
+
+                return stopwatch.Elapsed.TotalMilliseconds / frames;
+            }
+
+            var glyphCount = managedRun.GlyphCount;
+
+            // A: the v1 production path — mask triage declines the rotation, Slug takes it.
+            var productionMs = MeasureFrames(() =>
+            {
+                surface!.Canvas.Clear(SKColors.White);
+                context.DrawGlyphRun(Brushes.Black, managedRun);
+            });
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+
+            surface!.Canvas.Clear(SKColors.White);
+            context.DrawGlyphRun(Brushes.Black, managedRun);
+
+            var allocsPerFrame = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            // B: cached-shader emulation of the per-run instance cache — per-glyph shaders
+            // built once, frames only bind and draw.
+            var store = typeface.SlugStore;
+            var effect = Avalonia.Skia.SlugGlyphEffect.Effect!;
+
+            Assert.True(Avalonia.Skia.SlugGlyphEffect.TryGetShaders(store, out var curves, out var bands));
+
+            var totalMatrix = surface.Canvas.TotalMatrix;
+            var cachedShaders = new List<(SKShader Shader, SKRect Rect)>();
+            var indices = managedRun.GlyphIndices;
+            var positions = managedRun.GlyphPositions;
+
+            for (var i = 0; i < glyphCount; i++)
+            {
+                if (!store.TryRealize(typeface, indices[i], out var placement) ||
+                    placement.HorizontalBandCount == 0)
+                {
+                    continue;
+                }
+
+                var penX = (float)(managedRun.BaselineOrigin.X + positions[i * 2]);
+                var penY = (float)(managedRun.BaselineOrigin.Y + positions[i * 2 + 1]);
+                var localMatrix = new SKMatrix((float)emSize, 0, penX, 0, -(float)emSize, penY, 0, 0, 1);
+                var emToDevice = SKMatrix.Concat(totalMatrix, localMatrix);
+
+                Assert.True(emToDevice.TryInvert(out var deviceToEm));
+
+                var emsPerPixelX = Math.Abs(deviceToEm.ScaleX) + Math.Abs(deviceToEm.SkewX);
+                var emsPerPixelY = Math.Abs(deviceToEm.SkewY) + Math.Abs(deviceToEm.ScaleY);
+
+                var uniforms = new SKRuntimeEffectUniforms(effect)
+                {
+                    ["pixelsPerEm"] = new[] { 1f / emsPerPixelX, 1f / emsPerPixelY },
+                    ["glyphLoc"] = new[] { (float)placement.GlyphLocX, (float)placement.GlyphLocY },
+                    ["bandCounts"] = new[] { (float)placement.HorizontalBandCount, (float)placement.VerticalBandCount },
+                    ["bandTransform"] = new[]
+                    {
+                        placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY,
+                    },
+                    ["evenOdd"] = 0f,
+                    ["tint"] = new[] { 0f, 0f, 0f, 1f },
+                };
+                var children = new SKRuntimeEffectChildren(effect)
+                {
+                    ["curveTex"] = curves!,
+                    ["bandTex"] = bands!,
+                };
+
+                var apronX = emsPerPixelX * 1.5f;
+                var apronY = emsPerPixelY * 1.5f;
+
+                cachedShaders.Add((
+                    effect.ToShader(uniforms, children, localMatrix),
+                    new SKRect(
+                        penX + (placement.MinX - apronX) * (float)emSize,
+                        penY - (placement.MaxY + apronY) * (float)emSize,
+                        penX + (placement.MaxX + apronX) * (float)emSize,
+                        penY - (placement.MinY - apronY) * (float)emSize)));
+            }
+
+            using var cachedPaint = new SKPaint();
+
+            var cachedMs = MeasureFrames(() =>
+            {
+                surface.Canvas.Clear(SKColors.White);
+
+                foreach (var (shader, rect) in cachedShaders)
+                {
+                    cachedPaint.Shader = shader;
+                    surface.Canvas.DrawRect(rect, cachedPaint);
+                }
+
+                cachedPaint.Shader = null;
+            });
+
+            foreach (var (shader, _) in cachedShaders)
+            {
+                shader.Dispose();
+            }
+
+            // C: the incumbent — the native blob the fallback draws.
+            var blobMs = MeasureFrames(() =>
+            {
+                surface.Canvas.Clear(SKColors.White);
+                context.DrawGlyphRun(Brushes.Black, backendRun);
+            });
+
+            var line = FormattableString.Invariant(
+                $"{backend}: {glyphCount} glyphs rot15 {emSize}px | slug v1 {productionMs:0.000} ms/frame ({productionMs * 1000 / glyphCount:0.0} us/glyph, {allocsPerFrame} B) | cached shaders {cachedMs:0.000} ms/frame ({cachedMs * 1000 / glyphCount:0.0} us/glyph) | native blob {blobMs:0.000} ms/frame");
+
+            if (Environment.GetEnvironmentVariable("SLUG_GPU_REPORT") is { Length: > 0 } reportPath)
+            {
+                File.AppendAllLines(reportPath, new[] { line });
+            }
+
+            // Sanity only — this is a measurement, not a gate: a gesture frame must stay far
+            // from unusable even in the unbatched v1 shape.
+            Assert.True(productionMs < 50, line);
+        }
+
+        private static List<GlyphInfo> CreateInfos(GlyphTypeface typeface, string text, double emSize)
+        {
+            var scale = emSize / typeface.Metrics.DesignEmHeight;
+            var infos = new List<GlyphInfo>();
+            var cluster = 0;
+
+            foreach (var c in text)
+            {
+                var glyph = typeface.CharacterToGlyphMap[c];
+
+                typeface.TryGetGlyphMetrics(glyph, out var metrics);
+                infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
+            }
+
+            return infos;
+        }
+
         private sealed class GpuContext : IDisposable
         {
             private readonly Action _cleanup;
