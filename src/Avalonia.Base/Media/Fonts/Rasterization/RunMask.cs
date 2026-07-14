@@ -11,7 +11,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// drawable premultiplied tint, so the sentinel cannot collide). Opacity is deliberately
     /// absent — it rides the draw call, so fades reuse the cached mask (D7).
     /// </summary>
-    internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint);
+    internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true);
 
     /// <summary>
     /// An immutable composed run mask: a backend bitmap plus its placement relative to the run's
