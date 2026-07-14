@@ -26,5 +26,6 @@ internal interface IRenderDataVisitor<TScope> where TScope : unmanaged
     TScope OnPushRenderOptions(RenderOptions options);
     TScope OnPushTextOptions(TextOptions options);
     TScope OnPushEffect(IEffect? effect, Rect bounds);
+    TScope OnPushLayer(LayerOptions options);
     void OnPop(in TScope scope);
 }

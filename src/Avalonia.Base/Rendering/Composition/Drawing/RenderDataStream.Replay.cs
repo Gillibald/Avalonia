@@ -13,7 +13,9 @@ internal partial class RenderDataStream
         public RenderDataOpcode Kind;
         public bool Active;
         public Matrix SavedTransform;
-    }
+            public bool FallbackOpacity;
+            public bool FallbackEffect;
+        }
 
     internal struct ReplayVisitor : IRenderDataVisitor<ReplayScope>
     {
@@ -116,6 +118,38 @@ internal partial class RenderDataStream
             return new ReplayScope { Kind = RenderDataOpcode.PushEffect, Active = active };
         }
 
+        public ReplayScope OnPushLayer(LayerOptions options)
+        {
+            if (options.IsPassthrough)
+                return new ReplayScope { Kind = RenderDataOpcode.PushLayer, Active = false };
+
+            if (_context is IDrawingContextImplWithLayers layerImpl)
+            {
+                layerImpl.PushLayer(options);
+                return new ReplayScope { Kind = RenderDataOpcode.PushLayer, Active = true };
+            }
+
+            // Closest approximation without native layer support: compose the existing
+            // effect / opacity capabilities; blend mode and isolation cannot be honored here.
+            var scope = new ReplayScope { Kind = RenderDataOpcode.PushLayer };
+
+            if (options.Effect is { } effect && _context is IDrawingContextImplWithEffects effectImpl)
+            {
+                effectImpl.PushEffect(options.Bounds, effect);
+                scope.FallbackEffect = true;
+                scope.Active = true;
+            }
+
+            if (options.EffectiveOpacity < 1.0)
+            {
+                _context.PushOpacity(options.EffectiveOpacity, options.Bounds);
+                scope.FallbackOpacity = true;
+                scope.Active = true;
+            }
+
+            return scope;
+        }
+
         public void OnPop(in ReplayScope scope)
         {
             if (!scope.Active)
@@ -146,6 +180,18 @@ internal partial class RenderDataStream
                     break;
                 case RenderDataOpcode.PushEffect:
                     ((IDrawingContextImplWithEffects)_context).PopEffect();
+                    break;
+                case RenderDataOpcode.PushLayer:
+                    if (scope.FallbackOpacity || scope.FallbackEffect)
+                    {
+                        // Pop in reverse push order: opacity (innermost) first, then effect.
+                        if (scope.FallbackOpacity)
+                            _context.PopOpacity();
+                        if (scope.FallbackEffect)
+                            ((IDrawingContextImplWithEffects)_context).PopEffect();
+                    }
+                    else
+                        _context.PopLayer();
                     break;
             }
         }
