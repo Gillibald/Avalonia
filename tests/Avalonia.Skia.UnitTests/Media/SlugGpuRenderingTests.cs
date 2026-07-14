@@ -165,15 +165,21 @@ namespace Avalonia.Skia.UnitTests.Media
             var sum = 0.0;
             var worst = 0.0;
 
+            // The production draw pushes coverage through the mask-gamma table for the tint
+            // (white here) before the tint modulate; the reference applies the same table.
+            var gammaTable = MaskGamma.GetTable(0xFF, 0xFF, 0xFF);
+
             for (var py = 0; py < height; py++)
             {
                 for (var px = 0; px < width; px++)
                 {
                     var em = deviceToEm.MapPoint(new SKPoint(px + 0.5f, py + 0.5f));
 
-                    var expected = SlugReferenceEvaluator.Evaluate(
+                    var coverage = SlugReferenceEvaluator.Evaluate(
                         store.CurveTexels, store.BandTexels, in placement,
                         em.X, em.Y, emsPerPixelX, emsPerPixelY);
+
+                    var expected = gammaTable[(int)Math.Round(coverage * 255.0)] / 255.0;
 
                     var delta = Math.Abs(readback.GetPixel(px, py).Alpha / 255.0 - expected);
 

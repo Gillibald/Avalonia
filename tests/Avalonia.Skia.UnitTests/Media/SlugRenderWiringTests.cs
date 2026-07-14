@@ -187,6 +187,10 @@ namespace Avalonia.Skia.UnitTests.Media
             var worst = 0.0;
             var interiorChecked = false;
 
+            // The production filter chain corrects coverage through the mask-gamma table for
+            // the tint color (red) before the modulate applies the half alpha.
+            var gammaTable = MaskGamma.GetTable(0xFF, 0x00, 0x00);
+
             for (var py = 0; py < height; py++)
             {
                 for (var px = 0; px < width; px++)
@@ -197,8 +201,10 @@ namespace Avalonia.Skia.UnitTests.Media
                         store.CurveTexels, store.BandTexels, in placement,
                         em.X, em.Y, emsPerPixelX, emsPerPixelY);
 
+                    var corrected = gammaTable[(int)Math.Round(coverage * 255.0)] / 255.0;
+
                     var color = bitmap.GetPixel(px, py);
-                    var delta = Math.Abs(color.Alpha / 255.0 - coverage * alphaScale);
+                    var delta = Math.Abs(color.Alpha / 255.0 - corrected * alphaScale);
 
                     sum += delta;
                     worst = Math.Max(worst, delta);
@@ -216,7 +222,9 @@ namespace Avalonia.Skia.UnitTests.Media
             var mean = sum / (width * height);
 
             Assert.True(interiorChecked, "The rotated glyph never reached interior coverage.");
-            Assert.True(mean <= 0.002 && worst <= 0.008,
+            // The gamma table's steepest span roughly doubles a half-step quantization
+            // delta, and the modulate adds one more rounding — hence the widened worst bound.
+            Assert.True(mean <= 0.003 && worst <= 0.02,
                 FormattableString.Invariant($"mean {mean:0.00000}, worst {worst:0.00000}"));
         }
 
