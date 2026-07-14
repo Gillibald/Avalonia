@@ -75,6 +75,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Overshoot bands flatten only while they stay visually sub-pixel.</summary>
         private const float OvershootFlattenLimit = 0.75f;
 
+        /// <summary>
+        /// Zones grow away from the baseline once their fraction reaches this, measured
+        /// against DirectWrite-hinted output (Segoe UI: cap 8.40px renders 9 rows, x-height
+        /// 6.50px renders 7, descender 2.76px renders 3). Plain nearest rounding — and
+        /// especially banker's rounding, which sends 6.5 to 6 — reads visibly smaller.
+        /// </summary>
+        private const float ZoneGrowThreshold = 0.4f;
+
         private readonly float _designEmHeight;
         private readonly float _xHeight;
         private readonly float _capHeight;
@@ -177,16 +185,28 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var i = 0; i < count; i++)
             {
                 var src = zones[i];
-                var dst = MathF.Round(src);
+                var dst = SnapZone(src);
 
                 if (knots > 0)
                 {
-                    if (src <= from[knots - 1] + 0.5f)
+                    if (src <= from[knots - 1] + 0.01f)
                     {
-                        continue;   // collapsed with the previous zone at this tiny size
+                        continue;   // the same position — nothing to add
                     }
 
-                    if (dst < to[knots - 1])
+                    if (src <= from[knots - 1] + 0.5f)
+                    {
+                        // Zones closer than a pixel (Segoe UI's ascender sits a hair above
+                        // its cap at body sizes) flatten onto one row so both edges render
+                        // hard, the way hinted output shares ascender and cap rows at small
+                        // sizes. The LATER zone wins the row — cap height carries far more
+                        // text than ascender tops — and the earlier knot is pulled along.
+                        var floor = knots >= 2 ? to[knots - 2] : float.MinValue;
+
+                        to[knots - 1] = Math.Max(dst, floor);
+                        dst = to[knots - 1];
+                    }
+                    else if (dst < to[knots - 1])
                     {
                         dst = to[knots - 1];
                     }
@@ -234,6 +254,22 @@ namespace Avalonia.Media.Fonts.Rasterization
             Array.Resize(ref to, knots);
 
             return new VerticalWarp(from, to);
+        }
+
+        /// <summary>
+        /// Snaps a zone to a pixel row. Above the baseline the zone grows once its fraction
+        /// reaches <see cref="ZoneGrowThreshold"/> — the measured DirectWrite behavior (cap
+        /// 8.40px renders 9 rows) — while descenders round plain nearest (3.45px stays 3).
+        /// The baseline itself (zero) stays fixed.
+        /// </summary>
+        private static float SnapZone(float src)
+        {
+            var magnitude = MathF.Abs(src);
+            var floor = MathF.Floor(magnitude);
+            var threshold = src < 0 ? ZoneGrowThreshold : 0.5f;
+            var grown = magnitude - floor >= threshold ? floor + 1 : floor;
+
+            return src < 0 ? -grown : grown;
         }
 
         private static float MeasureTop(GlyphTypeface typeface, char reference)
