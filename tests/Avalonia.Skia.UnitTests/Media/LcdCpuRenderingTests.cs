@@ -118,6 +118,80 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Strong_Hinting_Renders_Identically_At_Fractional_Origins()
+        {
+            using var app = StartApp();
+            using var surface = CreateSurface(out var info);
+            var typeface = LoadTypeface();
+
+            // Two origins inside the same pixel: Strong must produce byte-identical output
+            // (every pen rounds), while the default quarter-phase positioning renders them
+            // differently — that per-instance variation is what reads as softness.
+            var first = RenderAt(surface, info, typeface, 8.26, TextHintingMode.Strong);
+            var second = RenderAt(surface, info, typeface, 8.49, TextHintingMode.Strong);
+
+            Assert.True(first.AsSpan().SequenceEqual(second), "Strong output varies with subpixel origin");
+
+            var lightFirst = RenderAt(surface, info, typeface, 8.26, TextHintingMode.Light);
+            var lightSecond = RenderAt(surface, info, typeface, 8.49, TextHintingMode.Light);
+
+            Assert.False(lightFirst.AsSpan().SequenceEqual(lightSecond),
+                "expected subpixel positioning to differ between phases under Light");
+        }
+
+        private byte[] RenderAt(SKSurface surface, SKImageInfo info, GlyphTypeface typeface,
+            double originX, TextHintingMode hinting)
+        {
+            using var run = CreateRunAt(typeface, "HHH", 24, originX);
+
+            using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Canvas = surface.Canvas,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                surface.Canvas.Clear(SKColors.White);
+                context.PushTextOptions(new TextOptions
+                {
+                    TextRenderingMode = TextRenderingMode.SubpixelAntialias,
+                    TextHintingMode = hinting,
+                });
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.PopTextOptions();
+            }
+
+            using var snapshot = surface.Snapshot();
+            using var readback = new SKBitmap(info);
+
+            Assert.True(snapshot.ReadPixels(info, readback.GetPixels(), readback.RowBytes, 0, 0));
+
+            var bytes = new byte[info.Width * info.Height * 4];
+
+            System.Runtime.InteropServices.Marshal.Copy(readback.GetPixels(), bytes, 0, bytes.Length);
+
+            return bytes;
+        }
+
+        private static ManagedGlyphRunImpl CreateRunAt(GlyphTypeface typeface, string text,
+            double emSize, double originX)
+        {
+            var scale = emSize / typeface.Metrics.DesignEmHeight;
+            var infos = new List<GlyphInfo>();
+            var cluster = 0;
+
+            foreach (var c in text)
+            {
+                var glyph = typeface.CharacterToGlyphMap[c];
+
+                typeface.TryGetGlyphMetrics(glyph, out var metrics);
+                infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
+            }
+
+            return new Avalonia.Skia.SkiaManagedGlyphRunImpl(typeface, emSize, infos, new Point(originX, 34));
+        }
+
         private static void AssertChannelInRange(byte value, byte tint, byte background, int x, int y)
         {
             var low = Math.Min(tint, background) - 2;
