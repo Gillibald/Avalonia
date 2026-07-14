@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Platform;
 using Avalonia.Rendering.SceneGraph;
@@ -72,6 +73,35 @@ namespace Avalonia.Skia.UnitTests.Media
                 // counter-clockwise→clockwise flip, and the start<end swap, 0.25/0.75 resolve to a
                 // 45° start angle — NOT the ~-244° a radians-scaled-by-180 decode would produce.
                 Assert.Equal(45.0, brush.Angle, 3);
+            }
+        }
+
+        [Fact]
+        public void Composite_Paint_Emits_An_Isolated_Group_With_A_Blended_Source_Layer()
+        {
+            using (UnitTestApplication.Start(
+                TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface())))
+            {
+                var outlineGlyph = SyntheticFont.FromAsset(InterAsset).TryCreateGlyphTypeface()!
+                    .CharacterToGlyphMap['A'];
+
+                var colr = BuildColrV1GlyphComposite(
+                    baseGlyph: 3, outlineGlyph, compositeMode: 5 /* SrcIn */);
+
+                var recorder = DrawColrGlyph(colr);
+
+                // Backdrop and source each committed one fill.
+                Assert.Equal(2, recorder.Brushes.Count);
+
+                // The traverser wraps the whole composite in an isolated SourceOver group, then
+                // pushes the source inside an isolated layer carrying the composite mode — so the
+                // source blends against the backdrop only, and the group composites onto the
+                // outside as a unit.
+                Assert.Equal(2, recorder.Layers.Count);
+                Assert.Equal(BitmapBlendingMode.SourceOver, recorder.Layers[0].BlendMode);
+                Assert.True(recorder.Layers[0].Isolate);
+                Assert.Equal(BitmapBlendingMode.SourceIn, recorder.Layers[1].BlendMode);
+                Assert.True(recorder.Layers[1].Isolate);
             }
         }
 
@@ -175,6 +205,61 @@ namespace Avalonia.Skia.UnitTests.Media
             colr.UInt16(outlineGlyph);
 
             // PaintSolid (format 2): paletteIndex 0, alpha 1.0.
+            colr.UInt8(2);
+            colr.UInt16(0);
+            colr.F2Dot14(1.0);
+
+            return colr.ToArray();
+        }
+
+        /// <summary>
+        /// COLR v1: base glyph → PaintComposite(format 32) whose backdrop and source are each
+        /// PaintGlyph(outlineGlyph) → PaintSolid on palette entry 0. Offsets are from the start of
+        /// the PaintComposite table: the composite spans 8 bytes, the backdrop chain (6 + 5 bytes)
+        /// follows at 8, and the source chain at 19.
+        /// </summary>
+        private static byte[] BuildColrV1GlyphComposite(ushort baseGlyph, ushort outlineGlyph, byte compositeMode)
+        {
+            var colr = new BigEndianBuffer();
+
+            // COLR header (v1).
+            colr.UInt16(1);
+            colr.UInt16(0);
+            colr.UInt32(0);
+            colr.UInt32(0);
+            colr.UInt16(0);
+            var baseListOffsetPos = colr.ReserveOffset32(); // baseGlyphV1ListOffset
+            colr.UInt32(0);   // layerV1ListOffset
+            colr.UInt32(0);   // clipListOffset
+            colr.UInt32(0);   // varIndexMapOffset
+            colr.UInt32(0);   // itemVariationStoreOffset
+
+            // BaseGlyphV1List → PaintComposite.
+            var baseListStart = colr.Position;
+            colr.PatchUInt32(baseListOffsetPos, (uint)baseListStart);
+            colr.UInt32(1);
+            colr.UInt16(baseGlyph);
+            var recordPaintOffsetPos = colr.ReserveOffset32();
+
+            // PaintComposite (format 32), 8 bytes: source offset, mode, backdrop offset.
+            colr.PatchUInt32(recordPaintOffsetPos, (uint)(colr.Position - baseListStart));
+            colr.UInt8(32);
+            colr.UInt24(19);            // source chain, after the backdrop chain
+            colr.UInt8(compositeMode);
+            colr.UInt24(8);             // backdrop chain, directly after this table
+
+            // Backdrop: PaintGlyph (format 10, 6 bytes) → PaintSolid (format 2, 5 bytes).
+            colr.UInt8(10);
+            colr.UInt24(6);
+            colr.UInt16(outlineGlyph);
+            colr.UInt8(2);
+            colr.UInt16(0);
+            colr.F2Dot14(1.0);
+
+            // Source: same chain again.
+            colr.UInt8(10);
+            colr.UInt24(6);
+            colr.UInt16(outlineGlyph);
             colr.UInt8(2);
             colr.UInt16(0);
             colr.F2Dot14(1.0);
@@ -291,11 +376,16 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             public List<IBrush?> Brushes { get; } = new();
             public List<double> Opacities { get; } = new();
+            public List<LayerOptions> Layers { get; } = new();
 
             protected override void DrawGeometryCore(IBrush? brush, IPen? pen, IGeometryImpl geometry)
                 => Brushes.Add(brush);
 
             protected override void PushOpacityCore(double opacity) => Opacities.Add(opacity);
+
+            protected override void PushLayerCore(LayerOptions options) => Layers.Add(options);
+
+            protected override void PopLayerCore() { }
 
             // Remaining abstract members — no-ops.
             protected override void DrawEllipseCore(IBrush? brush, IPen? pen, Rect rect) { }
