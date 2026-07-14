@@ -114,17 +114,32 @@ namespace Avalonia.Media.Fonts.Rasterization
             var deviceX = (float)(run.BaselineOrigin.X * scaleX + transform.M31);
             var deviceY = run.BaselineOrigin.Y * scaleY + transform.M32;
 
-            GlyphMaskKey.SnapPen(deviceX, out var originX, out var originPhase);
-            var originY = (int)Math.Round(deviceY);
-
             var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
 
             // TextHintingMode drives the vertical grid fit: None means outlines scaled only.
-            // Light and Strong both take the light auto-fit — there is no bytecode
-            // interpreter, so Strong behaves as Light on the managed path.
+            // Light and Strong both take the light auto-fit (there is no bytecode
+            // interpreter); Strong additionally snaps every pen to a whole pixel — the
+            // GDI-classic positioning trade: maximum stem consistency, spacing rounded.
             var gridFit = textHintingMode != TextHintingMode.None;
+            var penSnap = textHintingMode == TextHintingMode.Strong;
 
-            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint, gridFit);
+            int originX;
+            byte originPhase;
+
+            if (penSnap)
+            {
+                originX = (int)MathF.Round(deviceX);
+                originPhase = 0;
+            }
+            else
+            {
+                GlyphMaskKey.SnapPen(deviceX, out originX, out originPhase);
+            }
+
+            var originY = (int)Math.Round(deviceY);
+
+
+            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint, gridFit, penSnap);
 
             var cache = run.RunMasks;
 
@@ -196,6 +211,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Splits a glyph pen into placement pixel and phase. Under Strong hinting every pen
+        /// rounds to a whole pixel with phase zero, so identical glyphs rasterize identically
+        /// across the run — the uniformity that reads as GDI-era crispness.
+        /// </summary>
+        private static void SnapGlyphPen(in RunMaskKey key, float relativeX, out int penX, out byte phase)
+        {
+            if (key.PenSnap)
+            {
+                penX = (int)MathF.Round(relativeX);
+                phase = 0;
+                return;
+            }
+
+            GlyphMaskKey.SnapPen(relativeX, out penX, out phase);
+        }
+
+        /// <summary>
         /// Resolves the requested rendering mode onto a mask mode. Alias and Antialias map
         /// directly; Unspecified and SubpixelAntialias both mean LCD when the whole chain
         /// allows it — the same default the native blob applies — and degrade to grayscale
@@ -251,7 +283,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var i = 0; i < count; i++)
             {
                 var relativeX = originFraction + positions[i * 2] * scaleX;
-                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit),
@@ -277,7 +309,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var i = 0; i < count; i++)
                 {
                     var relativeX = originFraction + positions[i * 2] * scaleX;
-                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                     var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit),
@@ -378,7 +410,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var i = 0; i < count; i++)
             {
                 var relativeX = originFraction + positions[i * 2] * scaleX;
-                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit),
@@ -404,7 +436,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var i = 0; i < count; i++)
                 {
                     var relativeX = originFraction + positions[i * 2] * scaleX;
-                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                     var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit),
@@ -446,7 +478,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var i = 0; i < count; i++)
             {
                 var relativeX = originFraction + positions[i * 2] * scaleX;
-                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit),
@@ -472,7 +504,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var i = 0; i < count; i++)
                 {
                     var relativeX = originFraction + positions[i * 2] * scaleX;
-                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                     var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit),
@@ -562,7 +594,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // every pen, and each pen's own fraction picks that glyph's mask phase bucket.
                 // v0 layer glyphs share their base glyph's pen and phase.
                 var relativeX = originFraction + positions[i * 2] * scaleX;
-                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 if (TryGetBitmapRect(indices[i], penX, penY, out _, out var bx, out var by, out var bw, out var bh))
@@ -613,7 +645,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var i = 0; i < count; i++)
                 {
                     var relativeX = originFraction + positions[i * 2] * scaleX;
-                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                     var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                     if (TryGetBitmapRect(indices[i], penX, penY, out var placement, out var bx, out var by, out var bw, out var bh))
