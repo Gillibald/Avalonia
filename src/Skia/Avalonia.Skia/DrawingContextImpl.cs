@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Media.Fonts.Rasterization.Slug;
 using Avalonia.Platform;
 using Avalonia.Rendering.Utilities;
 using Avalonia.Skia.Helpers;
@@ -20,7 +21,8 @@ namespace Avalonia.Skia
     internal partial class DrawingContextImpl : IDrawingContextImpl,
         IDrawingContextWithAcrylicLikeSupport,
         IDrawingContextImplWithEffects,
-        IAlphaGlyphMaskContext
+        IAlphaGlyphMaskContext,
+        ISlugGlyphRunContext
     {
         private IDisposable?[]? _disposables;
         // TODO: Get rid of this value, it's currently used to calculate intermediate sizes for tile brushes
@@ -286,6 +288,91 @@ namespace Avalonia.Skia
 
             // Masks are drawn 1:1 at device pixels; nearest sampling keeps coverage exact.
             Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), new SKSamplingOptions(), paint);
+            SKPaintCache.Shared.ReturnReset(paint);
+        }
+
+        // GPU-backed contexts only: the analytic per-fragment evaluation is what the GPU
+        // parallelizes away; on the raster pipeline it measured ~750 µs per glyph draw.
+        bool ISlugGlyphRunContext.SupportsSlugRendering =>
+            GrContext is not null && SlugGlyphEffect.Effect is not null;
+
+        void ISlugGlyphRunContext.DrawSlugGlyph(SlugTexelStore store, in SlugGlyphPlacement placement,
+            double baselineX, double baselineY, double fontRenderingEmSize, uint tintArgb)
+        {
+            CheckLease();
+
+            if (SlugGlyphEffect.Effect is not { } effect ||
+                !SlugGlyphEffect.TryGetShaders(store, out var curveShader, out var bandShader))
+            {
+                return;
+            }
+
+            // Em space (y-up) → local canvas space; the canvas transform carries the rest, so
+            // one placement draws at any rotation or zoom.
+            var emSize = (float)fontRenderingEmSize;
+            var localMatrix = new SKMatrix(emSize, 0, (float)baselineX, 0, -emSize, (float)baselineY, 0, 0, 1);
+
+            // What the reference vertex/pixel stages derive per fragment is constant under an
+            // affine transform: the L1 norms of the device→em rows give the em footprint of one
+            // device pixel per axis.
+            var emToDevice = SKMatrix.Concat(Canvas.TotalMatrix, localMatrix);
+
+            if (!emToDevice.TryInvert(out var deviceToEm))
+            {
+                return;
+            }
+
+            var emsPerPixelX = Math.Abs(deviceToEm.ScaleX) + Math.Abs(deviceToEm.SkewX);
+            var emsPerPixelY = Math.Abs(deviceToEm.SkewY) + Math.Abs(deviceToEm.ScaleY);
+
+            if (!(emsPerPixelX > 0) || !(emsPerPixelY > 0))
+            {
+                return;
+            }
+
+            // Straight tint × ambient opacity, premultiplied — the shader multiplies by
+            // coverage only.
+            var a = (byte)(tintArgb >> 24) / 255f * (float)_currentOpacity;
+            var r = (byte)(tintArgb >> 16) / 255f * a;
+            var g = (byte)(tintArgb >> 8) / 255f * a;
+            var b = (byte)tintArgb / 255f * a;
+
+            var uniforms = new SKRuntimeEffectUniforms(effect)
+            {
+                ["pixelsPerEm"] = new[] { 1f / emsPerPixelX, 1f / emsPerPixelY },
+                ["glyphLoc"] = new[] { (float)placement.GlyphLocX, (float)placement.GlyphLocY },
+                ["bandCounts"] = new[] { (float)placement.HorizontalBandCount, (float)placement.VerticalBandCount },
+                ["bandTransform"] = new[]
+                {
+                    placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY,
+                },
+                ["evenOdd"] = placement.EvenOdd ? 1f : 0f,
+                ["tint"] = new[] { r, g, b, a },
+            };
+
+            var children = new SKRuntimeEffectChildren(effect)
+            {
+                ["curveTex"] = curveShader!,
+                ["bandTex"] = bandShader!,
+            };
+
+            using var shader = effect.ToShader(uniforms, children, localMatrix);
+            var paint = SKPaintCache.Shared.Get();
+
+            paint.Shader = shader;
+
+            // Antialiasing comes from the coverage math; the rect only bounds it, with an apron
+            // of ~1.5 device pixels (in em units) so edge coverage is never clipped.
+            var apronX = emsPerPixelX * 1.5f;
+            var apronY = emsPerPixelY * 1.5f;
+            var rect = new SKRect(
+                (float)(baselineX + (placement.MinX - apronX) * emSize),
+                (float)(baselineY - (placement.MaxY + apronY) * emSize),
+                (float)(baselineX + (placement.MaxX + apronX) * emSize),
+                (float)(baselineY - (placement.MinY - apronY) * emSize));
+
+            Canvas.DrawRect(rect, paint);
+            paint.Shader = null;
             SKPaintCache.Shared.ReturnReset(paint);
         }
 
@@ -664,6 +751,14 @@ namespace Avalonia.Skia
             {
                 if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
                         effectiveTextOptions.TextRenderingMode == TextRenderingMode.Alias))
+                {
+                    return;
+                }
+
+                // Slug vector tier: analytic GPU coverage for exactly the draws the mask triage
+                // rejected (rotation, skew, sizes past the mask ceiling). Declines fall through
+                // to the native blob like before.
+                if (SlugGlyphRunRenderer.TryDraw(this, Transform, managedRun, foreground))
                 {
                     return;
                 }
