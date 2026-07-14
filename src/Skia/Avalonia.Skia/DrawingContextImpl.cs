@@ -21,6 +21,7 @@ namespace Avalonia.Skia
     internal partial class DrawingContextImpl : IDrawingContextImpl,
         IDrawingContextWithAcrylicLikeSupport,
         IDrawingContextImplWithEffects,
+        IDrawingContextImplWithLayers,
         IAlphaGlyphMaskContext,
         ISlugGlyphRunContext
     {

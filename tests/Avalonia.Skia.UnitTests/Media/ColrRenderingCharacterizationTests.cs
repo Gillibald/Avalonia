@@ -317,6 +317,8 @@ namespace Avalonia.Skia.UnitTests.Media
             protected override void PopRenderOptionsCore() { }
             protected override void PopTextOptionsCore() { }
             protected override void PopEffectCore() { }
+            protected override void PushLayerCore(LayerOptions options) { }
+            protected override void PopLayerCore() { }
             protected override void DisposeCore() { }
             internal override void DrawBitmap(IRef<IBitmapImpl> source, double opacity, Rect sourceRect, Rect destRect) { }
             public override void Custom(ICustomDrawOperation custom) { }
