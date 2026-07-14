@@ -32,7 +32,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <c>true</c> when handled, including the nothing-to-draw cases.
         /// </summary>
         public static bool TryDraw(IDrawingContextImpl context, ManagedGlyphRunImpl run,
-            IBrush? foreground, bool aliased)
+            IBrush? foreground, TextRenderingMode textRenderingMode)
         {
             var transform = context.Transform;
 
@@ -115,7 +115,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphMaskKey.SnapPen(deviceX, out var originX, out var originPhase);
             var originY = (int)Math.Round(deviceY);
 
-            var mode = aliased ? GlyphMaskMode.Aliased : GlyphMaskMode.Antialiased;
+            var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out _);
+
+            if (mode == GlyphMaskMode.Subpixel)
+            {
+                // Subpixel mask generation lands with the next slice; an eligible draw keys
+                // grayscale until then, so the policy is live without changing pixels.
+                mode = GlyphMaskMode.Antialiased;
+            }
+
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint);
 
             var cache = run.RunMasks;
@@ -158,6 +166,35 @@ namespace Avalonia.Media.Fonts.Rasterization
             context.Transform = oldTransform;
 
             return true;
+        }
+
+        /// <summary>
+        /// Resolves the requested rendering mode onto a mask mode. Alias and Antialias map
+        /// directly; Unspecified and SubpixelAntialias both mean LCD when the whole chain
+        /// allows it — the same default the native blob applies — and degrade to grayscale
+        /// otherwise. Color art never renders subpixel: stripes only make sense for a solid
+        /// foreground modulating pure coverage.
+        /// </summary>
+        internal static GlyphMaskMode ResolveMaskMode(TextRenderingMode textRenderingMode,
+            IDrawingContextImpl context, GlyphTypeface typeface, out LcdMaskGeometry geometry)
+        {
+            geometry = LcdMaskGeometry.RgbHorizontal;
+
+            switch (textRenderingMode)
+            {
+                case TextRenderingMode.Alias:
+                    return GlyphMaskMode.Aliased;
+                case TextRenderingMode.Antialias:
+                    return GlyphMaskMode.Antialiased;
+            }
+
+            if (typeface.ColorTable is null && typeface.BitmapSource is null &&
+                context is IAlphaGlyphMaskContext lcdProbe && lcdProbe.TryGetLcdGeometry(out geometry))
+            {
+                return GlyphMaskMode.Subpixel;
+            }
+
+            return GlyphMaskMode.Antialiased;
         }
 
         /// <summary>

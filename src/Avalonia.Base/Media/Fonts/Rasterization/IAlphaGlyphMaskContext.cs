@@ -2,6 +2,13 @@ using System;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
+    /// <summary>Stripe geometries the subpixel mask path can serve.</summary>
+    internal enum LcdMaskGeometry : byte
+    {
+        RgbHorizontal = 0,
+        BgrHorizontal = 1,
+    }
+
     /// <summary>
     /// The backend fast path for managed text: realize an untinted 8-bit coverage mask once and
     /// tint it per draw. Tint then leaves the run-mask identity entirely — a foreground color
@@ -31,5 +38,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// context's ambient opacity applies on top.
         /// </summary>
         void DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb);
+
+        /// <summary>
+        /// Whether this draw may render subpixel (LCD) text right now, and with which stripe
+        /// order. False whenever a platform stack would degrade to grayscale: unknown or
+        /// vertical pixel geometry, a target that disables subpixel text, or drawing inside
+        /// any composited layer (opacity layer, opacity mask, effect, layer group), where
+        /// per-channel coverage would bake fringes against a transparent backdrop.
+        /// </summary>
+        bool TryGetLcdGeometry(out LcdMaskGeometry geometry);
     }
 }

@@ -34,7 +34,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             canvas.Clear(SKColors.White);
 
-            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, aliased: false),
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, TextRenderingMode.Antialias),
                 "the mask path rejected a bitmap-strike draw");
 
             var pixels = bitmap.GetPixelSpan();
@@ -129,8 +129,8 @@ namespace Avalonia.Skia.UnitTests.Media
             using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
 
             // Two different tints force two composes; the decoded pixels memoise on the table.
-            MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, aliased: false);
-            MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Red, aliased: false);
+            MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, TextRenderingMode.Antialias);
+            MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Red, TextRenderingMode.Antialias);
 
             Assert.Equal(1, counting.Decodes);
             run.Dispose();
@@ -151,7 +151,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             canvas.Clear(SKColors.White);
 
-            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, aliased: false));
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, TextRenderingMode.Antialias));
 
             var pixels = bitmap.GetPixelSpan();
             var greenAbove = 0;
@@ -207,7 +207,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
 
             canvas.Clear(SKColors.White);
-            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, aliased: false));
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, TextRenderingMode.Antialias));
 
             var pixels = bitmap.GetPixelSpan();
             var green = 0;
