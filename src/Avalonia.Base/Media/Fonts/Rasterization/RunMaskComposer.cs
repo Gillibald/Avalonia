@@ -56,6 +56,73 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Adds a subpixel glyph mask's stripe coverage into an RGBA8888 run buffer at the
+        /// snapped pen position, saturating per channel where glyphs overlap; alpha tracks the
+        /// per-pixel channel maximum. Masks store their channels in RGB stripe order — a BGR
+        /// destination swaps the outer channels here, keeping the glyph cache geometry-agnostic.
+        /// </summary>
+        public static void ComposeLcd(GlyphMask mask, int penX, int penY, bool bgr,
+            Span<byte> destination, int destWidth, int destHeight, int destStride = 0)
+        {
+            if (mask.IsEmpty)
+            {
+                return;
+            }
+
+            if (destStride == 0)
+            {
+                destStride = destWidth * 4;
+            }
+
+            ClipMask(mask, penX, penY, destWidth, destHeight,
+                out var srcX, out var srcY, out var dstX, out var dstY, out var width, out var height);
+
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            var left = bgr ? 2 : 0;
+            var right = bgr ? 0 : 2;
+
+            for (var y = 0; y < height; y++)
+            {
+                var src = mask.Alpha.AsSpan(((srcY + y) * mask.Width + srcX) * 3, width * 3);
+                var dst = destination.Slice((dstY + y) * destStride + dstX * 4, width * 4);
+
+                for (var x = 0; x < width; x++)
+                {
+                    var s0 = src[x * 3];
+                    var s1 = src[x * 3 + 1];
+                    var s2 = src[x * 3 + 2];
+
+                    if ((s0 | s1 | s2) == 0)
+                    {
+                        continue;
+                    }
+
+                    var d = x * 4;
+                    var c0 = dst[d + left] + s0;
+                    var c1 = dst[d + 1] + s1;
+                    var c2 = dst[d + right] + s2;
+
+                    dst[d + left] = c0 > 255 ? (byte)255 : (byte)c0;
+                    dst[d + 1] = c1 > 255 ? (byte)255 : (byte)c1;
+                    dst[d + right] = c2 > 255 ? (byte)255 : (byte)c2;
+
+                    var max = dst[d] > dst[d + 1] ? dst[d] : dst[d + 1];
+
+                    if (dst[d + 2] > max)
+                    {
+                        max = dst[d + 2];
+                    }
+
+                    dst[d + 3] = max;
+                }
+            }
+        }
+
+        /// <summary>
         /// Draws a glyph mask into a premultiplied BGRA run buffer (byte order B, G, R, A) with a
         /// solid premultiplied tint, source-over. Opacity is deliberately not a parameter — it
         /// rides the eventual bitmap draw call, so animating it reuses the composed buffer.

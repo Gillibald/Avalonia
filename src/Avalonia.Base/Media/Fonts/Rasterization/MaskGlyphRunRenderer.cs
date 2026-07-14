@@ -115,12 +115,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphMaskKey.SnapPen(deviceX, out var originX, out var originPhase);
             var originY = (int)Math.Round(deviceY);
 
-            var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out _);
+            var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
 
-            if (mode == GlyphMaskMode.Subpixel)
+            if (mode == GlyphMaskMode.Subpixel && alphaContext is null)
             {
-                // Subpixel mask generation lands with the next slice; an eligible draw keys
-                // grayscale until then, so the policy is live without changing pixels.
+                // The portable two-pass LCD draw lands with the next slice; until then only
+                // backend-mask contexts render subpixel and software targets keep grayscale.
                 mode = GlyphMaskMode.Antialiased;
             }
 
@@ -130,9 +130,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!cache.TryGet(key, out var runMask))
             {
-                var composed = alphaContext is null
-                    ? Compose(run, key, (float)scaleX, (float)scaleY)
-                    : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY);
+                var composed = mode == GlyphMaskMode.Subpixel
+                    ? ComposeLcdMask(run, key, alphaContext!, (float)scaleX, (float)scaleY, lcdGeometry)
+                    : alphaContext is null
+                        ? Compose(run, key, (float)scaleX, (float)scaleY)
+                        : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY);
 
                 if (composed is null)
                 {
@@ -156,7 +158,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var straightTint = ((uint)alpha << 24) |
                     ((uint)solid.Color.R << 16) | ((uint)solid.Color.G << 8) | solid.Color.B;
 
-                alphaContext.DrawAlphaMask(runMask.Handle, sourceRect, destRect, straightTint);
+                if (mode == GlyphMaskMode.Subpixel)
+                {
+                    alphaContext.DrawLcdMask(runMask.Handle, sourceRect, destRect, straightTint);
+                }
+                else
+                {
+                    alphaContext.DrawAlphaMask(runMask.Handle, sourceRect, destRect, straightTint);
+                }
             }
             else
             {
@@ -195,6 +204,75 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return GlyphMaskMode.Antialiased;
+        }
+
+        /// <summary>
+        /// The subpixel compose: three filtered stripe coverages per pixel plus their maximum
+        /// in alpha, realized as a backend mask and blended per channel at draw time. Only
+        /// reachable for COLR-free typefaces on LCD-eligible contexts.
+        /// </summary>
+        private static RunMask? ComposeLcdMask(ManagedGlyphRunImpl run, RunMaskKey key,
+            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, LcdMaskGeometry geometry)
+        {
+            var typeface = run.GlyphTypeface;
+            var maskCache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var count = run.GlyphCount;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
+            var state = (typeface, scratch);
+
+            var minX = int.MaxValue;
+            var minY = int.MaxValue;
+            var maxX = int.MinValue;
+            var maxY = int.MinValue;
+
+            for (var i = 0; i < count; i++)
+            {
+                var relativeX = originFraction + positions[i * 2] * scaleX;
+                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode),
+                    state, s_buildMask);
+
+                UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+            }
+
+            if (minX >= maxX || minY >= maxY)
+            {
+                return null;
+            }
+
+            var width = maxX - minX;
+            var height = maxY - minY;
+            var staging = ArrayPool<byte>.Shared.Rent(width * height * 4);
+
+            try
+            {
+                var span = staging.AsSpan(0, width * height * 4);
+                span.Clear();
+
+                for (var i = 0; i < count; i++)
+                {
+                    var relativeX = originFraction + positions[i * 2] * scaleX;
+                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                    var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode),
+                        state, s_buildMask);
+
+                    RunMaskComposer.ComposeLcd(mask, penX - minX, penY - minY,
+                        geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
+                }
+
+                return new RunMask(alphaContext.CreateLcdMask(span, width, height), minX, minY, width, height);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(staging);
+            }
         }
 
         /// <summary>
