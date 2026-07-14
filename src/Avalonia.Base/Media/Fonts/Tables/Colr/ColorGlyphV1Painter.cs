@@ -31,6 +31,17 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         // In COLR v1, there's a 1:1 mapping between glyph and fill operations
         private IGeometryImpl? _pendingGlyph;
 
+        // Transforms encountered BETWEEN a PaintGlyph and its fill re-map the fill's
+        // coordinate space only — PaintGlyph clips to its outline first, then renders the
+        // sub-paint inside it. Those must not touch the drawing context (that would move the
+        // outline copy itself — every layer of a real emoji would scatter); they accumulate
+        // here and ride the fill brush's Transform about the absolute design origin instead.
+        private readonly Stack<bool> _transformKinds = new();
+        private readonly Stack<Matrix> _brushTransformStack = new();
+        private Matrix _brushTransform = Matrix.Identity;
+
+        private static readonly RelativePoint s_designOrigin = new(0, 0, RelativeUnit.Absolute);
+
         public ColorGlyphV1Painter(DrawingContext drawingContext, ColrContext context)
         {
             _drawingContext = drawingContext;
@@ -39,10 +50,40 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
         public void PushTransform(Matrix transform)
         {
+            if (_pendingGlyph is not null)
+            {
+                _transformKinds.Push(false);
+                _brushTransformStack.Push(_brushTransform);
+
+                // Deeper transforms apply to the gradient's coordinates first, so the later
+                // push multiplies on the left in row-vector convention.
+                _brushTransform = transform * _brushTransform;
+                return;
+            }
+
+            _transformKinds.Push(true);
             _pushedStates.Push(_drawingContext.PushTransform(transform));
         }
 
-        public void PopTransform() => PopState();
+        public void PopTransform()
+        {
+            if (_transformKinds.Count == 0)
+            {
+                return;
+            }
+
+            if (_transformKinds.Pop())
+            {
+                PopState();
+            }
+            else
+            {
+                _brushTransform = _brushTransformStack.Pop();
+            }
+        }
+
+        private ImmutableTransform? CurrentBrushTransform
+            => _brushTransform.IsIdentity ? null : new ImmutableTransform(_brushTransform);
 
         public void PushLayer(CompositeMode mode)
         {
@@ -111,6 +152,8 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 var brush = new ImmutableLinearGradientBrush(
                     gradientStops: gradientStops,
                     opacity: 1.0,
+                    transform: CurrentBrushTransform,
+                    transformOrigin: s_designOrigin,
                     spreadMethod: extend,
                     startPoint: new RelativePoint(p0, RelativeUnit.Absolute),
                     endPoint: new RelativePoint(p1, RelativeUnit.Absolute));
@@ -128,18 +171,31 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 // position 0 and circle 1 (c1, r1) at position 1. Avalonia's RadialGradientBrush models
                 // the position-1 circle as Center + radius and position 0 as a focal *point*
                 // (GradientOrigin), so map circle 1 → Center/radius and circle 0's centre → the focal
-                // point. The focal radius r0 has no equivalent and is approximated as 0 — exact for the
-                // common focal-radial case (r0 == 0), an approximation otherwise.
+                // point. A non-zero focal radius has no direct equivalent; for the common concentric
+                // annulus (c0 == c1, the shape emoji shading layers use) the color line is remapped
+                // exactly — position 0 lands at radius r0 — and only the eccentric r0 > 0 case stays
+                // an approximation.
+                var innerFraction = 0.0;
+
+                if (r0 > 0 && r1 > r0 &&
+                    Math.Abs(c0.X - c1.X) < 0.5 && Math.Abs(c0.Y - c1.Y) < 0.5)
+                {
+                    innerFraction = r0 / r1;
+                }
+
                 var gradientStops = new ImmutableGradientStop[stops.Length];
 
                 for (var i = 0; i < stops.Length; i++)
                 {
-                    gradientStops[i] = new ImmutableGradientStop(stops[i].Offset, stops[i].Color);
+                    gradientStops[i] = new ImmutableGradientStop(
+                        innerFraction + stops[i].Offset * (1 - innerFraction), stops[i].Color);
                 }
 
                 var brush = new ImmutableRadialGradientBrush(
                     gradientStops: gradientStops,
                     opacity: 1.0,
+                    transform: CurrentBrushTransform,
+                    transformOrigin: s_designOrigin,
                     spreadMethod: extend,
                     center: new RelativePoint(c1, RelativeUnit.Absolute),
                     gradientOrigin: new RelativePoint(c0, RelativeUnit.Absolute),
@@ -215,6 +271,8 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 var brush = new ImmutableConicGradientBrush(
                     gradientStops: gradientStops,
                     opacity: 1.0,
+                    transform: CurrentBrushTransform,
+                    transformOrigin: s_designOrigin,
                     spreadMethod: extend,
                     center: new RelativePoint(center, RelativeUnit.Absolute),
                     angle: startAngle);
