@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Fonts.Tables.Colr;
 using Avalonia.Platform;
 
@@ -117,13 +118,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
 
-            if (mode == GlyphMaskMode.Subpixel && alphaContext is null)
-            {
-                // The portable two-pass LCD draw lands with the next slice; until then only
-                // backend-mask contexts render subpixel and software targets keep grayscale.
-                mode = GlyphMaskMode.Antialiased;
-            }
-
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint);
 
             var cache = run.RunMasks;
@@ -131,7 +125,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (!cache.TryGet(key, out var runMask))
             {
                 var composed = mode == GlyphMaskMode.Subpixel
-                    ? ComposeLcdMask(run, key, alphaContext!, (float)scaleX, (float)scaleY, lcdGeometry)
+                    ? alphaContext is null
+                        ? ComposeLcdBitmaps(run, key, (float)scaleX, (float)scaleY, lcdGeometry,
+                            alpha, solid.Color.R, solid.Color.G, solid.Color.B)
+                        : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, lcdGeometry)
                     : alphaContext is null
                         ? Compose(run, key, (float)scaleX, (float)scaleY)
                         : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY);
@@ -166,6 +163,21 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     alphaContext.DrawAlphaMask(runMask.Handle, sourceRect, destRect, straightTint);
                 }
+            }
+            else if (mode == GlyphMaskMode.Subpixel)
+            {
+                // Per-channel blending through the portable interface: multiply the
+                // destination by the inverse corrected coverage, then add the pre-tinted
+                // corrected coverage — together exactly the per-channel lerp.
+                var pair = (LcdRunBitmaps)runMask.Handle;
+
+                context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Multiply });
+                context.DrawBitmap((IBitmapImpl)pair.Multiply, 1, sourceRect, destRect);
+                context.PopRenderOptions();
+
+                context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Plus });
+                context.DrawBitmap((IBitmapImpl)pair.Plus, 1, sourceRect, destRect);
+                context.PopRenderOptions();
             }
             else
             {
@@ -205,6 +217,135 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             return GlyphMaskMode.Antialiased;
         }
+
+        /// <summary>
+        /// The portable subpixel compose: accumulates stripe coverage exactly like the backend
+        /// variant, then bakes the gamma-corrected coverage into the two blit payloads — the
+        /// Multiply pass holds the inverse corrected coverage per channel (alpha opaque) and
+        /// the Plus pass the premultiplied tinted coverage. Keyed by tint like the pre-tinted
+        /// grayscale floor, so a foreground change recomposes.
+        /// </summary>
+        private static unsafe RunMask? ComposeLcdBitmaps(ManagedGlyphRunImpl run, RunMaskKey key,
+            float scaleX, float scaleY, LcdMaskGeometry geometry, byte alpha, byte r, byte g, byte b)
+        {
+            var typeface = run.GlyphTypeface;
+            var maskCache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var count = run.GlyphCount;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
+            var state = (typeface, scratch);
+
+            var minX = int.MaxValue;
+            var minY = int.MaxValue;
+            var maxX = int.MinValue;
+            var maxY = int.MinValue;
+
+            for (var i = 0; i < count; i++)
+            {
+                var relativeX = originFraction + positions[i * 2] * scaleX;
+                GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode),
+                    state, s_buildMask);
+
+                UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+            }
+
+            if (minX >= maxX || minY >= maxY)
+            {
+                return null;
+            }
+
+            var width = maxX - minX;
+            var height = maxY - minY;
+            var staging = ArrayPool<byte>.Shared.Rent(width * height * 4);
+
+            try
+            {
+                var span = staging.AsSpan(0, width * height * 4);
+                span.Clear();
+
+                for (var i = 0; i < count; i++)
+                {
+                    var relativeX = originFraction + positions[i * 2] * scaleX;
+                    GlyphMaskKey.SnapPen(relativeX, out var penX, out var glyphPhase);
+                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                    var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode),
+                        state, s_buildMask);
+
+                    RunMaskComposer.ComposeLcd(mask, penX - minX, penY - minY,
+                        geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
+                }
+
+                var table = MaskGamma.GetTable(r, g, b);
+                var renderInterface = AvaloniaLocator.Current.GetRequiredService<Avalonia.Platform.IPlatformRenderInterface>();
+
+                var multiply = renderInterface.CreateWriteableBitmap(
+                    new PixelSize(width, height), new Vector(96, 96),
+                    Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+                var plus = renderInterface.CreateWriteableBitmap(
+                    new PixelSize(width, height), new Vector(96, 96),
+                    Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+
+                // Straight tint premultiplied by the text alpha once; per pixel only the
+                // corrected coverage multiplies in.
+                var tintB = Div255(b * alpha);
+                var tintG = Div255(g * alpha);
+                var tintR = Div255(r * alpha);
+
+                using (var multiplyBuffer = multiply.Lock())
+                using (var plusBuffer = plus.Lock())
+                {
+                    var mSpan = new Span<byte>((void*)multiplyBuffer.Address, multiplyBuffer.RowBytes * height);
+                    var pSpan = new Span<byte>((void*)plusBuffer.Address, plusBuffer.RowBytes * height);
+
+                    for (var y = 0; y < height; y++)
+                    {
+                        var src = span.Slice(y * width * 4, width * 4);
+                        var mRow = mSpan.Slice(y * multiplyBuffer.RowBytes, width * 4);
+                        var pRow = pSpan.Slice(y * plusBuffer.RowBytes, width * 4);
+
+                        for (var x = 0; x < width; x++)
+                        {
+                            var d = x * 4;
+
+                            // Staging is RGBA semantic order; the bitmaps are BGRA bytes.
+                            var covR = table[src[d]];
+                            var covG = table[src[d + 1]];
+                            var covB = table[src[d + 2]];
+                            var covMax = covR > covG ? covR : covG;
+
+                            if (covB > covMax)
+                            {
+                                covMax = covB;
+                            }
+
+                            mRow[d] = (byte)(255 - covB);
+                            mRow[d + 1] = (byte)(255 - covG);
+                            mRow[d + 2] = (byte)(255 - covR);
+                            mRow[d + 3] = 255;
+
+                            pRow[d] = (byte)Div255(tintB * covB);
+                            pRow[d + 1] = (byte)Div255(tintG * covG);
+                            pRow[d + 2] = (byte)Div255(tintR * covR);
+                            pRow[d + 3] = (byte)Div255(alpha * covMax);
+                        }
+                    }
+                }
+
+                return new RunMask(new LcdRunBitmaps(multiply, plus), minX, minY, width, height);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(staging);
+            }
+        }
+
+        private static int Div255(int value) => (value + 127) / 255;
 
         /// <summary>
         /// The subpixel compose: three filtered stripe coverages per pixel plus their maximum

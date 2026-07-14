@@ -113,11 +113,14 @@ namespace Avalonia.Skia.UnitTests.Media
             ((Avalonia.Platform.IDrawingContextImplWithEffects)context).PopEffect();
             Assert.True(probe.TryGetLcdGeometry(out _));
 
-            // Tracked (non-layered) opacity does NOT veto: translucent text onto the real
-            // target keeps LCD; only a composited group's transparent backdrop is the hazard.
+            // Tracked (non-layered) opacity vetoes on CPU contexts: the two-pass payloads are
+            // fixed and cannot fold an ambient opacity, so those draws degrade instead of
+            // blending wrong. (GPU contexts fold opacity into the blender tint and stay
+            // eligible; the GPU suites cover that side.)
             context.PushOpacity(0.5, null);
-            Assert.True(probe.TryGetLcdGeometry(out _));
+            Assert.False(probe.TryGetLcdGeometry(out _));
             context.PopOpacity();
+            Assert.True(probe.TryGetLcdGeometry(out _));
         }
 
         [Fact]
