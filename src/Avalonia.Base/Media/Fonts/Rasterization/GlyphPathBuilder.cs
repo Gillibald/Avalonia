@@ -65,6 +65,24 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The captured point values, consumed per verb in <see cref="Verbs"/> order.</summary>
         public ReadOnlySpan<float> Points => _points.AsSpan(0, _pointCount);
 
+        /// <summary>
+        /// Remaps every captured Y through the vertical grid-fit warp, in place. Points are
+        /// stored as interleaved x,y pairs, so this touches the odd slots only; control points
+        /// warp with the same map, which keeps curves attached to their snapped extremes.
+        /// </summary>
+        internal void ApplyVerticalWarp(in VerticalWarp warp)
+        {
+            if (warp.IsIdentity)
+            {
+                return;
+            }
+
+            for (var i = 1; i < _pointCount; i += 2)
+            {
+                _points[i] = warp.Apply(_points[i]);
+            }
+        }
+
         /// <summary>Clears the captured path so the instance can record another glyph.</summary>
         public void Reset()
         {
