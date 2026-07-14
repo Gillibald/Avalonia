@@ -1,0 +1,153 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="GlyphRasterDemo.DemoPage">
+  <UserControl.Styles>
+    <Style Selector="Border.section">
+      <Setter Property="BorderBrush" Value="#30808080" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="Margin" Value="0,0,0,14" />
+    </Style>
+    <Style Selector="TextBlock.h">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+    <Style Selector="TextBlock.expect">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer>
+    <StackPanel Margin="16" MaxWidth="1080">
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="1 — Size waterfall" />
+          <TextBlock Classes="expect"
+                     Text="Axis-aligned static text: per-glyph masks composed into cached run bitmaps (analytic exact-area coverage, unhinted, quarter-pixel phases). Every line stays on the mask path up to the 160 px/em ceiling." />
+          <TextBlock FontSize="9"  Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl 0123456789 (9 px)" />
+          <TextBlock FontSize="12" Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl 0123456789 (12 px)" />
+          <TextBlock FontSize="16" Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl 0123456789 (16 px)" />
+          <TextBlock FontSize="24" Text="Grumpy wizards make toxic brew — AVTA Wa fi ffl (24 px)" />
+          <TextBlock FontSize="48" Text="Grumpy wizards — AVTA fi (48 px)" />
+          <TextBlock FontSize="96" Text="Quartz 12 (96 px)" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="2 — Foreground animation" />
+          <TextBlock Classes="expect"
+                     Text="Color leaves the mask identity: on a GPU context one untinted alpha mask is reused and tinted per draw, so this animation recomposes nothing. Watch for smoothness and absence of shimmer." />
+          <TextBlock x:Name="HueText" FontSize="30" FontWeight="SemiBold"
+                     Text="Tint rides the paint, the mask never changes" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="3 — Script fallback and shaping" />
+          <TextBlock Classes="expect"
+                     Text="One line itemized across fallback typefaces; every resulting run renders through the managed path of its own font instance." />
+          <TextBlock FontSize="26" Text="Latin — 你好世界 — こんにちは — مرحبا — שלום — Ωπ∑√ — №℮µ" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="4 — Transformed text (Slug vector tier)" />
+          <TextBlock Classes="expect"
+                     Text="Rotation, skew, and sizes past the mask ceiling render analytically on the GPU from size-independent payloads (two-ray winding, zero misclassified pixels vs the area oracle). On the backend stack these fall to the native blob — compare edge quality under the toggle." />
+          <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto">
+            <Border Grid.Column="0" Height="190" ClipToBounds="True">
+              <TextBlock FontSize="30" Text="Rotated 30°" HorizontalAlignment="Center" VerticalAlignment="Center"
+                         RenderTransform="rotate(30deg)" />
+            </Border>
+            <Border Grid.Column="1" Height="190" ClipToBounds="True">
+              <TextBlock FontSize="30" Text="Skewed 18°" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <TextBlock.RenderTransform>
+                  <SkewTransform AngleX="18" />
+                </TextBlock.RenderTransform>
+              </TextBlock>
+            </Border>
+            <Border Grid.Column="2" Height="190" ClipToBounds="True">
+              <TextBlock x:Name="SpinText" FontSize="26" Text="Spinning text"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto">
+            <Border Grid.Column="0" Width="120" Height="230" ClipToBounds="True">
+              <TextBlock FontSize="24" Text="Vertical 90°" HorizontalAlignment="Left" VerticalAlignment="Top"
+                         Margin="70,10,0,0" RenderTransformOrigin="0%,0%" RenderTransform="rotate(90deg)" />
+            </Border>
+            <TextBlock Grid.Column="1" FontSize="220" Text="Ag@" VerticalAlignment="Center"
+                       ToolTip.Tip="220 px/em — past the 160 px mask ceiling, Slug takes it axis-aligned" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="5 — Zoom" />
+          <TextBlock Classes="expect"
+                     Text="The gesture case. Axis-aligned: masks re-raster per 1/8-px scale bucket up to 160 px/em, then Slug continues from the same payloads. Pre-rotated: Slug throughout — one payload per glyph serves the entire ladder, rebuilt shaders cost ~2-4 µs/glyph per bucket crossing." />
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <CheckBox x:Name="AnimateZoom" IsChecked="True" Content="Animate" />
+            <Slider x:Name="ZoomSlider" Width="360" Minimum="0.4" Maximum="8" Value="1" />
+            <TextBlock x:Name="ZoomLabel" VerticalAlignment="Center" Opacity="0.7" />
+          </StackPanel>
+          <Grid ColumnDefinitions="*,*">
+            <Border Grid.Column="0" Height="300" ClipToBounds="True">
+              <TextBlock x:Name="ZoomPlainText" FontSize="26" Text="Zoom 42 fi AVA"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <Border Grid.Column="1" Height="300" ClipToBounds="True">
+              <TextBlock x:Name="ZoomRotatedText" FontSize="26" Text="Zoom 42 fi AVA"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="6 — Color glyphs (COLR)" />
+          <TextBlock Classes="expect"
+                     Text="COLR v1 paint graphs (gradients — flame, rainbow) split at record time into managed drawings; v0-only glyphs compose as tinted mask layers, palette foreground sentinel included. The rotated row intentionally keeps the native fallback — color glyphs stay off the Slug tier." />
+          <TextBlock FontFamily="Segoe UI Emoji" FontSize="24" Text="😀 🔥 ❤️ 🌈 🚀 🎨 🦊 🌍 ⭐ 👍 (24 px)" />
+          <TextBlock FontFamily="Segoe UI Emoji" FontSize="48" Text="😀 🔥 ❤️ 🌈 🚀 🎨 (48 px)" />
+          <TextBlock FontFamily="Segoe UI Emoji" FontSize="96" Text="🔥 🌈 🦊 (96 px)" />
+          <Border Height="170" ClipToBounds="True">
+            <TextBlock FontFamily="Segoe UI Emoji" FontSize="40" Text="🔥 🌈 🦊 rotated"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransform="rotate(25deg)" />
+          </Border>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="section">
+        <StackPanel>
+          <TextBlock Classes="h" Text="7 — Variable fonts" />
+          <TextBlock Classes="expect"
+                     Text="Each weight and width is its own variation instance: the table walkers bake gvar deltas, so every row gets per-instance managed outlines, masks, and Slug payloads. The last line steps the weight axis continuously." />
+          <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="Light"    Text="Bahnschrift wght 300 — Hamburgefonstiv" />
+          <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="Normal"   Text="Bahnschrift wght 400 — Hamburgefonstiv" />
+          <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="SemiBold" Text="Bahnschrift wght 600 — Hamburgefonstiv" />
+          <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="Bold"     Text="Bahnschrift wght 700 — Hamburgefonstiv" />
+          <TextBlock FontFamily="Bahnschrift SemiCondensed" FontSize="26" Text="Bahnschrift wdth SemiCondensed — Hamburgefonstiv" />
+          <TextBlock FontFamily="Segoe UI Variable Display" FontSize="34" Text="Segoe UI Variable Display (opsz 36)" />
+          <TextBlock FontFamily="Segoe UI Variable Text" FontSize="15" Text="Segoe UI Variable Text (opsz 10.5) — body copy optical size" />
+          <TextBlock x:Name="WeightCycleText" FontFamily="Bahnschrift" FontSize="30"
+                     Text="Animated weight axis — Hamburgefonstiv 042" />
+        </StackPanel>
+      </Border>
+
+      <TextBlock Opacity="0.55" FontSize="11" Margin="2,0,0,18"
+                 Text="Validation: toggle the mode (top right) and compare — geometry, spacing, and color must match; the managed stack is unhinted by design, so sub-pixel weight differences at small sizes are the documented trade-off. Transform and zoom sections require a GPU-backed window (the Slug tier declines CPU raster contexts and falls back to the blob)." />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
