@@ -31,19 +31,38 @@ namespace GlyphRasterDemo
                 return;
             }
 
-            options.TextRasterizationMode = options.TextRasterizationMode == TextRasterizationMode.Managed
-                ? TextRasterizationMode.Backend
-                : TextRasterizationMode.Managed;
+            // Cycle Managed → Managed (no Slug) → Backend: the middle stop shows what the
+            // mask + native-blob combination looks like without the vector tier, so the
+            // Slug-vs-blob edge treatment can be compared on the transformed sections.
+            if (options.TextRasterizationMode == TextRasterizationMode.Managed)
+            {
+                if (options.EnableSlugVectorTier)
+                {
+                    options.EnableSlugVectorTier = false;
+                }
+                else
+                {
+                    options.EnableSlugVectorTier = true;
+                    options.TextRasterizationMode = TextRasterizationMode.Backend;
+                }
+            }
+            else
+            {
+                options.TextRasterizationMode = TextRasterizationMode.Managed;
+            }
 
             Reload();
         }
 
         private void Reload()
         {
-            _modeText.Text = $"mode: {Options?.TextRasterizationMode}";
+            _modeText.Text = Options is { TextRasterizationMode: TextRasterizationMode.Managed, EnableSlugVectorTier: false }
+                ? "mode: Managed (no Slug)"
+                : $"mode: {Options?.TextRasterizationMode}";
 
             // Fresh visuals build fresh glyph runs, and run creation reads the mode live —
-            // that is the whole validation mechanism: flip, rebuild, compare.
+            // that is the whole validation mechanism: flip, rebuild, compare. (The Slug switch
+            // alone is read per draw and would not strictly need the rebuild.)
             _host.Content = new DemoPage();
         }
     }
