@@ -58,12 +58,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             scratch.Reset();
 
-            // Vertical grid fit: font zones snap onto pixel rows so horizontal features render
-            // hard; identical per (typeface, scale), so every glyph and every layer of a color
-            // glyph warps consistently. Horizontal geometry is untouched. TextHintingMode.None
-            // opts a draw out (outlines scaled only), keyed separately in the cache.
-            var warp = key.GridFit ? typeface.GridFit.GetWarp(key.ScaleQ) : AxisWarp.Identity;
-
             if (key.Mode == GlyphMaskMode.Subpixel)
             {
                 // Three coverage samples per final pixel, one per stripe: rasterize at 3x
@@ -74,7 +68,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return GlyphMask.Empty;
                 }
 
-                scratch.ApplyVerticalWarp(warp);
+                // Vertical grid fit: zone knots plus this glyph's own stroke pairs, so
+                // crossbars stay thickness-true instead of washing out. TextHintingMode.None
+                // opts a draw out (outlines scaled only), keyed separately in the cache.
+                if (key.GridFit)
+                {
+                    scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ));
+                }
 
                 if (key.StemSnap)
                 {
@@ -95,7 +95,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return GlyphMask.Empty;
             }
 
-            scratch.ApplyVerticalWarp(warp);
+            if (key.GridFit)
+            {
+                scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ));
+            }
 
             if (key.StemSnap)
             {

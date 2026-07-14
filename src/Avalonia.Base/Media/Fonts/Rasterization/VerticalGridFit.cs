@@ -23,6 +23,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public bool IsIdentity => _from is null || _from.Length < 2;
 
+        /// <summary>The source knots, ascending; empty when identity.</summary>
+        internal ReadOnlySpan<float> From => _from;
+
+        /// <summary>The mapped knots, non-decreasing, parallel to <see cref="From"/>.</summary>
+        internal ReadOnlySpan<float> To => _to;
+
         public float Apply(float y)
         {
             if (_from is null || _to is null || _from.Length < 2)
@@ -138,9 +144,110 @@ namespace Avalonia.Media.Fonts.Rasterization
                 xHeight, capHeight, ascender, descender, overshoot);
         }
 
-        /// <summary>The warp for a quantized mask scale; identity when no zones measured.</summary>
+        /// <summary>The zone warp for a quantized mask scale; identity when no zones measured.</summary>
         public AxisWarp GetWarp(ushort scaleQ)
             => _warps.GetOrAdd(scaleQ, static (key, self) => self.BuildWarp(key), this);
+
+        /// <summary>
+        /// The per-glyph warp: the cached zone knots refined with this glyph's own horizontal
+        /// stroke pairs (crossbars, arms, bowl waists), which snap position to a row and
+        /// thickness to whole rows. Zones anchor the extremes; stroke pairs keep interior
+        /// strokes crisp and thickness-true, so interpolation only ever stretches the empty
+        /// counter space between features instead of the strokes themselves.
+        /// </summary>
+        public AxisWarp GetGlyphWarp(GlyphPathBuilder contours, ushort scaleQ)
+        {
+            var zones = GetWarp(scaleQ);
+
+            if (zones.IsIdentity)
+            {
+                return zones;
+            }
+
+            Span<float> strokeFrom = stackalloc float[16];
+            Span<float> strokeTo = stackalloc float[16];
+            var strokeKnots = StemFit.CollectStrokeKnots(contours, zones.From, 0.75f, strokeFrom, strokeTo);
+
+            if (strokeKnots == 0)
+            {
+                return zones;
+            }
+
+            // Merge, zone knots authoritative: a stroke pair is inserted only where it fits
+            // strictly between existing knots in both source and target order; a pair that
+            // does not fit whole is dropped whole (half-moved strokes would distort).
+            var zoneFrom = zones.From;
+            var zoneTo = zones.To;
+            var mergedFrom = new float[zoneFrom.Length + strokeKnots];
+            var mergedTo = new float[zoneFrom.Length + strokeKnots];
+
+            zoneFrom.CopyTo(mergedFrom);
+            zoneTo.CopyTo(mergedTo);
+
+            var count = zoneFrom.Length;
+
+            for (var i = 0; i + 1 < strokeKnots; i += 2)
+            {
+                TryInsert(mergedFrom, mergedTo, ref count,
+                    strokeFrom[i], strokeTo[i], strokeFrom[i + 1], strokeTo[i + 1]);
+            }
+
+            if (count == zoneFrom.Length)
+            {
+                return zones;
+            }
+
+            var finalFrom = new float[count];
+            var finalTo = new float[count];
+
+            Array.Copy(mergedFrom, finalFrom, count);
+            Array.Copy(mergedTo, finalTo, count);
+            Array.Sort(finalFrom, finalTo);
+
+            return new AxisWarp(finalFrom, finalTo);
+        }
+
+        private static void TryInsert(float[] from, float[] to, ref int count,
+            float srcTop, float dstTop, float srcBottom, float dstBottom)
+        {
+            var lowerDst = float.MinValue;
+            var upperDst = float.MaxValue;
+
+            for (var i = 0; i < count; i++)
+            {
+                if (MathF.Abs(from[i] - srcTop) < 0.25f || MathF.Abs(from[i] - srcBottom) < 0.25f)
+                {
+                    return;   // touches an existing knot — the zone side owns it
+                }
+
+                if (from[i] < srcTop && to[i] > lowerDst)
+                {
+                    lowerDst = to[i];
+                }
+
+                if (from[i] > srcBottom && to[i] < upperDst)
+                {
+                    upperDst = to[i];
+                }
+
+                if (from[i] > srcTop && from[i] < srcBottom)
+                {
+                    return;   // a knot inside the stroke — bail rather than shear it
+                }
+            }
+
+            if (dstTop < lowerDst || dstBottom > upperDst)
+            {
+                return;   // would break target monotonicity against the zones
+            }
+
+            from[count] = srcTop;
+            to[count] = dstTop;
+            count++;
+            from[count] = srcBottom;
+            to[count] = dstBottom;
+            count++;
+        }
 
         private AxisWarp BuildWarp(ushort scaleQ)
         {
