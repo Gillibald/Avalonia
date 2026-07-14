@@ -168,6 +168,10 @@ public class DrawingGroupTests
 
         protected override void PopEffectCore() { }
 
+        protected override void PushLayerCore(LayerOptions options) { }
+
+        protected override void PopLayerCore() { }
+
         // Implementing required abstract members
         protected override void DrawEllipseCore(IBrush? brush, IPen? pen, Rect rect) { }
         protected override void DrawGeometryCore(IBrush? brush, IPen? pen, IGeometryImpl geometry) { }

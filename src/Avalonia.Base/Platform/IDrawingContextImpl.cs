@@ -219,6 +219,22 @@ namespace Avalonia.Platform
         void PopEffect();
     }
 
+    /// <summary>
+    /// A probe interface for backends whose drawing context can composite a
+    /// full layer group in one operation. Extends the always-available
+    /// <see cref="IDrawingContextImpl.PushLayer(Rect)"/> with a
+    /// <see cref="LayerOptions"/>-accepting overload; the matching pop is the
+    /// existing <see cref="IDrawingContextImpl.PopLayer"/>. Backends that do
+    /// not implement this interface are served by
+    /// <see cref="PlatformDrawingContext"/>'s fallback that composes existing
+    /// PushOpacity/PushEffect operations where possible.
+    /// </summary>
+    [PrivateApi]
+    public interface IDrawingContextImplWithLayers : IDrawingContextImpl
+    {
+        void PushLayer(LayerOptions options);
+    }
+
     public static class DrawingContextImplExtensions
     {
         /// <summary>

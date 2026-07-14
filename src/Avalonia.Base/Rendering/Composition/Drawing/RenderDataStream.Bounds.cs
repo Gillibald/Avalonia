@@ -73,6 +73,9 @@ internal partial class RenderDataStream
         public BoundsScope OnPushEffect(IEffect? effect, Rect bounds)
             => EnterChildScope(effectPadding: effect.GetEffectOutputPadding());
 
+        public BoundsScope OnPushLayer(LayerOptions options)
+            => EnterChildScope(effectPadding: options.Effect.GetEffectOutputPadding());
+
         public void OnPop(in BoundsScope scope)
         {
             var childUnion = Current;

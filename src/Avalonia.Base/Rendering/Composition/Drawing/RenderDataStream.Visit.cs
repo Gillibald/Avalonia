@@ -144,6 +144,19 @@ internal partial class RenderDataStream
                             (IEffect?)_resources[p.Effect], p.Bounds);
                         break;
                     }
+                    case RenderDataOpcode.PushLayer:
+                    {
+                        var p = reader.ReadPayload<PushLayerPayload>();
+                        scopes[depth++] = visitor.OnPushLayer(new LayerOptions
+                        {
+                            Bounds = p.HasBounds ? p.Bounds : null,
+                            Opacity = p.Opacity,
+                            BlendMode = p.BlendMode,
+                            Isolate = p.Isolate,
+                            Effect = (IEffect?)_resources[p.Effect]
+                        });
+                        break;
+                    }
                     case RenderDataOpcode.Pop:
                     {
                         reader.Read<RenderDataOpcode>();

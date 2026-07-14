@@ -1,4 +1,5 @@
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 namespace Avalonia.Rendering.Composition.Drawing;
 
@@ -129,4 +130,16 @@ internal struct PushEffectPayload : IRenderDataPayload<PushEffectPayload>
 
     public int Effect;
     public Rect Bounds;
+}
+
+internal struct PushLayerPayload : IRenderDataPayload<PushLayerPayload>
+{
+    public static RenderDataOpcode Opcode => RenderDataOpcode.PushLayer;
+
+    public int Effect;
+    public Rect Bounds;
+    public double Opacity;
+    public BitmapBlendingMode BlendMode;
+    public bool HasBounds;
+    public bool Isolate;
 }
