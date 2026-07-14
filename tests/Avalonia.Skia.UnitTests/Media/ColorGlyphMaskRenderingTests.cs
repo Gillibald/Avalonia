@@ -120,7 +120,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             canvas.Clear(SKColors.White);
 
-            Assert.True(MaskGlyphRunRenderer.TryDraw(context, run, foreground, aliased: false),
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, run, foreground, TextRenderingMode.Antialias),
                 "the mask path rejected a v0 color draw it should handle");
 
             var span = bitmap.GetPixelSpan();

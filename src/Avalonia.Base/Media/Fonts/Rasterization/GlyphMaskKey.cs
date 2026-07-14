@@ -10,6 +10,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Coverage thresholded at one half (TextRenderingMode.Alias).</summary>
         Aliased = 1,
+
+        /// <summary>Per-stripe LCD coverage (TextRenderingMode.SubpixelAntialias), three
+        /// channels interleaved; only built when the destination is LCD-eligible.</summary>
+        Subpixel = 2,
     }
 
     /// <summary>
