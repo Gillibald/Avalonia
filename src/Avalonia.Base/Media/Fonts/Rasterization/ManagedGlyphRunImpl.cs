@@ -379,6 +379,13 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// The backend-owned Slug run artifact (cached per-glyph shaders and draw rects),
+        /// stored here so it lives and dies with the run like the composed run masks. Base
+        /// only disposes it; the backend owns its type and rebuild policy.
+        /// </summary>
+        internal IDisposable? SlugRunArtifact;
+
         public virtual void Dispose()
         {
             if (_disposed)
@@ -390,6 +397,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _runMasks?.Dispose();
             _runMasks = null;
+
+            SlugRunArtifact?.Dispose();
+            SlugRunArtifact = null;
 
             ArrayPool<ushort>.Shared.Return(_indices);
             ArrayPool<float>.Shared.Return(_positions);

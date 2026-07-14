@@ -138,6 +138,7 @@ half4 main(float2 coord) {
 ";
 
         private static SKRuntimeEffect? s_effect;
+        private static SKRuntimeShaderBuilder? s_builder;
         private static bool s_effectFailed;
 
         /// <summary>
@@ -164,6 +165,15 @@ half4 main(float2 coord) {
                 return s_effect;
             }
         }
+
+        /// <summary>
+        /// The shared runtime-shader builder over <see cref="Effect"/>. Never disposed: the
+        /// builder owns the effect it wraps, so tearing it down would free the process-wide
+        /// effect under later callers. Rebuilds overwrite every uniform and child before each
+        /// Build call, and it is only touched on the render thread like everything else here.
+        /// </summary>
+        public static SKRuntimeShaderBuilder? Builder
+            => Effect is { } effect ? s_builder ??= new SKRuntimeShaderBuilder(effect) : null;
 
         private sealed class TextureSet
         {
