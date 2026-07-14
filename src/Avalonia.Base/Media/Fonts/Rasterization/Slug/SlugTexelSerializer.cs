@@ -5,14 +5,18 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 {
     /// <summary>
     /// Where one glyph's payload landed in the shared textures, plus the per-glyph draw
-    /// constants: the band-header location, band counts, the fill-rule flag, and the em-space →
-    /// band-index transform (index = coordinate × scale + offset, clamped by the shader).
+    /// constants: the band-header location, band counts, the fill-rule flag, the em-space →
+    /// band-index transform (index = coordinate × scale + offset, clamped by the shader), and
+    /// the em-space control bounds the draw rect covers. Self-contained on purpose: a placement
+    /// outlives the CPU payload it was serialized from, so a draw never needs the payload back.
+    /// A default-valued placement (band counts of zero) is the documented "no ink" marker.
     /// </summary>
     internal readonly struct SlugGlyphPlacement
     {
         public SlugGlyphPlacement(
             int glyphLocX, int glyphLocY, int horizontalBandCount, int verticalBandCount, bool evenOdd,
-            float bandScaleX, float bandScaleY, float bandOffsetX, float bandOffsetY)
+            float bandScaleX, float bandScaleY, float bandOffsetX, float bandOffsetY,
+            float minX, float minY, float maxX, float maxY)
         {
             GlyphLocX = glyphLocX;
             GlyphLocY = glyphLocY;
@@ -23,6 +27,10 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             BandScaleY = bandScaleY;
             BandOffsetX = bandOffsetX;
             BandOffsetY = bandOffsetY;
+            MinX = minX;
+            MinY = minY;
+            MaxX = maxX;
+            MaxY = maxY;
         }
 
         public int GlyphLocX { get; }
@@ -34,6 +42,10 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         public float BandScaleY { get; }
         public float BandOffsetX { get; }
         public float BandOffsetY { get; }
+        public float MinX { get; }
+        public float MinY { get; }
+        public float MaxX { get; }
+        public float MaxY { get; }
     }
 
     /// <summary>
@@ -215,7 +227,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             placement = new SlugGlyphPlacement(
                 glyphLoc & ColumnMask, glyphLoc >> LogTextureWidth,
                 hCount, vCount, data.FillRule == FillRule.EvenOdd,
-                scaleX, scaleY, -data.MinX * scaleX, -data.MinY * scaleY);
+                scaleX, scaleY, -data.MinX * scaleX, -data.MinY * scaleY,
+                data.MinX, data.MinY, data.MaxX, data.MaxY);
 
             return true;
         }
