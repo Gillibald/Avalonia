@@ -657,7 +657,7 @@ namespace Avalonia.Media
         {
             try
             {
-                return new GlyphTypeface(typeface, fontSimulations);
+                return new GlyphTypeface(typeface, fontSimulations).WithImplicitVariation();
             }
             catch (Exception ex)
             {
@@ -671,6 +671,92 @@ namespace Avalonia.Media
                 return null;
             }
         }
+
+        private static readonly OpenTypeTag s_weightTag = OpenTypeTag.Parse("wght");
+        private static readonly OpenTypeTag s_widthTag = OpenTypeTag.Parse("wdth");
+        private static readonly OpenTypeTag s_italicTag = OpenTypeTag.Parse("ital");
+
+        /// <summary>
+        /// Binds a freshly created typeface to the variation point its platform typeface was
+        /// matched at. Platform font managers resolve weight / width / italic requests against
+        /// variable fonts by instantiating an axis position (a Bold request on Bahnschrift
+        /// matches wght 700), but the table walkers here read the raw font file — without this
+        /// step every instance of a variable font would walk its default instance while the
+        /// platform reports the matched style.
+        /// </summary>
+        /// <remarks>
+        /// A platform typeface already bound to an explicit variation point wins outright;
+        /// otherwise the standard axes derive from the platform-reported style against the
+        /// fvar defaults. Optical size stays untouched (it identifies the face rather than a
+        /// style choice), and slant-only italics are left to platform synthesis for now.
+        /// </remarks>
+        private GlyphTypeface WithImplicitVariation()
+        {
+            if (_fvarTable is null)
+            {
+                return this;
+            }
+
+            var explicitPosition = PlatformTypeface.VariationPosition;
+
+            if (!explicitPosition.IsDefault)
+            {
+                return WithVariation(explicitPosition);
+            }
+
+            List<FontVariation>? userVariations = null;
+
+            foreach (var axis in _fvarTable.Axes)
+            {
+                float value;
+
+                if (axis.Tag == s_weightTag)
+                {
+                    value = (int)PlatformTypeface.Weight;
+                }
+                else if (axis.Tag == s_widthTag)
+                {
+                    value = GetStretchPercentage(PlatformTypeface.Stretch);
+                }
+                else if (axis.Tag == s_italicTag)
+                {
+                    value = PlatformTypeface.Style == FontStyle.Italic ? 1 : 0;
+                }
+                else
+                {
+                    continue;
+                }
+
+                value = Math.Clamp(value, axis.MinimumValue, axis.MaximumValue);
+
+                if (Math.Abs(value - axis.DefaultValue) > 0.25f)
+                {
+                    (userVariations ??= new List<FontVariation>()).Add(new FontVariation(axis.Tag, value));
+                }
+            }
+
+            if (userVariations is null)
+            {
+                return this;
+            }
+
+            var position = CreateNormalizedPosition(new FontVariationSettings(userVariations));
+
+            return position.IsDefault ? this : WithVariation(position);
+        }
+
+        private static float GetStretchPercentage(FontStretch stretch) => stretch switch
+        {
+            FontStretch.UltraCondensed => 50f,
+            FontStretch.ExtraCondensed => 62.5f,
+            FontStretch.Condensed => 75f,
+            FontStretch.SemiCondensed => 87.5f,
+            FontStretch.SemiExpanded => 112.5f,
+            FontStretch.Expanded => 125f,
+            FontStretch.ExtraExpanded => 150f,
+            FontStretch.UltraExpanded => 200f,
+            _ => 100f,
+        };
 
         /// <summary>
         /// Gets the family name of the font.
@@ -1507,6 +1593,83 @@ namespace Avalonia.Media
         /// per-glyph contract the single <see cref="TryGetGlyphMetrics(ushort, out GlyphMetrics)"/> path
         /// and the COLR v1 paint-graph extents fallback need.
         /// </summary>
+        /// <summary>
+        /// Ink bounds for a color glyph in font units (y-up): the COLR v1 clip box — or the
+        /// built paint-graph drawing's extent when the font omits one — or the union of the
+        /// v0 layer outlines. Color ink routinely exceeds the base outline's box; a run that
+        /// declares base bounds under-invalidates and clips color glyphs on partial redraws.
+        /// </summary>
+        internal bool TryGetColorGlyphInkBounds(ushort glyphIndex, out GlyphBounds box)
+        {
+            box = default;
+
+            if (_colrTable is null)
+            {
+                return false;
+            }
+
+            if (_colrTable.TryGetBaseGlyphV1Record(glyphIndex, out _))
+            {
+                ReadOnlySpan<float> coords = _activeCoords ?? ReadOnlySpan<float>.Empty;
+
+                if (_colrTable.TryGetClipBox(glyphIndex, coords, out var clip))
+                {
+                    // Clip boxes are parsed in font space, y-up — a direct repackage.
+                    box = new GlyphBounds(
+                        ClampToShort(Math.Floor(clip.X)), ClampToShort(Math.Floor(clip.Y)),
+                        ClampToShort(Math.Ceiling(clip.Right)), ClampToShort(Math.Ceiling(clip.Bottom)));
+                    return true;
+                }
+
+                // No clip box: the built drawing knows its extent. Drawing space is y-down
+                // around the glyph origin, so the box flips back into font space. The drawing
+                // is cached, and a v1 glyph on a managed run gets built for drawing anyway, so
+                // this pre-warms rather than duplicates work.
+                if (GetGlyphDrawing(glyphIndex) is { } drawing)
+                {
+                    var b = drawing.Bounds;
+
+                    box = new GlyphBounds(
+                        ClampToShort(Math.Floor(b.X)), ClampToShort(Math.Floor(-b.Bottom)),
+                        ClampToShort(Math.Ceiling(b.Right)), ClampToShort(Math.Ceiling(-b.Y)));
+                    return true;
+                }
+            }
+
+            if (_cpalTable is not null && _colrTable.TryGetBaseGlyphRecord(glyphIndex, out var record))
+            {
+                var hasInk = false;
+                var minX = short.MaxValue;
+                var minY = short.MaxValue;
+                var maxX = short.MinValue;
+                var maxY = short.MinValue;
+
+                for (var layer = 0; layer < record.NumLayers; layer++)
+                {
+                    if (_colrTable.TryGetLayerRecord(record.FirstLayerIndex + layer, out var layerRecord) &&
+                        TryGetGlyphInkBounds(layerRecord.GlyphIndex, out var layerBounds))
+                    {
+                        hasInk = true;
+                        minX = Math.Min(minX, layerBounds.XMin);
+                        minY = Math.Min(minY, layerBounds.YMin);
+                        maxX = Math.Max(maxX, layerBounds.XMax);
+                        maxY = Math.Max(maxY, layerBounds.YMax);
+                    }
+                }
+
+                if (hasInk)
+                {
+                    box = new GlyphBounds(minX, minY, maxX, maxY);
+                    return true;
+                }
+            }
+
+            return false;
+
+            static short ClampToShort(double value)
+                => (short)Math.Clamp(value, short.MinValue, short.MaxValue);
+        }
+
         internal bool TryGetGlyphInkBounds(ushort glyph, out GlyphBounds box)
         {
             if (_glyfTable is not null)
