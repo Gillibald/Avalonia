@@ -13,6 +13,7 @@ partial class DrawingContextImpl
         using var filter = CreateEffect(effect);
         var paint = SKPaintCache.Shared.Get();
         paint.ImageFilter = filter;
+        _saveLayerDepth++;
         if (effectClipRect.HasValue)
             Canvas.SaveLayer(effectClipRect.Value.ToSKRect(), paint);
         else
@@ -23,6 +24,7 @@ partial class DrawingContextImpl
     public void PopEffect()
     {
         CheckLease();
+        _saveLayerDepth--;
         RestoreCanvas();
     }
 

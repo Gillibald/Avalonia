@@ -36,6 +36,8 @@ namespace Avalonia.Skia
         private readonly Matrix? _postTransform;
         private double _currentOpacity = 1.0f;
         private readonly bool _disableSubpixelTextRendering;
+        private readonly LcdMaskGeometry? _lcdMaskGeometry;
+        private int _saveLayerDepth;
         private Matrix? _currentTransform;
         private bool _disposed;
         private GRContext? _grContext;
@@ -195,6 +197,13 @@ namespace Avalonia.Skia
             _intermediateSurfaceDpi = createInfo.Dpi;
             _disposables = disposables;
             _disableSubpixelTextRendering = createInfo.DisableSubpixelTextRendering;
+
+            _lcdMaskGeometry = createInfo.Surface?.SurfaceProperties?.PixelGeometry switch
+            {
+                SKPixelGeometry.RgbHorizontal => LcdMaskGeometry.RgbHorizontal,
+                SKPixelGeometry.BgrHorizontal => LcdMaskGeometry.BgrHorizontal,
+                _ => null,
+            };
             _grContext = createInfo.GrContext;
             _gpu = createInfo.Gpu;
             if (_grContext != null)
@@ -264,6 +273,16 @@ namespace Avalonia.Skia
         }
 
         bool IAlphaGlyphMaskContext.PrefersAlphaMasks => GrContext is not null;
+
+        bool IAlphaGlyphMaskContext.TryGetLcdGeometry(out LcdMaskGeometry geometry)
+        {
+            geometry = _lcdMaskGeometry ?? LcdMaskGeometry.RgbHorizontal;
+
+            // Eligible only on a surface that declares horizontal stripes, outside every
+            // composited layer, on targets that permit subpixel text at all. Inside a layer
+            // the backdrop is transparent, and per-channel coverage would bake fringes.
+            return _lcdMaskGeometry.HasValue && !_disableSubpixelTextRendering && _saveLayerDepth == 0;
+        }
 
         IDisposable IAlphaGlyphMaskContext.CreateAlphaMask(ReadOnlySpan<byte> alpha, int width, int height)
         {
@@ -880,7 +899,7 @@ namespace Avalonia.Skia
             if (glyphRun is ManagedGlyphRunImpl managedRun)
             {
                 if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
-                        effectiveTextOptions.TextRenderingMode == TextRenderingMode.Alias))
+                        effectiveTextOptions.TextRenderingMode))
                 {
                     return;
                 }
@@ -975,12 +994,14 @@ namespace Avalonia.Skia
         public void PushLayer(Rect bounds)
         {
             CheckLease();
+            _saveLayerDepth++;
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
         }
 
         public void PopLayer()
         {
             CheckLease();
+            _saveLayerDepth--;
             RestoreCanvas();
         }
 
@@ -998,6 +1019,8 @@ namespace Avalonia.Skia
                 opacity = _currentOpacity * opacity; //Take current multiplied opacity
 
                 _currentOpacity = 1; //Opacity is applied via layering
+
+                _saveLayerDepth++;
 
                 if (bounds.HasValue)
                 {
@@ -1024,6 +1047,7 @@ namespace Avalonia.Skia
 
             if (useOpacitySaveLayer)
             {
+                _saveLayerDepth--;
                 RestoreCanvas();
             }
 
@@ -1113,6 +1137,7 @@ namespace Avalonia.Skia
 
             var paint = SKPaintCache.Shared.Get();
 
+            _saveLayerDepth++;
             Canvas.SaveLayer(bounds.ToSKRect(), paint);
             _maskStack.Push((Canvas.TotalMatrix, CreatePaint(paint, mask, bounds)));
         }
@@ -1139,6 +1164,7 @@ namespace Avalonia.Skia
 
             RestoreCanvas();
 
+            _saveLayerDepth--;
             RestoreCanvas();
         }
 

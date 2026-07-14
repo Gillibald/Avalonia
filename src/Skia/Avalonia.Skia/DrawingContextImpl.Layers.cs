@@ -28,6 +28,8 @@ partial class DrawingContextImpl
             paint.ImageFilter = imageFilter;
         }
 
+        _saveLayerDepth++;
+
         if (options.Bounds.HasValue)
             Canvas.SaveLayer(options.Bounds.Value.ToSKRect(), paint);
         else
