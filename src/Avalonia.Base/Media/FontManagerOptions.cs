@@ -34,5 +34,18 @@ namespace Avalonia.Media
         /// always use <see cref="TextRasterizationMode.Backend"/> regardless of this setting.
         /// </remarks>
         public TextRasterizationMode TextRasterizationMode { get; set; }
+
+        /// <summary>
+        /// Gets or sets whether managed rasterization may use the Slug vector tier — analytic
+        /// GPU coverage for exactly the draws the mask path rejects (rotation, skew, and sizes
+        /// past the mask ceiling). Defaults to <c>true</c>. Experimental.
+        /// </summary>
+        /// <remarks>
+        /// Unlike <see cref="TextRasterizationMode"/> this is read per draw, so it can be
+        /// flipped at runtime for side-by-side comparison. With the tier disabled (or without a
+        /// GPU context, where it never engages) those draws render through the backend's native
+        /// glyph path instead; the axis-aligned mask path is unaffected either way.
+        /// </remarks>
+        public bool EnableSlugVectorTier { get; set; } = true;
     }
 }
