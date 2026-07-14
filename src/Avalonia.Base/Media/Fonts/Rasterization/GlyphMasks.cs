@@ -41,7 +41,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return GlyphMask.Empty;
             }
 
-            var apron = key.Mode == GlyphMaskMode.Subpixel ? SubpixelApron : Apron;
+            // Stem snapping can move the right edge outward by up to a pixel, so it shares
+            // the wider apron.
+            var apron = key.Mode == GlyphMaskMode.Subpixel || key.StemSnap ? SubpixelApron : Apron;
 
             // Font units are y-up, masks are y-down: the top of the mask comes from YMax.
             var left = (int)Math.Floor(box.XMin * scale) - apron;
@@ -60,7 +62,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // hard; identical per (typeface, scale), so every glyph and every layer of a color
             // glyph warps consistently. Horizontal geometry is untouched. TextHintingMode.None
             // opts a draw out (outlines scaled only), keyed separately in the cache.
-            var warp = key.GridFit ? typeface.GridFit.GetWarp(key.ScaleQ) : VerticalWarp.Identity;
+            var warp = key.GridFit ? typeface.GridFit.GetWarp(key.ScaleQ) : AxisWarp.Identity;
 
             if (key.Mode == GlyphMaskMode.Subpixel)
             {
@@ -73,6 +75,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 scratch.ApplyVerticalWarp(warp);
+
+                if (key.StemSnap)
+                {
+                    scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor: 3));
+                }
 
                 var subWidth = width * 3;
                 var samples = new byte[subWidth * height];
@@ -89,6 +96,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             scratch.ApplyVerticalWarp(warp);
+
+            if (key.StemSnap)
+            {
+                scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor: 1));
+            }
 
             var alpha = new byte[width * height];
 
