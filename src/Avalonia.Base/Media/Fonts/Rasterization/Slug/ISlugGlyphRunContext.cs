@@ -17,12 +17,16 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         bool SupportsSlugRendering { get; }
 
         /// <summary>
-        /// Draws one glyph from its serialized payload. The baseline pen position is in the
-        /// context's current (pre-transform) coordinates and <paramref name="tintArgb"/> is the
-        /// straight (non-premultiplied) foreground; the context's ambient opacity applies on
-        /// top, and the current transform carries rotation, skew, and zoom.
+        /// Draws a whole run whose glyphs are already realized in <paramref name="store"/>,
+        /// reusing the run's cached artifact (per-glyph shaders and rects) when the current
+        /// transform's pixel-footprint bucket and the store version still match — so
+        /// same-transform redraws, translations, and foreground changes cost no rebuilds, and
+        /// zoom or rotation steps pay only a cheap builder pass. <paramref name="tintArgb"/> is
+        /// the straight (non-premultiplied) foreground applied at the paint level; the
+        /// context's ambient opacity applies on top. Returns false when the context cannot
+        /// realize its resources — the caller then falls back to its native path, so a failure
+        /// can never render as missing text.
         /// </summary>
-        void DrawSlugGlyph(SlugTexelStore store, in SlugGlyphPlacement placement,
-            double baselineX, double baselineY, double fontRenderingEmSize, uint tintArgb);
+        bool TryDrawSlugRun(ManagedGlyphRunImpl run, SlugTexelStore store, uint tintArgb);
     }
 }

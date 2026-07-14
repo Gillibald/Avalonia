@@ -296,30 +296,26 @@ namespace Avalonia.Skia
         bool ISlugGlyphRunContext.SupportsSlugRendering =>
             GrContext is not null && SlugGlyphEffect.Effect is not null;
 
-        void ISlugGlyphRunContext.DrawSlugGlyph(SlugTexelStore store, in SlugGlyphPlacement placement,
-            double baselineX, double baselineY, double fontRenderingEmSize, uint tintArgb)
+        bool ISlugGlyphRunContext.TryDrawSlugRun(ManagedGlyphRunImpl run, SlugTexelStore store, uint tintArgb)
         {
             CheckLease();
 
-            if (SlugGlyphEffect.Effect is not { } effect ||
-                !SlugGlyphEffect.TryGetShaders(store, out var curveShader, out var bandShader))
+            if (SlugGlyphEffect.Effect is not { } effect)
             {
-                return;
+                return false;
             }
-
-            // Em space (y-up) → local canvas space; the canvas transform carries the rest, so
-            // one placement draws at any rotation or zoom.
-            var emSize = (float)fontRenderingEmSize;
-            var localMatrix = new SKMatrix(emSize, 0, (float)baselineX, 0, -emSize, (float)baselineY, 0, 0, 1);
 
             // What the reference vertex/pixel stages derive per fragment is constant under an
             // affine transform: the L1 norms of the device→em rows give the em footprint of one
-            // device pixel per axis.
-            var emToDevice = SKMatrix.Concat(Canvas.TotalMatrix, localMatrix);
+            // device pixel per axis. Per-glyph local matrices differ only by translation, which
+            // the norms ignore, so the whole run shares one footprint — quantized to the mask
+            // cache's scale grid, it is the artifact's rebuild key.
+            var emSize = (float)run.FontRenderingEmSize;
+            var emToDevice = SKMatrix.Concat(Canvas.TotalMatrix, SKMatrix.CreateScale(emSize, -emSize));
 
             if (!emToDevice.TryInvert(out var deviceToEm))
             {
-                return;
+                return false;
             }
 
             var emsPerPixelX = Math.Abs(deviceToEm.ScaleX) + Math.Abs(deviceToEm.SkewX);
@@ -327,53 +323,179 @@ namespace Avalonia.Skia
 
             if (!(emsPerPixelX > 0) || !(emsPerPixelY > 0))
             {
-                return;
+                return false;
             }
 
-            // Straight tint × ambient opacity, premultiplied — the shader multiplies by
-            // coverage only.
-            var a = (byte)(tintArgb >> 24) / 255f * (float)_currentOpacity;
-            var r = (byte)(tintArgb >> 16) / 255f * a;
-            var g = (byte)(tintArgb >> 8) / 255f * a;
-            var b = (byte)tintArgb / 255f * a;
+            var scaleQX = GlyphMaskKey.QuantizeScale(1f / emsPerPixelX);
+            var scaleQY = GlyphMaskKey.QuantizeScale(1f / emsPerPixelY);
 
-            var uniforms = new SKRuntimeEffectUniforms(effect)
+            if (run.SlugRunArtifact is not SlugRunArtifact artifact)
             {
-                ["pixelsPerEm"] = new[] { 1f / emsPerPixelX, 1f / emsPerPixelY },
-                ["glyphLoc"] = new[] { (float)placement.GlyphLocX, (float)placement.GlyphLocY },
-                ["bandCounts"] = new[] { (float)placement.HorizontalBandCount, (float)placement.VerticalBandCount },
-                ["bandTransform"] = new[]
-                {
-                    placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY,
-                },
-                ["evenOdd"] = placement.EvenOdd ? 1f : 0f,
-                ["tint"] = new[] { r, g, b, a },
-            };
+                run.SlugRunArtifact = artifact = new SlugRunArtifact();
+            }
 
-            var children = new SKRuntimeEffectChildren(effect)
+            if ((artifact.ScaleQX != scaleQX || artifact.ScaleQY != scaleQY ||
+                 artifact.StoreVersion != store.Version) &&
+                !RebuildSlugArtifact(artifact, run, store, scaleQX, scaleQY))
             {
-                ["curveTex"] = curveShader!,
-                ["bandTex"] = bandShader!,
-            };
+                return false;
+            }
 
-            using var shader = effect.ToShader(uniforms, children, localMatrix);
+            if (artifact.Count == 0)
+            {
+                return true;   // whitespace-only run — handled, nothing to draw
+            }
+
             var paint = SKPaintCache.Shared.Get();
 
-            paint.Shader = shader;
+            // The shaders emit premultiplied white coverage; the cached modulate filter applies
+            // the straight foreground and paint alpha carries the ambient opacity — neither
+            // touches the artifact.
+            paint.ColorFilter = artifact.GetFilter(tintArgb);
+            paint.Color = new SKColor(255, 255, 255, (byte)(255 * _currentOpacity));
 
-            // Antialiasing comes from the coverage math; the rect only bounds it, with an apron
-            // of ~1.5 device pixels (in em units) so edge coverage is never clipped.
-            var apronX = emsPerPixelX * 1.5f;
-            var apronY = emsPerPixelY * 1.5f;
-            var rect = new SKRect(
-                (float)(baselineX + (placement.MinX - apronX) * emSize),
-                (float)(baselineY - (placement.MaxY + apronY) * emSize),
-                (float)(baselineX + (placement.MaxX + apronX) * emSize),
-                (float)(baselineY - (placement.MinY - apronY) * emSize));
+            for (var i = 0; i < artifact.Count; i++)
+            {
+                paint.Shader = artifact.Shaders[i];
+                Canvas.DrawRect(artifact.Rects[i], paint);
+            }
 
-            Canvas.DrawRect(rect, paint);
             paint.Shader = null;
+            paint.ColorFilter = null;
             SKPaintCache.Shared.ReturnReset(paint);
+
+            return true;
+        }
+
+        private static bool RebuildSlugArtifact(SlugRunArtifact artifact,
+            ManagedGlyphRunImpl run, SlugTexelStore store, ushort scaleQX, ushort scaleQY)
+        {
+            artifact.ReleaseShaders();
+            artifact.ScaleQX = scaleQX;
+            artifact.ScaleQY = scaleQY;
+            artifact.BuildCount++;
+
+            var glyphCount = run.GlyphCount;
+
+            if (artifact.Shaders.Length < glyphCount)
+            {
+                artifact.Shaders = new SKShader[glyphCount];
+                artifact.Rects = new SKRect[glyphCount];
+            }
+
+            var typeface = run.GlyphTypeface;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originX = run.BaselineOrigin.X;
+            var originY = run.BaselineOrigin.Y;
+            var emSize = (float)run.FontRenderingEmSize;
+
+            // Uniforms bake the bucketed footprint, so the shader and the rebuild key agree;
+            // the apron widens the rect by ~1.5 device pixels in em units.
+            var bucketedEmsPerPixelX = GlyphMaskKey.ScaleQuantum / scaleQX;
+            var bucketedEmsPerPixelY = GlyphMaskKey.ScaleQuantum / scaleQY;
+            var apronX = bucketedEmsPerPixelX * 1.5f;
+            var apronY = bucketedEmsPerPixelY * 1.5f;
+
+            // Realize every glyph before touching shaders or capturing the version: a direct
+            // caller may not have pre-realized like the run renderer does, and realization
+            // moves the store version and extends the texel mirrors.
+            var anyInk = false;
+            var count = 0;
+
+            for (var i = 0; i < indices.Length; i++)
+            {
+                if (!store.TryRealize(typeface, indices[i], out var realized))
+                {
+                    return Fail(artifact, ref count);
+                }
+
+                anyInk |= realized.HorizontalBandCount != 0;
+            }
+
+            artifact.StoreVersion = store.Version;
+
+            if (!anyInk)
+            {
+                artifact.Count = 0;
+                return true;
+            }
+
+            // The builder is process-shared and never disposed (it owns the effect); every
+            // uniform and child is overwritten here before each Build, and the render thread
+            // is the only caller.
+            SKRuntimeShaderBuilder? builder = null;
+
+            for (var i = 0; i < indices.Length; i++)
+            {
+                store.TryRealize(typeface, indices[i], out var placement);
+
+                if (placement.HorizontalBandCount == 0)
+                {
+                    continue;   // no ink
+                }
+
+                if (builder is null)
+                {
+                    if (!SlugGlyphEffect.TryGetShaders(store, out var curveShader, out var bandShader) ||
+                        SlugGlyphEffect.Builder is not { } sharedBuilder)
+                    {
+                        return Fail(artifact, ref count);
+                    }
+
+                    builder = sharedBuilder;
+                    builder.Children["curveTex"] = curveShader!;
+                    builder.Children["bandTex"] = bandShader!;
+                    builder.Uniforms["pixelsPerEm"] = new SKPoint(
+                        scaleQX / GlyphMaskKey.ScaleQuantum, scaleQY / GlyphMaskKey.ScaleQuantum);
+                    builder.Uniforms["tint"] = new SKColorF(1, 1, 1, 1);
+                }
+
+                builder.Uniforms["glyphLoc"] = new SKPoint(placement.GlyphLocX, placement.GlyphLocY);
+                builder.Uniforms["bandCounts"] = new SKPoint(
+                    placement.HorizontalBandCount, placement.VerticalBandCount);
+                builder.Uniforms["bandTransform"] = new SKColorF(
+                    placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY);
+                builder.Uniforms["evenOdd"] = placement.EvenOdd ? 1f : 0f;
+
+                var penX = (float)(originX + positions[i * 2]);
+                var penY = (float)(originY + positions[i * 2 + 1]);
+                var shader = builder.Build(new SKMatrix(emSize, 0, penX, 0, -emSize, penY, 0, 0, 1));
+
+                if (shader is null)
+                {
+                    return Fail(artifact, ref count);
+                }
+
+                artifact.Shaders[count] = shader;
+                artifact.Rects[count] = new SKRect(
+                    penX + (placement.MinX - apronX) * emSize,
+                    penY - (placement.MaxY + apronY) * emSize,
+                    penX + (placement.MaxX + apronX) * emSize,
+                    penY - (placement.MinY - apronY) * emSize);
+                count++;
+            }
+
+            artifact.Count = count;
+
+            return true;
+
+            static bool Fail(SlugRunArtifact artifact, ref int count)
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    artifact.Shaders[i].Dispose();
+                    artifact.Shaders[i] = null!;
+                }
+
+                count = 0;
+
+                // Force the next attempt to rebuild rather than reuse the failed state.
+                artifact.StoreVersion = -1;
+                artifact.Count = 0;
+
+                return false;
+            }
         }
 
         /// <inheritdoc />

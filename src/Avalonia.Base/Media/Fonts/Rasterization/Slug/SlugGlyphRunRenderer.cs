@@ -72,24 +72,11 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
             var tint = ((uint)alpha << 24) |
                 ((uint)solid.Color.R << 16) | ((uint)solid.Color.G << 8) | solid.Color.B;
-            var positions = run.GlyphPositions;
-            var origin = run.BaselineOrigin;
-            var emSize = run.FontRenderingEmSize;
 
-            for (var i = 0; i < indices.Length; i++)
-            {
-                store.TryRealize(typeface, indices[i], out var placement);
-
-                if (placement.HorizontalBandCount == 0)
-                {
-                    continue;   // no ink
-                }
-
-                context.DrawSlugGlyph(store, in placement,
-                    origin.X + positions[i * 2], origin.Y + positions[i * 2 + 1], emSize, tint);
-            }
-
-            return true;
+            // The context draws the whole run from its cached artifact; a false return (its
+            // resources failed to realize) sends the run to the caller's native fallback
+            // instead of rendering nothing.
+            return context.TryDrawSlugRun(run, store, tint);
         }
     }
 }
