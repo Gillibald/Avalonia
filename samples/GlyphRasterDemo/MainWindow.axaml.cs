@@ -10,6 +10,9 @@ namespace GlyphRasterDemo
     {
         private ContentControl _host = null!;
         private TextBlock _modeText = null!;
+        private ComboBox _renderingModeBox = null!;
+        private ComboBox _hintingModeBox = null!;
+        private bool _initialized;
 
         public MainWindow()
         {
@@ -17,6 +20,29 @@ namespace GlyphRasterDemo
 
             _host = this.FindControl<ContentControl>("Host")!;
             _modeText = this.FindControl<TextBlock>("ModeText")!;
+            _renderingModeBox = this.FindControl<ComboBox>("RenderingModeBox")!;
+            _hintingModeBox = this.FindControl<ComboBox>("HintingModeBox")!;
+
+            _renderingModeBox.ItemsSource = System.Enum.GetValues<TextRenderingMode>();
+            _renderingModeBox.SelectedItem = TextRenderingMode.Unspecified;
+            _hintingModeBox.ItemsSource = System.Enum.GetValues<TextHintingMode>();
+            _hintingModeBox.SelectedItem = TextHintingMode.Unspecified;
+            _initialized = true;
+
+            Reload();
+        }
+
+        private void OnTextModeChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e)
+        {
+            if (!_initialized)
+            {
+                return;
+            }
+
+            // Applied to the host, so the whole page inherits; rows that set their own value
+            // (the modes block) keep overriding, staying a fixed reference.
+            TextOptions.SetTextRenderingMode(_host, (TextRenderingMode)_renderingModeBox.SelectedItem!);
+            TextOptions.SetTextHintingMode(_host, (TextHintingMode)_hintingModeBox.SelectedItem!);
 
             Reload();
         }
