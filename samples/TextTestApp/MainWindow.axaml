@@ -125,6 +125,9 @@
         <TabItem Header="A/B Diff">
           <local:AbDiffView Name="_abDiff" />
         </TabItem>
+        <TabItem Header="Color" Name="_colorTab">
+          <local:ColorGlyphsView Name="_colorView" />
+        </TabItem>
       </TabControl>
     </DockPanel>
 </Window>
