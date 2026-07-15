@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="GlyphRasterDemo.InspectorPage">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#18808080" Padding="14,8">
+      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+        <TextBlock Text="Glyph" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <TextBox x:Name="CharBox" Width="44" Text="g" MaxLength="2" />
+        <TextBlock Text="Font" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <TextBox x:Name="FontBox" Width="140" Text="Segoe UI" />
+        <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <Slider x:Name="SizeSlider" Width="200" Minimum="8" Maximum="28" Value="12"
+                TickFrequency="0.5" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+        <TextBlock x:Name="SizeText" VerticalAlignment="Center" FontWeight="SemiBold" Width="46" />
+        <TextBlock Text="Hinting" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <ComboBox x:Name="HintingBox" Width="110" />
+        <CheckBox x:Name="GammaBox" Content="Gamma" IsChecked="True" />
+        <CheckBox x:Name="BgrBox" Content="BGR panel" />
+        <CheckBox x:Name="TintTiersBox" Content="Tint tiers" />
+      </StackPanel>
+    </Border>
+    <ScrollViewer>
+      <StackPanel Margin="14" Spacing="6">
+        <TextBlock Text="1. Hinting — zones, stroke pairs, and the warp" FontSize="15" FontWeight="SemiBold" />
+        <TextBlock Opacity="0.7" FontSize="12"
+                   Text="Drag the size slider and watch the cap and ascender rows merge and split; the blue outline is what actually rasterizes." />
+        <Image x:Name="HintingImage" Stretch="None" HorizontalAlignment="Left" />
+
+        <TextBlock Text="2. Masks — the cached unit and the composed run" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
+        <Image x:Name="MaskImage" Stretch="None" HorizontalAlignment="Left" />
+
+        <TextBlock Text="3. ClearType — 3x raster, stripe channels, composite" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
+        <Image x:Name="LcdImage" Stretch="None" HorizontalAlignment="Left" />
+
+        <TextBlock Text="4. Slug payload — em-space curves and the band partition the shader walks" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
+        <Image x:Name="SlugImage" Stretch="None" HorizontalAlignment="Left" />
+
+        <TextBlock Text="5. Tier routing (live rendering of this window)" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
+        <TextBlock Opacity="0.7" FontSize="12"
+                   Text="Check 'Tint tiers' above: every run gets a badge from the tier that drew it — green run masks, magenta Slug vector tier, orange native blob." />
+        <ContentControl x:Name="TierSampleHost" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

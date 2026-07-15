@@ -13,6 +13,7 @@ namespace GlyphRasterDemo
         private ComboBox _renderingModeBox = null!;
         private ComboBox _hintingModeBox = null!;
         private bool _initialized;
+        private bool _showInspector;
 
         public MainWindow()
         {
@@ -29,6 +30,40 @@ namespace GlyphRasterDemo
             _hintingModeBox.SelectedItem = TextHintingMode.Unspecified;
             _initialized = true;
 
+            // Dev shortcut: GLYPH_INSPECTOR=1 opens the inspector page directly ("tint" also
+            // enables the tier overlay); the tall window makes single-shot captures of the
+            // whole page possible.
+            if (System.Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 })
+            {
+                _showInspector = true;
+                Width = 1280;
+                Height = 1200;
+            }
+
+            Reload();
+
+            // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
+            // through the same code the inspector page shows live.
+            if (System.Environment.GetEnvironmentVariable("GLYPH_FIGURE_EXPORT_DIR") is { Length: > 0 } exportDir)
+            {
+                Opened += (_, _) =>
+                {
+                    if (GlyphRasterDemo.Inspector.PipelineFigures.LoadRepoInter() is { } inter)
+                    {
+                        GlyphRasterDemo.Inspector.PipelineFigures.ExportAll(exportDir, inter);
+                    }
+
+                    // Close after the first render pass settles; closing inside Opened tears
+                    // the lifetime down mid-startup.
+                    Avalonia.Threading.Dispatcher.UIThread.Post(Close,
+                        Avalonia.Threading.DispatcherPriority.Background);
+                };
+            }
+        }
+
+        private void OnToggleInspector(object? sender, RoutedEventArgs e)
+        {
+            _showInspector = !_showInspector;
             Reload();
         }
 
@@ -89,7 +124,7 @@ namespace GlyphRasterDemo
             // Fresh visuals build fresh glyph runs, and run creation reads the mode live —
             // that is the whole validation mechanism: flip, rebuild, compare. (The Slug switch
             // alone is read per draw and would not strictly need the rebuild.)
-            _host.Content = new DemoPage();
+            _host.Content = _showInspector ? new InspectorPage() : new DemoPage();
         }
     }
 }

@@ -13,6 +13,7 @@
           <TextBlock Text="Hinting" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
           <ComboBox x:Name="HintingModeBox" Width="120" SelectionChanged="OnTextModeChanged" />
           <TextBlock x:Name="ModeText" VerticalAlignment="Center" FontWeight="SemiBold" />
+          <Button x:Name="InspectorButton" Content="Inspector" Click="OnToggleInspector" />
           <Button x:Name="ToggleButton" Content="Toggle rasterization mode" Click="OnToggleMode" />
         </StackPanel>
         <StackPanel>
