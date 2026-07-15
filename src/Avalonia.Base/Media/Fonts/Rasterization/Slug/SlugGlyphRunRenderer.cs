@@ -12,9 +12,9 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
     {
         /// <summary>
         /// Attempts the run. Returns <c>false</c> when this tier cannot take it — unsupported
-        /// context, the tier switched off through <see cref="FontManagerOptions.EnableSlugVectorTier"/>,
-        /// non-solid foreground, color or outline-less typeface, degenerate transform, or any
-        /// glyph declining payload realization — and the caller falls back to its native path.
+        /// context, non-solid foreground, color or outline-less typeface, degenerate transform,
+        /// or any glyph declining payload realization — and the caller falls back to its native
+        /// path. The tier is simply on wherever the GPU context supports it.
         /// Returns <c>true</c> when handled, including the nothing-to-draw cases.
         /// </summary>
         public static bool TryDraw(ISlugGlyphRunContext context, Matrix transform,
@@ -25,13 +25,6 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 return false;
             }
 
-            // The explicit off switch: read per draw (unlike the rasterization mode, which is
-            // baked into the run at creation), so flipping it at runtime re-routes the very
-            // next frame to the caller's native fallback.
-            if (AvaloniaLocator.Current.GetService<FontManagerOptions>() is { EnableSlugVectorTier: false })
-            {
-                return false;
-            }
 
             if (foreground is not ISolidColorBrush solid)
             {
