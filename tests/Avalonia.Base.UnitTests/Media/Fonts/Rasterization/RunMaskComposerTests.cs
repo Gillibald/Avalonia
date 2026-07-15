@@ -65,7 +65,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 
                 // The cached masks are grid-fit; give the direct path the identical warp so
                 // this stays a composition test, not a hinting test.
-                capture.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(capture, GlyphMaskKey.QuantizeScale(ppem)));
+                capture.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(capture, GlyphMaskKey.QuantizeScale(ppem), typeface.StemWidths.HorizontalStrokeWidths));
                 Replay(capture, combined, pens[i], penY);
             }
 

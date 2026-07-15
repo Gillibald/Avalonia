@@ -66,6 +66,7 @@ namespace Avalonia.Media
         private GlyphCache? _glyphCache;
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
+        private Fonts.Rasterization.StemWidthTable? _stemWidthTable;
         private Fonts.Rasterization.Slug.SlugGlyphCache? _slugGlyphCache;
         private Fonts.Rasterization.Slug.SlugTexelStore? _slugTexelStore;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildGlyphGeometry;
@@ -1911,6 +1912,14 @@ namespace Avalonia.Media
         /// </summary>
         internal Fonts.Rasterization.VerticalGridFit GridFit =>
             _verticalGridFit ??= Fonts.Rasterization.VerticalGridFit.Create(this);
+
+        /// <summary>
+        /// Font-wide standard stroke widths for the mask pipeline's width unification,
+        /// measured lazily once. A benign create race hands identical values to whichever
+        /// instance wins.
+        /// </summary>
+        internal Fonts.Rasterization.StemWidthTable StemWidths =>
+            _stemWidthTable ??= Fonts.Rasterization.StemWidthTable.Create(this);
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
