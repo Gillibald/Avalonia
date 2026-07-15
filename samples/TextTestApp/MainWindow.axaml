@@ -111,11 +111,10 @@
       </DockPanel>
         </TabItem>
         <TabItem Header="Rasterization">
-          <Grid ColumnDefinitions="Auto,4,*">
+          <Panel>
             <local:GlyphExplorerView Name="_explorer" />
-            <GridSplitter Grid.Column="1" />
-            <local:RasterizationView Name="_raster" Grid.Column="2" />
-          </Grid>
+            <local:RasterizationView Name="_raster" IsVisible="False" />
+          </Panel>
         </TabItem>
         <TabItem Header="Waterfall">
           <local:WaterfallView Name="_waterfall" />
