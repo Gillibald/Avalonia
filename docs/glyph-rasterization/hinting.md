@@ -24,6 +24,10 @@ The rounding policy was measured against DirectWrite output rather than assumed:
 - distinct zones landing within half a pixel of each other (Segoe UI's cap sits 82 design units under its ascender, 0.36-0.48 px at 9-12 px) share one row at plain nearest of the topmost member - the measured DirectWrite resolution (9 px: round(6.66) = 7, never the cap's 6), and the merged cluster emits one flat shelf so caps, digits, l and f land on the same line; zones at identical design heights are one line, not a collision, and keep the grow policy;
 - overshoot bands flatten onto their zone row while the overshoot is at most `OvershootFlattenLimit = 0.75` px and survive as a distinct row beyond that, which is when the eye starts expecting it; each zone carries its own band ('o' for x-height, cap and baseline, the f hook for the ascender).
 
+![Zones, warp and stroke pairs for Inter 'g' at 12 px: the mask on the pixel grid, the unhinted outline in red, the grid-fit outline in blue, zone rows in green with dashed pre-snap sources](images/hinting-anatomy.png)
+
+*(Generated figure: run GlyphRasterDemo with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in the demo's Inspector page.)*
+
 ## Per-glyph stroke fitting: GetGlyphWarp
 
 Zone knots alone leave a problem: between knots the warp interpolates with slope not equal to 1, so interior horizontal strokes (the crossbars of 'e' and 'f', the arms of 'E', bowl waists) change thickness and land off the grid, rendering as two gray partial rows. That reads as washed-out text precisely when hinting is on.
