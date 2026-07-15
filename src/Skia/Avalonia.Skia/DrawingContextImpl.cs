@@ -940,6 +940,11 @@ namespace Avalonia.Skia
                 if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
                         effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode))
                 {
+                    if (TextTierDiagnostics.CountTiers)
+                    {
+                        System.Threading.Interlocked.Increment(ref TextTierDiagnostics.MaskTierDraws);
+                    }
+
                     if (TextTierDiagnostics.TintTiers)
                     {
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
@@ -953,6 +958,11 @@ namespace Avalonia.Skia
                 // to the native blob like before.
                 if (SlugGlyphRunRenderer.TryDraw(this, Transform, managedRun, foreground))
                 {
+                    if (TextTierDiagnostics.CountTiers)
+                    {
+                        System.Threading.Interlocked.Increment(ref TextTierDiagnostics.SlugTierDraws);
+                    }
+
                     if (TextTierDiagnostics.TintTiers)
                     {
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.SlugTierColor);
@@ -966,6 +976,11 @@ namespace Avalonia.Skia
 
                 Canvas.DrawText(fallbackBlob, (float)glyphRun.BaselineOrigin.X,
                     (float)glyphRun.BaselineOrigin.Y, fallbackPaint.Paint);
+
+                if (TextTierDiagnostics.CountTiers)
+                {
+                    System.Threading.Interlocked.Increment(ref TextTierDiagnostics.BlobTierDraws);
+                }
 
                 if (TextTierDiagnostics.TintTiers)
                 {

@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Fonts.Rasterization.Slug;
+using Avalonia.Threading;
 using SkiaSharp;
 
 namespace TextTestApp
@@ -36,7 +37,12 @@ namespace TextTestApp
         private TextBlock _pageText = null!;
         private TextBlock _summaryText = null!;
         private TextBlock _infoText = null!;
+        private TextBlock _metricsText = null!;
+        private TextBlock _hudText = null!;
+        private CheckBox _countTiersBox = null!;
+        private Button _resetCountersButton = null!;
         private Image _gridImage = null!;
+        private DispatcherTimer? _hudTimer;
 
         private GlyphTypeface? _typeface;
         private List<ushort> _glyphs = new();
@@ -58,7 +64,19 @@ namespace TextTestApp
             _pageText = this.FindControl<TextBlock>("PageText")!;
             _summaryText = this.FindControl<TextBlock>("SummaryText")!;
             _infoText = this.FindControl<TextBlock>("InfoText")!;
+            _metricsText = this.FindControl<TextBlock>("MetricsText")!;
+            _hudText = this.FindControl<TextBlock>("HudText")!;
+            _countTiersBox = this.FindControl<CheckBox>("CountTiersBox")!;
+            _resetCountersButton = this.FindControl<Button>("ResetCountersButton")!;
             _gridImage = this.FindControl<Image>("GridImage")!;
+
+            _countTiersBox.IsCheckedChanged += (_, _) =>
+                Avalonia.Skia.TextTierDiagnostics.CountTiers = _countTiersBox.IsChecked == true;
+            _resetCountersButton.Click += (_, _) =>
+            {
+                Avalonia.Skia.TextTierDiagnostics.ResetCounters();
+                UpdateHud();
+            };
 
             _filterBox.ItemsSource = s_filters;
             _filterBox.SelectedIndex = 0;
@@ -77,7 +95,45 @@ namespace TextTestApp
 
             _typeface = typeface;
             _reverseMap = null;
+            _metricsText.Text = typeface is null
+                ? string.Empty
+                : FormattableString.Invariant(
+                    $"resolved {-typeface.Metrics.Ascent}/{typeface.Metrics.Descent}/{typeface.Metrics.LineGap} of {typeface.Metrics.DesignEmHeight} upem{Environment.NewLine}{typeface.MetricsProvenance}");
             RebuildList();
+        }
+
+        protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+
+            _hudTimer ??= new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
+                (_, _) => UpdateHud());
+            _hudTimer.Start();
+        }
+
+        protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+        {
+            _hudTimer?.Stop();
+            base.OnDetachedFromVisualTree(e);
+        }
+
+        private void UpdateHud()
+        {
+            if (_typeface is not { } typeface)
+            {
+                _hudText.Text = string.Empty;
+                return;
+            }
+
+            var cache = typeface.MaskCache;
+            var store = typeface.SlugStore;
+
+            var maskDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.MaskTierDraws);
+            var slugDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.SlugTierDraws);
+            var blobDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.BlobTierDraws);
+
+            _hudText.Text = FormattableString.Invariant(
+                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB of {GlyphMaskCache.DefaultBudgetBytes / 1024} KB{Environment.NewLine}Slug store: v{store.Version}, {store.CurveRowCount} curve + {store.BandRowCount} band rows{Environment.NewLine}tier draws: masks {maskDraws}, Slug {slugDraws}, blob {blobDraws}");
         }
 
         private void RebuildList()
