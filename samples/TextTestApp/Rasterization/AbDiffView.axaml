@@ -7,10 +7,7 @@
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="Text" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
           <TextBox x:Name="TextBox" Width="340" Text="Hamburgefonstiv fi ffl 0123" />
-          <TextBlock Text="Font" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-          <TextBox x:Name="FontBox" Width="130" Text="Segoe UI" />
-          <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-          <NumericUpDown x:Name="SizeBox" Width="110" Minimum="6" Maximum="96" Value="13" Increment="1" />
+          <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
           <Button x:Name="RenderButton" Content="Render" FontWeight="SemiBold" />
           <Button x:Name="SaveButton" Content="Save A as reference..." />
           <Button x:Name="LoadButton" Content="Load reference as B..." />

@@ -23,8 +23,7 @@ namespace TextTestApp
         private static readonly string[] s_modes = { "Managed", "Backend" };
 
         private TextBox _textBox = null!;
-        private TextBox _fontBox = null!;
-        private NumericUpDown _sizeBox = null!;
+        private TextBlock _fontText = null!;
         private Button _renderButton = null!;
         private Button _saveButton = null!;
         private Button _loadButton = null!;
@@ -41,14 +40,15 @@ namespace TextTestApp
         private SKBitmap? _lastA;
         private SKBitmap? _referenceB;
         private string? _referenceName;
+        private string _fontFamily = "Segoe UI";
+        private double _fontSize = 13;
 
         public AbDiffView()
         {
             AvaloniaXamlLoader.Load(this);
 
             _textBox = this.FindControl<TextBox>("TextBox")!;
-            _fontBox = this.FindControl<TextBox>("FontBox")!;
-            _sizeBox = this.FindControl<NumericUpDown>("SizeBox")!;
+            _fontText = this.FindControl<TextBlock>("FontText")!;
             _renderButton = this.FindControl<Button>("RenderButton")!;
             _saveButton = this.FindControl<Button>("SaveButton")!;
             _loadButton = this.FindControl<Button>("LoadButton")!;
@@ -95,6 +95,19 @@ namespace TextTestApp
             };
         }
 
+        /// <summary>The app-global font and size; re-renders when a comparison is showing.</summary>
+        public void SetFont(string familyName, double size)
+        {
+            _fontFamily = familyName;
+            _fontSize = size;
+            _fontText.Text = FormattableString.Invariant($"{familyName}, {size:0.#} px");
+
+            if (_resultImage.Source is not null)
+            {
+                Render();
+            }
+        }
+
         protected override void OnAttachedToVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
@@ -114,8 +127,8 @@ namespace TextTestApp
             }
 
             var text = _textBox.Text ?? string.Empty;
-            var font = _fontBox.Text ?? "Segoe UI";
-            var size = (double)(_sizeBox.Value ?? 13);
+            var font = _fontFamily;
+            var size = Math.Clamp(_fontSize, 4, 300);
 
             var savedMode = options.TextRasterizationMode;
 

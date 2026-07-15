@@ -29,13 +29,12 @@ namespace TextTestApp
             _rendering.TextLineChanged += OnShapeBufferChanged;
             OnShapeBufferChanged();
 
-            // Rasterization tooling: the explorer follows the app's font selection; opening a
-            // glyph from either the explorer or the shaped buffer lands in the Rasterization
-            // tab with the exact typeface instance.
-            _font.SelectionChanged += (_, _) => PushExplorerTypeface();
-            PushExplorerTypeface();
-            // Explorer and inspector share the Rasterization page, side by side.
-            _explorer.OpenGlyphRequested += (typeface, glyph) => _raster.ShowGlyph(typeface, glyph);
+            // The global font and size drive every view; the explorer's selection drives
+            // the inspector beside it.
+            _font.SelectionChanged += (_, _) => PushFontContext();
+            _size.TextChanged += (_, _) => PushFontContext();
+            PushFontContext();
+            _explorer.GlyphSelected += (typeface, glyph, label) => _raster.ShowGlyph(typeface, glyph, label);
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -61,11 +60,21 @@ namespace TextTestApp
             }
         }
 
-        private void PushExplorerTypeface()
+        private void PushFontContext()
         {
             var familyName = _font.SelectedValue?.ToString() ?? "Segoe UI";
+            var typeface = RasterizationView.ResolveTypeface(familyName);
 
-            _explorer.SetTypeface(RasterizationView.ResolveTypeface(familyName));
+            if (!double.TryParse(_size.Text, out var size))
+            {
+                size = 13;
+            }
+
+            size = Math.Clamp(size, 4, 300);
+
+            _explorer.SetTypeface(typeface);
+            _raster.SetContext(typeface, size);
+            _abDiff.SetFont(familyName, size);
         }
 
         private void OnNewWindowClick(object? sender, RoutedEventArgs e)
@@ -239,9 +248,10 @@ namespace TextTestApp
                 // typeface instance, in the Rasterization tab.
                 GlyphTypeface rowTypeface = shapedRun.GlyphRun.GlyphTypeface;
                 ushort rowGlyph = info.GlyphIndex;
+                string? rowLabel = clusterText is { Length: > 0 } ? $"'{clusterText}'" : null;
                 border.DoubleTapped += (_, _) =>
                 {
-                    _raster.ShowGlyph(rowTypeface, rowGlyph);
+                    _raster.ShowGlyph(rowTypeface, rowGlyph, rowLabel);
                     _globalTabs.SelectedIndex = 1;
                 };
 

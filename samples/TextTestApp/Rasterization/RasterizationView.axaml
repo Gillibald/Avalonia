@@ -4,14 +4,8 @@
   <DockPanel>
     <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <TextBlock Text="Glyph (g, U+0067 or #74)" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <TextBox x:Name="CharBox" Width="86" Text="g" />
-        <TextBlock Text="Font" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <TextBox x:Name="FontBox" Width="130" Text="Segoe UI" />
-        <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <Slider x:Name="SizeSlider" Width="170" Minimum="8" Maximum="28" Value="12"
-                TickFrequency="0.5" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
-        <TextBlock x:Name="SizeText" VerticalAlignment="Center" FontWeight="SemiBold" Width="44" />
+        <TextBlock x:Name="GlyphText" VerticalAlignment="Center" FontWeight="SemiBold" MinWidth="230"
+                   Text="select a glyph in the explorer" />
         <TextBlock Text="Hinting" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
         <ComboBox x:Name="HintingBox" Width="100" />
         <CheckBox x:Name="GammaBox" Content="Gamma" IsChecked="True" />
