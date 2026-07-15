@@ -1,26 +1,26 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="GlyphRasterDemo.InspectorPage">
+             x:Class="TextTestApp.RasterizationView">
   <DockPanel>
-    <Border DockPanel.Dock="Top" Background="#18808080" Padding="14,8">
-      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-        <TextBlock Text="Glyph" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <TextBox x:Name="CharBox" Width="44" Text="g" MaxLength="2" />
+    <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <TextBlock Text="Glyph (g, U+0067 or #74)" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <TextBox x:Name="CharBox" Width="86" Text="g" />
         <TextBlock Text="Font" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <TextBox x:Name="FontBox" Width="140" Text="Segoe UI" />
+        <TextBox x:Name="FontBox" Width="130" Text="Segoe UI" />
         <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <Slider x:Name="SizeSlider" Width="200" Minimum="8" Maximum="28" Value="12"
+        <Slider x:Name="SizeSlider" Width="170" Minimum="8" Maximum="28" Value="12"
                 TickFrequency="0.5" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
-        <TextBlock x:Name="SizeText" VerticalAlignment="Center" FontWeight="SemiBold" Width="46" />
+        <TextBlock x:Name="SizeText" VerticalAlignment="Center" FontWeight="SemiBold" Width="44" />
         <TextBlock Text="Hinting" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="HintingBox" Width="110" />
+        <ComboBox x:Name="HintingBox" Width="100" />
         <CheckBox x:Name="GammaBox" Content="Gamma" IsChecked="True" />
-        <CheckBox x:Name="BgrBox" Content="BGR panel" />
+        <CheckBox x:Name="BgrBox" Content="BGR" />
         <CheckBox x:Name="TintTiersBox" Content="Tint tiers" />
       </StackPanel>
     </Border>
     <ScrollViewer>
-      <StackPanel Margin="14" Spacing="6">
+      <StackPanel Margin="12" Spacing="6">
         <TextBlock Text="1. Hinting — zones, stroke pairs, and the warp" FontSize="15" FontWeight="SemiBold" />
         <TextBlock Opacity="0.7" FontSize="12"
                    Text="Drag the size slider and watch the cap and ascender rows merge and split; the blue outline is what actually rasterizes." />
@@ -37,7 +37,7 @@
 
         <TextBlock Text="5. Tier routing (live rendering of this window)" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
         <TextBlock Opacity="0.7" FontSize="12"
-                   Text="Check 'Tint tiers' above: every run gets a badge from the tier that drew it — green run masks, magenta Slug vector tier, orange native blob." />
+                   Text="Check 'Tint tiers' above: every run gets a badge from the tier that drew it — green run masks, magenta Slug vector tier, orange native blob. Managed tiers engage when the app runs with TextRasterizationMode.Managed." />
         <ContentControl x:Name="TierSampleHost" />
       </StackPanel>
     </ScrollViewer>

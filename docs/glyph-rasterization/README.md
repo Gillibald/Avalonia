@@ -76,7 +76,8 @@ src/Skia/Avalonia.Skia/                        Skia-side implementations
     SlugRunArtifact.cs          per-run shader batching
     SkiaFontData.cs             zero-copy font table access
     SkiaBitmapGlyphDecoder.cs   PNG/JPEG strike decoding
-samples/GlyphRasterDemo/                       capability tour, pipeline inspector, visual review surface
+samples/GlyphRasterDemo/                       capability tour and A/B visual review surface
+samples/TextTestApp/Rasterization/             pipeline inspector, glyph explorer, doc figure export
 ```
 
 ## Status
