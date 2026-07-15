@@ -17,6 +17,10 @@ Every failed condition degrades to grayscale antialiasing, never to wrong blendi
 
 `GlyphMaskMode.Subpixel` masks rasterize the outline at 3x horizontal resolution (the analytic rasterizer takes the anisotropic transform as-is), then each stripe channel is downfiltered with the standard 5-tap FIR `(1,2,3,2,1)/9` used by ClearType and FreeType. The result is an interleaved 3-channel `GlyphMask` (`Channels = 3`) in fixed RGB stripe order with a 2-pixel apron (`SubpixelApron`) for filter support. BGR panels are handled at composition time by swapping channels, so one mask serves both geometries.
 
+![The ClearType stages: the 3x analytic raster, the three FIR-filtered stripe channels, and the gamma-corrected composite](images/cleartype-pipeline.png)
+
+*(Generated figure: run GlyphRasterDemo with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in the demo's Inspector page.)*
+
 ## GPU path: runtime blender
 
 The composed run mask is RGBA: the three coverage channels plus alpha = channel max. [LcdTextBlender](../../src/Skia/Avalonia.Skia/LcdTextBlender.cs) is an `SKRuntimeEffect` blender that computes, per channel, `dst + (tint - dst) * g(coverage)` where `g` is the analytic MaskGamma transfer evaluated in-shader from `GammaShaderParameters` (so GPU output matches the CPU tables). The destination alpha uses the max coverage channel. Tint and ambient opacity are uniforms, so foreground animation never recomposes the mask. Compiled blenders are cached per tint with a small cap (`CacheCap = 64`); the shared effect is created once and never disposed. Measured cost is on par with the grayscale A8 path on native GL and about 2x on ANGLE's dst-read lowering, at zero steady-state allocations.

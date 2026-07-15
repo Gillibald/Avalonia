@@ -11,6 +11,10 @@ The tier only runs on GPU-backed Skia contexts with the compiled runtime effect,
 3. [SlugTexelSerializer](../../src/Avalonia.Base/Media/Fonts/Rasterization/Slug/SlugTexelSerializer.cs) lays curves and band lists out in two RGBA F16 textures of width `TextureWidth = 2048`. The shader walks curve pairs, header blocks and band lists linearly without wrapping (only a list's start location wraps), so the serializer keeps each list within a row and duplicates the shared endpoint at row breaks. Hard caps guard the shader's static loop bounds: `MaxBandListLength = 64` entries per list, `MaxBandBlobSpan = 2047` texels, `MaxTextureRows = 2048`. A glyph exceeding any cap is declined atomically and the decline memoised.
 4. [SlugReferenceEvaluator](../../src/Avalonia.Base/Media/Fonts/Rasterization/Slug/SlugReferenceEvaluator.cs) is a C# twin of the pixel shader (root classification via IEEE sign bits, imaginary-root collapse, two-ray weighted blend, even-odd fold). It exists so correctness is testable without a GPU: the shader must match the evaluator on identical texels, and the evaluator is validated against the analytic rasterizer as ground truth ([SlugTexelDecoder](../../src/Avalonia.Base/Media/Fonts/Rasterization/Slug/SlugTexelDecoder.cs) round-trips the serialization side).
 
+![The Slug payload for Inter 'g': em-space quadratic chains under the horizontal and vertical band partition, with curves-per-band counts](images/slug-bands.png)
+
+*(Generated figure: run GlyphRasterDemo with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in the demo's Inspector page.)*
+
 ## Residency
 
 [SlugTexelStore](../../src/Avalonia.Base/Media/Fonts/Rasterization/Slug/SlugTexelStore.cs) hangs off each `GlyphTypeface`: append-only texel arrays plus a `Version` counter that backend texture mirrors key off, with placements memoised permanently. Glyphs with no contours (spaces) realize as empty rather than declining, so whitespace never knocks a run off the tier. [SlugGlyphCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/Slug/SlugGlyphCache.cs) bounds encoding memory at 2 MB per typeface with CLOCK eviction and memoised declines.
