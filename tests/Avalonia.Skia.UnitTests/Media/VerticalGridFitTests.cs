@@ -300,6 +300,93 @@ namespace Avalonia.Skia.UnitTests.Media
             return partials;
         }
 
+        [Fact]
+        public void Colliding_Cap_And_Ascender_Merge_Toward_The_Ascender_Row()
+        {
+            Assert.SkipWhen(!OperatingSystem.IsWindows(), "Needs Segoe UI's near-colliding cap and ascender zones.");
+
+            // Segoe UI puts caps at 1434 and the ascender at 1516 design units - 0.36 to 0.48
+            // px apart at 9-12 px, inside the collision window. Hinted DirectWrite output
+            // resolves every such size to ONE row at plain nearest of the ascender (9 px:
+            // round(6.66) = 7). Resolving toward the cap instead renders capitals a row
+            // shorter than l and f on the same line, which reads as ragged tops.
+            using var skTypeface = SKFontManager.Default.MatchFamily("Segoe UI", SKFontStyle.Normal);
+
+            Assert.NotNull(skTypeface);
+
+            var typeface = new GlyphTypeface(new Avalonia.Skia.SkiaTypeface(skTypeface!, FontSimulations.None));
+
+            Assert.True(typeface.TryGetGlyphInkBounds(typeface.CharacterToGlyphMap['l'], out var ascenderBox));
+
+            foreach (var size in new[] { 9f, 10f })
+            {
+                var ascenderPx = ascenderBox.YMax * size / typeface.Metrics.DesignEmHeight;
+                var expectedTop = -(int)MathF.Floor(ascenderPx + 0.5f);
+
+                foreach (var reference in "Hl8f")
+                {
+                    var top = TopInkRow(typeface, reference, size);
+
+                    Assert.True(top == expectedTop,
+                        $"'{reference}' at {size}px: line top row {top}, expected {expectedTop}");
+                }
+            }
+
+            // Past the window (0.64 px apart at 16 px) the lines split, again matching the
+            // hinted output: caps 11 rows, ascenders 12.
+            Assert.Equal(-11, TopInkRow(typeface, 'H', 16));
+            Assert.Equal(-12, TopInkRow(typeface, 'l', 16));
+            Assert.Equal(-12, TopInkRow(typeface, 'f', 16));
+        }
+
+        [Fact]
+        public void F_Hook_Overshoot_Flattens_Onto_The_Ascender_Row()
+        {
+            var typeface = LoadTypeface();
+
+            // Inter's f reaches 96/2816 em above l. At 12 px that is 0.41 px - visually the
+            // same line - so the hook must flatten onto the ascender row and render hard,
+            // not drift into a soft partial row above it.
+            var fTop = TopInkRow(typeface, 'f', 12);
+            var lTop = TopInkRow(typeface, 'l', 12);
+
+            Assert.True(fTop == lTop, $"f tops at {fTop}, l at {lTop} - ragged ascender line");
+
+            var mask = BuildMask(typeface, 'f', 12);
+
+            Assert.True(TopRowMax(mask.Alpha, mask.Width, mask.Height).Max >= 240,
+                "the flattened f top must render as a hard row");
+        }
+
+        /// <summary>Topmost visible ink row of the glyph's grid-fit mask, baseline-relative
+        /// (negative above); visible means any pixel over 40/255 coverage.</summary>
+        private static int TopInkRow(GlyphTypeface typeface, char reference, float size)
+        {
+            var mask = BuildMask(typeface, reference, size);
+
+            for (var y = 0; y < mask.Height; y++)
+            {
+                for (var x = 0; x < mask.Width; x++)
+                {
+                    if (mask.Alpha[y * mask.Width + x] > 40)
+                    {
+                        return mask.Top + y;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        private static GlyphMask BuildMask(GlyphTypeface typeface, char reference, float size)
+        {
+            var scratch = new GlyphPathBuilder();
+
+            return GlyphMasks.Build(typeface, scratch,
+                new GlyphMaskKey(typeface.CharacterToGlyphMap[reference], GlyphMaskKey.QuantizeScale(size), 0,
+                    GlyphMaskMode.Antialiased));
+        }
+
         private static (int Row, int Max) TopRowMax(byte[] alpha, int width, int height)
         {
             for (var y = 0; y < height; y++)
