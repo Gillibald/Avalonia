@@ -34,7 +34,14 @@ namespace TextTestApp
             _font.SelectionChanged += (_, _) => PushFontContext();
             _size.TextChanged += (_, _) => PushFontContext();
             PushFontContext();
-            _explorer.GlyphSelected += (typeface, glyph, label) => _raster.ShowGlyph(typeface, glyph, label);
+            // The Rasterization tab alternates: the explorer owns the full page until a
+            // glyph is selected, then the inspector takes it; Back (or Escape) returns.
+            _explorer.GlyphSelected += (typeface, glyph, label) =>
+            {
+                _raster.ShowGlyph(typeface, glyph, label);
+                ShowInspector(true);
+            };
+            _raster.BackRequested += () => ShowInspector(false);
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -63,7 +70,18 @@ namespace TextTestApp
                     "ab" => 4,
                     _ => 1,
                 };
+
+                if (inspect is "1" or "tint")
+                {
+                    ShowInspector(true);
+                }
             }
+        }
+
+        private void ShowInspector(bool visible)
+        {
+            _raster.IsVisible = visible;
+            _explorer.IsVisible = !visible;
         }
 
         private void PushFontContext()
@@ -101,7 +119,12 @@ namespace TextTestApp
             }
             else if (e.Key == Key.Escape)
             {
-                if (_hits.IsKeyboardFocusWithin && _hits.SelectedIndex != -1)
+                if (_globalTabs.SelectedIndex == 1 && _raster.IsVisible)
+                {
+                    ShowInspector(false);
+                    e.Handled = true;
+                }
+                else if (_hits.IsKeyboardFocusWithin && _hits.SelectedIndex != -1)
                 {
                     _hits.SelectedIndex = -1;
                     e.Handled = true;
@@ -261,6 +284,7 @@ namespace TextTestApp
                 {
                     _raster.ShowGlyph(rowTypeface, rowGlyph, rowLabel);
                     _globalTabs.SelectedIndex = 1;
+                    ShowInspector(true);
                 };
 
                 _buffer.Items.Add(border);

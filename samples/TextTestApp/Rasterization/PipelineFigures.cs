@@ -66,7 +66,7 @@ namespace TextTestApp
                 hinted.ApplyHorizontalWarp(StemFit.BuildWarp(hinted, 1f));
             }
 
-            var zoom = Math.Clamp(560 / Math.Max(mask.Width, Math.Max(mask.Height, 1)), 8, 36);
+            var zoom = Math.Clamp(400 / Math.Max(mask.Width, Math.Max(mask.Height, 1)), 6, 30);
             const int marginLeft = 96;
             const int marginTop = 28;
             var width = marginLeft + mask.Width * zoom + 150;
@@ -182,12 +182,13 @@ namespace TextTestApp
         /// </summary>
         public static SKBitmap MaskAnatomy(GlyphTypeface typeface, ushort glyph, string label, string runText, float size)
         {
+            // Compact enough for a quadrant; the run redraws at 3x instead of 4x.
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
                 new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased));
 
-            const int zoom = 14;
+            const int zoom = 11;
             var maskPanelWidth = Math.Max(mask.Width * zoom + 20, 300);
 
             // Compose the run into a BGRA buffer exactly the way the renderer does.
@@ -218,8 +219,8 @@ namespace TextTestApp
                 penX += metrics.AdvanceWidth * scale;
             }
 
-            var width = Math.Max(Math.Max(maskPanelWidth + 500, runWidth * 4 + 40), 620);
-            var height = Math.Max(mask.Height * zoom, 130) + runHeight * 5 + 110;
+            var width = Math.Max(Math.Max(maskPanelWidth + 480, runWidth * 3 + 40), 600);
+            var height = Math.Max(mask.Height * zoom, 126) + runHeight * 4 + 104;
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using var canvas = new SKCanvas(bitmap);
@@ -267,7 +268,7 @@ namespace TextTestApp
             }
 
             // The composed run at 1x and 4x.
-            var runTop = Math.Max(mask.Height * zoom, 130) + 56;
+            var runTop = Math.Max(mask.Height * zoom, 126) + 52;
 
             using (var image = SKImage.FromPixelCopy(
                        new SKImageInfo(runWidth, runHeight, SKColorType.Bgra8888, SKAlphaType.Premul), run))
@@ -278,7 +279,7 @@ namespace TextTestApp
                     10, runTop - 8, SKTextAlign.Left, font, text);
                 canvas.DrawImage(image, new SKRect(10, runTop, 10 + runWidth, runTop + runHeight));
                 canvas.DrawImage(image,
-                    new SKRect(10, runTop + runHeight + 8, 10 + runWidth * 4, runTop + runHeight + 8 + runHeight * 4),
+                    new SKRect(10, runTop + runHeight + 8, 10 + runWidth * 3, runTop + runHeight + 8 + runHeight * 3),
                     new SKSamplingOptions(SKFilterMode.Nearest));
             }
 
@@ -325,8 +326,8 @@ namespace TextTestApp
 
             GlyphRasterizer.Rasterize(contours, mask.Width * 3, mask.Height, -mask.Left * 3, -mask.Top, false, raw);
 
-            const int zoom = 13;
-            const int gap = 26;
+            const int zoom = 9;
+            const int gap = 20;
             var panelWidth = mask.Width * zoom;
             var raw3Width = mask.Width * 3 * (zoom / 3);
             var width = raw3Width + (panelWidth + gap) * 4 + gap + 20;
@@ -434,7 +435,7 @@ namespace TextTestApp
                 ? SlugBandEncoder.Encode(sink)
                 : null;
 
-            var bitmap = new SKBitmap(new SKImageInfo(620, 640, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var bitmap = new SKBitmap(new SKImageInfo(560, 520, SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using var canvas = new SKCanvas(bitmap);
             using var font = new SKFont(SKTypeface.Default, 13);
@@ -449,10 +450,10 @@ namespace TextTestApp
                 return bitmap;
             }
 
-            const float left = 50;
-            const float top = 40;
+            const float left = 46;
+            const float top = 32;
             var extent = Math.Max(data.MaxX - data.MinX, data.MaxY - data.MinY);
-            var s = 480f / extent;
+            var s = 370f / extent;
 
             float MapX(float x) => left + (x - data.MinX) * s;
             float MapY(float y) => top + (data.MaxY - y) * s;   // em space is y-up
@@ -525,13 +526,10 @@ namespace TextTestApp
                 $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
                 $"{data.HorizontalBandCount}x{data.VerticalBandCount} bands (worst list {worstBand} of {SlugTexelSerializer.MaxBandListLength}), " +
                 $"payload {data.RetainedBytes} B, {data.FillRule}",
-                10, 630 - 60, SKTextAlign.Left, font, text);
+                10, 520 - 40, SKTextAlign.Left, font, text);
             canvas.DrawText(
-                "green counts = curves per band list; the shader walks exactly one horizontal or vertical list per pixel",
-                10, 630 - 40, SKTextAlign.Left, font, text);
-            canvas.DrawText(
-                "encoded once per glyph ever, in em space; every size and rotation renders from this payload",
-                10, 630 - 20, SKTextAlign.Left, font, text);
+                "green counts = curves per band list; encoded once per glyph ever, in em space",
+                10, 520 - 20, SKTextAlign.Left, font, text);
 
             return bitmap;
         }

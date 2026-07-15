@@ -14,12 +14,13 @@ namespace TextTestApp
     /// <summary>
     /// The rasterization inspector: live figures for each stage of the managed glyph pipeline
     /// (hinting warps, mask anatomy, ClearType stages, the Slug payload) plus a live
-    /// tier-routing overlay for the window's own rendering. Selection-driven: it displays
-    /// whatever glyph the explorer or the shaped buffer pushed, at the app's global font
-    /// size, so ligatures and unmapped glyphs are reachable through the explorer.
+    /// tier-routing overlay for the window's own rendering. Selection-driven and laid out
+    /// as quadrants so all four stages are visible together: it displays whatever glyph the
+    /// explorer or the shaped buffer pushed, at the app's global font size.
     /// </summary>
     public partial class RasterizationView : UserControl
     {
+        private Button _backButton = null!;
         private TextBlock _glyphText = null!;
         private ComboBox _hintingBox = null!;
         private CheckBox _gammaBox = null!;
@@ -29,17 +30,20 @@ namespace TextTestApp
         private Image _maskImage = null!;
         private Image _lcdImage = null!;
         private Image _slugImage = null!;
-        private ContentControl _tierSampleHost = null!;
         private GlyphTypeface? _typeface;
         private ushort _glyph;
         private string? _label;
         private float _size = 13;
         private bool _initialized;
 
+        /// <summary>Raised by the Back button; the host swaps the explorer back in.</summary>
+        public event Action? BackRequested;
+
         public RasterizationView()
         {
             AvaloniaXamlLoader.Load(this);
 
+            _backButton = this.FindControl<Button>("BackButton")!;
             _glyphText = this.FindControl<TextBlock>("GlyphText")!;
             _hintingBox = this.FindControl<ComboBox>("HintingBox")!;
             _gammaBox = this.FindControl<CheckBox>("GammaBox")!;
@@ -49,23 +53,17 @@ namespace TextTestApp
             _maskImage = this.FindControl<Image>("MaskImage")!;
             _lcdImage = this.FindControl<Image>("LcdImage")!;
             _slugImage = this.FindControl<Image>("SlugImage")!;
-            _tierSampleHost = this.FindControl<ContentControl>("TierSampleHost")!;
 
             _hintingBox.ItemsSource = new[] { TextHintingMode.Light, TextHintingMode.None, TextHintingMode.Strong };
             _hintingBox.SelectedIndex = 0;
+            _backButton.Click += (_, _) => BackRequested?.Invoke();
 
             _hintingBox.SelectionChanged += (_, _) => Rebuild();
             _gammaBox.IsCheckedChanged += (_, _) => Rebuild();
             _bgrBox.IsCheckedChanged += (_, _) => Rebuild();
             _tintTiersBox.IsCheckedChanged += (_, _) =>
-            {
                 TextTierDiagnostics.TintTiers = _tintTiersBox.IsChecked == true;
 
-                // Fresh content builds fresh draws, so the badges appear immediately.
-                _tierSampleHost.Content = BuildTierSample();
-            };
-
-            _tierSampleHost.Content = BuildTierSample();
             _initialized = true;
 
             if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") == "tint")
@@ -161,66 +159,5 @@ namespace TextTestApp
             previous?.Dispose();
         }
 
-        private static Control BuildTierSample()
-        {
-            var gradient = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Colors.OrangeRed, 0),
-                    new GradientStop(Colors.RoyalBlue, 1),
-                },
-            };
-
-            var rotated = new TextBlock
-            {
-                Text = "Rotated 32 px — the mask triage declines, the vector tier takes it",
-                FontSize = 32,
-                RenderTransform = new RotateTransform(14),
-                RenderTransformOrigin = new RelativePoint(0, 0.5, RelativeUnit.Relative),
-                Margin = new Thickness(8, 40, 0, 60),
-                HorizontalAlignment = HorizontalAlignment.Left,
-            };
-
-            return new Border
-            {
-                Background = Brushes.White,
-                BorderBrush = Brushes.Gray,
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(12),
-                Child = new StackPanel
-                {
-                    Spacing = 6,
-                    Children =
-                    {
-                        new TextBlock
-                        {
-                            Text = "Body text at 13 px composes through cached run masks — the workhorse tier for axis-aligned UI text.",
-                            FontSize = 13,
-                        },
-                        new TextBlock
-                        {
-                            Text = "Zg 200 px",
-                            FontSize = 200,
-                        },
-                        rotated,
-                        new TextBlock
-                        {
-                            Text = "Gradient foreground at 24 px — non-solid brushes fall through to the native blob.",
-                            FontSize = 24,
-                            Foreground = gradient,
-                        },
-                        new TextBlock
-                        {
-                            Text = "Legend: green = run masks, magenta = Slug vector tier, orange = native blob.",
-                            FontSize = 12,
-                            Opacity = 0.7,
-                        },
-                    },
-                },
-            };
-        }
     }
 }
