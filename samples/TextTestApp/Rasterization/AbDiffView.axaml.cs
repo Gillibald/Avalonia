@@ -258,10 +258,12 @@ namespace TextTestApp
             _statsText.Text = FormattableString.Invariant(
                 $"RMSE {rmse:0.00}  |  {differing} differing pixels ({percent:0.00}%)  |  max channel delta {max}{reference}{mismatch}");
 
-            // Compose: A, B, overlay, heat map at 3x nearest.
+            // Compose: A, B, overlay, heat map at 3x nearest, stacked vertically so the
+            // same glyph sits in one column across all four bands.
             var panelW = width * zoom;
             var panelH = height * zoom;
-            var composed = new SKBitmap(new SKImageInfo(panelW * 4 + gap * 3, panelH + 22,
+            var bandHeight = panelH + 22;
+            var composed = new SKBitmap(new SKImageInfo(panelW, bandHeight * 4 + gap * 3,
                 SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using (var canvas = new SKCanvas(composed))
@@ -275,13 +277,13 @@ namespace TextTestApp
 
                 for (var i = 0; i < 4; i++)
                 {
-                    var x = i * (panelW + gap);
+                    var y = i * (bandHeight + gap);
 
-                    canvas.DrawText(titles[i], x, 14, SKTextAlign.Left, font, label);
+                    canvas.DrawText(titles[i], 0, y + 14, SKTextAlign.Left, font, label);
 
                     using var image = SKImage.FromBitmap(images[i]);
 
-                    canvas.DrawImage(image, new SKRect(x, 22, x + panelW, 22 + panelH),
+                    canvas.DrawImage(image, new SKRect(0, y + 22, panelW, y + 22 + panelH),
                         new SKSamplingOptions(SKFilterMode.Nearest));
                 }
             }
