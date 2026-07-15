@@ -56,7 +56,13 @@ namespace TextTestApp
 
             if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
             {
-                _globalTabs.SelectedIndex = inspect == "ab" ? 2 : 1;
+                _globalTabs.SelectedIndex = inspect switch
+                {
+                    "waterfall" => 2,
+                    "fringes" => 3,
+                    "ab" => 4,
+                    _ => 1,
+                };
             }
         }
 
@@ -74,6 +80,8 @@ namespace TextTestApp
 
             _explorer.SetTypeface(typeface);
             _raster.SetContext(typeface, size);
+            _waterfall.SetTypeface(typeface);
+            _fringes.SetContext(typeface, size);
             _abDiff.SetFont(familyName, size);
         }
 

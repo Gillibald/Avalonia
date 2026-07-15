@@ -117,6 +117,12 @@
             <local:RasterizationView Name="_raster" Grid.Column="2" />
           </Grid>
         </TabItem>
+        <TabItem Header="Waterfall">
+          <local:WaterfallView Name="_waterfall" />
+        </TabItem>
+        <TabItem Header="Fringes">
+          <local:FringesView Name="_fringes" />
+        </TabItem>
         <TabItem Header="A/B Diff">
           <local:AbDiffView Name="_abDiff" />
         </TabItem>
