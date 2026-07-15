@@ -55,6 +55,61 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Offscreen_Surfaces_Keep_Unspecified_Text_Grayscale_And_Clean_On_Transparency()
+        {
+            using var app = StartApp();
+            using var surface = CreateSurface(out var info);
+            var typeface = LoadTypeface();
+            using var run = CreateRun(typeface, "HHH", 24);
+
+            // The render-target-bitmap shape: an offscreen surface that declares RGB stripe
+            // geometry (SurfaceRenderTarget does, for every offscreen bitmap) but whose output
+            // is captured, composed or read back with alpha rather than presented on a panel.
+            // Unspecified must resolve to grayscale here — per-channel coverage has no valid
+            // meaning over a transparent destination, and the backend blob renders grayscale
+            // on the same surface.
+            using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Canvas = surface.Canvas,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                surface.Canvas.Clear(SKColors.Transparent);
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+
+            using var snapshot = surface.Snapshot();
+            using var readback = new SKBitmap(info);
+
+            Assert.True(snapshot.ReadPixels(info, readback.GetPixels(), readback.RowBytes, 0, 0));
+
+            var chroma = 0;
+            var lightOpaque = 0;
+
+            for (var y = 0; y < info.Height; y++)
+            {
+                for (var x = 0; x < info.Width; x++)
+                {
+                    var pixel = readback.GetPixel(x, y);
+
+                    if (Math.Abs(pixel.Red - pixel.Blue) > 8 || Math.Abs(pixel.Red - pixel.Green) > 8)
+                    {
+                        chroma++;
+                    }
+
+                    if (pixel.Alpha > 200 && pixel.Red > 200 && pixel.Green > 200 && pixel.Blue > 200)
+                    {
+                        lightOpaque++;
+                    }
+                }
+            }
+
+            Assert.Equal(0, chroma);
+            Assert.Equal(0, lightOpaque);
+        }
+
+        [Fact]
         public void Layers_And_Tracked_Opacity_Degrade_To_Grayscale()
         {
             using var app = StartApp();
