@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TextTestApp.ColorGlyphInspectorView">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <Button x:Name="BackButton" Content="&#x2190; Back" />
+        <TextBlock x:Name="TitleText" VerticalAlignment="Center" FontWeight="SemiBold" />
+        <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" Margin="12,0,0,0" />
+        <ComboBox x:Name="SizeBox" Width="80" />
+        <TextBlock x:Name="PaletteLabel" Text="Palette" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <ComboBox x:Name="PaletteBox" Width="110" />
+      </StackPanel>
+    </Border>
+    <Grid ColumnDefinitions="*,*" RowDefinitions="*,*" Margin="8">
+      <DockPanel Grid.Column="0" Grid.Row="0" Margin="4">
+        <TextBlock DockPanel.Dock="Top" Text="Drawing path (record-time split altitude)" FontWeight="SemiBold" FontSize="13" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <Image x:Name="DrawingImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
+        </ScrollViewer>
+      </DockPanel>
+      <DockPanel Grid.Column="1" Grid.Row="0" Margin="4">
+        <TextBlock DockPanel.Dock="Top" Text="Production draw (splitter + DrawGlyphRun dispatch)" FontWeight="SemiBold" FontSize="13" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <Image x:Name="ProductionImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
+        </ScrollViewer>
+      </DockPanel>
+      <DockPanel Grid.Column="0" Grid.Row="1" Margin="4">
+        <TextBlock x:Name="StructureHeader" DockPanel.Dock="Top" Text="Structure" FontWeight="SemiBold" FontSize="13" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <StackPanel Spacing="6" Margin="0,6,0,0">
+            <Image x:Name="StructureImage" Stretch="None" HorizontalAlignment="Left" />
+            <TextBlock x:Name="StructureText" FontFamily="Consolas,Courier New,monospace" FontSize="11"
+                       TextWrapping="NoWrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+      <DockPanel Grid.Column="1" Grid.Row="1" Margin="4">
+        <TextBlock DockPanel.Dock="Top" Text="Altitude diff (drawing vs production)" FontWeight="SemiBold" FontSize="13" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <StackPanel Spacing="6" Margin="0,6,0,0">
+            <Image x:Name="DiffImage" Stretch="None" HorizontalAlignment="Left" />
+            <TextBlock x:Name="DiffText" FontSize="12" TextWrapping="Wrap" />
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </Grid>
+  </DockPanel>
+</UserControl>
