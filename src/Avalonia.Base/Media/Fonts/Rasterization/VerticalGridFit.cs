@@ -169,7 +169,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// strokes crisp and thickness-true, so interpolation only ever stretches the empty
         /// counter space between features instead of the strokes themselves.
         /// </summary>
-        public AxisWarp GetGlyphWarp(GlyphPathBuilder contours, ushort scaleQ)
+        public AxisWarp GetGlyphWarp(GlyphPathBuilder contours, ushort scaleQ,
+            ReadOnlySpan<float> strokeStandards)
         {
             var zones = GetWarp(scaleQ);
 
@@ -178,9 +179,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return zones;
             }
 
+            var designToPixels = scaleQ / (GlyphMaskKey.ScaleQuantum * _designEmHeight);
             Span<float> strokeFrom = stackalloc float[16];
             Span<float> strokeTo = stackalloc float[16];
-            var strokeKnots = StemFit.CollectStrokeKnots(contours, zones.From, 0.75f, strokeFrom, strokeTo);
+            var strokeKnots = StemFit.CollectStrokeKnots(contours, zones.From, 0.75f,
+                strokeStandards, designToPixels, strokeFrom, strokeTo);
 
             if (strokeKnots == 0)
             {

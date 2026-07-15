@@ -173,6 +173,40 @@ namespace Avalonia.Skia.UnitTests.Media
             return run;
         }
 
+        [Fact]
+        public void Widths_Within_The_CutIn_Snap_To_The_Standard()
+        {
+            // Two synthetic stems, 1.4 and 1.55 px wide: with a 1.5 px (150-unit) standard
+            // both must render 2 px wide; with the standard out of reach past the cut-in,
+            // independent rounding splits them 1 vs 2.
+            var contours = new GlyphPathBuilder();
+
+            AddRectangle(contours, 2.2f, 3.6f, 0, 10);
+            AddRectangle(contours, 8.1f, 9.65f, 0, 10);
+
+            var unified = StemFit.BuildWarp(contours, 1f, new[] { 150f }, designToPixels: 0.01f);
+            var natural = StemFit.BuildWarp(contours, 1f, new[] { 500f }, designToPixels: 0.01f);
+
+            Assert.False(unified.IsIdentity);
+            Assert.False(natural.IsIdentity);
+
+            Assert.Equal(2f, unified.To[1] - unified.To[0], 3);
+            Assert.Equal(2f, unified.To[3] - unified.To[2], 3);
+
+            Assert.Equal(1f, natural.To[1] - natural.To[0], 3);
+            Assert.Equal(2f, natural.To[3] - natural.To[2], 3);
+        }
+
+        private static void AddRectangle(GlyphPathBuilder contours, float left, float right,
+            float top, float bottom)
+        {
+            contours.BeginFigure(new Avalonia.Point(left, top), true);
+            contours.LineTo(new Avalonia.Point(left, bottom));
+            contours.LineTo(new Avalonia.Point(right, bottom));
+            contours.LineTo(new Avalonia.Point(right, top));
+            contours.EndFigure(true);
+        }
+
         private static int CountPartials(GlyphMask mask, int row)
         {
             var partials = 0;
