@@ -61,6 +61,11 @@ namespace TextTestApp
                 };
             }
 
+            if (Environment.GetEnvironmentVariable("GLYPH_SIZE") is { Length: > 0 } presetSize)
+            {
+                _size.Text = presetSize;
+            }
+
             if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
             {
                 _globalTabs.SelectedIndex = inspect switch
