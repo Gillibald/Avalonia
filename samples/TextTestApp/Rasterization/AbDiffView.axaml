@@ -23,7 +23,7 @@
           <ComboBox x:Name="HintingB" Width="110" />
           <ComboBox x:Name="RenderingB" Width="150" />
           <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11"
-                     Text="CPU raster target: SubpixelAntialias degrades to grayscale here; LCD comparisons need a live window." />
+                     Text="Renders true LCD (the target carries stripe geometry). Unspecified hinting means Light on Managed but Full on Backend - match the hinting combos for like-for-like weight." />
         </StackPanel>
       </StackPanel>
     </Border>
