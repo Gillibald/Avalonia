@@ -114,6 +114,7 @@
           <Panel>
             <local:GlyphExplorerView Name="_explorer" />
             <local:RasterizationView Name="_raster" IsVisible="False" />
+            <local:ColorGlyphInspectorView Name="_colorInspector" IsVisible="False" />
           </Panel>
         </TabItem>
         <TabItem Header="Waterfall">
@@ -126,7 +127,10 @@
           <local:AbDiffView Name="_abDiff" />
         </TabItem>
         <TabItem Header="Color" Name="_colorTab">
-          <local:ColorGlyphsView Name="_colorView" />
+          <Panel>
+            <local:ColorGlyphsView Name="_colorView" />
+            <local:ColorGlyphInspectorView Name="_colorTabInspector" IsVisible="False" />
+          </Panel>
         </TabItem>
       </TabControl>
     </DockPanel>
