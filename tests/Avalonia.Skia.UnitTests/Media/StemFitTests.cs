@@ -103,6 +103,76 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Stems_Render_The_Same_Width_Across_Glyphs()
+        {
+            var typeface = LoadTypeface();
+
+            // Inter puts lowercase stems at 234-240 design units and capital stems at 248 -
+            // a 5% optical correction, far below a pixel at text sizes. Rounding each stem
+            // independently splits them into different whole widths at some sizes (29 px:
+            // 2.43 rounds to 2 while 2.55 rounds to 3), scattering mixed stem weights across
+            // one line. Like the CVT machinery in instructed fonts, close-by widths must
+            // unify onto one shared pixel width until the natural difference is big enough
+            // to deserve its own.
+            var failures = new System.Collections.Generic.List<string>();
+
+            for (var size = 20; size <= 40; size++)
+            {
+                var lowercase = StemPixels(typeface, 'n', size);
+                var capital = StemPixels(typeface, 'H', size);
+
+                if (lowercase > 0 && capital > 0 && lowercase != capital)
+                {
+                    failures.Add($"{size}px: n stem {lowercase}px, H stem {capital}px");
+                }
+            }
+
+            Assert.True(failures.Count == 0, string.Join("; ", failures));
+        }
+
+        /// <summary>Width in whole pixels of the glyph's left stem under Strong hinting,
+        /// measured as the first hard run on a mid-body device row.</summary>
+        private static int StemPixels(GlyphTypeface typeface, char reference, float size)
+        {
+            var glyph = typeface.CharacterToGlyphMap[reference];
+            var scratch = new GlyphPathBuilder();
+            var mask = GlyphMasks.Build(typeface, scratch,
+                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(size), 0, GlyphMaskMode.Antialiased,
+                    GridFit: true, StemSnap: true));
+
+            if (mask.IsEmpty)
+            {
+                return 0;
+            }
+
+            Assert.True(typeface.TryGetGlyphInkBounds(typeface.CharacterToGlyphMap['x'], out var xBox));
+
+            var deviceRow = -(int)Math.Round(xBox.YMax * size / typeface.Metrics.DesignEmHeight / 2);
+            var row = deviceRow - mask.Top;
+
+            if (row < 0 || row >= mask.Height)
+            {
+                return 0;
+            }
+
+            var run = 0;
+
+            for (var x = 0; x < mask.Width; x++)
+            {
+                if (mask.Alpha[row * mask.Width + x] >= 232)
+                {
+                    run++;
+                }
+                else if (run > 0)
+                {
+                    return run;   // the first (left) stem's hard run
+                }
+            }
+
+            return run;
+        }
+
         private static int CountPartials(GlyphMask mask, int row)
         {
             var partials = 0;
