@@ -163,6 +163,11 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using (Start())
             {
+                // This test is about the blob-backed run type; pin Backend mode explicitly
+                // now that Managed is the framework default.
+                AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(
+                    new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Backend });
+
                 var typeface = new Typeface("resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests#Inter");
                 var options = new TextShaperOptions(typeface.GlyphTypeface, 14);
                 var shapedBuffer = TextShaper.Current.ShapeText("F", options);

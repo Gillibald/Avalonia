@@ -7,7 +7,8 @@ namespace Avalonia.Media
     {
         /// <summary>
         /// The render backend's own text stack rasterizes glyphs (on Skia: <c>SKTextBlob</c>
-        /// through the backend's font machinery). The default.
+        /// through the backend's font machinery). The escape hatch; the default is
+        /// <see cref="Managed"/>.
         /// </summary>
         Backend = 0,
 

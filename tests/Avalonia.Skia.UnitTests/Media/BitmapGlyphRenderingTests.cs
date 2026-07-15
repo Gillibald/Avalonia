@@ -62,7 +62,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Backend_Mode_Splits_Bitmap_Glyphs_Through_Our_Drawings()
         {
-            using var scope = CreateEnvironment();   // no FontManagerOptions: Backend mode
+            using var scope = CreateEnvironment(managed: false);
             var typeface = CreateBitmapTypeface(out var bitmapGlyph, out _);
 
             var run = new GlyphRun(typeface, 32, default,
@@ -350,7 +350,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 40));
         }
 
-        private static IDisposable CreateEnvironment()
+        private static IDisposable CreateEnvironment(bool managed = true)
         {
             var scope = AvaloniaLocator.EnterScope();
 
@@ -358,6 +358,16 @@ namespace Avalonia.Skia.UnitTests.Media
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
             AvaloniaLocator.CurrentMutable
                 .Bind<IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
+
+            // Managed is the framework default now, so backend-mode tests must opt out
+            // explicitly rather than relying on unregistered options.
+            AvaloniaLocator.CurrentMutable
+                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                {
+                    TextRasterizationMode = managed
+                        ? TextRasterizationMode.Managed
+                        : TextRasterizationMode.Backend,
+                });
 
             return scope;
         }
