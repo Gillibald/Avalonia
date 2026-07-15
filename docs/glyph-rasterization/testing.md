@@ -36,6 +36,7 @@ Several committed tests are measurement tools rather than gates; they skip unles
 | --- | --- |
 | `FONT_HINTING_PROBE=1` | per-size ink-row tables, managed vs hinted DirectWrite, plus a side-by-side strip PNG |
 | `HINTING_WATERFALL_DIR=<dir>` | None/Light/Strong waterfall rendered through the real draw path |
+| `GLYPH_SHAPE_DIAG_DIR=<dir>` | per-glyph shape strips and row signatures, hinted DirectWrite vs managed, across Segoe UI, Arial and Inter |
 | `FONT_MEMORY_PROBE=1` | typeface memory across all installed families (table copy tally via `FONT_TABLE_TALLY=1`) |
 | `GLYPH_PARITY_REPORT=<file>` | rasterizer parity tables vs Skia path fills |
 | `LCD_GPU_REPORT=<file>` | LCD blender cost table on WGL and ANGLE |

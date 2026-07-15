@@ -16,13 +16,13 @@ The mode travels through the inherited `TextOptions` attached properties and is 
 
 ## Font-wide zones: VerticalGridFit
 
-[VerticalGridFit](../../src/Avalonia.Base/Media/Fonts/Rasterization/VerticalGridFit.cs) measures each typeface's alignment zones once, from glyph ink boxes only (no geometry walks): x-height from 'x', cap height from 'H', ascender from 'l' or 'b', descender from 'p' or 'g', and the round-letter overshoot from 'o'. For every quantized scale it builds a cached `AxisWarp` whose knots move each zone onto a pixel row, with slope 1 outside the outermost knots and the baseline anchored at 0.
+[VerticalGridFit](../../src/Avalonia.Base/Media/Fonts/Rasterization/VerticalGridFit.cs) measures each typeface's alignment zones once, from glyph ink boxes only (no geometry walks): x-height from 'x', cap height from 'H', ascender from 'l' or 'b', descender from 'p' or 'g', the round-letter overshoot from 'o', and the f hook's overshoot over the ascender (accepted as an overshoot up to em/24; larger excess, like 't', owns its height). For every quantized scale it builds a cached `AxisWarp` whose knots move each zone onto a pixel row, with slope 1 outside the outermost knots and the baseline anchored at 0.
 
 The rounding policy was measured against DirectWrite output rather than assumed:
 
 - zones above the baseline grow away from it when their fractional part is at least `ZoneGrowThreshold = 0.4` (a 8.4 px cap becomes 9 rows, matching DirectWrite); below the baseline plain nearest rounding applies;
-- when two zones land within half a pixel of each other (Segoe UI's ascender and cap differ by 0.14 px), both flatten onto one row chosen by the later zone, instead of dropping a zone and leaving its feature smeared;
-- overshoot bands (the 'o' extending past the x-height) flatten onto the zone row while the overshoot is at most `OvershootFlattenLimit = 0.75` px and survive as a distinct row beyond that, which is when the eye starts expecting it.
+- distinct zones landing within half a pixel of each other (Segoe UI's cap sits 82 design units under its ascender, 0.36-0.48 px at 9-12 px) share one row at plain nearest of the topmost member - the measured DirectWrite resolution (9 px: round(6.66) = 7, never the cap's 6), and the merged cluster emits one flat shelf so caps, digits, l and f land on the same line; zones at identical design heights are one line, not a collision, and keep the grow policy;
+- overshoot bands flatten onto their zone row while the overshoot is at most `OvershootFlattenLimit = 0.75` px and survive as a distinct row beyond that, which is when the eye starts expecting it; each zone carries its own band ('o' for x-height, cap and baseline, the f hook for the ascender).
 
 ## Per-glyph stroke fitting: GetGlyphWarp
 
