@@ -20,22 +20,24 @@
       </Border>
 
       <DockPanel DockPanel.Dock="Top" Margin="5">
-        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-          <Label Content="_Font:" Target="{Binding ElementName=_font}" VerticalAlignment="Center" Margin="5,0,0,0" />
-          <ComboBox Name="_font" ItemsSource="{Binding SystemFonts, Source={x:Static FontManager.Current}}" />
-          <Label Content="Fea_tures:" Target="{Binding ElementName=_features}" VerticalAlignment="Center" Margin="5,0,0,0" />
-          <TextBox Name="_features" VerticalAlignment="Center" Text="calt clig kern liga" />
-          <Label Content="_Size:" Target="{Binding ElementName=_size}" VerticalAlignment="Center" Margin="5,0,0,0" />
-          <TextBox Name="_size" VerticalAlignment="Center" Text="64" />
-          <Button VerticalAlignment="Center" Click="OnNewWindowClick" ToolTip.Tip="New window" Margin="5,0,0,0">+</Button>
-        </StackPanel>
-
-        <Label Content="_Text:" Target="{Binding ElementName=_text}"  VerticalAlignment="Center"/>
-        <TextBox Name="_text" Text="Hello!" VerticalAlignment="Center" />
+        <Button DockPanel.Dock="Right" VerticalAlignment="Center" Click="OnNewWindowClick" ToolTip.Tip="New window" Margin="5,0,0,0">+</Button>
+        <Label DockPanel.Dock="Right" Content="_Size:" Target="{Binding ElementName=_size}" VerticalAlignment="Center" Margin="5,0,0,0" />
+        <TextBox DockPanel.Dock="Right" Name="_size" VerticalAlignment="Center" Text="64" MinWidth="50" />
+        <Label Content="_Font:" Target="{Binding ElementName=_font}" VerticalAlignment="Center" />
+        <ComboBox Name="_font" ItemsSource="{Binding SystemFonts, Source={x:Static FontManager.Current}}" HorizontalAlignment="Stretch" />
       </DockPanel>
 
       <TabControl Name="_globalTabs" Padding="0" Margin="0,2,0,0">
         <TabItem Header="Text">
+      <DockPanel>
+        <DockPanel DockPanel.Dock="Top" Margin="5">
+          <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+            <Label Content="Fea_tures:" Target="{Binding ElementName=_features}" VerticalAlignment="Center" Margin="5,0,0,0" />
+            <TextBox Name="_features" VerticalAlignment="Center" Text="calt clig kern liga" />
+          </StackPanel>
+          <Label Content="_Text:" Target="{Binding ElementName=_text}" VerticalAlignment="Center" />
+          <TextBox Name="_text" Text="Hello!" VerticalAlignment="Center" />
+        </DockPanel>
       <Grid RowDefinitions="*,5,*">
         <local:InteractiveLineControl Name="_rendering" DockPanel.Dock="Top" Margin="16" HorizontalAlignment="Center" 
                                   
@@ -106,6 +108,7 @@
           </TabItem>
         </TabControl>
       </Grid>
+      </DockPanel>
         </TabItem>
         <TabItem Header="Rasterization">
           <Grid ColumnDefinitions="Auto,4,*">
@@ -115,7 +118,7 @@
           </Grid>
         </TabItem>
         <TabItem Header="A/B Diff">
-          <local:AbDiffView />
+          <local:AbDiffView Name="_abDiff" />
         </TabItem>
       </TabControl>
     </DockPanel>
