@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
@@ -50,7 +51,7 @@ public class GlyphRunDrawBenchmark
         {
             var origin = new Point(8, 14 * (i + 1));
             _backendRuns[i] = new GlyphRunImpl(typeface, 12, BuildInfos(typeface, 12), origin);
-            _managedRuns[i] = new SkiaManagedGlyphRunImpl(typeface, 12, BuildInfos(typeface, 12), origin);
+            _managedRuns[i] = new ManagedGlyphRunImpl(typeface, 12, BuildInfos(typeface, 12), origin);
         }
 
         // Five colors overflow the run-mask cache (one primary + three secondary slots), so the

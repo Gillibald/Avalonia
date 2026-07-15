@@ -210,20 +210,9 @@ namespace Avalonia.Skia
         public IGlyphRunImpl CreateGlyphRun(GlyphTypeface glyphTypeface, double fontRenderingEmSize,
             IReadOnlyList<GlyphInfo> glyphInfos, Point baselineOrigin)
         {
-            // Read live rather than cached so tests (and tooling) can flip the mode at runtime;
-            // this is the run-creation path, not the per-frame draw path, so a locator lookup is
-            // noise. Fonts without outline tables always take the backend impl — the managed
-            // rasterizer has nothing to rasterize for them.
-            var options = AvaloniaLocator.Current.GetService<FontManagerOptions>();
-            var mode = options?.TextRasterizationMode ?? TextRasterizationMode.Managed;
-
-            if (mode == TextRasterizationMode.Managed &&
-                (glyphTypeface.OutlineType != GlyphOutlineType.None || glyphTypeface.BitmapSource is not null) &&
-                glyphTypeface.PlatformTypeface is SkiaTypeface)
-            {
-                return new SkiaManagedGlyphRunImpl(glyphTypeface, fontRenderingEmSize, glyphInfos, baselineOrigin);
-            }
-
+            // Managed-mode runs are created backend-neutrally in GlyphRun itself; what
+            // reaches the platform interface is explicit Backend mode and typefaces the
+            // managed rasterizer has nothing to rasterize for.
             return new GlyphRunImpl(glyphTypeface, fontRenderingEmSize, glyphInfos, baselineOrigin);
         }
     }

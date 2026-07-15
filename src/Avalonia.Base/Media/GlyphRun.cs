@@ -868,6 +868,20 @@ namespace Avalonia.Media
 
         private IRef<IGlyphRunImpl> CreateGlyphRunImpl()
         {
+            // Managed rasterization is backend-neutral, so the run is created here rather
+            // than through the platform interface: every backend gets the mask-path floor
+            // without work of its own, and the backend-specific fallbacks (the Skia blob,
+            // the vector tier) attach at draw time. Typefaces with nothing to rasterize
+            // (no outlines, no strikes) keep the backend implementation.
+            if (Fonts.Rasterization.ColorGlyphRunSplitter.IsManagedTextRasterization() &&
+                (GlyphTypeface.OutlineType != GlyphOutlineType.None || GlyphTypeface.BitmapSource is not null))
+            {
+                _platformImpl = RefCountable.Create<IGlyphRunImpl>(
+                    new Fonts.Rasterization.ManagedGlyphRunImpl(GlyphTypeface, FontRenderingEmSize, GlyphInfos, BaselineOrigin));
+
+                return _platformImpl;
+            }
+
             var platformImpl = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>().CreateGlyphRun(
                 GlyphTypeface,
                 FontRenderingEmSize,

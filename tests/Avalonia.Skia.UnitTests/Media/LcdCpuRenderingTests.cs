@@ -173,9 +173,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 surface.Canvas.Clear(SKColors.White);
 
                 using var paint = new SKPaint { Color = SKColors.Black };
-                var blob = ((Avalonia.Skia.SkiaManagedGlyphRunImpl)run).GetTextBlob(
+                var blob = Avalonia.Skia.NativeTextBlob.TryGetTextBlob(run,
                     new TextOptions { TextRenderingMode = TextRenderingMode.SubpixelAntialias, TextHintingMode = hinting },
-                    default);
+                    default)!;
 
                 surface.Canvas.DrawText(blob, 8, 34, paint);
             }
@@ -241,7 +241,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
             }
 
-            return new Avalonia.Skia.SkiaManagedGlyphRunImpl(typeface, emSize, infos, new Point(originX, 34));
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(originX, 34));
         }
 
         private static void AssertChannelInRange(byte value, byte tint, byte background, int x, int y)
@@ -359,7 +359,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
             }
 
-            return new Avalonia.Skia.SkiaManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 34));
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 34));
         }
 
         private static GlyphTypeface LoadTypeface()
