@@ -221,22 +221,44 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var zones = typeface.GridFit.GetWarp(scaleQ);
 
+                var standards = typeface.StemWidths.HorizontalStrokeWidths;
+                var designToPixels = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
                 Span<float> knotFrom = stackalloc float[16];
                 Span<float> knotTo = stackalloc float[16];
-                var knots = StemFit.CollectStrokeKnots(scratch, zones.From, 0.75f, knotFrom, knotTo);
+                var knots = StemFit.CollectStrokeKnots(scratch, zones.From, 0.75f,
+                    standards, designToPixels, knotFrom, knotTo);
 
                 if (knots < 2)
                 {
                     continue;
                 }
 
-                // Thickness-true: every snapped pair is exactly max(1, round(raw thickness)).
+                // Thickness-true under unification: a pair within the cut-in of a font-wide
+                // standard renders at the standard's rounded width, otherwise at its own.
                 for (var k = 0; k + 1 < knots; k += 2)
                 {
                     var raw = knotFrom[k + 1] - knotFrom[k];
                     var snapped = knotTo[k + 1] - knotTo[k];
+                    var expected = Math.Max(1, Math.Round(raw));
+                    var bestDistance = float.MaxValue;
 
-                    Assert.Equal(Math.Max(1, Math.Round(raw)), snapped, 3);
+                    foreach (var standard in standards)
+                    {
+                        var standardPx = standard * designToPixels;
+
+                        if (Math.Abs(raw - standardPx) < bestDistance)
+                        {
+                            bestDistance = Math.Abs(raw - standardPx);
+                            expected = Math.Max(1, Math.Round(standardPx));
+                        }
+                    }
+
+                    if (bestDistance > 1f)
+                    {
+                        expected = Math.Max(1, Math.Round(raw));
+                    }
+
+                    Assert.Equal(expected, snapped, 3);
                 }
 
                 // Probe the bar: wherever the unwarped raster smears it over two partial

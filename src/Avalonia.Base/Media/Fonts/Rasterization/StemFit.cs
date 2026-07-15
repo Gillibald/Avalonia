@@ -28,11 +28,33 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Edge samples closer than this merge into one edge, in final pixels.</summary>
         private const float ClusterGap = 0.6f;
 
-        /// <summary>Plausible stem widths, in final pixels; outside this a pair is not a stem.</summary>
+        /// <summary>Plausible stem widths, in final pixels; outside this a pair is not a stem.
+        /// The ceiling grows with the font's own standards so detection follows the stems up
+        /// the size ramp instead of abandoning them past a fixed width.</summary>
         private const float MinStemWidth = 0.4f;
         private const float MaxStemWidth = 3f;
 
+        private static float PairWidthCeiling(ReadOnlySpan<float> standardsDesign, float designToPixels)
+        {
+            var ceiling = MaxStemWidth;
+
+            for (var i = 0; i < standardsDesign.Length; i++)
+            {
+                ceiling = MathF.Max(ceiling, standardsDesign[i] * designToPixels + WidthCutIn + 0.5f);
+            }
+
+            return ceiling;
+        }
+
         private const int MaxEdges = 16;
+
+        /// <summary>
+        /// The control-value cut-in, in final pixels: a pair whose natural width is within
+        /// this of a font-wide standard renders at the standard's width (TrueType's default
+        /// is 17/16 px). Natural widths win past it, so real differences come back once they
+        /// are big enough to see.
+        /// </summary>
+        private const float WidthCutIn = 1f;
 
         /// <summary>
         /// Builds the x-warp for the captured contours, or identity when no stems qualify.
@@ -40,7 +62,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// horizontally tripled; detection and snapping happen in final-pixel units and the
         /// knots convert back.
         /// </summary>
-        public static AxisWarp BuildWarp(GlyphPathBuilder contours, float subpixelFactor)
+        public static AxisWarp BuildWarp(GlyphPathBuilder contours, float subpixelFactor,
+            ReadOnlySpan<float> standardWidths, float designToPixels)
         {
             Span<float> edgeX = stackalloc float[MaxEdges];
             Span<float> edgeWeight = stackalloc float[MaxEdges];
@@ -59,11 +82,13 @@ namespace Avalonia.Media.Fonts.Rasterization
             Span<float> to = stackalloc float[MaxEdges];
             var knots = 0;
 
+            var widthCeiling = PairWidthCeiling(standardWidths, designToPixels);
+
             for (var i = 0; i + 1 < edgeCount; i++)
             {
                 var width = edgeX[i + 1] - edgeX[i];
 
-                if (width < MinStemWidth || width > MaxStemWidth)
+                if (width < MinStemWidth || width > widthCeiling)
                 {
                     continue;
                 }
@@ -82,7 +107,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 var left = MathF.Round(edgeX[i]);
-                var snappedWidth = MathF.Max(1f, MathF.Round(width));
+                var snappedWidth = UnifyWidth(width, standardWidths, designToPixels);
 
                 // Monotonicity across stems: a knot may never move left of its predecessor.
                 if (knots >= 2 && (edgeX[i] <= from[knots - 1] + 0.01f || left < to[knots - 1]))
@@ -125,19 +150,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static int CollectStrokeKnots(GlyphPathBuilder contours,
             ReadOnlySpan<float> zoneSources, float zoneExclusion,
+            ReadOnlySpan<float> standardWidths, float designToPixels,
             Span<float> knotFrom, Span<float> knotTo)
         {
             Span<float> edgeY = stackalloc float[MaxEdges];
             Span<float> edgeWeight = stackalloc float[MaxEdges];
             Span<float> edgeDirection = stackalloc float[MaxEdges];
             var edgeCount = CollectEdges(contours, 1f, vertical: true, edgeY, edgeWeight, edgeDirection);
+            var widthCeiling = PairWidthCeiling(standardWidths, designToPixels);
             var knots = 0;
 
             for (var i = 0; i + 1 < edgeCount && knots + 1 < knotFrom.Length; i++)
             {
                 var thickness = edgeY[i + 1] - edgeY[i];
 
-                if (thickness < MinStemWidth || thickness > MaxStemWidth)
+                if (thickness < MinStemWidth || thickness > widthCeiling)
                 {
                     continue;
                 }
@@ -164,7 +191,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 var top = MathF.Round(edgeY[i]);
-                var snappedThickness = MathF.Max(1f, MathF.Round(thickness));
+                var snappedThickness = UnifyWidth(thickness, standardWidths, designToPixels);
 
                 knotFrom[knots] = edgeY[i];
                 knotTo[knots] = top;
@@ -176,6 +203,78 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return knots;
+        }
+
+        /// <summary>
+        /// The unified pixel width: the nearest font-wide standard when the natural width is
+        /// within the cut-in, the natural width itself otherwise. One-pixel floor either way.
+        /// </summary>
+        private static float UnifyWidth(float width, ReadOnlySpan<float> standardsDesign,
+            float designToPixels)
+        {
+            var bestDistance = float.MaxValue;
+            var bestStandard = 0f;
+
+            for (var i = 0; i < standardsDesign.Length; i++)
+            {
+                var standard = standardsDesign[i] * designToPixels;
+                var distance = MathF.Abs(width - standard);
+
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    bestStandard = standard;
+                }
+            }
+
+            return bestDistance <= WidthCutIn
+                ? MathF.Max(1f, MathF.Round(bestStandard))
+                : MathF.Max(1f, MathF.Round(width));
+        }
+
+        /// <summary>
+        /// Measures paired stroke widths on captured contours along either axis — the
+        /// measurement half of width unification. Bounds are in capture-space pixels so
+        /// callers can measure at a large reference size for precision; returned widths are
+        /// in the same space. Pairing rules match the snapping detectors (opposite winding,
+        /// weight symmetry), so what gets measured is what would get snapped.
+        /// </summary>
+        public static int MeasurePairWidths(GlyphPathBuilder contours, bool vertical,
+            float minWidth, float maxWidth, Span<float> widths)
+        {
+            Span<float> edgePosition = stackalloc float[MaxEdges];
+            Span<float> edgeWeight = stackalloc float[MaxEdges];
+            Span<float> edgeDirection = stackalloc float[MaxEdges];
+            var edgeCount = CollectEdges(contours, 1f, vertical, edgePosition, edgeWeight, edgeDirection);
+            var count = 0;
+
+            for (var i = 0; i + 1 < edgeCount && count < widths.Length; i++)
+            {
+                var width = edgePosition[i + 1] - edgePosition[i];
+
+                if (width < minWidth || width > maxWidth)
+                {
+                    continue;
+                }
+
+                if (edgeDirection[i] * edgeDirection[i + 1] >= 0)
+                {
+                    continue;
+                }
+
+                var weaker = Math.Min(edgeWeight[i], edgeWeight[i + 1]);
+                var stronger = Math.Max(edgeWeight[i], edgeWeight[i + 1]);
+
+                if (weaker < stronger * 0.3f)
+                {
+                    continue;
+                }
+
+                widths[count++] = width;
+                i++;
+            }
+
+            return count;
         }
 
         private static bool NearAny(ReadOnlySpan<float> positions, float value, float distance)

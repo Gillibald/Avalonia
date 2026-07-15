@@ -73,12 +73,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // opts a draw out (outlines scaled only), keyed separately in the cache.
                 if (key.GridFit)
                 {
-                    scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ));
+                    scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ,
+                        typeface.StemWidths.HorizontalStrokeWidths));
                 }
 
                 if (key.StemSnap)
                 {
-                    scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor: 3));
+                    scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor: 3,
+                        typeface.StemWidths.VerticalStemWidths, scale));
                 }
 
                 var subWidth = width * 3;
@@ -97,12 +99,14 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (key.GridFit)
             {
-                scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ));
+                scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ,
+                    typeface.StemWidths.HorizontalStrokeWidths));
             }
 
             if (key.StemSnap)
             {
-                scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor: 1));
+                scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor: 1,
+                    typeface.StemWidths.VerticalStemWidths, scale));
             }
 
             var alpha = new byte[width * height];

@@ -57,13 +57,18 @@ namespace TextTestApp
 
             if (gridFit)
             {
-                strokeKnots = StemFit.CollectStrokeKnots(unhinted, zones.From, 0.75f, strokeFrom, strokeTo);
-                hinted.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(hinted, scaleQ));
+                var designToPixels = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
+
+                strokeKnots = StemFit.CollectStrokeKnots(unhinted, zones.From, 0.75f,
+                    typeface.StemWidths.HorizontalStrokeWidths, designToPixels, strokeFrom, strokeTo);
+                hinted.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(hinted, scaleQ,
+                    typeface.StemWidths.HorizontalStrokeWidths));
             }
 
             if (stemSnap)
             {
-                hinted.ApplyHorizontalWarp(StemFit.BuildWarp(hinted, 1f));
+                hinted.ApplyHorizontalWarp(StemFit.BuildWarp(hinted, 1f,
+                    typeface.StemWidths.VerticalStemWidths, scale));
             }
 
             var zoom = Math.Clamp(400 / Math.Max(mask.Width, Math.Max(mask.Height, 1)), 6, 30);
@@ -314,12 +319,14 @@ namespace TextTestApp
 
             if (gridFit)
             {
-                contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, scaleQ));
+                contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, scaleQ,
+                    typeface.StemWidths.HorizontalStrokeWidths));
             }
 
             if (stemSnap)
             {
-                contours.ApplyHorizontalWarp(StemFit.BuildWarp(contours, 3f));
+                contours.ApplyHorizontalWarp(StemFit.BuildWarp(contours, 3f,
+                    typeface.StemWidths.VerticalStemWidths, scale));
             }
 
             var raw = new byte[mask.Width * 3 * mask.Height];
