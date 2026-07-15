@@ -82,6 +82,15 @@ namespace TextTestApp
             _modeA.SelectedIndex = 0;   // A: Managed
             _modeB.SelectedIndex = 1;   // B: Backend
 
+            // Every setting re-renders live once the first comparison is up; the button
+            // stays as a manual refresh.
+            _textBox.TextChanged += (_, _) => RenderIfShown();
+
+            foreach (var box in new[] { _modeA, _hintingA, _renderingA, _modeB, _hintingB, _renderingB })
+            {
+                box.SelectionChanged += (_, _) => RenderIfShown();
+            }
+
             _renderButton.Click += (_, _) => Render();
             _saveButton.Click += async (_, _) => await SaveReferenceAsync();
             _loadButton.Click += async (_, _) => await LoadReferenceAsync();
@@ -101,7 +110,11 @@ namespace TextTestApp
             _fontFamily = familyName;
             _fontSize = size;
             _fontText.Text = FormattableString.Invariant($"{familyName}, {size:0.#} px");
+            RenderIfShown();
+        }
 
+        private void RenderIfShown()
+        {
             if (_resultImage.Source is not null)
             {
                 Render();
