@@ -13,18 +13,18 @@
         <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
       </StackPanel>
     </Border>
-    <Grid ColumnDefinitions="Auto,*">
+    <Grid ColumnDefinitions="Auto,260">
       <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto">
         <Image x:Name="GridImage" Stretch="None" VerticalAlignment="Top" HorizontalAlignment="Left"
                Margin="8" />
       </ScrollViewer>
       <Border Grid.Column="1" Padding="12" BorderBrush="#30808080" BorderThickness="1,0,0,0">
-        <StackPanel Spacing="4" MinWidth="230">
+        <StackPanel Spacing="4">
           <TextBlock Text="Selection" FontWeight="SemiBold" FontSize="14" />
           <TextBlock x:Name="InfoText" FontSize="12" TextWrapping="Wrap" />
-          <Button x:Name="OpenButton" Content="Open in Rasterization" Margin="0,8,0,0" IsEnabled="False" />
+          <Button x:Name="OpenButton" Content="Open in inspector" Margin="0,8,0,0" IsEnabled="False" />
           <TextBlock Opacity="0.7" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"
-                     Text="Cells render through the real mask tier. Badges: magenta = COLR color glyph, orange = bitmap strike, red frame = no outline. Double-click a cell to open it in the Rasterization tab." />
+                     Text="Cells render through the real mask tier. Badges: magenta = COLR color glyph, orange = bitmap strike, red frame = no outline. Double-click a cell to open it in the inspector beside." />
         </StackPanel>
       </Border>
     </Grid>
