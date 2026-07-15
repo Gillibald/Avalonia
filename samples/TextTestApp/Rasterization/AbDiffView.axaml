@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TextTestApp.AbDiffView">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
+      <StackPanel Spacing="6">
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="Text" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+          <TextBox x:Name="TextBox" Width="340" Text="Hamburgefonstiv fi ffl 0123" />
+          <TextBlock Text="Font" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+          <TextBox x:Name="FontBox" Width="130" Text="Segoe UI" />
+          <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+          <NumericUpDown x:Name="SizeBox" Width="110" Minimum="6" Maximum="96" Value="13" Increment="1" />
+          <Button x:Name="RenderButton" Content="Render" FontWeight="SemiBold" />
+          <Button x:Name="SaveButton" Content="Save A as reference..." />
+          <Button x:Name="LoadButton" Content="Load reference as B..." />
+          <Button x:Name="ClearButton" Content="Clear reference" IsEnabled="False" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="A:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#D43322" />
+          <ComboBox x:Name="ModeA" Width="110" />
+          <ComboBox x:Name="HintingA" Width="110" />
+          <ComboBox x:Name="RenderingA" Width="150" />
+          <TextBlock Text="B:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#2244CC" Margin="18,0,0,0" />
+          <ComboBox x:Name="ModeB" Width="110" />
+          <ComboBox x:Name="HintingB" Width="110" />
+          <ComboBox x:Name="RenderingB" Width="150" />
+          <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11"
+                     Text="CPU raster target: SubpixelAntialias degrades to grayscale here; LCD comparisons need a live window." />
+        </StackPanel>
+      </StackPanel>
+    </Border>
+    <ScrollViewer HorizontalScrollBarVisibility="Auto">
+      <StackPanel Margin="12" Spacing="8">
+        <TextBlock x:Name="StatsText" FontWeight="SemiBold" />
+        <Image x:Name="ResultImage" Stretch="None" HorizontalAlignment="Left" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>
