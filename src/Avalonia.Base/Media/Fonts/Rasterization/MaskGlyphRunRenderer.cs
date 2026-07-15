@@ -120,8 +120,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             // Light and Strong both take the light auto-fit (there is no bytecode
             // interpreter); Strong additionally snaps every pen to a whole pixel — the
             // GDI-classic positioning trade: maximum stem consistency, spacing rounded.
-            var gridFit = textHintingMode != TextHintingMode.None;
-            var penSnap = textHintingMode == TextHintingMode.Strong;
+            // Unspecified consults the font's gasp table first: a range that requests the
+            // classic grid fit without any ClearType-aware flag is the legacy signature
+            // (Courier New and friends), and DirectWrite answers it with GDI-classic
+            // rendering — full grid fit, snapped pens. An explicit hinting choice wins.
+            var hinting = textHintingMode;
+
+            if (hinting == TextHintingMode.Unspecified &&
+                run.GlyphTypeface.Gasp.WantsFullGridFit(pixelsPerEm))
+            {
+                hinting = TextHintingMode.Strong;
+            }
+
+            var gridFit = hinting != TextHintingMode.None;
+            var penSnap = hinting == TextHintingMode.Strong;
 
             int originX;
             byte originPhase;
