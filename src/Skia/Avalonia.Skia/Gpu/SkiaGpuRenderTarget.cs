@@ -38,7 +38,9 @@ namespace Avalonia.Skia
                 Dpi = SkiaPlatform.DefaultDpi * session.ScaleFactor,
                 ScaleDrawingToDpi = false,
                 Gpu = _skiaGpu,
-                CurrentSession =  session
+                CurrentSession =  session,
+                // GPU render sessions target window swapchains - display surfaces.
+                SurfaceIsDisplay = true,
             };
 
             return new DrawingContextImpl(nfo, session);

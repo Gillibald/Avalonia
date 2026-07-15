@@ -15,7 +15,7 @@ using Avalonia.Threading;
 
 namespace Avalonia.Headless
 {
-    internal class HeadlessWindowImpl : IWindowImpl, IPopupImpl, IFramebufferPlatformSurface, IHeadlessWindow
+    internal class HeadlessWindowImpl : IWindowImpl, IPopupImpl, IOffscreenFramebufferPlatformSurface, IHeadlessWindow
     {
         private static int _nextGlobalZOrder = 1;
 
