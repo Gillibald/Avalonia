@@ -13,7 +13,7 @@ The tier only runs on GPU-backed Skia contexts with the compiled runtime effect,
 
 ![The Slug payload for Inter 'g': em-space quadratic chains under the horizontal and vertical band partition, with curves-per-band counts](images/slug-bands.png)
 
-*(Generated figure: run GlyphRasterDemo with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in the demo's Inspector page.)*
+*(Generated figure: run TextTestApp with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in TextTestApp's Rasterization tab.)*
 
 ## Residency
 

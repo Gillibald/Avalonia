@@ -7,17 +7,17 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Skia;
-using GlyphRasterDemo.Inspector;
 using SkiaSharp;
 
-namespace GlyphRasterDemo
+namespace TextTestApp
 {
     /// <summary>
-    /// The pipeline inspector: live figures for each stage of the managed glyph pipeline
+    /// The rasterization inspector: live figures for each stage of the managed glyph pipeline
     /// (hinting warps, mask anatomy, ClearType stages, the Slug payload) plus a live
-    /// tier-routing overlay for the window's own rendering.
+    /// tier-routing overlay for the window's own rendering. Accepts a character, U+XXXX
+    /// codepoint or #id glyph reference, so ligatures and unmapped glyphs are reachable.
     /// </summary>
-    public partial class InspectorPage : UserControl
+    public partial class RasterizationView : UserControl
     {
         private TextBox _charBox = null!;
         private TextBox _fontBox = null!;
@@ -32,9 +32,10 @@ namespace GlyphRasterDemo
         private Image _lcdImage = null!;
         private Image _slugImage = null!;
         private ContentControl _tierSampleHost = null!;
+        private GlyphTypeface? _overrideTypeface;
         private bool _initialized;
 
-        public InspectorPage()
+        public RasterizationView()
         {
             AvaloniaXamlLoader.Load(this);
 
@@ -56,7 +57,11 @@ namespace GlyphRasterDemo
             _hintingBox.SelectedIndex = 0;
 
             _charBox.TextChanged += (_, _) => Rebuild();
-            _fontBox.TextChanged += (_, _) => Rebuild();
+            _fontBox.TextChanged += (_, _) =>
+            {
+                _overrideTypeface = null;   // a typed family name wins over a pushed instance
+                Rebuild();
+            };
             _sizeSlider.ValueChanged += (_, _) => Rebuild();
             _hintingBox.SelectionChanged += (_, _) => Rebuild();
             _gammaBox.IsCheckedChanged += (_, _) => Rebuild();
@@ -80,40 +85,97 @@ namespace GlyphRasterDemo
             Rebuild();
         }
 
+        /// <summary>Shows a specific glyph of a specific typeface instance — the drill-down
+        /// entry from the shaped buffer and the glyph explorer.</summary>
+        public void ShowGlyph(GlyphTypeface typeface, ushort glyphIndex)
+        {
+            _fontBox.Text = typeface.FamilyName;    // display only; the instance wins
+            _overrideTypeface = typeface;           // set after TextChanged cleared it
+            _charBox.Text = $"#{glyphIndex}";
+        }
+
         protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
         {
-            // Leaving the page must not leave the global overlay on.
+            // Leaving the view must not leave the global overlay on.
             TextTierDiagnostics.TintTiers = false;
             base.OnDetachedFromVisualTree(e);
         }
 
         private void Rebuild()
         {
-            if (!_initialized && _hintingImage is null)
+            if (!_initialized)
             {
                 return;
             }
 
-            var reference = string.IsNullOrEmpty(_charBox.Text) ? 'g' : _charBox.Text![0];
             var size = (float)_sizeSlider.Value;
             var hinting = _hintingBox.SelectedItem is TextHintingMode mode ? mode : TextHintingMode.Light;
 
             _sizeText.Text = $"{size:0.#} px";
 
-            if (ResolveTypeface(_fontBox.Text ?? "Segoe UI") is not { } typeface ||
-                !typeface.CharacterToGlyphMap.ContainsGlyph(reference))
+            var typeface = _overrideTypeface ?? ResolveTypeface(_fontBox.Text ?? "Segoe UI");
+
+            if (typeface is null || !TryParseGlyph(typeface, _charBox.Text, out var glyph, out var label))
             {
                 return;
             }
 
-            SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, reference, size, hinting));
-            SetImage(_maskImage, PipelineFigures.MaskAnatomy(typeface, reference, "Hamburgefonstiv", size));
-            SetImage(_lcdImage, PipelineFigures.ClearTypePipeline(typeface, reference, size,
+            SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, glyph, label, size, hinting));
+            SetImage(_maskImage, PipelineFigures.MaskAnatomy(typeface, glyph, label, "Hamburgefonstiv", size));
+            SetImage(_lcdImage, PipelineFigures.ClearTypePipeline(typeface, glyph, label, size,
                 _bgrBox.IsChecked == true, _gammaBox.IsChecked == true, hinting));
-            SetImage(_slugImage, PipelineFigures.SlugBands(typeface, reference));
+            SetImage(_slugImage, PipelineFigures.SlugBands(typeface, glyph, label));
         }
 
-        private static GlyphTypeface? ResolveTypeface(string familyName)
+        /// <summary>Parses "g" (a character), "U+0067" (a codepoint) or "#74" (a glyph id).</summary>
+        private static bool TryParseGlyph(GlyphTypeface typeface, string? text,
+            out ushort glyph, out string label)
+        {
+            glyph = 0;
+            label = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            text = text.Trim();
+
+            if (text.StartsWith('#') && ushort.TryParse(text.AsSpan(1), out var id))
+            {
+                if (id >= typeface.GlyphCount)
+                {
+                    return false;
+                }
+
+                glyph = id;
+                label = $"#{id}";
+                return true;
+            }
+
+            if ((text.StartsWith("U+", StringComparison.OrdinalIgnoreCase) ||
+                 text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) &&
+                int.TryParse(text.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null, out var codepoint) &&
+                typeface.CharacterToGlyphMap.ContainsGlyph(codepoint))
+            {
+                glyph = typeface.CharacterToGlyphMap[codepoint];
+                label = $"U+{codepoint:X4}";
+                return true;
+            }
+
+            var reference = text[0];
+
+            if (!typeface.CharacterToGlyphMap.ContainsGlyph(reference))
+            {
+                return false;
+            }
+
+            glyph = typeface.CharacterToGlyphMap[reference];
+            label = $"'{reference}'";
+            return true;
+        }
+
+        internal static GlyphTypeface? ResolveTypeface(string familyName)
         {
             if (FontManager.Current.TryGetGlyphTypeface(new Typeface(familyName), out var resolved) &&
                 resolved is GlyphTypeface managed &&

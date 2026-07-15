@@ -28,6 +28,47 @@ namespace TextTestApp
 
             _rendering.TextLineChanged += OnShapeBufferChanged;
             OnShapeBufferChanged();
+
+            // Rasterization tooling: the explorer follows the app's font selection; opening a
+            // glyph from either the explorer or the shaped buffer lands in the Rasterization
+            // tab with the exact typeface instance.
+            _font.SelectionChanged += (_, _) => PushExplorerTypeface();
+            PushExplorerTypeface();
+            _explorer.OpenGlyphRequested += (typeface, glyph) =>
+            {
+                _raster.ShowGlyph(typeface, glyph);
+                _tabs.SelectedIndex = 3;
+            };
+
+            // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
+            // through the same code the Rasterization tab shows live.
+            if (Environment.GetEnvironmentVariable("GLYPH_FIGURE_EXPORT_DIR") is { Length: > 0 } exportDir)
+            {
+                Opened += (_, _) =>
+                {
+                    if (PipelineFigures.LoadRepoInter() is { } inter)
+                    {
+                        PipelineFigures.ExportAll(exportDir, inter);
+                    }
+
+                    // Close after the first render pass settles; closing inside Opened tears
+                    // the lifetime down mid-startup.
+                    Avalonia.Threading.Dispatcher.UIThread.Post(Close,
+                        Avalonia.Threading.DispatcherPriority.Background);
+                };
+            }
+
+            if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
+            {
+                _tabs.SelectedIndex = inspect == "glyphs" ? 2 : 3;
+            }
+        }
+
+        private void PushExplorerTypeface()
+        {
+            var familyName = _font.SelectedValue?.ToString() ?? "Segoe UI";
+
+            _explorer.SetTypeface(RasterizationView.ResolveTypeface(familyName));
         }
 
         private void OnNewWindowClick(object? sender, RoutedEventArgs e)
@@ -196,6 +237,17 @@ namespace TextTestApp
 
                 border.Child = row;
                 border.Tag = offsetBounds;
+
+                // Drill-down: shaping to pixels — double-tap opens this glyph, on this exact
+                // typeface instance, in the Rasterization tab.
+                GlyphTypeface rowTypeface = shapedRun.GlyphRun.GlyphTypeface;
+                ushort rowGlyph = info.GlyphIndex;
+                border.DoubleTapped += (_, _) =>
+                {
+                    _raster.ShowGlyph(rowTypeface, rowGlyph);
+                    _tabs.SelectedIndex = 3;
+                };
+
                 _buffer.Items.Add(border);
                 
                 currentX += glyphInfos[i].GlyphAdvance;
