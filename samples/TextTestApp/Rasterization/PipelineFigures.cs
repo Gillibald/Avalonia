@@ -392,7 +392,7 @@ namespace TextTestApp
             }
 
             // Panel 5: composite black-on-white, per channel: 255 - g(coverage).
-            var table = gamma ? MaskGamma.GetTable(0, 0, 0) : null;
+            var table = gamma ? MaskGamma.GetLcdTable(0, 0, 0) : null;
             var compositeX = 10 + raw3Width + gap + (panelWidth + gap) * 3;
 
             for (var y = 0; y < mask.Height; y++)

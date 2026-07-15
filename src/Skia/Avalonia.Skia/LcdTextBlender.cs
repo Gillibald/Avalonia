@@ -31,6 +31,7 @@ uniform half  lumDst;
 uniform half  linSrc;
 uniform half  linDst;
 uniform half  nearEqual;
+uniform half  invGamma;
 
 half3 correct(half3 coverage) {
     half3 boosted = coverage + (half3(1.0) - coverage) * kContrast * coverage;
@@ -38,7 +39,7 @@ half3 correct(half3 coverage) {
         return boosted;
     }
     half3 linOut = linSrc * boosted + (half3(1.0) - boosted) * linDst;
-    half3 outv = pow(linOut, half3(1.0 / 2.2));
+    half3 outv = pow(linOut, half3(invGamma));
     return clamp((outv - half3(lumDst)) / half3(lumSrc - lumDst), half3(0.0), half3(1.0));
 }
 
@@ -87,7 +88,7 @@ half4 main(half4 src, half4 dst) {
             var r = (byte)(tintArgb >> 16);
             var g = (byte)(tintArgb >> 8);
             var b = (byte)tintArgb;
-            var parameters = MaskGamma.GetShaderParameters(r, g, b);
+            var parameters = MaskGamma.GetLcdShaderParameters(r, g, b);
 
             var builder = new SKRuntimeBlenderBuilder(s_effect!);
 
@@ -98,6 +99,7 @@ half4 main(half4 src, half4 dst) {
             builder.Uniforms["linSrc"] = parameters.LinSrc;
             builder.Uniforms["linDst"] = parameters.LinDst;
             builder.Uniforms["nearEqual"] = parameters.NearEqual ? 1f : 0f;
+            builder.Uniforms["invGamma"] = parameters.InverseGamma;
 
             return builder.Build();
         }
