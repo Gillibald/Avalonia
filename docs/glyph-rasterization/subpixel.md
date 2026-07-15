@@ -6,6 +6,7 @@ The managed path renders ClearType-style subpixel-antialiased text on both GPU a
 
 Subpixel blending writes per-channel colors that only look right composited against known-opaque content in a known stripe orientation. `ResolveMaskMode` in [MaskGlyphRunRenderer](../../src/Avalonia.Base/Media/Fonts/Rasterization/MaskGlyphRunRenderer.cs) asks the drawing context via `IAlphaGlyphMaskContext.TryGetLcdGeometry`, which on Skia returns true only when all of the following hold:
 
+- the target is a display-bound surface (window framebuffer or swapchain; `DrawingContextImpl.CreateInfo.SurfaceIsDisplay`). Offscreen targets - `RenderTargetBitmap`, `WriteableBitmap`, headless windows, capture harnesses - render grayscale even for an explicit `SubpixelAntialias` request: their output is composed, resampled or read back with alpha, where per-channel coverage has no valid interpretation (the DirectWrite rule);
 - the surface declares horizontal RGB or BGR stripe geometry (`SKSurfaceProperties.PixelGeometry`, seeded from the render target; picture recording targets disable subpixel text explicitly);
 - the draw is not inside any save layer (the context counts every `SaveLayer`/`Restore` pair) - layer content gets composited again, which would double-blend fringes;
 - on GPU, the runtime blender compiled; on CPU, no tracked ambient opacity is active (the fixed two-pass payloads cannot fold opacity in; the GPU path folds it into the blender tint and stays eligible);

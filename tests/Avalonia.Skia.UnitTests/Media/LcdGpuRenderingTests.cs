@@ -58,6 +58,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Surface = surface,
                 GrContext = gpu.GrContext,
                 Dpi = new Vector(96, 96),
+                SurfaceIsDisplay = true,
             });
 
             surface!.Canvas.Clear(background);
@@ -162,6 +163,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Surface = surface,
                 GrContext = gpu.GrContext,
                 Dpi = new Vector(96, 96),
+                SurfaceIsDisplay = true,
             });
 
             using var fenceBitmap = new SKBitmap(new SKImageInfo(1, 1, SKColorType.Bgra8888, SKAlphaType.Premul));
@@ -246,6 +248,7 @@ namespace Avalonia.Skia.UnitTests.Media
                        Surface = surface,
                        GrContext = gpu.GrContext,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 surface.Canvas.Clear(SKColors.White);

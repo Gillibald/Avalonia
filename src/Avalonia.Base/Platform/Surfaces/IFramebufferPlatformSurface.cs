@@ -8,6 +8,17 @@ namespace Avalonia.Platform.Surfaces
     {
         IFramebufferRenderTarget CreateFramebufferRenderTarget();
     }
+
+    /// <summary>
+    /// Marks a framebuffer surface whose contents are captured or read back (bitmap targets,
+    /// headless windows, test harnesses) rather than presented on a monitor. Subpixel (LCD)
+    /// text is not eligible on such surfaces: their output may be composed, resampled or kept
+    /// with alpha, where per-channel coverage has no valid interpretation. Framebuffers
+    /// without this marker are treated as display-bound.
+    /// </summary>
+    internal interface IOffscreenFramebufferPlatformSurface : IFramebufferPlatformSurface
+    {
+    }
     
     
     [PrivateApi]

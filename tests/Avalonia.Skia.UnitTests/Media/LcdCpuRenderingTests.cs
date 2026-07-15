@@ -144,6 +144,7 @@ namespace Avalonia.Skia.UnitTests.Media
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 surface.Canvas.Clear(background);
@@ -223,6 +224,7 @@ namespace Avalonia.Skia.UnitTests.Media
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 surface.Canvas.Clear(SKColors.White);
@@ -257,6 +259,7 @@ namespace Avalonia.Skia.UnitTests.Media
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 surface.Canvas.Clear(SKColors.White);
@@ -316,6 +319,7 @@ namespace Avalonia.Skia.UnitTests.Media
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 surface.Canvas.Clear(SKColors.White);
