@@ -4,36 +4,42 @@
   <DockPanel>
     <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <Button x:Name="BackButton" Content="&#x25C0; Glyphs" />
         <TextBlock x:Name="GlyphText" VerticalAlignment="Center" FontWeight="SemiBold" MinWidth="230"
                    Text="select a glyph in the explorer" />
         <TextBlock Text="Hinting" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
         <ComboBox x:Name="HintingBox" Width="100" />
         <CheckBox x:Name="GammaBox" Content="Gamma" IsChecked="True" />
         <CheckBox x:Name="BgrBox" Content="BGR" />
-        <CheckBox x:Name="TintTiersBox" Content="Tint tiers" />
+        <CheckBox x:Name="TintTiersBox" Content="Tint tiers"
+                  ToolTip.Tip="Badges every run in the window by the tier that drew it: green run masks, magenta Slug, orange native blob." />
       </StackPanel>
     </Border>
-    <ScrollViewer>
-      <StackPanel Margin="12" Spacing="6">
-        <TextBlock Text="1. Hinting — zones, stroke pairs, and the warp" FontSize="15" FontWeight="SemiBold" />
-        <TextBlock Opacity="0.7" FontSize="12"
-                   Text="Drag the size slider and watch the cap and ascender rows merge and split; the blue outline is what actually rasterizes." />
-        <Image x:Name="HintingImage" Stretch="None" HorizontalAlignment="Left" />
-
-        <TextBlock Text="2. Masks — the cached unit and the composed run" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
-        <Image x:Name="MaskImage" Stretch="None" HorizontalAlignment="Left" />
-
-        <TextBlock Text="3. ClearType — 3x raster, stripe channels, composite" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
-        <Image x:Name="LcdImage" Stretch="None" HorizontalAlignment="Left" />
-
-        <TextBlock Text="4. Slug payload — em-space curves and the band partition the shader walks" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
-        <Image x:Name="SlugImage" Stretch="None" HorizontalAlignment="Left" />
-
-        <TextBlock Text="5. Tier routing (live rendering of this window)" FontSize="15" FontWeight="SemiBold" Margin="0,18,0,0" />
-        <TextBlock Opacity="0.7" FontSize="12"
-                   Text="Check 'Tint tiers' above: every run gets a badge from the tier that drew it — green run masks, magenta Slug vector tier, orange native blob. Managed tiers engage when the app runs with TextRasterizationMode.Managed." />
-        <ContentControl x:Name="TierSampleHost" />
-      </StackPanel>
-    </ScrollViewer>
+    <Grid RowDefinitions="*,*" ColumnDefinitions="*,*">
+      <DockPanel Grid.Row="0" Grid.Column="0" Margin="8,4,4,4">
+        <TextBlock DockPanel.Dock="Top" Text="Hinting — zones, stroke pairs, and the warp" FontWeight="SemiBold" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <Image x:Name="HintingImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
+        </ScrollViewer>
+      </DockPanel>
+      <DockPanel Grid.Row="0" Grid.Column="1" Margin="4,4,8,4">
+        <TextBlock DockPanel.Dock="Top" Text="Masks — the cached unit and the composed run" FontWeight="SemiBold" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <Image x:Name="MaskImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
+        </ScrollViewer>
+      </DockPanel>
+      <DockPanel Grid.Row="1" Grid.Column="0" Margin="8,4,4,8">
+        <TextBlock DockPanel.Dock="Top" Text="ClearType — 3x raster, stripe channels, composite" FontWeight="SemiBold" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <Image x:Name="LcdImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
+        </ScrollViewer>
+      </DockPanel>
+      <DockPanel Grid.Row="1" Grid.Column="1" Margin="4,4,8,8">
+        <TextBlock DockPanel.Dock="Top" Text="Slug payload — em-space curves and bands" FontWeight="SemiBold" />
+        <ScrollViewer HorizontalScrollBarVisibility="Auto">
+          <Image x:Name="SlugImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
+        </ScrollViewer>
+      </DockPanel>
+    </Grid>
   </DockPanel>
 </UserControl>
