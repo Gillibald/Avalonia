@@ -319,7 +319,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
                 }
 
-                var table = MaskGamma.GetTable(r, g, b);
+                var table = MaskGamma.GetLcdTable(r, g, b);
                 var renderInterface = AvaloniaLocator.Current.GetRequiredService<Avalonia.Platform.IPlatformRenderInterface>();
 
                 var multiply = renderInterface.CreateWriteableBitmap(
