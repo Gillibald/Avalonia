@@ -19,7 +19,7 @@ Every failed condition degrades to grayscale antialiasing, never to wrong blendi
 
 ![The ClearType stages: the 3x analytic raster, the three FIR-filtered stripe channels, and the gamma-corrected composite](images/cleartype-pipeline.png)
 
-*(Generated figure: run GlyphRasterDemo with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in the demo's Inspector page.)*
+*(Generated figure: run TextTestApp with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in TextTestApp's Rasterization tab.)*
 
 ## GPU path: runtime blender
 

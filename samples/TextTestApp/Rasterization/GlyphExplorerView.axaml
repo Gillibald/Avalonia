@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TextTestApp.GlyphExplorerView">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
+      <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+        <TextBlock Text="Filter" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <ComboBox x:Name="FilterBox" Width="140" />
+        <Button x:Name="PrevButton" Content="&#x25C0;" />
+        <TextBlock x:Name="PageText" VerticalAlignment="Center" FontWeight="SemiBold" MinWidth="110"
+                   TextAlignment="Center" />
+        <Button x:Name="NextButton" Content="&#x25B6;" />
+        <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+      </StackPanel>
+    </Border>
+    <Grid ColumnDefinitions="Auto,*">
+      <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto">
+        <Image x:Name="GridImage" Stretch="None" VerticalAlignment="Top" HorizontalAlignment="Left"
+               Margin="8" />
+      </ScrollViewer>
+      <Border Grid.Column="1" Padding="12" BorderBrush="#30808080" BorderThickness="1,0,0,0">
+        <StackPanel Spacing="4" MinWidth="230">
+          <TextBlock Text="Selection" FontWeight="SemiBold" FontSize="14" />
+          <TextBlock x:Name="InfoText" FontSize="12" TextWrapping="Wrap" />
+          <Button x:Name="OpenButton" Content="Open in Rasterization" Margin="0,8,0,0" IsEnabled="False" />
+          <TextBlock Opacity="0.7" FontSize="11" Margin="0,14,0,0" TextWrapping="Wrap"
+                     Text="Cells render through the real mask tier. Badges: magenta = COLR color glyph, orange = bitmap strike, red frame = no outline. Double-click a cell to open it in the Rasterization tab." />
+        </StackPanel>
+      </Border>
+    </Grid>
+  </DockPanel>
+</UserControl>

@@ -6,7 +6,7 @@ using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Fonts.Rasterization.Slug;
 using SkiaSharp;
 
-namespace GlyphRasterDemo.Inspector
+namespace TextTestApp
 {
     /// <summary>
     /// The rendering core of the pipeline inspector: each method draws one stage of the
@@ -31,10 +31,9 @@ namespace GlyphRasterDemo.Inspector
         /// after (blue) the hinting warps, the zone rows (green, with their pre-snap source
         /// positions dashed) and the per-glyph stroke pairs (orange).
         /// </summary>
-        public static SKBitmap HintingAnatomy(GlyphTypeface typeface, char reference, float size,
+        public static SKBitmap HintingAnatomy(GlyphTypeface typeface, ushort glyph, string label, float size,
             TextHintingMode hinting)
         {
-            var glyph = typeface.CharacterToGlyphMap[reference];
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var gridFit = hinting != TextHintingMode.None;
@@ -168,7 +167,7 @@ namespace GlyphRasterDemo.Inspector
             using (var text = new SKPaint { Color = SKColors.Black })
             {
                 canvas.DrawText(
-                    Inv($"'{reference}' {size:0.#}px  hinting {hinting}  |  red unhinted, blue grid-fit, green zones (dashed = source), orange stroke pairs"),
+                    Inv($"{label} {size:0.#}px  hinting {hinting}  |  red unhinted, blue grid-fit, green zones (dashed = source), orange stroke pairs"),
                     6, height - 10, SKTextAlign.Left, font, text);
             }
 
@@ -179,9 +178,8 @@ namespace GlyphRasterDemo.Inspector
         /// Mask anatomy: the focus glyph's mask magnified with its apron marked, the cache key
         /// fields, and a run composed from per-glyph masks shown at 1x and 4x.
         /// </summary>
-        public static SKBitmap MaskAnatomy(GlyphTypeface typeface, char reference, string runText, float size)
+        public static SKBitmap MaskAnatomy(GlyphTypeface typeface, ushort glyph, string label, string runText, float size)
         {
-            var glyph = typeface.CharacterToGlyphMap[reference];
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
@@ -259,7 +257,7 @@ namespace GlyphRasterDemo.Inspector
             {
                 var infoX = Math.Max(10 + mask.Width * zoom + 24, 180);
 
-                canvas.DrawText($"'{reference}' mask, dashed = {GlyphMasks.Apron}px apron", 10, 18, SKTextAlign.Left, font, text);
+                canvas.DrawText($"{label} mask, dashed = {GlyphMasks.Apron}px apron", 10, 18, SKTextAlign.Left, font, text);
                 canvas.DrawText(Inv($"GlyphMaskKey: glyph {glyph}, scaleQ {scaleQ} ({scaleQ / GlyphMaskKey.ScaleQuantum:0.###} px/em)"), infoX, 46, SKTextAlign.Left, font, text);
                 canvas.DrawText($"phase 0 of {GlyphMaskKey.PhaseCount}, mode Antialiased, GridFit, no StemSnap", infoX, 66, SKTextAlign.Left, font, text);
                 canvas.DrawText($"mask {mask.Width}x{mask.Height} at ({mask.Left},{mask.Top}), pen-relative", infoX, 86, SKTextAlign.Left, font, text);
@@ -290,10 +288,9 @@ namespace GlyphRasterDemo.Inspector
         /// FIR-filtered stripe channels, and the final composite on white (optionally without
         /// gamma correction, optionally BGR stripe order).
         /// </summary>
-        public static SKBitmap ClearTypePipeline(GlyphTypeface typeface, char reference, float size,
+        public static SKBitmap ClearTypePipeline(GlyphTypeface typeface, ushort glyph, string label, float size,
             bool bgr, bool gamma, TextHintingMode hinting)
         {
-            var glyph = typeface.CharacterToGlyphMap[reference];
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var gridFit = hinting != TextHintingMode.None;
@@ -414,7 +411,7 @@ namespace GlyphRasterDemo.Inspector
             canvas.DrawText($"composite ({(bgr ? "BGR" : "RGB")}, gamma {(gamma ? "on" : "off")})",
                 compositeX, 18, SKTextAlign.Left, font, text);
             canvas.DrawText(
-                Inv($"'{reference}' {size:0.#}px  |  3x raster → (1,2,3,2,1)/9 FIR per stripe → interleaved RGB mask → per-channel blend"),
+                Inv($"{label} {size:0.#}px  |  3x raster → (1,2,3,2,1)/9 FIR per stripe → interleaved RGB mask → per-channel blend"),
                 10, height - 10, SKTextAlign.Left, font, text);
 
             return bitmap;
@@ -424,9 +421,8 @@ namespace GlyphRasterDemo.Inspector
         /// The Slug payload for one glyph: em-space quadratic chains with the horizontal and
         /// vertical band partition the shader walks, plus the payload statistics.
         /// </summary>
-        public static SKBitmap SlugBands(GlyphTypeface typeface, char reference)
+        public static SKBitmap SlugBands(GlyphTypeface typeface, ushort glyph, string label)
         {
-            var glyph = typeface.CharacterToGlyphMap[reference];
             var sink = new SlugContourSink();
 
             sink.Reset();
@@ -446,7 +442,7 @@ namespace GlyphRasterDemo.Inspector
 
             if (data is null)
             {
-                canvas.DrawText($"'{reference}': no Slug payload (no contours or caps exceeded — the tier declines)",
+                canvas.DrawText($"{label}: no Slug payload (no contours or caps exceeded — the tier declines)",
                     10, 30, SKTextAlign.Left, font, text);
                 return bitmap;
             }
@@ -524,7 +520,7 @@ namespace GlyphRasterDemo.Inspector
             }
 
             canvas.DrawText(
-                $"'{reference}': {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
+                $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
                 $"{data.HorizontalBandCount}x{data.VerticalBandCount} bands (worst list {worstBand} of {SlugTexelSerializer.MaxBandListLength}), " +
                 $"payload {data.RetainedBytes} B, {data.FillRule}",
                 10, 630 - 60, SKTextAlign.Left, font, text);
@@ -575,11 +571,13 @@ namespace GlyphRasterDemo.Inspector
         {
             Directory.CreateDirectory(directory);
 
-            Save(HintingAnatomy(typeface, 'g', 12, TextHintingMode.Light), Path.Combine(directory, "hinting-anatomy.png"));
-            Save(MaskAnatomy(typeface, 'g', "Hamburg", 13), Path.Combine(directory, "mask-anatomy.png"));
-            Save(ClearTypePipeline(typeface, 'e', 13, bgr: false, gamma: true, TextHintingMode.Light),
-                Path.Combine(directory, "cleartype-pipeline.png"));
-            Save(SlugBands(typeface, 'g'), Path.Combine(directory, "slug-bands.png"));
+            Save(HintingAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", 12, TextHintingMode.Light),
+                Path.Combine(directory, "hinting-anatomy.png"));
+            Save(MaskAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", "Hamburg", 13),
+                Path.Combine(directory, "mask-anatomy.png"));
+            Save(ClearTypePipeline(typeface, typeface.CharacterToGlyphMap['e'], "'e'", 13, bgr: false, gamma: true,
+                TextHintingMode.Light), Path.Combine(directory, "cleartype-pipeline.png"));
+            Save(SlugBands(typeface, typeface.CharacterToGlyphMap['g'], "'g'"), Path.Combine(directory, "slug-bands.png"));
         }
 
         private static void Save(SKBitmap bitmap, string path)
