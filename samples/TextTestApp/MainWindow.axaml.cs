@@ -73,6 +73,7 @@ namespace TextTestApp
                     "waterfall" => 2,
                     "fringes" => 3,
                     "ab" => 4,
+                    "color" => 5,
                     _ => 1,
                 };
 
@@ -106,6 +107,8 @@ namespace TextTestApp
             _waterfall.SetTypeface(typeface);
             _fringes.SetContext(typeface, size);
             _abDiff.SetFont(familyName, size);
+            _colorView.SetTypeface(typeface);
+            _colorTab.IsEnabled = typeface is { } t && (t.ColorTable is not null || t.BitmapSource is not null);
         }
 
         private void OnNewWindowClick(object? sender, RoutedEventArgs e)

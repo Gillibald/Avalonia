@@ -15,7 +15,8 @@ using SkiaSharp;
 namespace TextTestApp
 {
     /// <summary>
-    /// A grid over the font's glyph-id space, rendered through the real mask tier, with
+    /// A grid over the font's glyph-id space — monochrome glyphs through the real mask
+    /// tier, color glyphs (COLR v0/v1, bitmap strikes) through their color drawings — with
     /// per-glyph capability badges (COLR color glyph, bitmap strike, missing outline) and
     /// filters over exactly those categories — the "show me every glyph that exercises
     /// pipeline X" view. Selection shows identity, metrics and Slug payload status;
@@ -208,36 +209,82 @@ namespace TextTestApp
                 var scratch = new GlyphPathBuilder();
                 var scaleQ = GlyphMaskKey.QuantizeScale(CellRenderSize);
                 var first = _page * PageSize;
+                var drawingOptions = new GlyphDrawingOptions { PixelSize = (int)CellRenderSize };
+                var drawingScale = (double)CellRenderSize / typeface.Metrics.DesignEmHeight;
 
+                // Ink pass: color glyphs render through their color drawing (the same
+                // IGlyphDrawing path the renderer splits them onto), everything else through
+                // the mono mask tier. The DrawingContext wrapper is disposed before the
+                // chrome pass so the raw canvas state is clean for labels and badges.
+                using (var contextImpl = Avalonia.Skia.Helpers.DrawingContextHelper.WrapSkiaCanvas(
+                           canvas, new Vector(96, 96)))
+                using (var drawContext = new PlatformDrawingContext(contextImpl, ownsImpl: false))
+                {
+                    for (var i = 0; i < PageSize && first + i < _glyphs.Count; i++)
+                    {
+                        var glyph = _glyphs[first + i];
+                        var cx = (i % Columns) * Cell;
+                        var cy = (i / Columns) * Cell;
+
+                        if (typeface.GetGlyphDrawing(glyph, drawingOptions) is { } drawing &&
+                            drawing.Bounds is { Width: > 0, Height: > 0 } bounds)
+                        {
+                            var fit = drawingScale;
+
+                            if (bounds.Width * fit > Cell - 4)
+                            {
+                                fit = (Cell - 4) / bounds.Width;
+                            }
+
+                            if (bounds.Height * fit > Cell - 13)
+                            {
+                                fit = Math.Min(fit, (Cell - 13) / bounds.Height);
+                            }
+
+                            var penX = cx + (Cell - bounds.Width * fit) / 2 - bounds.X * fit;
+                            var penY = cy + (Cell - 11 - bounds.Height * fit) / 2 - bounds.Y * fit;
+
+                            using (drawContext.PushTransform(
+                                       Matrix.CreateScale(fit, fit) * Matrix.CreateTranslation(penX, penY)))
+                            {
+                                drawing.Draw(drawContext, default);
+                            }
+
+                            continue;
+                        }
+
+                        var mask = GlyphMasks.Build(typeface, scratch,
+                            new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased));
+
+                        if (!mask.IsEmpty)
+                        {
+                            // Center the ink in the cell's upper region; the label owns the bottom.
+                            var originX = cx + (Cell - mask.Width) / 2;
+                            var originY = cy + (Cell - 11 - mask.Height) / 2;
+
+                            for (var y = 0; y < mask.Height; y++)
+                            {
+                                for (var x = 0; x < mask.Width; x++)
+                                {
+                                    var coverage = mask.Alpha[y * mask.Width + x];
+
+                                    if (coverage > 0)
+                                    {
+                                        cellPaint.Color = new SKColor(0x20, 0x20, 0x20, coverage);
+                                        canvas.DrawRect(originX + x, originY + y, 1, 1, cellPaint);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Chrome pass: labels, badges and selection on the raw canvas.
                 for (var i = 0; i < PageSize && first + i < _glyphs.Count; i++)
                 {
                     var glyph = _glyphs[first + i];
                     var cx = (i % Columns) * Cell;
                     var cy = (i / Columns) * Cell;
-
-                    var mask = GlyphMasks.Build(typeface, scratch,
-                        new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased));
-
-                    if (!mask.IsEmpty)
-                    {
-                        // Center the ink in the cell's upper region; the label owns the bottom.
-                        var originX = cx + (Cell - mask.Width) / 2;
-                        var originY = cy + (Cell - 11 - mask.Height) / 2;
-
-                        for (var y = 0; y < mask.Height; y++)
-                        {
-                            for (var x = 0; x < mask.Width; x++)
-                            {
-                                var coverage = mask.Alpha[y * mask.Width + x];
-
-                                if (coverage > 0)
-                                {
-                                    cellPaint.Color = new SKColor(0x20, 0x20, 0x20, coverage);
-                                    canvas.DrawRect(originX + x, originY + y, 1, 1, cellPaint);
-                                }
-                            }
-                        }
-                    }
 
                     canvas.DrawText($"{glyph}", cx + 3, cy + Cell - 3, SKTextAlign.Left, labelFont, label);
 
