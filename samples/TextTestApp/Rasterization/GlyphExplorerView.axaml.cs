@@ -33,7 +33,6 @@ namespace TextTestApp
         private ComboBox _filterBox = null!;
         private Button _prevButton = null!;
         private Button _nextButton = null!;
-        private Button _openButton = null!;
         private TextBlock _pageText = null!;
         private TextBlock _summaryText = null!;
         private TextBlock _infoText = null!;
@@ -45,8 +44,9 @@ namespace TextTestApp
         private int _page;
         private int _selectedIndex = -1;
 
-        /// <summary>Raised when the user drills into a glyph (double-click or the button).</summary>
-        public event Action<GlyphTypeface, ushort>? OpenGlyphRequested;
+        /// <summary>Raised when a cell is selected; the label carries the first mapped
+        /// character when the reverse cmap knows one.</summary>
+        public event Action<GlyphTypeface, ushort, string?>? GlyphSelected;
 
         public GlyphExplorerView()
         {
@@ -55,7 +55,6 @@ namespace TextTestApp
             _filterBox = this.FindControl<ComboBox>("FilterBox")!;
             _prevButton = this.FindControl<Button>("PrevButton")!;
             _nextButton = this.FindControl<Button>("NextButton")!;
-            _openButton = this.FindControl<Button>("OpenButton")!;
             _pageText = this.FindControl<TextBlock>("PageText")!;
             _summaryText = this.FindControl<TextBlock>("SummaryText")!;
             _infoText = this.FindControl<TextBlock>("InfoText")!;
@@ -66,9 +65,7 @@ namespace TextTestApp
             _filterBox.SelectionChanged += (_, _) => RebuildList();
             _prevButton.Click += (_, _) => ShowPage(_page - 1);
             _nextButton.Click += (_, _) => ShowPage(_page + 1);
-            _openButton.Click += (_, _) => OpenSelected();
             _gridImage.PointerPressed += OnGridPressed;
-            _gridImage.DoubleTapped += (_, _) => OpenSelected();
         }
 
         public void SetTypeface(GlyphTypeface? typeface)
@@ -126,7 +123,6 @@ namespace TextTestApp
             _page = Math.Clamp(page, 0, pageCount - 1);
             _pageText.Text = $"page {_page + 1} / {pageCount}";
             _selectedIndex = -1;
-            _openButton.IsEnabled = false;
             _infoText.Text = string.Empty;
 
             RenderPage();
@@ -258,16 +254,18 @@ namespace TextTestApp
             }
 
             _selectedIndex = index;
-            _openButton.IsEnabled = true;
             UpdateInfo();
             RenderPage();
-        }
 
-        private void OpenSelected()
-        {
-            if (_typeface is { } typeface && _selectedIndex >= 0 && _selectedIndex < _glyphs.Count)
+            if (_typeface is { } typeface)
             {
-                OpenGlyphRequested?.Invoke(typeface, _glyphs[_selectedIndex]);
+                var glyph = _glyphs[index];
+                var codepoints = GetCodepoints(typeface, glyph);
+                var label = codepoints.Count > 0 && codepoints[0] is >= 0x20
+                    ? $"'{char.ConvertFromUtf32(codepoints[0])}'"
+                    : null;
+
+                GlyphSelected?.Invoke(typeface, glyph, label);
             }
         }
 
