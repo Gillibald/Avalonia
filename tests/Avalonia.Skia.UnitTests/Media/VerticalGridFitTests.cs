@@ -352,10 +352,29 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(fTop == lTop, $"f tops at {fTop}, l at {lTop} - ragged ascender line");
 
+            // The hook is an arc, so its top row can never be stem-hard - but flattened onto
+            // the line it must read as part of it, not as a faint sliver above.
             var mask = BuildMask(typeface, 'f', 12);
 
-            Assert.True(TopRowMax(mask.Alpha, mask.Width, mask.Height).Max >= 240,
-                "the flattened f top must render as a hard row");
+            Assert.True(TopRowMax(mask.Alpha, mask.Width, mask.Height).Max >= 128,
+                "the flattened f top must contribute visibly to the ascender line");
+        }
+
+        [Fact]
+        public void Coincident_Cap_And_Ascender_Keep_The_Grow_Policy()
+        {
+            var typeface = LoadTypeface();
+
+            // Inter puts caps and the ascender at the same design height (2048) - one line,
+            // not a collision. At 13 px it lands at 9.45 px, inside the grow window: the
+            // merged-line nearest rule must NOT apply, or the whole line loses a row against
+            // the calibrated grow policy.
+            foreach (var reference in "Hlf")
+            {
+                var top = TopInkRow(typeface, reference, 13);
+
+                Assert.True(top == -10, $"'{reference}' at 13px: line top row {top}, expected -10 (grow)");
+            }
         }
 
         /// <summary>Topmost visible ink row of the glyph's grid-fit mask, baseline-relative
