@@ -77,7 +77,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(snapshot.ReadPixels(info, readback.GetPixels(), readback.RowBytes, 0, 0));
 
-            var parameters = MaskGamma.GetShaderParameters(0xCC, 0x20, 0x10);
+            var parameters = MaskGamma.GetLcdShaderParameters(0xCC, 0x20, 0x10);
 
             for (var x = 0; x < 4; x++)
             {
@@ -313,7 +313,7 @@ namespace Avalonia.Skia.UnitTests.Media
             else
             {
                 var linOut = parameters.LinSrc * boosted + (1.0 - boosted) * parameters.LinDst;
-                var output = Math.Pow(linOut, 1.0 / MaskGamma.Gamma);
+                var output = Math.Pow(linOut, 1.0 / MaskGamma.LcdGamma);
 
                 corrected = Math.Clamp((output - parameters.LumDst) / (parameters.LumSrc - parameters.LumDst), 0.0, 1.0);
             }
