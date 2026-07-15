@@ -335,7 +335,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
             }
 
-            return new Avalonia.Skia.SkiaManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 34));
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, 34));
         }
 
         private static GlyphTypeface LoadTypeface()

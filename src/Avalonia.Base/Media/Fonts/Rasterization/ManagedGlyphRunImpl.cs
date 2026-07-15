@@ -395,6 +395,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal IDisposable? SlugRunArtifact;
 
+        /// <summary>
+        /// Backend-owned native-fallback state (on Skia: the lazily built text blob cache for
+        /// triage-rejected draws), disposal-tied to the run like the Slug artifact.
+        /// </summary>
+        internal IDisposable? NativeTextArtifact;
+
         public virtual void Dispose()
         {
             if (_disposed)
@@ -409,6 +415,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             SlugRunArtifact?.Dispose();
             SlugRunArtifact = null;
+            NativeTextArtifact?.Dispose();
+            NativeTextArtifact = null;
 
             ArrayPool<ushort>.Shared.Return(_indices);
             ArrayPool<float>.Shared.Return(_positions);

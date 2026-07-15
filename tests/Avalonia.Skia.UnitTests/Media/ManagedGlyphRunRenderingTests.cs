@@ -66,7 +66,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using var scope = CreateEnvironment(out var typeface);
 
-            using var managed = (SkiaManagedGlyphRunImpl)CreateRun(typeface, TextRasterizationMode.Managed);
+            using var managed = (ManagedGlyphRunImpl)CreateRun(typeface, TextRasterizationMode.Managed);
             using var backend = (GlyphRunImpl)CreateRun(typeface, TextRasterizationMode.Backend);
 
             // The managed intercepts come from our own flattened outlines rather than the
@@ -287,7 +287,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var origin = new Point(8, 32);
 
             return mode == TextRasterizationMode.Managed
-                ? new SkiaManagedGlyphRunImpl(typeface, emSize, infos, origin)
+                ? new ManagedGlyphRunImpl(typeface, emSize, infos, origin)
                 : new GlyphRunImpl(typeface, emSize, infos, origin);
         }
 

@@ -812,7 +812,7 @@ namespace TextTestApp
 
         /// <summary>A managed glyph run for direct pipeline draws (no shaping — cmap and
         /// advances only, which is exactly what the rasterization tools compare).</summary>
-        internal static Avalonia.Skia.SkiaManagedGlyphRunImpl CreateRun(GlyphTypeface typeface,
+        internal static ManagedGlyphRunImpl CreateRun(GlyphTypeface typeface,
             string text, double emSize, Point origin)
         {
             var scale = emSize / typeface.Metrics.DesignEmHeight;
@@ -832,7 +832,7 @@ namespace TextTestApp
                 infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
             }
 
-            return new Avalonia.Skia.SkiaManagedGlyphRunImpl(typeface, emSize, infos, origin);
+            return new ManagedGlyphRunImpl(typeface, emSize, infos, origin);
         }
 
         /// <summary>Writes the deterministic Inter figures the docs embed.</summary>
