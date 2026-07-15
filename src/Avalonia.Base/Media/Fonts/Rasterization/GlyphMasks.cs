@@ -22,14 +22,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         public const int MaxMaskSize = 4096;
 
         /// <summary>
-        /// The subpixel apron in final pixels: analytic bleed is under one subpixel and the
-        /// 5-tap downfilter spreads coverage two further subpixels, together under 2 pixels.
+        /// The subpixel apron in final pixels: analytic bleed plus the box downfilter stay
+        /// under one pixel, but stem snapping (which shares this apron) can move the right
+        /// edge outward by up to a pixel, so two pixels cover both consumers.
         /// </summary>
         public const int SubpixelApron = 2;
 
-        // The stripe downfilter (1,2,3,2,1)/9 — the DirectWrite/FreeType default. Sums to the
-        // divisor exactly, so solid interiors stay fully covered.
-        private const int FilterDivisorRounding = 4;
+        // The stripe downfilter (1,1,1)/3 — matches the DirectWrite host's fringe character
+        // (see FilterStripes). Sums to the divisor exactly, so solid interiors stay fully
+        // covered.
+        private const int FilterDivisorRounding = 1;
 
         public static GlyphMask Build(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
         {
@@ -118,9 +120,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Applies the (1,2,3,2,1)/9 stripe filter to 3x-wide coverage samples, producing
-        /// interleaved RGB channel coverage — each channel reads its own subpixel plus two
-        /// neighbors each side, which is what bounds color fringing.
+        /// Applies the (1,1,1)/3 stripe filter to 3x-wide coverage samples, producing
+        /// interleaved RGB channel coverage — each channel reads its own subpixel plus one
+        /// neighbor each side. This matches the DirectWrite host's fringe character: the GDI
+        /// ClearType 5-tap (1,2,3,2,1)/9 filters roughly a third of the fringe saturation
+        /// away, which reads as a temperature cast against DW-rendered text, while dropping
+        /// the filter entirely overshoots into harsh color (measured in LcdTemperatureProbe;
+        /// the ratio gate lives in LcdFringeSaturationTests).
         /// </summary>
         private static byte[] FilterStripes(byte[] samples, int width, int height)
         {
@@ -133,29 +139,19 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 for (var s = 0; s < subWidth; s++)
                 {
-                    var acc = 3 * samples[row + s];
+                    var acc = (int)samples[row + s];
 
                     if (s >= 1)
                     {
-                        acc += 2 * samples[row + s - 1];
-                    }
-
-                    if (s >= 2)
-                    {
-                        acc += samples[row + s - 2];
+                        acc += samples[row + s - 1];
                     }
 
                     if (s + 1 < subWidth)
                     {
-                        acc += 2 * samples[row + s + 1];
+                        acc += samples[row + s + 1];
                     }
 
-                    if (s + 2 < subWidth)
-                    {
-                        acc += samples[row + s + 2];
-                    }
-
-                    filtered[row + s] = (byte)((acc + FilterDivisorRounding) / 9);
+                    filtered[row + s] = (byte)((acc + FilterDivisorRounding) / 3);
                 }
             }
 
