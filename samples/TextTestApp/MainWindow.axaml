@@ -2,7 +2,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="clr-namespace:TextTestApp"
     x:Class="TextTestApp.MainWindow"
-    Title="Text Test App" Width="1200" Height="950">
+    Title="Text Test App" Width="1500" Height="950">
 
     <DockPanel>
       <Border DockPanel.Dock="Bottom" Background="WhiteSmoke" BorderThickness="0,1,0,0" BorderBrush="Silver" Padding="2">
@@ -34,6 +34,8 @@
         <TextBox Name="_text" Text="Hello!" VerticalAlignment="Center" />
       </DockPanel>
 
+      <TabControl Name="_globalTabs" Padding="0" Margin="0,2,0,0">
+        <TabItem Header="Text">
       <Grid RowDefinitions="*,5,*">
         <local:InteractiveLineControl Name="_rendering" DockPanel.Dock="Top" Margin="16" HorizontalAlignment="Center" 
                                   
@@ -102,13 +104,16 @@
               </Border>
             </ListBox>
           </TabItem>
-          <TabItem Header="Glyphs">
-            <local:GlyphExplorerView Name="_explorer" />
-          </TabItem>
-          <TabItem Header="Rasterization">
-            <local:RasterizationView Name="_raster" />
-          </TabItem>
         </TabControl>
       </Grid>
+        </TabItem>
+        <TabItem Header="Rasterization">
+          <Grid ColumnDefinitions="Auto,4,*">
+            <local:GlyphExplorerView Name="_explorer" />
+            <GridSplitter Grid.Column="1" />
+            <local:RasterizationView Name="_raster" Grid.Column="2" />
+          </Grid>
+        </TabItem>
+      </TabControl>
     </DockPanel>
 </Window>

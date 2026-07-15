@@ -34,11 +34,8 @@ namespace TextTestApp
             // tab with the exact typeface instance.
             _font.SelectionChanged += (_, _) => PushExplorerTypeface();
             PushExplorerTypeface();
-            _explorer.OpenGlyphRequested += (typeface, glyph) =>
-            {
-                _raster.ShowGlyph(typeface, glyph);
-                _tabs.SelectedIndex = 3;
-            };
+            // Explorer and inspector share the Rasterization page, side by side.
+            _explorer.OpenGlyphRequested += (typeface, glyph) => _raster.ShowGlyph(typeface, glyph);
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -58,9 +55,9 @@ namespace TextTestApp
                 };
             }
 
-            if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
+            if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 })
             {
-                _tabs.SelectedIndex = inspect == "glyphs" ? 2 : 3;
+                _globalTabs.SelectedIndex = 1;
             }
         }
 
@@ -245,7 +242,7 @@ namespace TextTestApp
                 border.DoubleTapped += (_, _) =>
                 {
                     _raster.ShowGlyph(rowTypeface, rowGlyph);
-                    _tabs.SelectedIndex = 3;
+                    _globalTabs.SelectedIndex = 1;
                 };
 
                 _buffer.Items.Add(border);
