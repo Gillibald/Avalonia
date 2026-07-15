@@ -16,7 +16,7 @@ Every failed condition degrades to grayscale antialiasing, never to wrong blendi
 
 ## Mask generation
 
-`GlyphMaskMode.Subpixel` masks rasterize the outline at 3x horizontal resolution (the analytic rasterizer takes the anisotropic transform as-is), then each stripe channel is downfiltered with the standard 5-tap FIR `(1,2,3,2,1)/9` used by ClearType and FreeType. The result is an interleaved 3-channel `GlyphMask` (`Channels = 3`) in fixed RGB stripe order with a 2-pixel apron (`SubpixelApron`) for filter support. BGR panels are handled at composition time by swapping channels, so one mask serves both geometries.
+`GlyphMaskMode.Subpixel` masks rasterize the outline at 3x horizontal resolution (the analytic rasterizer takes the anisotropic transform as-is), then each stripe channel is downfiltered with the narrow box FIR `(1,1,1)/3`. This matches the DirectWrite host's measured fringe character; the wider GDI/FreeType 5-tap `(1,2,3,2,1)/9` washes about a third of the fringe saturation away, which reads as a temperature cast next to DW-rendered text, while no filtering overshoots into harsh color (`LcdTemperatureProbe` has the sweep, `LcdFringeSaturationTests` pins the ratio). The result is an interleaved 3-channel `GlyphMask` (`Channels = 3`) in fixed RGB stripe order with a 2-pixel apron (`SubpixelApron`) for filter support. BGR panels are handled at composition time by swapping channels, so one mask serves both geometries.
 
 ![The ClearType stages: the 3x analytic raster, the three FIR-filtered stripe channels, and the gamma-corrected composite](images/cleartype-pipeline.png)
 
