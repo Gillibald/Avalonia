@@ -1873,10 +1873,10 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             }
         }
 
-        [InlineData("y", -8, -1.304, -5.44)]
-        [InlineData("f", -12, -11.824, -4.44)]
-        [InlineData("a", 1, -0.232, -20.44)]
-        [Win32Theory("Values depend on the Skia platform backend")]
+        [InlineData("y", -7.552, -0.256, -5.568)]
+        [InlineData("f", -11.072, -11.072, -5.184)]
+        [InlineData("a", 1.92, 1.024, -20.608)]
+        [Theory]
         public void Should_Produce_Overhang(string text, double leading, double trailing, double after)
         {
             const string symbolsFont = "resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests#Source Serif";
@@ -1898,6 +1898,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 Assert.NotNull(textLine);
 
+                // Managed rasterization derives ink bounds from the font tables, so the
+                // values are deterministic on every platform - this used to be Windows-only
+                // because blob ink bounds depended on the DirectWrite host.
                 Assert.Equal(leading, textLine.OverhangLeading, 2);
                 Assert.Equal(trailing, textLine.OverhangTrailing, 2);
                 Assert.Equal(after, textLine.OverhangAfter, 2);

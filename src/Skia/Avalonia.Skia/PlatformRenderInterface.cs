@@ -215,8 +215,9 @@ namespace Avalonia.Skia
             // noise. Fonts without outline tables always take the backend impl — the managed
             // rasterizer has nothing to rasterize for them.
             var options = AvaloniaLocator.Current.GetService<FontManagerOptions>();
+            var mode = options?.TextRasterizationMode ?? TextRasterizationMode.Managed;
 
-            if (options?.TextRasterizationMode == TextRasterizationMode.Managed &&
+            if (mode == TextRasterizationMode.Managed &&
                 (glyphTypeface.OutlineType != GlyphOutlineType.None || glyphTypeface.BitmapSource is not null) &&
                 glyphTypeface.PlatformTypeface is SkiaTypeface)
             {

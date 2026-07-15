@@ -117,8 +117,8 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Backend_Mode_Splits_V0_Glyphs_Through_Our_Drawings()
         {
-            // No FontManagerOptions registered: default Backend mode, where the blob would
-            // otherwise rasterize COLR itself — so v0 splits to our layer drawings too.
+            // Explicit Backend mode, where the blob would otherwise rasterize COLR
+            // itself — so v0 splits to our layer drawings too.
             using var scope = CreateEnvironment(managed: false);
             var typeface = CreateV0Typeface(out var v0Glyph);
 
@@ -299,14 +299,15 @@ namespace Avalonia.Skia.UnitTests.Media
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
 
-            if (managed)
-            {
-                AvaloniaLocator.CurrentMutable
-                    .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
-                    {
-                        TextRasterizationMode = TextRasterizationMode.Managed,
-                    });
-            }
+            // Managed is the framework default now, so backend-mode tests must opt out
+            // explicitly rather than relying on unregistered options.
+            AvaloniaLocator.CurrentMutable
+                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                {
+                    TextRasterizationMode = managed
+                        ? TextRasterizationMode.Managed
+                        : TextRasterizationMode.Backend,
+                });
 
             return scope;
         }

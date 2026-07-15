@@ -6,11 +6,13 @@ The motivation is backend portability and control: text output becomes identical
 
 ## Switching it on
 
+Managed rasterization is the default. `TextRasterizationMode.Backend` remains selectable as the escape hatch:
+
 ```csharp
 AppBuilder.Configure<App>()
     .With(new FontManagerOptions
     {
-        TextRasterizationMode = TextRasterizationMode.Managed,   // default: Backend
+        TextRasterizationMode = TextRasterizationMode.Backend,   // default: Managed
         EnableSlugVectorTier = true,                             // default: true, only used in Managed mode
     })
 ```
@@ -82,4 +84,4 @@ samples/TextTestApp/Rasterization/             pipeline inspector, glyph explore
 
 ## Status
 
-The managed path is complete and gated behind `TextRasterizationMode.Managed`; `Backend` remains the default until the release review flips it. Public API names introduced by this feature (notably `EnableSlugVectorTier`) get a final naming pass in that review.
+The managed path is the default (`TextRasterizationMode.Managed`); `Backend` remains selectable as the escape hatch for at least one release. Public API names introduced by this feature (notably `EnableSlugVectorTier`) get a final naming pass before stabilization.
