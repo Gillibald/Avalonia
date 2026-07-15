@@ -49,6 +49,8 @@ Several committed tests are measurement tools rather than gates; they skip unles
 
 `samples/GlyphRasterDemo` is the visual review surface: a size waterfall, animated foreground tint, script fallback, transformed and zoomed text (the Slug sections), COLR emoji at several sizes, variable font ramps, and a per-mode rendering block. The header switches `TextRasterizationMode` (Managed / Managed without Slug / Backend) live for A/B comparison and exposes `TextRenderingMode` and `TextHintingMode` combos that apply to the whole page through the inherited `TextOptions`.
 
+The header's Inspector button opens the pipeline inspector: live versions of the figures in these docs (hinting anatomy with zones and stroke pairs, mask anatomy, the ClearType stages, the Slug band partition) for any glyph, font, size and hinting mode, plus a tier-routing overlay that badges every run in the window by the tier that drew it (green run masks, magenta Slug, orange native blob — `TextTierDiagnostics` in Avalonia.Skia). `GLYPH_INSPECTOR=1` opens it directly (`tint` also enables the overlay), and `GLYPH_FIGURE_EXPORT_DIR=<dir>` regenerates the doc figures from the repo's Inter asset.
+
 ## Runner notes
 
 Test projects run on Microsoft.Testing.Platform with xUnit v3: filter with `-- --filter-class`/`--filter-namespace` after a plain build, never VSTest `--filter`. Do not pass `--nologo` to `dotnet test` (it runs zero tests under MTP), and read the run summary rather than trusting a piped exit code.
