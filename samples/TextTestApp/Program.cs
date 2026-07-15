@@ -23,6 +23,9 @@ namespace TextTestApp
         {
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()
+                // Registered so rasterization tooling (the A/B view) can flip the mode per
+                // render; Backend keeps the app's default rendering unchanged.
+                .With(new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Backend })
 #if DEBUG
                 .WithDeveloperTools()
 #endif
