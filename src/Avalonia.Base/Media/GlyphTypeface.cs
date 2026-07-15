@@ -145,6 +145,14 @@ namespace Avalonia.Media
         internal Fonts.Tables.Bitmaps.CbdtTable? BitmapTable => _cbdtTable;
 
         /// <summary>The font's bitmap strike source (CBDT or sbix), if it carries one.</summary>
+        /// <summary>
+        /// Which line-metric convention produced <see cref="Metrics"/> and from which raw
+        /// values — diagnostic only. Fonts whose hhea and win metrics disagree (emoji fonts,
+        /// mainly) measure differently per convention, and this string makes the decision
+        /// visible instead of an investigation.
+        /// </summary>
+        internal string MetricsProvenance { get; private set; } = "";
+
         internal Fonts.Tables.Bitmaps.IBitmapGlyphSource? BitmapSource =>
             _cbdtTable ?? (Fonts.Tables.Bitmaps.IBitmapGlyphSource?)_sbixTable;
 
@@ -257,6 +265,8 @@ namespace Avalonia.Media
                 ascent = -_os2Table.TypoAscender;
                 descent = -_os2Table.TypoDescender;
                 lineGap = _os2Table.TypoLineGap;
+                MetricsProvenance = FormattableString.Invariant(
+                    $"typo (USE_TYPO_METRICS set): {_os2Table.TypoAscender}/{_os2Table.TypoDescender}/{_os2Table.TypoLineGap}; usWin {_os2Table.WinAscent}/{_os2Table.WinDescent}");
             }
             else if (_hasOs2Table && (_os2Table.WinAscent != 0 || _os2Table.WinDescent != 0))
             {
@@ -274,6 +284,9 @@ namespace Avalonia.Media
                         _hhTable.Ascender - _hhTable.Descender + _hhTable.LineGap -
                         (_os2Table.WinAscent + _os2Table.WinDescent));
                 }
+
+                MetricsProvenance = FormattableString.Invariant(
+                    $"usWin + GDI leading (USE_TYPO_METRICS unset): {_os2Table.WinAscent}/{_os2Table.WinDescent}, leading {lineGap}; hhea {(_hasHorizontalMetrics ? _hhTable.Ascender : 0)}/{(_hasHorizontalMetrics ? _hhTable.Descender : 0)}/{(_hasHorizontalMetrics ? _hhTable.LineGap : 0)}; typo {_os2Table.TypoAscender}/{_os2Table.TypoDescender}/{_os2Table.TypoLineGap}");
             }
             else
             {
@@ -282,6 +295,8 @@ namespace Avalonia.Media
                     ascent = -_hhTable.Ascender;
                     descent = -_hhTable.Descender;
                     lineGap = _hhTable.LineGap;
+                    MetricsProvenance = FormattableString.Invariant(
+                        $"hhea (no usable OS/2): {_hhTable.Ascender}/{_hhTable.Descender}/{_hhTable.LineGap}");
                 }
             }
 
@@ -292,11 +307,13 @@ namespace Avalonia.Media
                     ascent = -_os2Table.TypoAscender;
                     descent = -_os2Table.TypoDescender;
                     lineGap = _os2Table.TypoLineGap;
+                    MetricsProvenance += " -> zero-corrected from typo";
                 }
                 else
                 {
                     ascent = -_os2Table.WinAscent;
                     descent = _os2Table.WinDescent;
+                    MetricsProvenance += " -> zero-corrected from usWin";
                 }
             }
 
