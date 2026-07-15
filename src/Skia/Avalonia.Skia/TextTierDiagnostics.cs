@@ -13,6 +13,21 @@ namespace Avalonia.Skia
     {
         public static volatile bool TintTiers;
 
+        /// <summary>Per-tier draw counters, gated separately from the visual tint so a HUD
+        /// can watch routing without repainting badges. Reset by the tooling.</summary>
+        public static volatile bool CountTiers;
+
+        public static long MaskTierDraws;
+        public static long SlugTierDraws;
+        public static long BlobTierDraws;
+
+        public static void ResetCounters()
+        {
+            System.Threading.Interlocked.Exchange(ref MaskTierDraws, 0);
+            System.Threading.Interlocked.Exchange(ref SlugTierDraws, 0);
+            System.Threading.Interlocked.Exchange(ref BlobTierDraws, 0);
+        }
+
         public static readonly SKColor MaskTierColor = new(0x22, 0xAA, 0x22, 0x46);
         public static readonly SKColor SlugTierColor = new(0xCC, 0x22, 0x99, 0x46);
         public static readonly SKColor BlobTierColor = new(0xDD, 0x88, 0x22, 0x46);
