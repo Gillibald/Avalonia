@@ -38,6 +38,7 @@ namespace TextTestApp
         private TextBlock _infoText = null!;
         private TextBlock _layersHeader = null!;
         private TextBlock _layersText = null!;
+        private Button _inspectButton = null!;
         private Image _gridImage = null!;
         private Image _previewImage = null!;
         private Image _layersImage = null!;
@@ -46,6 +47,9 @@ namespace TextTestApp
         private readonly List<ushort> _glyphs = new();
         private int _page;
         private int _selectedIndex = -1;
+
+        /// <summary>Raised when the selected glyph should open in the color inspector.</summary>
+        public event Action<GlyphTypeface, ushort, string?>? InspectRequested;
 
         public ColorGlyphsView()
         {
@@ -61,6 +65,7 @@ namespace TextTestApp
             _infoText = this.FindControl<TextBlock>("InfoText")!;
             _layersHeader = this.FindControl<TextBlock>("LayersHeader")!;
             _layersText = this.FindControl<TextBlock>("LayersText")!;
+            _inspectButton = this.FindControl<Button>("InspectButton")!;
             _gridImage = this.FindControl<Image>("GridImage")!;
             _previewImage = this.FindControl<Image>("PreviewImage")!;
             _layersImage = this.FindControl<Image>("LayersImage")!;
@@ -72,6 +77,13 @@ namespace TextTestApp
             _prevButton.Click += (_, _) => ShowPage(_page - 1);
             _nextButton.Click += (_, _) => ShowPage(_page + 1);
             _gridImage.PointerPressed += OnGridPressed;
+            _inspectButton.Click += (_, _) =>
+            {
+                if (_typeface is { } typeface && _selectedIndex >= 0 && _selectedIndex < _glyphs.Count)
+                {
+                    InspectRequested?.Invoke(typeface, _glyphs[_selectedIndex], null);
+                }
+            };
         }
 
         private int RenderSize => _sizeBox.SelectedItem is int size ? size : 48;
@@ -292,6 +304,7 @@ namespace TextTestApp
             _layersText.Text = string.Empty;
             _layersImage.Source = null;
             _previewImage.Source = null;
+            _inspectButton.IsVisible = _selectedIndex >= 0 && _selectedIndex < _glyphs.Count;
 
             if (_typeface is not { } typeface || _selectedIndex < 0 || _selectedIndex >= _glyphs.Count)
             {

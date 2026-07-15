@@ -38,10 +38,32 @@ namespace TextTestApp
             // glyph is selected, then the inspector takes it; Back (or Escape) returns.
             _explorer.GlyphSelected += (typeface, glyph, label) =>
             {
-                _raster.ShowGlyph(typeface, glyph, label);
-                ShowInspector(true);
+                // Color-capable glyphs get the color inspector - the mono pipeline view
+                // only shows their base outline.
+                if (IsColorCapable(typeface, glyph))
+                {
+                    _colorInspector.ShowGlyph(typeface, glyph, label);
+                    ShowColorInspector();
+                }
+                else
+                {
+                    _raster.ShowGlyph(typeface, glyph, label);
+                    ShowInspector(true);
+                }
             };
             _raster.BackRequested += () => ShowInspector(false);
+            _colorInspector.BackRequested += () => ShowInspector(false);
+            _colorView.InspectRequested += (typeface, glyph, label) =>
+            {
+                _colorTabInspector.ShowGlyph(typeface, glyph, label);
+                _colorTabInspector.IsVisible = true;
+                _colorView.IsVisible = false;
+            };
+            _colorTabInspector.BackRequested += () =>
+            {
+                _colorTabInspector.IsVisible = false;
+                _colorView.IsVisible = true;
+            };
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -87,8 +109,21 @@ namespace TextTestApp
         private void ShowInspector(bool visible)
         {
             _raster.IsVisible = visible;
+            _colorInspector.IsVisible = false;
             _explorer.IsVisible = !visible;
         }
+
+        private void ShowColorInspector()
+        {
+            _raster.IsVisible = false;
+            _colorInspector.IsVisible = true;
+            _explorer.IsVisible = false;
+        }
+
+        private static bool IsColorCapable(Avalonia.Media.GlyphTypeface typeface, ushort glyph)
+            => (typeface.ColorTable is { } colr &&
+                (colr.HasColorLayers(glyph) || colr.TryGetBaseGlyphV1Record(glyph, out _))) ||
+               typeface.BitmapSource?.HasGlyphImage(glyph) == true;
 
         private void PushFontContext()
         {
@@ -127,9 +162,15 @@ namespace TextTestApp
             }
             else if (e.Key == Key.Escape)
             {
-                if (_globalTabs.SelectedIndex == 1 && _raster.IsVisible)
+                if (_globalTabs.SelectedIndex == 1 && (_raster.IsVisible || _colorInspector.IsVisible))
                 {
                     ShowInspector(false);
+                    e.Handled = true;
+                }
+                else if (_globalTabs.SelectedIndex == 5 && _colorTabInspector.IsVisible)
+                {
+                    _colorTabInspector.IsVisible = false;
+                    _colorView.IsVisible = true;
                     e.Handled = true;
                 }
                 else if (_hits.IsKeyboardFocusWithin && _hits.SelectedIndex != -1)
