@@ -40,7 +40,7 @@ Uniform scale is folded into the mask scale; the quantized scale plus a quarter-
 
 - The mask tier renders monochrome glyphs, COLR v0 layer glyphs (as stacked tinted masks) and bitmap strikes (decoded and composed into the BGRA run mask). One run mask per (run, scale, phase, mode, tint-or-not) is cached on the run and redrawn as a plain bitmap blit until invalidated.
 - The Slug tier renders monochrome outlines under arbitrary affine transforms at effectively unbounded sizes. It requires a GPU-backed Skia context and the compiled runtime effect; CPU raster targets never use it (measured fragment cost makes masks the right choice there).
-- The blob tier renders everything else: gradient foregrounds, declined Slug glyphs when the tier is disabled, and any surface the managed tiers do not support.
+- The blob tier renders everything else: gradient foregrounds, Slug-declined glyphs, and any surface the managed tiers do not support.
 
 ## Record-time split for COLR v1 and drawings
 

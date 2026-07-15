@@ -13,11 +13,10 @@ AppBuilder.Configure<App>()
     .With(new FontManagerOptions
     {
         TextRasterizationMode = TextRasterizationMode.Backend,   // default: Managed
-        EnableSlugVectorTier = true,                             // default: true, only used in Managed mode
     })
 ```
 
-`TextRasterizationMode` ([TextRasterizationMode.cs](../../src/Avalonia.Base/Media/TextRasterizationMode.cs)) is read live at glyph run creation, so tests and demos can flip it at runtime and rebuild their visual tree. `EnableSlugVectorTier` is read per draw; turning it off routes rotated/oversized text to the native blob fallback instead of the GPU vector tier. Both live on [FontManagerOptions](../../src/Avalonia.Base/Media/FontManagerOptions.cs).
+`TextRasterizationMode` ([TextRasterizationMode.cs](../../src/Avalonia.Base/Media/TextRasterizationMode.cs)) lives on [FontManagerOptions](../../src/Avalonia.Base/Media/FontManagerOptions.cs) and is read live at glyph run creation, so tests and demos can flip it at runtime and rebuild their visual tree. The Slug vector tier has no switch of its own: it is on wherever the GPU context supports it and falls back to the native blob elsewhere.
 
 Per-visual quality settings travel through the inherited `TextOptions` attached properties ([TextOptions.cs](../../src/Avalonia.Base/Media/TextOptions.cs)): `TextRenderingMode` (alias/antialias/subpixel), `TextHintingMode` (none/light/strong) and `BaselinePixelAlignment`. `RenderOptions.TextRenderingMode` is obsolete on this branch; use `TextOptions.TextRenderingMode` in XAML.
 
@@ -84,4 +83,4 @@ samples/TextTestApp/Rasterization/             pipeline inspector, glyph explore
 
 ## Status
 
-The managed path is the default (`TextRasterizationMode.Managed`); `Backend` remains selectable as the escape hatch for at least one release. Public API names introduced by this feature (notably `EnableSlugVectorTier`) get a final naming pass before stabilization.
+The managed path is the default (`TextRasterizationMode.Managed`); `Backend` remains selectable as the escape hatch for at least one release.

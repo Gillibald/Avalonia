@@ -2,7 +2,7 @@
 
 Masks are bitmaps: they decline rotated, skewed and very large text (past 160 px/em) because resampling a bitmap blurs it and giant masks waste memory. The vector tier renders those draws by evaluating the outline itself on the GPU, using the Slug algorithm by Eric Lengyel (the reference shaders are dual MIT/Apache-2.0 licensed, the patent is dedicated to the public domain, and attribution is carried in the shader source). A glyph is encoded once ever, in em space; after that any transform, any size and any rotation renders from the same payload.
 
-The tier only runs on GPU-backed Skia contexts with the compiled runtime effect, and only while `FontManagerOptions.EnableSlugVectorTier` is true (checked per draw). Everything else falls to the native blob. CPU targets never use it: fragment evaluation measured around 580 ns per pixel, which is the quantified reason masks stay the CPU answer.
+The tier only runs on GPU-backed Skia contexts with the compiled runtime effect; everything else falls to the native blob. There is no switch — GPU capability is the gate. CPU targets never use it: fragment evaluation measured around 580 ns per pixel, which is the quantified reason masks stay the CPU answer.
 
 ## Encoding (backend-neutral, in `Rasterization/Slug/`)
 
