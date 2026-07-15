@@ -67,6 +67,7 @@ namespace Avalonia.Media
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
         private Fonts.Rasterization.StemWidthTable? _stemWidthTable;
+        private Fonts.Tables.GaspTable? _gaspTable;
         private Fonts.Rasterization.Slug.SlugGlyphCache? _slugGlyphCache;
         private Fonts.Rasterization.Slug.SlugTexelStore? _slugTexelStore;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildGlyphGeometry;
@@ -1920,6 +1921,13 @@ namespace Avalonia.Media
         /// </summary>
         internal Fonts.Rasterization.StemWidthTable StemWidths =>
             _stemWidthTable ??= Fonts.Rasterization.StemWidthTable.Create(this);
+
+        /// <summary>
+        /// The font's grid-fitting policy table, <see cref="Fonts.Tables.GaspTable.Empty"/>
+        /// when absent or malformed. Same benign create race as <see cref="StemWidths"/>.
+        /// </summary>
+        internal Fonts.Tables.GaspTable Gasp =>
+            _gaspTable ??= Fonts.Tables.GaspTable.Load(this);
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
