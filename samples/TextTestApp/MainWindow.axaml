@@ -114,6 +114,9 @@
             <local:RasterizationView Name="_raster" Grid.Column="2" />
           </Grid>
         </TabItem>
+        <TabItem Header="A/B Diff">
+          <local:AbDiffView />
+        </TabItem>
       </TabControl>
     </DockPanel>
 </Window>

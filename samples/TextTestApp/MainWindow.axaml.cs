@@ -55,9 +55,9 @@ namespace TextTestApp
                 };
             }
 
-            if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 })
+            if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
             {
-                _globalTabs.SelectedIndex = 1;
+                _globalTabs.SelectedIndex = inspect == "ab" ? 2 : 1;
             }
         }
 
