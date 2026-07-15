@@ -67,7 +67,7 @@ namespace Avalonia.Skia
             var defaultTextOptions = default(TextOptions) with
             {
                 TextRenderingMode = TextRenderingMode.SubpixelAntialias,
-                TextHintingMode = TextHintingMode.Strong,
+                TextHintingMode = TextHintingMode.Light,
                 BaselinePixelAlignment = BaselinePixelAlignment.Unaligned
             };
 
@@ -158,17 +158,20 @@ namespace Avalonia.Skia
                 _ => SKFontEdging.SubpixelAntialias
             };
 
-            // Determine hinting
+            // Determine hinting. Unspecified defaults to Light: DirectWrite's native
+            // rendering is light-class at every size (full grid-fitting only exists behind
+            // GDI-compat requests), and the managed path resolves Unspecified the same way -
+            // on FreeType hosts this is what keeps the default from running full bytecode
+            // hinting that no Windows stack would apply.
             var hinting = textOptions.TextHintingMode switch
             {
                 TextHintingMode.None => SKFontHinting.None,
-                TextHintingMode.Light => SKFontHinting.Slight,
                 TextHintingMode.Strong => SKFontHinting.Full,
-                _ => SKFontHinting.Full,
+                _ => SKFontHinting.Slight,
             };
 
-            // Force auto-hinting for "Slight" mode (prefer autohinter over bytecode hints), otherwise default.
-            var forceAutoHinting = textOptions.TextHintingMode == TextHintingMode.Light;
+            // Force auto-hinting for the light modes (prefer autohinter over bytecode hints), otherwise default.
+            var forceAutoHinting = textOptions.TextHintingMode is TextHintingMode.Light or TextHintingMode.Unspecified;
 
             // Subpixel rendering enabled when edging is not alias.
             var subpixel = edging != SKFontEdging.Alias;

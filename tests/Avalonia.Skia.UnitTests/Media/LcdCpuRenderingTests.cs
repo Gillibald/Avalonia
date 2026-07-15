@@ -140,6 +140,58 @@ namespace Avalonia.Skia.UnitTests.Media
                 "expected subpixel positioning to differ between phases under Light");
         }
 
+        [Fact]
+        public void Unspecified_Hinting_Renders_As_Light_On_The_Native_Blob()
+        {
+            using var app = StartApp();
+            using var surface = CreateSurface(out var info);
+            var typeface = LoadTypeface();
+
+            // DirectWrite has no strong-hinting mode of its own - its native rendering is
+            // light-class at every size, with full grid-fitting only behind GDI-compat
+            // requests. The blob's Unspecified default must therefore be Light, matching
+            // both the platform and the managed path's Unspecified resolution.
+            var unspecified = RenderBlobAt(surface, info, typeface, TextHintingMode.Unspecified);
+            var light = RenderBlobAt(surface, info, typeface, TextHintingMode.Light);
+
+            Assert.True(unspecified.AsSpan().SequenceEqual(light),
+                "Unspecified must render identically to Light on the native blob");
+        }
+
+        private byte[] RenderBlobAt(SKSurface surface, SKImageInfo info, GlyphTypeface typeface,
+            TextHintingMode hinting)
+        {
+            using var run = CreateRunAt(typeface, "Hamburg", 13, 8.3);
+
+            using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Canvas = surface.Canvas,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                surface.Canvas.Clear(SKColors.White);
+
+                using var paint = new SKPaint { Color = SKColors.Black };
+                var blob = ((Avalonia.Skia.SkiaManagedGlyphRunImpl)run).GetTextBlob(
+                    new TextOptions { TextRenderingMode = TextRenderingMode.SubpixelAntialias, TextHintingMode = hinting },
+                    default);
+
+                surface.Canvas.DrawText(blob, 8, 34, paint);
+            }
+
+            using var snapshot = surface.Snapshot();
+            using var readback = new SKBitmap(info);
+
+            Assert.True(snapshot.ReadPixels(info, readback.GetPixels(), readback.RowBytes, 0, 0));
+
+            var bytes = new byte[info.Width * info.Height * 4];
+
+            System.Runtime.InteropServices.Marshal.Copy(readback.GetPixels(), bytes, 0, bytes.Length);
+
+            return bytes;
+        }
+
         private byte[] RenderAt(SKSurface surface, SKImageInfo info, GlyphTypeface typeface,
             double originX, TextHintingMode hinting)
         {
