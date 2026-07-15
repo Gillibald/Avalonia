@@ -620,6 +620,7 @@ namespace TextTestApp
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 for (var column = 0; column < hintings.Length; column++)
@@ -708,6 +709,7 @@ namespace TextTestApp
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 context.PushTextOptions(new TextOptions

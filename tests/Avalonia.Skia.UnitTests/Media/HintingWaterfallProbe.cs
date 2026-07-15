@@ -47,6 +47,7 @@ namespace Avalonia.Skia.UnitTests.Media
                        Surface = surface,
                        Canvas = surface.Canvas,
                        Dpi = new Vector(96, 96),
+                       SurfaceIsDisplay = true,
                    }))
             {
                 for (var m = 0; m < modes.Length; m++)

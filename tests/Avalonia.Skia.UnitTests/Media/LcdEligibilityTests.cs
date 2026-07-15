@@ -7,13 +7,29 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// The LCD eligibility policy: subpixel text is offered only on surfaces that declare
-    /// horizontal stripe geometry, outside every composited layer, on targets that permit
-    /// subpixel text at all — everywhere else the mask path must degrade to grayscale, the
-    /// way every platform stack does.
+    /// The LCD eligibility policy: subpixel text is offered only on display-bound surfaces
+    /// that declare horizontal stripe geometry, outside every composited layer, on targets
+    /// that permit subpixel text at all — everywhere else the mask path must degrade to
+    /// grayscale, the way every platform stack does.
     /// </summary>
     public class LcdEligibilityTests
     {
+        [Fact]
+        public void An_Offscreen_Surface_Is_Ineligible_Despite_Declared_Stripes()
+        {
+            // SurfaceRenderTarget declares RGB stripes on every offscreen bitmap; without the
+            // display bit the geometry must not make LCD eligible.
+            using var surface = CreateSurface(SKPixelGeometry.RgbHorizontal);
+            using var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+            {
+                Surface = surface,
+                Canvas = surface.Canvas,
+                Dpi = new Vector(96, 96),
+            });
+
+            Assert.False(((IAlphaGlyphMaskContext)context).TryGetLcdGeometry(out _));
+        }
+
         [Fact]
         public void A_Surface_With_Rgb_Stripes_Is_Eligible()
         {
@@ -162,6 +178,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Surface = surface,
                 Canvas = surface.Canvas,
                 Dpi = new Vector(96, 96),
+                SurfaceIsDisplay = true,
             });
     }
 }

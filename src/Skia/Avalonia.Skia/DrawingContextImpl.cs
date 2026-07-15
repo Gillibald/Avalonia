@@ -36,6 +36,7 @@ namespace Avalonia.Skia
         private readonly Matrix? _postTransform;
         private double _currentOpacity = 1.0f;
         private readonly bool _disableSubpixelTextRendering;
+        private readonly bool _surfaceIsDisplay;
         private readonly LcdMaskGeometry? _lcdMaskGeometry;
         private int _saveLayerDepth;
         private Matrix? _currentTransform;
@@ -80,6 +81,15 @@ namespace Avalonia.Skia
             /// Render text without subpixel antialiasing.
             /// </summary>
             public bool DisableSubpixelTextRendering;
+
+            /// <summary>
+            /// The surface is a display-bound target (window framebuffer or swapchain) whose
+            /// declared pixel geometry corresponds to a physical panel. Subpixel (LCD) text is
+            /// only eligible here; offscreen targets render grayscale regardless of declared
+            /// stripe geometry, because their output may be composed, resampled or read back
+            /// with alpha, where per-channel coverage has no valid interpretation.
+            /// </summary>
+            public bool SurfaceIsDisplay;
 
             /// <summary>
             /// GPU-accelerated context (optional)
@@ -197,13 +207,19 @@ namespace Avalonia.Skia
             _intermediateSurfaceDpi = createInfo.Dpi;
             _disposables = disposables;
             _disableSubpixelTextRendering = createInfo.DisableSubpixelTextRendering;
+            _surfaceIsDisplay = createInfo.SurfaceIsDisplay;
 
-            _lcdMaskGeometry = createInfo.Surface?.SurfaceProperties?.PixelGeometry switch
-            {
-                SKPixelGeometry.RgbHorizontal => LcdMaskGeometry.RgbHorizontal,
-                SKPixelGeometry.BgrHorizontal => LcdMaskGeometry.BgrHorizontal,
-                _ => null,
-            };
+            // Stripe geometry only means anything on a display-bound surface; offscreen
+            // targets declare it too (SurfaceRenderTarget always has), but their output is
+            // captured or composed with alpha, so LCD text must not engage there.
+            _lcdMaskGeometry = !createInfo.SurfaceIsDisplay
+                ? null
+                : createInfo.Surface?.SurfaceProperties?.PixelGeometry switch
+                {
+                    SKPixelGeometry.RgbHorizontal => LcdMaskGeometry.RgbHorizontal,
+                    SKPixelGeometry.BgrHorizontal => LcdMaskGeometry.BgrHorizontal,
+                    _ => null,
+                };
             _grContext = createInfo.GrContext;
             _gpu = createInfo.Gpu;
             if (_grContext != null)
@@ -910,8 +926,11 @@ namespace Avalonia.Skia
             // Determine effective TextOptions for text rendering. Start with current pushed TextOptions.
             var effectiveTextOptions = TextOptions;
 
-            // If subpixel rendering is disabled globally, map subpixel modes to grayscale.
-            if (_disableSubpixelTextRendering)
+            // Map subpixel modes to grayscale when subpixel rendering is disabled globally or
+            // the target is not a display surface. Offscreen output is captured, composed or
+            // read back with alpha, where per-channel coverage is meaningless, so even an
+            // explicit SubpixelAntialias request degrades there (DirectWrite semantics).
+            if (_disableSubpixelTextRendering || !_surfaceIsDisplay)
             {
                 var mode = effectiveTextOptions.TextRenderingMode;
 

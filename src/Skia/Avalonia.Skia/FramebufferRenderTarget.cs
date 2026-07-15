@@ -13,6 +13,7 @@ namespace Avalonia.Skia
     internal class FramebufferRenderTarget : IRenderTarget
     {
         private readonly bool _useScaledDrawing;
+        private readonly bool _surfaceIsDisplay;
         private SKImageInfo _currentImageInfo;
         private IntPtr _currentFramebufferAddress;
         private SKSurface? _framebufferSurface;
@@ -29,6 +30,9 @@ namespace Avalonia.Skia
         public FramebufferRenderTarget(IFramebufferPlatformSurface platformSurface, bool useScaledDrawing = false)
         {
             _useScaledDrawing = useScaledDrawing;
+            // Framebuffers are display surfaces (that is what the interface exists for) unless
+            // the owner marks them as captured/read-back targets, where LCD text is not valid.
+            _surfaceIsDisplay = platformSurface is not IOffscreenFramebufferPlatformSurface;
             _renderTarget = platformSurface.CreateFramebufferRenderTarget();
         }
 
@@ -76,7 +80,8 @@ namespace Avalonia.Skia
             {
                 Surface = _framebufferSurface,
                 Dpi = framebuffer.Dpi,
-                ScaleDrawingToDpi = _useScaledDrawing
+                ScaleDrawingToDpi = _useScaledDrawing,
+                SurfaceIsDisplay = _surfaceIsDisplay,
             };
 
             properties = new()

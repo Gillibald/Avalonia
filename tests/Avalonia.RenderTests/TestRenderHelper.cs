@@ -152,7 +152,7 @@ static class TestRenderHelper
             Directory.CreateDirectory(dir);
     }
 
-    class BitmapFramebufferSurface : IFramebufferPlatformSurface
+    class BitmapFramebufferSurface : IOffscreenFramebufferPlatformSurface
     {
         private readonly IWriteableBitmapImpl _bitmap;
 
