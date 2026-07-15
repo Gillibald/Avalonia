@@ -95,10 +95,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly float _ascender;
         private readonly float _descender;
         private readonly float _roundOvershoot;
+        private readonly float _ascenderOvershoot;
         private readonly ConcurrentDictionary<ushort, AxisWarp> _warps = new();
 
         private VerticalGridFit(float designEmHeight, float xHeight, float capHeight,
-            float ascender, float descender, float roundOvershoot)
+            float ascender, float descender, float roundOvershoot, float ascenderOvershoot)
         {
             _designEmHeight = designEmHeight;
             _xHeight = xHeight;
@@ -106,6 +107,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             _ascender = ascender;
             _descender = descender;
             _roundOvershoot = roundOvershoot;
+            _ascenderOvershoot = ascenderOvershoot;
         }
 
         public static VerticalGridFit Create(GlyphTypeface typeface)
@@ -140,8 +142,20 @@ namespace Avalonia.Media.Fonts.Rasterization
                 overshoot = Math.Max(overshoot, -oBottom);
             }
 
-            return new VerticalGridFit(typeface.Metrics.DesignEmHeight,
-                xHeight, capHeight, ascender, descender, overshoot);
+            // The f hook typically clears the ascender by a sliver (Segoe UI 22, Inter 96
+            // design units) that is a design overshoot of the ascender line, not a line of
+            // its own. Anything larger (t, which owns its height) stays untouched.
+            var ascenderOvershoot = 0f;
+            var fTop = MeasureTop(typeface, 'f');
+            var designEmHeight = typeface.Metrics.DesignEmHeight;
+
+            if (ascender > 0 && fTop > ascender && fTop - ascender <= designEmHeight / 24f)
+            {
+                ascenderOvershoot = fTop - ascender;
+            }
+
+            return new VerticalGridFit(designEmHeight,
+                xHeight, capHeight, ascender, descender, overshoot, ascenderOvershoot);
         }
 
         /// <summary>The zone warp for a quantized mask scale; identity when no zones measured.</summary>
@@ -254,100 +268,131 @@ namespace Avalonia.Media.Fonts.Rasterization
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * _designEmHeight);
 
             // Device space is y-down with the baseline at 0 (the pen row is integer-snapped by
-            // the renderer): zones above the baseline are negative.
-            Span<float> zones = stackalloc float[5];
+            // the renderer): zones above the baseline are negative. Each zone carries its own
+            // overshoot band: the round overshoot ('o', 'O', '8') for x-height, cap and
+            // baseline, plus the f hook's sliver for the ascender.
+            Span<float> src = stackalloc float[5];
+            Span<float> dst = stackalloc float[5];
+            Span<float> band = stackalloc float[5];
             var count = 0;
 
             if (_ascender > 0)
             {
-                zones[count++] = -_ascender * scale;
+                src[count] = -_ascender * scale;
+                band[count++] = Math.Max(_roundOvershoot, _ascenderOvershoot) * scale;
             }
 
             if (_capHeight > 0)
             {
-                zones[count++] = -_capHeight * scale;
+                src[count] = -_capHeight * scale;
+                band[count++] = _roundOvershoot * scale;
             }
 
             if (_xHeight > 0)
             {
-                zones[count++] = -_xHeight * scale;
+                src[count] = -_xHeight * scale;
+                band[count++] = _roundOvershoot * scale;
             }
 
-            zones[count++] = 0f;
+            src[count] = 0f;
+            band[count++] = _roundOvershoot * scale;
 
             if (_descender < 0)
             {
-                zones[count++] = -_descender * scale;
+                src[count] = -_descender * scale;
+                band[count++] = 0f;
             }
 
-            var overshoot = _roundOvershoot * scale;
-            var flatten = overshoot > 0 && overshoot <= OvershootFlattenLimit;
+            for (var i = 0; i < count; i++)
+            {
+                dst[i] = SnapZone(src[i]);
+            }
 
-            // Up to two knots per zone (the overshoot band flattens onto the zone) — assembled
-            // in ascending device order; zones landed on the same row collapse to one knot.
+            // Resolve collisions before emitting: DISTINCT zones closer than half a pixel
+            // cannot hold distinct rows, so the cluster shares one — at plain nearest of its
+            // topmost member, which is how hinted DirectWrite output places Segoe UI's shared
+            // ascender/cap line at small sizes (9 px: round(6.66) = 7, never the cap's 6).
+            // Growing the merged line by the usual threshold would overshoot: the merged ink
+            // sits between the two sources. Zones at the SAME height (Arial and Inter put
+            // caps and ascender both on one line) are one line, not a collision — they keep
+            // the calibrated grow policy and collapse at emission.
+            for (var i = 1; i < count && src[i] < -0.5f; i++)
+            {
+                var gap = src[i] - src[i - 1];
+
+                if (gap > 0.01f && gap <= 0.5f)
+                {
+                    var clusterStart = i - 1;
+
+                    while (clusterStart > 0)
+                    {
+                        var previousGap = src[clusterStart] - src[clusterStart - 1];
+
+                        if (previousGap <= 0.01f || previousGap > 0.5f)
+                        {
+                            break;
+                        }
+
+                        clusterStart--;
+                    }
+
+                    var merged = -MathF.Floor(-src[clusterStart] + 0.5f);
+
+                    for (var j = clusterStart; j <= i; j++)
+                    {
+                        dst[j] = merged;
+                    }
+                }
+            }
+
+            // Monotonicity: a zone may never land above the one before it.
+            for (var i = 1; i < count; i++)
+            {
+                if (dst[i] < dst[i - 1])
+                {
+                    dst[i] = dst[i - 1];
+                }
+            }
+
+            // Emit knots in ascending device order; overshoot bands flatten onto the zone row
+            // while they stay visually sub-pixel, and are skipped where they would collide
+            // with the previous knot at very small sizes.
             var from = new float[count * 2];
             var to = new float[count * 2];
             var knots = 0;
 
             for (var i = 0; i < count; i++)
             {
-                var src = zones[i];
-                var dst = SnapZone(src);
-
-                if (knots > 0)
+                if (knots > 0 && src[i] <= from[knots - 1] + 0.01f)
                 {
-                    if (src <= from[knots - 1] + 0.01f)
-                    {
-                        continue;   // the same position — nothing to add
-                    }
-
-                    if (src <= from[knots - 1] + 0.5f)
-                    {
-                        // Zones closer than a pixel (Segoe UI's ascender sits a hair above
-                        // its cap at body sizes) flatten onto one row so both edges render
-                        // hard, the way hinted output shares ascender and cap rows at small
-                        // sizes. The LATER zone wins the row — cap height carries far more
-                        // text than ascender tops — and the earlier knot is pulled along.
-                        var floor = knots >= 2 ? to[knots - 2] : float.MinValue;
-
-                        to[knots - 1] = Math.Max(dst, floor);
-                        dst = to[knots - 1];
-                    }
-                    else if (dst < to[knots - 1])
-                    {
-                        dst = to[knots - 1];
-                    }
+                    continue;   // the same position — nothing to add
                 }
 
-                // Round overshoot reaches outward from the zone: above the x-height/cap tops
-                // (more negative) and below the baseline (more positive). Flattening adds the
-                // band edge as a second knot mapping onto the same row — skipped when the band
-                // would collide with the previous knot at very small sizes.
-                var overshootsUp = src < -0.5f;
-                var bandFits = knots == 0 || src - overshoot > from[knots - 1] + 0.01f;
+                var flatten = band[i] > 0 && band[i] <= OvershootFlattenLimit;
+                var bandFits = knots == 0 || src[i] - band[i] > from[knots - 1] + 0.01f;
 
-                if (flatten && overshootsUp && bandFits)
+                if (flatten && src[i] < -0.5f && bandFits)
                 {
-                    from[knots] = src - overshoot;
-                    to[knots] = dst;
+                    from[knots] = src[i] - band[i];
+                    to[knots] = dst[i];
                     knots++;
-                    from[knots] = src;
-                    to[knots] = dst;
+                    from[knots] = src[i];
+                    to[knots] = dst[i];
                     knots++;
                 }
-                else if (flatten && src == 0f)
+                else if (flatten && src[i] == 0f)
                 {
-                    from[knots] = src;
-                    to[knots] = dst;
+                    from[knots] = src[i];
+                    to[knots] = dst[i];
                     knots++;
-                    from[knots] = src + overshoot;
-                    to[knots] = dst;
+                    from[knots] = src[i] + band[i];
+                    to[knots] = dst[i];
                     knots++;
                 }
                 else
                 {
-                    from[knots] = src;
-                    to[knots] = dst;
+                    from[knots] = src[i];
+                    to[knots] = dst[i];
                     knots++;
                 }
             }
