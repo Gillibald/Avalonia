@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Fonts.Rasterization.Slug;
+using Avalonia.Media.TextFormatting;
 using SkiaSharp;
 
 namespace TextTestApp
@@ -564,6 +566,268 @@ namespace TextTestApp
             return skTypeface is null
                 ? null
                 : new GlyphTypeface(new Avalonia.Skia.SkiaTypeface(skTypeface, FontSimulations.None));
+        }
+
+        /// <summary>
+        /// The hinting/rendering-mode waterfall: one size ladder down, one column per hinting
+        /// mode, every cell drawn through the REAL pipeline (DrawingContextImpl on an
+        /// RGB-striped raster surface, so SubpixelAntialias produces true LCD output).
+        /// </summary>
+        public static SKBitmap WaterfallMatrix(GlyphTypeface typeface, string text,
+            TextRenderingMode rendering)
+        {
+            float[] sizes = { 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24 };
+            TextHintingMode[] hintings = { TextHintingMode.None, TextHintingMode.Light, TextHintingMode.Strong };
+
+            // Column width from the widest (largest) run.
+            var scale = sizes[^1] / typeface.Metrics.DesignEmHeight;
+            var advance = 0f;
+
+            foreach (var c in text)
+            {
+                if (typeface.CharacterToGlyphMap.ContainsGlyph(c))
+                {
+                    typeface.TryGetGlyphMetrics(typeface.CharacterToGlyphMap[c], out var metrics);
+                    advance += metrics.AdvanceWidth * scale;
+                }
+            }
+
+            var columnWidth = (int)Math.Ceiling(advance) + 30;
+            const int labelWidth = 44;
+            var rowHeights = new int[sizes.Length];
+            var height = 26;
+
+            for (var i = 0; i < sizes.Length; i++)
+            {
+                rowHeights[i] = (int)Math.Ceiling(sizes[i] * 1.6) + 8;
+                height += rowHeights[i];
+            }
+
+            var info = new SKImageInfo(labelWidth + columnWidth * hintings.Length, height,
+                SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(info, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
+
+            surface.Canvas.Clear(SKColors.White);
+
+            using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Canvas = surface.Canvas,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                for (var column = 0; column < hintings.Length; column++)
+                {
+                    context.PushTextOptions(new TextOptions
+                    {
+                        TextRenderingMode = rendering,
+                        TextHintingMode = hintings[column],
+                    });
+
+                    var y = 26f;
+
+                    for (var row = 0; row < sizes.Length; row++)
+                    {
+                        // A fractional origin, so Light shows its subpixel positioning.
+                        using var run = CreateRun(typeface, text, sizes[row],
+                            new Point(labelWidth + columnWidth * column + 8.3, y + sizes[row] * 1.15));
+
+                        context.DrawGlyphRun(Brushes.Black, run);
+                        y += rowHeights[row];
+                    }
+
+                    context.PopTextOptions();
+                }
+            }
+
+            using (var font = new SKFont(SKTypeface.Default, 12))
+            using (var label = new SKPaint { Color = new SKColor(0x60, 0x60, 0x60) })
+            {
+                for (var column = 0; column < hintings.Length; column++)
+                {
+                    surface.Canvas.DrawText($"{hintings[column]}", labelWidth + columnWidth * column + 8, 16,
+                        SKTextAlign.Left, font, label);
+                }
+
+                var y = 26f;
+
+                for (var row = 0; row < sizes.Length; row++)
+                {
+                    surface.Canvas.DrawText(Inv($"{sizes[row]:0}"), 8, y + sizes[row] * 1.15f,
+                        SKTextAlign.Left, font, label);
+                    y += rowHeights[row];
+                }
+            }
+
+            using var snapshot = surface.Snapshot();
+            var bitmap = new SKBitmap(info);
+
+            snapshot.ReadPixels(info, bitmap.GetPixels(), bitmap.RowBytes, 0, 0);
+            return bitmap;
+        }
+
+        /// <summary>
+        /// Renders the sample subpixel on an RGB-striped surface and classifies every fringed
+        /// pixel (|R-B| beyond a threshold) by polarity: warm on a left edge and cool on a
+        /// right edge is physically correct for RGB stripes; anything else is flagged. The
+        /// returned strip stacks the rendering over the classification map, and the counters
+        /// come back for the caller's stats line.
+        /// </summary>
+        public static SKBitmap FringeAnalysis(GlyphTypeface typeface, string text, float size,
+            TextHintingMode hinting, int zoom,
+            out int fringed, out int warmLeft, out int coolRight, out int wrongPolarity, out int inkPixels)
+        {
+            var scale = size / typeface.Metrics.DesignEmHeight;
+            var advance = 0f;
+
+            foreach (var c in text)
+            {
+                if (typeface.CharacterToGlyphMap.ContainsGlyph(c))
+                {
+                    typeface.TryGetGlyphMetrics(typeface.CharacterToGlyphMap[c], out var metrics);
+                    advance += metrics.AdvanceWidth * scale;
+                }
+            }
+
+            var width = (int)Math.Ceiling(advance) + 20;
+            var height = (int)Math.Ceiling(size * 1.7) + 8;
+            var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(info, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
+
+            surface.Canvas.Clear(SKColors.White);
+
+            using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Canvas = surface.Canvas,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                context.PushTextOptions(new TextOptions
+                {
+                    TextRenderingMode = TextRenderingMode.SubpixelAntialias,
+                    TextHintingMode = hinting,
+                });
+
+                using var run = CreateRun(typeface, text, size, new Point(10.3, size * 1.25));
+
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.PopTextOptions();
+            }
+
+            using var snapshot = surface.Snapshot();
+            using var render = new SKBitmap(info);
+
+            snapshot.ReadPixels(info, render.GetPixels(), render.RowBytes, 0, 0);
+
+            fringed = 0;
+            warmLeft = 0;
+            coolRight = 0;
+            wrongPolarity = 0;
+            inkPixels = 0;
+
+            using var map = new SKBitmap(info);
+
+            static int Luma(SKColor c) => 54 * c.Red + 183 * c.Green + 19 * c.Blue;
+
+            for (var y = 0; y < height; y++)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    var pixel = render.GetPixel(x, y);
+
+                    if (Luma(pixel) < 240 * 256)
+                    {
+                        inkPixels++;
+                    }
+
+                    if (x == 0 || x == width - 1 || Math.Abs(pixel.Red - pixel.Blue) <= 8)
+                    {
+                        map.SetPixel(x, y, SKColors.White);
+                        continue;
+                    }
+
+                    fringed++;
+
+                    var leftInk = Luma(render.GetPixel(x - 1, y)) < Luma(pixel);
+                    var rightInk = Luma(render.GetPixel(x + 1, y)) < Luma(pixel);
+
+                    if (pixel.Red > pixel.Blue && rightInk && !leftInk)
+                    {
+                        warmLeft++;
+                        map.SetPixel(x, y, new SKColor(0xE0, 0x50, 0x30));
+                    }
+                    else if (pixel.Blue > pixel.Red && leftInk && !rightInk)
+                    {
+                        coolRight++;
+                        map.SetPixel(x, y, new SKColor(0x30, 0x60, 0xE0));
+                    }
+                    else if ((pixel.Red > pixel.Blue && leftInk && !rightInk) ||
+                             (pixel.Blue > pixel.Red && rightInk && !leftInk))
+                    {
+                        // Warm on a right edge or cool on a left edge — swapped stripe order
+                        // or a double-blend; this is the defect signal.
+                        wrongPolarity++;
+                        map.SetPixel(x, y, new SKColor(0xE0, 0x00, 0xE0));
+                    }
+                    else
+                    {
+                        // Fringed interior pixel (both or neither neighbor inked) — normal
+                        // between tightly spaced stems.
+                        map.SetPixel(x, y, new SKColor(0xF0, 0xC0, 0x60));
+                    }
+                }
+            }
+
+            var composed = new SKBitmap(new SKImageInfo(width * zoom,
+                (height * zoom + 20) * 2, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            using (var canvas = new SKCanvas(composed))
+            using (var font = new SKFont(SKTypeface.Default, 12))
+            using (var label = new SKPaint { Color = SKColors.Black })
+            {
+                canvas.Clear(SKColors.White);
+                canvas.DrawText("rendering", 0, 14, SKTextAlign.Left, font, label);
+                canvas.DrawText("fringe map: red = warm left edge, blue = cool right edge, magenta = WRONG polarity, amber = interior",
+                    0, height * zoom + 34, SKTextAlign.Left, font, label);
+
+                using var renderImage = SKImage.FromBitmap(render);
+                using var mapImage = SKImage.FromBitmap(map);
+
+                canvas.DrawImage(renderImage, new SKRect(0, 20, width * zoom, 20 + height * zoom),
+                    new SKSamplingOptions(SKFilterMode.Nearest));
+                canvas.DrawImage(mapImage, new SKRect(0, height * zoom + 40, width * zoom, height * zoom + 40 + height * zoom),
+                    new SKSamplingOptions(SKFilterMode.Nearest));
+            }
+
+            return composed;
+        }
+
+        /// <summary>A managed glyph run for direct pipeline draws (no shaping — cmap and
+        /// advances only, which is exactly what the rasterization tools compare).</summary>
+        internal static Avalonia.Skia.SkiaManagedGlyphRunImpl CreateRun(GlyphTypeface typeface,
+            string text, double emSize, Point origin)
+        {
+            var scale = emSize / typeface.Metrics.DesignEmHeight;
+            var infos = new List<GlyphInfo>();
+            var cluster = 0;
+
+            foreach (var c in text)
+            {
+                if (!typeface.CharacterToGlyphMap.ContainsGlyph(c))
+                {
+                    continue;
+                }
+
+                var glyph = typeface.CharacterToGlyphMap[c];
+
+                typeface.TryGetGlyphMetrics(glyph, out var metrics);
+                infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
+            }
+
+            return new Avalonia.Skia.SkiaManagedGlyphRunImpl(typeface, emSize, infos, origin);
         }
 
         /// <summary>Writes the deterministic Inter figures the docs embed.</summary>
