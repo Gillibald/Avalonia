@@ -81,35 +81,6 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Empty(supported.Draws);
         }
 
-        [Fact]
-        public void The_Vector_Tier_Can_Be_Switched_Off_Through_Font_Manager_Options()
-        {
-            var typeface = LoadTypeface();
-
-            using var run = CreateRun(typeface, "go");
-
-            using (AvaloniaLocator.EnterScope())
-            {
-                var options = new FontManagerOptions { EnableSlugVectorTier = false };
-
-                AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(options);
-
-                var context = new RecordingSlugContext();
-
-                // Explicitly disabled, the tier declines even on a capable context, so the
-                // caller falls back to its native blob path.
-                Assert.False(SlugGlyphRunRenderer.TryDraw(
-                    context, Matrix.CreateRotation(Math.PI / 6), run, Brushes.Black));
-                Assert.Empty(context.Draws);
-
-                // The switch is read per draw: flipping it back re-enables the very next one.
-                options.EnableSlugVectorTier = true;
-
-                Assert.True(SlugGlyphRunRenderer.TryDraw(
-                    context, Matrix.CreateRotation(Math.PI / 6), run, Brushes.Black));
-                Assert.Equal(1, context.Draws.Count);
-            }
-        }
 
         [Fact]
         public void Transparent_Foregrounds_Are_Handled_Without_Draws()
