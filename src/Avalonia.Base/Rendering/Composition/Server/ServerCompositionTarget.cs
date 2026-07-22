@@ -33,6 +33,9 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _fullRedrawRequested;
         private bool _disposed;
         private readonly HashSet<ServerCompositionVisual> _attachedVisuals = new();
+        private readonly HashSet<ServerCompositionVisual> _backdropVisuals = new();
+        private readonly List<LtrbRect> _frameDirtyRects = new();
+        private RecordingDirtyRectCollector? _recordingCollector;
         public IDirtyRectTracker DirtyRects { get; }
 
         public long Id { get; }
@@ -128,8 +131,19 @@ namespace Avalonia.Rendering.Composition.Server
                 var collector = DebugEvents != null
                     ? new DebugEventsDirtyRectCollectorProxy(DirtyRects, DebugEvents)
                     : (IDirtyRectCollector)DirtyRects;
-                
+
+                // Backdrops need to know what this frame invalidated, and the
+                // tracker cannot answer that until FinalizeFrame.
+                _frameDirtyRects.Clear();
+                if (_backdropVisuals.Count > 0)
+                {
+                    _recordingCollector ??= new RecordingDirtyRectCollector(_frameDirtyRects);
+                    collector = _recordingCollector.Wrap(collector);
+                }
+
                 Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height));
+
+                ExpandDirtyRegionForBackdrops(collector, transform);
 
                 _updateRequested = false;
 
@@ -356,6 +370,100 @@ namespace Avalonia.Rendering.Composition.Server
         {
             if (_attachedVisuals.Remove(visual) && IsEnabled)
                 visual.Deactivate();
+        }
+
+        /// <summary>
+        /// Mirrors what the update invalidates into a list, so the backdrop pass
+        /// can see this frame's rects. Reused across frames: this sits in the
+        /// compositor's per-frame path.
+        /// </summary>
+        private sealed class RecordingDirtyRectCollector : IDirtyRectCollector
+        {
+            private readonly List<LtrbRect> _rects;
+            private IDirtyRectCollector? _inner;
+
+            public RecordingDirtyRectCollector(List<LtrbRect> rects) => _rects = rects;
+
+            public IDirtyRectCollector Wrap(IDirtyRectCollector inner)
+            {
+                _inner = inner;
+                return this;
+            }
+
+            public void AddRect(LtrbRect rect)
+            {
+                _inner!.AddRect(rect);
+                _rects.Add(rect);
+            }
+        }
+
+        public void AddBackdropVisual(ServerCompositionVisual visual) => _backdropVisuals.Add(visual);
+
+        public void RemoveBackdropVisual(ServerCompositionVisual visual) => _backdropVisuals.Remove(visual);
+
+        /// <summary>
+        /// Widens the dirty region so that every backdrop it touches is covered in
+        /// full, together with the area its filter reads beyond its own bounds.
+        /// A backdrop composites what is already on the surface, so anything left
+        /// unpainted underneath it is last frame's output - which already contains
+        /// the backdrop - and filtering that again smears it outward.
+        /// </summary>
+        /// <remarks>
+        /// This works off the rects collected during the update rather than
+        /// <see cref="IDirtyRectTracker.Intersects"/>, because the tracker only
+        /// rebuilds what that queries in FinalizeFrame, which has not run yet and
+        /// would answer for the previous frame.
+        /// </remarks>
+        private void ExpandDirtyRegionForBackdrops(IDirtyRectCollector collector, Matrix transform)
+        {
+            if (_backdropVisuals.Count == 0 || _frameDirtyRects.Count == 0)
+                return;
+
+            var surface = new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height);
+
+            // Expanding one backdrop can reach another, so repeat until a pass adds
+            // nothing. Each pass covers at least one more backdrop, so the visual
+            // count bounds the loop.
+            for (var pass = 0; pass < _backdropVisuals.Count; pass++)
+            {
+                var added = false;
+                foreach (var visual in _backdropVisuals)
+                {
+                    if (visual.BackdropEffect is not { } effect)
+                        continue;
+                    if (visual.TryGetWorldBounds(transform) is not { } bounds)
+                        continue;
+
+                    var area = bounds.Inflate(effect.GetEffectOutputPadding()).IntersectOrEmpty(surface);
+                    if (area.IsZeroSize)
+                        continue;
+
+                    var touched = false;
+                    for (var i = 0; i < _frameDirtyRects.Count; i++)
+                    {
+                        var rect = _frameDirtyRects[i];
+                        if (rect.Contains(area))
+                        {
+                            // Already repainted in full; nothing to widen.
+                            touched = false;
+                            break;
+                        }
+
+                        touched |= rect.Intersects(area);
+                    }
+
+                    if (!touched)
+                        continue;
+
+                    // The collector records into _frameDirtyRects, so the next
+                    // backdrop in this pass already sees the widened area.
+                    collector.AddRect(area);
+                    added = true;
+                }
+
+                if (!added)
+                    return;
+            }
         }
 
         public void RequestFullRedraw() => _redrawRequested = true;
