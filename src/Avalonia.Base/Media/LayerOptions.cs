@@ -51,6 +51,22 @@ public readonly record struct LayerOptions
     public IEffect? Effect { get; init; }
 
     /// <summary>
+    /// Optional image-filter effect applied to the content already on the
+    /// surface when the layer is opened, rather than to the layer's own
+    /// content. This is the CSS <c>backdrop-filter</c> semantic: the layer is
+    /// initialized with a filtered copy of what is behind it, so drawing a
+    /// translucent shape over it produces the frosted-glass look.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="Effect"/>, a backdrop cannot be expressed by the
+    /// composite-time paint, so it needs a backend that implements
+    /// <c>IDrawingContextImplWithLayers</c>. Backends without one ignore it and
+    /// emit a one-shot warning. The filtered region is the layer's
+    /// <see cref="Bounds"/>, or the current clip when no bounds are given.
+    /// </remarks>
+    public IEffect? BackdropEffect { get; init; }
+
+    /// <summary>
     /// Forces an isolated offscreen layer even when no other compositing
     /// parameter is set. Children with non-default blend modes then composite
     /// against the layer's contents instead of the page backdrop — the CSS
@@ -70,5 +86,6 @@ public readonly record struct LayerOptions
         !Isolate
         && EffectiveOpacity == 1.0
         && EffectiveBlendMode == BitmapBlendingMode.SourceOver
-        && Effect == null;
+        && Effect == null
+        && BackdropEffect == null;
 }

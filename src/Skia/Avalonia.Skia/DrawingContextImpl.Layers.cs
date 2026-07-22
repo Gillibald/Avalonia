@@ -28,12 +28,35 @@ partial class DrawingContextImpl
             paint.ImageFilter = imageFilter;
         }
 
-        if (options.Bounds.HasValue)
+        SKImageFilter? backdropFilter = null;
+        if (options.BackdropEffect is { } backdropEffect)
+            backdropFilter = CreateEffect(backdropEffect);
+
+        if (backdropFilter != null)
+        {
+            // A backdrop filters the surface content the layer is opened over,
+            // which the composite-time paint cannot express - it only exists on
+            // the SaveLayerRec overload.
+            var rec = new SKCanvasSaveLayerRec
+            {
+                Bounds = options.Bounds?.ToSKRect(),
+                Paint = paint,
+                Backdrop = backdropFilter
+            };
+
+            Canvas.SaveLayer(ref rec);
+        }
+        else if (options.Bounds.HasValue)
+        {
             Canvas.SaveLayer(options.Bounds.Value.ToSKRect(), paint);
+        }
         else
+        {
             Canvas.SaveLayer(paint);
+        }
 
         imageFilter?.Dispose();
+        backdropFilter?.Dispose();
         SKPaintCache.Shared.ReturnReset(paint);
     }
 
