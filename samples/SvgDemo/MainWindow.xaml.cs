@@ -1,10 +1,13 @@
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Svg;
+using Avalonia.Platform.Storage;
 
 namespace SvgDemo
 {
@@ -12,6 +15,10 @@ namespace SvgDemo
     {
         private readonly ObservableCollection<string> _clicks = new();
         private readonly TextBlock _hoverChainText;
+        private readonly SvgControl _loadedSvg;
+        private readonly TextBlock _loadedFileText;
+        private readonly TextBlock _loadErrorText;
+        private SvgDocument? _loadedDoc;
 
         public MainWindow()
         {
@@ -27,6 +34,50 @@ namespace SvgDemo
 
             // Clicks: the control raises element events with the chain attached.
             interactiveSvg.ElementPointerPressed += OnSvgElementPressed;
+
+            // Load File tab: pick a .svg from disk and present it live.
+            _loadedSvg = this.FindControl<SvgControl>("LoadedSvg")!;
+            _loadedFileText = this.FindControl<TextBlock>("LoadedFileText")!;
+            _loadErrorText = this.FindControl<TextBlock>("LoadErrorText")!;
+            this.FindControl<Button>("OpenSvgButton")!.Click += OnOpenSvgClick;
+        }
+
+        private async void OnOpenSvgClick(object? sender, RoutedEventArgs e)
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Open SVG file",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("SVG image") { Patterns = new[] { "*.svg" } }
+                }
+            });
+
+            if (files.Count == 0)
+                return;
+
+            var file = files[0];
+            try
+            {
+                await using var stream = await file.OpenReadAsync();
+                var document = SvgDocument.Load(stream);
+
+                // The control does not own code-assigned documents, so swap in the
+                // new one and dispose the document the previous load created.
+                var previous = _loadedDoc;
+                _loadedSvg.Source = document;
+                _loadedDoc = document;
+                previous?.Dispose();
+
+                _loadedFileText.Text = file.Name;
+                _loadErrorText.IsVisible = false;
+            }
+            catch (Exception ex)
+            {
+                _loadErrorText.Text = $"Could not load '{file.Name}': {ex.Message}";
+                _loadErrorText.IsVisible = true;
+            }
         }
 
         private void OnSvgPointerMoved(object? sender, PointerEventArgs e)
