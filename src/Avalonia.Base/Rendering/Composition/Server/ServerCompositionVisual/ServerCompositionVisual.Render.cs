@@ -159,6 +159,21 @@ partial class ServerCompositionVisual
             if (visual.OpacityMaskBrush != null)
                 _canvas.PushOpacityMask(visual.OpacityMaskBrush, visual._subTreeBounds!.Value.ToRect());
             
+            // A backdrop filters the surface below rather than this visual's own
+            // content, so the layer opens before anything is drawn. LayerOptions
+            // .Bounds only hints the offscreen size, so the clip is what actually
+            // confines the filter to this visual.
+            if (visual.BackdropEffect != null && _canvas is IDrawingContextImplWithLayers backdropLayers)
+            {
+                var backdropBounds = visual._subTreeBounds!.Value.ToRect();
+                _canvas.PushClip(backdropBounds);
+                backdropLayers.PushLayer(new Avalonia.Media.LayerOptions
+                {
+                    Bounds = backdropBounds,
+                    BackdropEffect = visual.BackdropEffect
+                });
+            }
+
             if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
                 effects.PushEffect(visual._subTreeBounds!.Value.ToRect(), visual.Effect);
 
@@ -182,6 +197,12 @@ partial class ServerCompositionVisual
             {
                 if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
                     effects.PopEffect();
+
+                if (visual.BackdropEffect != null && _canvas is IDrawingContextImplWithLayers backdropLayers)
+                {
+                    backdropLayers.PopLayer();
+                    _canvas.PopClip();
+                }
 
                 if (visual.OpacityMaskBrush != null)
                     _canvas.PopOpacityMask();
