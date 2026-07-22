@@ -116,6 +116,35 @@ public class BackdropEffectTests : TestBase
     }
 
     /// <summary>
+    /// A frosted panel is normally rounded, and the backdrop has to follow that
+    /// shape rather than filling the corners. The compositor cannot know a
+    /// control's painted shape, so the panel's own clip is what confines it.
+    /// </summary>
+    [Fact]
+    public async Task Backdrop_Follows_Rounded_Clip()
+    {
+        var canvas = BuildScene();
+
+        // A grayscale backdrop over saturated quadrants makes the filtered region's
+        // outline unmistakable; a blur over flat colour would hide the corners.
+        var panel = FrostedPanel(new ImmutableColorMatrixEffect(new double[]
+        {
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0,      0,      0,      1, 0
+        }));
+        panel.Clip = new RectangleGeometry(new Rect(0, 0, 140, 84), 24, 24);
+        panel.CornerRadius = new CornerRadius(24);
+        Canvas.SetLeft(panel, 30);
+        Canvas.SetTop(panel, 58);
+        canvas.Children.Add(panel);
+
+        await RenderToFile(canvas);
+        CompareImages(skipImmediate: true);
+    }
+
+    /// <summary>
     /// The pre-existing Visual.Effect API over the same tree, for contrast: it
     /// filters the control's own content, not what is behind it.
     /// </summary>
