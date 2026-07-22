@@ -405,6 +405,12 @@ internal static class SvgCompiler
             case "text":
                 SvgText.Compile(element, context, compileContext, style);
                 break;
+            // Deliberately absent from IsRenderable: inside a <switch> an
+            // author's own <text> fallback must still win over this
+            // approximation of the embedded content.
+            case "foreignObject":
+                SvgForeignObject.Compile(element, context, compileContext, style);
+                break;
         }
     }
 
