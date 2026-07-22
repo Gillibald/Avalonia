@@ -19,7 +19,9 @@ namespace Avalonia.Skia
     internal partial class DrawingContextImpl : IDrawingContextImpl,
         IDrawingContextWithAcrylicLikeSupport,
         IDrawingContextImplWithEffects,
-        IDrawingContextImplWithBackdropSupport
+        IDrawingContextImplWithBackdropSupport,
+        IDrawingContextImplWithLuminanceMask,
+        IDrawingContextImplWithLayers
     {
         private IDisposable?[]? _disposables;
         // TODO: Get rid of this value, it's currently used to calculate intermediate sizes for tile brushes
@@ -842,6 +844,10 @@ namespace Avalonia.Skia
 
         /// <inheritdoc />
         public void PushOpacityMask(IBrush mask, Rect bounds)
+            => PushOpacityMask(mask, bounds, MaskType.Alpha);
+
+        /// <inheritdoc />
+        public void PushOpacityMask(IBrush mask, Rect bounds, MaskType maskType)
         {
             CheckLease();
 
@@ -851,6 +857,16 @@ namespace Avalonia.Skia
             // Mask paints are a plain color or shader, so DstIn applies the mask straight to the layer.
             var maskPaint = CreatePaint(SKPaintCache.Shared.Get(), mask, bounds);
             maskPaint.Paint.BlendMode = SKBlendMode.DstIn;
+
+            if (maskType == MaskType.Luminance)
+            {
+                // SVG luminance mode: convert the mask brush's RGB to alpha
+                // (weighted by luminance) before the DstIn blend in PopOpacityMask.
+                var lumaFilter = SKColorFilter.CreateLumaColor();
+                maskPaint.Paint.ColorFilter = lumaFilter;
+                maskPaint.AddDisposable(lumaFilter);
+            }
+
             _maskStack.Push((Canvas.TotalMatrix, maskPaint));
         }
 
