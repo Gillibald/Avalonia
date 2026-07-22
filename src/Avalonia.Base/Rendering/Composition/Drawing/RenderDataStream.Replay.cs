@@ -1,3 +1,4 @@
+using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -8,11 +9,16 @@ namespace Avalonia.Rendering.Composition.Drawing;
 
 internal partial class RenderDataStream
 {
+    private static bool s_warnedAboutLayerFallback;
+    private static bool s_warnedAboutLuminanceFallback;
+
     internal struct ReplayScope
     {
         public RenderDataOpcode Kind;
         public bool Active;
         public Matrix SavedTransform;
+        public bool FallbackOpacity;
+        public bool FallbackEffect;
     }
 
     internal struct ReplayVisitor : IRenderDataVisitor<ReplayScope>
@@ -105,10 +111,29 @@ internal partial class RenderDataStream
             return new ReplayScope { Kind = RenderDataOpcode.PushOpacity, Active = opacity != 1 };
         }
 
-        public ReplayScope OnPushOpacityMask(IBrush? brush, Rect bounds)
+        public ReplayScope OnPushOpacityMask(IBrush? brush, Rect bounds, MaskType maskType)
         {
             if (brush != null)
-                _context.PushOpacityMask(brush, bounds);
+            {
+                if (maskType == MaskType.Luminance && _context is IDrawingContextImplWithLuminanceMask luminanceImpl)
+                {
+                    luminanceImpl.PushOpacityMask(brush, bounds, MaskType.Luminance);
+                }
+                else
+                {
+                    if (maskType == MaskType.Luminance && !s_warnedAboutLuminanceFallback)
+                    {
+                        s_warnedAboutLuminanceFallback = true;
+                        Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
+                            _context,
+                            "Backend does not implement IDrawingContextImplWithLuminanceMask; " +
+                            "falling back to alpha mask. SVG luminance-mode masks will render " +
+                            "incorrectly.");
+                    }
+
+                    _context.PushOpacityMask(brush, bounds);
+                }
+            }
             return new ReplayScope { Kind = RenderDataOpcode.PushOpacityMask, Active = brush != null };
         }
 
@@ -143,6 +168,48 @@ internal partial class RenderDataStream
             return new ReplayScope { Kind = RenderDataOpcode.PushEffect, Active = active };
         }
 
+        public ReplayScope OnPushLayer(LayerOptions options)
+        {
+            if (options.IsPassthrough)
+                return new ReplayScope { Kind = RenderDataOpcode.PushLayer, Active = false };
+
+            if (_context is IDrawingContextImplWithLayers layerImpl)
+            {
+                layerImpl.PushLayer(options);
+                return new ReplayScope { Kind = RenderDataOpcode.PushLayer, Active = true };
+            }
+
+            if ((options.EffectiveBlendMode != BitmapBlendingMode.SourceOver || options.Isolate)
+                && !s_warnedAboutLayerFallback)
+            {
+                s_warnedAboutLayerFallback = true;
+                Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
+                    _context,
+                    "Backend does not implement IDrawingContextImplWithLayers; " +
+                    "layer blend mode / isolation cannot be honored.");
+            }
+
+            // Closest approximation without native layer support: compose the existing
+            // effect / opacity capabilities; blend mode and isolation cannot be honored here.
+            var scope = new ReplayScope { Kind = RenderDataOpcode.PushLayer };
+
+            if (options.Effect is { } effect && _context is IDrawingContextImplWithEffects effectImpl)
+            {
+                effectImpl.PushEffect(options.Bounds, effect);
+                scope.FallbackEffect = true;
+                scope.Active = true;
+            }
+
+            if (options.EffectiveOpacity < 1.0)
+            {
+                _context.PushOpacity(options.EffectiveOpacity, options.Bounds);
+                scope.FallbackOpacity = true;
+                scope.Active = true;
+            }
+
+            return scope;
+        }
+
         public void OnPop(in ReplayScope scope)
         {
             if (!scope.Active)
@@ -173,6 +240,18 @@ internal partial class RenderDataStream
                     break;
                 case RenderDataOpcode.PushEffect:
                     ((IDrawingContextImplWithEffects)_context).PopEffect();
+                    break;
+                case RenderDataOpcode.PushLayer:
+                    if (scope.FallbackOpacity || scope.FallbackEffect)
+                    {
+                        // Pop in reverse push order: opacity (innermost) first, then effect.
+                        if (scope.FallbackOpacity)
+                            _context.PopOpacity();
+                        if (scope.FallbackEffect)
+                            ((IDrawingContextImplWithEffects)_context).PopEffect();
+                    }
+                    else
+                        _context.PopLayer();
                     break;
             }
         }

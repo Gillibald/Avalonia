@@ -410,7 +410,8 @@ namespace Avalonia.Media
                 OpacityMask,
                 RenderOptions,
                 TextOptions,
-                Effect
+                Effect,
+                Layer
             }
 
             public RestoreState(DrawingContext context, PushedStateType type)
@@ -441,6 +442,8 @@ namespace Avalonia.Media
                     _context.PopTextOptionsCore();
                 else if (_type == PushedStateType.Effect)
                     _context.PopEffectCore();
+                else if (_type == PushedStateType.Layer)
+                    _context.PopLayerCore();
             }
         }
 
@@ -512,13 +515,46 @@ namespace Avalonia.Media
         /// </param>
         /// <returns>A disposable to undo the opacity mask.</returns>
         public PushedState PushOpacityMask(IBrush mask, Rect bounds)
+            => PushOpacityMask(mask, bounds, MaskType.Alpha);
+
+        /// <summary>
+        /// Pushes an opacity mask whose coverage is derived from
+        /// <paramref name="maskType"/>.
+        /// </summary>
+        /// <param name="mask">The opacity mask.</param>
+        /// <param name="bounds">The size of the brush's target area.</param>
+        /// <param name="maskType">Whether the mask's alpha or luminance drives coverage.</param>
+        /// <returns>A disposable to undo the opacity mask.</returns>
+        /// <remarks>
+        /// Backends that do not advertise <c>IDrawingContextImplWithLuminanceMask</c>
+        /// fall back to alpha mode when <paramref name="maskType"/> is
+        /// <see cref="MaskType.Luminance"/>, emitting a one-shot warning.
+        /// </remarks>
+        public PushedState PushOpacityMask(IBrush mask, Rect bounds, MaskType maskType)
         {
-            PushOpacityMaskCore(mask, bounds);
+            PushOpacityMaskCore(mask, bounds, maskType);
             _states ??= StateStackPool.Get();
             _states.Push(new RestoreState(this, RestoreState.PushedStateType.OpacityMask));
             return new PushedState(this);
         }
+
+        /// <summary>
+        /// Legacy alpha-only core. Implementations should override
+        /// <see cref="PushOpacityMaskCore(IBrush, Rect, MaskType)"/> instead; the
+        /// three-parameter override forwards here when mask type is
+        /// <see cref="MaskType.Alpha"/>.
+        /// </summary>
         protected abstract void PushOpacityMaskCore(IBrush mask, Rect bounds);
+
+        /// <summary>
+        /// When overridden, pushes an opacity mask with the given mask type. The
+        /// base implementation ignores <paramref name="maskType"/> and delegates
+        /// to <see cref="PushOpacityMaskCore(IBrush, Rect)"/>, which keeps derived
+        /// contexts that do not care about luminance (e.g. immediate replay)
+        /// behaving exactly as before.
+        /// </summary>
+        protected virtual void PushOpacityMaskCore(IBrush mask, Rect bounds, MaskType maskType)
+            => PushOpacityMaskCore(mask, bounds);
 
         /// <summary>
         /// Pushes a matrix transformation.
@@ -579,6 +615,36 @@ namespace Avalonia.Media
         }
 
         protected abstract void PushTextOptionsCore(TextOptions textOptions);
+
+        /// <summary>
+        /// Pushes a compositing layer. Subsequent draw operations are rendered
+        /// into an offscreen buffer that is composited back onto the surface
+        /// below when the returned <see cref="PushedState"/> is disposed.
+        /// </summary>
+        /// <param name="options">
+        /// Options controlling how the layer composites: optional explicit
+        /// bounds, group opacity, blend mode, and filter effect.
+        /// </param>
+        /// <remarks>
+        /// Layers differ from <see cref="PushOpacity(double)"/> in that
+        /// overlapping semi-transparent children are first blended inside the
+        /// layer before the whole group is composited — this is what SVG's
+        /// <c>&lt;g opacity&gt;</c>, <c>mix-blend-mode</c>, and
+        /// <c>&lt;filter&gt;</c> require. Backends that do not advertise the
+        /// layer probe interface fall back to the closest approximation
+        /// available, emitting a one-shot warning.
+        /// </remarks>
+        /// <returns>A disposable used to pop the layer.</returns>
+        public PushedState PushLayer(LayerOptions options)
+        {
+            PushLayerCore(options);
+            _states ??= StateStackPool.Get();
+            _states.Push(new RestoreState(this, RestoreState.PushedStateType.Layer));
+            return new PushedState(this);
+        }
+
+        protected abstract void PushLayerCore(LayerOptions options);
+        protected abstract void PopLayerCore();
 
         protected abstract void PushTransformCore(Matrix matrix);
 

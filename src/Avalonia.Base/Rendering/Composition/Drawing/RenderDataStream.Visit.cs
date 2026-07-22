@@ -126,7 +126,7 @@ internal partial class RenderDataStream
                     {
                         var p = reader.ReadPayload<PushOpacityMaskPayload>();
                         scopes[depth++] = visitor.OnPushOpacityMask(
-                            (IBrush?)_resources[p.Brush], p.Bounds);
+                            (IBrush?)_resources[p.Brush], p.Bounds, p.MaskType);
                         break;
                     }
                     case RenderDataOpcode.PushTransform:
@@ -152,6 +152,19 @@ internal partial class RenderDataStream
                         var p = reader.ReadPayload<PushEffectPayload>();
                         scopes[depth++] = visitor.OnPushEffect(
                             (IEffect?)_resources[p.Effect], p.Bounds);
+                        break;
+                    }
+                    case RenderDataOpcode.PushLayer:
+                    {
+                        var p = reader.ReadPayload<PushLayerPayload>();
+                        scopes[depth++] = visitor.OnPushLayer(new LayerOptions
+                        {
+                            Bounds = p.HasBounds ? p.Bounds : null,
+                            Opacity = p.Opacity,
+                            BlendMode = p.BlendMode,
+                            Isolate = p.Isolate,
+                            Effect = (IEffect?)_resources[p.Effect]
+                        });
                         break;
                     }
                     case RenderDataOpcode.Pop:

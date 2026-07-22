@@ -23,10 +23,11 @@ internal interface IRenderDataVisitor<TScope> where TScope : unmanaged
     TScope OnPushClip(RoundedRect clip);
     TScope OnPushGeometryClip(IGeometryImpl? geometry);
     TScope OnPushOpacity(double opacity);
-    TScope OnPushOpacityMask(IBrush? brush, Rect bounds);
+    TScope OnPushOpacityMask(IBrush? brush, Rect bounds, MaskType maskType);
     TScope OnPushTransform(Matrix matrix);
     TScope OnPushRenderOptions(RenderOptions options);
     TScope OnPushTextOptions(TextOptions options);
     TScope OnPushEffect(IEffect? effect, Rect bounds);
+    TScope OnPushLayer(LayerOptions options);
     void OnPop(in TScope scope);
 }

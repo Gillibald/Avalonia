@@ -407,6 +407,9 @@ internal class RenderDataDrawingContext : DrawingContext
     }
 
     protected override void PushOpacityMaskCore(IBrush? mask, Rect bounds)
+        => PushOpacityMaskCore(mask, bounds, MaskType.Alpha);
+
+    protected override void PushOpacityMaskCore(IBrush? mask, Rect bounds, MaskType maskType)
     {
         if (mask == null)
         {
@@ -415,7 +418,7 @@ internal class RenderDataDrawingContext : DrawingContext
         }
 
         var before = Stream.OpcodeLength;
-        Stream.PushOpacityMask(CaptureBrush(mask), bounds);
+        Stream.PushOpacityMask(CaptureBrush(mask), bounds, maskType);
         PushedScope(before);
     }
 
@@ -452,6 +455,39 @@ internal class RenderDataDrawingContext : DrawingContext
         Stream.PushEffect(effect.ToImmutable(), bounds.Inflate(effect.GetEffectOutputPadding()));
         PushedScope(before);
     }
+
+    protected override void PushLayerCore(LayerOptions options)
+    {
+        if (options.IsPassthrough)
+        {
+            PushedNoOpScope();
+            return;
+        }
+
+        // The recorded scope replays on the render thread and is not registered
+        // as a composition resource, so the effect must be captured as an
+        // immutable snapshot regardless of the context mode.
+        IImmutableEffect? effect = null;
+        if (options.Effect is { } sourceEffect)
+        {
+            effect = sourceEffect as IImmutableEffect
+                ?? (sourceEffect is IMutableEffect
+                    ? sourceEffect.ToImmutable()
+                    : throw new InvalidOperationException(
+                        sourceEffect.GetType() + " cannot be recorded. LayerOptions.Effect must be an " +
+                        "immutable effect or a mutable effect that supports snapshotting."));
+        }
+
+        var before = Stream.OpcodeLength;
+        Stream.PushLayer(options.Bounds, options.EffectiveOpacity, options.EffectiveBlendMode,
+            options.Isolate, effect);
+        // A layer with an effect produces output even over empty content (a
+        // source-generating filter fills the layer), so it must survive
+        // empty-scope elision.
+        PushedScope(before, keepWhenEmpty: effect != null);
+    }
+
+    protected override void PopLayerCore() => PopCore();
 
     protected override void PopClipCore() => PopCore();
 

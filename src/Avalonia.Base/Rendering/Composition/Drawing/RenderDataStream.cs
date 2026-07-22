@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition.Transport;
 using Avalonia.Rendering.SceneGraph;
@@ -177,12 +178,13 @@ internal partial class RenderDataStream : IDisposable
         EnterScope();
     }
 
-    public void PushOpacityMask(IBrush? serverBrush, Rect bounds)
+    public void PushOpacityMask(IBrush? serverBrush, Rect bounds, MaskType maskType = MaskType.Alpha)
     {
         _writer.WritePayload(new PushOpacityMaskPayload
         {
             Brush = _resources.Intern(serverBrush),
-            Bounds = bounds
+            Bounds = bounds,
+            MaskType = maskType
         });
         EnterScope();
     }
@@ -211,6 +213,21 @@ internal partial class RenderDataStream : IDisposable
         {
             Effect = _resources.Intern(effect),
             Bounds = bounds
+        });
+        EnterScope();
+    }
+
+    public void PushLayer(Rect? bounds, double opacity, BitmapBlendingMode blendMode, bool isolate,
+        IImmutableEffect? effect)
+    {
+        _writer.WritePayload(new PushLayerPayload
+        {
+            Effect = _resources.Intern(effect),
+            HasBounds = bounds.HasValue,
+            Bounds = bounds ?? default,
+            Opacity = opacity,
+            BlendMode = blendMode,
+            Isolate = isolate
         });
         EnterScope();
     }

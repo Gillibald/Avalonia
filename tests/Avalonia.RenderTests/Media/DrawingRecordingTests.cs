@@ -185,6 +185,190 @@ public class DrawingRecordingTests : TestBase
         CompareImages();
     }
 
+    [Fact]
+    public async Task PushOpacityMask_Luminance_Differs_From_Alpha()
+    {
+        // A red square masked by a horizontal black-to-white gradient.
+        // Alpha mode: mask alpha is constant 1, so the red passes through unchanged.
+        // Luminance mode: mask RGB→alpha goes from black (0) to white (1), so the
+        // result fades from transparent on the left to opaque red on the right.
+        var mask = new ImmutableLinearGradientBrush(
+            new[]
+            {
+                new ImmutableGradientStop(0, Colors.Black),
+                new ImmutableGradientStop(1, Colors.White)
+            },
+            startPoint: new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            endPoint: new RelativePoint(1, 0.5, RelativeUnit.Relative));
+
+        var target = new RecordingRenderer((control, context) =>
+        {
+            // White background so the difference is visible.
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 200, 100));
+
+            using (context.PushOpacityMask(mask, new Rect(10, 10, 80, 80), MaskType.Luminance))
+                context.FillRectangle(Brushes.Red, new Rect(10, 10, 80, 80));
+
+            using (context.PushOpacityMask(mask, new Rect(110, 10, 80, 80), MaskType.Alpha))
+                context.FillRectangle(Brushes.Red, new Rect(110, 10, 80, 80));
+        })
+        {
+            Width = 200, Height = 100
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
+    public async Task PushLayer_BlendMode_Multiply()
+    {
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 150, 150));
+
+            // Magenta over yellow with multiply: result = red.
+            context.FillRectangle(Brushes.Yellow, new Rect(20, 20, 80, 80));
+
+            using (context.PushLayer(new LayerOptions
+            {
+                BlendMode = BitmapBlendingMode.Multiply
+            }))
+            {
+                context.FillRectangle(Brushes.Magenta, new Rect(50, 50, 80, 80));
+            }
+        })
+        {
+            Width = 150, Height = 150
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
+    public async Task PushLayer_Group_Opacity_Differs_From_Per_Primitive()
+    {
+        // Two overlapping semi-transparent disks.
+        // Per-primitive opacity (PushOpacity): each disk blends with backdrop
+        // independently; overlap region is double-blended (darker).
+        // Group opacity (PushLayer.Opacity): both disks compose into a layer
+        // first; layer is then blended with backdrop once.
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 200, 100));
+
+            // Left: per-primitive opacity 0.5 around two opaque disks.
+            using (context.PushOpacity(0.5))
+            {
+                context.DrawEllipse(Brushes.Red, null, new Rect(20, 20, 50, 50));
+                context.DrawEllipse(Brushes.Red, null, new Rect(50, 30, 50, 50));
+            }
+
+            // Right: group opacity 0.5 (PushLayer) around the same two disks.
+            using (context.PushLayer(new LayerOptions { Opacity = 0.5 }))
+            {
+                context.DrawEllipse(Brushes.Red, null, new Rect(120, 20, 50, 50));
+                context.DrawEllipse(Brushes.Red, null, new Rect(150, 30, 50, 50));
+            }
+        })
+        {
+            Width = 200, Height = 100
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
+    public async Task PushLayer_Composite_Effect_Chain()
+    {
+        // Grayscale (saturate 0) then offset: one composed filter on the layer.
+        var grayscale = new ImmutableColorMatrixEffect(new double[]
+        {
+            0.213, 0.715, 0.072, 0, 0,
+            0.213, 0.715, 0.072, 0, 0,
+            0.213, 0.715, 0.072, 0, 0,
+            0, 0, 0, 1, 0,
+        });
+
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 150, 100));
+
+            // Reference: the unfiltered shape.
+            context.FillRectangle(Brushes.Crimson, new Rect(20, 20, 40, 40));
+
+            using (context.PushLayer(new LayerOptions
+            {
+                Effect = new ImmutableCompositeEffect(new IEffect[]
+                {
+                    grayscale,
+                    new ImmutableOffsetEffect(70, 20),
+                })
+            }))
+            {
+                context.FillRectangle(Brushes.Crimson, new Rect(20, 20, 40, 40));
+            }
+        })
+        {
+            Width = 150, Height = 100
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
+    public async Task PushLayer_Isolation_Bounds_Blend_Modes()
+    {
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 200, 100));
+
+            // Left: multiply blends with the yellow backdrop (red intersection).
+            context.FillRectangle(Brushes.Yellow, new Rect(10, 20, 80, 40));
+            using (context.PushLayer(new LayerOptions { BlendMode = BitmapBlendingMode.Multiply }))
+                context.FillRectangle(Brushes.Magenta, new Rect(30, 40, 50, 40));
+
+            // Right: the isolated group bounds the blend — multiply sees only the
+            // group's transparent backdrop, so the magenta stays magenta.
+            context.FillRectangle(Brushes.Yellow, new Rect(110, 20, 80, 40));
+            using (context.PushLayer(new LayerOptions { Isolate = true }))
+            using (context.PushLayer(new LayerOptions { BlendMode = BitmapBlendingMode.Multiply }))
+                context.FillRectangle(Brushes.Magenta, new Rect(130, 40, 50, 40));
+        })
+        {
+            Width = 200, Height = 100
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
+    [Fact]
+    public async Task PushLayer_With_Blur_Effect()
+    {
+        var target = new RecordingRenderer((control, context) =>
+        {
+            context.FillRectangle(Brushes.White, new Rect(0, 0, 150, 150));
+
+            using (context.PushLayer(new LayerOptions
+            {
+                Effect = new ImmutableBlurEffect(8)
+            }))
+            {
+                context.FillRectangle(Brushes.Black, new Rect(40, 40, 70, 70));
+            }
+        })
+        {
+            Width = 150, Height = 150
+        };
+
+        await RenderToFile(target);
+        CompareImages(skipImmediate: true);
+    }
+
     /// <summary>
     /// A control that renders content via a delegate or by replaying a
     /// pre-recorded <see cref="DrawingRecording"/>.

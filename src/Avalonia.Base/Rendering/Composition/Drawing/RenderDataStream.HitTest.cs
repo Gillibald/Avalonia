@@ -121,7 +121,7 @@ internal partial class RenderDataStream
         public HitTestScope OnPushOpacity(double opacity)
             => new HitTestScope { SavedLive = Live };
 
-        public HitTestScope OnPushOpacityMask(IBrush? brush, Rect bounds)
+        public HitTestScope OnPushOpacityMask(IBrush? brush, Rect bounds, MaskType maskType)
             => new HitTestScope { SavedLive = Live };
 
         public HitTestScope OnPushTransform(Matrix matrix)
@@ -148,6 +148,9 @@ internal partial class RenderDataStream
             => new HitTestScope { SavedLive = Live };
 
         public HitTestScope OnPushEffect(IEffect? effect, Rect bounds)
+            => new HitTestScope { SavedLive = Live };
+
+        public HitTestScope OnPushLayer(LayerOptions options)
             => new HitTestScope { SavedLive = Live };
 
         public void OnPop(in HitTestScope scope)

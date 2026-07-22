@@ -514,6 +514,253 @@ public class DrawingRecordingTests
         });
     }
 
+    [Fact]
+    public void PushOpacityMask_Default_Behaves_As_Alpha()
+    {
+        // The alpha overload forwards to the MaskType overload with
+        // MaskType.Alpha — bounds and hit behavior must be unchanged.
+        var mask = new ImmutableSolidColorBrush(Colors.White);
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100)))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushOpacityMask_Luminance_Preserves_Bounds()
+    {
+        var mask = new ImmutableSolidColorBrush(Colors.White);
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100), MaskType.Luminance))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        // Mask type is purely compositional — geometric bounds are unaffected.
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushOpacityMask_Luminance_Hits_Unchanged_By_Type()
+    {
+        var mask = new ImmutableSolidColorBrush(Colors.White);
+
+        using var alphaRec = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100), MaskType.Alpha))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+        using var lumaRec = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushOpacityMask(mask, new Rect(0, 0, 100, 100), MaskType.Luminance))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(alphaRec.Bounds, lumaRec.Bounds);
+        Assert.Equal(alphaRec.HitTest(new Point(20, 20)), lumaRec.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushLayer_Passthrough_Has_Unchanged_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions()))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushLayer_With_Opacity_Preserves_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Opacity = 0.5 }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_BlendMode_Preserves_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions
+            {
+                BlendMode = Avalonia.Media.Imaging.BitmapBlendingMode.Multiply
+            }))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_Blur_Effect_Inflates_Bounds()
+    {
+        var blur = new ImmutableBlurEffect(5);
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = blur }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        // Blur radius expands bounds on every side.
+        var bounds = recording.Bounds;
+        Assert.True(bounds.Width > 30, $"bounds width {bounds.Width} should exceed 30");
+        Assert.True(bounds.Height > 30, $"bounds height {bounds.Height} should exceed 30");
+        Assert.True(bounds.X < 10, $"bounds X {bounds.X} should be < 10");
+        Assert.True(bounds.Y < 10, $"bounds Y {bounds.Y} should be < 10");
+    }
+
+    [Fact]
+    public void PushLayer_With_DropShadow_Effect_Expands_Bounds()
+    {
+        var drop = new ImmutableDropShadowEffect(10, 10, 0, Colors.Black, 1.0);
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = drop }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 30, 30));
+        });
+
+        // Drop shadow expands bounds to cover the offset shape.
+        var bounds = recording.Bounds;
+        Assert.True(bounds.Right >= 40, $"bounds.Right {bounds.Right} should cover offset shape");
+        Assert.True(bounds.Bottom >= 40, $"bounds.Bottom {bounds.Bottom} should cover offset shape");
+    }
+
+    [Fact]
+    public void PushLayer_Explicit_Bounds_Does_Not_Extend_Recording_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            // LayerOptions.Bounds is a backend hint for the compositor's offscreen
+            // buffer extent; it does not produce visible pixels on its own.
+            using (ctx.PushLayer(new LayerOptions { Bounds = new Rect(0, 0, 200, 200) }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_Offset_Effect_Shifts_Bounds()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = new ImmutableOffsetEffect(20, 10) }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 30, 30));
+        });
+
+        // The output pads towards the offset direction.
+        var bounds = recording.Bounds;
+        Assert.Equal(0, bounds.X);
+        Assert.Equal(0, bounds.Y);
+        Assert.True(bounds.Right >= 50, $"bounds.Right {bounds.Right} should cover the shifted content");
+        Assert.True(bounds.Bottom >= 40, $"bounds.Bottom {bounds.Bottom} should cover the shifted content");
+    }
+
+    [Fact]
+    public void PushLayer_With_ColorMatrix_Effect_Preserves_Bounds()
+    {
+        var matrix = new double[20];
+        matrix[0] = matrix[6] = matrix[12] = matrix[18] = 1; // identity
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = new ImmutableColorMatrixEffect(matrix) }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
+    [Fact]
+    public void PushLayer_With_Composite_Effect_Accumulates_Bounds()
+    {
+        var composite = new ImmutableCompositeEffect(new IEffect[]
+        {
+            new ImmutableBlurEffect(4),
+            new ImmutableOffsetEffect(15, 0),
+        });
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = composite }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 30, 30));
+        });
+
+        // Blur padding plus the offset towards +x.
+        var bounds = recording.Bounds;
+        Assert.True(bounds.X < 0, $"bounds.X {bounds.X} should include blur padding");
+        Assert.True(bounds.Right >= 45 + 4, $"bounds.Right {bounds.Right} should cover blur + offset");
+    }
+
+    [Fact]
+    public void Composite_Effect_Equality_Is_Structural()
+    {
+        var a = new ImmutableCompositeEffect(new IEffect[] { new ImmutableBlurEffect(4), new ImmutableOffsetEffect(1, 2) });
+        var b = new ImmutableCompositeEffect(new IEffect[] { new ImmutableBlurEffect(4), new ImmutableOffsetEffect(1, 2) });
+        var c = new ImmutableCompositeEffect(new IEffect[] { new ImmutableBlurEffect(5), new ImmutableOffsetEffect(1, 2) });
+
+        Assert.True(a.Equals(b));
+        Assert.False(a.Equals(c));
+    }
+
+    [Fact]
+    public void PushLayer_Isolate_Forces_A_Layer()
+    {
+        // Isolation must defeat the passthrough elision: an all-default layer is
+        // elided, an isolated one is not.
+        Assert.True(new LayerOptions().IsPassthrough);
+        Assert.False(new LayerOptions { Isolate = true }.IsPassthrough);
+
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Isolate = true }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+        Assert.True(recording.HitTest(new Point(20, 20)));
+    }
+
+    [Fact]
+    public void PushLayer_Nested_Balances_Correctly()
+    {
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Opacity = 0.5 }))
+            using (ctx.PushLayer(new LayerOptions
+            {
+                BlendMode = Avalonia.Media.Imaging.BitmapBlendingMode.Multiply
+            }))
+            {
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(10, 10, 30, 30));
+            }
+        });
+
+        Assert.Equal(new Rect(10, 10, 30, 30), recording.Bounds);
+    }
+
     private static IBrush? ReplayAndCaptureBrush(DrawingRecording recording)
     {
         var mockImpl = new Mock<IDrawingContextImpl>();
@@ -618,6 +865,38 @@ public class DrawingRecordingTests
         // Ownership transferred at the DrawRecording call; the failed recording
         // must not leak the child.
         Assert.True(child.IsDisposed);
+    }
+
+    [Fact]
+    public void PushLayer_Snapshots_Mutable_Effect()
+    {
+        var blur = new BlurEffect { Radius = 10 };
+        using var recording = DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = blur }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(20, 20, 30, 30));
+        });
+
+        var boundsBefore = recording.Bounds;
+
+        // Mutating the live effect must not affect the recorded layer.
+        blur.Radius = 100;
+
+        Assert.Equal(boundsBefore, recording.Bounds);
+    }
+
+    private sealed class FakeEffect : IEffect
+    {
+    }
+
+    [Fact]
+    public void PushLayer_Throws_On_Effect_That_Cannot_Be_Snapshotted()
+    {
+        Assert.Throws<InvalidOperationException>(() => DrawingRecording.Create(ctx =>
+        {
+            using (ctx.PushLayer(new LayerOptions { Effect = new FakeEffect() }))
+                ctx.DrawRectangle(Brushes.Red, null, new Rect(0, 0, 10, 10));
+        }));
     }
 
     [Fact]
