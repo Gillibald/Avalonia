@@ -24,13 +24,13 @@ partial class DrawingContextImpl
 
         if (options.Effect is { } effect)
         {
-            imageFilter = CreateEffect(effect);
+            imageFilter = CreateEffect(effect, options.Bounds);
             paint.ImageFilter = imageFilter;
         }
 
         SKImageFilter? backdropFilter = null;
         if (options.BackdropEffect is { } backdropEffect)
-            backdropFilter = CreateEffect(backdropEffect);
+            backdropFilter = CreateEffect(backdropEffect, options.Bounds);
 
         if (backdropFilter != null)
         {

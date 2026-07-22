@@ -10,7 +10,7 @@ partial class DrawingContextImpl
     public void PushEffect(Rect? effectClipRect, IEffect effect)
     {
         CheckLease();
-        using var filter = CreateEffect(effect);
+        using var filter = CreateEffect(effect, effectClipRect);
         var paint = SKPaintCache.Shared.Get();
         paint.ImageFilter = filter;
         if (effectClipRect.HasValue)
@@ -26,7 +26,22 @@ partial class DrawingContextImpl
         RestoreCanvas();
     }
 
-    SKImageFilter? CreateEffect(IEffect effect)
+    /// <param name="region">
+    /// The area the graph filters, if known. Only the matrix convolution uses it:
+    /// Skia's tile mode is relative to the filter's crop rect, and with no crop
+    /// rect there is no boundary to tile against, so every edge mode degenerates
+    /// to sampling transparent black.
+    /// </param>
+    /// <remarks>
+    /// The convolution is the only filter here that needs the region. Supplying a
+    /// crop rect at natural bounds to blur, morphology, lighting, offset, drop
+    /// shadow, colour filters, the shader source and the compositing filters
+    /// changes nothing; a tighter one would only clip them, which is why they are
+    /// left unbounded. Blur does take a tile mode, and it is not inert either, but
+    /// its default is the decal behaviour SVG wants - a blur that fades out at the
+    /// edge - so there is nothing to pass.
+    /// </remarks>
+    SKImageFilter? CreateEffect(IEffect effect, Rect? region)
     {
         if (effect is IBlurEffect blur)
         {
@@ -79,7 +94,7 @@ partial class DrawingContextImpl
             // convention too.
             var inputs = new SKImageFilter?[merge.Inputs.Count];
             for (var i = 0; i < inputs.Length; i++)
-                inputs[i] = merge.Inputs[i] is { } input ? CreateEffect(input) : null;
+                inputs[i] = merge.Inputs[i] is { } input ? CreateEffect(input, region) : null;
 
             var merged = SKImageFilter.CreateMerge(inputs!);
             foreach (var input in inputs)
@@ -89,15 +104,15 @@ partial class DrawingContextImpl
 
         if (effect is IBlendEffect blend)
         {
-            using var background = blend.Background is { } bg ? CreateEffect(bg) : null;
-            using var foreground = blend.Foreground is { } fg ? CreateEffect(fg) : null;
+            using var background = blend.Background is { } bg ? CreateEffect(bg, region) : null;
+            using var foreground = blend.Foreground is { } fg ? CreateEffect(fg, region) : null;
             return SKImageFilter.CreateBlendMode(blend.Mode.ToSKBlendMode(), background, foreground);
         }
 
         if (effect is IArithmeticCompositeEffect arithmetic)
         {
-            using var background = arithmetic.Background is { } bg ? CreateEffect(bg) : null;
-            using var foreground = arithmetic.Foreground is { } fg ? CreateEffect(fg) : null;
+            using var background = arithmetic.Background is { } bg ? CreateEffect(bg, region) : null;
+            using var foreground = arithmetic.Foreground is { } fg ? CreateEffect(fg, region) : null;
             return SKImageFilter.CreateArithmetic(
                 (float)arithmetic.K1, (float)arithmetic.K2, (float)arithmetic.K3, (float)arithmetic.K4,
                 enforcePMColor: true, background, foreground);
@@ -105,13 +120,13 @@ partial class DrawingContextImpl
 
         if (effect is ITileEffect tile)
         {
-            using var input = tile.Input is { } tileInput ? CreateEffect(tileInput) : null;
+            using var input = tile.Input is { } tileInput ? CreateEffect(tileInput, region) : null;
             return SKImageFilter.CreateTile(tile.Source.ToSKRect(), tile.Destination.ToSKRect(), input);
         }
 
         if (effect is IMorphologyEffect morphology)
         {
-            using var input = morphology.Input is { } morphologyInput ? CreateEffect(morphologyInput) : null;
+            using var input = morphology.Input is { } morphologyInput ? CreateEffect(morphologyInput, region) : null;
             var radiusX = (float)morphology.RadiusX;
             var radiusY = (float)morphology.RadiusY;
             return morphology.Dilate
@@ -121,7 +136,7 @@ partial class DrawingContextImpl
 
         if (effect is ILightingEffect lighting)
         {
-            using var lightingInput = lighting.Input is { } li ? CreateEffect(li) : null;
+            using var lightingInput = lighting.Input is { } li ? CreateEffect(li, region) : null;
             var lightColor = new SKColor(lighting.LightColor.R, lighting.LightColor.G, lighting.LightColor.B);
             var surfaceScale = (float)lighting.SurfaceScale;
             var constant = (float)lighting.LightingConstant;
@@ -168,7 +183,7 @@ partial class DrawingContextImpl
 
         if (effect is IComponentTransferEffect transfer)
         {
-            using var transferInput = transfer.Input is { } ti ? CreateEffect(ti) : null;
+            using var transferInput = transfer.Input is { } ti ? CreateEffect(ti, region) : null;
             using var table = SKColorFilter.CreateTable(
                 ToTable(transfer.AlphaTable), ToTable(transfer.RedTable),
                 ToTable(transfer.GreenTable), ToTable(transfer.BlueTable));
@@ -187,7 +202,7 @@ partial class DrawingContextImpl
 
         if (effect is IConvolveMatrixEffect convolve)
         {
-            using var convolveInput = convolve.Input is { } ci ? CreateEffect(ci) : null;
+            using var convolveInput = convolve.Input is { } ci ? CreateEffect(ci, region) : null;
             var kernel = new float[convolve.Kernel.Count];
             for (var i = 0; i < kernel.Length; i++)
                 kernel[i] = (float)convolve.Kernel[i];
@@ -199,19 +214,26 @@ partial class DrawingContextImpl
                 _ => SKShaderTileMode.Clamp,
             };
 
-            return SKImageFilter.CreateMatrixConvolution(
-                new SKSizeI(convolve.OrderX, convolve.OrderY),
-                kernel,
-                (float)(1 / convolve.Divisor),
-                // Skia's bias is in [0, 255] color units; the effect's is the
-                // SVG [0, 1] fraction.
-                (float)(convolve.Bias * 255),
-                new SKPointI(convolve.TargetX, convolve.TargetY),
-                tileMode,
-                // Skia's flag is convolveAlpha — the inverse of preserveAlpha:
-                // the SVG default convolves premultiplied data incl. alpha.
-                !convolve.PreserveAlpha,
-                convolveInput);
+            var kernelSize = new SKSizeI(convolve.OrderX, convolve.OrderY);
+            var gain = (float)(1 / convolve.Divisor);
+            // Skia's bias is in [0, 255] color units; the effect's is the
+            // SVG [0, 1] fraction.
+            var bias = (float)(convolve.Bias * 255);
+            var kernelOffset = new SKPointI(convolve.TargetX, convolve.TargetY);
+            // Skia's flag is convolveAlpha — the inverse of preserveAlpha:
+            // the SVG default convolves premultiplied data incl. alpha.
+            var convolveAlpha = !convolve.PreserveAlpha;
+
+            // The tile mode is relative to the crop rect. Without one the filter
+            // is unbounded, there is no edge to tile against, and every mode
+            // silently degrades to sampling transparent black.
+            return region is { } cropRect
+                ? SKImageFilter.CreateMatrixConvolution(
+                    kernelSize, kernel, gain, bias, kernelOffset, tileMode, convolveAlpha,
+                    convolveInput, cropRect.ToSKRect())
+                : SKImageFilter.CreateMatrixConvolution(
+                    kernelSize, kernel, gain, bias, kernelOffset, tileMode, convolveAlpha,
+                    convolveInput);
         }
 
         if (effect is IRecordingEffect recordingEffect)
@@ -256,7 +278,7 @@ partial class DrawingContextImpl
 
         if (effect is IAnisotropicBlurEffect anisotropicBlur)
         {
-            using var blurInput = anisotropicBlur.Input is { } abi ? CreateEffect(abi) : null;
+            using var blurInput = anisotropicBlur.Input is { } abi ? CreateEffect(abi, region) : null;
             var sigmaX = anisotropicBlur.RadiusX > 0 ? SkBlurRadiusToSigma(anisotropicBlur.RadiusX) : 0;
             var sigmaY = anisotropicBlur.RadiusY > 0 ? SkBlurRadiusToSigma(anisotropicBlur.RadiusY) : 0;
             return SKImageFilter.CreateBlur(sigmaX, sigmaY, blurInput);
@@ -266,7 +288,7 @@ partial class DrawingContextImpl
         {
             // A tile with identical source and destination passes the region
             // through unchanged — a crop to the primitive subregion.
-            using var cropInput = crop.Input is { } cri ? CreateEffect(cri) : null;
+            using var cropInput = crop.Input is { } cri ? CreateEffect(cri, region) : null;
             return SKImageFilter.CreateTile(crop.Rect.ToSKRect(), crop.Rect.ToSKRect(), cropInput);
         }
 
@@ -277,7 +299,7 @@ partial class DrawingContextImpl
             SKImageFilter? chain = null;
             foreach (var child in composite.Children)
             {
-                var stage = CreateEffect(child);
+                var stage = CreateEffect(child, region);
                 if (stage == null)
                     continue;
 
