@@ -284,5 +284,26 @@
       </ScrollViewer>
     </TabItem>
 
+    <TabItem Header="Load File">
+      <ScrollViewer>
+        <StackPanel Margin="16" Spacing="12">
+          <TextBlock Classes="caption">
+            Load any .svg file from disk and render it through the same SvgControl pipeline the built-in
+            tabs use. The picked file is read as a stream and parsed at runtime with SvgDocument.Load —
+            the same loader that reads avares:// resources and pre-compiled blobs.
+          </TextBlock>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button Name="OpenSvgButton" Content="Open SVG file…"/>
+            <TextBlock Name="LoadedFileText" VerticalAlignment="Center"
+                       Foreground="#475569" Text="No file loaded"/>
+          </StackPanel>
+          <TextBlock Name="LoadErrorText" Classes="caption" Foreground="#b91c1c" IsVisible="False"/>
+          <Border Classes="canvas">
+            <SvgControl Name="LoadedSvg"/>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </TabItem>
+
   </TabControl>
 </Window>
