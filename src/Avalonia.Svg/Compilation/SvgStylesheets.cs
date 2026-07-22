@@ -8,12 +8,15 @@ namespace Avalonia.Media.Svg.Compilation;
 /// <summary>
 /// A minimal CSS engine for <c>&lt;style&gt;</c> content: selector chains of
 /// compound selectors (type, <c>.class</c>, <c>#id</c>, <c>[attr]</c>,
-/// <c>[attr=value]</c>, <c>*</c>) joined by descendant and child combinators,
-/// selector lists, specificity, <c>!important</c>, document order and
-/// file-based <c>@import</c>. Matched declarations resolve onto the elements
-/// once per document; the element lookup slots them into the cascade between
-/// the <c>style</c> attribute and presentation attributes. Pseudo-classes and
-/// other at-rules are out of scope.
+/// <c>[attr=value]</c>, <c>*</c>, the <c>:root</c> pseudo-class) joined by
+/// descendant and child combinators, selector lists, specificity,
+/// <c>!important</c>, document order and file-based <c>@import</c>. Matched
+/// declarations resolve onto the elements once per document; the element lookup
+/// slots them into the cascade between the <c>style</c> attribute and
+/// presentation attributes, and CSS custom properties (<c>--*</c>) resolve
+/// through <c>var()</c> at value-read time (see <see cref="SvgElement"/>). Other
+/// pseudo-classes reject the selector; other at-rules (<c>@media</c>,
+/// <c>@supports</c>, ...) are skipped whole.
 /// </summary>
 internal static class SvgStylesheets
 {
@@ -25,6 +28,7 @@ internal static class SvgStylesheets
         public string? Id;
         public List<string>? Classes;
         public List<(string Name, string? Value)>? Attributes;
+        public bool Root;
     }
 
     private sealed class Rule
@@ -178,19 +182,25 @@ internal static class SvgStylesheets
             var open = css.IndexOf('{', position);
             if (open < 0)
                 break;
-            var close = css.IndexOf('}', open + 1);
+
+            var close = FindMatchingBrace(css, open);
             if (close < 0)
                 break;
 
-            var selectors = css.Substring(position, open - position);
-            var body = css.Substring(open + 1, close - open - 1);
+            var prelude = css.Substring(position, open - position).Trim();
             position = close + 1;
 
-            var declarations = ParseDeclarations(body);
+            // Skip an at-rule block whole (e.g. @media, @supports, @font-face):
+            // its nested braces would otherwise corrupt the following rules.
+            // @import is already inlined before parsing.
+            if (prelude.StartsWith("@", StringComparison.Ordinal))
+                continue;
+
+            var declarations = ParseDeclarations(css.Substring(open + 1, close - open - 1));
             if (declarations.Count == 0)
                 continue;
 
-            foreach (var selector in selectors.Split(','))
+            foreach (var selector in prelude.Split(','))
             {
                 if (TryParseSelectorChain(selector.Trim(), out var chain, out var specificity))
                 {
@@ -206,6 +216,24 @@ internal static class SvgStylesheets
         }
 
         return rules;
+    }
+
+    /// <summary>
+    /// The index of the <c>}</c> that closes the block opened at
+    /// <paramref name="open"/>, honoring nesting, or -1 if unterminated.
+    /// </summary>
+    private static int FindMatchingBrace(string css, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < css.Length; i++)
+        {
+            if (css[i] == '{')
+                depth++;
+            else if (css[i] == '}' && --depth == 0)
+                return i;
+        }
+
+        return -1;
     }
 
     private static string StripComments(string css)
@@ -382,6 +410,22 @@ internal static class SvgStylesheets
                 position = end + 1;
                 any = true;
             }
+            else if (marker == ':')
+            {
+                var end = position + 1;
+                while (end < selector.Length && (char.IsLetterOrDigit(selector[end]) || selector[end] == '-'))
+                    end++;
+
+                // Only :root is supported; any other pseudo-class rejects the
+                // whole selector, matching the engine's documented scope.
+                if (selector.Substring(position + 1, end - position - 1) != "root")
+                    return false;
+
+                compound.Root = true;
+                specificity += 1_000;
+                position = end;
+                any = true;
+            }
             else
             {
                 break;
@@ -432,6 +476,10 @@ internal static class SvgStylesheets
 
     private static bool MatchesCompound(SvgElement element, Compound compound)
     {
+        // :root matches only the document root (the element with no parent).
+        if (compound.Root && element.Parent != null)
+            return false;
+
         if (compound.Type != null && compound.Type != element.Name)
             return false;
 
