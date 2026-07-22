@@ -39,6 +39,7 @@ namespace Avalonia.Animation.Animators
                         s_relativePointAnimator.Interpolate(progress, oldRadial.GradientOrigin, newRadial.GradientOrigin),
                         s_relativeScalarAnimator.Interpolate(progress, oldRadial.RadiusX, newRadial.RadiusX),
                         s_relativeScalarAnimator.Interpolate(progress, oldRadial.RadiusY, newRadial.RadiusY),
+                        s_relativeScalarAnimator.Interpolate(progress, oldRadial.FocalRadius, newRadial.FocalRadius),
                         InterpolateTransform(progress, oldValue.RelativeTransform, newValue.RelativeTransform)
                         );
 
@@ -133,7 +134,7 @@ namespace Avalonia.Animation.Animators
                         oldRadial.Transform is { } ? new ImmutableTransform(oldRadial.Transform.Value) : null,
                         oldRadial.TransformOrigin,
                         oldRadial.SpreadMethod, oldRadial.Center, oldRadial.GradientOrigin,
-                        oldRadial.RadiusX, oldRadial.RadiusY);
+                        oldRadial.RadiusX, oldRadial.RadiusY, oldRadial.FocalRadius);
 
                 case IConicGradientBrush oldConic:
                     return new ImmutableConicGradientBrush(
