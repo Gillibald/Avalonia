@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -147,11 +148,67 @@ public class EffectRenderTests : TestBase
 
     private static readonly double[] EdgeDetectKernel = { 0, -1, 0, -1, 4, -1, 0, -1, 0 };
 
-    // ConvolveMatrixEdgeMode has no render coverage on purpose: Skia produces
-    // byte-identical output for Duplicate, Wrap and None here, whether the
-    // convolution runs over the whole layer or a cropped input, so a golden per
-    // mode would pin three identical images and advertise coverage that does not
-    // exist. The divisor, bias and preserveAlpha knobs below do take effect.
+    /// <summary>
+    /// A wide box blur, so the band where the edge mode decides what is sampled
+    /// beyond the filter region is several pixels thick rather than one.
+    /// </summary>
+    private static readonly double[] BoxKernel9 = CreateBoxKernel(9);
+
+    private static double[] CreateBoxKernel(int order)
+    {
+        var kernel = new double[order * order];
+        Array.Fill(kernel, 1d);
+        return kernel;
+    }
+
+    private static Bitmap LoadStar()
+    {
+        var directory = Path.GetDirectoryName(typeof(EffectRenderTests).Assembly.Location)!;
+        return new Bitmap(Path.Join(directory, "Assets", "Star512.png"));
+    }
+
+    /// <summary>
+    /// Convolves the tinted bitmap rather than the shared scene. The scene is
+    /// white at its border and sits on a white page, so duplicating that white
+    /// edge and fading it to transparent both come out white and the three modes
+    /// render identically. The bitmap carries a different saturated colour into
+    /// every edge, which is what makes duplicate, wrap and none diverge.
+    /// </summary>
+    private async Task RunConvolveEdgeMode(
+        ConvolveMatrixEdgeMode edgeMode,
+        [System.Runtime.CompilerServices.CallerMemberName] string testName = "")
+    {
+        using var image = LoadStar();
+
+        var target = new EffectRenderer(
+            new LayerOptions
+            {
+                Bounds = new Rect(0, 0, Size, Size),
+                Effect = new ImmutableConvolveMatrixEffect(
+                    9, 9, BoxKernel9,
+                    divisor: 81, bias: 0, targetX: 4, targetY: 4,
+                    edgeMode, preserveAlpha: false, null)
+            },
+            background: image)
+        {
+            Width = Size, Height = Size
+        };
+
+        await RenderToFile(target, testName);
+        CompareImages(testName, skipImmediate: true);
+    }
+
+    [Fact]
+    public Task ConvolveMatrix_EdgeMode_Duplicate() =>
+        RunConvolveEdgeMode(ConvolveMatrixEdgeMode.Duplicate);
+
+    [Fact]
+    public Task ConvolveMatrix_EdgeMode_Wrap() =>
+        RunConvolveEdgeMode(ConvolveMatrixEdgeMode.Wrap);
+
+    [Fact]
+    public Task ConvolveMatrix_EdgeMode_None() =>
+        RunConvolveEdgeMode(ConvolveMatrixEdgeMode.None);
 
     [Fact]
     public Task ConvolveMatrix_EdgeDetect() => Run(new ImmutableConvolveMatrixEffect(
@@ -277,10 +334,12 @@ public class EffectRenderTests : TestBase
     private sealed class EffectRenderer : Control
     {
         private readonly LayerOptions _options;
+        private readonly IImage? _background;
 
-        public EffectRenderer(LayerOptions options)
+        public EffectRenderer(LayerOptions options, IImage? background = null)
         {
             _options = options;
+            _background = background;
         }
 
         public override void Render(DrawingContext context)
@@ -288,7 +347,32 @@ public class EffectRenderTests : TestBase
             context.FillRectangle(Brushes.White, new Rect(0, 0, Size, Size));
 
             using (context.PushLayer(_options))
+                DrawBackground(context);
+        }
+
+        private void DrawBackground(DrawingContext context)
+        {
+            if (_background is { } image)
+            {
+                context.DrawImage(image, new Rect(0, 0, Size, Size));
+
+                // The asset is a black outline on opaque white, and grayscale is
+                // identity over pure black and white, so tint it into quadrants:
+                // the input then carries both image detail and real colour and
+                // a colour filter has something to change.
+                var half = Size / 2;
+                Tint(context, Colors.Crimson, new Rect(0, 0, half, half));
+                Tint(context, Colors.DodgerBlue, new Rect(half, 0, half, half));
+                Tint(context, Colors.Gold, new Rect(0, half, half, half));
+                Tint(context, Colors.MediumSeaGreen, new Rect(half, half, half, half));
+            }
+            else
+            {
                 DrawScene(context);
+            }
+
+            static void Tint(DrawingContext context, Color color, Rect rect) =>
+                context.FillRectangle(new ImmutableSolidColorBrush(color, 0.55), rect);
         }
 
         private static void DrawScene(DrawingContext context)

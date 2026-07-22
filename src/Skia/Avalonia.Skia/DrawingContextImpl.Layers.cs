@@ -24,7 +24,7 @@ partial class DrawingContextImpl
 
         if (options.Effect is { } effect)
         {
-            imageFilter = CreateEffect(effect);
+            imageFilter = CreateEffect(effect, options.Bounds);
             paint.ImageFilter = imageFilter;
         }
 
