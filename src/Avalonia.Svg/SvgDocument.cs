@@ -246,6 +246,22 @@ public sealed class SvgDocument : IDisposable
         return document;
     }
 
+    /// <summary>
+    /// True when <paramref name="element"/> is, or sits inside, a
+    /// <c>foreignObject</c> — the one place foreign-namespace content is kept
+    /// rather than skipped, so its text can render as a fallback.
+    /// </summary>
+    private static bool IsInsideForeignObject(SvgElement? element)
+    {
+        for (; element != null; element = element.Parent)
+        {
+            if (element.Name == "foreignObject")
+                return true;
+        }
+
+        return false;
+    }
+
     private static XmlReaderSettings CreateReaderSettings() => new()
     {
         // SVG documents commonly carry a DTD declaration; never resolve it
@@ -273,10 +289,12 @@ public sealed class SvgDocument : IDisposable
             {
                 // Accept the SVG namespace and, leniently, elements without a
                 // namespace (hand-written documents often omit xmlns). Foreign
-                // subtrees (editor metadata etc.) are skipped entirely; Skip()
-                // already positions the reader on the following node, so the
-                // loop must not advance again.
-                if (reader.NamespaceURI.Length != 0 && reader.NamespaceURI != SvgNamespace)
+                // subtrees (editor metadata etc.) are skipped entirely, except
+                // inside a foreignObject: its content is kept by local name so
+                // the text fallback can render it. Skip() already positions the
+                // reader on the following node, so the loop must not advance again.
+                if (reader.NamespaceURI.Length != 0 && reader.NamespaceURI != SvgNamespace
+                    && !IsInsideForeignObject(current))
                 {
                     reader.Skip();
                     continue;
