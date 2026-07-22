@@ -148,11 +148,61 @@ public class EffectRenderTests : TestBase
 
     private static readonly double[] EdgeDetectKernel = { 0, -1, 0, -1, 4, -1, 0, -1, 0 };
 
-    // ConvolveMatrixEdgeMode has no render coverage on purpose: Skia produces
-    // byte-identical output for Duplicate, Wrap and None here, whether the
-    // convolution runs over the whole layer or a cropped input, so a golden per
-    // mode would pin three identical images and advertise coverage that does not
-    // exist. The divisor, bias and preserveAlpha knobs below do take effect.
+    /// <summary>
+    /// A wide box blur, so the band where the edge mode decides what is sampled
+    /// beyond the filter region is several pixels thick rather than one.
+    /// </summary>
+    private static readonly double[] BoxKernel9 = CreateBoxKernel(9);
+
+    private static double[] CreateBoxKernel(int order)
+    {
+        var kernel = new double[order * order];
+        Array.Fill(kernel, 1d);
+        return kernel;
+    }
+
+    /// <summary>
+    /// Convolves the tinted bitmap rather than the shared scene. The scene is
+    /// white at its border and sits on a white page, so duplicating that white
+    /// edge and fading it to transparent both come out white and the three modes
+    /// render identically. The bitmap carries a different saturated colour into
+    /// every edge, which is what makes duplicate, wrap and none diverge.
+    /// </summary>
+    private async Task RunConvolveEdgeMode(
+        ConvolveMatrixEdgeMode edgeMode,
+        [System.Runtime.CompilerServices.CallerMemberName] string testName = "")
+    {
+        using var image = LoadStar();
+
+        var target = new EffectRenderer(
+            new LayerOptions
+            {
+                Bounds = new Rect(0, 0, Size, Size),
+                Effect = new ImmutableConvolveMatrixEffect(
+                    9, 9, BoxKernel9,
+                    divisor: 81, bias: 0, targetX: 4, targetY: 4,
+                    edgeMode, preserveAlpha: false, null)
+            },
+            background: image)
+        {
+            Width = Size, Height = Size
+        };
+
+        await RenderToFile(target, testName);
+        CompareImages(testName, skipImmediate: true);
+    }
+
+    [Fact]
+    public Task ConvolveMatrix_EdgeMode_Duplicate() =>
+        RunConvolveEdgeMode(ConvolveMatrixEdgeMode.Duplicate);
+
+    [Fact]
+    public Task ConvolveMatrix_EdgeMode_Wrap() =>
+        RunConvolveEdgeMode(ConvolveMatrixEdgeMode.Wrap);
+
+    [Fact]
+    public Task ConvolveMatrix_EdgeMode_None() =>
+        RunConvolveEdgeMode(ConvolveMatrixEdgeMode.None);
 
     [Fact]
     public Task ConvolveMatrix_EdgeDetect() => Run(new ImmutableConvolveMatrixEffect(
