@@ -36,11 +36,18 @@ namespace Avalonia.Media
                 nameof(RadiusX), RelativeScalar.Middle);
         
         /// <summary>
-        /// Defines the <see cref="RadiusX"/> property.
+        /// Defines the <see cref="RadiusY"/> property.
         /// </summary>
         public static readonly StyledProperty<RelativeScalar> RadiusYProperty =
             AvaloniaProperty.Register<RadialGradientBrush, RelativeScalar>(
                 nameof(RadiusY), RelativeScalar.Middle);
+
+        /// <summary>
+        /// Defines the <see cref="FocalRadius"/> property.
+        /// </summary>
+        public static readonly StyledProperty<RelativeScalar> FocalRadiusProperty =
+            AvaloniaProperty.Register<RadialGradientBrush, RelativeScalar>(
+                nameof(FocalRadius), RelativeScalar.Beginning);
         
         /// <summary>
         /// Gets or sets the start point for the gradient.
@@ -81,6 +88,17 @@ namespace Avalonia.Media
             set { SetValue(RadiusYProperty, value); }
         }
 
+        /// <summary>
+        /// Gets or sets the radius of the focal circle around <see cref="GradientOrigin"/> at
+        /// which the gradient starts, making the brush a two-point conical gradient. The
+        /// default of zero starts the gradient at the origin point itself.
+        /// </summary>
+        public RelativeScalar FocalRadius
+        {
+            get { return GetValue(FocalRadiusProperty); }
+            set { SetValue(FocalRadiusProperty, value); }
+        }
+
         /// <inheritdoc/>
         public override IImmutableBrush ToImmutable()
         {
@@ -93,7 +111,7 @@ namespace Avalonia.Media
         private protected override void SerializeChanges(Compositor c, BatchStreamWriter writer)
         {
             base.SerializeChanges(c, writer);
-            ServerCompositionSimpleRadialGradientBrush.SerializeAllChanges(writer, Center, GradientOrigin, RadiusX, RadiusY);
+            ServerCompositionSimpleRadialGradientBrush.SerializeAllChanges(writer, Center, GradientOrigin, RadiusX, RadiusY, FocalRadius);
         }
     }
 }
