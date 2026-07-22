@@ -151,6 +151,7 @@ internal struct PushLayerPayload : IRenderDataPayload<PushLayerPayload>
     public static RenderDataOpcode Opcode => RenderDataOpcode.PushLayer;
 
     public int Effect;
+    public int BackdropEffect;
     public Rect Bounds;
     public double Opacity;
     public BitmapBlendingMode BlendMode;

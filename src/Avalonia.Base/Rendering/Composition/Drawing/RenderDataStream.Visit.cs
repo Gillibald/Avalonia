@@ -163,7 +163,8 @@ internal partial class RenderDataStream
                             Opacity = p.Opacity,
                             BlendMode = p.BlendMode,
                             Isolate = p.Isolate,
-                            Effect = (IEffect?)_resources[p.Effect]
+                            Effect = (IEffect?)_resources[p.Effect],
+                            BackdropEffect = (IEffect?)_resources[p.BackdropEffect]
                         });
                         break;
                     }

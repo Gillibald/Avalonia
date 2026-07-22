@@ -465,27 +465,30 @@ internal class RenderDataDrawingContext : DrawingContext
         }
 
         // The recorded scope replays on the render thread and is not registered
-        // as a composition resource, so the effect must be captured as an
-        // immutable snapshot regardless of the context mode.
-        IImmutableEffect? effect = null;
-        if (options.Effect is { } sourceEffect)
-        {
-            effect = sourceEffect as IImmutableEffect
-                ?? (sourceEffect is IMutableEffect
-                    ? sourceEffect.ToImmutable()
-                    : throw new InvalidOperationException(
-                        sourceEffect.GetType() + " cannot be recorded. LayerOptions.Effect must be an " +
-                        "immutable effect or a mutable effect that supports snapshotting."));
-        }
+        // as a composition resource, so both effects must be captured as
+        // immutable snapshots regardless of the context mode.
+        var effect = SnapshotLayerEffect(options.Effect);
+        var backdropEffect = SnapshotLayerEffect(options.BackdropEffect);
 
         var before = Stream.OpcodeLength;
         Stream.PushLayer(options.Bounds, options.EffectiveOpacity, options.EffectiveBlendMode,
-            options.Isolate, effect);
-        // A layer with an effect produces output even over empty content (a
-        // source-generating filter fills the layer), so it must survive
+            options.Isolate, effect, backdropEffect);
+        // A layer with an effect produces output even over empty content: a
+        // source-generating filter fills the layer, and a backdrop effect
+        // composites the filtered destination. Such scopes must survive
         // empty-scope elision.
-        PushedScope(before, keepWhenEmpty: effect != null);
+        PushedScope(before, keepWhenEmpty: effect != null || backdropEffect != null);
     }
+
+    private static IImmutableEffect? SnapshotLayerEffect(IEffect? effect) => effect switch
+    {
+        null => null,
+        IImmutableEffect immutable => immutable,
+        IMutableEffect => effect.ToImmutable(),
+        _ => throw new InvalidOperationException(
+            effect.GetType() + " cannot be recorded. A LayerOptions effect must be an " +
+            "immutable effect or a mutable effect that supports snapshotting.")
+    };
 
     protected override void PopLayerCore() => PopCore();
 

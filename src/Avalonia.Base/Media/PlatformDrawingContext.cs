@@ -126,14 +126,16 @@ internal sealed class PlatformDrawingContext : DrawingContext
             frame.FallbackOpacity = true;
         }
 
-        if ((options.EffectiveBlendMode != BitmapBlendingMode.SourceOver || options.Isolate)
+        if ((options.EffectiveBlendMode != BitmapBlendingMode.SourceOver
+                || options.Isolate
+                || options.BackdropEffect != null)
             && !s_warnedAboutLayerFallback)
         {
             s_warnedAboutLayerFallback = true;
             Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
                 this,
                 "Backend does not implement IDrawingContextImplWithLayers; " +
-                "layer blend mode / isolation cannot be honored.");
+                "layer blend mode / isolation / backdrop effect cannot be honored.");
         }
 
         _layerFrames.Push(frame);

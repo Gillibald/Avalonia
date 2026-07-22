@@ -179,18 +179,22 @@ internal partial class RenderDataStream
                 return new ReplayScope { Kind = RenderDataOpcode.PushLayer, Active = true };
             }
 
-            if ((options.EffectiveBlendMode != BitmapBlendingMode.SourceOver || options.Isolate)
+            if ((options.EffectiveBlendMode != BitmapBlendingMode.SourceOver
+                    || options.Isolate
+                    || options.BackdropEffect != null)
                 && !s_warnedAboutLayerFallback)
             {
                 s_warnedAboutLayerFallback = true;
                 Logger.TryGet(LogEventLevel.Warning, LogArea.Visual)?.Log(
                     _context,
                     "Backend does not implement IDrawingContextImplWithLayers; " +
-                    "layer blend mode / isolation cannot be honored.");
+                    "layer blend mode / isolation / backdrop effect cannot be honored.");
             }
 
             // Closest approximation without native layer support: compose the existing
-            // effect / opacity capabilities; blend mode and isolation cannot be honored here.
+            // effect / opacity capabilities; blend mode, isolation and the backdrop
+            // effect (which needs the destination, not the layer content) cannot be
+            // honored here.
             var scope = new ReplayScope { Kind = RenderDataOpcode.PushLayer };
 
             if (options.Effect is { } effect && _context is IDrawingContextImplWithEffects effectImpl)
