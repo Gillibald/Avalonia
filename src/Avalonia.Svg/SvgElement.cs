@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 
 namespace Avalonia.Media.Svg;
 
@@ -78,9 +79,13 @@ public sealed class SvgElement
     /// Gets a style property value, per the cascade: an active SMIL animation
     /// override wins over everything, then <c>!important</c> stylesheet rules,
     /// the <c>style</c> attribute, normal stylesheet rules, and finally the
-    /// presentation attribute of the same name.
+    /// presentation attribute of the same name. CSS <c>var()</c> references in the
+    /// winning value resolve against the element's inherited custom properties.
     /// </summary>
-    internal string? GetStyleOrAttribute(string name)
+    internal string? GetStyleOrAttribute(string name) =>
+        ResolveCustomProperties(GetStyleOrAttributeRaw(name));
+
+    private string? GetStyleOrAttributeRaw(string name)
     {
         if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
             return animated;
@@ -110,7 +115,10 @@ public sealed class SvgElement
     /// <c>isolation</c> have no presentation attribute — an attribute of that
     /// name must be ignored.
     /// </summary>
-    internal string? GetStyleProperty(string name)
+    internal string? GetStyleProperty(string name) =>
+        ResolveCustomProperties(GetStylePropertyRaw(name));
+
+    private string? GetStylePropertyRaw(string name)
     {
         if (_animatedValues != null && _animatedValues.TryGetValue(name, out var animated))
             return animated;
@@ -131,6 +139,93 @@ public sealed class SvgElement
         return _stylesheetValues != null && _stylesheetValues.TryGetValue(name, out var sheet)
             ? sheet
             : null;
+    }
+
+    private const int MaxVarDepth = 16;
+
+    /// <summary>
+    /// The element's computed custom property (<c>--name</c>): its own declared
+    /// value, or the nearest ancestor's, since custom properties inherit. The
+    /// value is raw and may itself contain a <c>var()</c> reference.
+    /// </summary>
+    private string? GetCustomPropertyRaw(string name)
+    {
+        for (var element = this; element != null; element = element.Parent)
+        {
+            if (element.GetStylePropertyRaw(name) is { } value)
+                return value;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Substitutes CSS <c>var(--name[, fallback])</c> references in a computed
+    /// value using the element's inherited custom properties. Returns the input
+    /// unchanged when it holds no <c>var()</c>; returns null when a reference is
+    /// undefined and has no usable fallback, so the declaration is invalid and the
+    /// caller keeps the inherited value (per CSS invalid-at-computed-value-time).
+    /// </summary>
+    private string? ResolveCustomProperties(string? value)
+    {
+        if (value == null || value.IndexOf("var(", StringComparison.Ordinal) < 0)
+            return value;
+
+        return ResolveVars(value, depth: 0);
+    }
+
+    private string? ResolveVars(string value, int depth)
+    {
+        if (depth > MaxVarDepth)
+            return null;
+
+        var start = value.IndexOf("var(", StringComparison.Ordinal);
+        if (start < 0)
+            return value;
+
+        var builder = new StringBuilder(value.Length);
+        var position = 0;
+
+        while (start >= 0)
+        {
+            builder.Append(value, position, start - position);
+
+            // Find the matching close paren, allowing nested parens so a fallback
+            // like var(--c, rgb(0, 0, 0)) is captured whole.
+            var open = start + "var(".Length;
+            var nesting = 1;
+            var index = open;
+            for (; index < value.Length && nesting > 0; index++)
+            {
+                if (value[index] == '(')
+                    nesting++;
+                else if (value[index] == ')')
+                    nesting--;
+            }
+
+            if (nesting != 0)
+                return null; // unterminated var()
+
+            var inner = value.Substring(open, index - 1 - open);
+            var comma = inner.IndexOf(',');
+            var name = (comma >= 0 ? inner.Substring(0, comma) : inner).Trim();
+            var fallback = comma >= 0 ? inner.Substring(comma + 1).Trim() : null;
+
+            string? resolved = null;
+            if (name.StartsWith("--", StringComparison.Ordinal) && GetCustomPropertyRaw(name) is { } raw)
+                resolved = ResolveVars(raw, depth + 1);
+            resolved ??= fallback != null ? ResolveVars(fallback, depth + 1) : null;
+
+            if (resolved == null)
+                return null;
+
+            builder.Append(resolved);
+            position = index;
+            start = value.IndexOf("var(", position, StringComparison.Ordinal);
+        }
+
+        builder.Append(value, position, value.Length - position);
+        return builder.ToString();
     }
 
     /// <summary>
@@ -189,7 +284,10 @@ public sealed class SvgElement
             if (separator <= 0)
                 continue;
 
-            var name = declaration.Substring(0, separator).Trim().ToLowerInvariant();
+            var name = declaration.Substring(0, separator).Trim();
+            // Custom property names are case-sensitive; fold only regular names.
+            if (!name.StartsWith("--", StringComparison.Ordinal))
+                name = name.ToLowerInvariant();
             var value = declaration.Substring(separator + 1).Trim();
             if (name.Length == 0 || value.Length == 0)
                 continue;
