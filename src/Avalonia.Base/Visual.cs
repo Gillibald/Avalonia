@@ -83,6 +83,12 @@ namespace Avalonia
             AvaloniaProperty.Register<Visual, IEffect?>(nameof(Effect));
 
         /// <summary>
+        /// Defines the <see cref="BackdropEffect"/> property.
+        /// </summary>
+        public static readonly StyledProperty<IEffect?> BackdropEffectProperty =
+            AvaloniaProperty.Register<Visual, IEffect?>(nameof(BackdropEffect));
+
+        /// <summary>
         /// Defines the <see cref="HasMirrorTransform"/> property.
         /// </summary>
         public static readonly DirectProperty<Visual, bool> HasMirrorTransformProperty =
@@ -146,6 +152,7 @@ namespace Avalonia
                 OpacityProperty,
                 OpacityMaskProperty,
                 EffectProperty,
+                BackdropEffectProperty,
                 HasMirrorTransformProperty);
             RenderTransformProperty.Changed.Subscribe(RenderTransformChanged);
             ZIndexProperty.Changed.Subscribe(ZIndexChanged);
@@ -284,6 +291,23 @@ namespace Avalonia
         {
             get => GetValue(EffectProperty);
             set => SetValue(EffectProperty, value);
+        }
+
+        /// <summary>
+        /// Gets or sets an effect applied to whatever is drawn behind this control
+        /// rather than to the control itself: the CSS <c>backdrop-filter</c>
+        /// semantic, as used by frosted-glass panels.
+        /// </summary>
+        /// <remarks>
+        /// The filtered result is confined to the control's bounds, and the control
+        /// must paint something for it to show - a translucent background is
+        /// enough, but a fully transparent control composites to nothing. Requires
+        /// a backend whose drawing context supports layers; others ignore it.
+        /// </remarks>
+        public IEffect? BackdropEffect
+        {
+            get => GetValue(BackdropEffectProperty);
+            set => SetValue(BackdropEffectProperty, value);
         }
 
 
