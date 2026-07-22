@@ -461,23 +461,29 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 var defaultProperties = new GenericTextRunProperties(Typeface.Default);
 
-                // The previous run resolved to the Simplified-Chinese font.
-                var scTypeface = new Typeface(new FontFamily("fonts:SystemFonts#Noto Sans SC"));
-                Assert.True(fontManager.TryGetGlyphTypeface(scTypeface, out var scGlyphTypeface));
-
                 const int han = 0x4E2D; // 中, covered by both regional fonts.
 
-                // Preconditions: the primary covers the space but not the ideograph, the previous font
-                // covers the ideograph, and a fresh search for it would pick the *other* font - so the
-                // font of the second run tells us whether the bias survived the space.
-                Assert.True(defaultProperties.CachedGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(' ', out _));
-                Assert.False(defaultProperties.CachedGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(han, out _));
-                Assert.True(scGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(han, out _));
-
+                // The previous run resolved to whichever regional font a fresh search for the
+                // ideograph would *not* pick, so the font of the second run tells us whether the
+                // bias survived the space - independent of how the fallback ranks the two.
                 Assert.True(fontManager.TryMatchCharacter(han, FontStyle.Normal, FontWeight.Normal,
                     FontStretch.Normal, defaultProperties.Typeface.FontFamily, null, out var freshMatch));
                 Assert.True(fontManager.TryGetGlyphTypeface(freshMatch, out var freshGlyphTypeface));
-                Assert.Equal("Noto Sans JP", freshGlyphTypeface.FamilyName);
+                var previousFamily = freshGlyphTypeface.FamilyName switch
+                {
+                    "Noto Sans JP" => "Noto Sans SC",
+                    "Noto Sans SC" => "Noto Sans JP",
+                    var other => throw new InvalidOperationException($"Unexpected fallback {other}")
+                };
+
+                var previousTypeface = new Typeface(new FontFamily("fonts:SystemFonts#" + previousFamily));
+                Assert.True(fontManager.TryGetGlyphTypeface(previousTypeface, out var previousGlyphTypeface));
+
+                // Preconditions: the primary covers the space but not the ideograph, and the previous
+                // font covers the ideograph.
+                Assert.True(defaultProperties.CachedGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(' ', out _));
+                Assert.False(defaultProperties.CachedGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(han, out _));
+                Assert.True(previousGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(han, out _));
 
                 var text = (" " + char.ConvertFromUtf32(han)).AsMemory();
 
@@ -487,7 +493,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = new GenericTextRunProperties(scTypeface);
+                    TextRunProperties? previousProperties = new GenericTextRunProperties(previousTypeface);
 
                     textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
 
@@ -497,7 +503,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                     Assert.Equal(defaultProperties.Typeface, results[0].Properties!.Typeface);
 
                     Assert.True(fontManager.TryGetGlyphTypeface(results[1].Properties!.Typeface, out var runGlyphTypeface));
-                    Assert.Equal("Noto Sans SC", runGlyphTypeface.FamilyName);
+                    Assert.Equal(previousFamily, runGlyphTypeface.FamilyName);
                 }
                 finally
                 {

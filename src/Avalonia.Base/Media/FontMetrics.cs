@@ -54,5 +54,17 @@
         ///     Gets a value that indicates the thickness of the underline in design em size.
         /// </summary>
         public int StrikethroughThickness { get; init; }
+
+        /// <summary>
+        ///     Gets the height of lowercase letters above the baseline in design em size,
+        ///     from the font's OS/2 table. Zero when the font does not provide it.
+        /// </summary>
+        public int XHeight { get; init; }
+
+        /// <summary>
+        ///     Gets the height of uppercase letters above the baseline in design em size,
+        ///     from the font's OS/2 table. Zero when the font does not provide it.
+        /// </summary>
+        public int CapHeight { get; init; }
     }
 }
