@@ -108,5 +108,8 @@
     <TabItem Header="RecordingComposition">
       <pages:RecordingCompositionPage />
     </TabItem>
+    <TabItem Header="BackdropEffect">
+      <pages:BackdropEffectPage />
+    </TabItem>
   </controls:HamburgerMenu>
 </Window>
