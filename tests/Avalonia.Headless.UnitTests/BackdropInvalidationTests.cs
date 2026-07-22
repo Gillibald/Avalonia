@@ -173,26 +173,24 @@ public class BackdropInvalidationTests
 #elif XUNIT
     [AvaloniaFact]
 #endif
-    public void Backdrop_Samples_Only_What_Is_Under_It()
+    public void Backdrop_Reads_Content_Just_Outside_Its_Bounds()
     {
-        // Pins the sampling scope, which is what makes the invalidation above
-        // sufficient: the backdrop layer opens inside a clip to its own bounds,
-        // so only content under the panel can reach the filter. Nothing outside
-        // it can, which is why "content behind changed" is the whole of what has
-        // to be invalidated.
+        // A blur reaches past the panel, so content next to it tints the filtered
+        // result near that edge - the inward bleed that makes frosted glass look
+        // right, and what CSS backdrop-filter does.
         //
-        // Note this differs from CSS backdrop-filter, where the filter runs on
-        // the unclipped backdrop and the result is clipped afterwards, so a blur
-        // pulls surrounding colour inward. Matching that would mean filtering
-        // offscreen and clipping on composite rather than clipping first.
-        var (window, recordingVisual) = BuildScene(new ImmutableBlurEffect(6));
+        // This only holds because the area a backdrop reads is invalidated along
+        // with the backdrop itself. Without that the surround is never repainted,
+        // the filter reads a stale surface that already contains the panel's own
+        // output, and re-filtering it smears outward instead.
+        var (window, recordingVisual) = BuildScene(new ImmutableBlurEffect(12));
         var compositor = recordingVisual.Compositor;
 
         // A bar hard against the panel's top edge, still entirely outside it, and
         // only the panel's topmost rows are sampled - averaging the whole band
-        // would dilute an effect that can reach a few pixels at most.
-        var gap = new Rect(40, PanelRect.Y - 9, 120, 9);
-        var topRows = new Rect(PanelRect.X, PanelRect.Y, PanelRect.Width, 12);
+        // would dilute an effect that reaches a few pixels.
+        var gap = new Rect(40, PanelRect.Y - 10, 120, 10);
+        var topRows = new Rect(PanelRect.X, PanelRect.Y, PanelRect.Width, 10);
 
         recordingVisual.Recording = DrawingRecording.Create(compositor,
             ctx => ctx.DrawRectangle(Brushes.White, null, gap));
@@ -204,8 +202,8 @@ public class BackdropInvalidationTests
         Dispatcher.UIThread.RunJobs();
         var dark = Sample(window, topRows);
 
-        AssertHelper.True(Distance(blank, dark) < 1,
-            "The backdrop picked up content from outside its own bounds, so the " +
-            $"clip no longer confines what it samples: {blank} vs {dark}");
+        AssertHelper.True(Distance(blank, dark) > 1,
+            "A black bar against the panel's top edge did not darken the filtered " +
+            $"rows next to it: {blank} vs {dark}");
     }
 }

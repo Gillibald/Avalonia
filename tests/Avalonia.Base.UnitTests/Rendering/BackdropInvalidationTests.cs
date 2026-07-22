@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Rendering;
@@ -14,6 +15,33 @@ namespace Avalonia.Base.UnitTests.Rendering;
 /// </summary>
 public class BackdropInvalidationTests : CompositorTestsBase
 {
+    /// <summary>
+    /// What matters is the area the frame ends up repainting, not how many rects
+    /// it was collected as, so these assert against the union.
+    /// </summary>
+    private static void AssertCovers(CompositorTestServices s, Rect expected)
+    {
+        s.RunJobs();
+
+        Rect? union = null;
+        foreach (var rect in s.Events.Rects)
+            union = union is { } u ? u.Union(rect) : rect;
+
+        Assert.True(union is { } total && total.Contains(expected),
+            $"Invalidated {(union?.ToString() ?? "nothing")}, which does not cover {expected}");
+    }
+
+    private static void AssertDoesNotCover(CompositorTestServices s, Rect forbidden)
+    {
+        s.RunJobs();
+
+        foreach (var rect in s.Events.Rects)
+        {
+            Assert.False(rect.Intersects(forbidden),
+                $"Invalidated {rect}, which reaches into {forbidden} for an unrelated change");
+        }
+    }
+
     private static Border Frosted(double left, double top, double width, double height, double blur) =>
         new()
         {
@@ -44,7 +72,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         // but the panel re-reads its whole 40x40 area, so all of it must repaint.
         behind.Background = Brushes.Blue;
 
-        s.AssertRects(new Rect(50, 50, 40, 40));
+        AssertCovers(s, new Rect(50, 50, 40, 40));
     }
 
     [Fact]
@@ -67,7 +95,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         // A blur reads past the panel, so the invalidated area has to cover the
         // panel inflated by the filter's reach rather than just the panel.
         var padding = new ImmutableBlurEffect(4).GetEffectOutputPadding();
-        s.AssertRects(new Rect(50, 50, 40, 40).Inflate(padding));
+        AssertCovers(s, new Rect(50, 50, 40, 40).Inflate(padding));
     }
 
     [Fact]
@@ -88,6 +116,7 @@ public class BackdropInvalidationTests : CompositorTestsBase
         };
         s.Canvas.Children.Add(far);
 
-        s.AssertRects(new Rect(200, 200, 10, 10));
+        AssertCovers(s, new Rect(200, 200, 10, 10));
+        AssertDoesNotCover(s, new Rect(50, 50, 40, 40));
     }
 }
