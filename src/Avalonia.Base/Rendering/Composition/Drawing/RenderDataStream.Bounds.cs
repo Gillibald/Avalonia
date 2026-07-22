@@ -14,6 +14,9 @@ internal partial class RenderDataStream
         public bool IsTransform;
         public Matrix Matrix;
         public Thickness EffectPadding;
+        public bool HasLayerEffect;
+        public bool HasLayerBounds;
+        public Rect LayerBounds;
     }
 
     internal struct BoundsVisitor : IRenderDataVisitor<BoundsScope>
@@ -126,13 +129,32 @@ internal partial class RenderDataStream
         public BoundsScope OnPushClip(RoundedRect clip) => EnterChildScope();
         public BoundsScope OnPushGeometryClip(IGeometryImpl? geometry) => EnterChildScope();
         public BoundsScope OnPushOpacity(double opacity) => EnterChildScope();
-        public BoundsScope OnPushOpacityMask(IBrush? brush, Rect bounds) => EnterChildScope();
+        public BoundsScope OnPushOpacityMask(IBrush? brush, Rect bounds, MaskType maskType) => EnterChildScope();
         public BoundsScope OnPushTransform(Matrix matrix) => EnterChildScope(true, matrix);
         public BoundsScope OnPushRenderOptions(RenderOptions options) => EnterChildScope();
         public BoundsScope OnPushTextOptions(TextOptions options) => EnterChildScope();
 
         public BoundsScope OnPushEffect(IEffect? effect, Rect bounds)
             => EnterChildScope(effectPadding: effect.GetEffectOutputPadding());
+
+        public BoundsScope OnPushLayer(LayerOptions options)
+        {
+            // LayerOptions.Bounds is a backend hint for the offscreen buffer
+            // extent and does not by itself produce visible pixels - unless an
+            // effect is attached, which can paint beyond (or without) any
+            // content: source-generating filters fill their layer.
+            var scope = EnterChildScope(effectPadding: options.Effect.GetEffectOutputPadding());
+            if (options.Effect != null)
+            {
+                scope.HasLayerEffect = true;
+                if (options.Bounds is { } layerBounds)
+                {
+                    scope.HasLayerBounds = true;
+                    scope.LayerBounds = layerBounds;
+                }
+            }
+            return scope;
+        }
 
         public void OnPop(in BoundsScope scope)
         {
@@ -142,6 +164,8 @@ internal partial class RenderDataStream
                 childUnion = childUnion?.TransformToAABB(scope.Matrix);
             else if (childUnion.HasValue && !scope.EffectPadding.Equals(default))
                 childUnion = childUnion.Value.Inflate(scope.EffectPadding);
+            if (scope.HasLayerEffect && scope.HasLayerBounds)
+                childUnion = Rect.Union(childUnion, scope.LayerBounds);
             Current = scope.SavedBounds;
             Union(childUnion);
         }
