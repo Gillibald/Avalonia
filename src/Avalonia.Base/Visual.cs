@@ -299,10 +299,23 @@ namespace Avalonia
         /// semantic, as used by frosted-glass panels.
         /// </summary>
         /// <remarks>
-        /// The filtered result is confined to the control's bounds, and the control
-        /// must paint something for it to show - a translucent background is
-        /// enough, but a fully transparent control composites to nothing. Requires
-        /// a backend whose drawing context supports layers; others ignore it.
+        /// <para>
+        /// The control must paint something for the result to show - a translucent
+        /// background is enough, but a fully transparent control composites to
+        /// nothing. Requires a backend whose drawing context supports layers;
+        /// others ignore it.
+        /// </para>
+        /// <para>
+        /// The filtered result is confined to the control's bounds, refined by its
+        /// <see cref="Clip"/>. Nothing here knows the shape a control paints, so a
+        /// rounded panel needs a <see cref="Clip"/> matching its corner radius -
+        /// otherwise the background is drawn rounded while the filtered area stays
+        /// square and fills the corners:
+        /// <code>
+        /// panel.CornerRadius = new CornerRadius(16);
+        /// panel.Clip = new RectangleGeometry(new Rect(panel.Bounds.Size), 16, 16);
+        /// </code>
+        /// </para>
         /// </remarks>
         public IEffect? BackdropEffect
         {
