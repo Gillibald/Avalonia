@@ -160,12 +160,16 @@ partial class ServerCompositionVisual
                 _canvas.PushOpacityMask(visual.OpacityMaskBrush, visual._subTreeBounds!.Value.ToRect());
             
             // A backdrop filters the surface below rather than this visual's own
-            // content, so the layer opens before anything is drawn. LayerOptions
-            // .Bounds only hints the offscreen size, so the clip is what actually
-            // confines the filter to this visual.
+            // content, so it happens before anything is drawn - and the layer
+            // closes again immediately: the filtered destination is its whole
+            // contribution, and content drawn afterwards (an Effect layer's drop
+            // shadow reaches past these bounds) must not be confined by the
+            // backdrop's clip. The bounds exclude an own Effect's padding for
+            // the same reason, and because LayerOptions.Bounds only hints the
+            // offscreen size, the clip is what actually confines the filter.
             if (visual.BackdropEffect != null && _canvas is IDrawingContextImplWithLayers backdropLayers)
             {
-                var backdropBounds = visual._subTreeBounds!.Value.ToRect();
+                var backdropBounds = (visual._subTreeBoundsWithoutEffect ?? visual._subTreeBounds)!.Value.ToRect();
                 _canvas.PushClip(backdropBounds);
                 backdropLayers.PushLayer(new Avalonia.Media.LayerOptions
                 {
@@ -173,6 +177,8 @@ partial class ServerCompositionVisual
                     BackdropEffect = visual.BackdropEffect,
                     BackdropCache = visual.BackdropCache
                 });
+                backdropLayers.PopLayer();
+                _canvas.PopClip();
             }
 
             if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
@@ -198,12 +204,6 @@ partial class ServerCompositionVisual
             {
                 if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
                     effects.PopEffect();
-
-                if (visual.BackdropEffect != null && _canvas is IDrawingContextImplWithLayers backdropLayers)
-                {
-                    backdropLayers.PopLayer();
-                    _canvas.PopClip();
-                }
 
                 if (visual.OpacityMaskBrush != null)
                     _canvas.PopOpacityMask();

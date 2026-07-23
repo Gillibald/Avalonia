@@ -126,7 +126,9 @@ namespace Avalonia.Rendering.Composition.Server
 
             // _transformedSubTreeBounds is expressed in the parent's space, so each
             // ancestor clips in its own space first and then maps up one level.
-            var rect = _transformedSubTreeBounds.Value;
+            // An own Effect widens the subtree bounds by its output padding, but
+            // the backdrop samples only the content's area beneath it.
+            var rect = (_transformedSubTreeBoundsWithoutEffect ?? _transformedSubTreeBounds).Value;
             for (var parent = Parent; parent != null; parent = parent.Parent)
             {
                 if (!parent.Visible)
