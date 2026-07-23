@@ -45,6 +45,12 @@ namespace Avalonia.Skia
         private readonly ISkiaGpuRenderSession? _session;
         private bool _leased;
         private bool _useOpacitySaveLayer;
+        // Tracks whether any save-layer is open, because a cached backdrop may
+        // only capture/draw against the base surface (a snapshot cannot see
+        // layer content). PushLayer records per push whether it opened a real
+        // layer, since the cached-backdrop path only does a plain save.
+        private int _saveLayerDepth;
+        private readonly Stack<bool> _pushedLayerIsSaveLayer = new();
 
         /// <summary>
         /// Context create info.
@@ -703,11 +709,15 @@ namespace Avalonia.Skia
         {
             CheckLease();
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
+            _saveLayerDepth++;
+            _pushedLayerIsSaveLayer.Push(true);
         }
 
         public void PopLayer()
         {
             CheckLease();
+            if (_pushedLayerIsSaveLayer.Count > 0 && _pushedLayerIsSaveLayer.Pop())
+                _saveLayerDepth--;
             RestoreCanvas();
         }
 
@@ -735,6 +745,8 @@ namespace Avalonia.Skia
                 {
                     Canvas.SaveLayer(new SKPaint { ColorF = new SKColorF(0, 0, 0, (float)opacity) });
                 }
+
+                _saveLayerDepth++;
             }
             else
             {
@@ -751,6 +763,7 @@ namespace Avalonia.Skia
 
             if (useOpacitySaveLayer)
             {
+                _saveLayerDepth--;
                 RestoreCanvas();
             }
 
@@ -845,6 +858,7 @@ namespace Avalonia.Skia
             var paint = SKPaintCache.Shared.Get();
 
             Canvas.SaveLayer(bounds.ToSKRect(), paint);
+            _saveLayerDepth++;
             var paintWrapper = CreatePaint(paint, mask, bounds);
 
             if (maskType == MaskType.Luminance)
@@ -881,6 +895,7 @@ namespace Avalonia.Skia
 
             RestoreCanvas();
 
+            _saveLayerDepth--;
             RestoreCanvas();
         }
 

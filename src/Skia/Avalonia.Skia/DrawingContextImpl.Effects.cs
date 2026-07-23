@@ -17,12 +17,14 @@ partial class DrawingContextImpl
             Canvas.SaveLayer(effectClipRect.Value.ToSKRect(), paint);
         else
             Canvas.SaveLayer(paint);
+        _saveLayerDepth++;
         SKPaintCache.Shared.ReturnReset(paint);
     }
 
     public void PopEffect()
     {
         CheckLease();
+        _saveLayerDepth--;
         RestoreCanvas();
     }
 

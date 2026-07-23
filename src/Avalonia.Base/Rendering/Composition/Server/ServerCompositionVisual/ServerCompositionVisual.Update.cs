@@ -12,16 +12,21 @@ internal partial class ServerCompositionVisual
     struct UpdateContext : IServerTreeVisitor, IDisposable
     {
         private TreeWalkContext _context;
-        
+
         private IDirtyRectCollector _dirtyRegion;
         private int _dirtyRegionDisableCount;
         private Stack<int> _dirtyRegionDisableCountStack;
         private Stack<IDirtyRectCollector> _dirtyRegionCollectorStack;
+        private readonly List<BackdropDirtyRect>? _backdropDirtyRects;
+        private ulong _currentBackdropMask;
+        private int _backdropRecordDisableCount;
         private bool AreDirtyRegionsDisabled() => _dirtyRegionDisableCount != 0;
 
-        public UpdateContext(CompositorPools pools, IDirtyRectCollector dirtyRects, Matrix transform, LtrbRect clip)
+        public UpdateContext(CompositorPools pools, IDirtyRectCollector dirtyRects, Matrix transform, LtrbRect clip,
+            List<BackdropDirtyRect>? backdropDirtyRects)
         {
             _dirtyRegion = dirtyRects;
+            _backdropDirtyRects = backdropDirtyRects;
             _context = new TreeWalkContext(pools, transform, clip);
             _dirtyRegionDisableCountStack = pools.IntStackPool.Rent();
             _dirtyRegionCollectorStack = pools.DirtyRectCollectorStackPool.Rent();
@@ -35,7 +40,11 @@ internal partial class ServerCompositionVisual
                 _dirtyRegion = visual.Cache.DirtyRectCollector;
                 _dirtyRegionDisableCountStack.Push(_dirtyRegionDisableCount);
                 _dirtyRegionDisableCount = 0;
-                
+                // Rects redirected into the cache do not repaint the target's
+                // surface this frame; only the cached visual's own bounds do,
+                // which PopCacheIfNeeded adds after the redirect ends.
+                _backdropRecordDisableCount++;
+
                 _context.PushSetTransform(Matrix.Identity);
                 _context.ResetClip(LtrbRect.Infinite);
             }
@@ -49,6 +58,7 @@ internal partial class ServerCompositionVisual
                 _context.PopTransform();
                 _dirtyRegion = _dirtyRegionCollectorStack.Pop();
                 _dirtyRegionDisableCount = _dirtyRegionDisableCountStack.Pop();
+                _backdropRecordDisableCount--;
                 if (visual.Cache.IsDirty)
                     AddToDirtyRegion(visual._subTreeBounds);
             }
@@ -112,11 +122,24 @@ internal partial class ServerCompositionVisual
                 // to outer space.
                 node._subTreeBounds = node._ownContentBounds;
             }
+
+            // Rects added from here to the marker's removal come from this
+            // backdrop's subtree, which paints inside its layer - above the
+            // sample point - and so cannot change what the filter reads. The
+            // node's own rects were added before this line on purpose: its own
+            // movement does relocate the sample region.
+            if (node._registeredAsBackdrop)
+                _currentBackdropMask |= node.BackdropMaskBit;
         }
-        
-        
+
+
         public void PostSubgraph(ServerCompositionVisual node)
         {
+            // Cleared first so the node's own rects added below (extra dirty
+            // rects, the dirty-for-render bbox) classify as invalidating.
+            if (node._registeredAsBackdrop)
+                _currentBackdropMask &= ~node.BackdropMaskBit;
+
             var parent = node.Parent;
             if (node._needsBoundingBoxUpdate)
             {
@@ -209,6 +232,9 @@ internal partial class ServerCompositionVisual
                 return;
 
             _dirtyRegion.AddRect(transformed);
+
+            if (_backdropRecordDisableCount == 0)
+                _backdropDirtyRects?.Add(new BackdropDirtyRect(transformed, _currentBackdropMask));
         }
         
         private void PushBoundsAffectingProperties(ServerCompositionVisual node)
@@ -235,9 +261,10 @@ internal partial class ServerCompositionVisual
         }
     }
     
-    public void UpdateRoot(IDirtyRectCollector tracker, Matrix transform, LtrbRect clip)
+    public void UpdateRoot(IDirtyRectCollector tracker, Matrix transform, LtrbRect clip,
+        List<BackdropDirtyRect>? backdropDirtyRects = null)
     {
-        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip);
+        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropDirtyRects);
         ServerTreeWalker<UpdateContext>.Walk(ref context, this);
         context.Dispose();
     }
