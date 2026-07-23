@@ -19,6 +19,10 @@ partial class ServerCompositionVisual
         private double _opacity;
         private bool _fullSkip;
         private bool _usedCache;
+        // Number of enclosing effect subtrees. Inside one, dirty-rect culling
+        // is suspended: the effect's filter input must be complete even when
+        // only a slice of its output is being redrawn.
+        private int _effectInputDepth;
         public int RenderedVisuals;
         public int VisitedVisuals;
         private ServerVisualRenderContext _publicContext;
@@ -91,7 +95,7 @@ partial class ServerCompositionVisual
                 worldBounds = LtrbRect.FullUnion(worldBounds, box)!.Value;
             }
             if (!effectiveClip.Intersects(worldBounds)
-                || _dirtyRects?.Intersects(worldBounds) == false)
+                || (_effectInputDepth == 0 && _dirtyRects?.Intersects(worldBounds) == false))
                 return false;
             
             
@@ -197,7 +201,18 @@ partial class ServerCompositionVisual
             }
 
             if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
+            {
                 effects.PushEffect(visual._subTreeBounds!.Value.ToRect(), visual.Effect);
+                // The filter reads the whole subtree, not just the redrawn
+                // slice, so a partial redraw crossing this visual must still
+                // visit the subtree content around the slice: widen the walk
+                // clip to the padded subtree bounds and suspend dirty-rect
+                // culling below. Written pixels stay confined to the redraw
+                // region by the canvas clip; the filtered layer's input is
+                // sized past that clip by the filter's own reach.
+                _walkContext.ResetClip(visual._subTreeBounds!.Value.TransformToAABB(_walkContext.Transform));
+                _effectInputDepth++;
+            }
 
             visual.RenderCore(_publicContext, _walkContext.Clip);
             
@@ -218,7 +233,11 @@ partial class ServerCompositionVisual
             if (!_usedCache)
             {
                 if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
+                {
                     effects.PopEffect();
+                    _walkContext.PopClip();
+                    _effectInputDepth--;
+                }
 
                 if (visual.OpacityMaskBrush != null)
                     _canvas.PopOpacityMask();
