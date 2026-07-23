@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Rendering.Composition;
@@ -205,5 +206,86 @@ public class BackdropInvalidationTests
         AssertHelper.True(Distance(blank, dark) > 1,
             "A black bar against the panel's top edge did not darken the filtered " +
             $"rows next to it: {blank} vs {dark}");
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
+    public void Backdrop_Result_Is_Stable_While_Only_Content_Above_It_Changes()
+    {
+        // The panel's own child paints above the point where the filter samples
+        // the surface, so its changes reuse the retained filtered result. A
+        // stale or feedback-smeared cache would drift the panel band away from
+        // its first frame here; a real change beneath must still refresh it.
+        var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+
+        var caret = new Border
+        {
+            Width = 20, Height = 20, Background = Brushes.Black,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var panel = new Border
+        {
+            Width = PanelRect.Width,
+            Height = PanelRect.Height,
+            Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+            BackdropEffect = new ImmutableBlurEffect(6),
+            Child = caret
+        };
+        Canvas.SetLeft(panel, PanelRect.X);
+        Canvas.SetTop(panel, PanelRect.Y);
+
+        var behind = new Canvas { Width = Size, Height = Size };
+        host.Children.Add(behind);
+        host.Children.Add(panel);
+
+        var window = new Window { Content = host, Width = Size, Height = Size };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var compositor = ElementComposition.GetElementVisual(window)!.Compositor;
+        var recordingVisual = compositor.CreateRecordingVisual();
+        recordingVisual.Recording = DrawingRecording.Create(compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Crimson, null, new Rect(20, 60, 90, 80));
+            ctx.DrawEllipse(Brushes.DodgerBlue, null, new Rect(60, 80, 70, 50));
+        });
+        recordingVisual.Size = new Vector(Size, Size);
+        ElementComposition.SetElementChildVisual(behind, recordingVisual);
+        Dispatcher.UIThread.RunJobs();
+
+        // The panel spans (40,70)-(160,130) and the child hugs its right edge,
+        // so this band on the left only ever shows the filtered backdrop.
+        var band = new Rect(44, 74, 60, 50);
+        var caretRect = new Rect(140, 90, 20, 20);
+
+        var first = Sample(window, band);
+        var caretFirst = Sample(window, caretRect);
+        var caretMoved = 0d;
+        var drift = 0d;
+
+        for (var i = 0; i < 6; i++)
+        {
+            caret.Background = i % 2 == 0 ? Brushes.White : Brushes.Black;
+            Dispatcher.UIThread.RunJobs();
+
+            drift = Math.Max(drift, Distance(first, Sample(window, band)));
+            caretMoved = Math.Max(caretMoved, Distance(caretFirst, Sample(window, caretRect)));
+        }
+
+        AssertHelper.True(caretMoved > Threshold,
+            $"The child never visibly changed (spread {caretMoved:F2}); the test exercised nothing.");
+        AssertHelper.True(drift < 2,
+            $"The filtered band drifted {drift:F2} while only content above the backdrop changed.");
+
+        recordingVisual.Recording = DrawingRecording.Create(compositor, ctx =>
+            ctx.DrawRectangle(Brushes.MediumSeaGreen, null, new Rect(0, 0, Size, Size)));
+        Dispatcher.UIThread.RunJobs();
+
+        AssertHelper.True(Distance(first, Sample(window, band)) > Threshold,
+            "A change behind the panel did not refresh the filtered result.");
     }
 }
