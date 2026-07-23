@@ -68,6 +68,8 @@ namespace RenderDemo.Pages
 
         private readonly DispatcherTimer _blink = new() { Interval = TimeSpan.FromMilliseconds(500) };
 
+        private static readonly ImmutableDropShadowEffect s_dropShadow = new(0, 6, 16, Colors.Black, 0.4);
+
         public BackdropEffectPage()
         {
             const double radius = 16;
@@ -87,14 +89,13 @@ namespace RenderDemo.Pages
                 // The Border feeds its corner radius to the backdrop, so the
                 // filtered region follows the rounded shape without an explicit
                 // clip - which also leaves the shadow free to paint outside the
-                // panel. The shadow is a geometry BoxShadow rather than a drop
-                // shadow Effect on purpose: an Effect's output depends on the
-                // subtree, so every caret blink would re-render the whole
-                // shadowed panel, while the box shadow is the border's own
-                // static drawing and a child change repaints only its sliver
-                // over the cached backdrop.
+                // panel. The shadow picker below A/Bs the two shadow kinds with
+                // the dirty-rect overlay: a drop shadow Effect repaints the
+                // caret plus its shadow band on each blink (the localized
+                // effect region), a geometry BoxShadow repaints only the caret
+                // sliver, and neither touches the cached backdrop.
                 CornerRadius = new CornerRadius(radius),
-                BoxShadow = BoxShadows.Parse("0 6 16 0 #66000000"),
+                Effect = s_dropShadow,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 BackdropEffect = s_effects[0].Effect,
@@ -132,6 +133,20 @@ namespace RenderDemo.Pages
                     _panel.BackdropEffect = s_effects[index].Effect;
             };
 
+            var shadowPicker = new ComboBox
+            {
+                ItemsSource = new List<string> { "Drop shadow (effect)", "Box shadow", "No shadow" },
+                SelectedIndex = 0,
+                Width = 160
+            };
+            shadowPicker.SelectionChanged += (_, _) =>
+            {
+                _panel.Effect = shadowPicker.SelectedIndex == 0 ? s_dropShadow : null;
+                _panel.BoxShadow = shadowPicker.SelectedIndex == 1
+                    ? BoxShadows.Parse("0 6 16 0 #66000000")
+                    : default;
+            };
+
             // With the sweep paused nothing beneath the panel changes, which is
             // the case the cached backdrop exists for.
             var pause = new ToggleButton { Content = "Pause sweep" };
@@ -161,6 +176,7 @@ namespace RenderDemo.Pages
                                 VerticalAlignment = VerticalAlignment.Center
                             },
                             picker,
+                            shadowPicker,
                             pause
                         }
                     },
