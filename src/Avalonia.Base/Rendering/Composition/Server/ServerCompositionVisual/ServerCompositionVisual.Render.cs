@@ -82,7 +82,15 @@ partial class ServerCompositionVisual
                 effectiveClip = effectiveClip.IntersectOrEmpty(visual._ownClipRect.Value.TransformToAABB(effectiveNewTransform));
 
             var worldBounds = visual._transformedSubTreeBounds.Value.TransformToAABB(_walkContext.Transform);
-            if (!effectiveClip.Intersects(worldBounds) 
+            if (visual.BackdropEffect != null)
+            {
+                // The backdrop fill covers the control's box even where the
+                // subtree paints nothing, so culling has to account for it.
+                var box = new LtrbRect(0, 0, visual.Size.X, visual.Size.Y)
+                    .TransformToAABB(effectiveNewTransform);
+                worldBounds = LtrbRect.FullUnion(worldBounds, box)!.Value;
+            }
+            if (!effectiveClip.Intersects(worldBounds)
                 || _dirtyRects?.Intersects(worldBounds) == false)
                 return false;
             
@@ -163,13 +171,15 @@ partial class ServerCompositionVisual
             // content, so it happens before anything is drawn - and the layer
             // closes again immediately: the filtered destination is its whole
             // contribution, and content drawn afterwards (an Effect layer's drop
-            // shadow reaches past these bounds) must not be confined by the
-            // backdrop's clip. The bounds exclude an own Effect's padding for
-            // the same reason, and because LayerOptions.Bounds only hints the
-            // offscreen size, the clip is what actually confines the filter.
-            if (visual.BackdropEffect != null && _canvas is IDrawingContextImplWithLayers backdropLayers)
+            // shadow, an overflowing child) must not be confined by the
+            // backdrop's clip. The region is the control's own box - the active
+            // ClipToBounds/geometry clips refine it - and because LayerOptions
+            // .Bounds only hints the offscreen size, the clip is what actually
+            // confines the filter.
+            if (visual.BackdropEffect != null && visual.Size.X > 0 && visual.Size.Y > 0
+                && _canvas is IDrawingContextImplWithLayers backdropLayers)
             {
-                var backdropBounds = (visual._subTreeBoundsWithoutEffect ?? visual._subTreeBounds)!.Value.ToRect();
+                var backdropBounds = new Rect(0, 0, visual.Size.X, visual.Size.Y);
                 _canvas.PushClip(backdropBounds);
                 backdropLayers.PushLayer(new Avalonia.Media.LayerOptions
                 {

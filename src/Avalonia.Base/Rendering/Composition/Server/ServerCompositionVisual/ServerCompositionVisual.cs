@@ -121,14 +121,23 @@ namespace Avalonia.Rendering.Composition.Server
         {
             cacheable = Opacity == 1 && OpacityMaskBrush == null;
 
+            // A subtree that paints nothing at all is culled by the render
+            // pass, so there is no fill to keep fresh either.
             if (_transformedSubTreeBounds == null || !Visible)
                 return null;
 
-            // _transformedSubTreeBounds is expressed in the parent's space, so each
-            // ancestor clips in its own space first and then maps up one level.
-            // An own Effect widens the subtree bounds by its output padding, but
-            // the backdrop samples only the content's area beneath it.
-            var rect = (_transformedSubTreeBoundsWithoutEffect ?? _transformedSubTreeBounds).Value;
+            // The backdrop region is the control's own box refined by its clip
+            // - never the subtree's paint union - so overflowing children and
+            // effect output do not widen it. Mapped to the parent's space
+            // first; each ancestor then clips in its own space and maps up one
+            // level.
+            var rect = new LtrbRect(0, 0, Size.X, Size.Y);
+            if (_ownClipRect.HasValue)
+                rect = rect.IntersectOrEmpty(_ownClipRect.Value);
+            if (rect.IsZeroSize)
+                return null;
+            if (_ownTransform.HasValue)
+                rect = rect.TransformToAABB(_ownTransform.Value);
             for (var parent = Parent; parent != null; parent = parent.Parent)
             {
                 if (!parent.Visible)
