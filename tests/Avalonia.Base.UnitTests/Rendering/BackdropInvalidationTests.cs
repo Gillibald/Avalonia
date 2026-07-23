@@ -1,6 +1,9 @@
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using Avalonia.Rendering.Composition;
+using Avalonia.Rendering.Composition.Server;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -118,5 +121,103 @@ public class BackdropInvalidationTests : CompositorTestsBase
 
         AssertCovers(s, new Rect(200, 200, 10, 10));
         AssertDoesNotCover(s, new Rect(50, 50, 40, 40));
+    }
+
+    /// <summary>
+    /// The server-side cache slot of a backdrop visual. The tests drive the
+    /// implementation's half of the <see cref="BackdropLayerCache"/> handshake
+    /// by hand - the mock render interface never captures anything.
+    /// </summary>
+    private static BackdropLayerCache ServerCacheOf(CompositorTestServices s, Visual visual)
+    {
+        s.RunJobs();
+        var composition = ElementComposition.GetElementVisual(visual)!;
+        return ((ServerCompositionVisual)composition.Server!).BackdropCache!;
+    }
+
+    [Fact]
+    public void Backdrop_Child_Change_Should_Not_Repaint_Beneath_When_Result_Is_Cached()
+    {
+        using var s = new CompositorCanvas();
+
+        var child = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Child = child;
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        // Simulate the backend having captured the filtered result last frame.
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        s.Events.Rects.Clear();
+
+        // The child paints inside the backdrop layer, above the sample point,
+        // so it cannot change what the filter reads: the cached result stays
+        // usable and nothing beneath the panel may be dragged into the region.
+        child.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(80, 80, 10, 10));
+        AssertDoesNotCover(s, new Rect(45, 45, 25, 50));
+    }
+
+    [Fact]
+    public void Backdrop_Child_Change_Should_Repaint_Beneath_While_No_Cached_Result_Exists()
+    {
+        using var s = new CompositorCanvas();
+
+        var child = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Child = child;
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        // No usable cached result (a backend that never captures leaves the
+        // slot invalid forever): the filter will re-sample the surface, so the
+        // whole input area has to be freshly painted even for a change that sits
+        // above the sample point.
+        child.Background = Brushes.Blue;
+
+        var padding = new ImmutableBlurEffect(4).GetEffectOutputPadding();
+        AssertCovers(s, new Rect(50, 50, 40, 40).Inflate(padding));
+    }
+
+    [Fact]
+    public void Backdrop_Should_Be_Invalidated_And_Granted_A_Refresh_When_Content_Behind_It_Changes()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        s.Events.Rects.Clear();
+
+        behind.Background = Brushes.Blue;
+        s.RunJobs();
+
+        // The content the filter reads changed: the retained result is stale,
+        // and because this frame's region now covers the whole input area it is
+        // the safe moment for the backend to capture a fresh one.
+        Assert.False(cache.IsValid);
+        Assert.True(cache.RefreshRequested);
     }
 }

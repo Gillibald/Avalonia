@@ -52,6 +52,14 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _registeredAsBackdrop;
 
         /// <summary>
+        /// Retains the filtered backdrop across frames so that changes painted
+        /// on top of this visual do not force everything beneath it to repaint.
+        /// Created with the backdrop registration, freed with it; see
+        /// <see cref="BackdropLayerCache"/> for the update/render handshake.
+        /// </summary>
+        internal BackdropLayerCache? BackdropCache { get; private set; }
+
+        /// <summary>
         /// A backdrop reads the surface beneath it, which no other visual's dirty
         /// rect accounts for, so the target keeps a list of them and widens the
         /// dirty region to cover their whole area. Registration is kept in step
@@ -65,9 +73,16 @@ namespace Avalonia.Rendering.Composition.Server
 
             _registeredAsBackdrop = shouldRegister;
             if (shouldRegister)
+            {
+                BackdropCache = new BackdropLayerCache();
                 Root!.AddBackdropVisual(this);
+            }
             else
+            {
                 Root?.RemoveBackdropVisual(this);
+                BackdropCache?.Dispose();
+                BackdropCache = null;
+            }
         }
 
         private void UnregisterBackdrop(ServerCompositionTarget target)
@@ -77,6 +92,8 @@ namespace Avalonia.Rendering.Composition.Server
 
             _registeredAsBackdrop = false;
             target.RemoveBackdropVisual(this);
+            BackdropCache?.Dispose();
+            BackdropCache = null;
         }
 
         /// <summary>

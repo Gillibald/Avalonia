@@ -67,6 +67,15 @@ public readonly record struct LayerOptions
     public IEffect? BackdropEffect { get; init; }
 
     /// <summary>
+    /// Optional cache slot for the filtered backdrop, stamped by the
+    /// compositor's render pass. When present, an implementation that supports
+    /// caching draws the retained image instead of re-sampling the surface, and
+    /// refreshes it only on frames the update pass has marked safe. See
+    /// <see cref="BackdropLayerCache"/> for the handshake contract.
+    /// </summary>
+    internal BackdropLayerCache? BackdropCache { get; init; }
+
+    /// <summary>
     /// Forces an isolated offscreen layer even when no other compositing
     /// parameter is set. Children with non-default blend modes then composite
     /// against the layer's contents instead of the page backdrop — the CSS
