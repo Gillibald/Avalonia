@@ -89,6 +89,12 @@ namespace Avalonia
             AvaloniaProperty.Register<Visual, IEffect?>(nameof(BackdropEffect));
 
         /// <summary>
+        /// Defines the <see cref="BackdropClip"/> property.
+        /// </summary>
+        public static readonly StyledProperty<Geometry?> BackdropClipProperty =
+            AvaloniaProperty.Register<Visual, Geometry?>(nameof(BackdropClip));
+
+        /// <summary>
         /// Defines the <see cref="HasMirrorTransform"/> property.
         /// </summary>
         public static readonly DirectProperty<Visual, bool> HasMirrorTransformProperty =
@@ -153,6 +159,7 @@ namespace Avalonia
                 OpacityMaskProperty,
                 EffectProperty,
                 BackdropEffectProperty,
+                BackdropClipProperty,
                 HasMirrorTransformProperty);
             RenderTransformProperty.Changed.Subscribe(RenderTransformChanged);
             ZIndexProperty.Changed.Subscribe(ZIndexChanged);
@@ -310,15 +317,15 @@ namespace Avalonia
         /// <see cref="Clip"/> - the control's own box, like CSS, never the extent
         /// of what it happens to paint. Children overflowing the control and
         /// effect output such as a drop shadow fall on the unfiltered background,
-        /// and a control without a size shows no backdrop at all. Nothing here
-        /// knows the shape a control paints, so a rounded panel needs a
-        /// <see cref="Clip"/> matching its corner radius - otherwise the
-        /// background is drawn rounded while the filtered area stays square and
-        /// fills the corners:
-        /// <code>
-        /// panel.CornerRadius = new CornerRadius(16);
-        /// panel.Clip = new RectangleGeometry(new Rect(panel.Bounds.Size), 16, 16);
-        /// </code>
+        /// and a control without a size shows no backdrop at all.
+        /// </para>
+        /// <para>
+        /// Shaped panels shape themselves: a Border feeds a rounded rectangle
+        /// matching its corner radius automatically, and any visual can set
+        /// <see cref="BackdropClip"/> to an arbitrary geometry. Unlike
+        /// <see cref="Clip"/>, which also crops everything else the subtree
+        /// paints - effects included - the backdrop clip crops only the
+        /// backdrop.
         /// </para>
         /// </remarks>
         public IEffect? BackdropEffect
@@ -326,6 +333,28 @@ namespace Avalonia
             get => GetValue(BackdropEffectProperty);
             set => SetValue(BackdropEffectProperty, value);
         }
+
+        /// <summary>
+        /// Gets or sets a geometry shaping the region a
+        /// <see cref="BackdropEffect"/> fills, in the control's local
+        /// coordinates. Unlike <see cref="Clip"/> this crops only the backdrop,
+        /// so it composes with effects and overflowing children. When unset,
+        /// controls that know their own shape supply one - a Border feeds a
+        /// rounded rectangle matching its corner radius automatically.
+        /// </summary>
+        public Geometry? BackdropClip
+        {
+            get => GetValue(BackdropClipProperty);
+            set => SetValue(BackdropClipProperty, value);
+        }
+
+        /// <summary>
+        /// The geometry actually shaping the backdrop region: the explicit
+        /// <see cref="BackdropClip"/> when one is set, otherwise whatever shape
+        /// the control declares for itself - the base visual is square (null),
+        /// a Border supplies its rounded rectangle.
+        /// </summary>
+        internal virtual Geometry? EffectiveBackdropClip => BackdropClip;
 
 
         /// <summary>

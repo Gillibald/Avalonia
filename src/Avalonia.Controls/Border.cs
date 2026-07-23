@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls.Utils;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -131,6 +132,50 @@ namespace Avalonia.Controls
         {
             get => GetValue(CornerRadiusProperty);
             set => SetValue(CornerRadiusProperty, value);
+        }
+
+        private Geometry? _backdropClipCache;
+        private Size _backdropClipCacheSize;
+        private CornerRadius _backdropClipCacheRadius;
+        private Thickness _backdropClipCacheThickness;
+
+        // A border knows the rounded shape it paints, so its backdrop follows
+        // the corner radius without an explicit BackdropClip. The geometry is
+        // the same outer-edge shape the border renders - built by the shared
+        // GeometryBuilder math, so the clip and the painted outline agree on
+        // corner clamping - and is rebuilt only when its inputs change.
+        internal override Geometry? EffectiveBackdropClip
+        {
+            get
+            {
+                if (BackdropClip is { } explicitClip)
+                    return explicitClip;
+
+                var radius = CornerRadius;
+                var size = Bounds.Size;
+                if (radius == default || size.Width <= 0 || size.Height <= 0)
+                    return null;
+
+                var thickness = BorderThickness;
+                if (_backdropClipCache == null
+                    || _backdropClipCacheSize != size
+                    || _backdropClipCacheRadius != radius
+                    || _backdropClipCacheThickness != thickness)
+                {
+                    var keypoints = GeometryBuilder.CalculateRoundedCornersRectangleWinUI(
+                        new Rect(size), thickness, radius, BackgroundSizing.OuterBorderEdge);
+                    var geometry = new StreamGeometry();
+                    using (var ctx = geometry.Open())
+                        GeometryBuilder.DrawRoundedCornersRectangle(ctx, ref keypoints);
+
+                    _backdropClipCache = geometry;
+                    _backdropClipCacheSize = size;
+                    _backdropClipCacheRadius = radius;
+                    _backdropClipCacheThickness = thickness;
+                }
+
+                return _backdropClipCache;
+            }
         }
 
         /// <summary>

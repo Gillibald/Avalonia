@@ -181,6 +181,9 @@ partial class ServerCompositionVisual
             {
                 var backdropBounds = new Rect(0, 0, visual.Size.X, visual.Size.Y);
                 _canvas.PushClip(backdropBounds);
+                var backdropClip = visual.BackdropClip;
+                if (backdropClip != null)
+                    _canvas.PushGeometryClip(backdropClip);
                 backdropLayers.PushLayer(new Avalonia.Media.LayerOptions
                 {
                     Bounds = backdropBounds,
@@ -188,6 +191,8 @@ partial class ServerCompositionVisual
                     BackdropCache = visual.BackdropCache
                 });
                 backdropLayers.PopLayer();
+                if (backdropClip != null)
+                    _canvas.PopGeometryClip();
                 _canvas.PopClip();
             }
 
