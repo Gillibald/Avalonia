@@ -34,8 +34,7 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _disposed;
         private readonly HashSet<ServerCompositionVisual> _attachedVisuals = new();
         private readonly HashSet<ServerCompositionVisual> _backdropVisuals = new();
-        private readonly List<LtrbRect> _frameDirtyRects = new();
-        private RecordingDirtyRectCollector? _recordingCollector;
+        private readonly List<BackdropDirtyRect> _backdropDirtyRects = new();
         public IDirtyRectTracker DirtyRects { get; }
 
         public long Id { get; }
@@ -132,16 +131,26 @@ namespace Avalonia.Rendering.Composition.Server
                     ? new DebugEventsDirtyRectCollectorProxy(DirtyRects, DebugEvents)
                     : (IDirtyRectCollector)DirtyRects;
 
-                // Backdrops need to know what this frame invalidated, and the
-                // tracker cannot answer that until FinalizeFrame.
-                _frameDirtyRects.Clear();
+                // Backdrops need to know what this frame invalidated - the
+                // tracker cannot answer that until FinalizeFrame - and where
+                // each rect sits relative to their sample point, which only the
+                // update walk knows.
+                List<BackdropDirtyRect>? backdropDirtyRects = null;
                 if (_backdropVisuals.Count > 0)
                 {
-                    _recordingCollector ??= new RecordingDirtyRectCollector(_frameDirtyRects);
-                    collector = _recordingCollector.Wrap(collector);
+                    _backdropDirtyRects.Clear();
+                    backdropDirtyRects = _backdropDirtyRects;
+
+                    var bit = 1UL;
+                    foreach (var visual in _backdropVisuals)
+                    {
+                        visual.BackdropMaskBit = bit;
+                        bit <<= 1; // zero past 64 backdrops: those classify conservatively
+                    }
                 }
 
-                Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height));
+                Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height),
+                    backdropDirtyRects);
 
                 ExpandDirtyRegionForBackdrops(collector, transform);
 
@@ -372,41 +381,21 @@ namespace Avalonia.Rendering.Composition.Server
                 visual.Deactivate();
         }
 
-        /// <summary>
-        /// Mirrors what the update invalidates into a list, so the backdrop pass
-        /// can see this frame's rects. Reused across frames: this sits in the
-        /// compositor's per-frame path.
-        /// </summary>
-        private sealed class RecordingDirtyRectCollector : IDirtyRectCollector
-        {
-            private readonly List<LtrbRect> _rects;
-            private IDirtyRectCollector? _inner;
-
-            public RecordingDirtyRectCollector(List<LtrbRect> rects) => _rects = rects;
-
-            public IDirtyRectCollector Wrap(IDirtyRectCollector inner)
-            {
-                _inner = inner;
-                return this;
-            }
-
-            public void AddRect(LtrbRect rect)
-            {
-                _inner!.AddRect(rect);
-                _rects.Add(rect);
-            }
-        }
-
         public void AddBackdropVisual(ServerCompositionVisual visual) => _backdropVisuals.Add(visual);
 
         public void RemoveBackdropVisual(ServerCompositionVisual visual) => _backdropVisuals.Remove(visual);
 
         /// <summary>
-        /// Widens the dirty region so that every backdrop it touches is covered in
-        /// full, together with the area its filter reads beyond its own bounds.
-        /// A backdrop composites what is already on the surface, so anything left
-        /// unpainted underneath it is last frame's output - which already contains
-        /// the backdrop - and filtering that again smears it outward.
+        /// Decides, per backdrop this frame touched, whether its retained result
+        /// is still usable and widens the dirty region when it is not. A backdrop
+        /// composites what is already on the surface, so when its filter has to
+        /// run, everything it reads - its whole area plus the filter's reach -
+        /// must be freshly painted first; anything left unpainted is last frame's
+        /// output, which already contains the backdrop, and filtering that again
+        /// smears it outward. Rects tagged as coming from the backdrop's own
+        /// subtree paint above the sample point and cannot change what the filter
+        /// reads, so a backdrop with a valid cache skips both the re-filter and
+        /// the repaint underneath - the point of the cache.
         /// </summary>
         /// <remarks>
         /// This works off the rects collected during the update rather than
@@ -416,10 +405,14 @@ namespace Avalonia.Rendering.Composition.Server
         /// </remarks>
         private void ExpandDirtyRegionForBackdrops(IDirtyRectCollector collector, Matrix transform)
         {
-            if (_backdropVisuals.Count == 0 || _frameDirtyRects.Count == 0)
+            if (_backdropVisuals.Count == 0 || _backdropDirtyRects.Count == 0)
                 return;
 
             var surface = new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height);
+
+            // A save-layer around the whole frame means every backdrop samples
+            // that layer instead of the base surface the snapshot would read.
+            var rootUsesLayer = Compositor.Options.UseSaveLayerRootClip ?? false;
 
             // Expanding one backdrop can reach another, so repeat until a pass adds
             // nothing. Each pass covers at least one more backdrop, so the visual
@@ -431,33 +424,55 @@ namespace Avalonia.Rendering.Composition.Server
                 {
                     if (visual.BackdropEffect is not { } effect)
                         continue;
-                    if (visual.TryGetWorldBounds(transform) is not { } bounds)
+                    if (visual.TryGetWorldBounds(transform, out var cacheable) is not { } bounds)
                         continue;
+                    cacheable &= !rootUsesLayer;
 
                     var area = bounds.Inflate(effect.GetEffectOutputPadding()).IntersectOrEmpty(surface);
                     if (area.IsZeroSize)
                         continue;
 
+                    var bit = visual.BackdropMaskBit;
                     var touched = false;
-                    for (var i = 0; i < _frameDirtyRects.Count; i++)
+                    var invalidated = false;
+                    var contained = false;
+                    for (var i = 0; i < _backdropDirtyRects.Count; i++)
                     {
-                        var rect = _frameDirtyRects[i];
-                        if (rect.Contains(area))
-                        {
-                            // Already repainted in full; nothing to widen.
-                            touched = false;
-                            break;
-                        }
+                        var entry = _backdropDirtyRects[i];
+                        if (!entry.Rect.Intersects(area))
+                            continue;
 
-                        touched |= rect.Intersects(area);
+                        touched = true;
+                        if (entry.Rect.Contains(area))
+                            contained = true;
+                        // Above the sample point only when provably from this
+                        // backdrop's subtree; a zero bit (mask overflow) always
+                        // invalidates.
+                        if (bit == 0 || (entry.AboveMask & bit) == 0)
+                            invalidated = true;
                     }
 
                     if (!touched)
                         continue;
 
-                    // The collector records into _frameDirtyRects, so the next
-                    // backdrop in this pass already sees the widened area.
+                    var cache = visual.BackdropCache;
+                    if (invalidated && cache != null)
+                        cache.IsValid = false;
+
+                    if (cacheable && cache is { IsValid: true })
+                        continue; // the retained result gets drawn; nothing beneath needs repainting
+
+                    if (cacheable && cache != null)
+                        cache.RefreshRequested = true;
+
+                    if (contained)
+                        continue; // some rect already repaints the full input; nothing to widen
+
+                    // The next backdrop in this pass classifies this rect as
+                    // invalidating (no mask), which is what a repaint of the
+                    // area beneath it is.
                     collector.AddRect(area);
+                    _backdropDirtyRects.Add(new BackdropDirtyRect(area, 0));
                     added = true;
                 }
 
@@ -468,4 +483,13 @@ namespace Avalonia.Rendering.Composition.Server
 
         public void RequestFullRedraw() => _redrawRequested = true;
     }
+
+    /// <summary>
+    /// A rect invalidated during the update walk, tagged with the registered
+    /// backdrops whose subtree it was recorded inside. Content in a backdrop's
+    /// subtree paints inside its layer - above the point where the filter
+    /// samples the surface - so such rects cannot invalidate that backdrop's
+    /// retained result.
+    /// </summary>
+    internal readonly record struct BackdropDirtyRect(LtrbRect Rect, ulong AboveMask);
 }

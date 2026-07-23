@@ -97,13 +97,30 @@ namespace Avalonia.Rendering.Composition.Server
         }
 
         /// <summary>
+        /// The bit identifying this backdrop in the per-frame dirty-rect masks,
+        /// assigned by the target each update. Zero past 64 registered backdrops,
+        /// which just makes classification conservative for the overflow.
+        /// </summary>
+        internal ulong BackdropMaskBit { get; set; }
+
+        /// <summary>
         /// This visual's bounds in the target's coordinate space, or null when it
         /// contributes nothing. The update walk only descends into dirty subtrees,
         /// so a backdrop that did not itself change is never visited and its world
         /// transform has to be rebuilt from the parent chain.
         /// </summary>
-        internal LtrbRect? TryGetWorldBounds(Matrix rootTransform)
+        /// <param name="rootTransform">The target's root transform.</param>
+        /// <param name="cacheable">
+        /// Whether a backdrop on this visual samples the base surface directly.
+        /// The visual's own opacity or mask, or any ancestor opacity, mask,
+        /// effect or backdrop, wraps it in a save-layer; the live sample then
+        /// reads that layer while a snapshot reads the base surface, so such a
+        /// backdrop cannot use the cached path.
+        /// </param>
+        internal LtrbRect? TryGetWorldBounds(Matrix rootTransform, out bool cacheable)
         {
+            cacheable = Opacity == 1 && OpacityMaskBrush == null;
+
             if (_transformedSubTreeBounds == null || !Visible)
                 return null;
 
@@ -114,6 +131,11 @@ namespace Avalonia.Rendering.Composition.Server
             {
                 if (!parent.Visible)
                     return null;
+
+                if (parent.Opacity != 1 || parent.OpacityMaskBrush != null
+                    || parent.Effect != null || parent.BackdropEffect != null)
+                    cacheable = false;
+
                 if (parent._ownClipRect.HasValue)
                 {
                     rect = rect.IntersectOrEmpty(parent._ownClipRect.Value);

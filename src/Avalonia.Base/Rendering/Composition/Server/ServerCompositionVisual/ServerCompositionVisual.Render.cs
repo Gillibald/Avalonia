@@ -170,7 +170,8 @@ partial class ServerCompositionVisual
                 backdropLayers.PushLayer(new Avalonia.Media.LayerOptions
                 {
                     Bounds = backdropBounds,
-                    BackdropEffect = visual.BackdropEffect
+                    BackdropEffect = visual.BackdropEffect,
+                    BackdropCache = visual.BackdropCache
                 });
             }
 
