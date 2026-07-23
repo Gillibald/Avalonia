@@ -71,6 +71,16 @@ internal partial class ServerCompositionVisual
         
         public void PreSubgraph(ServerCompositionVisual node, out bool visitChildren)
         {
+            // From here on, every rect this node or its subtree adds paints at
+            // or above the node's own backdrop sample point. Whether the node's
+            // own rects must still invalidate it (a move or bounds change
+            // relocates the sample region) is only decidable in PostSubgraph
+            // once the new bounds exist; a stale-tagged old-bounds rect is safe
+            // because PostSubgraph re-adds the bounds untagged whenever that
+            // decision says so.
+            if (node._registeredAsBackdrop)
+                _currentBackdropMask |= node.BackdropMaskBit;
+
             visitChildren = node._isDirtyForRenderInSubgraph || node._needsBoundingBoxUpdate;
             
             // If this node has an alpha mask an we caused its inner bounds to change
@@ -122,23 +132,12 @@ internal partial class ServerCompositionVisual
                 // to outer space.
                 node._subTreeBounds = node._ownContentBounds;
             }
-
-            // Rects added from here to the marker's removal come from this
-            // backdrop's subtree, which paints inside its layer - above the
-            // sample point - and so cannot change what the filter reads. The
-            // node's own rects were added before this line on purpose: its own
-            // movement does relocate the sample region.
-            if (node._registeredAsBackdrop)
-                _currentBackdropMask |= node.BackdropMaskBit;
         }
 
 
         public void PostSubgraph(ServerCompositionVisual node)
         {
-            // Cleared first so the node's own rects added below (extra dirty
-            // rects, the dirty-for-render bbox) classify as invalidating.
-            if (node._registeredAsBackdrop)
-                _currentBackdropMask &= ~node.BackdropMaskBit;
+            var oldSampleBounds = node._transformedSubTreeBoundsWithoutEffect ?? node._transformedSubTreeBounds;
 
             var parent = node.Parent;
             if (node._needsBoundingBoxUpdate)
@@ -149,6 +148,17 @@ internal partial class ServerCompositionVisual
                 //
                 FinalizeSubtreeBounds(node);
             }
+
+            // A pure subtree content redraw - the node's own drawings, or the
+            // Effect whole-bounds re-add a child change triggers, e.g. for a
+            // drop shadow - paints above the node's own backdrop sample point
+            // and keeps the marker on. Its own change or an actual bounds
+            // change relocates the sample region, so those rects must
+            // invalidate: clear the marker before they are added below.
+            var ownRectsInvalidate = node._isDirtyForRender
+                || oldSampleBounds != (node._transformedSubTreeBoundsWithoutEffect ?? node._transformedSubTreeBounds);
+            if (node._registeredAsBackdrop && ownRectsInvalidate)
+                _currentBackdropMask &= ~node.BackdropMaskBit;
             
             //
             // Update state on the parent node if we have a parent.
@@ -194,19 +204,33 @@ internal partial class ServerCompositionVisual
             node._needsBoundingBoxUpdate = false;
             node._needsToAddExtraDirtyRectToDirtyRegion = false;
             node._contentChanged = false;
+
+            if (node._registeredAsBackdrop && !ownRectsInvalidate)
+                _currentBackdropMask &= ~node.BackdropMaskBit;
         }
 
         private void FinalizeSubtreeBounds(ServerCompositionVisual node)
         {
             // WPF simply removes drawing commands from every visual in invisible subtree (on UI thread).
             // We set the bounds to null when computing subtree bounds for invisible nodes.
-            if (!node.Visible) 
+            if (!node.Visible)
                 node._subTreeBounds = null;
+
+            node._subTreeBoundsWithoutEffect = null;
 
             if (node._subTreeBounds != null)
             {
                 if (node.Effect != null)
+                {
+                    // Kept for backdrops before the effect padding widens the
+                    // bounds; the same clip applies to both variants.
+                    var withoutEffect = node._subTreeBounds;
+                    if (node._ownClipRect.HasValue)
+                        withoutEffect = withoutEffect.Value.IntersectOrNull(node._ownClipRect.Value);
+                    node._subTreeBoundsWithoutEffect = withoutEffect;
+
                     node._subTreeBounds = node._subTreeBounds.Value.Inflate(node.Effect.GetEffectOutputPadding());
+                }
 
                 if (node._ownClipRect.HasValue)
                     node._subTreeBounds = node._subTreeBounds.Value.IntersectOrNull(node._ownClipRect.Value);
@@ -218,6 +242,14 @@ internal partial class ServerCompositionVisual
                 node._transformedSubTreeBounds = node._subTreeBounds?.TransformToAABB(node._ownTransform.Value);
             else
                 node._transformedSubTreeBounds = node._subTreeBounds;
+
+            if (node._subTreeBoundsWithoutEffect == null)
+                node._transformedSubTreeBoundsWithoutEffect = null;
+            else if (node._ownTransform.HasValue)
+                node._transformedSubTreeBoundsWithoutEffect =
+                    node._subTreeBoundsWithoutEffect?.TransformToAABB(node._ownTransform.Value);
+            else
+                node._transformedSubTreeBoundsWithoutEffect = node._subTreeBoundsWithoutEffect;
 
             node.EnqueueForReadbackUpdate();
         }

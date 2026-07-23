@@ -145,6 +145,37 @@ public class BackdropEffectTests : TestBase
     }
 
     /// <summary>
+    /// Frosted panels normally float, which means BackdropEffect and a drop
+    /// shadow Effect on the same control. The two must not leak into each
+    /// other: the filtered region stops at the panel's clip, and the shadow
+    /// falls outside it onto the unfiltered background.
+    /// </summary>
+    [Fact]
+    public async Task Backdrop_With_DropShadow_On_Control()
+    {
+        var canvas = BuildScene();
+
+        // Grayscale so the filtered region's outline is unmistakable; a black
+        // offset shadow so its reach beyond the panel is equally visible.
+        var panel = FrostedPanel(new ImmutableColorMatrixEffect(new double[]
+        {
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0,      0,      0,      1, 0
+        }));
+        // No geometry clip: Visual.Clip crops the whole subtree render, shadow
+        // included - the standard clip semantics, not a backdrop interaction.
+        panel.Effect = new ImmutableDropShadowEffect(6, 6, 12, Colors.Black, 0.7);
+        Canvas.SetLeft(panel, 30);
+        Canvas.SetTop(panel, 58);
+        canvas.Children.Add(panel);
+
+        await RenderToFile(canvas);
+        CompareImages(skipImmediate: true);
+    }
+
+    /// <summary>
     /// The pre-existing Visual.Effect API over the same tree, for contrast: it
     /// filters the control's own content, not what is behind it.
     /// </summary>

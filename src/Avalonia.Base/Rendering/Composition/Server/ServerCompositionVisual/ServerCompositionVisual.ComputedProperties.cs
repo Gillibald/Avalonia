@@ -45,6 +45,14 @@ partial class ServerCompositionVisual
     // Updated by: PostSubgraph
     private LtrbRect? _transformedSubTreeBounds;
 
+    // The subtree bounds without the Effect's output padding, set only while an
+    // effect is present. A backdrop on this visual samples this area: the
+    // padding exists for effect output like a drop shadow, which paints above
+    // the backdrop's sample point and must not widen the filtered region.
+    // Coordinate spaces: local / parent; updated by: PostSubgraph
+    private LtrbRect? _subTreeBoundsWithoutEffect;
+    private LtrbRect? _transformedSubTreeBoundsWithoutEffect;
+
     // Visual's own clip area
     // Coordinate space: local
     private LtrbRect? _ownClipRect;
