@@ -193,6 +193,39 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Backdrop_Region_Should_Stop_At_The_Controls_Bounds_Under_Overflowing_Content()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+
+        var panel = Frosted(50, 50, 40, 40, blur: 0);
+        // A child shifted past the panel's right edge: it paints outside the
+        // control's box (nothing clips it), but the backdrop region is the box
+        // itself, so the overhang must not widen what gets repainted.
+        panel.Child = new Border
+        {
+            Background = Brushes.Cyan, Width = 40, Height = 20,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            RenderTransform = new TranslateTransform(20, 0)
+        };
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        behind.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(50, 50, 40, 40));
+        AssertDoesNotCover(s, new Rect(95, 50, 15, 40));
+    }
+
+    [Fact]
     public void Backdrop_With_DropShadow_Should_Not_Expand_Into_The_Shadow_Zone()
     {
         using var s = new CompositorCanvas();
