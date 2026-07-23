@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Animations;
+using Avalonia.Threading;
 
 namespace RenderDemo.Pages
 {
@@ -51,6 +53,21 @@ namespace RenderDemo.Pages
         private readonly Border _panel;
         private readonly BackdropSource _source = new();
 
+        // A caret blinking on the glass: with the sweep paused, the dirty-rect
+        // overlay should show each blink repainting only this sliver - the
+        // cached backdrop result spares everything underneath the panel.
+        private readonly Border _caret = new()
+        {
+            Width = 2,
+            Height = 18,
+            Background = Brushes.Black,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(120, 0, 0, 0)
+        };
+
+        private readonly DispatcherTimer _blink = new() { Interval = TimeSpan.FromMilliseconds(500) };
+
         public BackdropEffectPage()
         {
             const double radius = 16;
@@ -76,14 +93,26 @@ namespace RenderDemo.Pages
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 BackdropEffect = s_effects[0].Effect,
-                Child = new TextBlock
+                Child = new Panel
                 {
-                    Text = "BackdropEffect",
-                    Foreground = Brushes.Black,
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = "BackdropEffect",
+                            Foreground = Brushes.Black,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        },
+                        _caret
+                    }
                 }
             };
+
+            // Opacity rather than IsVisible: a visibility toggle schedules a
+            // layout pass, and the point of the caret is to show a pure render
+            // change repainting only its own sliver.
+            _blink.Tick += (_, _) => _caret.Opacity = _caret.Opacity > 0 ? 0 : 1;
 
             var picker = new ComboBox
             {
@@ -96,6 +125,17 @@ namespace RenderDemo.Pages
                 var index = picker.SelectedIndex;
                 if (index >= 0 && index < s_effects.Length)
                     _panel.BackdropEffect = s_effects[index].Effect;
+            };
+
+            // With the sweep paused nothing beneath the panel changes, which is
+            // the case the cached backdrop exists for.
+            var pause = new ToggleButton { Content = "Pause sweep" };
+            pause.IsCheckedChanged += (_, _) =>
+            {
+                if (pause.IsChecked == true)
+                    _source.Pause();
+                else
+                    _source.Resume();
             };
 
             Content = new DockPanel
@@ -115,7 +155,8 @@ namespace RenderDemo.Pages
                                 Text = "Backdrop:",
                                 VerticalAlignment = VerticalAlignment.Center
                             },
-                            picker
+                            picker,
+                            pause
                         }
                     },
                     new Panel
@@ -124,6 +165,18 @@ namespace RenderDemo.Pages
                     }
                 }
             };
+        }
+
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            _blink.Start();
+        }
+
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            _blink.Stop();
         }
 
         /// <summary>
@@ -181,15 +234,28 @@ namespace RenderDemo.Pages
                 _visual.Size = new Vector(600, 400);
                 ElementComposition.SetElementChildVisual(this, _visual);
 
-                // Sent once; the sweep runs on the compositor from here on, so the
-                // backdrop has to track a surface changing with no UI-thread work.
-                var sweep = compositor.CreateVector3DKeyFrameAnimation();
+                StartSweep(_visual);
+            }
+
+            public void Pause() => _visual?.StopAnimation("Offset");
+
+            public void Resume()
+            {
+                if (_visual is { } visual)
+                    StartSweep(visual);
+            }
+
+            // Sent once; the sweep runs on the compositor from here on, so the
+            // backdrop has to track a surface changing with no UI-thread work.
+            private static void StartSweep(CompositionRecordingVisual visual)
+            {
+                var sweep = visual.Compositor.CreateVector3DKeyFrameAnimation();
                 sweep.InsertKeyFrame(0f, new Vector3D(-Span, 0, 0));
                 sweep.InsertKeyFrame(0.5f, new Vector3D(Span, 0, 0));
                 sweep.InsertKeyFrame(1f, new Vector3D(-Span, 0, 0));
                 sweep.Duration = TimeSpan.FromSeconds(6);
                 sweep.IterationBehavior = AnimationIterationBehavior.Forever;
-                _visual.StartAnimation("Offset", sweep);
+                visual.StartAnimation("Offset", sweep);
             }
 
             protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
