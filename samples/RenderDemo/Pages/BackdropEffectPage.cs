@@ -84,12 +84,19 @@ namespace RenderDemo.Pages
                 Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
                 BorderBrush = new ImmutableSolidColorBrush(Colors.White, 0.7),
                 BorderThickness = new Thickness(1),
+                // The Border feeds its corner radius to the backdrop, so the
+                // filtered region follows the rounded shape without an explicit
+                // clip - which also leaves the shadow free to paint outside the
+                // panel. The shadow is a geometry BoxShadow rather than a drop
+                // shadow Effect on purpose: an Effect's output depends on the
+                // subtree, so every caret blink would re-render the whole
+                // shadowed panel, while the box shadow is the border's own
+                // static drawing and a child change repaints only its sliver
+                // over the cached backdrop.
                 CornerRadius = new CornerRadius(radius),
-                // The backdrop is confined by the control's bounds and clip, and
-                // nothing knows the shape a Border paints. Without a matching clip
-                // the wash is drawn rounded while the filtered area stays square
-                // and fills the corners.
-                Clip = new RectangleGeometry(new Rect(0, 0, panelWidth, panelHeight), radius, radius),
+                BoxShadow = BoxShadows.Parse("0 6 16 0 #66000000"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 BackdropEffect = s_effects[0].Effect,
                 Child = new Panel
                 {
@@ -111,20 +118,6 @@ namespace RenderDemo.Pages
             // layout pass, and the point of the caret is to show a pure render
             // change repainting only its own sliver.
             _blink.Tick += (_, _) => _caret.Opacity = _caret.Opacity > 0 ? 0 : 1;
-
-            // The shadow lives on a wrapper rather than the panel: the panel's
-            // rounded clip would crop an Effect-based shadow away, while an
-            // Effect on a wrapper would open a filter layer the backdrop then
-            // samples instead of the scene. A geometry box shadow does neither -
-            // no clip on this element, no layer around the glass.
-            var shadow = new Border
-            {
-                CornerRadius = new CornerRadius(radius),
-                BoxShadow = BoxShadows.Parse("0 6 16 0 #66000000"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = _panel
-            };
 
             var picker = new ComboBox
             {
@@ -173,7 +166,7 @@ namespace RenderDemo.Pages
                     },
                     new Panel
                     {
-                        Children = { _source, shadow }
+                        Children = { _source, _panel }
                     }
                 }
             };

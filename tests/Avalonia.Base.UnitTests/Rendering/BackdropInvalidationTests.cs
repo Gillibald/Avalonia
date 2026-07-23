@@ -226,6 +226,41 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Backdrop_With_BoxShadow_Child_Change_Should_Repaint_Only_The_Child()
+    {
+        using var s = new CompositorCanvas();
+
+        var child = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 0);
+        // A geometry box shadow is the border's own drawing and does not depend
+        // on the subtree, unlike a drop shadow Effect whose whole-bounds
+        // re-render makes any child change repaint the full panel. This is the
+        // composition the demo uses: glass plus shadow plus cheap child
+        // changes.
+        panel.BoxShadow = BoxShadows.Parse("0 4 8 0 #66000000");
+        panel.Child = child;
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        child.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(80, 80, 10, 10));
+        AssertDoesNotCover(s, new Rect(50, 50, 25, 40));
+        Assert.True(cache.IsValid);
+        Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Backdrop_With_DropShadow_Should_Not_Expand_Into_The_Shadow_Zone()
     {
         using var s = new CompositorCanvas();
