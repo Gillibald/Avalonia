@@ -193,6 +193,70 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Backdrop_With_DropShadow_Should_Not_Expand_Into_The_Shadow_Zone()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+
+        var panel = Frosted(50, 50, 40, 40, blur: 0);
+        // The shadow inflates the visual's subtree bounds to (49,49)-(111,111),
+        // but the backdrop still samples only the panel's own 40x40 area.
+        panel.Effect = new ImmutableDropShadowEffect(10, 10, 10, Colors.Black, 1);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        behind.Background = Brushes.Blue;
+
+        // The repaint has to cover what the filter reads - the panel's area -
+        // and must not be dragged out into the shadow zone, which contains only
+        // content painted above the sample point.
+        AssertCovers(s, new Rect(50, 50, 40, 40));
+        AssertDoesNotCover(s, new Rect(95, 50, 16, 40));
+    }
+
+    [Fact]
+    public void Backdrop_With_DropShadow_Child_Change_Should_Keep_The_Cached_Result()
+    {
+        using var s = new CompositorCanvas();
+
+        var child = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Effect = new ImmutableDropShadowEffect(6, 6, 8, Colors.Black, 1);
+        panel.Child = child;
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        // A capture consumes the refresh grant and marks the slot valid; the
+        // mock backend does neither, so the test plays that half by hand.
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        // The shadow depends on the panel's content, so a child change
+        // re-renders the panel's whole bounds - but everything re-rendered
+        // paints above the backdrop's sample point, so the retained filtered
+        // result stays usable and no refresh is needed.
+        child.Background = Brushes.Blue;
+        s.RunJobs();
+
+        Assert.True(cache.IsValid);
+        Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Backdrop_Should_Be_Invalidated_And_Granted_A_Refresh_When_Content_Behind_It_Changes()
     {
         using var s = new CompositorCanvas();
