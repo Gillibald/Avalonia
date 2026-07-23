@@ -154,6 +154,8 @@ public partial class Visual
         if (!comp.BackdropEffect.EffectEquals(BackdropEffect))
             comp.BackdropEffect = BackdropEffect?.ToImmutable();
 
+        comp.BackdropClip = EffectiveBackdropClip?.PlatformImpl;
+
         comp.RenderOptions = RenderOptions;
         comp.TextOptions = TextOptions;
 

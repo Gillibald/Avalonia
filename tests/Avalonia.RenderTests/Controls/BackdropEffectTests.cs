@@ -177,6 +177,38 @@ public class BackdropEffectTests : TestBase
     }
 
     /// <summary>
+    /// Any visual can shape its backdrop with an explicit geometry - no Border
+    /// and no subtree-cropping clip. The panel here is a plain Panel whose
+    /// square wash pokes past the elliptical filtered region.
+    /// </summary>
+    [Fact]
+    public async Task Backdrop_Follows_Explicit_Backdrop_Clip()
+    {
+        var canvas = BuildScene();
+
+        var panel = new Panel
+        {
+            Width = 140,
+            Height = 84,
+            Background = new ImmutableSolidColorBrush(Colors.White, 0.3),
+            BackdropClip = new EllipseGeometry(new Rect(0, 0, 140, 84)),
+            BackdropEffect = new ImmutableColorMatrixEffect(new double[]
+            {
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0.2126, 0.7152, 0.0722, 0, 0,
+                0,      0,      0,      1, 0
+            })
+        };
+        Canvas.SetLeft(panel, 30);
+        Canvas.SetTop(panel, 58);
+        canvas.Children.Add(panel);
+
+        await RenderToFile(canvas);
+        CompareImages(skipImmediate: true);
+    }
+
+    /// <summary>
     /// The filtered region is the control's own box, like CSS backdrop-filter:
     /// a child hanging past the panel's edge paints over the unfiltered
     /// background rather than widening the frosted area.
