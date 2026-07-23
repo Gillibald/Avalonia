@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Platform;
+using Avalonia.Threading;
 
 namespace Avalonia.Rendering.Composition.Server;
 
@@ -17,6 +18,7 @@ internal partial class ServerCompositionVisual
         private int _dirtyRegionDisableCount;
         private Stack<int> _dirtyRegionDisableCountStack;
         private Stack<IDirtyRectCollector> _dirtyRegionCollectorStack;
+        private Stack<LtrbRect?> _localizedEffectOldBoundsStack;
         private readonly List<BackdropDirtyRect>? _backdropDirtyRects;
         private ulong _currentBackdropMask;
         private int _backdropRecordDisableCount;
@@ -30,6 +32,80 @@ internal partial class ServerCompositionVisual
             _context = new TreeWalkContext(pools, transform, clip);
             _dirtyRegionDisableCountStack = pools.IntStackPool.Rent();
             _dirtyRegionCollectorStack = pools.DirtyRectCollectorStackPool.Rent();
+            _localizedEffectOldBoundsStack = pools.NullableLtrbRectStackPool.Rent();
+        }
+
+        /// <summary>Unions redirected rects into a single local-space extent.</summary>
+        private sealed class UnionDirtyRectCollector : IDirtyRectCollector
+        {
+            public LtrbRect? Union;
+            public void AddRect(LtrbRect rect) => Union = LtrbRect.FullUnion(Union, rect);
+        }
+
+        private static readonly ThreadSafeObjectPool<UnionDirtyRectCollector> s_unionCollectorPool = new();
+
+        /// <summary>
+        /// Whether the node's dirty subtree can invalidate just the changed
+        /// content plus the effect's reach instead of the node's whole padded
+        /// bounds: nothing about the node itself changed, and the effect's
+        /// output can only differ near changed input.
+        /// </summary>
+        private static bool UseLocalizedEffectRegion(ServerCompositionVisual node)
+            => node is { _isDirtyForRender: false, _isDirtyForRenderInSubgraph: true, HasEffect: true, Cache: null }
+               && node.Effect is { } effect
+               && effect.IsInputLocal();
+
+        private void PushLocalizedEffectRegionIfNeeded(ServerCompositionVisual node)
+        {
+            if (!UseLocalizedEffectRegion(node))
+                return;
+
+            // Last frame's finalized subtree bounds, captured before the
+            // bounding-box seed overwrites them: already effect-inflated and
+            // clipped, they are the output extent the effect could have
+            // painted last frame. Unioned with the recomputed bounds when the
+            // redirect pops, that is exactly where vacated output may need
+            // repainting.
+            _localizedEffectOldBoundsStack.Push(node._subTreeBounds);
+
+            _dirtyRegionCollectorStack.Push(_dirtyRegion);
+            _dirtyRegion = s_unionCollectorPool.Get();
+            _dirtyRegionDisableCountStack.Push(_dirtyRegionDisableCount);
+            _dirtyRegionDisableCount = 0;
+            // Redirected rects repaint at or above the node's backdrop sample
+            // point, exactly like the whole-bounds re-add they replace; only
+            // the final localized rect is recorded for backdrops, on pop.
+            _backdropRecordDisableCount++;
+
+            _context.PushSetTransform(Matrix.Identity);
+            _context.ResetClip(LtrbRect.Infinite);
+        }
+
+        private void PopLocalizedEffectRegionIfNeeded(ServerCompositionVisual node)
+        {
+            if (!UseLocalizedEffectRegion(node))
+                return;
+
+            _context.PopClip();
+            _context.PopTransform();
+            var union = (UnionDirtyRectCollector?)_dirtyRegion;
+            _dirtyRegion = _dirtyRegionCollectorStack.Pop();
+            _dirtyRegionDisableCount = _dirtyRegionDisableCountStack.Pop();
+            _backdropRecordDisableCount--;
+
+            var oldBounds = _localizedEffectOldBoundsStack.Pop();
+            if (union!.Union is { } changed
+                && LtrbRect.FullUnion(oldBounds, node._subTreeBounds) is { } outputExtent)
+            {
+                // Everything the effect's output can have changed in: the
+                // changed input plus the filter's reach, clamped to the output
+                // extent the effect could have painted in either frame.
+                AddToDirtyRegion(
+                    changed.Inflate(node.Effect!.GetEffectOutputPadding()).IntersectOrNull(outputExtent));
+            }
+
+            union.Union = null;
+            s_unionCollectorPool.ReturnAndSetNull(ref union);
         }
 
         private void PushCacheIfNeeded(ServerCompositionVisual visual)
@@ -89,9 +165,12 @@ internal partial class ServerCompositionVisual
                 node._isDirtyForRender = true;
             
             // Special handling for effects: just add the entire node's old subtree bounds as a dirty region
-            // WPF does this because they had legacy effects with non-affine transforms, we do this because 
+            // WPF does this because they had legacy effects with non-affine transforms, we do this because
             // it's something to be done in the future (maybe)
-            if (node._isDirtyForRender || node is { _isDirtyForRenderInSubgraph: true, HasEffect: true })
+            // Input-local effects skip this whole-bounds mechanism: the subtree's
+            // rects are redirected below and re-added with the effect's reach.
+            if ((node._isDirtyForRender || node is { _isDirtyForRenderInSubgraph: true, HasEffect: true })
+                && !UseLocalizedEffectRegion(node))
             {
                 // If bounds haven't actually changed, there is no point in adding them now since they will be added
                 // again in PostSubgraph.
@@ -103,7 +182,7 @@ internal partial class ServerCompositionVisual
                     // region algorithm.
                     AddToDirtyRegion(node._transformedSubTreeBounds);
                 }
-                
+
                 // If we added a node in the parent chain to the bbox we don't need to add anything below this node
                 // to the dirty region.
                 _dirtyRegionDisableCount++;
@@ -121,8 +200,9 @@ internal partial class ServerCompositionVisual
                 {
                     PushBoundsAffectingProperties(node);
                 }
-                
+
                 PushCacheIfNeeded(node);
+                PushLocalizedEffectRegionIfNeeded(node);
             }
 
             if (node._needsBoundingBoxUpdate)
@@ -181,16 +261,20 @@ internal partial class ServerCompositionVisual
             // to finish handling it here as well.
             if (NeedToPushBoundsAffectingProperties(node))
             {
+                PopLocalizedEffectRegionIfNeeded(node);
                 PopCacheIfNeeded(node);
                 if(!AreDirtyRegionsDisabled())
                     PopBoundsAffectingProperties(node);
 
             }
-            
+
             // Special handling for effects: just add the entire node's old subtree bounds as a dirty region
-            // WPF does this because they had legacy effects with non-affine transforms, we do this because  
+            // WPF does this because they had legacy effects with non-affine transforms, we do this because
             // it's something to be done in the future (maybe)
-            if(node._isDirtyForRender || node is { _isDirtyForRenderInSubgraph: true, Effect: not null })
+            // Localized effect nodes already added their reach-inflated rect
+            // when the redirect popped, and never incremented the disable count.
+            if((node._isDirtyForRender || node is { _isDirtyForRenderInSubgraph: true, Effect: not null })
+               && !UseLocalizedEffectRegion(node))
             {
                 _dirtyRegionDisableCount--;
                 AddToDirtyRegion(node._transformedSubTreeBounds);
@@ -267,6 +351,7 @@ internal partial class ServerCompositionVisual
         {
             _context.Pools.IntStackPool.Return(ref _dirtyRegionDisableCountStack);
             _context.Pools.DirtyRectCollectorStackPool.Return(ref _dirtyRegionCollectorStack);
+            _context.Pools.NullableLtrbRectStackPool.Return(ref _localizedEffectOldBoundsStack);
             _context.Dispose();
         }
     }
