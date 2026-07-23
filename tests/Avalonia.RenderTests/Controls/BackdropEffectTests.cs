@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Xunit;
@@ -167,6 +168,42 @@ public class BackdropEffectTests : TestBase
         // No geometry clip: Visual.Clip crops the whole subtree render, shadow
         // included - the standard clip semantics, not a backdrop interaction.
         panel.Effect = new ImmutableDropShadowEffect(6, 6, 12, Colors.Black, 0.7);
+        Canvas.SetLeft(panel, 30);
+        Canvas.SetTop(panel, 58);
+        canvas.Children.Add(panel);
+
+        await RenderToFile(canvas);
+        CompareImages(skipImmediate: true);
+    }
+
+    /// <summary>
+    /// The filtered region is the control's own box, like CSS backdrop-filter:
+    /// a child hanging past the panel's edge paints over the unfiltered
+    /// background rather than widening the frosted area.
+    /// </summary>
+    [Fact]
+    public async Task Backdrop_Stops_At_The_Controls_Bounds_Under_Overflowing_Content()
+    {
+        var canvas = BuildScene();
+
+        var panel = FrostedPanel(new ImmutableColorMatrixEffect(new double[]
+        {
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0.2126, 0.7152, 0.0722, 0, 0,
+            0,      0,      0,      1, 0
+        }));
+        // Sticks out 40px past the panel's right edge; translucent, so what it
+        // sits on shows through - saturated colour, not grayscale.
+        panel.Child = new Border
+        {
+            Width = 80,
+            Height = 30,
+            Background = new ImmutableSolidColorBrush(Colors.White, 0.5),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            RenderTransform = new TranslateTransform(40, 0)
+        };
         Canvas.SetLeft(panel, 30);
         Canvas.SetTop(panel, 58);
         canvas.Children.Add(panel);

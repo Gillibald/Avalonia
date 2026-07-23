@@ -307,10 +307,14 @@ namespace Avalonia
         /// </para>
         /// <para>
         /// The filtered result is confined to the control's bounds, refined by its
-        /// <see cref="Clip"/>. Nothing here knows the shape a control paints, so a
-        /// rounded panel needs a <see cref="Clip"/> matching its corner radius -
-        /// otherwise the background is drawn rounded while the filtered area stays
-        /// square and fills the corners:
+        /// <see cref="Clip"/> - the control's own box, like CSS, never the extent
+        /// of what it happens to paint. Children overflowing the control and
+        /// effect output such as a drop shadow fall on the unfiltered background,
+        /// and a control without a size shows no backdrop at all. Nothing here
+        /// knows the shape a control paints, so a rounded panel needs a
+        /// <see cref="Clip"/> matching its corner radius - otherwise the
+        /// background is drawn rounded while the filtered area stays square and
+        /// fills the corners:
         /// <code>
         /// panel.CornerRadius = new CornerRadius(16);
         /// panel.Clip = new RectangleGeometry(new Rect(panel.Bounds.Size), 16, 16);

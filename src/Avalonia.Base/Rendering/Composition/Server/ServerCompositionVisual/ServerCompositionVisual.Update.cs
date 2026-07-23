@@ -137,8 +137,6 @@ internal partial class ServerCompositionVisual
 
         public void PostSubgraph(ServerCompositionVisual node)
         {
-            var oldSampleBounds = node._transformedSubTreeBoundsWithoutEffect ?? node._transformedSubTreeBounds;
-
             var parent = node.Parent;
             if (node._needsBoundingBoxUpdate)
             {
@@ -149,14 +147,13 @@ internal partial class ServerCompositionVisual
                 FinalizeSubtreeBounds(node);
             }
 
-            // A pure subtree content redraw - the node's own drawings, or the
-            // Effect whole-bounds re-add a child change triggers, e.g. for a
-            // drop shadow - paints above the node's own backdrop sample point
-            // and keeps the marker on. Its own change or an actual bounds
-            // change relocates the sample region, so those rects must
-            // invalidate: clear the marker before they are added below.
-            var ownRectsInvalidate = node._isDirtyForRender
-                || oldSampleBounds != (node._transformedSubTreeBoundsWithoutEffect ?? node._transformedSubTreeBounds);
+            // A backdrop's sample region is the control's own box, and only
+            // the node's own changes - size, transform, clip, all of which set
+            // _isDirtyForRender (see the flags cheatsheet) - can move it.
+            // Subtree rects, including the Effect whole-bounds re-add a child
+            // change triggers e.g. for a drop shadow, paint above the sample
+            // point and keep the marker on until the end.
+            var ownRectsInvalidate = node._isDirtyForRender;
             if (node._registeredAsBackdrop && ownRectsInvalidate)
                 _currentBackdropMask &= ~node.BackdropMaskBit;
             
@@ -216,21 +213,10 @@ internal partial class ServerCompositionVisual
             if (!node.Visible)
                 node._subTreeBounds = null;
 
-            node._subTreeBoundsWithoutEffect = null;
-
             if (node._subTreeBounds != null)
             {
                 if (node.Effect != null)
-                {
-                    // Kept for backdrops before the effect padding widens the
-                    // bounds; the same clip applies to both variants.
-                    var withoutEffect = node._subTreeBounds;
-                    if (node._ownClipRect.HasValue)
-                        withoutEffect = withoutEffect.Value.IntersectOrNull(node._ownClipRect.Value);
-                    node._subTreeBoundsWithoutEffect = withoutEffect;
-
                     node._subTreeBounds = node._subTreeBounds.Value.Inflate(node.Effect.GetEffectOutputPadding());
-                }
 
                 if (node._ownClipRect.HasValue)
                     node._subTreeBounds = node._subTreeBounds.Value.IntersectOrNull(node._ownClipRect.Value);
@@ -242,14 +228,6 @@ internal partial class ServerCompositionVisual
                 node._transformedSubTreeBounds = node._subTreeBounds?.TransformToAABB(node._ownTransform.Value);
             else
                 node._transformedSubTreeBounds = node._subTreeBounds;
-
-            if (node._subTreeBoundsWithoutEffect == null)
-                node._transformedSubTreeBoundsWithoutEffect = null;
-            else if (node._ownTransform.HasValue)
-                node._transformedSubTreeBoundsWithoutEffect =
-                    node._subTreeBoundsWithoutEffect?.TransformToAABB(node._ownTransform.Value);
-            else
-                node._transformedSubTreeBoundsWithoutEffect = node._subTreeBoundsWithoutEffect;
 
             node.EnqueueForReadbackUpdate();
         }
