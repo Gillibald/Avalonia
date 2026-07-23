@@ -132,6 +132,85 @@ public static class EffectExtensions
     }
 
     /// <summary>
+    /// Whether the effect is input-local: an input change at a point can only
+    /// alter output within <see cref="GetEffectOutputPadding"/> of that point,
+    /// so a changed region plus the padding bounds everything the output can
+    /// differ in. A tile replicates a source region across its whole
+    /// destination - a local input change can move output anywhere - and
+    /// unknown effects are conservatively non-local. Mirrors the recursion
+    /// shape of <see cref="GetEffectOutputPadding"/>, but never throws.
+    /// </summary>
+    internal static bool IsInputLocal(this IEffect? effect)
+    {
+        // A null input is the identity passthrough (the layer source).
+        if (effect == null)
+            return true;
+        if (effect is IBlurEffect)
+            return true;
+        if (effect is IDropShadowEffect)
+            return true;
+        if (effect is IOffsetEffect)
+            return true;
+        if (effect is IColorMatrixEffect)
+            return true;
+
+        if (effect is ICompositeEffect composite)
+        {
+            foreach (var child in composite.Children)
+            {
+                if (!child.IsInputLocal())
+                    return false;
+            }
+
+            return true;
+        }
+
+        // Generators replace or fill the layer content without reading input.
+        if (effect is IFloodEffect)
+            return true;
+        if (effect is ITileEffect)
+            return false;
+
+        if (effect is IMergeEffect merge)
+        {
+            foreach (var input in merge.Inputs)
+            {
+                if (!input.IsInputLocal())
+                    return false;
+            }
+
+            return true;
+        }
+
+        if (effect is IBlendEffect blend)
+            return blend.Background.IsInputLocal() && blend.Foreground.IsInputLocal();
+
+        if (effect is IArithmeticCompositeEffect arithmetic)
+            return arithmetic.Background.IsInputLocal() && arithmetic.Foreground.IsInputLocal();
+
+        if (effect is IMorphologyEffect morphology)
+            return morphology.Input.IsInputLocal();
+
+        if (effect is ILightingEffect lightingEffect)
+            return lightingEffect.Input.IsInputLocal();
+        if (effect is IComponentTransferEffect componentTransfer)
+            return componentTransfer.Input.IsInputLocal();
+        if (effect is ICropEffect cropEffect)
+            return cropEffect.Input.IsInputLocal();
+
+        if (effect is IRecordingEffect or ITurbulenceEffect)
+            return true;
+
+        if (effect is IAnisotropicBlurEffect anisotropicBlur)
+            return anisotropicBlur.Input.IsInputLocal();
+
+        if (effect is IConvolveMatrixEffect convolve)
+            return convolve.Input.IsInputLocal();
+
+        return false;
+    }
+
+    /// <summary>
     /// Converts a effect to an immutable effect.
     /// </summary>
     /// <param name="effect">The effect.</param>
