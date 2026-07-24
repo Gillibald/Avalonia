@@ -34,7 +34,9 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _disposed;
         private readonly HashSet<ServerCompositionVisual> _attachedVisuals = new();
         private readonly HashSet<ServerCompositionVisual> _backdropVisuals = new();
-        private readonly List<BackdropDirtyRect> _backdropDirtyRects = new();
+        private readonly List<BackdropCapture> _backdropCaptures = new();
+        private readonly List<(LtrbRect Rect, int DfsIndex)> _backdropExpansions = new();
+        private readonly List<LtrbRect> _backdropWorkingSet = new();
         public IDirtyRectTracker DirtyRects { get; }
 
         public long Id { get; }
@@ -131,26 +133,18 @@ namespace Avalonia.Rendering.Composition.Server
                     ? new DebugEventsDirtyRectCollectorProxy(DirtyRects, DebugEvents)
                     : (IDirtyRectCollector)DirtyRects;
 
-                // Backdrops need to know what this frame invalidated - the
-                // tracker cannot answer that until FinalizeFrame - and where
-                // each rect sits relative to their sample point, which only the
-                // update walk knows.
-                List<BackdropDirtyRect>? backdropDirtyRects = null;
+                // Backdrops need to know where this frame's damage sits
+                // relative to their sample point, which only the update walk
+                // knows: it classifies each backdrop at its own walk position.
+                List<BackdropCapture>? backdropCaptures = null;
                 if (_backdropVisuals.Count > 0)
                 {
-                    _backdropDirtyRects.Clear();
-                    backdropDirtyRects = _backdropDirtyRects;
-
-                    var bit = 1UL;
-                    foreach (var visual in _backdropVisuals)
-                    {
-                        visual.BackdropMaskBit = bit;
-                        bit <<= 1; // zero past 64 backdrops: those classify conservatively
-                    }
+                    _backdropCaptures.Clear();
+                    backdropCaptures = _backdropCaptures;
                 }
 
                 Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height),
-                    backdropDirtyRects);
+                    backdropCaptures);
 
                 ExpandDirtyRegionForBackdrops(collector, transform);
 
@@ -405,7 +399,7 @@ namespace Avalonia.Rendering.Composition.Server
         /// </remarks>
         private void ExpandDirtyRegionForBackdrops(IDirtyRectCollector collector, Matrix transform)
         {
-            if (_backdropVisuals.Count == 0 || _backdropDirtyRects.Count == 0)
+            if (_backdropVisuals.Count == 0)
                 return;
 
             var surface = new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height);
@@ -414,46 +408,82 @@ namespace Avalonia.Rendering.Composition.Server
             // that layer instead of the base surface the snapshot would read.
             var rootUsesLayer = Compositor.Options.UseSaveLayerRootClip ?? false;
 
+            // Registered backdrops the walk never reached (a clean spine): no
+            // position and no classification exist, so any touch invalidates.
+            foreach (var visual in _backdropVisuals)
+            {
+                var captured = false;
+                for (var i = 0; i < _backdropCaptures.Count && !captured; i++)
+                    captured = ReferenceEquals(_backdropCaptures[i].Visual, visual);
+                if (!captured)
+                {
+                    var worldBounds = visual.TryGetWorldBounds(transform, out var uncapturedCacheable);
+                    _backdropCaptures.Add(new BackdropCapture(
+                        visual, int.MaxValue, SelfDirty: false, BelowDirt: false,
+                        worldBounds, uncapturedCacheable, Captured: false));
+                }
+            }
+
+            _backdropExpansions.Clear();
+
             // Expanding one backdrop can reach another, so repeat until a pass adds
-            // nothing. Each pass covers at least one more backdrop, so the visual
-            // count bounds the loop.
-            for (var pass = 0; pass < _backdropVisuals.Count; pass++)
+            // nothing. Each pass covers at least one more backdrop, so the count
+            // bounds the loop.
+            for (var pass = 0; pass < _backdropCaptures.Count; pass++)
             {
                 var added = false;
-                foreach (var visual in _backdropVisuals)
+
+                // The raw working set only grows via the expansions this loop
+                // adds, so one refresh per pass is enough for the touch and
+                // containment tests.
+                _backdropWorkingSet.Clear();
+                collector.GetWorkingSet().CollectTo(_backdropWorkingSet);
+
+                foreach (var capture in _backdropCaptures)
                 {
+                    var visual = capture.Visual;
                     if (visual.BackdropEffect is not { } effect)
                         continue;
-                    if (visual.TryGetWorldBounds(transform, out var cacheable) is not { } bounds)
+                    if (capture.WorldBounds is not { } bounds)
                         continue;
-                    cacheable &= !rootUsesLayer;
+                    var cacheable = capture.Cacheable && !rootUsesLayer;
 
                     var area = bounds.Inflate(effect.GetEffectOutputPadding()).IntersectOrEmpty(surface);
                     if (area.IsZeroSize)
                         continue;
 
-                    var bit = visual.BackdropMaskBit;
                     var touched = false;
-                    var invalidated = false;
                     var contained = false;
-                    for (var i = 0; i < _backdropDirtyRects.Count; i++)
+                    foreach (var rect in _backdropWorkingSet)
                     {
-                        var entry = _backdropDirtyRects[i];
-                        if (!entry.Rect.Intersects(area))
+                        if (!rect.Intersects(area))
                             continue;
 
                         touched = true;
-                        if (entry.Rect.Contains(area))
+                        if (rect.Contains(area))
                             contained = true;
-                        // Above the sample point only when provably from this
-                        // backdrop's subtree; a zero bit (mask overflow) always
-                        // invalidates.
-                        if (bit == 0 || (entry.AboveMask & bit) == 0)
-                            invalidated = true;
                     }
 
                     if (!touched)
                         continue;
+
+                    // The walk classified damage by position: only content
+                    // painted at or beneath the sample point (or the visual's
+                    // own relocation) changes what the filter reads. Expansion
+                    // output of an earlier-painted backdrop also repaints
+                    // beneath this one.
+                    var invalidated = capture.SelfDirty || capture.BelowDirt || !capture.Captured;
+                    if (!invalidated)
+                    {
+                        foreach (var expansion in _backdropExpansions)
+                        {
+                            if (expansion.DfsIndex < capture.DfsIndex && expansion.Rect.Intersects(area))
+                            {
+                                invalidated = true;
+                                break;
+                            }
+                        }
+                    }
 
                     var cache = visual.BackdropCache;
                     if (invalidated && cache != null)
@@ -468,11 +498,8 @@ namespace Avalonia.Rendering.Composition.Server
                     if (contained)
                         continue; // some rect already repaints the full input; nothing to widen
 
-                    // The next backdrop in this pass classifies this rect as
-                    // invalidating (no mask), which is what a repaint of the
-                    // area beneath it is.
                     collector.AddRect(area);
-                    _backdropDirtyRects.Add(new BackdropDirtyRect(area, 0));
+                    _backdropExpansions.Add((area, capture.DfsIndex));
                     added = true;
                 }
 
@@ -485,11 +512,19 @@ namespace Avalonia.Rendering.Composition.Server
     }
 
     /// <summary>
-    /// A rect invalidated during the update walk, tagged with the registered
-    /// backdrops whose subtree it was recorded inside. Content in a backdrop's
-    /// subtree paints inside its layer - above the point where the filter
-    /// samples the surface - so such rects cannot invalidate that backdrop's
-    /// retained result.
+    /// A registered backdrop's per-frame classification, captured by the update
+    /// walk at the visual's own walk position. Damage already emitted at that
+    /// point painted at or beneath the sample point; later damage paints above
+    /// it inside the backdrop's layer and cannot change what the filter reads.
+    /// <paramref name="Captured"/> is false for backdrops the walk never
+    /// reached - they carry no position, so any touch invalidates.
     /// </summary>
-    internal readonly record struct BackdropDirtyRect(LtrbRect Rect, ulong AboveMask);
+    internal readonly record struct BackdropCapture(
+        ServerCompositionVisual Visual,
+        int DfsIndex,
+        bool SelfDirty,
+        bool BelowDirt,
+        LtrbRect? WorldBounds,
+        bool Cacheable,
+        bool Captured);
 }

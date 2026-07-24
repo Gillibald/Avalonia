@@ -37,6 +37,14 @@ internal class SingleDirtyRectTracker : IDirtyRectTracker
     public bool IsEmpty => _rect?.IsZeroSize ?? true;
     public bool Intersects(LtrbRect rect) => _extendedRect.Intersects(rect);
 
+    public void CollectWorkingSet(List<LtrbRect> buffer)
+    {
+        if (_rect is { IsZeroSize: false } rect)
+            buffer.Add(rect);
+    }
+
+    public DirtyRectWorkingSet GetWorkingSet() => new(this);
+
     public void Initialize(LtrbRect bounds) => _rect = default;
     public void Visualize(IDrawingContextImpl context)
     {

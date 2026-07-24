@@ -19,16 +19,28 @@ internal partial class ServerCompositionVisual
         private Stack<int> _dirtyRegionDisableCountStack;
         private Stack<IDirtyRectCollector> _dirtyRegionCollectorStack;
         private Stack<LtrbRect?> _localizedEffectOldBoundsStack;
-        private readonly List<BackdropDirtyRect>? _backdropDirtyRects;
-        private ulong _currentBackdropMask;
-        private int _backdropRecordDisableCount;
+        private readonly List<BackdropCapture>? _backdropCaptures;
+        private readonly IDirtyRectCollector _rootCollector;
+        private readonly Matrix _rootTransform;
+        // Walk position: emission order equals paint order, so a rect present in
+        // the root collector's working set at a given position painted at or
+        // beneath that position.
+        private int _dfsCounter;
+        // Number of ancestors whose extra dirty rect (a removed or reparented
+        // child's old bounds) is still pending: it only lands in the working set
+        // at the ancestor's PostSubgraph, and the vanished content may have
+        // painted beneath a backdrop captured before that.
+        private int _extraDirtyAncestorCount;
+        private List<LtrbRect>? _workingSetBuffer;
         private bool AreDirtyRegionsDisabled() => _dirtyRegionDisableCount != 0;
 
         public UpdateContext(CompositorPools pools, IDirtyRectCollector dirtyRects, Matrix transform, LtrbRect clip,
-            List<BackdropDirtyRect>? backdropDirtyRects)
+            List<BackdropCapture>? backdropCaptures)
         {
             _dirtyRegion = dirtyRects;
-            _backdropDirtyRects = backdropDirtyRects;
+            _rootCollector = dirtyRects;
+            _rootTransform = transform;
+            _backdropCaptures = backdropCaptures;
             _context = new TreeWalkContext(pools, transform, clip);
             _dirtyRegionDisableCountStack = pools.IntStackPool.Rent();
             _dirtyRegionCollectorStack = pools.DirtyRectCollectorStackPool.Rent();
@@ -40,6 +52,9 @@ internal partial class ServerCompositionVisual
         {
             public LtrbRect? Union;
             public void AddRect(LtrbRect rect) => Union = LtrbRect.FullUnion(Union, rect);
+            // Union rects have no readable position; consumers classify
+            // conservatively.
+            public DirtyRectWorkingSet GetWorkingSet() => default;
         }
 
         private static readonly ThreadSafeObjectPool<UnionDirtyRectCollector> s_unionCollectorPool = new();
@@ -72,10 +87,6 @@ internal partial class ServerCompositionVisual
             _dirtyRegion = s_unionCollectorPool.Get();
             _dirtyRegionDisableCountStack.Push(_dirtyRegionDisableCount);
             _dirtyRegionDisableCount = 0;
-            // Redirected rects repaint at or above the node's backdrop sample
-            // point, exactly like the whole-bounds re-add they replace; only
-            // the final localized rect is recorded for backdrops, on pop.
-            _backdropRecordDisableCount++;
 
             _context.PushSetTransform(Matrix.Identity);
             _context.ResetClip(LtrbRect.Infinite);
@@ -91,7 +102,6 @@ internal partial class ServerCompositionVisual
             var union = (UnionDirtyRectCollector?)_dirtyRegion;
             _dirtyRegion = _dirtyRegionCollectorStack.Pop();
             _dirtyRegionDisableCount = _dirtyRegionDisableCountStack.Pop();
-            _backdropRecordDisableCount--;
 
             var oldBounds = _localizedEffectOldBoundsStack.Pop();
             if (union!.Union is { } changed
@@ -116,10 +126,6 @@ internal partial class ServerCompositionVisual
                 _dirtyRegion = visual.Cache.DirtyRectCollector;
                 _dirtyRegionDisableCountStack.Push(_dirtyRegionDisableCount);
                 _dirtyRegionDisableCount = 0;
-                // Rects redirected into the cache do not repaint the target's
-                // surface this frame; only the cached visual's own bounds do,
-                // which PopCacheIfNeeded adds after the redirect ends.
-                _backdropRecordDisableCount++;
 
                 _context.PushSetTransform(Matrix.Identity);
                 _context.ResetClip(LtrbRect.Infinite);
@@ -134,7 +140,6 @@ internal partial class ServerCompositionVisual
                 _context.PopTransform();
                 _dirtyRegion = _dirtyRegionCollectorStack.Pop();
                 _dirtyRegionDisableCount = _dirtyRegionDisableCountStack.Pop();
-                _backdropRecordDisableCount--;
                 if (visual.Cache.IsDirty)
                     AddToDirtyRegion(visual._subTreeBounds);
             }
@@ -147,23 +152,28 @@ internal partial class ServerCompositionVisual
         
         public void PreSubgraph(ServerCompositionVisual node, out bool visitChildren)
         {
-            // From here on, every rect this node or its subtree adds paints at
-            // or above the node's own backdrop sample point. Whether the node's
-            // own rects must still invalidate it (a move or bounds change
-            // relocates the sample region) is only decidable in PostSubgraph
-            // once the new bounds exist; a stale-tagged old-bounds rect is safe
-            // because PostSubgraph re-adds the bounds untagged whenever that
-            // decision says so.
-            if (node._registeredAsBackdrop)
-                _currentBackdropMask |= node.BackdropMaskBit;
+            _dfsCounter++;
 
             visitChildren = node._isDirtyForRenderInSubgraph || node._needsBoundingBoxUpdate;
-            
+
             // If this node has an alpha mask an we caused its inner bounds to change
             // then treat the node as if _isDirtyForRender was set.
             if (node is { _needsBoundingBoxUpdate: true, OpacityMaskBrush: not null })
                 node._isDirtyForRender = true;
-            
+
+            // Classify this backdrop's frame before any of this node's own or
+            // descendant damage is emitted: everything already in the working
+            // set painted at or beneath the sample point, everything later
+            // paints above it.
+            if (node._registeredAsBackdrop)
+                CaptureBackdrop(node);
+
+            // The extra rect (a removed child's old bounds) is only emitted at
+            // this node's PostSubgraph, above this node's own sample point but
+            // possibly beneath backdrops captured deeper in the subtree.
+            if (node._needsToAddExtraDirtyRectToDirtyRegion)
+                _extraDirtyAncestorCount++;
+
             // Special handling for effects: just add the entire node's old subtree bounds as a dirty region
             // WPF does this because they had legacy effects with non-affine transforms, we do this because
             // it's something to be done in the future (maybe)
@@ -227,16 +237,6 @@ internal partial class ServerCompositionVisual
                 FinalizeSubtreeBounds(node);
             }
 
-            // A backdrop's sample region is the control's own box, and only
-            // the node's own changes - size, transform, clip, all of which set
-            // _isDirtyForRender (see the flags cheatsheet) - can move it.
-            // Subtree rects, including the Effect whole-bounds re-add a child
-            // change triggers e.g. for a drop shadow, paint above the sample
-            // point and keep the marker on until the end.
-            var ownRectsInvalidate = node._isDirtyForRender;
-            if (node._registeredAsBackdrop && ownRectsInvalidate)
-                _currentBackdropMask &= ~node.BackdropMaskBit;
-            
             //
             // Update state on the parent node if we have a parent.
 
@@ -280,14 +280,66 @@ internal partial class ServerCompositionVisual
                 AddToDirtyRegion(node._transformedSubTreeBounds);
             }
 
+            if (node._needsToAddExtraDirtyRectToDirtyRegion)
+                _extraDirtyAncestorCount--;
+
             node._isDirtyForRender = false;
             node._isDirtyForRenderInSubgraph = false;
             node._needsBoundingBoxUpdate = false;
             node._needsToAddExtraDirtyRectToDirtyRegion = false;
             node._contentChanged = false;
+        }
 
-            if (node._registeredAsBackdrop && !ownRectsInvalidate)
-                _currentBackdropMask &= ~node.BackdropMaskBit;
+        /// <summary>
+        /// Records this frame's classification for a registered backdrop at its
+        /// walk position. Only the node's own changes - size, transform, clip,
+        /// all of which set _isDirtyForRender (see the flags cheatsheet) - can
+        /// move the sample region; subtree damage, including the Effect
+        /// whole-bounds re-add a child change triggers for a drop shadow,
+        /// paints above the sample point and keeps the retained result usable.
+        /// </summary>
+        private void CaptureBackdrop(ServerCompositionVisual node)
+        {
+            if (_backdropCaptures == null)
+                return;
+
+            var bounds = node.TryGetWorldBounds(_rootTransform, out var cacheable);
+
+            bool belowDirt;
+            if (AreDirtyRegionsDisabled() || _extraDirtyAncestorCount > 0
+                || !ReferenceEquals(_dirtyRegion, _rootCollector))
+            {
+                // A covering dirty-for-render ancestor (its rect only lands in
+                // the working set at its own PostSubgraph), a pending extra rect
+                // above (a removed child that may have painted beneath), or a
+                // redirected collector (bitmap cache, localized effect): the
+                // provenance is unknowable here, so the input conservatively
+                // counts as changed beneath.
+                belowDirt = true;
+            }
+            else if (bounds is not { } worldBounds)
+            {
+                belowDirt = false;
+            }
+            else
+            {
+                var area = worldBounds.Inflate(node.BackdropEffect.GetEffectOutputPadding());
+                belowDirt = false;
+                var buffer = _workingSetBuffer ??= new List<LtrbRect>();
+                buffer.Clear();
+                _rootCollector.GetWorkingSet().CollectTo(buffer);
+                foreach (var rect in buffer)
+                {
+                    if (rect.Intersects(area))
+                    {
+                        belowDirt = true;
+                        break;
+                    }
+                }
+            }
+
+            _backdropCaptures.Add(new BackdropCapture(
+                node, _dfsCounter, node._isDirtyForRender, belowDirt, bounds, cacheable, Captured: true));
         }
 
         private void FinalizeSubtreeBounds(ServerCompositionVisual node)
@@ -326,9 +378,6 @@ internal partial class ServerCompositionVisual
                 return;
 
             _dirtyRegion.AddRect(transformed);
-
-            if (_backdropRecordDisableCount == 0)
-                _backdropDirtyRects?.Add(new BackdropDirtyRect(transformed, _currentBackdropMask));
         }
         
         private void PushBoundsAffectingProperties(ServerCompositionVisual node)
@@ -357,9 +406,9 @@ internal partial class ServerCompositionVisual
     }
     
     public void UpdateRoot(IDirtyRectCollector tracker, Matrix transform, LtrbRect clip,
-        List<BackdropDirtyRect>? backdropDirtyRects = null)
+        List<BackdropCapture>? backdropCaptures = null)
     {
-        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropDirtyRects);
+        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropCaptures);
         ServerTreeWalker<UpdateContext>.Walk(ref context, this);
         context.Dispose();
     }

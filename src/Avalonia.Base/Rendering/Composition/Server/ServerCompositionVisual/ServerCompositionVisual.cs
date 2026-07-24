@@ -97,13 +97,6 @@ namespace Avalonia.Rendering.Composition.Server
         }
 
         /// <summary>
-        /// The bit identifying this backdrop in the per-frame dirty-rect masks,
-        /// assigned by the target each update. Zero past 64 registered backdrops,
-        /// which just makes classification conservative for the overflow.
-        /// </summary>
-        internal ulong BackdropMaskBit { get; set; }
-
-        /// <summary>
         /// This visual's bounds in the target's coordinate space, or null when it
         /// contributes nothing. The update walk only descends into dirty subtrees,
         /// so a backdrop that did not itself change is never visited and its world
