@@ -290,6 +290,39 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Small_Behind_Change_Should_Refresh_Only_Its_Neighborhood()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        // D = (60,60,10,10) with reach 5 (blur 4): the filter's output can
+        // differ only within O = (D + 5) clamped to the box, and re-filtering
+        // O needs input O + 5 = (50,50,30,30) freshly painted. The panel's far
+        // side is neither, and the retained result stays usable for a partial
+        // refresh of O.
+        behind.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(50, 50, 30, 30));
+        AssertDoesNotCover(s, new Rect(84, 52, 8, 36));
+        Assert.True(cache.IsValid);
+        Assert.True(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Overlay_Above_The_Glass_Should_Not_Invalidate_The_Cached_Result()
     {
         using var s = new CompositorCanvas();
