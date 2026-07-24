@@ -39,6 +39,12 @@ namespace Avalonia.Rendering.Composition.Server
         private readonly List<(IDirtyRectCollector Collector, LtrbRect Rect, int DfsIndex)> _backdropExpansions = new();
         private readonly List<(IDirtyRectCollector Collector, ServerCompositionVisual? Owner, int Depth)> _backdropHostOrder = new();
         private readonly List<LtrbRect> _backdropWorkingSet = new();
+        private readonly List<LtrbRect> _backdropDirtRects = new();
+        private readonly List<LtrbRect> _partialDirtScratch = new();
+
+        // A partial refresh past this many sub-rects degrades to a full one:
+        // per-rect staging stops paying off and the bookkeeping stays tiny.
+        internal const int MaxPartialRefreshRects = 4;
         public IDirtyRectTracker DirtyRects { get; }
 
         public long Id { get; }
@@ -142,16 +148,19 @@ namespace Avalonia.Rendering.Composition.Server
                 // backdrop samples.
                 List<BackdropCapture>? backdropCaptures = null;
                 List<BackdropHostRecord>? backdropHosts = null;
+                List<LtrbRect>? backdropDirtRects = null;
                 if (_backdropVisuals.Count > 0)
                 {
                     _backdropCaptures.Clear();
                     _backdropHosts.Clear();
+                    _backdropDirtRects.Clear();
                     backdropCaptures = _backdropCaptures;
                     backdropHosts = _backdropHosts;
+                    backdropDirtRects = _backdropDirtRects;
                 }
 
                 Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height),
-                    backdropCaptures, backdropHosts);
+                    backdropCaptures, backdropHosts, backdropDirtRects);
 
                 ExpandDirtyRegionForBackdrops(collector, transform);
 
@@ -404,6 +413,101 @@ namespace Avalonia.Rendering.Composition.Server
         /// rebuilds what that queries in FinalizeFrame, which has not run yet and
         /// would answer for the previous frame.
         /// </remarks>
+        /// <summary>
+        /// Grants a partial refresh for a valid, cacheable backdrop touched by
+        /// classifiable dirt. Behind-dirt D changes the filter's output within
+        /// O = (D + reach) clamped to the box; re-filtering O reads input
+        /// O + reach, so the region expands by (O + reach) clamped to the
+        /// padded input area, and the granted rects are exactly O in the
+        /// visual's local space. Anything unclassifiable - unknown provenance,
+        /// too many rects, a rotated chain, a stale unconsumed grant - refuses,
+        /// and the caller falls back to full invalidation.
+        /// </summary>
+        private bool TryGrantPartialBackdropRefresh(in BackdropCapture capture, BackdropLayerCache cache,
+            IEffect effect, LtrbRect box, LtrbRect inputArea, IDirtyRectCollector hostCollector,
+            ref bool added, ref bool receivedDamage)
+        {
+            if (!capture.Captured || capture.SelfDirty || capture.DirtOverflow
+                || capture.StalePartialGrant
+                || capture.LocalToHost is not { } localToHost
+                || !localToHost.TryInvert(out var hostToLocal))
+                return false;
+
+            // This frame's dirt: the rects collected at capture plus expansion
+            // output delivered from earlier-painted backdrops in this host.
+            _partialDirtScratch.Clear();
+            for (var i = 0; i < capture.DirtCount; i++)
+                _partialDirtScratch.Add(_backdropDirtRects[capture.DirtStart + i]);
+            foreach (var expansion in _backdropExpansions)
+            {
+                if (ReferenceEquals(expansion.Collector, hostCollector)
+                    && expansion.DfsIndex < capture.DfsIndex
+                    && expansion.Rect.IntersectOrNull(inputArea) is { } hit)
+                {
+                    if (_partialDirtScratch.Count >= MaxPartialRefreshRects)
+                        return false;
+                    _partialDirtScratch.Add(hit);
+                }
+            }
+
+            if (_partialDirtScratch.Count == 0
+                || cache.RefreshRects.Count + _partialDirtScratch.Count > MaxPartialRefreshRects)
+                return false;
+
+            var padding = effect.GetEffectOutputPadding();
+            LtrbRect? union = null;
+            var outputCount = 0;
+            for (var i = 0; i < _partialDirtScratch.Count; i++)
+            {
+                var output = _partialDirtScratch[i].Inflate(padding).IntersectOrEmpty(box);
+                _partialDirtScratch[i] = output;
+                if (output.IsZeroSize)
+                    continue;
+                outputCount++;
+                union = LtrbRect.FullUnion(union, output);
+            }
+
+            if (outputCount == 0 || union is not { } unionRect)
+                return false;
+
+            // Once the neighborhoods approach the whole box a full refresh is
+            // both cheaper and simpler.
+            if (unionRect.Width * unionRect.Height > 0.5 * box.Width * box.Height)
+                return false;
+
+            foreach (var output in _partialDirtScratch)
+            {
+                if (output.IsZeroSize)
+                    continue;
+
+                cache.RefreshRects.Add(output.TransformToAABB(hostToLocal).ToRect());
+
+                var input = output.Inflate(padding).IntersectOrEmpty(inputArea);
+                if (input.IsZeroSize)
+                    continue;
+                var covered = false;
+                foreach (var rect in _backdropWorkingSet)
+                {
+                    if (rect.Contains(input))
+                    {
+                        covered = true;
+                        break;
+                    }
+                }
+
+                if (!covered)
+                {
+                    hostCollector.AddRect(input);
+                    _backdropExpansions.Add((hostCollector, input, capture.DfsIndex));
+                    added = true;
+                    receivedDamage = true;
+                }
+            }
+
+            cache.RefreshRequested = true;
+            return true;
+        }
+
         private static ServerCompositionVisual? NearestCacheHostOwner(ServerCompositionVisual visual)
         {
             for (var parent = visual.Parent; parent != null; parent = parent.Parent)
@@ -580,14 +684,30 @@ namespace Avalonia.Rendering.Composition.Server
                     }
 
                     var cache = visual.BackdropCache;
+
+                    // A still-valid cache touched by classifiable dirt can be
+                    // refreshed partially: only the changed output neighborhood
+                    // re-filters, from input the grant's expansion covers.
+                    if (invalidated && cacheable && cache is { IsValid: true }
+                        && TryGrantPartialBackdropRefresh(capture, cache, effect, bounds, area, hostCollector,
+                            ref added, ref receivedDamage))
+                        continue;
+
                     if (invalidated && cache != null)
+                    {
                         cache.IsValid = false;
+                        cache.RefreshRects.Clear();
+                    }
 
                     if (cacheable && cache is { IsValid: true })
                         continue; // the retained result gets drawn; nothing beneath needs repainting
 
                     if (cacheable && cache != null)
+                    {
+                        // An empty rect list makes the grant a full refresh.
                         cache.RefreshRequested = true;
+                        cache.RefreshRects.Clear();
+                    }
 
                     if (contained)
                         continue; // some rect already repaints the full input; nothing to widen
@@ -669,7 +789,12 @@ namespace Avalonia.Rendering.Composition.Server
         bool BelowDirt,
         LtrbRect? HostBounds,
         bool Cacheable,
-        bool Captured);
+        bool Captured,
+        int DirtStart = 0,
+        int DirtCount = 0,
+        bool DirtOverflow = true,
+        Matrix? LocalToHost = null,
+        bool StalePartialGrant = false);
 
     /// <summary>
     /// A bitmap-cache host the update walk entered, recorded at the cache

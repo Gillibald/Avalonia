@@ -394,10 +394,12 @@ public class BackdropInvalidationTests : CompositorTestsBase
     {
         using var s = new CompositorCanvas();
 
+        // Large enough that a partial refresh stops paying off: most of the
+        // filter's input changed, so the whole retained result is stale.
         var behind = new Border
         {
-            Background = Brushes.Red, Width = 10, Height = 10,
-            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+            Background = Brushes.Red, Width = 30, Height = 30,
+            [Canvas.LeftProperty] = 55, [Canvas.TopProperty] = 55
         };
         s.Canvas.Children.Add(behind);
         var panel = Frosted(50, 50, 40, 40, blur: 4);
@@ -411,9 +413,10 @@ public class BackdropInvalidationTests : CompositorTestsBase
         behind.Background = Brushes.Blue;
         s.RunJobs();
 
-        // The content the filter reads changed: the retained result is stale,
-        // and because this frame's region now covers the whole input area it is
-        // the safe moment for the backend to capture a fresh one.
+        // The content the filter reads changed almost everywhere: the retained
+        // result is stale, and because this frame's region now covers the whole
+        // input area it is the safe moment for the backend to capture a fresh
+        // one.
         Assert.False(cache.IsValid);
         Assert.True(cache.RefreshRequested);
     }
