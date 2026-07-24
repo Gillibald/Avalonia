@@ -521,6 +521,41 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Deep_Glass_On_A_Clean_Spine_Keeps_The_Cached_Result_For_An_Overlay_Above()
+    {
+        using var s = new CompositorCanvas();
+
+        // The glass sits two clean levels down; nothing on its spine is dirty
+        // when the overlay changes, so only the damage-directed descent can
+        // classify it exactly.
+        var outer = new Canvas { Width = 200, Height = 200 };
+        var inner = new Canvas { Width = 200, Height = 200 };
+        outer.Children.Add(inner);
+        s.Canvas.Children.Add(outer);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        inner.Children.Add(panel);
+
+        var overlay = new Border
+        {
+            Background = Brushes.Red, Width = 20, Height = 20,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(overlay);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        overlay.Background = Brushes.Blue;
+        s.RunJobs();
+
+        Assert.True(cache.IsValid);
+        Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Resizing_The_Glass_Invalidates_And_Covers_Old_And_New_Bounds()
     {
         using var s = new CompositorCanvas();
