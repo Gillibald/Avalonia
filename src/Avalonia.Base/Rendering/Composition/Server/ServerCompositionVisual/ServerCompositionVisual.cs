@@ -51,6 +51,30 @@ namespace Avalonia.Rendering.Composition.Server
 
         private bool _registeredAsBackdrop;
 
+        // Number of registered backdrops in this node's subtree (excluding this
+        // node itself), maintained eagerly along the whole parent chain. The
+        // update walk uses it to keep descending clean spines toward backdrops
+        // that need their frame classified.
+        internal int _backdropsInSubTree;
+
+        private int BackdropContributionToParent =>
+            (_registeredAsBackdrop ? 1 : 0) + _backdropsInSubTree;
+
+        private static void PropagateBackdropCountDelta(ServerCompositionVisual? start, int delta)
+        {
+            if (delta == 0)
+                return;
+            for (var node = start; node != null; node = node.Parent)
+                node._backdropsInSubTree += delta;
+        }
+
+        private void Backdrop_OnParentChanging() =>
+            // Parent still points at the old parent here.
+            PropagateBackdropCountDelta(Parent, -BackdropContributionToParent);
+
+        private void Backdrop_OnParentChanged() =>
+            PropagateBackdropCountDelta(Parent, BackdropContributionToParent);
+
         /// <summary>
         /// Retains the filtered backdrop across frames so that changes painted
         /// on top of this visual do not force everything beneath it to repaint.
@@ -72,6 +96,7 @@ namespace Avalonia.Rendering.Composition.Server
                 return;
 
             _registeredAsBackdrop = shouldRegister;
+            PropagateBackdropCountDelta(Parent, shouldRegister ? 1 : -1);
             if (shouldRegister)
             {
                 BackdropCache = new BackdropLayerCache();
@@ -91,6 +116,7 @@ namespace Avalonia.Rendering.Composition.Server
                 return;
 
             _registeredAsBackdrop = false;
+            PropagateBackdropCountDelta(Parent, -1);
             target.RemoveBackdropVisual(this);
             BackdropCache?.Dispose();
             BackdropCache = null;
@@ -111,6 +137,18 @@ namespace Avalonia.Rendering.Composition.Server
         /// backdrop cannot use the cached path.
         /// </param>
         internal LtrbRect? TryGetWorldBounds(Matrix rootTransform, out bool cacheable)
+            => TryGetHostBounds(rootTransform, stopAtHostOwner: null, out cacheable);
+
+        /// <summary>
+        /// Same as <see cref="TryGetWorldBounds"/>, but resolved in a bitmap
+        /// cache host's space: the ancestor walk stops at the host owner (its
+        /// clip applies, its own transform does not - the cache texture lives
+        /// in its inner space), and the root transform is not applied. The
+        /// cacheable accumulation covers only ancestors inside the host, since
+        /// the backdrop samples the host surface.
+        /// </summary>
+        internal LtrbRect? TryGetHostBounds(Matrix rootTransform, ServerCompositionVisual? stopAtHostOwner,
+            out bool cacheable)
         {
             cacheable = Opacity == 1 && OpacityMaskBrush == null;
 
@@ -146,6 +184,11 @@ namespace Avalonia.Rendering.Composition.Server
                     if (rect.IsZeroSize)
                         return null;
                 }
+
+                // The host owner's inner space is where its cache texture
+                // lives: apply its clip, but stop before its own transform.
+                if (ReferenceEquals(parent, stopAtHostOwner))
+                    return rect;
 
                 if (parent._ownTransform.HasValue)
                     rect = rect.TransformToAABB(parent._ownTransform.Value);

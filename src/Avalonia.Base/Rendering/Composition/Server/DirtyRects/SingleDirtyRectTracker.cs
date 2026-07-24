@@ -43,7 +43,7 @@ internal class SingleDirtyRectTracker : IDirtyRectTracker
             buffer.Add(rect);
     }
 
-    public DirtyRectWorkingSet GetWorkingSet() => new(this);
+    public DirtyRectWorkingSet GetWorkingSet() => new(this, DirtyRectSpaceMapping.Identity);
 
     public void Initialize(LtrbRect bounds) => _rect = default;
     public void Visualize(IDrawingContextImpl context)
