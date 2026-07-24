@@ -213,6 +213,68 @@ public class BackdropInvalidationTests
 #elif XUNIT
     [AvaloniaFact]
 #endif
+    public void Backdrop_Under_An_Ancestor_Effect_Renders_And_Tracks()
+    {
+        // An ancestor Effect wraps the subtree in a save-layer, which makes
+        // the retained path unsafe - the sample must fall back to the live
+        // layer, never skip the backdrop. Each state is compared against a
+        // fresh one-pass render, so both a missing backdrop and a stale one
+        // fail.
+        static (Window Window, Border Behind) BuildScene(IBrush behindBrush)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+
+            var wrapped = new Canvas
+            {
+                Width = Size, Height = Size,
+                Effect = new ImmutableBlurEffect(1)
+            };
+            host.Children.Add(wrapped);
+
+            var behind = new Border
+            {
+                Background = behindBrush, Width = 80, Height = 60,
+                [Canvas.LeftProperty] = 50.0, [Canvas.TopProperty] = 60.0
+            };
+            wrapped.Children.Add(behind);
+
+            var panel = new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = new ImmutableBlurEffect(6),
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            };
+            wrapped.Children.Add(panel);
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, behind);
+        }
+
+        var (window, behind) = BuildScene(Brushes.Crimson);
+        _ = Sample(window, PanelRect);
+
+        behind.Background = Brushes.DodgerBlue;
+        Dispatcher.UIThread.RunJobs();
+        var toggled = Sample(window, PanelRect);
+
+        var (reference, _) = BuildScene(Brushes.DodgerBlue);
+        var fresh = Sample(reference, PanelRect);
+
+        AssertHelper.True(Distance(toggled, fresh) <= 3,
+            "The backdrop under an ancestor effect diverged from a fresh render: " +
+            $"toggled {toggled} vs fresh {fresh} (delta {Distance(toggled, fresh):F2}).");
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
     public void Backdrop_Partial_Refreshes_Match_A_Fresh_Render()
     {
         // Successive small changes beneath the panel, each at a different

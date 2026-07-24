@@ -76,6 +76,39 @@ public class BackdropCacheHostTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Change_Inside_A_Cached_Subtree_Reaches_A_Later_Glass_In_The_Root()
+    {
+        using var s = new CompositorCanvas();
+
+        // The cached subtree redraws and its texture recomposes over the
+        // target - beneath the root-level glass painted after it, whose
+        // retained result must therefore refresh.
+        var host = CachedHost();
+        s.Canvas.Children.Add(host);
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 30, Height = 30,
+            [Canvas.LeftProperty] = 55, [Canvas.TopProperty] = 55
+        };
+        host.Children.Add(behind);
+
+        var rootGlass = Frosted(60, 60, 40, 40, blur: 4);
+        s.Canvas.Children.Add(rootGlass);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, rootGlass);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        behind.Background = Brushes.Blue;
+        s.RunJobs();
+
+        Assert.False(cache.IsValid);
+        Assert.True(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Behind_Change_Inside_The_Host_Should_Invalidate_And_Grant()
     {
         using var s = new CompositorCanvas();

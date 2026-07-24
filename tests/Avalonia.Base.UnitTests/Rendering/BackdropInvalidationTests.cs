@@ -390,6 +390,279 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Backdrop_Registers_When_The_Effect_Is_Set_Before_Attaching()
+    {
+        using var s = new CompositorCanvas();
+
+        // The effect exists before the visual ever sees a root; registration
+        // must converge regardless of the order.
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        var detachedParent = new Canvas { Width = 200, Height = 200 };
+        detachedParent.Children.Add(behind);
+        detachedParent.Children.Add(panel);
+
+        s.Canvas.Children.Add(detachedParent);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        behind.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(50, 50, 40, 40));
+    }
+
+    [Fact]
+    public void Detaching_The_Glass_Stops_Expanding_The_Region()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        s.Canvas.Children.Remove(panel);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        // With the glass gone its area must not be dragged into the region
+        // for a change that only touches the content that was beneath it.
+        behind.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(60, 60, 10, 10));
+        AssertDoesNotCover(s, new Rect(80, 80, 15, 15));
+    }
+
+    [Fact]
+    public void Clearing_The_Effect_Stops_Expanding_The_Region()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        panel.BackdropEffect = null;
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        behind.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(60, 60, 10, 10));
+        AssertDoesNotCover(s, new Rect(80, 80, 15, 15));
+    }
+
+    [Fact]
+    public void Dirty_Ancestor_Should_Invalidate_The_Cached_Result()
+    {
+        using var s = new CompositorCanvas();
+
+        var wrapper = new Canvas { Width = 200, Height = 200, Background = Brushes.Beige };
+        s.Canvas.Children.Add(wrapper);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        wrapper.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        // The ancestor repaints its own content beneath the glass; the walk
+        // cannot see its rect at the glass's position (it is only emitted at
+        // the ancestor's PostSubgraph), so the covering blanket must apply.
+        wrapper.Background = Brushes.Bisque;
+        s.RunJobs();
+
+        Assert.False(cache.IsValid);
+    }
+
+    [Fact]
+    public void Removing_A_Sibling_Beneath_Should_Invalidate_The_Cached_Result()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        s.Events.Rects.Clear();
+
+        // The vanished content painted beneath the glass; its old bounds only
+        // surface as the parent's extra rect after the glass's position, so
+        // the pending-extra blanket must classify it as changed beneath.
+        s.Canvas.Children.Remove(behind);
+        s.RunJobs();
+
+        Assert.False(cache.IsValid);
+    }
+
+    [Fact]
+    public void Resizing_The_Glass_Invalidates_And_Covers_Old_And_New_Bounds()
+    {
+        using var s = new CompositorCanvas();
+
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        s.Events.Rects.Clear();
+
+        // The sample region itself moves: the retained result is stale and
+        // both the vacated and the newly covered area must repaint.
+        panel.Width = 70;
+        s.RunJobs();
+
+        Assert.False(cache.IsValid);
+        AssertCovers(s, new Rect(50, 50, 40, 40));
+        AssertCovers(s, new Rect(50, 50, 70, 40));
+    }
+
+    [Fact]
+    public void Uncached_Glass_Expansion_Reaches_A_Later_Valid_Glass()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 55, [Canvas.TopProperty] = 55
+        };
+        s.Canvas.Children.Add(behind);
+        var lower = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(lower);
+        var upper = Frosted(60, 60, 40, 40, blur: 4);
+        s.Canvas.Children.Add(upper);
+        s.RunJobs();
+
+        var lowerCache = ServerCacheOf(s, lower);
+        var upperCache = ServerCacheOf(s, upper);
+        lowerCache.IsValid = false;
+        upperCache.IsValid = true;
+        upperCache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        // The lower glass has no retained result, so its whole area repaints -
+        // and that repaint includes its own changed output, which the upper
+        // glass painted over it reads.
+        behind.Background = Brushes.Blue;
+        s.RunJobs();
+
+        Assert.False(upperCache.IsValid);
+        Assert.True(upperCache.RefreshRequested);
+    }
+
+    [Fact]
+    public void Chained_Uncached_Glasses_Converge_To_Both_Areas()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 55, [Canvas.TopProperty] = 55
+        };
+        s.Canvas.Children.Add(behind);
+        var lower = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(lower);
+        var upper = Frosted(80, 80, 40, 40, blur: 4);
+        s.Canvas.Children.Add(upper);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        // Neither glass has a retained result. The change touches only the
+        // lower one, whose expansion reaches into the upper one's area; the
+        // convergence loop must settle with both whole areas covered.
+        behind.Background = Brushes.Blue;
+
+        var padding = new ImmutableBlurEffect(4).GetEffectOutputPadding();
+        AssertCovers(s, new Rect(50, 50, 40, 40).Inflate(padding));
+        AssertCovers(s, new Rect(80, 80, 40, 40).Inflate(padding));
+    }
+
+    [Fact]
+    public void Uncached_Glass_Above_Keeps_A_Valid_Glass_Below()
+    {
+        using var s = new CompositorCanvas();
+
+        var lower = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(lower);
+        var upper = Frosted(80, 60, 40, 40, blur: 4);
+        s.Canvas.Children.Add(upper);
+        var overlay = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 100, [Canvas.TopProperty] = 70
+        };
+        s.Canvas.Children.Add(overlay);
+        s.RunJobs();
+
+        var lowerCache = ServerCacheOf(s, lower);
+        var upperCache = ServerCacheOf(s, upper);
+        lowerCache.IsValid = true;
+        lowerCache.RefreshRequested = false;
+        upperCache.IsValid = false;
+        s.Events.Rects.Clear();
+
+        // The overlay touches only the upper glass, whose whole-area repaint
+        // overlaps the lower one - but the upper glass paints above the lower
+        // one's sample point, so the lower retained result stays usable.
+        overlay.Background = Brushes.Blue;
+        s.RunJobs();
+
+        Assert.True(lowerCache.IsValid);
+        Assert.False(lowerCache.RefreshRequested);
+    }
+
+    [Fact]
+    public void Zero_Size_Glass_Adds_No_Region()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 0, 0, blur: 4);
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+        s.Events.Rects.Clear();
+
+        // A zero-size glass samples nothing: no crash, no expansion.
+        behind.Background = Brushes.Blue;
+
+        AssertCovers(s, new Rect(60, 60, 10, 10));
+        AssertDoesNotCover(s, new Rect(80, 80, 15, 15));
+    }
+
+    [Fact]
     public void Backdrop_Should_Be_Invalidated_And_Granted_A_Refresh_When_Content_Behind_It_Changes()
     {
         using var s = new CompositorCanvas();
