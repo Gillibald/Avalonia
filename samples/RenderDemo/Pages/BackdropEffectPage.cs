@@ -68,6 +68,35 @@ namespace RenderDemo.Pages
 
         private readonly DispatcherTimer _blink = new() { Interval = TimeSpan.FromMilliseconds(500) };
 
+        // A saturated badge bouncing on the glass: with the sweep paused and
+        // the dirty-rect overlay on, each hop repaints only the badge's own
+        // rects while the frosted result and its cache stay untouched - the
+        // element-box region is why (a subtree-bounds region would resize and
+        // invalidate on every frame of the bounce). The bounce is a compositor
+        // keyframe animation on the badge's element visual Offset, mirroring
+        // the sweep: it runs on the render thread at vsync, and the per-frame
+        // server-side dirt it produces classifies above the sample point, so
+        // the cached backdrop survives at full frame rate. (An earlier
+        // DispatcherTimer drive capped the FPS counter at its tick rate,
+        // which measured the driver, not the pipeline.) Offset animation is
+        // render-driven churn like a RenderTransform - it never touches
+        // measure; animating Margin/Width instead would bubble a measure
+        // invalidation into the panel, whose unconditional InvalidateVisual
+        // re-records the glass itself - the upstream coarseness pinned by the
+        // measure-driven compositor test.
+        private readonly Border _badge = new()
+        {
+            Width = 26,
+            Height = 18,
+            Background = Brushes.OrangeRed,
+            CornerRadius = new CornerRadius(4),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(16, 16, 0, 0)
+        };
+
+        private readonly ToggleButton _animateChild = new() { Content = "Animate child" };
+
         private static readonly ImmutableDropShadowEffect s_dropShadow = new(0, 6, 16, Colors.Black, 0.4);
 
         public BackdropEffectPage()
@@ -103,6 +132,7 @@ namespace RenderDemo.Pages
                 {
                     Children =
                     {
+                        _badge,
                         new TextBlock
                         {
                             Text = "BackdropEffect",
@@ -158,6 +188,14 @@ namespace RenderDemo.Pages
                     _source.Resume();
             };
 
+            _animateChild.IsCheckedChanged += (_, _) =>
+            {
+                if (_animateChild.IsChecked == true)
+                    StartBounce();
+                else
+                    StopBounce();
+            };
+
             Content = new DockPanel
             {
                 Children =
@@ -177,7 +215,8 @@ namespace RenderDemo.Pages
                             },
                             picker,
                             shadowPicker,
-                            pause
+                            pause,
+                            _animateChild
                         }
                     },
                     new Panel
@@ -192,12 +231,47 @@ namespace RenderDemo.Pages
         {
             base.OnAttachedToVisualTree(e);
             _blink.Start();
+            // Attach runs parent-first, so the badge has no composition visual
+            // yet; defer past the attach walk and the layout pass that follows.
+            if (_animateChild.IsChecked == true)
+                Dispatcher.UIThread.Post(StartBounce, DispatcherPriority.Loaded);
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnDetachedFromVisualTree(e);
             _blink.Stop();
+            StopBounce();
+        }
+
+        // A linear there-and-back on the element visual's Offset: a triangle
+        // wave of +-40px horizontally and +-20px vertically about the path's
+        // midpoint, looping forever on the compositor. Known caveat: the
+        // layout sync overwrites Offset whenever the badge re-syncs, so the
+        // animation owns Offset only while layout leaves the badge alone -
+        // fine for the demo, whose badge never re-measures.
+        private void StartBounce()
+        {
+            if (ElementComposition.GetElementVisual(_badge) is not { } visual)
+                return;
+
+            var rest = new Vector3D(_badge.Bounds.Left, _badge.Bounds.Top, 0);
+            var bounce = visual.Compositor.CreateVector3DKeyFrameAnimation();
+            bounce.InsertKeyFrame(0f, rest);
+            bounce.InsertKeyFrame(0.5f, rest + new Vector3D(80, 40, 0));
+            bounce.InsertKeyFrame(1f, rest);
+            bounce.Duration = TimeSpan.FromSeconds(1.8);
+            bounce.IterationBehavior = AnimationIterationBehavior.Forever;
+            visual.StartAnimation("Offset", bounce);
+        }
+
+        private void StopBounce()
+        {
+            if (ElementComposition.GetElementVisual(_badge) is not { } visual)
+                return;
+
+            visual.StopAnimation("Offset");
+            visual.Offset = new Vector3D(_badge.Bounds.Left, _badge.Bounds.Top, 0);
         }
 
         /// <summary>
