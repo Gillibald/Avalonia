@@ -54,7 +54,7 @@ internal partial class MultiDirtyRectTracker : IDirtyRectTracker
 
     public void CollectWorkingSet(List<LtrbRect> buffer) => _regions.CollectRawRegions(buffer);
 
-    public DirtyRectWorkingSet GetWorkingSet() => new(this);
+    public DirtyRectWorkingSet GetWorkingSet() => new(this, DirtyRectSpaceMapping.Identity);
 
     public bool Intersects(LtrbRect rect)
     {

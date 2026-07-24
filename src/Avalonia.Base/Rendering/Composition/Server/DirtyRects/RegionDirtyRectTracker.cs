@@ -47,7 +47,7 @@ internal class RegionDirtyRectTracker : IDirtyRectTracker
 
     public void CollectWorkingSet(List<LtrbRect> buffer) => buffer.AddRange(_rects);
 
-    public DirtyRectWorkingSet GetWorkingSet() => new(this);
+    public DirtyRectWorkingSet GetWorkingSet() => new(this, DirtyRectSpaceMapping.Identity);
 
     public void Initialize(LtrbRect bounds) => _rects.Clear();
 

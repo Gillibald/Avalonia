@@ -35,7 +35,9 @@ namespace Avalonia.Rendering.Composition.Server
         private readonly HashSet<ServerCompositionVisual> _attachedVisuals = new();
         private readonly HashSet<ServerCompositionVisual> _backdropVisuals = new();
         private readonly List<BackdropCapture> _backdropCaptures = new();
-        private readonly List<(LtrbRect Rect, int DfsIndex)> _backdropExpansions = new();
+        private readonly List<BackdropHostRecord> _backdropHosts = new();
+        private readonly List<(IDirtyRectCollector Collector, LtrbRect Rect, int DfsIndex)> _backdropExpansions = new();
+        private readonly List<(IDirtyRectCollector Collector, ServerCompositionVisual? Owner, int Depth)> _backdropHostOrder = new();
         private readonly List<LtrbRect> _backdropWorkingSet = new();
         public IDirtyRectTracker DirtyRects { get; }
 
@@ -135,16 +137,21 @@ namespace Avalonia.Rendering.Composition.Server
 
                 // Backdrops need to know where this frame's damage sits
                 // relative to their sample point, which only the update walk
-                // knows: it classifies each backdrop at its own walk position.
+                // knows: it classifies each backdrop at its own walk position,
+                // against the bitmap-cache host (or target) whose surface the
+                // backdrop samples.
                 List<BackdropCapture>? backdropCaptures = null;
+                List<BackdropHostRecord>? backdropHosts = null;
                 if (_backdropVisuals.Count > 0)
                 {
                     _backdropCaptures.Clear();
+                    _backdropHosts.Clear();
                     backdropCaptures = _backdropCaptures;
+                    backdropHosts = _backdropHosts;
                 }
 
                 Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height),
-                    backdropCaptures);
+                    backdropCaptures, backdropHosts);
 
                 ExpandDirtyRegionForBackdrops(collector, transform);
 
@@ -397,19 +404,59 @@ namespace Avalonia.Rendering.Composition.Server
         /// rebuilds what that queries in FinalizeFrame, which has not run yet and
         /// would answer for the previous frame.
         /// </remarks>
+        private static ServerCompositionVisual? NearestCacheHostOwner(ServerCompositionVisual visual)
+        {
+            for (var parent = visual.Parent; parent != null; parent = parent.Parent)
+            {
+                if (parent.Cache != null)
+                    return parent;
+            }
+
+            return null;
+        }
+
+        // The cache owner's subtree bounds mapped into its parent host's space,
+        // for propagating host damage upward as the boundary's coarse rect.
+        private static LtrbRect? OwnerCoarseBoundsInParentHost(ServerCompositionVisual owner,
+            ServerCompositionVisual? parentHostOwner, Matrix rootTransform)
+        {
+            if (owner.SubTreeBounds is not { } bounds)
+                return null;
+
+            var rect = owner.OwnTransform is { } ownTransform ? bounds.TransformToAABB(ownTransform) : bounds;
+            for (var parent = owner.Parent; parent != null; parent = parent.Parent)
+            {
+                if (ReferenceEquals(parent, parentHostOwner))
+                    return rect;
+                if (parent.OwnTransform is { } parentTransform)
+                    rect = rect.TransformToAABB(parentTransform);
+            }
+
+            return parentHostOwner == null ? rect.TransformToAABB(rootTransform) : null;
+        }
+
+        private void AddBackdropHostOrdered(IDirtyRectCollector hostCollector, ServerCompositionVisual? owner)
+        {
+            foreach (var host in _backdropHostOrder)
+            {
+                if (ReferenceEquals(host.Collector, hostCollector))
+                    return;
+            }
+
+            var depth = 0;
+            for (var parent = owner; parent != null; parent = parent.Parent)
+                depth++;
+            _backdropHostOrder.Add((hostCollector, owner, depth));
+        }
+
         private void ExpandDirtyRegionForBackdrops(IDirtyRectCollector collector, Matrix transform)
         {
             if (_backdropVisuals.Count == 0)
                 return;
 
-            var surface = new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height);
-
-            // A save-layer around the whole frame means every backdrop samples
-            // that layer instead of the base surface the snapshot would read.
-            var rootUsesLayer = Compositor.Options.UseSaveLayerRootClip ?? false;
-
-            // Registered backdrops the walk never reached (a clean spine): no
-            // position and no classification exist, so any touch invalidates.
+            // Registered backdrops the walk never reached (a clean spine or a
+            // clean cache boundary): no position and no classification exist,
+            // so any touch of their host's damage invalidates.
             foreach (var visual in _backdropVisuals)
             {
                 var captured = false;
@@ -417,38 +464,83 @@ namespace Avalonia.Rendering.Composition.Server
                     captured = ReferenceEquals(_backdropCaptures[i].Visual, visual);
                 if (!captured)
                 {
-                    var worldBounds = visual.TryGetWorldBounds(transform, out var uncapturedCacheable);
+                    var hostOwner = NearestCacheHostOwner(visual);
+                    var hostCollector = hostOwner?.Cache?.DirtyRectCollector ?? collector;
+                    var bounds = visual.TryGetHostBounds(transform, hostOwner, out var uncapturedCacheable);
                     _backdropCaptures.Add(new BackdropCapture(
-                        visual, int.MaxValue, SelfDirty: false, BelowDirt: false,
-                        worldBounds, uncapturedCacheable, Captured: false));
+                        visual, hostCollector, int.MaxValue, SelfDirty: false, BelowDirt: false,
+                        bounds, uncapturedCacheable, Captured: false));
                 }
             }
 
+            // Process hosts deepest-first so a child host's propagated damage is
+            // already in its parent's tracker and expansion list before the
+            // parent's own pass runs; the target's own collector goes last.
+            _backdropHostOrder.Clear();
+            foreach (var record in _backdropHosts)
+                AddBackdropHostOrdered(record.HostCollector, record.Owner);
+            foreach (var capture in _backdropCaptures)
+            {
+                if (!ReferenceEquals(capture.Collector, collector))
+                    AddBackdropHostOrdered(capture.Collector, NearestCacheHostOwner(capture.Visual));
+            }
+
+            _backdropHostOrder.Sort(static (a, b) => b.Depth.CompareTo(a.Depth));
+            _backdropHostOrder.Add((collector, null, 0));
+
             _backdropExpansions.Clear();
 
-            // Expanding one backdrop can reach another, so repeat until a pass adds
-            // nothing. Each pass covers at least one more backdrop, so the count
-            // bounds the loop.
-            for (var pass = 0; pass < _backdropCaptures.Count; pass++)
+            foreach (var host in _backdropHostOrder)
+                RunBackdropHostPass(host.Collector, host.Owner, collector, transform);
+        }
+
+        private void RunBackdropHostPass(IDirtyRectCollector hostCollector, ServerCompositionVisual? hostOwner,
+            IDirtyRectCollector rootCollector, Matrix transform)
+        {
+            var isRootHost = ReferenceEquals(hostCollector, rootCollector);
+            var surface = new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height);
+
+            // A save-layer around the whole frame means a root-host backdrop
+            // samples that layer instead of the base surface the snapshot would
+            // read; cache hosts render into their own surface and are immune.
+            var rootUsesLayer = isRootHost && (Compositor.Options.UseSaveLayerRootClip ?? false);
+
+            var receivedDamage = false;
+
+            // Expanding one backdrop can reach another, so repeat until a pass
+            // adds nothing. Each pass covers at least one more backdrop, so the
+            // count bounds the loop.
+            for (var pass = 0; pass < _backdropCaptures.Count + 1; pass++)
             {
                 var added = false;
 
                 // The raw working set only grows via the expansions this loop
                 // adds, so one refresh per pass is enough for the touch and
-                // containment tests.
+                // containment tests. An unusable view (a cache that never drew)
+                // has nothing retained to keep fresh.
+                var workingSet = hostCollector.GetWorkingSet();
+                if (!workingSet.IsUsable)
+                    break;
                 _backdropWorkingSet.Clear();
-                collector.GetWorkingSet().CollectTo(_backdropWorkingSet);
+                workingSet.CollectTo(_backdropWorkingSet);
+                if (_backdropWorkingSet.Count == 0)
+                    break;
 
                 foreach (var capture in _backdropCaptures)
                 {
+                    if (!ReferenceEquals(capture.Collector, hostCollector))
+                        continue;
+
                     var visual = capture.Visual;
                     if (visual.BackdropEffect is not { } effect)
                         continue;
-                    if (capture.WorldBounds is not { } bounds)
+                    if (capture.HostBounds is not { } bounds)
                         continue;
                     var cacheable = capture.Cacheable && !rootUsesLayer;
 
-                    var area = bounds.Inflate(effect.GetEffectOutputPadding()).IntersectOrEmpty(surface);
+                    var area = bounds.Inflate(effect.GetEffectOutputPadding());
+                    if (isRootHost)
+                        area = area.IntersectOrEmpty(surface);
                     if (area.IsZeroSize)
                         continue;
 
@@ -477,7 +569,9 @@ namespace Avalonia.Rendering.Composition.Server
                     {
                         foreach (var expansion in _backdropExpansions)
                         {
-                            if (expansion.DfsIndex < capture.DfsIndex && expansion.Rect.Intersects(area))
+                            if (ReferenceEquals(expansion.Collector, hostCollector)
+                                && expansion.DfsIndex < capture.DfsIndex
+                                && expansion.Rect.Intersects(area))
                             {
                                 invalidated = true;
                                 break;
@@ -498,14 +592,60 @@ namespace Avalonia.Rendering.Composition.Server
                     if (contained)
                         continue; // some rect already repaints the full input; nothing to widen
 
-                    collector.AddRect(area);
-                    _backdropExpansions.Add((area, capture.DfsIndex));
+                    hostCollector.AddRect(area);
+                    _backdropExpansions.Add((hostCollector, area, capture.DfsIndex));
                     added = true;
+                    receivedDamage = true;
                 }
 
                 if (!added)
-                    return;
+                    break;
             }
+
+            if (!receivedDamage || hostOwner == null)
+                return;
+
+            // The host redraws content its parent composes as the boundary
+            // visual's coarse bounds: mirror that into the parent host so the
+            // refreshed texture reaches the screen, and deliver it to backdrops
+            // painted later than the boundary there.
+            BackdropHostRecord? record = null;
+            foreach (var candidate in _backdropHosts)
+            {
+                if (ReferenceEquals(candidate.HostCollector, hostCollector))
+                {
+                    record = candidate;
+                    break;
+                }
+            }
+
+            if (record is { OwnerInnerToParentValid: false })
+                return; // a disabled ancestor's whole bounds already cover the boundary
+
+            LtrbRect? coarse;
+            IDirtyRectCollector parentCollector;
+            int boundaryDfsIndex;
+            if (record is { } r)
+            {
+                coarse = hostOwner.SubTreeBounds?.TransformToAABB(r.OwnerInnerToParent);
+                parentCollector = r.ParentCollector;
+                boundaryDfsIndex = r.OwnerDfsIndex;
+            }
+            else
+            {
+                var parentHostOwner = NearestCacheHostOwner(hostOwner);
+                coarse = OwnerCoarseBoundsInParentHost(hostOwner, parentHostOwner, transform);
+                parentCollector = parentHostOwner?.Cache?.DirtyRectCollector ?? rootCollector;
+                // The boundary was not visited this walk, so its paint position
+                // is unknown; deliver to every backdrop in the parent host.
+                boundaryDfsIndex = int.MinValue;
+            }
+
+            if (coarse is not { IsZeroSize: false } coarseRect)
+                return;
+
+            parentCollector.AddRect(coarseRect);
+            _backdropExpansions.Add((parentCollector, coarseRect, boundaryDfsIndex));
         }
 
         public void RequestFullRedraw() => _redrawRequested = true;
@@ -513,18 +653,36 @@ namespace Avalonia.Rendering.Composition.Server
 
     /// <summary>
     /// A registered backdrop's per-frame classification, captured by the update
-    /// walk at the visual's own walk position. Damage already emitted at that
-    /// point painted at or beneath the sample point; later damage paints above
-    /// it inside the backdrop's layer and cannot change what the filter reads.
-    /// <paramref name="Captured"/> is false for backdrops the walk never
-    /// reached - they carry no position, so any touch invalidates.
+    /// walk at the visual's own walk position within its host - the bitmap
+    /// cache (or the target) whose surface the backdrop samples. Damage already
+    /// emitted at that point painted at or beneath the sample point; later
+    /// damage paints above it inside the backdrop's layer and cannot change
+    /// what the filter reads. <paramref name="Captured"/> is false for
+    /// backdrops the walk never reached - they carry no position, so any touch
+    /// invalidates.
     /// </summary>
     internal readonly record struct BackdropCapture(
         ServerCompositionVisual Visual,
+        IDirtyRectCollector Collector,
         int DfsIndex,
         bool SelfDirty,
         bool BelowDirt,
-        LtrbRect? WorldBounds,
+        LtrbRect? HostBounds,
         bool Cacheable,
         bool Captured);
+
+    /// <summary>
+    /// A bitmap-cache host the update walk entered, recorded at the cache
+    /// redirect push: its collector, the collector of the host it nests in,
+    /// the owning visual with its walk position there, and the matrix mapping
+    /// the owner's inner space to the parent host's space (only meaningful
+    /// when the walk had pushed the ancestor transforms).
+    /// </summary>
+    internal readonly record struct BackdropHostRecord(
+        IDirtyRectCollector HostCollector,
+        IDirtyRectCollector ParentCollector,
+        ServerCompositionVisual Owner,
+        int OwnerDfsIndex,
+        Matrix OwnerInnerToParent,
+        bool OwnerInnerToParentValid);
 }

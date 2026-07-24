@@ -151,11 +151,13 @@ partial class ServerCompositionVisual
     {
         if (Parent != null && _transformedSubTreeBounds.HasValue)
             Parent.AddExtraDirtyRect(_transformedSubTreeBounds.Value);
+        Backdrop_OnParentChanging();
         AttHelper_ParentChanging();
     }
-    
+
     partial void OnParentChanged()
     {
+        Backdrop_OnParentChanged();
         if (Parent != null)
         {
             _delayPropagateNeedsBoundsUpdate = _delayPropagateIsDirtyForRender = true;

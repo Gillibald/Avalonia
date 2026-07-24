@@ -20,8 +20,17 @@ internal partial class ServerCompositionVisual
         private Stack<IDirtyRectCollector> _dirtyRegionCollectorStack;
         private Stack<LtrbRect?> _localizedEffectOldBoundsStack;
         private readonly List<BackdropCapture>? _backdropCaptures;
+        private readonly List<BackdropHostRecord>? _backdropHosts;
         private readonly IDirtyRectCollector _rootCollector;
         private readonly Matrix _rootTransform;
+        // The bitmap-cache host the walk is currently inside (null = the render
+        // target itself) and its collector. Unlike _dirtyRegion these are not
+        // touched by the localized-effect union redirect: a backdrop under one
+        // still belongs to its cache (or root) host.
+        private ServerCompositionVisual? _currentHostOwner;
+        private IDirtyRectCollector _currentHostCollector;
+        private Stack<ServerCompositionVisual?>? _hostOwnerStack;
+        private Stack<IDirtyRectCollector>? _hostCollectorStack;
         // Walk position: emission order equals paint order, so a rect present in
         // the root collector's working set at a given position painted at or
         // beneath that position.
@@ -35,12 +44,14 @@ internal partial class ServerCompositionVisual
         private bool AreDirtyRegionsDisabled() => _dirtyRegionDisableCount != 0;
 
         public UpdateContext(CompositorPools pools, IDirtyRectCollector dirtyRects, Matrix transform, LtrbRect clip,
-            List<BackdropCapture>? backdropCaptures)
+            List<BackdropCapture>? backdropCaptures, List<BackdropHostRecord>? backdropHosts)
         {
             _dirtyRegion = dirtyRects;
             _rootCollector = dirtyRects;
+            _currentHostCollector = dirtyRects;
             _rootTransform = transform;
             _backdropCaptures = backdropCaptures;
+            _backdropHosts = backdropHosts;
             _context = new TreeWalkContext(pools, transform, clip);
             _dirtyRegionDisableCountStack = pools.IntStackPool.Rent();
             _dirtyRegionCollectorStack = pools.DirtyRectCollectorStackPool.Rent();
@@ -122,6 +133,26 @@ internal partial class ServerCompositionVisual
         {
             if (visual.Cache != null)
             {
+                if (_backdropCaptures != null)
+                {
+                    // The propagation matrix is only meaningful when the walk
+                    // pushed the ancestor transforms; under a disabled region
+                    // the disabling ancestor's whole bounds already cover this
+                    // cache in the parent host, so propagation can be skipped.
+                    _backdropHosts?.Add(new BackdropHostRecord(
+                        visual.Cache.DirtyRectCollector,
+                        _currentHostCollector,
+                        visual,
+                        _dfsCounter,
+                        _context.Transform,
+                        OwnerInnerToParentValid: !AreDirtyRegionsDisabled()));
+
+                    (_hostOwnerStack ??= new Stack<ServerCompositionVisual?>()).Push(_currentHostOwner);
+                    (_hostCollectorStack ??= new Stack<IDirtyRectCollector>()).Push(_currentHostCollector);
+                    _currentHostOwner = visual;
+                    _currentHostCollector = visual.Cache.DirtyRectCollector;
+                }
+
                 _dirtyRegionCollectorStack.Push(_dirtyRegion);
                 _dirtyRegion = visual.Cache.DirtyRectCollector;
                 _dirtyRegionDisableCountStack.Push(_dirtyRegionDisableCount);
@@ -140,6 +171,13 @@ internal partial class ServerCompositionVisual
                 _context.PopTransform();
                 _dirtyRegion = _dirtyRegionCollectorStack.Pop();
                 _dirtyRegionDisableCount = _dirtyRegionDisableCountStack.Pop();
+
+                if (_backdropCaptures != null)
+                {
+                    _currentHostOwner = _hostOwnerStack!.Pop();
+                    _currentHostCollector = _hostCollectorStack!.Pop();
+                }
+
                 if (visual.Cache.IsDirty)
                     AddToDirtyRegion(visual._subTreeBounds);
             }
@@ -173,6 +211,14 @@ internal partial class ServerCompositionVisual
             // possibly beneath backdrops captured deeper in the subtree.
             if (node._needsToAddExtraDirtyRectToDirtyRegion)
                 _extraDirtyAncestorCount++;
+
+            // Keep descending a clean spine toward registered backdrops while
+            // the current host has damage, so they get classified at their
+            // walk position. A clean cache boundary is never entered: its host
+            // has no new damage, so backdrops inside it are unaffected.
+            if (!visitChildren && node.Cache == null && node._backdropsInSubTree > 0
+                && !_dirtyRegion.GetWorkingSet().IsEmpty)
+                visitChildren = true;
 
             // Special handling for effects: just add the entire node's old subtree bounds as a dirty region
             // WPF does this because they had legacy effects with non-affine transforms, we do this because
@@ -303,31 +349,34 @@ internal partial class ServerCompositionVisual
             if (_backdropCaptures == null)
                 return;
 
-            var bounds = node.TryGetWorldBounds(_rootTransform, out var cacheable);
+            // The backdrop belongs to the nearest enclosing bitmap-cache host
+            // (or the target): it samples that host's surface, so bounds and
+            // classification are resolved in host space.
+            var bounds = node.TryGetHostBounds(_rootTransform, _currentHostOwner, out var cacheable);
 
+            var workingSet = _dirtyRegion.GetWorkingSet();
             bool belowDirt;
-            if (AreDirtyRegionsDisabled() || _extraDirtyAncestorCount > 0
-                || !ReferenceEquals(_dirtyRegion, _rootCollector))
+            if (AreDirtyRegionsDisabled() || _extraDirtyAncestorCount > 0 || !workingSet.IsUsable)
             {
                 // A covering dirty-for-render ancestor (its rect only lands in
                 // the working set at its own PostSubgraph), a pending extra rect
-                // above (a removed child that may have painted beneath), or a
-                // redirected collector (bitmap cache, localized effect): the
-                // provenance is unknowable here, so the input conservatively
-                // counts as changed beneath.
+                // above (a removed child that may have painted beneath), or an
+                // unreadable collector (a localized-effect union, a cache that
+                // never drew): the provenance is unknowable here, so the input
+                // conservatively counts as changed beneath.
                 belowDirt = true;
             }
-            else if (bounds is not { } worldBounds)
+            else if (bounds is not { } hostBounds)
             {
                 belowDirt = false;
             }
             else
             {
-                var area = worldBounds.Inflate(node.BackdropEffect.GetEffectOutputPadding());
+                var area = hostBounds.Inflate(node.BackdropEffect.GetEffectOutputPadding());
                 belowDirt = false;
                 var buffer = _workingSetBuffer ??= new List<LtrbRect>();
                 buffer.Clear();
-                _rootCollector.GetWorkingSet().CollectTo(buffer);
+                workingSet.CollectTo(buffer);
                 foreach (var rect in buffer)
                 {
                     if (rect.Intersects(area))
@@ -339,7 +388,8 @@ internal partial class ServerCompositionVisual
             }
 
             _backdropCaptures.Add(new BackdropCapture(
-                node, _dfsCounter, node._isDirtyForRender, belowDirt, bounds, cacheable, Captured: true));
+                node, _currentHostCollector, _dfsCounter, node._isDirtyForRender, belowDirt, bounds, cacheable,
+                Captured: true));
         }
 
         private void FinalizeSubtreeBounds(ServerCompositionVisual node)
@@ -406,9 +456,9 @@ internal partial class ServerCompositionVisual
     }
     
     public void UpdateRoot(IDirtyRectCollector tracker, Matrix transform, LtrbRect clip,
-        List<BackdropCapture>? backdropCaptures = null)
+        List<BackdropCapture>? backdropCaptures = null, List<BackdropHostRecord>? backdropHosts = null)
     {
-        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropCaptures);
+        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropCaptures, backdropHosts);
         ServerTreeWalker<UpdateContext>.Walk(ref context, this);
         context.Dispose();
     }
