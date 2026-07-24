@@ -70,6 +70,11 @@ internal class ServerCompositionVisualCache
                 (rect.Right + parent._drawAtOffset.X) * parent._scaleX,
                 (rect.Bottom + parent._drawAtOffset.Y) * parent._scaleY));
         }
+
+        // The tracker stores texture-space rects behind an offset/scale this
+        // view cannot express yet, so backdrop classification treats cache
+        // content as unknown provenance.
+        public DirtyRectWorkingSet GetWorkingSet() => default;
     }
     
     private readonly IDirtyRectTracker _dirtyRectTracker = new SingleDirtyRectTracker();

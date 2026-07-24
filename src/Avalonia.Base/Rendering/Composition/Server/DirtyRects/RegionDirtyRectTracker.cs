@@ -45,6 +45,10 @@ internal class RegionDirtyRectTracker : IDirtyRectTracker
 
     public bool Intersects(LtrbRect rect) => _region.Intersects(rect);
 
+    public void CollectWorkingSet(List<LtrbRect> buffer) => buffer.AddRange(_rects);
+
+    public DirtyRectWorkingSet GetWorkingSet() => new(this);
+
     public void Initialize(LtrbRect bounds) => _rects.Clear();
 
     public void Visualize(IDrawingContextImpl context)
