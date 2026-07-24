@@ -290,6 +290,38 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Overlay_Above_The_Glass_Should_Not_Invalidate_The_Cached_Result()
+    {
+        using var s = new CompositorCanvas();
+
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+
+        // A later sibling drawn above the panel, overlapping it.
+        var overlay = new Border
+        {
+            Background = Brushes.Red, Width = 20, Height = 20,
+            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+        };
+        s.Canvas.Children.Add(overlay);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        // The overlay paints above the point where the panel's filter samples
+        // the surface, so its change cannot alter what the filter reads: the
+        // retained result stays usable and no refresh is needed.
+        overlay.Background = Brushes.Blue;
+        s.RunJobs();
+
+        Assert.True(cache.IsValid);
+        Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Backdrop_With_DropShadow_Child_Change_Should_Keep_The_Cached_Result()
     {
         using var s = new CompositorCanvas();
