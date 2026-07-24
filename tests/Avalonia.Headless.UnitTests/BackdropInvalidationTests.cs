@@ -213,6 +213,75 @@ public class BackdropInvalidationTests
 #elif XUNIT
     [AvaloniaFact]
 #endif
+    public void Backdrop_Partial_Refreshes_Match_A_Fresh_Render()
+    {
+        // Successive small changes beneath the panel, each at a different
+        // spot. A partial refresh must re-filter only the changed output
+        // neighborhood from freshly painted input; re-ingesting anything
+        // outside the certified region reads last frame's composited output
+        // (wash plus filtered content) and smears. Every frame is compared
+        // against a fresh one-pass render of the same state.
+        var spots = new[] { new Rect(48, 78, 14, 14), new Rect(90, 100, 14, 14), new Rect(130, 84, 14, 14) };
+
+        static (Window Window, Border[] Squares) BuildScene(IBrush[] colors, Rect[] spots)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+
+            var squares = new Border[spots.Length];
+            for (var i = 0; i < spots.Length; i++)
+            {
+                squares[i] = new Border
+                {
+                    Background = colors[i], Width = spots[i].Width, Height = spots[i].Height,
+                    [Canvas.LeftProperty] = spots[i].X, [Canvas.TopProperty] = spots[i].Y
+                };
+                host.Children.Add(squares[i]);
+            }
+
+            var panel = new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = new ImmutableBlurEffect(6),
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            };
+            host.Children.Add(panel);
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, squares);
+        }
+
+        var colors = new IBrush[] { Brushes.Crimson, Brushes.DodgerBlue, Brushes.MediumSeaGreen };
+        var (window, squares) = BuildScene(colors, spots);
+        _ = Sample(window, PanelRect);
+
+        var swaps = new IBrush[] { Brushes.DodgerBlue, Brushes.MediumSeaGreen, Brushes.Crimson };
+        var worst = 0d;
+        for (var i = 0; i < spots.Length; i++)
+        {
+            colors[i] = swaps[i];
+            squares[i].Background = swaps[i];
+            Dispatcher.UIThread.RunJobs();
+            var partial = Sample(window, PanelRect);
+
+            var (reference, _) = BuildScene((IBrush[])colors.Clone(), spots);
+            var fresh = Sample(reference, PanelRect);
+            worst = Math.Max(worst, Distance(partial, fresh));
+        }
+
+        AssertHelper.True(worst <= 3,
+            $"A partially refreshed frame drifted {worst:F2} from a fresh one-pass render.");
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
     public void Backdrop_Inside_A_Cached_Subtree_Tracks_Content_Behind_It()
     {
         // The panel and the content behind it live inside a bitmap-cached
