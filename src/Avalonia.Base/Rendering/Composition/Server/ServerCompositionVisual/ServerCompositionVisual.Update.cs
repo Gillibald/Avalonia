@@ -21,6 +21,7 @@ internal partial class ServerCompositionVisual
         private Stack<LtrbRect?> _localizedEffectOldBoundsStack;
         private readonly List<BackdropCapture>? _backdropCaptures;
         private readonly List<BackdropHostRecord>? _backdropHosts;
+        private readonly List<LtrbRect>? _backdropDirtRects;
         private readonly IDirtyRectCollector _rootCollector;
         private readonly Matrix _rootTransform;
         // The bitmap-cache host the walk is currently inside (null = the render
@@ -44,7 +45,8 @@ internal partial class ServerCompositionVisual
         private bool AreDirtyRegionsDisabled() => _dirtyRegionDisableCount != 0;
 
         public UpdateContext(CompositorPools pools, IDirtyRectCollector dirtyRects, Matrix transform, LtrbRect clip,
-            List<BackdropCapture>? backdropCaptures, List<BackdropHostRecord>? backdropHosts)
+            List<BackdropCapture>? backdropCaptures, List<BackdropHostRecord>? backdropHosts,
+            List<LtrbRect>? backdropDirtRects)
         {
             _dirtyRegion = dirtyRects;
             _rootCollector = dirtyRects;
@@ -52,6 +54,7 @@ internal partial class ServerCompositionVisual
             _rootTransform = transform;
             _backdropCaptures = backdropCaptures;
             _backdropHosts = backdropHosts;
+            _backdropDirtRects = backdropDirtRects;
             _context = new TreeWalkContext(pools, transform, clip);
             _dirtyRegionDisableCountStack = pools.IntStackPool.Rent();
             _dirtyRegionCollectorStack = pools.DirtyRectCollectorStackPool.Rent();
@@ -352,10 +355,14 @@ internal partial class ServerCompositionVisual
             // The backdrop belongs to the nearest enclosing bitmap-cache host
             // (or the target): it samples that host's surface, so bounds and
             // classification are resolved in host space.
-            var bounds = node.TryGetHostBounds(_rootTransform, _currentHostOwner, out var cacheable);
+            var bounds = node.TryGetHostBounds(_rootTransform, _currentHostOwner, out var cacheable,
+                out var localToHost);
 
             var workingSet = _dirtyRegion.GetWorkingSet();
             bool belowDirt;
+            var dirtStart = _backdropDirtRects?.Count ?? 0;
+            var dirtCount = 0;
+            var dirtOverflow = false;
             if (AreDirtyRegionsDisabled() || _extraDirtyAncestorCount > 0 || !workingSet.IsUsable)
             {
                 // A covering dirty-for-render ancestor (its rect only lands in
@@ -363,8 +370,9 @@ internal partial class ServerCompositionVisual
                 // above (a removed child that may have painted beneath), or an
                 // unreadable collector (a localized-effect union, a cache that
                 // never drew): the provenance is unknowable here, so the input
-                // conservatively counts as changed beneath.
+                // conservatively counts as changed beneath, everywhere.
                 belowDirt = true;
+                dirtOverflow = true;
             }
             else if (bounds is not { } hostBounds)
             {
@@ -379,17 +387,33 @@ internal partial class ServerCompositionVisual
                 workingSet.CollectTo(buffer);
                 foreach (var rect in buffer)
                 {
-                    if (rect.Intersects(area))
+                    if (!rect.Intersects(area))
+                        continue;
+
+                    belowDirt = true;
+                    // Keep the individual dirt rects so a valid cache can be
+                    // refreshed partially; past the cap the frame degrades to
+                    // a full refresh.
+                    if (_backdropDirtRects != null && dirtCount < ServerCompositionTarget.MaxPartialRefreshRects)
                     {
-                        belowDirt = true;
-                        break;
+                        _backdropDirtRects.Add(rect.IntersectOrEmpty(area));
+                        dirtCount++;
+                    }
+                    else
+                    {
+                        dirtOverflow = true;
                     }
                 }
             }
 
+            // A grant left unconsumed (the backend never pushed the layer, or
+            // ignored it) must escalate to a full refresh on the next touch:
+            // its certified region is gone.
+            var stalePartialGrant = node.BackdropCache is { IsValid: true, RefreshRequested: true };
+
             _backdropCaptures.Add(new BackdropCapture(
                 node, _currentHostCollector, _dfsCounter, node._isDirtyForRender, belowDirt, bounds, cacheable,
-                Captured: true));
+                Captured: true, dirtStart, dirtCount, dirtOverflow, localToHost, stalePartialGrant));
         }
 
         private void FinalizeSubtreeBounds(ServerCompositionVisual node)
@@ -456,9 +480,11 @@ internal partial class ServerCompositionVisual
     }
     
     public void UpdateRoot(IDirtyRectCollector tracker, Matrix transform, LtrbRect clip,
-        List<BackdropCapture>? backdropCaptures = null, List<BackdropHostRecord>? backdropHosts = null)
+        List<BackdropCapture>? backdropCaptures = null, List<BackdropHostRecord>? backdropHosts = null,
+        List<LtrbRect>? backdropDirtRects = null)
     {
-        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropCaptures, backdropHosts);
+        var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropCaptures, backdropHosts,
+            backdropDirtRects);
         ServerTreeWalker<UpdateContext>.Walk(ref context, this);
         context.Dispose();
     }

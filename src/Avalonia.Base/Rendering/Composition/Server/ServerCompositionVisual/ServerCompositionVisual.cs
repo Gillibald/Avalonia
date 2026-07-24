@@ -137,7 +137,11 @@ namespace Avalonia.Rendering.Composition.Server
         /// backdrop cannot use the cached path.
         /// </param>
         internal LtrbRect? TryGetWorldBounds(Matrix rootTransform, out bool cacheable)
-            => TryGetHostBounds(rootTransform, stopAtHostOwner: null, out cacheable);
+            => TryGetHostBounds(rootTransform, stopAtHostOwner: null, out cacheable, out _);
+
+        internal LtrbRect? TryGetHostBounds(Matrix rootTransform, ServerCompositionVisual? stopAtHostOwner,
+            out bool cacheable)
+            => TryGetHostBounds(rootTransform, stopAtHostOwner, out cacheable, out _);
 
         /// <summary>
         /// Same as <see cref="TryGetWorldBounds"/>, but resolved in a bitmap
@@ -147,10 +151,19 @@ namespace Avalonia.Rendering.Composition.Server
         /// cacheable accumulation covers only ancestors inside the host, since
         /// the backdrop samples the host surface.
         /// </summary>
+        /// <param name="localToHost">
+        /// The accumulated visual-local to host-space transform when the chain
+        /// is axis-aligned (scales and translations only), null otherwise.
+        /// Host-space rects map back to local space exactly through its
+        /// inverse, which partial backdrop refreshes rely on.
+        /// </param>
         internal LtrbRect? TryGetHostBounds(Matrix rootTransform, ServerCompositionVisual? stopAtHostOwner,
-            out bool cacheable)
+            out bool cacheable, out Matrix? localToHost)
         {
             cacheable = Opacity == 1 && OpacityMaskBrush == null;
+            localToHost = null;
+            var transform = Matrix.Identity;
+            var axisAligned = true;
 
             // A subtree that paints nothing at all is culled by the render
             // pass, so there is no fill to keep fresh either.
@@ -168,7 +181,11 @@ namespace Avalonia.Rendering.Composition.Server
             if (rect.IsZeroSize)
                 return null;
             if (_ownTransform.HasValue)
+            {
                 rect = rect.TransformToAABB(_ownTransform.Value);
+                Accumulate(_ownTransform.Value, ref transform, ref axisAligned);
+            }
+
             for (var parent = Parent; parent != null; parent = parent.Parent)
             {
                 if (!parent.Visible)
@@ -188,13 +205,30 @@ namespace Avalonia.Rendering.Composition.Server
                 // The host owner's inner space is where its cache texture
                 // lives: apply its clip, but stop before its own transform.
                 if (ReferenceEquals(parent, stopAtHostOwner))
+                {
+                    if (axisAligned)
+                        localToHost = transform;
                     return rect;
+                }
 
                 if (parent._ownTransform.HasValue)
+                {
                     rect = rect.TransformToAABB(parent._ownTransform.Value);
+                    Accumulate(parent._ownTransform.Value, ref transform, ref axisAligned);
+                }
             }
 
+            Accumulate(rootTransform, ref transform, ref axisAligned);
+            if (axisAligned)
+                localToHost = transform;
             return rect.TransformToAABB(rootTransform);
+
+            static void Accumulate(Matrix m, ref Matrix transform, ref bool axisAligned)
+            {
+                transform *= m;
+                if (m.M12 != 0 || m.M21 != 0)
+                    axisAligned = false;
+            }
         }
 
         protected virtual void OnAttachedToRoot(ServerCompositionTarget target)

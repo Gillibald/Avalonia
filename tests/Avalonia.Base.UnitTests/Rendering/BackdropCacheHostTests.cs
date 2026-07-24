@@ -83,11 +83,13 @@ public class BackdropCacheHostTests : CompositorTestsBase
         var host = CachedHost();
         s.Canvas.Children.Add(host);
 
-        // Painted before (beneath) the panel, inside the same host.
+        // Painted before (beneath) the panel, inside the same host. Large
+        // enough that most of the filter's input changes, so the frame
+        // escalates past a partial refresh to a full one.
         var behind = new Border
         {
-            Background = Brushes.Red, Width = 10, Height = 10,
-            [Canvas.LeftProperty] = 60, [Canvas.TopProperty] = 60
+            Background = Brushes.Red, Width = 30, Height = 30,
+            [Canvas.LeftProperty] = 55, [Canvas.TopProperty] = 55
         };
         host.Children.Add(behind);
         host.Children.Add(Frosted(50, 50, 40, 40, blur: 4));

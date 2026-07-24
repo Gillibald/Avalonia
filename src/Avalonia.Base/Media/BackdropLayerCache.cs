@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Avalonia.Media;
 
@@ -32,12 +33,24 @@ internal sealed class BackdropLayerCache : IDisposable
 
     /// <summary>
     /// Set by the update pass when it has widened the dirty region to cover the
-    /// filter's whole input area, which makes this frame safe to capture from.
+    /// refresh's whole input area, which makes this frame safe to capture from.
     /// Consumed (cleared) by the implementation at the layer push whether or
     /// not the capture succeeds - a stale grant must not fire on a later frame
-    /// whose region no longer covers the area.
+    /// whose region no longer covers the area. With <see cref="RefreshRects"/>
+    /// empty the grant is a full refresh (<see cref="IsValid"/> is false);
+    /// with rects it is a partial refresh of a still-valid result.
     /// </summary>
     public bool RefreshRequested { get; set; }
+
+    /// <summary>
+    /// The output sub-rects of a partial refresh grant, in the visual's local
+    /// space (the space of the layer bounds). Each rect's input neighborhood
+    /// (the rect inflated by the effect's reach) is covered by this frame's
+    /// dirty region, so re-filtering exactly these rects reads only freshly
+    /// painted content. Consumed (cleared) with the grant. Empty means the
+    /// grant, if any, is a full refresh.
+    /// </summary>
+    public List<Rect> RefreshRects { get; } = new();
 
     /// <summary>
     /// The implementation's retained resources (image, device rect, the
@@ -52,5 +65,6 @@ internal sealed class BackdropLayerCache : IDisposable
         PlatformState = null;
         IsValid = false;
         RefreshRequested = false;
+        RefreshRects.Clear();
     }
 }

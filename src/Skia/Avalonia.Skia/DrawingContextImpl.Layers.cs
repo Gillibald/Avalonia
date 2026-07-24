@@ -85,37 +85,50 @@ partial class DrawingContextImpl
 
     /// <summary>
     /// The retained half of the <see cref="BackdropLayerCache"/> handshake: the
-    /// filtered destination as device pixels, the rect it belongs to, and the
-    /// context the image lives on so a device loss is detectable.
+    /// filtered destination as a retained surface (so granted sub-rects can be
+    /// re-filtered in place), its snapshot for drawing, the device rect it
+    /// belongs to, and the context it lives on so a device loss is detectable.
     /// </summary>
     private sealed class SkiaBackdropCacheState : IDisposable
     {
-        public SkiaBackdropCacheState(GRContext? context, SKImage image, SKRectI deviceRect)
+        public SkiaBackdropCacheState(GRContext? context, SKSurface surface, SKRectI deviceRect)
         {
             Context = context;
-            Image = image;
+            Surface = surface;
             DeviceRect = deviceRect;
         }
 
         public GRContext? Context { get; }
-        public SKImage Image { get; }
+        public SKSurface Surface { get; }
+        public SKImage? Snapshot { get; set; }
         public SKRectI DeviceRect { get; }
 
-        public void Dispose() => Image.Dispose();
+        public void Dispose()
+        {
+            Snapshot?.Dispose();
+            Surface.Dispose();
+        }
     }
 
     private bool TryPushCachedBackdropLayer(IEffect effect, BackdropLayerCache cache, Rect? bounds)
     {
         // Consume the grant either way: it certifies this frame's dirty region
         // and must not fire later on a frame whose region no longer covers the
-        // filter's input.
+        // refresh's input.
         var refresh = cache.RefreshRequested;
         cache.RefreshRequested = false;
+        Rect[]? partialRects = null;
+        if (cache.RefreshRects.Count > 0)
+        {
+            if (refresh && cache.IsValid)
+                partialRects = cache.RefreshRects.ToArray();
+            cache.RefreshRects.Clear();
+        }
 
         var state = cache.PlatformState as SkiaBackdropCacheState;
         if (state != null && state.Context != _grContext)
         {
-            // The context the image lived on is gone. The target recreation
+            // The context the surface lived on is gone. The target recreation
             // that comes with a device loss forces a full redraw, so the live
             // path below stays correct, and the still-invalid slot makes the
             // compositor grant a refresh on the next frame that touches this
@@ -135,10 +148,16 @@ partial class DrawingContextImpl
             return false;
         }
 
-        if (cache.IsValid && state != null)
+        if (cache.IsValid && !refresh)
         {
-            DrawBackdropCache(state);
-            return true;
+            if (state is { Snapshot: not null })
+            {
+                DrawBackdropCache(state);
+                return true;
+            }
+
+            cache.IsValid = false; // valid without pixels: uncached in practice
+            return false;
         }
 
         if (!refresh)
@@ -147,14 +166,15 @@ partial class DrawingContextImpl
             return false;
         }
 
-        // Capture. The compositor widened this frame's dirty region to cover
-        // the whole input area, so the destination is fresh everywhere the
-        // filter reads. The result is built offscreen instead of through the
-        // save-layer backdrop so it can be retained; drawing pure filter(dest)
-        // src-over afterwards is exactly what restoring a backdrop-initialized
-        // layer with an empty subtree contribution does.
+        // A refresh grant. The compositor widened this frame's dirty region to
+        // cover the refresh's input area - the whole padded area for a full
+        // refresh, the granted sub-rects' neighborhoods for a partial one - so
+        // the destination is fresh everywhere the staging reads. The result is
+        // built offscreen instead of through the save-layer backdrop so it can
+        // be retained; drawing pure filter(dest) src-over afterwards is exactly
+        // what restoring a backdrop-initialized layer with an empty subtree
+        // contribution does.
         var ctm = Canvas.TotalMatrix;
-        SkiaBackdropCacheState newState;
         using (var dest = Surface.Snapshot())
         {
             var mapped = ctm.MapRect(localBounds.ToSKRect());
@@ -170,61 +190,146 @@ partial class DrawingContextImpl
                 return false;
             }
 
-            var info = new SKImageInfo(deviceRect.Width, deviceRect.Height,
-                dest.ColorType, SKAlphaType.Premul, dest.ColorSpace);
-            using var scratch = _grContext != null
-                ? SKSurface.Create(_grContext, false, info)
-                : SKSurface.Create(info);
-            if (scratch == null)
+            if (cache.IsValid)
             {
-                cache.IsValid = false;
-                return false;
+                // Partial refresh: only the granted sub-rects' input is
+                // certified fresh, so nothing broader may be re-ingested. If
+                // the retained surface no longer matches, fall to the live
+                // path; the next touch escalates to a full grant.
+                if (partialRects == null || state == null || state.DeviceRect != deviceRect)
+                {
+                    cache.IsValid = false;
+                    return false;
+                }
+
+                RefreshBackdropCachePartially(state, dest, effect, localBounds, ctm, partialRects);
             }
-
-            var scratchCanvas = scratch.Canvas;
-            scratchCanvas.Clear(SKColors.Transparent);
-
-            // A save-layer paint filter is applied with the matrix captured at
-            // the save, so set (device offset after ctm) for the filter, then
-            // drop to plain offset space inside the layer to land the snapshot
-            // pixels 1:1. The whole destination is the source, like the live
-            // sample - the filter reads only what it needs.
-            var offset = SKMatrix.CreateTranslation(-deviceRect.Left, -deviceRect.Top);
-            scratchCanvas.SetMatrix(SKMatrix.Concat(offset, ctm));
-
-            using (var filter = CreateEffect(effect, localBounds))
+            else
             {
-                var paint = SKPaintCache.Shared.Get();
-                paint.ImageFilter = filter;
-                scratchCanvas.SaveLayer(paint);
-                scratchCanvas.SetMatrix(offset);
-                scratchCanvas.DrawImage(dest, 0, 0);
-                scratchCanvas.Restore();
-                SKPaintCache.Shared.ReturnReset(paint);
-            }
+                // Full refresh: reallocate the retained surface when the rect
+                // or context moved on.
+                if (state == null || state.DeviceRect != deviceRect)
+                {
+                    (cache.PlatformState as IDisposable)?.Dispose();
+                    cache.PlatformState = null;
+                    var info = new SKImageInfo(deviceRect.Width, deviceRect.Height,
+                        dest.ColorType, SKAlphaType.Premul, dest.ColorSpace);
+                    var surface = _grContext != null
+                        ? SKSurface.Create(_grContext, false, info)
+                        : SKSurface.Create(info);
+                    if (surface == null)
+                    {
+                        cache.IsValid = false;
+                        return false;
+                    }
 
-            newState = new SkiaBackdropCacheState(_grContext, scratch.Snapshot(), deviceRect);
+                    state = new SkiaBackdropCacheState(_grContext, surface, deviceRect);
+                    cache.PlatformState = state;
+                }
+
+                // The old snapshot goes before the write, or the write forces a
+                // copy-on-write duplicate of the whole retained surface.
+                state.Snapshot?.Dispose();
+                state.Snapshot = null;
+
+                var canvas = state.Surface.Canvas;
+                canvas.Clear(SKColors.Transparent);
+
+                // A save-layer paint filter is applied with the matrix captured
+                // at the save, so set (device offset after ctm) for the filter,
+                // then drop to plain offset space inside the layer to land the
+                // snapshot pixels 1:1. The whole destination is the source, like
+                // the live sample - the filter reads only what it needs.
+                var offset = SKMatrix.CreateTranslation(-deviceRect.Left, -deviceRect.Top);
+                canvas.SetMatrix(SKMatrix.Concat(offset, ctm));
+
+                using (var filter = CreateEffect(effect, localBounds))
+                {
+                    var paint = SKPaintCache.Shared.Get();
+                    paint.ImageFilter = filter;
+                    canvas.SaveLayer(paint);
+                    canvas.SetMatrix(offset);
+                    canvas.DrawImage(dest, 0, 0);
+                    canvas.Restore();
+                    SKPaintCache.Shared.ReturnReset(paint);
+                }
+            }
         }
 
-        // The destination snapshot is disposed before the surface is written
-        // again, so drawing the image below does not force a copy-on-write of
-        // the whole target.
-        (cache.PlatformState as IDisposable)?.Dispose();
-        cache.PlatformState = newState;
+        // The destination snapshot is disposed before the target surface is
+        // written again, so the composite below does not force a copy-on-write
+        // of the whole target.
+        state = (SkiaBackdropCacheState)cache.PlatformState!;
+        state.Snapshot ??= state.Surface.Snapshot();
         cache.IsValid = true;
 
-        DrawBackdropCache(newState);
+        DrawBackdropCache(state);
         return true;
+    }
+
+    private void RefreshBackdropCachePartially(SkiaBackdropCacheState state, SKImage dest, IEffect effect,
+        Rect localBounds, SKMatrix ctm, Rect[] rects)
+    {
+        var deviceRect = state.DeviceRect;
+
+        // The old snapshot goes before the write, or the write forces a
+        // copy-on-write duplicate of the whole retained surface.
+        state.Snapshot?.Dispose();
+        state.Snapshot = null;
+
+        var canvas = state.Surface.Canvas;
+        var offset = SKMatrix.CreateTranslation(-deviceRect.Left, -deviceRect.Top);
+        using var filter = CreateEffect(effect, localBounds);
+        var paint = SKPaintCache.Shared.Get();
+        paint.ImageFilter = filter;
+        try
+        {
+            foreach (var local in rects)
+            {
+                var mapped = ctm.MapRect(local.ToSKRect());
+                var sub = new SKRectI(
+                    Math.Max(deviceRect.Left, (int)Math.Floor(mapped.Left)),
+                    Math.Max(deviceRect.Top, (int)Math.Floor(mapped.Top)),
+                    Math.Min(deviceRect.Right, (int)Math.Ceiling(mapped.Right)),
+                    Math.Min(deviceRect.Bottom, (int)Math.Ceiling(mapped.Bottom)));
+                if (sub.Width <= 0 || sub.Height <= 0)
+                    continue;
+
+                // Same staging recipe as the full capture, confined to the
+                // sub-rect: the filter reads its input margin beyond the clip
+                // from the drawn destination, which the partial grant's region
+                // covers. Clearing first stops the fresh output from blending
+                // over the stale pixels.
+                canvas.Save();
+                canvas.ResetMatrix();
+                canvas.ClipRect(SKRect.Create(
+                    sub.Left - deviceRect.Left, sub.Top - deviceRect.Top, sub.Width, sub.Height));
+                canvas.Clear(SKColors.Transparent);
+                canvas.SetMatrix(SKMatrix.Concat(offset, ctm));
+                canvas.SaveLayer(paint);
+                canvas.SetMatrix(offset);
+                canvas.DrawImage(dest, 0, 0);
+                canvas.Restore();
+                canvas.Restore();
+            }
+        }
+        finally
+        {
+            SKPaintCache.Shared.ReturnReset(paint);
+        }
     }
 
     private void DrawBackdropCache(SkiaBackdropCacheState state)
     {
+        if (state.Snapshot is not { } image)
+            return;
+
         // The image holds device pixels of this surface, so bypass the
         // transform to land it 1:1; the active clip - including a geometry clip
         // shaping the backdrop - still applies.
         Canvas.Save();
         Canvas.ResetMatrix();
-        Canvas.DrawImage(state.Image, state.DeviceRect.Left, state.DeviceRect.Top);
+        Canvas.DrawImage(image, state.DeviceRect.Left, state.DeviceRect.Top);
         Canvas.Restore();
     }
 }
