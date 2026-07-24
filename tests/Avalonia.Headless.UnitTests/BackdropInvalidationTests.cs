@@ -213,6 +213,79 @@ public class BackdropInvalidationTests
 #elif XUNIT
     [AvaloniaFact]
 #endif
+    public void Backdrop_Inside_A_Cached_Subtree_Tracks_Content_Behind_It()
+    {
+        // The panel and the content behind it live inside a bitmap-cached
+        // subtree, so the panel's filter samples the HOST surface (the cache
+        // texture). Its invalidation and refresh grants must therefore track
+        // the host's dirty space: a grant certified against the target's
+        // region lets the capture read a cache texture whose area beneath the
+        // panel still holds the previous filtered output, and re-filtering
+        // that smears. The repeated toggle amplifies any such feedback; the
+        // final frame must match a fresh one-pass render of the same scene.
+        static (Window Window, Border Behind) BuildCachedScene(IBrush behindBrush)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+
+            var cached = new Canvas
+            {
+                Width = Size, Height = Size,
+                CacheMode = new BitmapCache()
+            };
+            host.Children.Add(cached);
+
+            var behind = new Border
+            {
+                Background = behindBrush, Width = 80, Height = 60,
+                [Canvas.LeftProperty] = 50.0, [Canvas.TopProperty] = 60.0
+            };
+            cached.Children.Add(behind);
+
+            var panel = new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = new ImmutableBlurEffect(6),
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            };
+            cached.Children.Add(panel);
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, behind);
+        }
+
+        var (window, behind) = BuildCachedScene(Brushes.Crimson);
+        _ = Sample(window, PanelRect);
+
+        // Alternate the content beneath; every toggle re-filters.
+        for (var i = 0; i < 6; i++)
+        {
+            behind.Background = i % 2 == 0 ? Brushes.DodgerBlue : Brushes.Crimson;
+            Dispatcher.UIThread.RunJobs();
+            _ = Sample(window, PanelRect);
+        }
+
+        behind.Background = Brushes.DodgerBlue;
+        Dispatcher.UIThread.RunJobs();
+        var toggled = Sample(window, PanelRect);
+
+        var (reference, _) = BuildCachedScene(Brushes.DodgerBlue);
+        var fresh = Sample(reference, PanelRect);
+
+        AssertHelper.True(Distance(toggled, fresh) <= 3,
+            "The filtered result inside the cached subtree drifted from a fresh render: " +
+            $"toggled {toggled} vs fresh {fresh} (delta {Distance(toggled, fresh):F2}).");
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
     public void Backdrop_Result_Is_Stable_While_Only_Content_Above_It_Changes()
     {
         // The panel's own child paints above the point where the filter samples
