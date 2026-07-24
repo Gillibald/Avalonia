@@ -390,6 +390,101 @@ public class BackdropInvalidationTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Backdrop_Child_Bounds_Animation_Should_Keep_The_Cached_Result()
+    {
+        using var s = new CompositorCanvas();
+
+        var badge = new Border
+        {
+            Background = Brushes.Red, Width = 8, Height = 8,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Child = badge;
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+
+        // The badge bounces inside the panel via RenderTransform - translate
+        // AND scale, so its bounds genuinely change every frame, purely on the
+        // render side (no measure runs, so the glass itself stays untouched;
+        // see the measure-driven pin below for why that matters). The backdrop
+        // region is the element's box, not the subtree union: the churning
+        // child bounds must neither resize the sampled region, nor invalidate
+        // the retained result, nor drag the panel's far side into the repaint.
+        // (A subtree-derived region would do all three on every frame.)
+        var dx = new[] { 6d, 12, 18, 12, 6, 0 };
+        var scales = new[] { 1d, 1.5, 1.25, 1, 1.5, 1.25 };
+
+        // A band beneath the glass the badge never reaches: y 74..86 against
+        // badge travel of y 52..64 (scale about the badge's own center).
+        var strip = new Rect(52, 74, 32, 12);
+
+        for (var i = 0; i < dx.Length; i++)
+        {
+            s.Events.Rects.Clear();
+            badge.RenderTransform = new MatrixTransform(
+                Matrix.CreateScale(scales[i], scales[i]) * Matrix.CreateTranslation(dx[i], 0));
+            s.RunJobs();
+
+            // The transform is about the badge center (54 + dx, 58): its new
+            // bounds are that center +/- 4 * scale.
+            var half = 4 * scales[i];
+            AssertCovers(s, new Rect(54 + dx[i] - half, 58 - half, 2 * half, 2 * half));
+            AssertDoesNotCover(s, strip);
+            Assert.True(cache.IsValid);
+            Assert.False(cache.RefreshRequested);
+        }
+    }
+
+    [Fact]
+    public void Backdrop_Measure_Driven_Child_Change_Currently_Rerecords_The_Glass()
+    {
+        using var s = new CompositorCanvas();
+
+        var badge = new Border
+        {
+            Background = Brushes.Red, Width = 8, Height = 8,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Child = badge;
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        var cache = ServerCacheOf(s, panel);
+        cache.IsValid = true;
+        cache.RefreshRequested = false;
+        s.Events.Rects.Clear();
+
+        // KNOWN COST, pinned deliberately: a measure-affecting child change
+        // (Margin/Width) bubbles ChildDesiredSizeChanged into the glass, and
+        // Layoutable.InvalidateMeasure unconditionally calls InvalidateVisual,
+        // re-recording the glass's own draw list even though it draws the same
+        // pixels. The server rightly classifies that as self-dirty: the whole
+        // box repaints and the retained result is dropped. This is upstream
+        // invalidation coarseness, independent of the backdrop design (a plain
+        // Border with no backdrop repaints its whole box on the same change);
+        // the analysis and fix directions live in
+        // planning/measure-invalidate-repaint-coarseness.md. Inverting these
+        // assertions is the ready-made red test for that framework fix.
+        badge.Margin = new Thickness(6, 4, 0, 0);
+        badge.Width = 12;
+        s.RunJobs();
+
+        AssertCovers(s, new Rect(50, 50, 40, 40));
+        Assert.False(cache.IsValid);
+        Assert.True(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Backdrop_Registers_When_The_Effect_Is_Set_Before_Attaching()
     {
         using var s = new CompositorCanvas();

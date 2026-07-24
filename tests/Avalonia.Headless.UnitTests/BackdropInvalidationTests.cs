@@ -492,4 +492,97 @@ public class BackdropInvalidationTests
         AssertHelper.True(Distance(first, Sample(window, band)) > Threshold,
             "A change behind the panel did not refresh the filtered result.");
     }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
+    public void Backdrop_Result_Is_Stable_While_A_Child_Animates_Its_Bounds()
+    {
+        // Like the content-above stability test, but the child's BOUNDS change:
+        // Margin and Width animate, so real layout-driven bounds changes flow
+        // through the update walk every frame. The backdrop region is the
+        // element's box, not the subtree union, so the roaming child never
+        // resizes the sampled region: the filtered band away from the child
+        // stays bit-stable against its first frame, while a real change
+        // beneath must still refresh it. (Pixel-stable, not repaint-free:
+        // measure-driven churn currently re-records the glass itself - the
+        // known cost pinned by the compositor suite - but re-filtering the
+        // unchanged surface reproduces the same band.)
+        var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+
+        var badge = new Border
+        {
+            Width = 14, Height = 20, Background = Brushes.Black,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(70, 10, 0, 0)
+        };
+        var panel = new Border
+        {
+            Width = PanelRect.Width,
+            Height = PanelRect.Height,
+            Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+            BackdropEffect = new ImmutableBlurEffect(6),
+            Child = badge
+        };
+        Canvas.SetLeft(panel, PanelRect.X);
+        Canvas.SetTop(panel, PanelRect.Y);
+
+        var behind = new Canvas { Width = Size, Height = Size };
+        host.Children.Add(behind);
+        host.Children.Add(panel);
+
+        var window = new Window { Content = host, Width = Size, Height = Size };
+        window.Show();
+        Dispatcher.UIThread.RunJobs();
+
+        var compositor = ElementComposition.GetElementVisual(window)!.Compositor;
+        var recordingVisual = compositor.CreateRecordingVisual();
+        recordingVisual.Recording = DrawingRecording.Create(compositor, ctx =>
+        {
+            ctx.DrawRectangle(Brushes.Crimson, null, new Rect(20, 60, 90, 80));
+            ctx.DrawEllipse(Brushes.DodgerBlue, null, new Rect(60, 80, 70, 50));
+        });
+        recordingVisual.Size = new Vector(Size, Size);
+        ElementComposition.SetElementChildVisual(behind, recordingVisual);
+        Dispatcher.UIThread.RunJobs();
+
+        // The badge roams x = 110..152 in the panel's right half; the band on
+        // the left only ever shows the filtered backdrop, and the roam probe
+        // sits where the badge's far travel lands.
+        var band = new Rect(44, 74, 56, 50);
+        var roam = new Rect(126, 78, 24, 24);
+
+        var margins = new[] { 78d, 86, 90, 82, 74, 70 };
+        var widths = new[] { 18d, 22, 20, 16, 14, 18 };
+
+        var first = Sample(window, band);
+        var roamFirst = Sample(window, roam);
+        var badgeMoved = 0d;
+        var drift = 0d;
+
+        for (var i = 0; i < margins.Length; i++)
+        {
+            badge.Margin = new Thickness(margins[i], 10, 0, 0);
+            badge.Width = widths[i];
+            Dispatcher.UIThread.RunJobs();
+
+            drift = Math.Max(drift, Distance(first, Sample(window, band)));
+            badgeMoved = Math.Max(badgeMoved, Distance(roamFirst, Sample(window, roam)));
+        }
+
+        AssertHelper.True(badgeMoved > Threshold,
+            $"The child's bounds never visibly changed (spread {badgeMoved:F2}); the test exercised nothing.");
+        AssertHelper.True(drift < 2,
+            $"The filtered band drifted {drift:F2} while a child animated its bounds above the backdrop.");
+
+        recordingVisual.Recording = DrawingRecording.Create(compositor, ctx =>
+            ctx.DrawRectangle(Brushes.MediumSeaGreen, null, new Rect(0, 0, Size, Size)));
+        Dispatcher.UIThread.RunJobs();
+
+        AssertHelper.True(Distance(first, Sample(window, band)) > Threshold,
+            "A change behind the panel did not refresh the filtered result.");
+    }
 }
