@@ -41,6 +41,7 @@ namespace Avalonia.Rendering.Composition.Server
         private readonly List<LtrbRect> _backdropWorkingSet = new();
         private readonly List<LtrbRect> _backdropDirtRects = new();
         private readonly List<LtrbRect> _partialDirtScratch = new();
+        private readonly List<BackdropJournalEntry> _backdropJournal = new();
 
         // A partial refresh past this many sub-rects degrades to a full one:
         // per-rect staging stops paying off and the bookkeeping stays tiny.
@@ -149,18 +150,21 @@ namespace Avalonia.Rendering.Composition.Server
                 List<BackdropCapture>? backdropCaptures = null;
                 List<BackdropHostRecord>? backdropHosts = null;
                 List<LtrbRect>? backdropDirtRects = null;
+                List<BackdropJournalEntry>? backdropJournal = null;
                 if (_backdropVisuals.Count > 0)
                 {
                     _backdropCaptures.Clear();
                     _backdropHosts.Clear();
                     _backdropDirtRects.Clear();
+                    _backdropJournal.Clear();
                     backdropCaptures = _backdropCaptures;
                     backdropHosts = _backdropHosts;
                     backdropDirtRects = _backdropDirtRects;
+                    backdropJournal = _backdropJournal;
                 }
 
                 Root.UpdateRoot(collector, transform, new LtrbRect(0, 0, PixelSize.Width, PixelSize.Height),
-                    backdropCaptures, backdropHosts, backdropDirtRects);
+                    backdropCaptures, backdropHosts, backdropDirtRects, backdropJournal);
 
                 ExpandDirtyRegionForBackdrops(collector, transform);
 
@@ -427,7 +431,7 @@ namespace Avalonia.Rendering.Composition.Server
             IEffect effect, LtrbRect box, LtrbRect inputArea, IDirtyRectCollector hostCollector,
             ref bool added, ref bool receivedDamage)
         {
-            if (!capture.Captured || capture.SelfDirty || capture.DirtOverflow
+            if (capture.SelfDirty || capture.DirtOverflow
                 || capture.StalePartialGrant
                 || capture.LocalToHost is not { } localToHost
                 || !localToHost.TryInvert(out var hostToLocal))
@@ -498,7 +502,8 @@ namespace Avalonia.Rendering.Composition.Server
                 if (!covered)
                 {
                     hostCollector.AddRect(input);
-                    _backdropExpansions.Add((hostCollector, input, capture.DfsIndex));
+                    _backdropExpansions.Add((hostCollector, input,
+                        capture.DfsIndex == int.MaxValue ? int.MinValue : capture.DfsIndex));
                     added = true;
                     receivedDamage = true;
                 }
@@ -506,6 +511,129 @@ namespace Avalonia.Rendering.Composition.Server
 
             cache.RefreshRequested = true;
             return true;
+        }
+
+        private void SweepUncapturedBackdrop(ServerCompositionVisual visual, IDirtyRectCollector rootCollector,
+            Matrix transform)
+        {
+            var hostOwner = NearestCacheHostOwner(visual);
+            var hostCollector = hostOwner?.Cache?.DirtyRectCollector ?? rootCollector;
+            var bounds = visual.TryGetHostBounds(transform, hostOwner, out var cacheable, out var localToHost);
+
+            var belowDirt = false;
+            var dirtStart = _backdropDirtRects.Count;
+            var dirtCount = 0;
+            var dirtOverflow = false;
+            if (bounds is { } hostBounds && visual.BackdropEffect is { } effect)
+            {
+                var area = hostBounds.Inflate(effect.GetEffectOutputPadding());
+                foreach (var entry in _backdropJournal)
+                {
+                    if (!ReferenceEquals(entry.Host, hostCollector) || !entry.Rect.Intersects(area))
+                        continue;
+
+                    var before = PaintsBefore(entry.Emitter, visual);
+                    if (before == false)
+                        continue; // provably painted above the sample point
+
+                    belowDirt = true;
+                    if (before == null)
+                    {
+                        // An ancestor's covering rect (or an unresolvable
+                        // relation) mixes content from both sides: full only.
+                        dirtOverflow = true;
+                    }
+                    else if (dirtCount < MaxPartialRefreshRects)
+                    {
+                        _backdropDirtRects.Add(entry.Rect.IntersectOrEmpty(area));
+                        dirtCount++;
+                    }
+                    else
+                    {
+                        dirtOverflow = true;
+                    }
+                }
+            }
+
+            var stalePartialGrant = visual.BackdropCache is { IsValid: true, RefreshRequested: true };
+
+            // DfsIndex int.MaxValue: the glass has no walk position, so every
+            // expansion counts as painted beneath it (conservative receive);
+            // its own expansions are tagged int.MinValue at the add sites so
+            // they deliver to everyone (conservative send).
+            _backdropCaptures.Add(new BackdropCapture(
+                visual, hostCollector, int.MaxValue, SelfDirty: false, belowDirt, bounds, cacheable,
+                dirtStart, dirtCount, dirtOverflow, localToHost, stalePartialGrant));
+        }
+
+        /// <summary>
+        /// Whether <paramref name="emitter"/> paints before (beneath)
+        /// <paramref name="backdrop"/> in document order; false when provably
+        /// after (above); null when the relation cannot be established - an
+        /// emitter on the backdrop's ancestor chain (its rect mixes content
+        /// from both sides of the sample point) or a broken parent chain.
+        /// </summary>
+        private static bool? PaintsBefore(ServerCompositionVisual emitter, ServerCompositionVisual backdrop)
+        {
+            if (ReferenceEquals(emitter, backdrop))
+                return null;
+
+            var emitterDepth = DepthOf(emitter);
+            var backdropDepth = DepthOf(backdrop);
+
+            var e = emitter;
+            var b = backdrop;
+            ServerCompositionVisual? emitterBranch = null;
+            ServerCompositionVisual? backdropBranch = null;
+            while (emitterDepth > backdropDepth)
+            {
+                emitterBranch = e;
+                e = e.Parent!;
+                emitterDepth--;
+            }
+
+            while (backdropDepth > emitterDepth)
+            {
+                backdropBranch = b;
+                b = b.Parent!;
+                backdropDepth--;
+            }
+
+            while (!ReferenceEquals(e, b))
+            {
+                if (e.Parent == null || b.Parent == null)
+                    return null;
+                emitterBranch = e;
+                backdropBranch = b;
+                e = e.Parent;
+                b = b.Parent;
+            }
+
+            if (emitterBranch == null)
+                return null; // the emitter is an ancestor of the backdrop
+            // An emitter inside the backdrop's subtree cannot happen for a
+            // swept backdrop (a dirty descendant forces the walk through the
+            // glass, which captures it); classify as beneath defensively.
+            if (backdropBranch == null)
+                return true;
+
+            var children = e.Children?.List;
+            if (children == null)
+                return null;
+            var emitterIndex = children.IndexOf(emitterBranch);
+            var backdropIndex = children.IndexOf(backdropBranch);
+            if (emitterIndex < 0 || backdropIndex < 0)
+                return null;
+
+            return emitterIndex < backdropIndex;
+        }
+
+        private static int DepthOf(ServerCompositionVisual visual)
+        {
+            var depth = 0;
+            for (var parent = visual.Parent; parent != null; parent = parent.Parent)
+                depth++;
+            return depth;
         }
 
         private static ServerCompositionVisual? NearestCacheHostOwner(ServerCompositionVisual visual)
@@ -559,22 +687,18 @@ namespace Avalonia.Rendering.Composition.Server
                 return;
 
             // Registered backdrops the walk never reached (a clean spine or a
-            // clean cache boundary): no position and no classification exist,
-            // so any touch of their host's damage invalidates.
+            // clean cache boundary): the walk stamped no position for them, so
+            // classify from the positional journal instead - each emitted rect
+            // carries its emitting visual, and document order against the
+            // glass decides above/below exactly as the in-walk capture would
+            // have. Anything the comparison cannot prove counts as beneath.
             foreach (var visual in _backdropVisuals)
             {
                 var captured = false;
                 for (var i = 0; i < _backdropCaptures.Count && !captured; i++)
                     captured = ReferenceEquals(_backdropCaptures[i].Visual, visual);
                 if (!captured)
-                {
-                    var hostOwner = NearestCacheHostOwner(visual);
-                    var hostCollector = hostOwner?.Cache?.DirtyRectCollector ?? collector;
-                    var bounds = visual.TryGetHostBounds(transform, hostOwner, out var uncapturedCacheable);
-                    _backdropCaptures.Add(new BackdropCapture(
-                        visual, hostCollector, int.MaxValue, SelfDirty: false, BelowDirt: false,
-                        bounds, uncapturedCacheable, Captured: false));
-                }
+                    SweepUncapturedBackdrop(visual, collector, transform);
             }
 
             // Process hosts deepest-first so a child host's propagated damage is
@@ -668,7 +792,7 @@ namespace Avalonia.Rendering.Composition.Server
                     // own relocation) changes what the filter reads. Expansion
                     // output of an earlier-painted backdrop also repaints
                     // beneath this one.
-                    var invalidated = capture.SelfDirty || capture.BelowDirt || !capture.Captured;
+                    var invalidated = capture.SelfDirty || capture.BelowDirt;
                     if (!invalidated)
                     {
                         foreach (var expansion in _backdropExpansions)
@@ -713,7 +837,10 @@ namespace Avalonia.Rendering.Composition.Server
                         continue; // some rect already repaints the full input; nothing to widen
 
                     hostCollector.AddRect(area);
-                    _backdropExpansions.Add((hostCollector, area, capture.DfsIndex));
+                    // A swept glass (DfsIndex MaxValue) has no provable paint
+                    // position, so its expansion delivers to everyone.
+                    _backdropExpansions.Add((hostCollector, area,
+                        capture.DfsIndex == int.MaxValue ? int.MinValue : capture.DfsIndex));
                     added = true;
                     receivedDamage = true;
                 }
@@ -772,14 +899,15 @@ namespace Avalonia.Rendering.Composition.Server
     }
 
     /// <summary>
-    /// A registered backdrop's per-frame classification, captured by the update
-    /// walk at the visual's own walk position within its host - the bitmap
-    /// cache (or the target) whose surface the backdrop samples. Damage already
-    /// emitted at that point painted at or beneath the sample point; later
-    /// damage paints above it inside the backdrop's layer and cannot change
-    /// what the filter reads. <paramref name="Captured"/> is false for
-    /// backdrops the walk never reached - they carry no position, so any touch
-    /// invalidates.
+    /// A registered backdrop's per-frame classification within its host - the
+    /// bitmap cache (or the target) whose surface the backdrop samples. The
+    /// update walk captures visited backdrops at their own walk position:
+    /// damage already emitted at that point painted at or beneath the sample
+    /// point; later damage paints above it inside the backdrop's layer and
+    /// cannot change what the filter reads. Backdrops the walk never reached
+    /// (a clean spine) are classified by the post-walk journal sweep instead
+    /// and carry <see cref="DfsIndex"/> <see cref="int.MaxValue"/>: they have
+    /// no walk position, so every expansion delivers to them.
     /// </summary>
     internal readonly record struct BackdropCapture(
         ServerCompositionVisual Visual,
@@ -789,12 +917,22 @@ namespace Avalonia.Rendering.Composition.Server
         bool BelowDirt,
         LtrbRect? HostBounds,
         bool Cacheable,
-        bool Captured,
         int DirtStart = 0,
         int DirtCount = 0,
         bool DirtOverflow = true,
         Matrix? LocalToHost = null,
         bool StalePartialGrant = false);
+
+    /// <summary>
+    /// A dirty rect emitted by the update walk into a host collector, tagged
+    /// with the visual that emitted it. Backdrops the walk never visited have
+    /// no stamped position, so the post-walk sweep classifies these entries by
+    /// document order against the glass instead.
+    /// </summary>
+    internal readonly record struct BackdropJournalEntry(
+        IDirtyRectCollector Host,
+        LtrbRect Rect,
+        ServerCompositionVisual Emitter);
 
     /// <summary>
     /// A bitmap-cache host the update walk entered, recorded at the cache
