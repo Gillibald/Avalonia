@@ -22,6 +22,10 @@ internal partial class ServerCompositionVisual
         private readonly List<BackdropCapture>? _backdropCaptures;
         private readonly List<BackdropHostRecord>? _backdropHosts;
         private readonly List<LtrbRect>? _backdropDirtRects;
+        private readonly List<BackdropJournalEntry>? _backdropJournal;
+        // The visual whose Pre/PostSubgraph is currently executing: every rect
+        // emitted meanwhile belongs to it positionally.
+        private ServerCompositionVisual? _currentNode;
         private readonly IDirtyRectCollector _rootCollector;
         private readonly Matrix _rootTransform;
         // The bitmap-cache host the walk is currently inside (null = the render
@@ -46,7 +50,7 @@ internal partial class ServerCompositionVisual
 
         public UpdateContext(CompositorPools pools, IDirtyRectCollector dirtyRects, Matrix transform, LtrbRect clip,
             List<BackdropCapture>? backdropCaptures, List<BackdropHostRecord>? backdropHosts,
-            List<LtrbRect>? backdropDirtRects)
+            List<LtrbRect>? backdropDirtRects, List<BackdropJournalEntry>? backdropJournal)
         {
             _dirtyRegion = dirtyRects;
             _rootCollector = dirtyRects;
@@ -55,6 +59,7 @@ internal partial class ServerCompositionVisual
             _backdropCaptures = backdropCaptures;
             _backdropHosts = backdropHosts;
             _backdropDirtRects = backdropDirtRects;
+            _backdropJournal = backdropJournal;
             _context = new TreeWalkContext(pools, transform, clip);
             _dirtyRegionDisableCountStack = pools.IntStackPool.Rent();
             _dirtyRegionCollectorStack = pools.DirtyRectCollectorStackPool.Rent();
@@ -194,6 +199,7 @@ internal partial class ServerCompositionVisual
         public void PreSubgraph(ServerCompositionVisual node, out bool visitChildren)
         {
             _dfsCounter++;
+            _currentNode = node;
 
             visitChildren = node._isDirtyForRenderInSubgraph || node._needsBoundingBoxUpdate;
 
@@ -276,6 +282,7 @@ internal partial class ServerCompositionVisual
 
         public void PostSubgraph(ServerCompositionVisual node)
         {
+            _currentNode = node;
             var parent = node.Parent;
             if (node._needsBoundingBoxUpdate)
             {
@@ -413,7 +420,7 @@ internal partial class ServerCompositionVisual
 
             _backdropCaptures.Add(new BackdropCapture(
                 node, _currentHostCollector, _dfsCounter, node._isDirtyForRender, belowDirt, bounds, cacheable,
-                Captured: true, dirtStart, dirtCount, dirtOverflow, localToHost, stalePartialGrant));
+                dirtStart, dirtCount, dirtOverflow, localToHost, stalePartialGrant));
         }
 
         private void FinalizeSubtreeBounds(ServerCompositionVisual node)
@@ -452,6 +459,14 @@ internal partial class ServerCompositionVisual
                 return;
 
             _dirtyRegion.AddRect(transformed);
+
+            // Journal host-space emissions with their emitting visual so the
+            // post-walk sweep can position-classify damage for backdrops the
+            // walk never reached. Redirected (union) emissions are skipped;
+            // their final rect re-enters here once the redirect pops.
+            if (_backdropJournal != null && _currentNode != null
+                && ReferenceEquals(_dirtyRegion, _currentHostCollector))
+                _backdropJournal.Add(new BackdropJournalEntry(_currentHostCollector, transformed, _currentNode));
         }
         
         private void PushBoundsAffectingProperties(ServerCompositionVisual node)
@@ -481,10 +496,10 @@ internal partial class ServerCompositionVisual
     
     public void UpdateRoot(IDirtyRectCollector tracker, Matrix transform, LtrbRect clip,
         List<BackdropCapture>? backdropCaptures = null, List<BackdropHostRecord>? backdropHosts = null,
-        List<LtrbRect>? backdropDirtRects = null)
+        List<LtrbRect>? backdropDirtRects = null, List<BackdropJournalEntry>? backdropJournal = null)
     {
         var context = new UpdateContext(Compositor.Pools, tracker, transform, clip, backdropCaptures, backdropHosts,
-            backdropDirtRects);
+            backdropDirtRects, backdropJournal);
         ServerTreeWalker<UpdateContext>.Walk(ref context, this);
         context.Dispose();
     }
