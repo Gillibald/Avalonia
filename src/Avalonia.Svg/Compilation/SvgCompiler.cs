@@ -103,6 +103,8 @@ internal static class SvgCompiler
             var compileContext = new SvgCompileContext(document, contentViewport)
             {
                 PaintAnimationTargets = options.PaintAnimationTargets,
+                LiftedPaintBrushes = options.LiftedPaintBrushes,
+                SeededLiftedTargets = options.SeededLiftedTargets,
                 ElementFilter = options.ElementFilter,
             };
 
@@ -918,7 +920,9 @@ internal static class SvgCompiler
         SvgElement element, in SvgStyle style, SvgCompileContext compileContext, Rect bounds)
     {
         var brush = ResolvePaint(style.Fill, style, compileContext, bounds, style.FillOpacity);
-        return compileContext.TryGetAnimatedBrush(element, "fill", brush) ?? (IBrush?)brush;
+        return compileContext.TryGetLiftedBrush(element, "fill", brush)
+            ?? compileContext.TryGetAnimatedBrush(element, "fill", brush)
+            ?? (IBrush?)brush;
     }
 
     /// <inheritdoc cref="ResolveFillForDrawing"/>
@@ -926,6 +930,8 @@ internal static class SvgCompiler
         SvgElement element, in SvgStyle style, SvgCompileContext compileContext, Rect bounds)
     {
         var brush = ResolvePaint(style.Stroke, style, compileContext, bounds, style.StrokeOpacity);
+        if (compileContext.TryGetLiftedBrush(element, "stroke", brush) is { } lifted)
+            return style.ResolveMutablePen(lifted);
         if (compileContext.TryGetAnimatedBrush(element, "stroke", brush) is { } animated)
             return style.ResolveMutablePen(animated);
         return style.ResolvePen(brush);

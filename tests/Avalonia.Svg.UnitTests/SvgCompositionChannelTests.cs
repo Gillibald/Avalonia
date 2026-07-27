@@ -53,6 +53,77 @@ public class SvgCompositionChannelTests
     }
 
     [Fact]
+    public void Indefinite_Color_Paint_Classifies_For_The_Composition_Channel()
+    {
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <circle cx="50" cy="50" r="30" fill="#22d3ee">
+                <animate attributeName="fill" values="#22d3ee;#f472b6;#22d3ee" dur="6s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        Assert.True(SvgCompositionAnimation.TryClassifyPaint(animator.Entries[0], out var frames));
+        Assert.Equal(3, frames.Length);
+        Assert.Equal(Color.FromRgb(0x22, 0xd3, 0xee), frames[0]);
+        Assert.Equal(Color.FromRgb(0xf4, 0x72, 0xb6), frames[1]);
+    }
+
+    [Theory]
+    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s" begin="1s" repeatCount="indefinite"/>""")] // delayed begin
+    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s" calcMode="discrete" repeatCount="indefinite"/>""")] // discrete
+    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s"/>""")] // finite without freeze
+    [InlineData("""<set attributeName="fill" to="#0000ff" dur="2s"/>""")] // set
+    [InlineData("""<animate attributeName="fill" values="url(#a);url(#b)" dur="2s" repeatCount="indefinite"/>""")] // not colors
+    public void Ineligible_Paint_Shapes_Stay_On_The_Sampled_Channel(string animation)
+    {
+        using var document = SvgDocument.Parse(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="10" height="10" fill="#ff0000">{animation}</rect>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        Assert.False(SvgCompositionAnimation.TryClassifyPaint(animator.Entries[0], out _));
+    }
+
+    [Fact]
+    public void Composition_Color_Interpolation_Matches_The_Sampled_Channel_Within_One_Bit()
+    {
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="10" height="10" fill="#102030">
+                <animate attributeName="fill" from="#102030" to="#e0d0c0" dur="10s" repeatCount="indefinite"/>
+              </rect>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+        var entry = animator.Entries[0];
+
+        Assert.True(SvgCompositionAnimation.TryClassifyPaint(entry, out var frames));
+
+        // Both channels lerp per channel in sRGB; the compositor truncates
+        // where the sampler rounds, so they may sit one bit apart but no more.
+        foreach (var progress in new[] { 0.25f, 0.5f, 0.75f })
+        {
+            var sampledValue = entry.Sample(TimeSpan.FromSeconds(10 * progress))!;
+            Assert.True(Avalonia.Media.Svg.Parsing.SvgColor.TryParse(sampledValue, out var sampled));
+
+            var composed = Avalonia.Rendering.Composition.Animations.ColorInterpolator.Instance
+                .Interpolate(frames[0], frames[1], progress);
+
+            Assert.True(Math.Abs(sampled.R - composed.R) <= 1, $"R at {progress}: {sampled} vs {composed}");
+            Assert.True(Math.Abs(sampled.G - composed.G) <= 1, $"G at {progress}: {sampled} vs {composed}");
+            Assert.True(Math.Abs(sampled.B - composed.B) <= 1, $"B at {progress}: {sampled} vs {composed}");
+            Assert.Equal(sampled.A, composed.A);
+        }
+    }
+
+    [Fact]
     public void Finite_Frozen_Repeat_Classifies()
     {
         using var document = SvgDocument.Parse(

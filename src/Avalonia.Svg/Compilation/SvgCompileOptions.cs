@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Rendering.Composition;
 
 namespace Avalonia.Media.Svg.Compilation;
 
@@ -29,6 +30,22 @@ internal sealed class SvgCompileOptions
     /// visuals.
     /// </summary>
     public Func<SvgElement, bool>? ElementFilter { get; init; }
+
+    /// <summary>
+    /// Composition brushes pre-created for paint targets lifted to the
+    /// composition channel: the compiler paints with these instead of
+    /// registering mutable brushes, and their color animations run on the
+    /// render thread. Each brush is seeded from the statically resolved paint
+    /// exactly once (tracked in <see cref="SeededLiftedTargets"/>) - a later
+    /// client write would detach the running server animation.
+    /// </summary>
+    public IReadOnlyDictionary<(SvgElement Element, string Attribute), CompositionSolidColorBrush>? LiftedPaintBrushes { get; init; }
+
+    /// <summary>
+    /// Targets whose lifted brush has been seeded; owned by the host so the
+    /// guard survives structural re-compiles.
+    /// </summary>
+    public HashSet<(SvgElement Element, string Attribute)>? SeededLiftedTargets { get; init; }
 
     /// <summary>The hit-test tree root, when <see cref="BuildHitTree"/> was set.</summary>
     public SvgHitNode? HitRoot { get; internal set; }
