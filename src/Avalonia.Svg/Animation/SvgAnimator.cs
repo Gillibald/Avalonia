@@ -98,8 +98,33 @@ internal sealed class SvgAnimator
     public bool IsPaintEntry(SvgAnimationEntry entry) => IsPaintEligible(entry);
 
     /// <summary>
+    /// The gradient definition an entry animates, when it targets a gradient
+    /// element or content inside one (its stops); null otherwise. Gradient
+    /// timelines have no sampled channel - the effect of a gradient attribute
+    /// surfaces at the shapes consuming the definition, not at the target's
+    /// own position, so sampling into overrides would recompile nothing
+    /// useful. They either lift to a composition gradient brush or stay
+    /// inert, and <see cref="Apply"/>, <see cref="HasUnclaimedWork"/> and the
+    /// partitioner skip them.
+    /// </summary>
+    public SvgElement? GetGradientElement(SvgAnimationEntry entry)
+    {
+        for (var current = entry.Target; current != null; current = current.Parent)
+        {
+            if (current.Name is "linearGradient" or "radialGradient")
+                return current;
+        }
+
+        return null;
+    }
+
+    /// <summary>Whether an entry animates a gradient definition; see <see cref="GetGradientElement"/>.</summary>
+    public bool IsGradientEntry(SvgAnimationEntry entry) => GetGradientElement(entry) != null;
+
+    /// <summary>
     /// True while any entry still needs UI-thread ticking — claimed entries
-    /// run as server-side composition animations instead.
+    /// run as server-side composition animations instead, and unclaimed
+    /// gradient entries are inert rather than sampled.
     /// </summary>
     public bool HasUnclaimedWork
     {
@@ -107,7 +132,7 @@ internal sealed class SvgAnimator
         {
             foreach (var entry in _entries)
             {
-                if (!entry.Claimed)
+                if (!entry.Claimed && !IsGradientEntry(entry))
                     return true;
             }
 
@@ -127,7 +152,7 @@ internal sealed class SvgAnimator
 
         foreach (var entry in _entries)
         {
-            if (entry.Claimed)
+            if (entry.Claimed || IsGradientEntry(entry))
                 continue;
 
             var value = entry.Sample(time);
@@ -288,10 +313,22 @@ internal sealed class SvgAnimator
     {
         for (var current = element.Parent; current != null; current = current.Parent)
         {
-            if (current.Name is "symbol" or "marker" or "pattern" or "mask"
-                or "linearGradient" or "radialGradient" or "clipPath" or "filter")
+            switch (current.Name)
             {
-                return true;
+                // Gradient-scoped animations are a channel of their own: they
+                // lift to a composition gradient brush or stay inert, decided
+                // by the nearest gradient ancestor.
+                case "linearGradient":
+                case "radialGradient":
+                    return false;
+
+                case "symbol":
+                case "marker":
+                case "pattern":
+                case "mask":
+                case "clipPath":
+                case "filter":
+                    return true;
             }
         }
 

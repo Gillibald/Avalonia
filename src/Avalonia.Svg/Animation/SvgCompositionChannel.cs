@@ -188,21 +188,71 @@ internal sealed class SvgCompositionAnimation
     }
 
     /// <summary>
+    /// The timing gate for brush-property lifts (paint colors, gradient
+    /// timelines): like <see cref="HasCompositionCompatibleTiming"/> but also
+    /// admitting <c>calcMode="discrete"</c> (expressed as stepped key frames)
+    /// and delayed begins (the host defers the animation start past the seed
+    /// commit so the base value survives the delay). The transform channel
+    /// keeps the strict gate - its frame builder is linear-only.
+    /// </summary>
+    internal static bool HasLiftableTiming(SvgAnimationEntry entry)
+    {
+        if (entry.IsSet || entry.Values.Length < 2
+            || entry.Duration < TimeSpan.FromMilliseconds(1) || entry.Begin < TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        var indefinite = double.IsPositiveInfinity(entry.RepeatCount);
+        return indefinite || (entry.RepeatCount % 1 == 0 && entry.RepeatCount >= 1 && entry.Freeze);
+    }
+
+    /// <summary>
+    /// The key positions for an entry's values: evenly spaced ramps for linear
+    /// interpolation, or stepped pairs holding each value across its interval
+    /// (with a negligible ramp at each boundary) for <c>calcMode="discrete"</c>,
+    /// mirroring the sampled channel's step mapping.
+    /// </summary>
+    internal static (float Key, int ValueIndex)[] BuildKeyFrames(SvgAnimationEntry entry)
+    {
+        var count = entry.Values.Length;
+
+        if (!entry.Discrete)
+        {
+            var frames = new (float, int)[count];
+            var last = count - 1;
+            for (var i = 0; i < count; i++)
+                frames[i] = (last == 0 ? 1f : (float)i / last, i);
+            return frames;
+        }
+
+        // N discrete values split the duration into N equal steps; each value
+        // holds its interval and switches inside a sub-millisecond ramp.
+        const float epsilon = 0.0005f;
+        var stepped = new List<(float, int)>(count * 2);
+        for (var i = 0; i < count; i++)
+        {
+            var start = (float)i / count;
+            var end = (float)(i + 1) / count;
+            stepped.Add((i == 0 ? 0f : start, i));
+            stepped.Add((i == count - 1 ? 1f : end - epsilon, i));
+        }
+
+        return stepped.ToArray();
+    }
+
+    /// <summary>
     /// Classifies a paint-channel entry for a server-side color key-frame
-    /// animation on a composition brush. Requires the timing gate, every value
-    /// parsing as a color, and a zero begin: before a delayed begin SMIL shows
-    /// the underlying paint, but a color write and a started animation batched
-    /// in the same commit let the animation swallow the write, so the base
-    /// color cannot be represented reliably - delayed entries stay on the
-    /// sampled channel. Color interpolation is per-channel sRGB on both
-    /// channels (the compositor truncates where the sampler rounds, at most
-    /// one bit per channel apart), so the pixels match.
+    /// animation on a composition brush: the liftable timing gate plus every
+    /// value parsing as a color. Color interpolation is per-channel sRGB on
+    /// both channels (the compositor truncates where the sampler rounds, at
+    /// most one bit per channel apart), so the pixels match.
     /// </summary>
     public static bool TryClassifyPaint(SvgAnimationEntry entry, out Color[] frames)
     {
         frames = Array.Empty<Color>();
 
-        if (!HasCompositionCompatibleTiming(entry) || entry.Begin != TimeSpan.Zero)
+        if (!HasLiftableTiming(entry))
             return false;
 
         var colors = new Color[entry.Values.Length];
@@ -320,7 +370,11 @@ internal static class SvgCompositionPartitioner
         var needsHandling = new HashSet<SvgElement>();
         foreach (var entry in animator.Entries)
         {
-            if (animator.IsPaintEntry(entry))
+            // Paint entries mutate brushes in place; gradient entries lift to
+            // composition gradient brushes or stay inert. Neither forces a
+            // structural slice - a gradient target lives in defs, so slicing
+            // around it would recompile nothing that renders.
+            if (animator.IsPaintEntry(entry) || animator.IsGradientEntry(entry))
                 continue;
 
             needsHandling.Add(entry.Target);
@@ -465,8 +519,12 @@ internal static class SvgCompositionPartitioner
         var own = new List<SvgAnimationEntry>();
         foreach (var entry in animator.Entries)
         {
-            if (entry.Target == element && !animator.IsPaintEntry(entry))
+            if (entry.Target == element
+                && !animator.IsPaintEntry(entry)
+                && !animator.IsGradientEntry(entry))
+            {
                 own.Add(entry);
+            }
         }
 
         return own;

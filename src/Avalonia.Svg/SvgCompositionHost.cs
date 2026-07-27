@@ -331,25 +331,57 @@ internal sealed class SvgCompositionHost : IDisposable
     /// Starts the lifted paint timelines as server-side color key-frame
     /// animations on their composition brushes. Several entries on one target
     /// start in document order, so the last one drives the brush - the same
-    /// later-wins the sampled channel produces per tick.
+    /// later-wins the sampled channel produces per tick. Delayed begins start
+    /// after the seed commit; see <see cref="StartAfterSeedCommit"/>.
     /// </summary>
     private void StartPaintAnimations()
     {
+        List<(SvgAnimationEntry Entry, Color[] Frames)>? deferred = null;
+
         foreach (var (entry, colorFrames) in _liftedEntries)
         {
             entry.Claimed = true;
 
-            var brush = _liftedBrushes[(entry.Target, entry.AttributeName)];
-            var frames = _compositor.CreateColorKeyFrameAnimation();
-            Configure(frames, entry);
+            if (entry.Begin > TimeSpan.Zero)
+            {
+                (deferred ??= new()).Add((entry, colorFrames));
+                continue;
+            }
 
-            var linear = new LinearEasing();
-            var last = colorFrames.Length - 1;
-            for (var i = 0; i < colorFrames.Length; i++)
-                frames.InsertKeyFrame(last == 0 ? 1f : (float)i / last, colorFrames[i], linear);
-
-            brush.StartAnimation("Color", frames);
+            StartPaintAnimation(entry, colorFrames);
         }
+
+        if (deferred != null)
+            StartAfterSeedCommit(deferred);
+    }
+
+    private void StartPaintAnimation(SvgAnimationEntry entry, Color[] colorFrames)
+    {
+        var brush = _liftedBrushes[(entry.Target, entry.AttributeName)];
+        var frames = _compositor.CreateColorKeyFrameAnimation();
+        Configure(frames, entry);
+
+        var linear = new LinearEasing();
+        foreach (var (key, index) in SvgCompositionAnimation.BuildKeyFrames(entry))
+            frames.InsertKeyFrame(key, colorFrames[index], linear);
+
+        brush.StartAnimation("Color", frames);
+    }
+
+    /// <summary>
+    /// Starts delayed timelines one commit after the seed: a seeded base value
+    /// and a started animation batched into the same commit let the animated
+    /// flag swallow the write, losing the base value the SMIL begin delay must
+    /// show. The one-commit skew on the begin offset is a frame at most.
+    /// </summary>
+    private async void StartAfterSeedCommit(List<(SvgAnimationEntry Entry, Color[] Frames)> deferred)
+    {
+        await _compositor.RequestCommitAsync();
+        if (_disposed)
+            return;
+
+        foreach (var (entry, frames) in deferred)
+            StartPaintAnimation(entry, frames);
     }
 
     private static void InsertFrames<TAnimation>(
