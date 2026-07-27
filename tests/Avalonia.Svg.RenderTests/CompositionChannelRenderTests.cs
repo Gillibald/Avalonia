@@ -139,17 +139,38 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
     }
 
     [Fact]
-    public async Task Image_Hosts_A_Delayed_Paint_Animation_On_The_Sampled_Channel()
+    public async Task Image_Hosts_A_Delayed_Paint_Animation_On_The_Composition_Channel()
     {
-        // A delayed begin cannot lift (the base color shown before begin is not
-        // representable next to a batched animation start), so the entry stays
-        // on the sampled paint channel and the instance keeps its clock.
+        // A delayed begin lifts too: the host starts the animation one commit
+        // after the seed, so the base color survives the SMIL delay instead of
+        // being swallowed by a batched animation start. At t≈0 the composited
+        // output shows the base color, matching the static immediate render.
         using var document = SvgDocument.Parse(
             """
             <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
               <rect width="100" height="100" fill="#0b1022"/>
               <circle cx="50" cy="50" r="30" fill="#22d3ee">
                 <animate attributeName="fill" values="#f472b6;#22d3ee" begin="5000s" dur="10000s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
+            """);
+
+        var probe = await RenderHostedImage(document);
+        Assert.False(probe.InstanceNeededClock);
+    }
+
+    [Fact]
+    public async Task Image_Hosts_A_Fractional_Repeat_Paint_Animation_On_The_Sampled_Channel()
+    {
+        // A fractional repeat cannot lift (a composition animation iterates
+        // whole counts), so the entry stays on the sampled paint channel and
+        // the instance keeps its clock.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="100" height="100" fill="#0b1022"/>
+              <circle cx="50" cy="50" r="30" fill="#22d3ee">
+                <animate attributeName="fill" values="#22d3ee;#f472b6" dur="10000s" repeatCount="2.5" fill="freeze"/>
               </circle>
             </svg>
             """);
