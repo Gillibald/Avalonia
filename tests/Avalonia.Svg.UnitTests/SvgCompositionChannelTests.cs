@@ -72,9 +72,8 @@ public class SvgCompositionChannelTests
     }
 
     [Theory]
-    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s" begin="1s" repeatCount="indefinite"/>""")] // delayed begin
-    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s" calcMode="discrete" repeatCount="indefinite"/>""")] // discrete
     [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s"/>""")] // finite without freeze
+    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s" repeatCount="2.5" fill="freeze"/>""")] // fractional repeat
     [InlineData("""<set attributeName="fill" to="#0000ff" dur="2s"/>""")] // set
     [InlineData("""<animate attributeName="fill" values="url(#a);url(#b)" dur="2s" repeatCount="indefinite"/>""")] // not colors
     public void Ineligible_Paint_Shapes_Stay_On_The_Sampled_Channel(string animation)
@@ -88,6 +87,108 @@ public class SvgCompositionChannelTests
         var animator = SvgAnimator.TryCreate(document)!;
 
         Assert.False(SvgCompositionAnimation.TryClassifyPaint(animator.Entries[0], out _));
+    }
+
+    [Theory]
+    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff" dur="2s" begin="1s" repeatCount="indefinite"/>""")] // delayed begin (deferred start)
+    [InlineData("""<animate attributeName="fill" values="#ff0000;#0000ff;#00ff00" dur="2s" calcMode="discrete" repeatCount="indefinite"/>""")] // discrete (stepped frames)
+    public void Widened_Paint_Shapes_Classify_For_The_Composition_Channel(string animation)
+    {
+        using var document = SvgDocument.Parse(
+            $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="10" height="10" fill="#ff0000">{animation}</rect>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        Assert.True(SvgCompositionAnimation.TryClassifyPaint(animator.Entries[0], out _));
+    }
+
+    [Fact]
+    public void Discrete_Entries_Build_Stepped_Key_Frames()
+    {
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="10" height="10" fill="#ff0000">
+                <animate attributeName="fill" values="#ff0000;#00ff00;#0000ff" dur="3s"
+                         calcMode="discrete" repeatCount="indefinite"/>
+              </rect>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        var frames = SvgCompositionAnimation.BuildKeyFrames(animator.Entries[0]);
+
+        // Each of the three values holds a third of the duration: pairs of
+        // identical values bracket each interval, switching in a negligible
+        // ramp at the boundaries, and the ends sit exactly at 0 and 1.
+        Assert.Equal(6, frames.Length);
+        Assert.Equal((0f, 0), frames[0]);
+        Assert.Equal(0, frames[1].ValueIndex);
+        Assert.True(frames[1].Key < 1f / 3 && frames[1].Key > 1f / 3 - 0.001);
+        Assert.Equal((1f / 3, 1), frames[2]);
+        Assert.Equal((1f, 2), frames[5]);
+    }
+
+    [Fact]
+    public void Gradient_Scoped_Animations_Scan_As_Inert_Gradient_Entries()
+    {
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <linearGradient id="g">
+                  <stop offset="0" stop-color="#ff0000">
+                    <animate attributeName="stop-color" values="#ff0000;#0000ff" dur="2s" repeatCount="indefinite"/>
+                  </stop>
+                  <stop offset="1" stop-color="#0000ff"/>
+                </linearGradient>
+              </defs>
+              <rect width="100" height="100" fill="url(#g)"/>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        // The stop timeline scans into an entry classified to the gradient
+        // definition; without a lift it is inert - it neither ticks the clock
+        // nor writes overrides.
+        var entry = Assert.Single(animator.Entries);
+        Assert.True(animator.IsGradientEntry(entry));
+        Assert.Same(document.GetElementById("g"), animator.GetGradientElement(entry));
+        Assert.False(animator.HasUnclaimedWork);
+
+        var state = new SvgAnimationState();
+        Assert.False(animator.Apply(TimeSpan.FromSeconds(1), state));
+    }
+
+    [Fact]
+    public void Inert_Gradient_Entries_Do_Not_Force_Structural_Slices()
+    {
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <linearGradient id="g">
+                  <stop offset="0" stop-color="#ff0000">
+                    <animate attributeName="stop-color" values="#ff0000;#0000ff" dur="2s" repeatCount="indefinite"/>
+                  </stop>
+                  <stop offset="1" stop-color="#0000ff"/>
+                </linearGradient>
+              </defs>
+              <rect width="100" height="100" fill="url(#g)"/>
+            </svg>
+            """);
+        var animator = SvgAnimator.TryCreate(document)!;
+
+        var partition = SvgCompositionPartitioner.TryBuild(document, animator);
+
+        // The animation's target lives in defs; slicing around it would
+        // recompile nothing that renders, so the whole document stays in
+        // compile-once static slices.
+        Assert.NotNull(partition);
+        Assert.All(partition!.Children, node => Assert.IsType<SvgStaticSlice>(node));
     }
 
     [Fact]
