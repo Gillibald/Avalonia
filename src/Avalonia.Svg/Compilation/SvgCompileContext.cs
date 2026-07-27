@@ -74,6 +74,19 @@ internal sealed class SvgCompileContext
     public HashSet<(SvgElement Element, string Attribute)>? SeededLiftedTargets { get; set; }
 
     /// <summary>
+    /// Gradient definitions lifted to composition gradient brushes, keyed by
+    /// the definition element; see <see cref="SvgCompileOptions.LiftedGradients"/>.
+    /// </summary>
+    public IReadOnlyDictionary<SvgElement, IBrush>? LiftedGradients { get; set; }
+
+    /// <summary>
+    /// True while compiling shared referenced content (markers, pattern tiles,
+    /// mask content, use targets): those compile into immutable recordings,
+    /// which cannot capture a composition brush.
+    /// </summary>
+    public bool CompilingSharedContent => _sharedStack is { Count: > 0 };
+
+    /// <summary>
     /// Returns the composition brush for a fill/stroke lifted to the
     /// composition channel, or null when the pair is not lifted. The brush's
     /// color and opacity are seeded from the statically resolved paint exactly

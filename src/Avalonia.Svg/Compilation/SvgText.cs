@@ -1491,8 +1491,11 @@ internal static class SvgText
         IImmutableBrush? brush;
         if (stroke.Kind == SvgPaintKind.Reference)
         {
+            // Text is typed immutable throughout, so it opts out of lifted
+            // gradients and keeps the static per-use resolution.
             brush = chunkBounds is { } bounds && stroke.Reference is { } id
-                ? SvgPaintServers.Resolve(compileContext, id, style, bounds, style.StrokeOpacity)
+                ? (IImmutableBrush?)SvgPaintServers.Resolve(
+                    compileContext, id, style, bounds, style.StrokeOpacity, allowLifted: false)
                 : null;
             brush ??= stroke.Fallback switch
             {
@@ -1547,8 +1550,11 @@ internal static class SvgText
             if (compileContext.Measuring)
                 return new ImmutableSolidColorBrush(Colors.Black);
 
+            // Text is typed immutable throughout, so it opts out of lifted
+            // gradients and keeps the static per-use resolution.
             var brush = bounds is { } resolved && fill.Reference is { } id
-                ? SvgPaintServers.Resolve(compileContext, id, style, resolved, style.FillOpacity)
+                ? (IImmutableBrush?)SvgPaintServers.Resolve(
+                    compileContext, id, style, resolved, style.FillOpacity, allowLifted: false)
                 : null;
             if (brush != null)
                 return brush;

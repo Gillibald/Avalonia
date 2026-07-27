@@ -14,7 +14,7 @@ internal static class SvgPaintServers
 {
     private const int MaxReferenceChain = 8;
 
-    public static IImmutableBrush? Resolve(SvgCompileContext context, string id, in SvgStyle style, Rect bounds)
+    public static IBrush? Resolve(SvgCompileContext context, string id, in SvgStyle style, Rect bounds)
         => Resolve(context, id, style, bounds, 1);
 
     /// <summary>
@@ -26,12 +26,34 @@ internal static class SvgPaintServers
     /// absolutely in the context element's space and the brush counters the
     /// consumer's transforms, so the paint stays fixed across all consumers.
     /// </summary>
-    public static IImmutableBrush? Resolve(
+    public static IBrush? Resolve(
         SvgCompileContext context, string id, in SvgStyle style, Rect bounds, double opacity,
-        Rect? contextBounds = null, Matrix contextInverse = default)
+        Rect? contextBounds = null, Matrix contextInverse = default, bool allowLifted = true)
     {
         var element = context.Document.GetElementById(id);
-        return element?.Name switch
+        if (element == null)
+            return null;
+
+        // A gradient definition lifted to a composition brush substitutes for
+        // every plain consumer: its values animate on the render thread and
+        // one bounds-free brush serves all of them. Measuring and shared
+        // compiles capture into immutable recordings that cannot hold a
+        // composition brush, context paints need per-use conjugation, a
+        // consumer's own paint opacity has nowhere to ride on a shared brush,
+        // and the text pipeline is typed immutable throughout - those keep the
+        // static per-use form.
+        if (allowLifted
+            && contextBounds == null
+            && opacity >= 1
+            && !context.Measuring
+            && !context.CompilingSharedContent
+            && context.LiftedGradients is { } lifted
+            && lifted.TryGetValue(element, out var liftedBrush))
+        {
+            return liftedBrush;
+        }
+
+        return element.Name switch
         {
             "linearGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: false, contextBounds, contextInverse),
             "radialGradient" => ResolveGradient(context, element, style, bounds, opacity, radial: true, contextBounds, contextInverse),
@@ -285,6 +307,24 @@ internal static class SvgPaintServers
         }
 
         return length.Resolve(axis, viewport);
+    }
+
+    /// <summary>
+    /// Parses one animated coordinate value the way <see cref="GetCoordinate"/>
+    /// resolves static ones: bounding-box fractions (percentages divide by
+    /// 100) or user-space lengths resolved against the viewport.
+    /// </summary>
+    internal static bool TryParseCoordinate(
+        string value, bool objectBoundingBox, SvgLengthAxis axis, Size viewport, out double result)
+    {
+        result = 0;
+        if (!SvgLength.TryParse(value.AsSpan(), out var length))
+            return false;
+
+        result = objectBoundingBox
+            ? length.Unit == SvgLengthUnit.Percent ? length.Value / 100.0 : length.Value
+            : length.Resolve(axis, viewport);
+        return true;
     }
 
     /// <summary>
