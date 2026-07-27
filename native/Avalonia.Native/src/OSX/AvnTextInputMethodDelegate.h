@@ -15,6 +15,9 @@
 -(void) setCursorRect:(AvnRect) cursorRect;
 -(void) setSelection: (int) start : (int) end;
 
+// Abandons any composition that is still in flight, closing the candidate window with it.
+-(void) abandonMarkedText;
+
 @end
 
 #endif /* AvnTextInputMethodHost_h */

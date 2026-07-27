@@ -434,6 +434,11 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void)onLostFocus
 {
+    // Focus is moving to another client, so any in flight composition has to go with it.
+    // Leaving _markedRange set would make the next composition look like a continuation of
+    // this one and anchor it at a stale location.
+    [self abandonMarkedText];
+
     auto parent = _parent.tryGet();
     if (parent)
         parent->TopLevelEvents->LostFocus();
@@ -754,6 +759,10 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (NSRange)markedRange
 {
+    // From the docs: the location of the returned range is NSNotFound if there is no marked text.
+    if(![self hasMarkedText])
+        return NSMakeRange(NSNotFound, 0);
+
     return _markedRange;
 }
 
@@ -764,48 +773,106 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void)setMarkedText:(id)string selectedRange:(NSRange)selectedRange replacementRange:(NSRange)replacementRange
 {
-    NSString* markedText;
-        
+    // From the docs: string is an NSString or an NSAttributedString.
+    NSString* markedText = nil;
+
     if([string isKindOfClass:[NSAttributedString class]])
     {
         markedText = [string string];
     }
-    else
+    else if([string isKindOfClass:[NSString class]])
     {
         markedText = (NSString*) string;
     }
-    
-    auto parent = _parent.tryGet();
 
-    // Delete any replaced range
-    if (replacementRange.location != NSNotFound && parent != nullptr && parent->InputMethod->IsActive())
+    if(markedText == nil)
     {
-        parent->InputMethod->Client->SelectInSurroundingText((int)replacementRange.location, (int)(replacementRange.location + replacementRange.length));
+        markedText = @"";
+    }
+
+    auto parent = _parent.tryGet();
+    bool inputMethodActive = parent != nullptr && parent->InputMethod->IsActive();
+
+    // From the docs: replacementRange is the range to replace. If it is {NSNotFound, 0} the
+    // marked text is replaced, and if there is no marked text the current selection is replaced.
+    // The marked text lives in a separate preedit buffer that SetPreeditText replaces wholesale,
+    // so the only thing that has to be removed here is content that is part of the document.
+    NSRange rangeToRemove = NSMakeRange(NSNotFound, 0);
+
+    if (replacementRange.location != NSNotFound)
+    {
+        rangeToRemove = replacementRange;
+    }
+    else if (![self hasMarkedText])
+    {
+        rangeToRemove = _selectedRange;
+    }
+
+    if (inputMethodActive && rangeToRemove.location != NSNotFound && rangeToRemove.length > 0)
+    {
+        parent->InputMethod->Client->SelectInSurroundingText((int)rangeToRemove.location, (int)(rangeToRemove.location + rangeToRemove.length));
         uint64_t timestamp = static_cast<uint64_t>([NSDate timeIntervalSinceReferenceDate] * 1000);
         parent->TopLevelEvents->RawKeyEvent(KeyDown, timestamp, AvnInputModifiersNone, AvnKeyBack, AvnPhysicalKeyNone, "\b");
         parent->TopLevelEvents->RawKeyEvent(KeyUp, timestamp, AvnInputModifiersNone, AvnKeyBack, AvnPhysicalKeyNone, "\b");
     }
-    
-    _markedRange = NSMakeRange(_selectedRange.location, [markedText length]);
 
-    if (parent != nullptr && parent->InputMethod->IsActive())
+    // Keep the composition anchored where it started. _selectedRange is only refreshed
+    // asynchronously by the client, so it must not be re-read while composing.
+    NSUInteger markedLocation;
+
+    if ([self hasMarkedText])
+    {
+        markedLocation = _markedRange.location;
+    }
+    else if (rangeToRemove.location != NSNotFound)
+    {
+        markedLocation = rangeToRemove.location;
+    }
+    else
+    {
+        markedLocation = _selectedRange.location;
+    }
+
+    _markedRange = NSMakeRange(markedLocation, [markedText length]);
+
+    if (inputMethodActive)
     {
         parent->InputMethod->Client->SetPreeditText((char*)[markedText UTF8String]);
     }
 }
 
-- (void)unmarkText
+// Drops the composition state without telling the input context about it. Used when the input
+// context is the one driving the change and already knows the composition is over.
+- (void)clearMarkedText
 {
     auto parent = _parent.tryGet();
-    if(parent->InputMethod->IsActive()){
+    if(parent != nullptr && parent->InputMethod->IsActive()){
         parent->InputMethod->Client->SetPreeditText(nullptr);
     }
-    
+
     _markedRange = NSMakeRange(_selectedRange.location, 0);
-    
+}
+
+// Abandons the composition from our side. discardMarkedText belongs here rather than in
+// unmarkText: unmarkText is the input context calling into us, and calling back into it from
+// there tears down compositions the IME is still driving, such as a multi clause conversion
+// that commits one clause through insertText and keeps composing the rest.
+- (void)abandonMarkedText
+{
+    if(![self hasMarkedText]){
+        return;
+    }
+
+    [self clearMarkedText];
+
     if([self inputContext]) {
         [[self inputContext] discardMarkedText];
     }
+}
+
+- (void)unmarkText
+{
+    [self clearMarkedText];
 }
 
 - (NSArray<NSString *> *)validAttributesForMarkedText
@@ -815,20 +882,25 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)range actualRange:(NSRangePointer)actualRange
 {
-    if(actualRange){
-        range = *actualRange;
-    }
-
     // From the docs: an implementation of this method should be prepared for aRange to be out of bounds.
     // In this case, you should return the intersection of the document's range and aRange.
     // If the location of aRange is completely outside of the document's range, return nil.
     auto finalRange = NSIntersectionRange(range, NSMakeRange(0, _text.length));
-    
+
     if (finalRange.length == 0)
+    {
+        if (actualRange) {
+            *actualRange = NSMakeRange(NSNotFound, 0);
+        }
+
         return nil;
-    
-    NSAttributedString* subString = [_text attributedSubstringFromRange:finalRange];
-    return subString;
+    }
+
+    if (actualRange) {
+        *actualRange = finalRange;
+    }
+
+    return [_text attributedSubstringFromRange:finalRange];
 }
 
 - (void)insertText:(id)string replacementRange:(NSRange)replacementRange
@@ -838,29 +910,36 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
         return;
     }
 
-    NSString* text;
+    // From the docs: string is an NSString or an NSAttributedString.
+    NSString* text = nil;
 
     if([string isKindOfClass:[NSAttributedString class]])
     {
         text = [string string];
     }
-    else
+    else if([string isKindOfClass:[NSString class]])
     {
         text = (NSString*) string;
     }
-    
+
     if (replacementRange.location != NSNotFound &&
         ![self hasMarkedText] &&
         parent->InputMethod->IsActive())
     {
         parent->InputMethod->Client->SelectInSurroundingText((int)replacementRange.location, (int)(replacementRange.location + replacementRange.length));
     }
-    
+
     [self unmarkText];
-        
+
+    const char* utf8Text = [text UTF8String];
+
+    if(utf8Text == nullptr){
+        return;
+    }
+
     uint64_t timestamp = static_cast<uint64_t>([NSDate timeIntervalSinceReferenceDate] * 1000);
-        
-    parent->TopLevelEvents->RawTextInputEvent(timestamp, [text UTF8String]);
+
+    parent->TopLevelEvents->RawTextInputEvent(timestamp, utf8Text);
 }
 
 - (NSUInteger)characterIndexForPoint:(NSPoint)point
@@ -871,10 +950,21 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 - (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actualRange
 {
     auto parent = _parent.tryGet();
-    if(!parent->InputMethod->IsActive()){
+
+    if(parent == nullptr || !parent->InputMethod->IsActive()){
+        if (actualRange) {
+            *actualRange = NSMakeRange(NSNotFound, 0);
+        }
+
         return NSZeroRect;
     }
-    
+
+    // We only track a single cursor rect, so the rect we return covers the whole
+    // requested range instead of just its first line.
+    if (actualRange) {
+        *actualRange = range;
+    }
+
     return _cursorRect;
 }
 
@@ -1028,11 +1118,19 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 }
 
 - (void) setText:(NSString *)text{
-    [[_text mutableString] setString:text];
+    [[_text mutableString] setString:text != nil ? text : @""];
 }
 
 - (void) setSelection:(int)start :(int)end{
-    _selectedRange = NSMakeRange(start, end - start);
+    // The client reports the selection as (anchor, caret), so start can be greater than end
+    // for a backwards selection. The indices can also lag behind the surrounding text,
+    // so clamp them to the text we currently know about.
+    int length = (int)_text.length;
+
+    int from = MAX(0, MIN(MIN(start, end), length));
+    int to = MAX(0, MIN(MAX(start, end), length));
+
+    _selectedRange = NSMakeRange((NSUInteger)from, (NSUInteger)(to - from));
 }
 
 - (void) setCursorRect:(AvnRect)rect{
