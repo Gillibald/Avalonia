@@ -72,9 +72,20 @@ internal static class SvgPaintServers
             _ => GradientSpreadMethod.Pad,
         };
 
-        var transform = contextBounds is { } anchorBounds
-            ? BuildContextTransform(chain, objectBoundingBox, anchorBounds, contextInverse, bounds)
-            : ParseGradientTransform(chain, objectBoundingBox, bounds, context.Viewport);
+        ImmutableTransform? transform;
+        RelativePoint? transformOrigin = null;
+        ImmutableTransform? relativeTransform = null;
+        if (contextBounds is { } anchorBounds)
+        {
+            // Context paints stay per-use: the conjugation includes the
+            // consumer's inverse accumulated transform.
+            transform = BuildContextTransform(chain, objectBoundingBox, anchorBounds, contextInverse, bounds);
+        }
+        else
+        {
+            (transform, transformOrigin, relativeTransform) =
+                ParseGradientTransform(chain, objectBoundingBox, bounds, context.Viewport);
+        }
 
         if (radial)
         {
@@ -128,13 +139,14 @@ internal static class SvgPaintServers
                 stops,
                 opacity,
                 transform: transform,
-                transformOrigin: null,
+                transformOrigin: transformOrigin,
                 spreadMethod: spreadMethod,
                 center: new RelativePoint(cx, cy, unit),
                 gradientOrigin: new RelativePoint(fx, fy, unit),
                 radiusX: new RelativeScalar(r, unit),
                 radiusY: new RelativeScalar(r, unit),
-                focalRadius: new RelativeScalar(fr, unit));
+                focalRadius: new RelativeScalar(fr, unit),
+                relativeTransform: relativeTransform);
         }
         else
         {
@@ -158,9 +170,11 @@ internal static class SvgPaintServers
                 stops,
                 opacity,
                 transform: transform,
+                transformOrigin: transformOrigin,
                 spreadMethod: spreadMethod,
                 startPoint: new RelativePoint(x1, y1, unit),
-                endPoint: new RelativePoint(x2, y2, unit));
+                endPoint: new RelativePoint(x2, y2, unit),
+                relativeTransform: relativeTransform);
         }
     }
 
@@ -273,15 +287,25 @@ internal static class SvgPaintServers
         return length.Resolve(axis, viewport);
     }
 
-    private static ImmutableTransform? ParseGradientTransform(
-        List<SvgElement> chain, bool objectBoundingBox, Rect bounds, Size viewport)
+    /// <summary>
+    /// The brush form of a gradientTransform, bounds-free so one brush serves
+    /// every consumer: an objectBoundingBox transform acts in the unit box and
+    /// maps to the brush's relative transform verbatim, while a userSpaceOnUse
+    /// transform acts in user space and maps to the absolute transform pivoted
+    /// at the absolute origin (the default pivot sits at the target bounds and
+    /// would drag the consumer's position into the matrix). Only a
+    /// transform-origin resolved against <c>transform-box: fill-box</c> still
+    /// reads <paramref name="bounds"/> and stays per-shape.
+    /// </summary>
+    private static (ImmutableTransform? Transform, RelativePoint? TransformOrigin, ImmutableTransform? RelativeTransform)
+        ParseGradientTransform(List<SvgElement> chain, bool objectBoundingBox, Rect bounds, Size viewport)
     {
         var value = GetChained(chain, "gradientTransform");
         if (value == null
             || !SvgTransformParser.TryParse(value.AsSpan(), out var matrix)
             || matrix.IsIdentity)
         {
-            return null;
+            return (null, null, null);
         }
 
         // transform-origin conjugates the gradient transform in the gradient's
@@ -299,39 +323,29 @@ internal static class SvgPaintServers
 
         if (objectBoundingBox)
         {
-            // SVG applies gradientTransform in the unit bounding-box space, while
-            // Avalonia applies the brush transform in target space (origin at the
-            // bounds top-left). Conjugating by the bounding-box scale converts
-            // between the two exactly.
-            if (bounds.Width <= 0 || bounds.Height <= 0)
-                return null;
-
+            // SVG applies gradientTransform in the unit bounding-box space -
+            // exactly the space the brush's relative transform runs in, so the
+            // matrix carries over verbatim and the backend conjugates it by
+            // whichever bounds it paints.
             if (originElement != null)
             {
                 matrix = SvgCompiler.ApplyTransformOrigin(
                     originElement, matrix, new Rect(0, 0, 1, 1), new Rect(0, 0, 1, 1));
             }
 
-            matrix = Matrix.CreateScale(1 / bounds.Width, 1 / bounds.Height)
-                     * matrix
-                     * Matrix.CreateScale(bounds.Width, bounds.Height);
+            return (null, null, new ImmutableTransform(matrix));
         }
-        else if (originElement != null)
+
+        if (originElement != null)
         {
             matrix = SvgCompiler.ApplyTransformOrigin(
                 originElement, matrix, new Rect(viewport), bounds);
-
-            // The brush conjugates its transform about the target bounds
-            // position; compensate so the matrix acts in user space.
-            if (bounds.X != 0 || bounds.Y != 0)
-            {
-                matrix = Matrix.CreateTranslation(bounds.X, bounds.Y)
-                         * matrix
-                         * Matrix.CreateTranslation(-bounds.X, -bounds.Y);
-            }
         }
 
-        return new ImmutableTransform(matrix);
+        // A user-space matrix must act about the user-space origin: the brush's
+        // default pivot sits at the target bounds top-left, so pin it to the
+        // absolute origin instead of baking a per-shape compensation.
+        return (new ImmutableTransform(matrix), new RelativePoint(0, 0, RelativeUnit.Absolute), null);
     }
 
     private static List<ImmutableGradientStop>? ParseStops(List<SvgElement> chain, in SvgStyle style)
