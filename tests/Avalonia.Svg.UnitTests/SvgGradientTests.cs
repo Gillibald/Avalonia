@@ -176,24 +176,53 @@ public class SvgGradientTests
         var gradient = Assert.IsType<ImmutableLinearGradientBrush>(brush);
         var transform = Assert.IsType<ImmutableTransform>(gradient.Transform);
         Assert.Equal(Matrix.CreateTranslation(10, 20), transform.Value);
+        // The matrix acts in user space, so the pivot is pinned to the absolute
+        // origin instead of the consumer's bounds.
+        Assert.Equal(new RelativePoint(0, 0, RelativeUnit.Absolute), gradient.TransformOrigin);
+        Assert.Null(gradient.RelativeTransform);
     }
 
     [Fact]
-    public void GradientTransform_ObjectBoundingBox_Conjugates_With_Bounds()
+    public void GradientTransform_UserSpace_Is_Not_Anchored_To_The_Shape()
     {
-        var brush = Resolve(
+        const string defs =
+            """
+            <linearGradient id="g" gradientUnits="userSpaceOnUse" gradientTransform="rotate(30 40 40)">
+              <stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/>
+            </linearGradient>
+            """;
+
+        var a = Assert.IsType<ImmutableLinearGradientBrush>(Resolve(defs, "g", new Rect(10, 20, 100, 50)));
+        var b = Assert.IsType<ImmutableLinearGradientBrush>(Resolve(defs, "g", new Rect(-5, 0, 30, 300)));
+
+        // A non-translation user-space matrix is position-sensitive: pinning the
+        // pivot to the absolute origin keeps the resolved brush identical for
+        // every consumer instead of dragging each shape's position in.
+        Assert.Equal(a.Transform!.Value, b.Transform!.Value);
+        Assert.Equal(new RelativePoint(0, 0, RelativeUnit.Absolute), a.TransformOrigin);
+        Assert.Equal(a.TransformOrigin, b.TransformOrigin);
+    }
+
+    [Fact]
+    public void GradientTransform_ObjectBoundingBox_Maps_To_The_Relative_Transform()
+    {
+        const string defs =
             """
             <linearGradient id="g" gradientTransform="translate(0.5, 0)">
               <stop offset="0" stop-color="red"/><stop offset="1" stop-color="blue"/>
             </linearGradient>
-            """,
-            "g", new Rect(0, 0, 200, 100));
+            """;
 
-        // A half-box translation in unit space is 100 user units for a 200-wide box.
-        var gradient = Assert.IsType<ImmutableLinearGradientBrush>(brush);
-        var transform = Assert.IsType<ImmutableTransform>(gradient.Transform);
-        Assert.Equal(100, transform.Value.M31, 9);
-        Assert.Equal(0, transform.Value.M32, 9);
+        var a = Assert.IsType<ImmutableLinearGradientBrush>(Resolve(defs, "g", new Rect(0, 0, 200, 100)));
+        var b = Assert.IsType<ImmutableLinearGradientBrush>(Resolve(defs, "g", new Rect(15, 40, 30, 300)));
+
+        // The unit-box matrix carries over verbatim; the backend conjugates it
+        // by whichever bounds it paints, so no consumer's bounds appear here
+        // and one brush serves them all.
+        Assert.Null(a.Transform);
+        var relative = Assert.IsType<ImmutableTransform>(a.RelativeTransform);
+        Assert.Equal(Matrix.CreateTranslation(0.5, 0), relative.Value);
+        Assert.Equal(relative.Value, Assert.IsType<ImmutableTransform>(b.RelativeTransform).Value);
     }
 
     [Fact]
