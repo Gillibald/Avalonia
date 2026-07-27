@@ -2,6 +2,8 @@
   <PropertyGroup>
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
+    <!-- The shared Mesa readback surfaces below use unsafe pointer access. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <!-- Shared render-test infrastructure (immediate + composited rendering and
@@ -9,6 +11,11 @@
     <Compile Include="..\Avalonia.RenderTests\TestRenderHelper.cs" Link="Infrastructure\TestRenderHelper.cs" />
     <Compile Include="..\Avalonia.RenderTests\TestRenderRoot.cs" Link="Infrastructure\TestRenderRoot.cs" />
     <Compile Include="..\Avalonia.RenderTests\ManualRenderTimer.cs" Link="Infrastructure\ManualRenderTimer.cs" />
+    <!-- TestRenderHelper's GPU branches construct these readback surfaces, so
+         they are part of its compile closure even though the SVG suite renders
+         on the CPU path. -->
+    <Compile Include="..\Avalonia.RenderTests\Mesa\FboReadbackGlPlatformSurface.cs" Link="Infrastructure\Mesa\FboReadbackGlPlatformSurface.cs" />
+    <Compile Include="..\Avalonia.RenderTests\Mesa\VulkanReadbackPlatformSurface.cs" Link="Infrastructure\Mesa\VulkanReadbackPlatformSurface.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Deterministic text rendering: SVG test content references this font via
