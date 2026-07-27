@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Avalonia.Animation.Easings;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Animations;
 using Avalonia.Media.Svg.Animation;
@@ -34,6 +35,9 @@ internal sealed class SvgCompositionHost : IDisposable
     private readonly Dictionary<(SvgElement Element, string Attribute), CompositionSolidColorBrush> _liftedBrushes = new();
     private readonly List<(SvgAnimationEntry Entry, Color[] Frames)> _liftedEntries = new();
     private readonly HashSet<(SvgElement Element, string Attribute)> _seededLifted = new();
+    private readonly Dictionary<SvgElement, IBrush> _liftedGradients = new();
+    private readonly List<(SvgGradientLift Plan, CompositionGradientBrush Brush, List<CompositionGradientStop> Stops)> _gradientLifts = new();
+    private List<Action>? _deferredStarts;
     private bool _disposed;
 
     public SvgCompositionHost(
@@ -51,6 +55,7 @@ internal sealed class SvgCompositionHost : IDisposable
         _viewport = viewport;
         _state = state;
         _paintTargets = PartitionPaintTargets(animator, compositor);
+        ClassifyGradientLifts();
 
         ApplySuppressions(rootGroup);
 
@@ -59,6 +64,10 @@ internal sealed class SvgCompositionHost : IDisposable
 
         _animator.BindPaintBrushes(_brushes);
         StartPaintAnimations();
+        StartGradientAnimations();
+
+        if (_deferredStarts != null)
+            StartAfterSeedCommit(_deferredStarts);
     }
 
     /// <summary>
@@ -246,6 +255,7 @@ internal sealed class SvgCompositionHost : IDisposable
             PaintAnimationTargets = _paintTargets.Count > 0 ? _paintTargets : null,
             LiftedPaintBrushes = _liftedBrushes.Count > 0 ? _liftedBrushes : null,
             SeededLiftedTargets = _liftedBrushes.Count > 0 ? _seededLifted : null,
+            LiftedGradients = _liftedGradients.Count > 0 ? _liftedGradients : null,
         };
 
         // DrawingRecording.Create compiles synchronously, so the instance's
@@ -336,23 +346,19 @@ internal sealed class SvgCompositionHost : IDisposable
     /// </summary>
     private void StartPaintAnimations()
     {
-        List<(SvgAnimationEntry Entry, Color[] Frames)>? deferred = null;
-
         foreach (var (entry, colorFrames) in _liftedEntries)
         {
             entry.Claimed = true;
 
             if (entry.Begin > TimeSpan.Zero)
             {
-                (deferred ??= new()).Add((entry, colorFrames));
+                var (deferredEntry, deferredFrames) = (entry, colorFrames);
+                (_deferredStarts ??= new()).Add(() => StartPaintAnimation(deferredEntry, deferredFrames));
                 continue;
             }
 
             StartPaintAnimation(entry, colorFrames);
         }
-
-        if (deferred != null)
-            StartAfterSeedCommit(deferred);
     }
 
     private void StartPaintAnimation(SvgAnimationEntry entry, Color[] colorFrames)
@@ -374,14 +380,204 @@ internal sealed class SvgCompositionHost : IDisposable
     /// flag swallow the write, losing the base value the SMIL begin delay must
     /// show. The one-commit skew on the begin offset is a frame at most.
     /// </summary>
-    private async void StartAfterSeedCommit(List<(SvgAnimationEntry Entry, Color[] Frames)> deferred)
+    private async void StartAfterSeedCommit(List<Action> deferred)
     {
         await _compositor.RequestCommitAsync();
         if (_disposed)
             return;
 
-        foreach (var (entry, frames) in deferred)
-            StartPaintAnimation(entry, frames);
+        foreach (var start in deferred)
+            start();
+    }
+
+    /// <summary>
+    /// Plans and builds the lifted gradient definitions: for each definition
+    /// whose timelines all lift, the static resolution seeds one shared
+    /// composition gradient brush (bounds do not matter - eligibility excludes
+    /// every bounds-dependent resolution path) and plain consumers paint with
+    /// it at compile time.
+    /// </summary>
+    private void ClassifyGradientLifts()
+    {
+        Dictionary<SvgElement, List<SvgAnimationEntry>>? byGradient = null;
+        foreach (var entry in _animator.Entries)
+        {
+            if (_animator.GetGradientElement(entry) is { } gradient)
+            {
+                byGradient ??= new Dictionary<SvgElement, List<SvgAnimationEntry>>();
+                if (!byGradient.TryGetValue(gradient, out var list))
+                    byGradient[gradient] = list = new List<SvgAnimationEntry>();
+                list.Add(entry);
+            }
+        }
+
+        if (byGradient == null)
+            return;
+
+        foreach (var pair in byGradient)
+        {
+            var gradient = pair.Key;
+            if (gradient.GetAttribute("id") is not { Length: > 0 } id)
+                continue;
+
+            var context = new SvgCompileContext(_document, _viewport);
+            var style = SvgStyle.CreateDefault(_viewport);
+            if (SvgPaintServers.Resolve(context, id, style, new Rect(0, 0, 1, 1))
+                is not ImmutableGradientBrush resolved)
+            {
+                continue;
+            }
+
+            if (SvgGradientLift.TryPlan(gradient, pair.Value, resolved, _viewport) is not { } plan)
+                continue;
+
+            var (brush, stops) = BuildGradientBrush(resolved);
+            _liftedGradients[gradient] = brush;
+            _gradientLifts.Add((plan, brush, stops));
+        }
+    }
+
+    /// <summary>Builds the shared composition brush seeded from the static resolution.</summary>
+    private (CompositionGradientBrush Brush, List<CompositionGradientStop> Stops) BuildGradientBrush(
+        ImmutableGradientBrush resolved)
+    {
+        CompositionGradientBrush brush;
+        if (resolved is ImmutableRadialGradientBrush radial)
+        {
+            var radialBrush = _compositor.CreateRadialGradientBrush();
+            radialBrush.Center = radial.Center;
+            radialBrush.GradientOrigin = radial.GradientOrigin;
+            radialBrush.RadiusX = radial.RadiusX;
+            radialBrush.RadiusY = radial.RadiusY;
+            radialBrush.FocalRadius = radial.FocalRadius;
+            brush = radialBrush;
+        }
+        else
+        {
+            var linear = (ImmutableLinearGradientBrush)resolved;
+            var linearBrush = _compositor.CreateLinearGradientBrush();
+            linearBrush.StartPoint = linear.StartPoint;
+            linearBrush.EndPoint = linear.EndPoint;
+            brush = linearBrush;
+        }
+
+        brush.SpreadMethod = resolved.SpreadMethod;
+        brush.Transform = resolved.Transform;
+        brush.TransformOrigin = resolved.TransformOrigin;
+        brush.RelativeTransform = resolved.RelativeTransform;
+
+        var stops = new List<CompositionGradientStop>(resolved.GradientStops.Count);
+        foreach (var stop in resolved.GradientStops)
+        {
+            var compositionStop = _compositor.CreateGradientStop(stop.Offset, stop.Color);
+            stops.Add(compositionStop);
+            brush.GradientStops.Add(compositionStop);
+        }
+
+        return (brush, stops);
+    }
+
+    /// <summary>
+    /// Starts the lifted gradient timelines as server-side key-frame
+    /// animations on the shared brushes and their stops. Delayed begins defer
+    /// past the seed commit like the paint lifts.
+    /// </summary>
+    private void StartGradientAnimations()
+    {
+        foreach (var (plan, brush, stops) in _gradientLifts)
+        {
+            foreach (var animation in plan.Animations)
+            {
+                animation.Entry.Claimed = true;
+
+                // Zipped pair partners and superseded duplicates carry no
+                // frames of their own.
+                if (animation.Colors == null && animation.Scalars == null && animation.Points == null)
+                    continue;
+
+                if (animation.Entry.Begin > TimeSpan.Zero)
+                {
+                    var (deferredAnimation, deferredBrush, deferredStops, deferredUnits) =
+                        (animation, brush, stops, plan.ObjectBoundingBox);
+                    (_deferredStarts ??= new()).Add(() =>
+                        StartGradientAnimation(deferredAnimation, deferredBrush, deferredStops, deferredUnits));
+                    continue;
+                }
+
+                StartGradientAnimation(animation, brush, stops, plan.ObjectBoundingBox);
+            }
+        }
+    }
+
+    private void StartGradientAnimation(
+        SvgGradientLiftAnimation animation,
+        CompositionGradientBrush brush,
+        List<CompositionGradientStop> stops,
+        bool objectBoundingBox)
+    {
+        var unit = objectBoundingBox ? RelativeUnit.Relative : RelativeUnit.Absolute;
+        var linear = new LinearEasing();
+        var keyFrames = SvgCompositionAnimation.BuildKeyFrames(animation.Entry);
+
+        switch (animation.Target)
+        {
+            case SvgGradientLiftTarget.StopColor:
+            {
+                var frames = _compositor.CreateColorKeyFrameAnimation();
+                Configure(frames, animation.Entry);
+                foreach (var (key, index) in keyFrames)
+                    frames.InsertKeyFrame(key, animation.Colors![index], linear);
+                stops[animation.StopIndex].StartAnimation("Color", frames);
+                break;
+            }
+
+            case SvgGradientLiftTarget.StopOffset:
+            {
+                var frames = _compositor.CreateDoubleKeyFrameAnimation();
+                Configure(frames, animation.Entry);
+                foreach (var (key, index) in keyFrames)
+                    frames.InsertKeyFrame(key, animation.Scalars![index], linear);
+                stops[animation.StopIndex].StartAnimation("Offset", frames);
+                break;
+            }
+
+            case SvgGradientLiftTarget.StartPoint:
+            case SvgGradientLiftTarget.EndPoint:
+            case SvgGradientLiftTarget.Center:
+            case SvgGradientLiftTarget.GradientOrigin:
+            {
+                var frames = _compositor.CreateRelativePointKeyFrameAnimation();
+                Configure(frames, animation.Entry);
+                foreach (var (key, index) in keyFrames)
+                    frames.InsertKeyFrame(key, new RelativePoint(animation.Points![index], unit), linear);
+                brush.StartAnimation(animation.Target.ToString(), frames);
+                break;
+            }
+
+            case SvgGradientLiftTarget.Radius:
+            {
+                // One r timeline drives both radii, matching the static
+                // resolution that sets them from the single attribute.
+                StartScalar("RadiusX");
+                StartScalar("RadiusY");
+                break;
+            }
+
+            case SvgGradientLiftTarget.FocalRadius:
+            {
+                StartScalar("FocalRadius");
+                break;
+            }
+        }
+
+        void StartScalar(string property)
+        {
+            var frames = _compositor.CreateRelativeScalarKeyFrameAnimation();
+            Configure(frames, animation.Entry);
+            foreach (var (key, index) in keyFrames)
+                frames.InsertKeyFrame(key, new RelativeScalar(animation.Scalars![index], unit), linear);
+            brush.StartAnimation(property, frames);
+        }
     }
 
     private static void InsertFrames<TAnimation>(
@@ -444,6 +640,19 @@ internal sealed class SvgCompositionHost : IDisposable
 
         _liftedBrushes.Clear();
         _liftedEntries.Clear();
+
+        foreach (var (plan, brush, stops) in _gradientLifts)
+        {
+            foreach (var animation in plan.Animations)
+                animation.Entry.Claimed = false;
+
+            foreach (var stop in stops)
+                stop.Dispose();
+            brush.Dispose();
+        }
+
+        _gradientLifts.Clear();
+        _liftedGradients.Clear();
     }
 
     private static void UnclaimEntries(SvgCompositionGroup group)

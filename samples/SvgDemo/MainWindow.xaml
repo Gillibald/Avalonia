@@ -123,12 +123,18 @@
       <ScrollViewer>
         <StackPanel Margin="16" Spacing="12">
           <TextBlock Classes="caption">
-            SMIL animations run on two channels. Paint channel: color animations on a shape's own
-            fill/stroke mutate brushes inside a compositor-bound recording — nothing is ever
-            re-recorded. Structural channel: transforms, geometry and visibility re-compile the root
-            per change tick while shared sub-recordings (like the pinwheel petal) replay from cache.
+            SMIL animations run on three channels. Composition channel: eligible fill/stroke colors
+            and gradient timelines lift to composition brushes that animate on the render thread —
+            no UI-thread clock at all. Paint channel: the remaining color animations mutate brushes
+            inside a compositor-bound recording per tick — nothing is ever re-recorded. Structural
+            channel: transforms, geometry and visibility re-compile the root per change tick while
+            shared sub-recordings (like the pinwheel petal) replay from cache.
           </TextBlock>
-          <TextBlock FontWeight="Bold">Paint channel — brush mutation only</TextBlock>
+          <TextBlock FontWeight="Bold">Gradient timelines — server-side key frames on shared brushes</TextBlock>
+          <Border Classes="canvas">
+            <SvgControl Source="avares://SvgDemo/Assets/animation-gradient.svg"/>
+          </Border>
+          <TextBlock FontWeight="Bold">Paint channel — lifted and sampled side by side</TextBlock>
           <Border Classes="canvas">
             <SvgControl Source="avares://SvgDemo/Assets/animation-paint.svg"/>
           </Border>
