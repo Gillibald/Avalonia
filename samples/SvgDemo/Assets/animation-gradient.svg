@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="170" viewBox="0 0 520 170">
+  <!-- Every timeline here targets a gradient definition, so the whole document
+       lifts onto shared composition gradient brushes: stop colors, gradient
+       geometry and the focal radius all animate on the render thread with no
+       UI-thread clock and no re-recording. -->
+  <defs>
+    <linearGradient id="sweep">
+      <animate attributeName="x1" values="0;0.5;0" dur="4s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="1;1.5;1" dur="4s" repeatCount="indefinite"/>
+      <stop offset="0" stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#1e1b4b"/>
+    </linearGradient>
+
+    <linearGradient id="mood">
+      <stop offset="0" stop-color="#f59e0b">
+        <animate attributeName="stop-color" values="#f59e0b;#ec4899;#f59e0b" dur="5s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="1" stop-color="#7c3aed">
+        <animate attributeName="stop-color" values="#7c3aed;#0ea5e9;#7c3aed" dur="5s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+
+    <radialGradient id="pulse">
+      <animate attributeName="r" values="0.35;0.75;0.35" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="fr" values="0;0.25;0" dur="3s" repeatCount="indefinite"/>
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="0.6" stop-color="#f97316">
+        <animate attributeName="offset" values="0.6;0.35;0.6" dur="3s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="1" stop-color="#450a0a"/>
+    </radialGradient>
+  </defs>
+
+  <!-- One definition, two consumers of different sizes: the shared brush is
+       bounds-free, so both animate from a single set of server timelines. -->
+  <rect x="15" y="20" width="150" height="90" rx="10" fill="url(#sweep)"/>
+  <rect x="40" y="120" width="100" height="34" rx="8" fill="url(#sweep)"/>
+
+  <rect x="190" y="20" width="140" height="134" rx="10" fill="url(#mood)"/>
+
+  <circle cx="430" cy="87" r="66" fill="url(#pulse)"/>
+</svg>

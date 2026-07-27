@@ -47,6 +47,15 @@ internal sealed class SvgCompileOptions
     /// </summary>
     public HashSet<(SvgElement Element, string Attribute)>? SeededLiftedTargets { get; init; }
 
+    /// <summary>
+    /// Gradient definitions lifted to composition gradient brushes, keyed by
+    /// the definition element: plain consumers paint with the shared brush and
+    /// its timelines run on the render thread. Measuring and shared compiles,
+    /// context paints and consumers with their own paint opacity keep the
+    /// static per-use resolution.
+    /// </summary>
+    public IReadOnlyDictionary<SvgElement, IBrush>? LiftedGradients { get; init; }
+
     /// <summary>The hit-test tree root, when <see cref="BuildHitTree"/> was set.</summary>
     public SvgHitNode? HitRoot { get; internal set; }
 

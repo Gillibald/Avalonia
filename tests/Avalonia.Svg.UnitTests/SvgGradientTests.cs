@@ -8,7 +8,7 @@ namespace Avalonia.Svg.UnitTests;
 
 public class SvgGradientTests
 {
-    private static IImmutableBrush? Resolve(string defs, string id, Rect bounds, Size? viewport = null)
+    private static IBrush? Resolve(string defs, string id, Rect bounds, Size? viewport = null)
     {
         using var document = SvgDocument.Parse(
             $"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">{defs}</svg>""");

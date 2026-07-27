@@ -105,6 +105,7 @@ internal static class SvgCompiler
                 PaintAnimationTargets = options.PaintAnimationTargets,
                 LiftedPaintBrushes = options.LiftedPaintBrushes,
                 SeededLiftedTargets = options.SeededLiftedTargets,
+                LiftedGradients = options.LiftedGradients,
                 ElementFilter = options.ElementFilter,
             };
 
@@ -864,7 +865,7 @@ internal static class SvgCompiler
 
     private static readonly ImmutableSolidColorBrush s_measuringFill = new(Colors.Black);
 
-    private static IImmutableBrush? ResolvePaint(
+    private static IBrush? ResolvePaint(
         in SvgPaint contextual, in SvgStyle style, SvgCompileContext compileContext, Rect bounds, double opacity)
     {
         // Fill boxes do not depend on the paint, so measuring recordings
@@ -934,7 +935,11 @@ internal static class SvgCompiler
             return style.ResolveMutablePen(lifted);
         if (compileContext.TryGetAnimatedBrush(element, "stroke", brush) is { } animated)
             return style.ResolveMutablePen(animated);
-        return style.ResolvePen(brush);
+        // A lifted gradient stroke rides a mutable pen: an immutable pen is
+        // typed to immutable brushes.
+        if (brush is not null and not IImmutableBrush)
+            return style.ResolveMutablePen(brush);
+        return style.ResolvePen((IImmutableBrush?)brush);
     }
 
     private static void CompileRect(

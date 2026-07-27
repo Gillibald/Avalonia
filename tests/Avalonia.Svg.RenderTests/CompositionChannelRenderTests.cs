@@ -180,6 +180,62 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
     }
 
     [Fact]
+    public async Task Image_Hosts_An_Animated_Gradient_On_The_Composition_Channel()
+    {
+        // Stop colors and gradient geometry lift onto one shared composition
+        // gradient brush, so the whole document runs on the render thread. At
+        // t≈0 the lifted brush renders the seeded static state, matching the
+        // immediate render - which also proves the substituted brush paints
+        // correctly through the recording.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <linearGradient id="g">
+                  <animate attributeName="x2" values="100%;50%" dur="10000s" repeatCount="indefinite"/>
+                  <stop offset="0" stop-color="#22d3ee">
+                    <animate attributeName="stop-color" values="#22d3ee;#f472b6" dur="10000s" repeatCount="indefinite"/>
+                  </stop>
+                  <stop offset="1" stop-color="#0b1022"/>
+                </linearGradient>
+              </defs>
+              <rect width="100" height="100" fill="url(#g)"/>
+            </svg>
+            """);
+
+        var probe = await RenderHostedImage(document);
+        Assert.False(probe.InstanceNeededClock);
+    }
+
+    [Fact]
+    public async Task Image_Keeps_An_Href_Gradient_Timeline_Inert()
+    {
+        // A template chain cannot lift; the timeline stays inert - static
+        // pixels, and no UI-thread clock burns for it.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <defs>
+                <linearGradient id="t">
+                  <stop offset="0" stop-color="#22d3ee"/>
+                  <stop offset="1" stop-color="#0b1022"/>
+                </linearGradient>
+                <linearGradient id="g" href="#t">
+                  <stop offset="0" stop-color="#22d3ee">
+                    <animate attributeName="stop-color" values="#22d3ee;#f472b6" dur="10000s" repeatCount="indefinite"/>
+                  </stop>
+                  <stop offset="1" stop-color="#0b1022"/>
+                </linearGradient>
+              </defs>
+              <rect width="100" height="100" fill="url(#g)"/>
+            </svg>
+            """);
+
+        var probe = await RenderHostedImage(document);
+        Assert.False(probe.InstanceNeededClock);
+    }
+
+    [Fact]
     public async Task Image_Hosts_A_Structural_Only_Animation()
     {
         // A geometry timeline stays structural (no composition group); the
