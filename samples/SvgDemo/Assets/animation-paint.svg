@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="520" height="170" viewBox="0 0 520 170">
   <!-- Every animation here targets a shape's own fill/stroke color, so the
-       whole document runs on the paint channel: it compiles once into a
-       compositor-bound recording and only brush colors mutate per tick. -->
+       document compiles once into a compositor-bound recording and no
+       re-recording ever happens. The circle and the ring stroke lift all the
+       way to composition brushes (zero begin, indefinite): their colors
+       animate on the render thread. The discrete LED and the begin-staggered
+       wave bars stay on the sampled channel, mutating their brushes per
+       UI-thread tick - both channels drive one document side by side. -->
 
   <circle cx="70" cy="70" r="40" fill="#ef4444">
     <animate attributeName="fill" values="#ef4444;#f59e0b;#ef4444" dur="2.4s" repeatCount="indefinite"/>
