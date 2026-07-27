@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -83,19 +84,24 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
     {
         using var document = SvgDocument.Parse(SlicedDocument);
 
+        var probe = new CompositionImageProbe(new SvgImage(document));
         var image = new Image
         {
-            Source = new SvgImage(document),
+            Source = probe,
             Width = 200,
             Height = 200,
         };
 
         await RenderToFile(image);
 
-        // Proof the channel is actually engaged: the Image parents the channel's
-        // visual subtree. A static fallback (whose first frame is pixel-identical
-        // at t≈0) would leave no child visual, so this distinguishes the two.
-        Assert.NotNull(ElementComposition.GetElementChildVisual(image));
+        // Proof the channel is actually engaged: the Image materialized a hosting
+        // instance during the composited pass, which suppresses the static draw -
+        // a static fallback (whose first frame is pixel-identical at t≈0) would
+        // never create one, so the pixel match below can only come from the
+        // hosted visual subtree. The tree itself cannot be inspected here: the
+        // render harness detaches the control after painting, and hosting
+        // releases its instance (and child visual) on detach.
+        Assert.True(probe.InstancesCreated > 0, "the Image control never hosted the source");
 
         // The same document at the same size renders identically whether hosted
         // by the Svg control or the Image control, so it diffs against the
@@ -170,24 +176,27 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
 
     /// <summary>
     /// Renders an animated document through the <see cref="Image"/> control, then
-    /// asserts it is actually hosted (a child visual is parented — the partitioner
-    /// built a host) and that the composited render matches the static immediate
-    /// render: at t≈0 the hosted output holds the document's base state, no golden
-    /// required.
+    /// asserts it was actually hosted (the control materialized an instance — the
+    /// partitioner built a host) and that the composited render matches the static
+    /// immediate render: at t≈0 the hosted output holds the document's base state,
+    /// no golden required. Hosting is observed through a counting probe because
+    /// the render harness detaches the control after the composited pass and
+    /// hosting releases its instance (and child visual) on detach.
     /// </summary>
     private async Task RenderHostedImage(SvgDocument document, [CallerMemberName] string testName = "")
     {
         var svgImage = new SvgImage(document);
+        var probe = new CompositionImageProbe(svgImage);
         var image = new Image
         {
-            Source = svgImage,
+            Source = probe,
             Width = svgImage.Size.Width,
             Height = svgImage.Size.Height,
         };
 
         await RenderToFile(image, testName);
 
-        Assert.NotNull(ElementComposition.GetElementChildVisual(image));
+        Assert.True(probe.InstancesCreated > 0, "the Image control never hosted the source");
 
         var immediatePath = Path.Combine(OutputPath, testName + ".immediate.out.png");
         var compositedPath = Path.Combine(OutputPath, testName + ".composited.out.png");
@@ -195,5 +204,39 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         using var composited = SixLabors.ImageSharp.Image.Load<Rgba32>(compositedPath);
         var error = TestRenderHelper.CompareImages(composited, immediate);
         Assert.True(error <= 0.022, $"{compositedPath} vs immediate: Error = {error}");
+    }
+
+    /// <summary>
+    /// Delegating <see cref="ICompositionImage"/> that counts instance
+    /// materializations: hosting proof that survives the composited render
+    /// harness detaching the control, which releases the instance and its child
+    /// visual before the test can look at the tree.
+    /// </summary>
+    private sealed class CompositionImageProbe : ICompositionImage
+    {
+        private readonly SvgImage _inner;
+
+        public CompositionImageProbe(SvgImage inner) => _inner = inner;
+
+        public int InstancesCreated { get; private set; }
+
+        public Size Size => _inner.Size;
+
+        public void Draw(DrawingContext context, Rect sourceRect, Rect destRect) =>
+            ((IImage)_inner).Draw(context, sourceRect, destRect);
+
+        public event EventHandler? Invalidated
+        {
+            add => ((ICompositionImage)_inner).Invalidated += value;
+            remove => ((ICompositionImage)_inner).Invalidated -= value;
+        }
+
+        public ICompositionImageInstance? CreateInstance(Compositor compositor)
+        {
+            var instance = ((ICompositionImage)_inner).CreateInstance(compositor);
+            if (instance is not null)
+                InstancesCreated++;
+            return instance;
+        }
     }
 }
