@@ -65,6 +65,42 @@ internal sealed class SvgCompileContext
     public Dictionary<(SvgElement Element, string Attribute), SolidColorBrush>? AnimatedBrushes { get; private set; }
 
     /// <summary>
+    /// Composition brushes for paint targets lifted to the composition channel;
+    /// see <see cref="SvgCompileOptions.LiftedPaintBrushes"/>.
+    /// </summary>
+    public IReadOnlyDictionary<(SvgElement Element, string Attribute), Rendering.Composition.CompositionSolidColorBrush>? LiftedPaintBrushes { get; set; }
+
+    /// <summary>Seed guard for <see cref="LiftedPaintBrushes"/>; host-owned.</summary>
+    public HashSet<(SvgElement Element, string Attribute)>? SeededLiftedTargets { get; set; }
+
+    /// <summary>
+    /// Returns the composition brush for a fill/stroke lifted to the
+    /// composition channel, or null when the pair is not lifted. The brush's
+    /// color and opacity are seeded from the statically resolved paint exactly
+    /// once - later writes would detach the running server color animation.
+    /// Measuring passes keep their immutable paints, like the mutable path.
+    /// </summary>
+    public IBrush? TryGetLiftedBrush(SvgElement element, string attribute, IBrush? resolved)
+    {
+        if (Measuring
+            || LiftedPaintBrushes == null
+            || !LiftedPaintBrushes.TryGetValue((element, attribute), out var brush))
+        {
+            return null;
+        }
+
+        if (SeededLiftedTargets != null
+            && SeededLiftedTargets.Add((element, attribute))
+            && resolved is ISolidColorBrush solid)
+        {
+            brush.Color = solid.Color;
+            brush.Opacity = solid.Opacity;
+        }
+
+        return brush;
+    }
+
+    /// <summary>
     /// Returns (creating and registering on first use) the mutable brush for an
     /// animated fill/stroke, seeded from the statically resolved brush. Returns
     /// null when the pair is not an animation target. Measuring passes and

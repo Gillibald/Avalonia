@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using Avalonia.Media;
+using Avalonia.Media.Svg.Parsing;
 
 namespace Avalonia.Media.Svg.Animation;
 
@@ -59,14 +60,7 @@ internal sealed class SvgCompositionAnimation
     {
         animation = null;
 
-        if (entry.IsSet || entry.Discrete || entry.Values.Length < 2
-            || entry.Duration < TimeSpan.FromMilliseconds(1) || entry.Begin < TimeSpan.Zero)
-        {
-            return false;
-        }
-
-        var indefinite = double.IsPositiveInfinity(entry.RepeatCount);
-        if (!indefinite && (entry.RepeatCount % 1 != 0 || entry.RepeatCount < 1 || !entry.Freeze))
+        if (!HasCompositionCompatibleTiming(entry))
             return false;
 
         if (entry.TransformType is { } transformType)
@@ -172,6 +166,54 @@ internal sealed class SvgCompositionAnimation
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether the entry's timing shape is one the server key-frame clock
+    /// reproduces exactly: linear interpolation over at least two values, an
+    /// offset begin, and either an indefinite repeat or a whole-number repeat
+    /// with <c>fill="freeze"</c> (a finished composition animation holds its
+    /// final frame).
+    /// </summary>
+    internal static bool HasCompositionCompatibleTiming(SvgAnimationEntry entry)
+    {
+        if (entry.IsSet || entry.Discrete || entry.Values.Length < 2
+            || entry.Duration < TimeSpan.FromMilliseconds(1) || entry.Begin < TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        var indefinite = double.IsPositiveInfinity(entry.RepeatCount);
+        return indefinite || (entry.RepeatCount % 1 == 0 && entry.RepeatCount >= 1 && entry.Freeze);
+    }
+
+    /// <summary>
+    /// Classifies a paint-channel entry for a server-side color key-frame
+    /// animation on a composition brush. Requires the timing gate, every value
+    /// parsing as a color, and a zero begin: before a delayed begin SMIL shows
+    /// the underlying paint, but a color write and a started animation batched
+    /// in the same commit let the animation swallow the write, so the base
+    /// color cannot be represented reliably - delayed entries stay on the
+    /// sampled channel. Color interpolation is per-channel sRGB on both
+    /// channels (the compositor truncates where the sampler rounds, at most
+    /// one bit per channel apart), so the pixels match.
+    /// </summary>
+    public static bool TryClassifyPaint(SvgAnimationEntry entry, out Color[] frames)
+    {
+        frames = Array.Empty<Color>();
+
+        if (!HasCompositionCompatibleTiming(entry) || entry.Begin != TimeSpan.Zero)
+            return false;
+
+        var colors = new Color[entry.Values.Length];
+        for (var i = 0; i < entry.Values.Length; i++)
+        {
+            if (!SvgColor.TryParse(entry.Values[i], out colors[i]))
+                return false;
+        }
+
+        frames = colors;
+        return true;
     }
 
     private static bool TryParseNumberList(string value, out float[] numbers)

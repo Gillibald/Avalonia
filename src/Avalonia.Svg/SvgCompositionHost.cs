@@ -31,6 +31,9 @@ internal sealed class SvgCompositionHost : IDisposable
     private readonly List<(CompositionRecordingVisual Visual, HashSet<SvgElement> Membership)> _structuralSlices = new();
     private readonly Dictionary<(SvgElement Element, string Attribute), SolidColorBrush> _brushes = new();
     private readonly Dictionary<SvgElement, CompositionRecordingVisual> _compositionVisuals = new();
+    private readonly Dictionary<(SvgElement Element, string Attribute), CompositionSolidColorBrush> _liftedBrushes = new();
+    private readonly List<(SvgAnimationEntry Entry, Color[] Frames)> _liftedEntries = new();
+    private readonly HashSet<(SvgElement Element, string Attribute)> _seededLifted = new();
     private bool _disposed;
 
     public SvgCompositionHost(
@@ -47,7 +50,7 @@ internal sealed class SvgCompositionHost : IDisposable
         _rootGroup = rootGroup;
         _viewport = viewport;
         _state = state;
-        _paintTargets = animator.GetPaintTargets();
+        _paintTargets = PartitionPaintTargets(animator, compositor);
 
         ApplySuppressions(rootGroup);
 
@@ -55,6 +58,59 @@ internal sealed class SvgCompositionHost : IDisposable
         BuildChildren(RootVisual, rootGroup.Children);
 
         _animator.BindPaintBrushes(_brushes);
+        StartPaintAnimations();
+    }
+
+    /// <summary>
+    /// Splits the paint targets between the channels: a target lifts to a
+    /// composition brush when every entry driving it classifies for a
+    /// server-side color key-frame animation (a sampled client write on a
+    /// lifted brush would detach the running animation, so mixed targets stay
+    /// sampled together). Returns the targets left on the sampled channel;
+    /// lifted ones get their brush created here and painted with at compile.
+    /// </summary>
+    private IReadOnlyCollection<(SvgElement Element, string Attribute)> PartitionPaintTargets(
+        SvgAnimator animator, Compositor compositor)
+    {
+        var sampled = new HashSet<(SvgElement Element, string Attribute)>();
+
+        foreach (var target in animator.GetPaintTargets())
+        {
+            var lifts = new List<(SvgAnimationEntry Entry, Color[] Frames)>();
+            var allLift = true;
+
+            foreach (var entry in animator.Entries)
+            {
+                if (entry.Target != target.Element
+                    || entry.AttributeName != target.Attribute
+                    || !animator.IsPaintEntry(entry))
+                {
+                    continue;
+                }
+
+                if (SvgCompositionAnimation.TryClassifyPaint(entry, out var frames))
+                {
+                    lifts.Add((entry, frames));
+                }
+                else
+                {
+                    allLift = false;
+                    break;
+                }
+            }
+
+            if (allLift && lifts.Count > 0)
+            {
+                _liftedBrushes[target] = compositor.CreateSolidColorBrush();
+                _liftedEntries.AddRange(lifts);
+            }
+            else
+            {
+                sampled.Add(target);
+            }
+        }
+
+        return sampled;
     }
 
     /// <summary>The visual to attach as the control's child visual.</summary>
@@ -188,6 +244,8 @@ internal sealed class SvgCompositionHost : IDisposable
         {
             ElementFilter = membership.Contains,
             PaintAnimationTargets = _paintTargets.Count > 0 ? _paintTargets : null,
+            LiftedPaintBrushes = _liftedBrushes.Count > 0 ? _liftedBrushes : null,
+            SeededLiftedTargets = _liftedBrushes.Count > 0 ? _seededLifted : null,
         };
 
         // DrawingRecording.Create compiles synchronously, so the instance's
@@ -269,6 +327,31 @@ internal sealed class SvgCompositionHost : IDisposable
         }
     }
 
+    /// <summary>
+    /// Starts the lifted paint timelines as server-side color key-frame
+    /// animations on their composition brushes. Several entries on one target
+    /// start in document order, so the last one drives the brush - the same
+    /// later-wins the sampled channel produces per tick.
+    /// </summary>
+    private void StartPaintAnimations()
+    {
+        foreach (var (entry, colorFrames) in _liftedEntries)
+        {
+            entry.Claimed = true;
+
+            var brush = _liftedBrushes[(entry.Target, entry.AttributeName)];
+            var frames = _compositor.CreateColorKeyFrameAnimation();
+            Configure(frames, entry);
+
+            var linear = new LinearEasing();
+            var last = colorFrames.Length - 1;
+            for (var i = 0; i < colorFrames.Length; i++)
+                frames.InsertKeyFrame(last == 0 ? 1f : (float)i / last, colorFrames[i], linear);
+
+            brush.StartAnimation("Color", frames);
+        }
+    }
+
     private static void InsertFrames<TAnimation>(
         TAnimation animation,
         SvgCompositionAnimation source,
@@ -310,10 +393,25 @@ internal sealed class SvgCompositionHost : IDisposable
 
         UnclaimEntries(_rootGroup);
 
+        foreach (var (entry, _) in _liftedEntries)
+            entry.Claimed = false;
+
         foreach (var recording in _recordings)
             recording.Dispose();
         _recordings.Clear();
         _structuralSlices.Clear();
+
+        // Composition objects expose Dispose internally only; the IVT lets the
+        // host release its brushes so re-hosting does not accumulate server
+        // objects for the compositor's lifetime.
+        foreach (var brush in _liftedBrushes.Values)
+        {
+            brush.StopAnimation("Color");
+            brush.Dispose();
+        }
+
+        _liftedBrushes.Clear();
+        _liftedEntries.Clear();
     }
 
     private static void UnclaimEntries(SvgCompositionGroup group)

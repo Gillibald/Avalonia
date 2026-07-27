@@ -121,8 +121,9 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
     public async Task Image_Hosts_A_Paint_Only_Animation()
     {
         // No transform/opacity, so the partition has no composition group: the
-        // relaxed gate still hosts it as a single static slice whose mutable fill
-        // brush the paint tick drives.
+        // relaxed gate still hosts it as a single static slice. The fill
+        // timeline lifts to a composition brush, so the whole document runs on
+        // the render thread and the instance never needs a UI-thread clock.
         using var document = SvgDocument.Parse(
             """
             <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
@@ -133,7 +134,28 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
             </svg>
             """);
 
-        await RenderHostedImage(document);
+        var probe = await RenderHostedImage(document);
+        Assert.False(probe.InstanceNeededClock);
+    }
+
+    [Fact]
+    public async Task Image_Hosts_A_Delayed_Paint_Animation_On_The_Sampled_Channel()
+    {
+        // A delayed begin cannot lift (the base color shown before begin is not
+        // representable next to a batched animation start), so the entry stays
+        // on the sampled paint channel and the instance keeps its clock.
+        using var document = SvgDocument.Parse(
+            """
+            <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+              <rect width="100" height="100" fill="#0b1022"/>
+              <circle cx="50" cy="50" r="30" fill="#22d3ee">
+                <animate attributeName="fill" values="#f472b6;#22d3ee" begin="5000s" dur="10000s" repeatCount="indefinite"/>
+              </circle>
+            </svg>
+            """);
+
+        var probe = await RenderHostedImage(document);
+        Assert.True(probe.InstanceNeededClock);
     }
 
     [Fact]
@@ -183,7 +205,8 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
     /// the render harness detaches the control after the composited pass and
     /// hosting releases its instance (and child visual) on detach.
     /// </summary>
-    private async Task RenderHostedImage(SvgDocument document, [CallerMemberName] string testName = "")
+    private async Task<CompositionImageProbe> RenderHostedImage(
+        SvgDocument document, [CallerMemberName] string testName = "")
     {
         var svgImage = new SvgImage(document);
         var probe = new CompositionImageProbe(svgImage);
@@ -204,6 +227,8 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         using var composited = SixLabors.ImageSharp.Image.Load<Rgba32>(compositedPath);
         var error = TestRenderHelper.CompareImages(composited, immediate);
         Assert.True(error <= 0.022, $"{compositedPath} vs immediate: Error = {error}");
+
+        return probe;
     }
 
     /// <summary>
@@ -220,6 +245,13 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
 
         public int InstancesCreated { get; private set; }
 
+        /// <summary>
+        /// Whether the most recent instance needed UI-thread ticks at creation,
+        /// recorded here because the harness tears the instance down (and
+        /// unclaims its entries) before the test can ask it directly.
+        /// </summary>
+        public bool? InstanceNeededClock { get; private set; }
+
         public Size Size => _inner.Size;
 
         public void Draw(DrawingContext context, Rect sourceRect, Rect destRect) =>
@@ -235,7 +267,10 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         {
             var instance = ((ICompositionImage)_inner).CreateInstance(compositor);
             if (instance is not null)
+            {
                 InstancesCreated++;
+                InstanceNeededClock = instance.NeedsClock;
+            }
             return instance;
         }
     }
