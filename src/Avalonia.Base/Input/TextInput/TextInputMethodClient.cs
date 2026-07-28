@@ -82,6 +82,29 @@ namespace Avalonia.Input.TextInput
         {
             SetPreeditText(preeditText);
         }
+
+        /// <summary>
+        /// Returns the index of the character nearest to <paramref name="point"/>, or -1 when the
+        /// client has no text view. The point is expressed in <see cref="TextViewVisual"/>
+        /// coordinates. Used by IMEs to hit-test pointer events against the active composition
+        /// (e.g. to move the caret inside it).
+        /// </summary>
+        /// <remarks>
+        /// The index is into the laid-out text, which includes any active preedit inserted at the
+        /// caret. It therefore agrees with <see cref="SurroundingText"/> indices up to the start of
+        /// the composition, and runs ahead of them by the preedit length after it; callers
+        /// comparing against a composition range must work in this space. The nearest index is
+        /// returned rather than requiring strict containment, matching the semantics of
+        /// NSTextInputClient's characterIndexForPoint:.
+        /// </remarks>
+        public virtual int GetCharacterIndexFromPoint(Point point) => -1;
+
+        /// <summary>
+        /// Returns the bounding rectangle, in <see cref="TextViewVisual"/> coordinates, of the given
+        /// character range, or null when geometry isn't available. The range is in the same index
+        /// space as <see cref="GetCharacterIndexFromPoint"/>.
+        /// </summary>
+        public virtual Rect? GetTextRectForRange(int start, int end) => null;
         
         protected virtual void RaiseTextViewVisualChanged()
         {

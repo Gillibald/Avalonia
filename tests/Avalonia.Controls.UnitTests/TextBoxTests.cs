@@ -2317,6 +2317,148 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
+        public void InputMethodClient_GetCharacterIndexFromPoint_Returns_Index_Under_Point()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            var (client, presenter) = CreateLaidOutInputMethodClient("abc def");
+
+            // Probe the middle of the glyph at index 4 ('d').
+            var index = client.GetCharacterIndexFromPoint(FirstRect(presenter, 4, 1).Center);
+
+            Assert.Equal(4, index);
+        }
+
+        [Fact]
+        public void InputMethodClient_GetCharacterIndexFromPoint_Returns_Nearest_Index_Beyond_End_Of_Line()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            var (client, presenter) = CreateLaidOutInputMethodClient("abc def");
+
+            var lastGlyph = FirstRect(presenter, 6, 1);
+            var beyond = new Point(lastGlyph.Right + 500, lastGlyph.Center.Y);
+
+            // Nearest index, not strict containment: a containment check would answer -1 here.
+            var index = client.GetCharacterIndexFromPoint(beyond);
+
+            Assert.NotEqual(-1, index);
+            Assert.InRange(index, 0, "abc def".Length);
+        }
+
+        [Fact]
+        public void InputMethodClient_GetCharacterIndexFromPoint_Indices_Include_Active_Preedit()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            var (client, presenter) = CreateLaidOutInputMethodClient("abc def", caretIndex: 3);
+
+            // Preedit is inserted at the caret, so the laid-out text becomes "abcXY def" - two
+            // characters longer than SurroundingText, and indices after the composition shift.
+            client.SetPreeditText("XY", 2);
+            Relayout(presenter);
+
+            // Index 7 is the 'e' of "def". Probing mid-text on purpose: a probe at the centre of
+            // the very last glyph resolves to the trailing position after it, not to the glyph.
+            var index = client.GetCharacterIndexFromPoint(FirstRect(presenter, 7, 1).Center);
+
+            Assert.Equal(7, index);
+
+            // Decisive: 7 is past the end of SurroundingText, so this cannot be that index space.
+            Assert.Equal("abc def", client.SurroundingText);
+            Assert.True(index > client.SurroundingText.Length - 1);
+        }
+
+        [Fact]
+        public void InputMethodClient_GetCharacterIndexFromPoint_Returns_Minus_One_Without_Presenter()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            // No ApplyTemplate, so the client never gets a presenter. This is the only -1 path;
+            // a point outside the text returns the nearest index instead.
+            var textBox = new TextBox { Template = CreateTemplate(), Text = "abc" };
+
+            var client = GetInputMethodClient(textBox);
+
+            Assert.Equal(-1, client.GetCharacterIndexFromPoint(new Point(5, 5)));
+        }
+
+        [Fact]
+        public void InputMethodClient_GetTextRectForRange_Returns_First_Rect_Of_Range()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            var (client, presenter) = CreateLaidOutInputMethodClient("abc def");
+
+            var rect = client.GetTextRectForRange(4, 7);
+
+            Assert.NotNull(rect);
+            Assert.Equal(FirstRect(presenter, 4, 3), rect!.Value);
+        }
+
+        [Fact]
+        public void InputMethodClient_GetTextRectForRange_Returns_Null_For_Range_Past_End()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            var (client, _) = CreateLaidOutInputMethodClient("abc def");
+
+            // Null lets the macOS backend fall back to the cursor rect rather than reporting
+            // a zero-sized rectangle as if it were real geometry.
+            Assert.Null(client.GetTextRectForRange(50, 60));
+        }
+
+        [Fact]
+        public void InputMethodClient_GetTextRectForRange_Returns_Null_For_Inverted_Range()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+
+            var (client, _) = CreateLaidOutInputMethodClient("abc def");
+
+            Assert.Null(client.GetTextRectForRange(6, 2));
+        }
+
+        private static (TextInputMethodClient Client, TextPresenter Presenter) CreateLaidOutInputMethodClient(
+            string text,
+            int caretIndex = 0)
+        {
+            var textBox = new TextBox
+            {
+                Template = CreateTemplate(),
+                Text = text,
+                CaretIndex = caretIndex
+            };
+
+            textBox.ApplyTemplate();
+
+            var client = GetInputMethodClient(textBox);
+            var presenter = Assert.IsType<TextPresenter>(client.TextViewVisual);
+
+            Relayout(presenter);
+
+            return (client, presenter);
+        }
+
+        private static void Relayout(TextPresenter presenter)
+        {
+            var root = (Layoutable)presenter.GetVisualRoot()! ?? presenter;
+
+            root.InvalidateMeasure();
+            root.Measure(Size.Infinity);
+            root.Arrange(new Rect(root.DesiredSize));
+        }
+
+        private static Rect FirstRect(TextPresenter presenter, int start, int length)
+        {
+            foreach (var rect in presenter.TextLayout.HitTestTextRange(start, length))
+            {
+                return rect;
+            }
+
+            throw new InvalidOperationException($"No rect for range {start}..{start + length}.");
+        }
+
+        [Fact]
         public void Backspace_Should_Delete_Last_Character_In_Line_And_Keep_Caret_On_Same_Line()
         {
             using var _ = UnitTestApplication.Start(Services);

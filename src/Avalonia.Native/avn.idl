@@ -871,8 +871,18 @@ interface IAvnWindowEvents : IAvnWindowBaseEvents
 [uuid(f2079145-a2d9-42b8-a85e-2732e3c2b055)]
 interface IAvnTextInputMethodClient : IUnknown
 {
-    void SetPreeditText(char* preeditText);
+    void SetPreeditText(char* preeditText, int cursorPos);
     void SelectInSurroundingText(int start, int end);
+    // Returns the index of the character nearest to the given point, or -1 when the client has
+    // no text view. The point is expressed in the top level's coordinate space (same space as
+    // raw pointer events). The index is into the laid-out text, which includes any active
+    // preedit inserted at the caret, so it agrees with surrounding-text indices up to the start
+    // of the composition and runs ahead of them by the preedit length after it.
+    int GetCharacterIndexFromPoint(AvnPoint point);
+    // Returns the bounding rectangle (top level coordinate space) of the given character range,
+    // in the same index space as GetCharacterIndexFromPoint. Used to answer NSTextInputClient
+    // firstRectForCharacterRange:.
+    HRESULT GetTextRectForRange(int start, int end, AvnRect* rect);
 }
 
 [uuid(1382a29f-e260-4c7a-b83f-c99fc72e27c2)]

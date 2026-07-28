@@ -154,6 +154,52 @@ namespace Avalonia.Controls
             _presenter.SetCurrentValue(TextPresenter.PreeditTextCursorPositionProperty, cursorPos);
         }
 
+        public override int GetCharacterIndexFromPoint(Point point)
+        {
+            if (_presenter is null || _parent is null)
+            {
+                return -1;
+            }
+
+            var hit = _presenter.TextLayout.HitTestPoint(point);
+
+            // hit.TextPosition is the nearest character index in the layout (which includes the
+            // active preedit). NSTextInputClient.characterIndexForPoint: wants the nearest index,
+            // not strict containment, so we deliberately do not gate on hit.IsInside.
+            var index = hit.TextPosition;
+
+            if (index < 0)
+            {
+                return -1;
+            }
+
+            return index;
+        }
+
+        public override Rect? GetTextRectForRange(int start, int end)
+        {
+            if (_presenter is null || _parent is null)
+            {
+                return null;
+            }
+
+            if (end < start)
+            {
+                return null;
+            }
+
+            // An empty range asks for the caret position, which a one-character range answers.
+            var length = Math.Max(1, end - start);
+
+            foreach (var rect in _presenter.TextLayout.HitTestTextRange(start, length))
+            {
+                // The first rectangle is enough to satisfy NSTextInputClient firstRectForCharacterRange:.
+                return rect;
+            }
+
+            return null;
+        }
+
         public override void ExecuteContextMenuAction(ContextMenuAction action)
         {
             base.ExecuteContextMenuAction(action);

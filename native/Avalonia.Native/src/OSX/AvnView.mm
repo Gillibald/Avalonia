@@ -798,7 +798,8 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
     if (parent != nullptr && parent->InputMethod->IsActive())
     {
-        parent->InputMethod->Client->SetPreeditText((char*)[markedText UTF8String]);
+        // selectedRange.location is the caret offset within the marked (preedit) text.
+        parent->InputMethod->Client->SetPreeditText((char*)[markedText UTF8String], (int)selectedRange.location);
     }
 }
 
@@ -806,7 +807,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 {
     auto parent = _parent.tryGet();
     if(parent->InputMethod->IsActive()){
-        parent->InputMethod->Client->SetPreeditText(nullptr);
+        parent->InputMethod->Client->SetPreeditText(nullptr, -1);
     }
     
     _markedRange = NSMakeRange(_selectedRange.location, 0);
@@ -873,17 +874,54 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (NSUInteger)characterIndexForPoint:(NSPoint)point
 {
-    return NSNotFound;
+    auto parent = _parent.tryGet();
+    if(parent == nullptr || !parent->InputMethod->IsActive()){
+        return NSNotFound;
+    }
+
+    // point is in screen coordinates. Convert it to the top level coordinate space using the
+    // same screen -> window -> view-local conversion that pointer events use.
+    NSPoint windowPoint = [[self window] convertPointFromScreen:point];
+    auto viewLocation = [self convertPoint:NSMakePoint(0, 0) toView:nil];
+    auto localPoint = NSMakePoint(windowPoint.x - viewLocation.x, viewLocation.y - windowPoint.y);
+
+    int index = parent->InputMethod->Client->GetCharacterIndexFromPoint(ToAvnPoint(localPoint));
+
+    if(index < 0){
+        return NSNotFound;
+    }
+
+    return (NSUInteger)index;
 }
 
 - (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actualRange
 {
     auto parent = _parent.tryGet();
-    if(!parent->InputMethod->IsActive()){
+    if(parent == nullptr || !parent->InputMethod->IsActive()){
         return NSZeroRect;
     }
-    
-    return _cursorRect;
+
+    AvnRect avnRect = {};
+    parent->InputMethod->Client->GetTextRectForRange((int)range.location, (int)(range.location + range.length), &avnRect);
+
+    if(avnRect.Width <= 0 || avnRect.Height <= 0){
+        // Fall back to the cursor rect when the client can't provide range geometry.
+        return _cursorRect;
+    }
+
+    // avnRect is in the top level coordinate space (Y-down). Convert it to a screen rect using
+    // the same math as setCursorRect.
+    NSRect rect = ToNSRect(avnRect);
+    NSRect viewRectOnScreen = [[self window] convertRectToScreen:self.frame];
+    viewRectOnScreen.origin = NSMakePoint(viewRectOnScreen.origin.x + rect.origin.x,
+                                          viewRectOnScreen.origin.y + self.frame.size.height - rect.origin.y - rect.size.height);
+    viewRectOnScreen.size = rect.size;
+
+    if(actualRange){
+        *actualRange = range;
+    }
+
+    return viewRectOnScreen;
 }
 
 - (NSDragOperation)triggerAvnDragEvent: (AvnDragEventType) type info: (id <NSDraggingInfo>)info
@@ -1047,7 +1085,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     auto parent = _parent.tryGet();
 
     if(parent != nullptr && parent->InputMethod->IsActive()){
-        parent->InputMethod->Client->SetPreeditText(nullptr);
+        parent->InputMethod->Client->SetPreeditText(nullptr, -1);
     }
 
     _markedRange = NSMakeRange(_selectedRange.location, 0);
