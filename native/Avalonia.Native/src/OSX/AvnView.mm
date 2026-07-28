@@ -20,8 +20,12 @@
     AvnPlatformResizeReason _resizeReason;
     NSRect _cursorRect;
     NSMutableAttributedString* _text;
+    NSString* _markedText;
     NSRange _selectedRange;
     NSRange _markedRange;
+    // True while the input context is processing an event (handleEvent:). Selection updates that
+    // happen as a side effect of the IME's own composition must NOT be reported back to it.
+    BOOL _imeProcessingEvent;
     NSEvent* _lastKeyDownEvent;
     NSMutableArray* _accessibilityChildren;
 }
@@ -376,16 +380,62 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
         }
     }
 
+    // When there is an active composition, give the input context a chance to handle the
+    // button-down first. The IME may either commit the composition (click outside the marked
+    // text) or move the caret/selection inside the composition (click inside the marked text).
+    // If the IME consumes the event we must NOT also dispatch it as a raw pointer event,
+    // otherwise the click would be handled twice (IME moves the caret AND Avalonia moves it).
+    bool handledByInputContext = false;
     if([self hasMarkedText] &&
        (type == LeftButtonDown || type == RightButtonDown || type == MiddleButtonDown ||
         type == XButton1Down || type == XButton2Down) &&
        [self inputContext] != nil)
     {
-        [[self inputContext] handleEvent:event];
+        // Hit-test the click against the active composition (marked text).
+        NSPoint screenPoint = [[self window] convertPointToScreen:[event locationInWindow]];
+        NSUInteger clickedIndex = [self characterIndexForPoint:screenPoint];
+
+        BOOL insideComposition = clickedIndex != NSNotFound &&
+            clickedIndex >= _markedRange.location &&
+            clickedIndex <= _markedRange.location + _markedRange.length;
+
+        if(insideComposition && _markedText != nil)
+        {
+            // Click landed inside the composition. Move the preedit caret to the clicked offset and
+            // report the new selection to the input context. IMEs that honour out-of-band selection
+            // changes will move their composition insertion point to match; the system Japanese IME
+            // currently only moves the visible caret, but the state flow is correct either way.
+            NSUInteger offsetWithinMarked = clickedIndex - _markedRange.location;
+            _selectedRange = NSMakeRange(clickedIndex, 0);
+
+            auto imParent = _parent.tryGet();
+            if(imParent != nullptr && imParent->InputMethod->IsActive())
+            {
+                imParent->InputMethod->Client->SetPreeditText((char*)[_markedText UTF8String], (int)offsetWithinMarked);
+            }
+
+            [self notifySelectionDidUpdate];
+
+            // Consume the click so Avalonia doesn't also move the caret in the committed buffer.
+            handledByInputContext = true;
+        }
+        else
+        {
+            _imeProcessingEvent = YES;
+            handledByInputContext = [[self inputContext] handleEvent:event];
+            _imeProcessingEvent = NO;
+
+            if(!handledByInputContext && [self hasMarkedText] && _markedText != nil)
+            {
+                // IME declined and the click is outside the composition: commit the current
+                // composition instead of dropping it, then let the click move the caret.
+                [self insertText:_markedText replacementRange:NSMakeRange(NSNotFound, 0)];
+            }
+        }
     }
 
     auto parent = _parent.tryGet();
-    if(parent != nullptr)
+    if(parent != nullptr && !handledByInputContext)
     {
         parent->TopLevelEvents->RawMouseEvent(type, pointerType, timestamp, modifiers, point, delta, pressure, xTilt, yTilt);
     }
@@ -645,7 +695,9 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
     _modifierState = newModifierState;
 
+    _imeProcessingEvent = YES;
     [[self inputContext] handleEvent:event];
+    _imeProcessingEvent = NO;
     [super flagsChanged:event];
 }
 
@@ -687,9 +739,13 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
             }
         }
         
-        if([[self inputContext] handleEvent:event] == NO){
+        _imeProcessingEvent = YES;
+        BOOL keyHandledByInputContext = [[self inputContext] handleEvent:event];
+        _imeProcessingEvent = NO;
+
+        if(keyHandledByInputContext == NO){
             //KeyDown has not been consumed by the input context
-                
+
             //Only raise a keyDown if we don't have a modifier
             if(!hasInputModifier){
                 [self handleKeyDown:timestamp withKey:key withPhysicalKey:physicalKey withModifiers:modifiers withKeySymbol:keySymbol];
@@ -795,6 +851,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     }
     
     _markedRange = NSMakeRange(_selectedRange.location, [markedText length]);
+    _markedText = markedText;
 
     if (parent != nullptr && parent->InputMethod->IsActive())
     {
@@ -809,9 +866,10 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     if(parent->InputMethod->IsActive()){
         parent->InputMethod->Client->SetPreeditText(nullptr, -1);
     }
-    
+
+    _markedText = nil;
     _markedRange = NSMakeRange(_selectedRange.location, 0);
-    
+
     if([self inputContext]) {
         [[self inputContext] discardMarkedText];
     }
@@ -832,10 +890,10 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     // In this case, you should return the intersection of the document's range and aRange.
     // If the location of aRange is completely outside of the document's range, return nil.
     auto finalRange = NSIntersectionRange(range, NSMakeRange(0, _text.length));
-    
+
     if (finalRange.length == 0)
         return nil;
-    
+
     NSAttributedString* subString = [_text attributedSubstringFromRange:finalRange];
     return subString;
 }
@@ -866,9 +924,9 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     }
     
     [self unmarkText];
-        
+
     uint64_t timestamp = static_cast<uint64_t>([NSDate timeIntervalSinceReferenceDate] * 1000);
-        
+
     parent->TopLevelEvents->RawTextInputEvent(timestamp, [text UTF8String]);
 }
 
@@ -922,6 +980,24 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     }
 
     return viewRectOnScreen;
+}
+
+// macOS 14+ queries these in response to textInputClientDidUpdateSelection (selection affordances /
+// Writing Tools). They must exist on the client or AppKit raises an unrecognized-selector exception.
+- (NSRect)unionRectInVisibleSelectedRange
+{
+    // Bounding rect of the current selection in screen coordinates. The caret/selection rect we
+    // already track for the IME is a good approximation.
+    return _cursorRect;
+}
+
+- (NSRect)documentVisibleRect
+{
+    if([self window] == nil){
+        return [self visibleRect];
+    }
+
+    return [[self window] convertRectToScreen:[self convertRect:[self visibleRect] toView:nil]];
 }
 
 - (NSDragOperation)triggerAvnDragEvent: (AvnDragEventType) type info: (id <NSDraggingInfo>)info
@@ -1079,20 +1155,32 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void) setSelection:(int)start :(int)end{
     _selectedRange = NSMakeRange(start, end - start);
+
+    // Report out-of-band selection changes (caret moved by Avalonia, not by the IME) to the input
+    // context. notifySelectionDidUpdate suppresses the IME's own updates.
+    [self notifySelectionDidUpdate];
+}
+
+- (void) notifySelectionDidUpdate{
+    // Tell the input context that the client's selection changed out-of-band (i.e. not as a
+    // result of the IME itself). Available on macOS 14+, so probe for it.
+    // Guarded with _imeProcessingEvent: notifying can make the IME call back into us (e.g.
+    // setMarkedText -> setSelection), which would otherwise recurse into another notification.
+    if(_imeProcessingEvent){
+        return;
+    }
+
+    if([self inputContext] != nil && [[self inputContext] respondsToSelector:@selector(textInputClientDidUpdateSelection)]){
+        _imeProcessingEvent = YES;
+        [[self inputContext] textInputClientDidUpdateSelection];
+        _imeProcessingEvent = NO;
+    }
 }
 
 - (void) resetInputMethod{
-    auto parent = _parent.tryGet();
-
-    if(parent != nullptr && parent->InputMethod->IsActive()){
-        parent->InputMethod->Client->SetPreeditText(nullptr, -1);
-    }
-
-    _markedRange = NSMakeRange(_selectedRange.location, 0);
-
-    if([self inputContext]) {
-        [[self inputContext] discardMarkedText];
-    }
+    // Same teardown as ending a composition normally: clearing the preedit, the marked range and
+    // the marked text must stay in one place, since the pointer path reads _markedText directly.
+    [self unmarkText];
 }
 
 - (void) setCursorRect:(AvnRect)rect{
