@@ -582,7 +582,15 @@ namespace TextTestApp
             TextRenderingMode rendering)
         {
             float[] sizes = { 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24 };
-            TextHintingMode[] hintings = { TextHintingMode.None, TextHintingMode.Light, TextHintingMode.Strong };
+
+            // Unspecified sits last: the explicit ladder first, then the policy column showing
+            // what apps that set nothing actually get (the gasp escalation resolves per size,
+            // so a legacy font can be Light at one row and Strong at the next).
+            TextHintingMode[] hintings =
+            {
+                TextHintingMode.None, TextHintingMode.Light, TextHintingMode.Strong,
+                TextHintingMode.Unspecified,
+            };
 
             // Column width from the widest (largest) run.
             var scale = sizes[^1] / typeface.Metrics.DesignEmHeight;
