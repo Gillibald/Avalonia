@@ -88,6 +88,12 @@ namespace TextTestApp
                 _size.Text = presetSize;
             }
 
+            if (Environment.GetEnvironmentVariable("GLYPH_FONT") is { Length: > 0 } presetFont)
+            {
+                _font.SelectedItem = FontManager.Current.SystemFonts
+                    .FirstOrDefault(f => string.Equals(f.Name, presetFont, StringComparison.OrdinalIgnoreCase));
+            }
+
             if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
             {
                 _globalTabs.SelectedIndex = inspect switch
