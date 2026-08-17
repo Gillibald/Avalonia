@@ -68,6 +68,7 @@ namespace Avalonia.Media
         private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
         private Fonts.Rasterization.StemWidthTable? _stemWidthTable;
         private Fonts.Tables.GaspTable? _gaspTable;
+        private Fonts.Rasterization.TrueType.TrueTypeProgramTables? _programTables;
         private Fonts.Rasterization.Slug.SlugGlyphCache? _slugGlyphCache;
         private Fonts.Rasterization.Slug.SlugTexelStore? _slugTexelStore;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildGlyphGeometry;
@@ -1928,6 +1929,17 @@ namespace Avalonia.Media
         /// </summary>
         internal Fonts.Tables.GaspTable Gasp =>
             _gaspTable ??= Fonts.Tables.GaspTable.Load(this);
+
+        /// <summary>
+        /// The raw TrueType hinting programs (fpgm/prep/cvt),
+        /// <see cref="Fonts.Rasterization.TrueType.TrueTypeProgramTables.Empty"/> for fonts
+        /// without glyf outlines (the programs are meaningless for CFF) or without the tables.
+        /// Same benign create race as <see cref="StemWidths"/>.
+        /// </summary>
+        internal Fonts.Rasterization.TrueType.TrueTypeProgramTables ProgramTables =>
+            _programTables ??= _glyfTable is null
+                ? Fonts.Rasterization.TrueType.TrueTypeProgramTables.Empty
+                : Fonts.Rasterization.TrueType.TrueTypeProgramTables.Load(this);
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
