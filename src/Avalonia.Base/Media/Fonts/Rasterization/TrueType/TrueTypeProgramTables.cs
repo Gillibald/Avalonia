@@ -66,6 +66,14 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 controlValues = default;
             }
 
+            return Create(fontProgram, controlValueProgram, controlValues);
+        }
+
+        public static TrueTypeProgramTables Create(
+            ReadOnlyMemory<byte> fontProgram,
+            ReadOnlyMemory<byte> controlValueProgram,
+            ReadOnlyMemory<byte> controlValues)
+        {
             if ((controlValues.Length & 1) != 0)
             {
                 controlValues = controlValues.Slice(0, controlValues.Length & ~1);
