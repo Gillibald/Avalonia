@@ -23,7 +23,10 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         public ReadOnlySpan<GlyphComponent> Components { get; }
 
         /// <summary>
-        /// Gets the instruction data (currently unused).
+        /// Gets the composite instruction stream that follows the last component. Empty when
+        /// the last component's WE_HAVE_INSTRUCTIONS flag is clear, or when the declared
+        /// stream overruns the glyph record (half a program must not execute, so a truncated
+        /// stream reads as absent rather than clamped).
         /// </summary>
         public ReadOnlySpan<byte> Instructions { get; }
 
@@ -47,10 +50,11 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// <param name="usesPointMatching">Indicates whether any component is positioned by point matching rather than by an x/y offset.</param>
         /// <param name="rentedBuffer">An optional array used as a rented buffer for internal storage. If provided, the buffer may be used to
         /// optimize memory usage.</param>
-        private CompositeGlyph(ReadOnlySpan<GlyphComponent> components, bool usesPointMatching, GlyphComponent[]? rentedBuffer)
+        private CompositeGlyph(ReadOnlySpan<GlyphComponent> components, ReadOnlySpan<byte> instructions,
+            bool usesPointMatching, GlyphComponent[]? rentedBuffer)
         {
             Components = components;
-            Instructions = default;
+            Instructions = instructions;
             UsesPointMatching = usesPointMatching;
             _rentedBuffer = rentedBuffer;
         }
@@ -167,19 +171,30 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     moreComponents = (flags & CompositeFlags.MoreComponents) != 0;
                 } while (moreComponents);
 
-                // Instructions if present (currently unused)
-                //ReadOnlySpan<byte> instructions = ReadOnlySpan<byte>.Empty;
-                //if (componentCount > 0 && (componentsBuffer[componentCount - 1].Flags & CompositeFlags.WeHaveInstructions) != 0)
-                //{
-                //    ushort instrLen = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2));
-                //    offset += 2;
-                //    instructions = data.Slice(offset, instrLen);
-                //}
+                // The instruction stream follows the last component when that component's
+                // flags announce one (the spec puts the flag on the last record). A stream
+                // whose declared length overruns the glyph record is malformed and reads as
+                // absent: executing half a program would move points arbitrarily, while a
+                // missing one merely renders unhinted.
+                ReadOnlySpan<byte> instructions = default;
+
+                if (componentCount > 0 &&
+                    (componentsBuffer[componentCount - 1].Flags & CompositeFlags.WeHaveInstructions) != 0 &&
+                    data.Length - offset >= 2)
+                {
+                    int instructionLength = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(offset, 2));
+
+                    if (instructionLength <= data.Length - offset - 2)
+                    {
+                        instructions = data.Slice(offset + 2, instructionLength);
+                    }
+                }
 
                 // Return a CompositeGlyph with the rented buffer
                 // The caller is responsible for calling Dispose() to return the buffer
                 return new CompositeGlyph(
                     componentsBuffer.AsSpan(0, componentCount),
+                    instructions,
                     usesPointMatching,
                     componentsBuffer
                 );
