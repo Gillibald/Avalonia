@@ -27,6 +27,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
         public TrueTypeError Error { get; }
 
+        /// <summary>The 16.16 factor from font units to 26.6 device pixels at this size.</summary>
+        public int Scale { get; private set; }
+
         public bool IsValid => Error == TrueTypeError.None && Interpreter is not null;
 
         /// <summary>The graphics state every glyph run starts from.</summary>
@@ -140,6 +143,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             var state = new TrueTypeSizeState(interpreter, TrueTypeError.None)
             {
                 InstructControl = interpreter.GraphicsState.InstructControl,
+                Scale = scale,
             };
 
             // INSTCTRL bit 2 asks for prep's graphics-state changes to be discarded; the

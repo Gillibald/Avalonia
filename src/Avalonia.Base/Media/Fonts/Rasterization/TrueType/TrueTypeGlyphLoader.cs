@@ -84,21 +84,43 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _zone.ContourCount = contourCount;
             _zone.FirstPoint = 0;
 
-            // Phantom points in font units: origin and advance on the baseline, then the
-            // vertical pair synthesized from the ink top and the vertical advance.
-            SetPhantom(pointCount + 0, xMin - leftSideBearing, 0, scale16Dot16);
-            SetPhantom(pointCount + 1, xMin - leftSideBearing + advanceWidth, 0, scale16Dot16);
-            SetPhantom(pointCount + 2, 0, yMax, scale16Dot16);
-            SetPhantom(pointCount + 3, 0, yMax - verticalAdvance, scale16Dot16);
-
-            // The reference rounds the horizontal pair's x and the vertical pair's y before
-            // any instruction runs.
-            _zone.CurX[pointCount + 0] = F26Dot6.Round(_zone.CurX[pointCount + 0]);
-            _zone.CurX[pointCount + 1] = F26Dot6.Round(_zone.CurX[pointCount + 1]);
-            _zone.CurY[pointCount + 2] = F26Dot6.Round(_zone.CurY[pointCount + 2]);
-            _zone.CurY[pointCount + 3] = F26Dot6.Round(_zone.CurY[pointCount + 3]);
+            InitializePhantoms(
+                _zone, pointCount, xMin, yMax, leftSideBearing, advanceWidth, verticalAdvance,
+                scale16Dot16, round: true);
 
             return true;
+        }
+
+        /// <summary>
+        /// Writes the four phantom points at <paramref name="firstIndex"/>: origin and
+        /// advance on the baseline, then the vertical pair synthesized from the ink top and
+        /// the vertical advance. When <paramref name="round"/> is set, the horizontal pair's
+        /// x and the vertical pair's y pre-round to the pixel grid the way the reference
+        /// rounds them before any instruction runs.
+        /// </summary>
+        public static void InitializePhantoms(
+            TrueTypeZone zone,
+            int firstIndex,
+            int xMin,
+            int yMax,
+            int leftSideBearing,
+            int advanceWidth,
+            int verticalAdvance,
+            int scale16Dot16,
+            bool round)
+        {
+            SetPhantom(zone, firstIndex + 0, xMin - leftSideBearing, 0, scale16Dot16);
+            SetPhantom(zone, firstIndex + 1, xMin - leftSideBearing + advanceWidth, 0, scale16Dot16);
+            SetPhantom(zone, firstIndex + 2, 0, yMax, scale16Dot16);
+            SetPhantom(zone, firstIndex + 3, 0, yMax - verticalAdvance, scale16Dot16);
+
+            if (round)
+            {
+                zone.CurX[firstIndex + 0] = F26Dot6.Round(zone.CurX[firstIndex + 0]);
+                zone.CurX[firstIndex + 1] = F26Dot6.Round(zone.CurX[firstIndex + 1]);
+                zone.CurY[firstIndex + 2] = F26Dot6.Round(zone.CurY[firstIndex + 2]);
+                zone.CurY[firstIndex + 3] = F26Dot6.Round(zone.CurY[firstIndex + 3]);
+            }
         }
 
         private bool TryLoadOutline(
@@ -212,15 +234,15 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             return true;
         }
 
-        private void SetPhantom(int index, int xUnits, int yUnits, int scale16Dot16)
+        private static void SetPhantom(TrueTypeZone zone, int index, int xUnits, int yUnits, int scale16Dot16)
         {
-            _zone.OrusX[index] = xUnits;
-            _zone.OrusY[index] = yUnits;
-            _zone.OrgX[index] = F26Dot6.MulFix(xUnits, scale16Dot16);
-            _zone.OrgY[index] = F26Dot6.MulFix(yUnits, scale16Dot16);
-            _zone.CurX[index] = _zone.OrgX[index];
-            _zone.CurY[index] = _zone.OrgY[index];
-            _zone.Tags[index] = 0;
+            zone.OrusX[index] = xUnits;
+            zone.OrusY[index] = yUnits;
+            zone.OrgX[index] = F26Dot6.MulFix(xUnits, scale16Dot16);
+            zone.OrgY[index] = F26Dot6.MulFix(yUnits, scale16Dot16);
+            zone.CurX[index] = zone.OrgX[index];
+            zone.CurY[index] = zone.OrgY[index];
+            zone.Tags[index] = 0;
         }
     }
 }

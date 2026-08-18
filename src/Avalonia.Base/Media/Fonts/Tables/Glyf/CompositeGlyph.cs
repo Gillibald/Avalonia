@@ -31,6 +31,14 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         public ReadOnlySpan<byte> Instructions { get; }
 
         /// <summary>
+        /// Offset of the instruction stream's length field within the post-header component
+        /// data, or -1 when no stream is present. Lets a caller holding the glyph's memory
+        /// re-slice the stream with a stable lifetime, since <see cref="Instructions"/> is
+        /// span-bound to this parse.
+        /// </summary>
+        public int InstructionsOffset { get; }
+
+        /// <summary>
         /// Gets a value indicating whether any component is positioned by point matching
         /// (ARGS_ARE_XY_VALUES is clear) rather than by an x/y offset.
         /// </summary>
@@ -52,10 +60,11 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// <param name="rentedBuffer">An optional array used as a rented buffer for internal storage. If provided, the buffer may be used to
         /// optimize memory usage.</param>
         private CompositeGlyph(ReadOnlySpan<GlyphComponent> components, ReadOnlySpan<byte> instructions,
-            bool usesPointMatching, GlyphComponent[]? rentedBuffer)
+            int instructionsOffset, bool usesPointMatching, GlyphComponent[]? rentedBuffer)
         {
             Components = components;
             Instructions = instructions;
+            InstructionsOffset = instructionsOffset;
             UsesPointMatching = usesPointMatching;
             _rentedBuffer = rentedBuffer;
         }
@@ -178,6 +187,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 // absent: executing half a program would move points arbitrarily, while a
                 // missing one merely renders unhinted.
                 ReadOnlySpan<byte> instructions = default;
+                var instructionsOffset = -1;
 
                 if (componentCount > 0 &&
                     (componentsBuffer[componentCount - 1].Flags & CompositeFlags.WeHaveInstructions) != 0 &&
@@ -188,6 +198,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     if (instructionLength <= data.Length - offset - 2)
                     {
                         instructions = data.Slice(offset + 2, instructionLength);
+                        instructionsOffset = offset;
                     }
                 }
 
@@ -196,6 +207,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 return new CompositeGlyph(
                     componentsBuffer.AsSpan(0, componentCount),
                     instructions,
+                    instructionsOffset,
                     usesPointMatching,
                     componentsBuffer
                 );

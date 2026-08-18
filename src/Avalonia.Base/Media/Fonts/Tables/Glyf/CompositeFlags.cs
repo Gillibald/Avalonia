@@ -15,8 +15,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         WeHaveInstructions = 0x0100,
         UseMyMetrics = 0x0200,
         OverlapCompound = 0x0400,
-        Reserved = 0x1000, // must be ignored
-        ScaledComponentOffset = 0x2000,
-        UnscaledComponentOffset = 0x4000
+        ScaledComponentOffset = 0x0800,
+        UnscaledComponentOffset = 0x1000
     }
 }
