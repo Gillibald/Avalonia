@@ -5,9 +5,12 @@ using SkiaSharp;
 
 namespace Avalonia.Skia;
 
+// A render-target bitmap is a readback surface by definition: its output is captured,
+// composed or saved with alpha, never presented on a panel, so the offscreen marker keeps
+// subpixel text from engaging (the compositor path's test surfaces already carry it).
 internal class RenderTargetBitmapImpl : WriteableBitmapImpl,
     IRenderTargetBitmapImpl,
-    IFramebufferPlatformSurface
+    IOffscreenFramebufferPlatformSurface
 {
     private readonly FramebufferRenderTarget _renderTarget;
     
