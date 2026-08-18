@@ -1,3 +1,12 @@
+// This source file contains logic adapted to C# from the FreeType project
+// (https://freetype.org), src/truetype/ttgload.c, and is a modified version of the
+// original FreeType code, not the original.
+//
+// Copyright (C) 1996-2026 by David Turner, Robert Wilhelm, and Werner Lemberg.
+//
+// Used under the FreeType Project License (FTL); see NOTICE.md in the
+// repository root for the full license text and the required credit.
+
 using System;
 using System.Buffers.Binary;
 using Avalonia.Media.Fonts.Tables.Glyf;
