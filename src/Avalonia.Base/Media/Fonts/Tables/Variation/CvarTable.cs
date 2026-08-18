@@ -1,3 +1,12 @@
+// This source file contains logic adapted to C# from the FreeType project
+// (https://freetype.org), src/truetype/ttgxvar.c, and is a modified version of the
+// original FreeType code, not the original.
+//
+// Copyright (C) 2004-2026 by David Turner, Robert Wilhelm, Werner Lemberg, and George Williams.
+//
+// Used under the FreeType Project License (FTL); see NOTICE.md in the
+// repository root for the full license text and the required credit.
+
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
