@@ -1941,6 +1941,96 @@ namespace Avalonia.Media
                 ? Fonts.Rasterization.TrueType.TrueTypeProgramTables.Empty
                 : Fonts.Rasterization.TrueType.TrueTypeProgramTables.Load(this);
 
+        /// <summary>
+        /// Whether the font carries TrueType hinting worth running: glyf outlines plus real
+        /// program machinery (a font program or control values). A stray prep alone marks a
+        /// modern unhinted export and keeps the auto-hinter.
+        /// </summary>
+        internal bool HasTrueTypeHinting => _glyfTable is not null && ProgramTables.HasHintingMachinery;
+
+        // One hinter per (quantized size, mask mode): the render class feeds GETINFO, which
+        // prep may branch on, so the size state is per mode. Entries memoise failures as
+        // null. Populated on the render thread like the other per-size caches; the lock only
+        // guards the cold create.
+        private List<(ushort ScaleQ, Fonts.Rasterization.GlyphMaskMode Mode, Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? Hinter)>? _trueTypeHinters;
+
+        /// <summary>
+        /// The bytecode hinter for the given quantized size and mask mode, null when the
+        /// font is ineligible or its programs faulted at this size (memoised, so a broken
+        /// prep costs one attempt).
+        /// </summary>
+        internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? GetTrueTypeHinter(
+            ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
+        {
+            if (!HasTrueTypeHinting)
+            {
+                return null;
+            }
+
+            var hinters = _trueTypeHinters ??= new();
+
+            lock (hinters)
+            {
+                foreach (var entry in hinters)
+                {
+                    if (entry.ScaleQ == scaleQ && entry.Mode == mode)
+                    {
+                        return entry.Hinter;
+                    }
+                }
+
+                var hinter = CreateTrueTypeHinter(scaleQ, mode);
+
+                hinters.Add((scaleQ, mode, hinter));
+                return hinter;
+            }
+        }
+
+        private Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? CreateTrueTypeHinter(
+            ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
+        {
+            var maxp = Fonts.Tables.MaxpTable.Load(this);
+
+            var renderClass = mode switch
+            {
+                Fonts.Rasterization.GlyphMaskMode.Subpixel => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Subpixel,
+                Fonts.Rasterization.GlyphMaskMode.Aliased => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Aliased,
+                _ => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Grayscale,
+            };
+
+            // The scale bucket is eighths of a pixel per em; 26.6 is exactly eight times it.
+            var state = Fonts.Rasterization.TrueType.TrueTypeSizeState.Create(
+                ProgramTables,
+                Metrics.DesignEmHeight,
+                scaleQ * 8,
+                maxp.MaxStorage,
+                maxp.MaxFunctionDefs,
+                maxp.MaxInstructionDefs,
+                maxp.MaxStackElements,
+                maxp.MaxTwilightPoints,
+                renderClass,
+                isVariation: _activeCoords is not null);
+
+            if (!state.IsValid)
+            {
+                return null;
+            }
+
+            return new Fonts.Rasterization.TrueType.TrueTypeGlyphHinter(
+                state,
+                _glyfTable!,
+                _gvarTable,
+                _activeCoords,
+                (int glyphIndex, out int lsb, out int advance) =>
+                {
+                    TryGetGlyphMetrics((ushort)glyphIndex, out var metrics);
+                    lsb = metrics.XBearing;
+                    advance = metrics.AdvanceWidth;
+                    return true;
+                },
+                verticalAdvance: Metrics.DesignEmHeight);
+        }
+
         /// <summary>The TrueType outline table, when the font carries glyf outlines.</summary>
         internal Fonts.Tables.Glyf.GlyfTable? GlyfTable => _glyfTable;
 

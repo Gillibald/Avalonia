@@ -27,8 +27,13 @@ namespace Avalonia.Skia.UnitTests.Media
         private static byte[] LegacyGasp() => BuildGasp(0, (8, 0x0002), (36, 0x0001), (0xFFFF, 0x0003));
 
         // Segoe UI's actual table: version 1; the 9-19 range has GRIDFIT set but also
-        // SYMMETRIC_GRIDFIT - a ClearType-tuned font that must NOT escalate.
+        // SYMMETRIC_GRIDFIT and DOGRAY - a ClearType-tuned font that must NOT escalate.
         private static byte[] ClearTypeAwareGasp() => BuildGasp(1, (8, 0x000A), (19, 0x0007), (0xFFFF, 0x000F));
+
+        // Tahoma's actual table: version 1; below 9 no grid fitting at all (the designer's
+        // small-size veto), 9-16 GRIDFIT plus SYMMETRIC_GRIDFIT with no DOGRAY - the
+        // ClearType-era strong-hinting request.
+        private static byte[] TahomaGasp() => BuildGasp(1, (8, 0x000A), (16, 0x0005), (17, 0x0007), (0xFFFF, 0x000F));
 
         [Fact]
         public void Unspecified_Escalates_To_Full_Grid_Fit_When_Gasp_Requests_Classic_Grid_Fit()
@@ -64,6 +69,57 @@ namespace Avalonia.Skia.UnitTests.Media
                 "ClearType-aware gasp ranges must keep the natural Light treatment");
             Assert.False(unspecified.AsSpan().SequenceEqual(strong),
                 "ClearType-aware gasp must not escalate to the full grid fit");
+        }
+
+        [Fact]
+        public void Unspecified_Escalates_For_Bytecode_Backed_Symmetric_Grid_Fit()
+        {
+            using var app = StartApp();
+
+            // Noto Mono carries the full ttfautohint program set, so a bytecode interpreter
+            // stands behind the request: Tahoma's 9-16 range gets the Strong treatment.
+            var typeface = CreateTypeface(TahomaGasp(), fontFile: "NotoMono-Regular.ttf");
+
+            var unspecified = Render(typeface, 13, 8.26, TextHintingMode.Unspecified);
+            var strong = Render(typeface, 13, 8.26, TextHintingMode.Strong);
+            var light = Render(typeface, 13, 8.26, TextHintingMode.Light);
+
+            Assert.True(unspecified.AsSpan().SequenceEqual(strong),
+                "SYMMETRIC_GRIDFIT without DOGRAY must escalate when the font is instructed");
+            Assert.False(unspecified.AsSpan().SequenceEqual(light),
+                "escalated output should differ from Light at a fractional origin");
+        }
+
+        [Fact]
+        public void Symmetric_Grid_Fit_Stays_Light_Without_Bytecode()
+        {
+            using var app = StartApp();
+
+            // The same gasp shape on a font without hinting machinery (Inter ships only a
+            // trivial prep): the auto-hinter cannot honor the request, so the natural Light
+            // treatment stays.
+            var typeface = CreateTypeface(TahomaGasp());
+
+            var unspecified = Render(typeface, 13, 8.26, TextHintingMode.Unspecified);
+            var light = Render(typeface, 13, 8.26, TextHintingMode.Light);
+
+            Assert.True(unspecified.AsSpan().SequenceEqual(light),
+                "SYMMETRIC_GRIDFIT must not escalate onto the auto-hinter");
+        }
+
+        [Fact]
+        public void Below_The_Hinting_Floor_Unspecified_Renders_Unhinted()
+        {
+            using var app = StartApp();
+            var typeface = CreateTypeface(TahomaGasp());
+
+            // 8 px sits below the hinted floor: the designer vetoed fitting there, so
+            // Unspecified renders like None.
+            var unspecified = Render(typeface, 8, 8.26, TextHintingMode.Unspecified);
+            var none = Render(typeface, 8, 8.26, TextHintingMode.None);
+
+            Assert.True(unspecified.AsSpan().SequenceEqual(none),
+                "below the font's hinted floor, Unspecified must render unhinted");
         }
 
         [Fact]
@@ -108,11 +164,12 @@ namespace Avalonia.Skia.UnitTests.Media
             return bytes;
         }
 
-        /// <summary>Inter with the given gasp table injected (or removed), served through the
-        /// synthetic platform typeface so only the managed pipeline is exercised.</summary>
-        private static GlyphTypeface CreateTypeface(byte[]? gasp)
+        /// <summary>The named font with the given gasp table injected (or removed), served
+        /// through the synthetic platform typeface so only the managed pipeline is
+        /// exercised.</summary>
+        private static GlyphTypeface CreateTypeface(byte[]? gasp, string fontFile = "Inter-Regular.ttf")
         {
-            var font = SyntheticFont.FromBytes(LoadInterBytes());
+            var font = SyntheticFont.FromBytes(LoadFontBytes(fontFile));
 
             if (gasp is null)
             {
@@ -180,7 +237,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(originX, 34));
         }
 
-        private static byte[] LoadInterBytes()
+        private static byte[] LoadFontBytes(string fileName)
         {
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
@@ -191,7 +248,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.NotNull(directory);
 
-            return File.ReadAllBytes(Path.Combine(directory!.FullName, "Avalonia.RenderTests", "Assets", "Inter-Regular.ttf"));
+            return File.ReadAllBytes(Path.Combine(directory!.FullName, "Avalonia.RenderTests", "Assets", fileName));
         }
 
         private static IDisposable StartApp()
