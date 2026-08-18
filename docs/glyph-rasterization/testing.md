@@ -8,6 +8,7 @@ Text quality regressions are easy to introduce and hard to spot in a diff, so th
 | --- | --- |
 | `tests/Avalonia.Skia.UnitTests/Media/` | mask pipeline, hinting, LCD (CPU and GPU), Slug (encoding through GPU draw), COLR rendering, font data, all probes |
 | `tests/Avalonia.Base.UnitTests/Media/Fonts/Rasterization/` | rasterizer, mask model and caches, composer, splitter, Slug encoding units |
+| `tests/Avalonia.Base.UnitTests/Media/Fonts/Rasterization/TrueType/` | the bytecode engine: opcode families and rounding, size states and copy-on-write scoping, glyph loading, composites, hinted mask builds, fuzz soaks, determinism pins (assembled fixtures via `TtAsm` plus the instructed Noto Mono asset) |
 | `tests/Avalonia.Headless.UnitTests` | compositor-path rendering (`CaptureRenderedFrame` with the real compositor and Skia), used for app-level repros like emoji clipping |
 
 The rasterizer is bit-deterministic, so these gates run identically on every OS; fixtures that used to be Windows-only do not need platform gates on the managed path.
@@ -26,7 +27,9 @@ Cost gates run on the same contexts: LCD per-glyph draw cost against the graysca
 - Self-calibrating sharpness gates: instead of golden images, tests find a provably bad size first (a body size where the unwarped raster smears a feature across two partial rows) and then assert the fitted build renders it hard. The vertical fit uses the flat-topped 'z' (max row coverage under 210 unhinted, at least 240 fitted); the stroke fit measures the 'e' crossbar inside the band reported by the edge detector itself.
 - Measure at fixed device rows, not mask-relative rows: mask-relative middles drift with aprons and get contaminated by neighboring features (a crossbar edge, bowl ink in the same column). This bit twice; both stem tests and the crossbar gate now locate their probe rows from device-space knowledge.
 - Metrics parity: managed font-wide metrics must equal `SKFont` values for installed system fonts, which pins the win/typo/hhea selection policy to the platform's.
-- Hinting policy is pinned to DirectWrite measurements: per-size ink-row tables for x-height, cap and descender glyphs against a fully hinted DirectWrite rendering. Divergences are known and deliberate (font bytecode effects the auto-hinter does not replicate).
+- Auto-hinter policy is pinned to DirectWrite measurements: per-size ink-row tables for x-height, cap and descender glyphs against a fully hinted DirectWrite rendering. Divergences are known and deliberate (the auto-hinter is geometric; fonts with real programs execute them through the bytecode engine instead).
+- Bytecode determinism is pinned by committed FNV-1a hashes over hinted point zones at several sizes and both interpretation classes. The engine is integer 26.6 end to end, so a hash mismatch on another platform or architecture is a portability defect, not flakiness; a mismatch after an engine change is a behavior change that needs a deliberate re-pin.
+- DirectWrite RMSE is a landscape probe, not a gate, for the bytecode engine: the auto-hinter's rounding was calibrated row-by-row against DirectWrite, so it wins that metric by construction at tuned sizes, and the v40 class follows FreeType, which documents that it does not reproduce ClearType rendering exactly. Placement correctness is gated separately (a glyph without instructions in an eligible font must land its ink exactly where the unhinted build does); quality is judged in the waterfall and A/B surfaces.
 
 ## Env-gated probes
 
@@ -44,6 +47,8 @@ Several committed tests are measurement tools rather than gates; they skip unles
 | `SLUG_GPU_REPORT=<file>` | Slug draw cost tables |
 | `SLUG_BAND_REPORT=<file>` | band distribution statistics across font corpora |
 | `COLOR_GLYPH_DIAG_DIR=<dir>` / `COLOR_GLYPH_PROBE=1` | color glyph ink dumps and resolved paint-tree dumps |
+| `TRUETYPE_FUZZ=<n>` | extended hostile-input soak over the bytecode engine with fresh randomness (the committed smokes use a fixed seed) |
+| `DW_HINTING_PARITY=1` | RMSE tables for instructed system fonts vs a DirectWrite host render at the same integer pens: v40 / full / auto-hinter columns at 9-16 px |
 
 ## The demo app
 
