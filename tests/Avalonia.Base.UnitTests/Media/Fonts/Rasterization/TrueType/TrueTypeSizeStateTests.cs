@@ -43,6 +43,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
                 maxFunctionDefs: 32,
                 maxInstructionDefs: 8,
                 maxStackElements: 64,
+                maxTwilightPoints: 8,
                 renderClass,
                 isVariation);
         }
@@ -297,6 +298,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
                 maxFunctionDefs: 32,
                 maxInstructionDefs: 8,
                 maxStackElements: 64,
+                maxTwilightPoints: 8,
                 TrueTypeRenderClass.Grayscale,
                 isVariation: false);
 
