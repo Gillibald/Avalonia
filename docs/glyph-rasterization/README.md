@@ -1,6 +1,6 @@
 # Managed glyph rasterization
 
-Avalonia can rasterize glyphs itself instead of delegating text rendering to the render backend's font machinery. The managed path parses font tables, extracts and rasterizes outlines, applies its own hinting, gamma correction and subpixel (ClearType style) rendering, renders COLR v0/v1 color glyphs and CBDT/sbix bitmap glyphs through Avalonia's own drawing model, and carries an optional GPU vector tier for rotated and very large text. On the Skia backend the native `SKTextBlob` path remains available as the final fallback and as the default mode.
+Avalonia can rasterize glyphs itself instead of delegating text rendering to the render backend's font machinery. The managed path parses font tables, extracts and rasterizes outlines, hints them - instructed fonts through their own TrueType bytecode, everything else through a geometric auto-hinter - applies gamma correction and subpixel (ClearType style) rendering, renders COLR v0/v1 color glyphs and CBDT/sbix bitmap glyphs through Avalonia's own drawing model, and carries an optional GPU vector tier for rotated and very large text. On the Skia backend the native `SKTextBlob` path remains available as the final fallback and as the default mode.
 
 The motivation is backend portability and control: text output becomes identical across platforms and backends (the rasterizer is bit-deterministic), quality policies (hinting, gamma, subpixel) live in Avalonia instead of behind backend defaults, and a future non-Skia backend only needs bitmap blits plus a few optional capability interfaces to get full text rendering.
 
@@ -42,7 +42,7 @@ Monochrome glyphs, COLR v0 layer glyphs and bitmap strikes are handled server si
 | --- | --- |
 | [pipeline.md](pipeline.md) | run creation, draw dispatch, triage rules, fallback chain |
 | [masks.md](masks.md) | contour capture, the analytic rasterizer, mask keys and caches, run composition, gamma |
-| [hinting.md](hinting.md) | the hinting ladder, vertical zone fit, edge-based stroke fit, stem snapping, pen snapping |
+| [hinting.md](hinting.md) | the hinting ladder, the TrueType bytecode engine, the fallback auto-hinter (zones, stroke fit, stem snapping), pen snapping |
 | [subpixel.md](subpixel.md) | LCD subpixel rendering: eligibility, mask format, GPU blender, CPU two-pass |
 | [color-glyphs.md](color-glyphs.md) | COLR v0 mask stacks, COLR v1 paint graphs, layers and composites |
 | [bitmap-glyphs.md](bitmap-glyphs.md) | CBDT/CBLC and sbix strikes, strike selection, the decoder seam |
@@ -60,8 +60,9 @@ src/Avalonia.Base/Media/Fonts/Rasterization/   the backend-neutral core
     RunMask*.cs              run-level composition and cache
     MaskGlyphRunRenderer.cs  mask tier dispatch and composition policy
     MaskGamma.cs             gamma/contrast coverage correction
-    VerticalGridFit.cs       vertical zone and stroke fitting (hinting)
+    VerticalGridFit.cs       vertical zone and stroke fitting (auto-hinter)
     StemFit.cs               edge detection, horizontal stem snapping
+    TrueType/                the TrueType bytecode interpreter (see hinting.md)
     IAlphaGlyphMaskContext.cs backend capability seam for A8/LCD fast paths
     ColorGlyphRunSplitter.cs record-time COLR v1 / bitmap split
     IBitmapGlyphDecoder.cs   image decoder seam for bitmap strikes
