@@ -177,25 +177,52 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                             deltaX.Clear();
                             deltaY.Clear();
 
-                            GlyphVariationReader.TryApplyDeltas(
-                                gvarTable, glyphIndex, activeCoords,
-                                endPoints, xCoords, yCoords,
-                                deltaX, deltaY);
+                            if (!GlyphVariationReader.TryApplyDeltas(
+                                    gvarTable, glyphIndex, activeCoords,
+                                    endPoints, xCoords, yCoords,
+                                    deltaX, deltaY))
+                            {
+                                // No deltas for this glyph: the exact unvaried path below
+                                // avoids the fdot6 round-trip entirely.
+                                deltaX = default;
+                                deltaY = default;
+                            }
                         }
 
                         for (var i = 0; i < pointCount; i++)
                         {
-                            // Deltas quantize to whole font units for the hinting zone; the
-                            // instructions were authored against integer coordinates.
-                            var x = xCoords[i] + (deltaX.IsEmpty ? 0 : (int)Math.Round(deltaX[i]));
-                            var y = yCoords[i] + (deltaY.IsEmpty ? 0 : (int)Math.Round(deltaY[i]));
+                            int x, y, orgX, orgY;
+
+                            if (deltaX.IsEmpty)
+                            {
+                                x = xCoords[i];
+                                y = yCoords[i];
+                                orgX = F26Dot6.MulFix(x, scale16Dot16);
+                                orgY = F26Dot6.MulFix(y, scale16Dot16);
+                            }
+                            else
+                            {
+                                // The reference keeps two views of a varied point: the
+                                // outline rounds to whole font units (half up) - that is
+                                // what the interpolation instructions measure against -
+                                // while the scaled position comes from the unrounded
+                                // 26.6-unit value, rounded once after the scale, so
+                                // sub-unit deltas survive into device space.
+                                var preciseX = (xCoords[i] << 6) + (int)Math.Floor(deltaX[i] * 64f + 0.5f);
+                                var preciseY = (yCoords[i] << 6) + (int)Math.Floor(deltaY[i] * 64f + 0.5f);
+
+                                x = (preciseX + 32) >> 6;
+                                y = (preciseY + 32) >> 6;
+                                orgX = (F26Dot6.MulFix(preciseX, scale16Dot16) + 32) >> 6;
+                                orgY = (F26Dot6.MulFix(preciseY, scale16Dot16) + 32) >> 6;
+                            }
 
                             _zone.OrusX[i] = x;
                             _zone.OrusY[i] = y;
-                            _zone.OrgX[i] = F26Dot6.MulFix(x, scale16Dot16);
-                            _zone.OrgY[i] = F26Dot6.MulFix(y, scale16Dot16);
-                            _zone.CurX[i] = _zone.OrgX[i];
-                            _zone.CurY[i] = _zone.OrgY[i];
+                            _zone.OrgX[i] = orgX;
+                            _zone.OrgY[i] = orgY;
+                            _zone.CurX[i] = orgX;
+                            _zone.CurY[i] = orgY;
                             _zone.Tags[i] = (flags[i] & GlyphFlag.OnCurvePoint) != 0 ? TrueTypeZone.OnCurve : (byte)0;
                         }
 

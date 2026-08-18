@@ -76,6 +76,35 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Cvar_Deltas_Adjust_The_Unscaled_Control_Values()
+        {
+            // The reference folds 26.6-unit deltas into its 26.6-stored CVT and divides
+            // back to whole units (truncating) before scaling. +192 on 100 units is +3
+            // whole units; -96 on -100 lands at -101.5, truncated to -101.
+            var state = TrueTypeSizeState.Create(
+                TrueTypeProgramTables.Create(
+                    Array.Empty<byte>(), Array.Empty<byte>(),
+                    new byte[] { 0, 100, unchecked((byte)(-100 >> 8)), unchecked((byte)-100) }),
+                unitsPerEm: 2048,
+                pixelsPerEm26Dot6: 1024,
+                maxStorage: 16,
+                maxFunctionDefs: 32,
+                maxInstructionDefs: 8,
+                maxStackElements: 64,
+                maxTwilightPoints: 8,
+                TrueTypeRenderClass.Grayscale,
+                isVariation: true,
+                cvtDeltasFdot6: new[] { 192, -96 });
+
+            Assert.True(state.IsValid);
+
+            // scale 0.5: 103 units -> 52 (26.6, rounded), -101 units -> -51 (MulFix rounds
+            // half away from zero, symmetric signs).
+            Assert.Equal(52, state.Interpreter!.PristineCvt[0]);
+            Assert.Equal(-51, state.Interpreter.PristineCvt[1]);
+        }
+
+        [Fact]
         public void Prep_Working_State_Does_Not_Leak_Into_The_Snapshot()
         {
             // The reference's undocumented MS rule: the cvt program may hand only a fixed

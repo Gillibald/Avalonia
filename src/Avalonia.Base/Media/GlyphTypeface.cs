@@ -85,6 +85,10 @@ namespace Avalonia.Media
         // HVAR / VVAR / MVAR with no outline variation).
         private readonly GvarTable? _gvarTable;
 
+        // cvar — tuple deltas over the control value table, applied per instance before
+        // the control value program runs. Null when the font has no hinting variations.
+        private readonly Fonts.Tables.Variation.CvarTable? _cvarTable;
+
         // HVAR table — per-glyph advance-width and side-bearing deltas. Null on static
         // fonts and on variable fonts that don't carry HVAR (rare; without it, a
         // wght=900 layout uses default-instance advances and glyphs overlap their
@@ -449,6 +453,10 @@ namespace Avalonia.Media
                 // active.
                 GvarTable.TryLoad(this, _fvarTable.Axes.Length, GlyphCount, out _gvarTable);
 
+                // cvar rides gvar's formats and shares its tuple records; loaded after gvar
+                // so shared-tuple references resolve.
+                Fonts.Tables.Variation.CvarTable.TryLoad(this, _fvarTable.Axes.Length, _gvarTable, out _cvarTable);
+
                 // HVAR provides per-glyph horizontal-advance deltas (and optionally LSB /
                 // RSB deltas). Loaded once per typeface; per-call TryGetHorizontalGlyphAdvance
                 // pays a field-access + IsDefault check when no variation is active.
@@ -543,6 +551,7 @@ namespace Avalonia.Media
             _fvarTable = source._fvarTable;
             _avarTable = source._avarTable;
             _gvarTable = source._gvarTable;
+            _cvarTable = source._cvarTable;
             _hvarTable = source._hvarTable;
             _mvarTable = source._mvarTable;
             _vvarTable = source._vvarTable;
@@ -1998,6 +2007,15 @@ namespace Avalonia.Media
                 _ => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Grayscale,
             };
 
+            // cvar adjusts the unscaled CVT per instance; the deltas depend only on the
+            // active coordinates, so all of this instance's size states share them.
+            int[]? cvtDeltas = null;
+
+            if (_activeCoords is not null && _cvarTable is not null)
+            {
+                cvtDeltas = _cvarTable.TryComputeDeltas(_activeCoords, ProgramTables.ControlValues.Length / 2);
+            }
+
             // The scale bucket is eighths of a pixel per em; 26.6 is exactly eight times it.
             var state = Fonts.Rasterization.TrueType.TrueTypeSizeState.Create(
                 ProgramTables,
@@ -2009,7 +2027,8 @@ namespace Avalonia.Media
                 maxp.MaxStackElements,
                 maxp.MaxTwilightPoints,
                 renderClass,
-                isVariation: _activeCoords is not null);
+                isVariation: _activeCoords is not null,
+                cvtDeltasFdot6: cvtDeltas);
 
             if (!state.IsValid)
             {

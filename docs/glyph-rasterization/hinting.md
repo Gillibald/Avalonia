@@ -36,6 +36,8 @@ Legacy UI fonts carry their small-size quality in per-glyph instruction programs
 
 **Advances stay unhinted.** The engine maintains and fits phantom points because programs reference them, but the advance that positions the next glyph still comes from hmtx and the shaper. Spacing stays natural in every mode; a GDI-compatible hinted-advance opt-in would be a metrics-layer change, not an engine change.
 
+**Variable fonts.** Variation instances hint through their own size states - each `WithVariation` clone carries its own hinter cache, so nothing is keyed across instances. The loader feeds gvar-varied outlines to the interpreter in two precisions, the reference's model: interpolation instructions measure against points rounded to whole font units (half up), while the scaled positions keep sub-unit delta fractions and round once after the scale. A [cvar table](../../src/Avalonia.Base/Media/Fonts/Tables/Variation/CvarTable.cs) adjusts the unscaled control values per instance before the control value program runs (its shared-tuple indices resolve into gvar's records); fonts without cvar hint on the default CVT, which is spec-conformant - Bahnschrift does exactly that, while Segoe UI Variable ships a cvar that retunes stem controls toward its optical-size minimum.
+
 **Hardening.** Instruction, loop-call, jump and call-depth budgets bound every program; a fault or overrun halts cleanly and vetoes, never throws, and the copy-on-write scoping keeps hostile glyphs from corrupting the size state. The engine is fuzz-tested over random streams and bit-flipped real tables, and its output is pinned by committed cross-platform hashes (see [testing.md](testing.md)).
 
 ## The fallback auto-hinter
