@@ -1941,6 +1941,18 @@ namespace Avalonia.Media
                 ? Fonts.Rasterization.TrueType.TrueTypeProgramTables.Empty
                 : Fonts.Rasterization.TrueType.TrueTypeProgramTables.Load(this);
 
+        /// <summary>The TrueType outline table, when the font carries glyf outlines.</summary>
+        internal Fonts.Tables.Glyf.GlyfTable? GlyfTable => _glyfTable;
+
+        /// <summary>
+        /// The variation inputs the outline walkers use: the gvar table and this instance's
+        /// normalized coordinates, empty when unvaried.
+        /// </summary>
+        internal Fonts.Tables.Variation.GvarTable? GvarTable => _gvarTable;
+
+        internal ReadOnlySpan<float> ActiveVariationCoordinates =>
+            _gvarTable is not null && _activeCoords is not null ? _activeCoords : default;
+
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
             var created = new Fonts.Rasterization.GlyphMaskCache();

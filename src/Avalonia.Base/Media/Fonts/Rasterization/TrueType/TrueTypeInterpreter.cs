@@ -189,6 +189,12 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         /// <summary>Composite glyph programs get wider DELTAP/SHPIX exceptions under v40.</summary>
         public bool IsCompositeGlyph;
 
+        /// <summary>
+        /// Diagnostic hook: receives one line per dispatched instruction when set. Costs a
+        /// null check when unset; string building happens only while tracing.
+        /// </summary>
+        public Action<string>? Trace;
+
         public void SetGlyphZone(TrueTypeZone? zone) => _glyphZone = zone;
 
         public bool RunFontProgram() => Execute(TrueTypeCodeRange.FontProgram, _fontProgram);
@@ -274,6 +280,11 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 }
 
                 _nextIp = _ip + length;
+
+                if (Trace is { } trace)
+                {
+                    trace($"{_currentRange}:{_ip:D4} {TrueTypeOpcodeName.Of(opcode)} stack={_top}");
+                }
 
                 Dispatch(opcode, span);
 
