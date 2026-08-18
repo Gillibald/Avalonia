@@ -59,6 +59,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         /// <summary>The hinted zone of the last successful <see cref="TryHint"/>.</summary>
         public TrueTypeZone? Zone { get; private set; }
 
+        /// <summary>The size context this hinter runs against.</summary>
+        public TrueTypeSizeState State => _state;
+
         public bool TryHint(int glyphIndex, int backwardCompatibility)
         {
             Zone = null;

@@ -116,20 +116,33 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
 
-            // TextHintingMode drives the vertical grid fit: None means outlines scaled only.
-            // Light and Strong both take the light auto-fit (there is no bytecode
-            // interpreter); Strong additionally snaps every pen to a whole pixel — the
-            // GDI-classic positioning trade: maximum stem consistency, spacing rounded.
-            // Unspecified consults the font's gasp table first: a range that requests the
-            // classic grid fit without any ClearType-aware flag is the legacy signature
-            // (Courier New and friends), and DirectWrite answers it with GDI-classic
-            // rendering — full grid fit, snapped pens. An explicit hinting choice wins.
+            // TextHintingMode drives the grid fit: None means outlines scaled only, Light
+            // takes the natural fit (bytecode in the v40 compatibility class when the font
+            // is instructed, the light auto-fit otherwise), and Strong adds whole-pixel pens
+            // with full program interpretation — the GDI-classic positioning trade.
+            // Unspecified resolves through the font's gasp table: a grid-fit range without
+            // smoothing flags is the legacy bi-level signature (Courier New) and gets the
+            // Strong treatment outright; a grid-fit range whose only smoothing flag is
+            // SYMMETRIC_GRIDFIT (Tahoma and Verdana at text sizes) is the ClearType-era
+            // strong-hinting request, honored only when a bytecode interpreter actually
+            // stands behind it — the auto-hinter cannot deliver what that range promises.
+            // A size below the font's own hinted floor renders unhinted, the designer's
+            // small-size veto that DirectWrite honors too. An explicit choice always wins.
             var hinting = textHintingMode;
 
-            if (hinting == TextHintingMode.Unspecified &&
-                run.GlyphTypeface.Gasp.WantsFullGridFit(pixelsPerEm))
+            if (hinting == TextHintingMode.Unspecified)
             {
-                hinting = TextHintingMode.Strong;
+                var gasp = run.GlyphTypeface.Gasp;
+
+                if (gasp.IsBelowHintingFloor(pixelsPerEm))
+                {
+                    hinting = TextHintingMode.None;
+                }
+                else if (gasp.WantsFullGridFit(pixelsPerEm) ||
+                         (gasp.WantsBytecodeGridFit(pixelsPerEm) && run.GlyphTypeface.HasTrueTypeHinting))
+                {
+                    hinting = TextHintingMode.Strong;
+                }
             }
 
             var gridFit = hinting != TextHintingMode.None;

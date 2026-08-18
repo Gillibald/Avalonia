@@ -210,24 +210,27 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         [Fact]
         public void Real_Font_Programs_Execute_End_To_End()
         {
-            // Inter carries per-glyph instruction streams and a real prep; the whole chain
-            // (prep at size creation, embedded glyph programs, composite assembly) must run
-            // without a veto.
-            var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).CreateGlyphTypeface();
+            // Noto Mono carries the full ttfautohint program set: an fpgm with dozens of
+            // functions, a prep that builds twilight heights, and per-glyph streams. The
+            // whole chain must run without a veto, and instructions must actually execute.
+            var typeface = SyntheticFont.FromBytes(TestFontFiles.Load("NotoMono-Regular.ttf")).CreateGlyphTypeface();
+
+            // The declared maxp limits, exactly as the production path passes them.
+            var maxp = Avalonia.Media.Fonts.Tables.MaxpTable.Load(typeface);
 
             var state = TrueTypeSizeState.Create(
                 typeface.ProgramTables,
                 typeface.Metrics.DesignEmHeight,
                 pixelsPerEm26Dot6: 16 * 64,
-                maxStorage: 64,
-                maxFunctionDefs: 64,
-                maxInstructionDefs: 16,
-                maxStackElements: 256,
-                maxTwilightPoints: 16,
+                maxp.MaxStorage,
+                maxp.MaxFunctionDefs,
+                maxp.MaxInstructionDefs,
+                maxp.MaxStackElements,
+                maxp.MaxTwilightPoints,
                 TrueTypeRenderClass.Grayscale,
                 isVariation: false);
 
-            Assert.True(state.IsValid);
+            Assert.True(state.IsValid, $"size state faulted: {state.Error}");
 
             var hinter = new TrueTypeGlyphHinter(
                 state,
@@ -247,15 +250,36 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
             Assert.True(hinter.TryHint(typeface.CharacterToGlyphMap['H'], backwardCompatibility: 4));
             Assert.True(hinter.Zone!.PointCount > 4);
 
-            // The first composite in the font assembles through its hinted components.
-            var glyfTable = typeface.GlyfTable!;
+            // The glyph's own program really ran - dozens of instructions, not a no-op.
+            Assert.True(state.Interpreter!.InstructionsExecuted > 0,
+                "the glyph program should have dispatched instructions");
 
-            for (var id = 0; id < typeface.GlyphCount; id++)
+            // The uninstructed embedded Inter still assembles its composites through the
+            // hinter (components hint as identity, assembly and phantom flow still run).
+            var inter = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).CreateGlyphTypeface();
+            var interHinter = new TrueTypeGlyphHinter(
+                CreateState(maxTwilightPoints: 16),
+                inter.GlyfTable!,
+                inter.GvarTable,
+                activeCoords: null,
+                (int glyphIndex, out int lsb, out int advance) =>
+                {
+                    var ok = inter.TryGetGlyphMetrics((ushort)glyphIndex, out var metrics);
+
+                    lsb = metrics.XBearing;
+                    advance = metrics.AdvanceWidth;
+                    return ok;
+                },
+                verticalAdvance: inter.Metrics.DesignEmHeight);
+
+            var glyfTable = inter.GlyfTable!;
+
+            for (var id = 0; id < inter.GlyphCount; id++)
             {
                 if (glyfTable.TryGetCompositeComponents(id, out var components) && components.Length > 0)
                 {
-                    Assert.True(hinter.TryHint(id, backwardCompatibility: 4));
-                    Assert.True(hinter.Zone!.ContourCount > 0);
+                    Assert.True(interHinter.TryHint(id, backwardCompatibility: 4));
+                    Assert.True(interHinter.Zone!.ContourCount > 0);
                     return;
                 }
             }

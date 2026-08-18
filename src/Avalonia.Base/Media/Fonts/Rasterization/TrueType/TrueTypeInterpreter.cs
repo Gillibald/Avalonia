@@ -147,7 +147,12 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _activeStorage = storage;
             _maxFunctionDefs = maxFunctionDefs;
             _maxInstructionDefs = maxInstructionDefs;
-            _stack = new int[Math.Clamp(maxStackElements + 32, 64, MaxStackSize)];
+
+            // Shipped fonts routinely push past their declared maxStackElements (the
+            // reference cites a prep pushing 255 against a declared 153), so the stack takes
+            // the reference's headroom: half again the declaration, at least 128 slots.
+            _stack = new int[Math.Clamp(
+                maxStackElements + Math.Max(maxStackElements / 2, 128), 128, MaxStackSize)];
             _ppem = ppem;
             _pointSize = pointSize26Dot6;
             _scale = scale16Dot16;

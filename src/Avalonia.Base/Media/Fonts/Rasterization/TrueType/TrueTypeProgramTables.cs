@@ -47,6 +47,15 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         /// </summary>
         public bool IsEmpty => FontProgram.IsEmpty && ControlValueProgram.IsEmpty && ControlValues.IsEmpty;
 
+        /// <summary>
+        /// Whether the font carries real hinting machinery: a function library or control
+        /// values. Modern unhinted exports often ship a trivial prep alone (scan-control
+        /// setup), and treating that as hinting would replace the auto-hinter with identity
+        /// outlines; orphan per-glyph streams without these tables stay on the auto-hinter
+        /// for the same reason.
+        /// </summary>
+        public bool HasHintingMachinery => !FontProgram.IsEmpty || !ControlValues.IsEmpty;
+
         public static TrueTypeProgramTables Load(GlyphTypeface typeface)
         {
             var platform = typeface.PlatformTypeface;
