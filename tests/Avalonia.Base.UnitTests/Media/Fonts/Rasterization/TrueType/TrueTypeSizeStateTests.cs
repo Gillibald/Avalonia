@@ -76,6 +76,46 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Prep_Working_State_Does_Not_Leak_Into_The_Snapshot()
+        {
+            // The reference's undocumented MS rule: the cvt program may hand only a fixed
+            // scalar set to glyph runs. Tahoma's prep ends with the y axis projected, and
+            // carrying that into glyph programs runs their leading x-passes against y,
+            // wrecking every instructed glyph in the small-size band.
+            var prep = new TtAsm()
+                .Op(TtAsm.Svtca0)
+                .Op(TtAsm.Rdtg)
+                .PushB(3).Op(TtAsm.Sloop)
+                .PushB(5).Op(TtAsm.Srp0)
+                .PushB(0).Op(TtAsm.Szp0)
+                .PushB(32).Op(0x1A)
+                .PushB(7).Op(TtAsm.Sdb)
+                .PushB(40).Op(TtAsm.Scvtci)
+                .Build();
+
+            var state = CreateState(cvtProgram: prep);
+
+            Assert.True(state.IsValid);
+
+            var gs = state.DefaultGraphicsState;
+
+            // Working state reverts to spec defaults for every glyph run.
+            Assert.Equal((short)0x4000, gs.ProjectionX);
+            Assert.Equal((short)0, gs.ProjectionY);
+            Assert.Equal((short)0x4000, gs.FreedomX);
+            Assert.Equal((short)0x4000, gs.DualX);
+            Assert.Equal(TrueTypeRoundState.ToGrid, gs.RoundState);
+            Assert.Equal(1, gs.Loop);
+            Assert.Equal(0, gs.Rp0);
+            Assert.Equal(1, gs.Zp0);
+
+            // The sanctioned scalars carry.
+            Assert.Equal(32, gs.MinimumDistance);
+            Assert.Equal((ushort)7, gs.DeltaBase);
+            Assert.Equal(40, gs.ControlValueCutIn);
+        }
+
+        [Fact]
         public void Font_Program_Functions_Are_Callable_From_Prep()
         {
             var fpgm = new TtAsm()
