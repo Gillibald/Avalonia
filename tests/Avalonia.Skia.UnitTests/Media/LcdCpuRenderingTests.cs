@@ -110,6 +110,64 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Render_Target_Bitmaps_Keep_Text_Grayscale_And_Clean_On_Transparency()
+        {
+            using var app = StartApp();
+
+            var typeface = LoadTypeface();
+            using var run = CreateRun(typeface, "HHH", 24);
+
+            // The full RenderTargetBitmap path: its framebuffer target must classify as a
+            // readback surface, not a display, or subpixel text engages and composes white
+            // pillows onto the transparent background (the render suite's immediate images
+            // showed exactly that while the marked compositor surface stayed clean).
+            using var bitmap = new Avalonia.Skia.RenderTargetBitmapImpl(new PixelSize(160, 48), new Vector(96, 96));
+
+            using (var context = bitmap.CreateDrawingContext())
+            {
+                context.Clear(Colors.Transparent);
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+
+            var chroma = 0;
+            var lightOpaque = 0;
+
+            using (var framebuffer = bitmap.Lock())
+            {
+                var isRgba = framebuffer.Format == PixelFormat.Rgba8888;
+                var pixels = new byte[framebuffer.RowBytes * framebuffer.Size.Height];
+
+                System.Runtime.InteropServices.Marshal.Copy(framebuffer.Address, pixels, 0, pixels.Length);
+
+                for (var y = 0; y < framebuffer.Size.Height; y++)
+                {
+                    var row = y * framebuffer.RowBytes;
+
+                    for (var x = 0; x < framebuffer.Size.Width; x++)
+                    {
+                        var b = pixels[row + x * 4 + (isRgba ? 2 : 0)];
+                        var g = pixels[row + x * 4 + 1];
+                        var r = pixels[row + x * 4 + (isRgba ? 0 : 2)];
+                        var a = pixels[row + x * 4 + 3];
+
+                        if (Math.Abs(r - b) > 8 || Math.Abs(r - g) > 8)
+                        {
+                            chroma++;
+                        }
+
+                        if (a > 200 && r > 200 && g > 200 && b > 200)
+                        {
+                            lightOpaque++;
+                        }
+                    }
+                }
+            }
+
+            Assert.Equal(0, chroma);
+            Assert.Equal(0, lightOpaque);
+        }
+
+        [Fact]
         public void Layers_And_Tracked_Opacity_Degrade_To_Grayscale()
         {
             using var app = StartApp();
