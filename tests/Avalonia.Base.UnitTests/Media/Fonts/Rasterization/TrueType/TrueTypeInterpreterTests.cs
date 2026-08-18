@@ -333,6 +333,30 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void The_Instruction_Budget_Stops_Runaway_Execution()
+        {
+            // A 100-instruction function body loop-called 15000 times dispatches around
+            // 1.5 million instructions - past the absolute budget - while the loop-call
+            // counter itself stays inside its own limit, which scales with the control
+            // value count.
+            var body = new TtAsm().PushB(0).Op(TtAsm.Fdef);
+
+            for (var i = 0; i < 50; i++)
+            {
+                body.PushB(1).Op(TtAsm.Pop);
+            }
+
+            body.Op(TtAsm.Endf);
+
+            var prep = new TtAsm().PushW(15000).PushB(0).Op(TtAsm.LoopCall).Build();
+            var interpreter = Create(fontProgram: body.Build(), cvtProgram: prep, cvt: new int[700]);
+
+            Assert.True(interpreter.RunFontProgram());
+            Assert.False(interpreter.RunControlValueProgram());
+            Assert.Equal(TrueTypeError.ExecutionTooLong, interpreter.Error);
+        }
+
+        [Fact]
         public void Storage_And_Cvt_Reads_Follow_Non_Pedantic_Bounds()
         {
             // In-bounds write/read round-trips; out-of-bounds writes are ignored and reads
