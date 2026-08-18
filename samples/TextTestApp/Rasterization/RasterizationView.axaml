@@ -17,7 +17,14 @@
     </Border>
     <Grid RowDefinitions="*,*" ColumnDefinitions="*,*">
       <DockPanel Grid.Row="0" Grid.Column="0" Margin="8,4,4,4">
-        <TextBlock DockPanel.Dock="Top" Text="Hinting — zones, stroke pairs, and the warp" FontWeight="SemiBold" />
+        <TextBlock DockPanel.Dock="Top" x:Name="HintingTitle" Text="Hinting" FontWeight="SemiBold" />
+        <TextBlock DockPanel.Dock="Top" x:Name="EngineText" FontSize="12" Opacity="0.75" Margin="0,2,0,2" />
+        <DockPanel DockPanel.Dock="Top" x:Name="ScrubRow" Margin="0,0,8,2" IsVisible="False">
+          <TextBlock DockPanel.Dock="Right" x:Name="StepText" FontSize="12" FontFamily="Consolas,monospace"
+                     VerticalAlignment="Center" MinWidth="230" Margin="8,0,0,0" />
+          <Slider x:Name="StepSlider" Minimum="0" IsSnapToTickEnabled="True" TickFrequency="1"
+                  ToolTip.Tip="Scrub through the glyph program: each position is the outline after one more instruction." />
+        </DockPanel>
         <ScrollViewer HorizontalScrollBarVisibility="Auto">
           <Image x:Name="HintingImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
         </ScrollViewer>
