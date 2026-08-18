@@ -29,7 +29,6 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         public const byte Call = 0x2B;
         public const byte Fdef = 0x2C;
         public const byte Endf = 0x2D;
-        public const byte Mdap0 = 0x2E;
         public const byte Rtdg = 0x3D;
         public const byte Ws = 0x42;
         public const byte Rs = 0x43;

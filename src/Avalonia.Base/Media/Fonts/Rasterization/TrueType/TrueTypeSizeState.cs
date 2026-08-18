@@ -72,6 +72,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             int maxFunctionDefs,
             int maxInstructionDefs,
             int maxStackElements,
+            int maxTwilightPoints,
             TrueTypeRenderClass renderClass,
             bool isVariation)
         {
@@ -109,6 +110,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 maxFunctionDefs,
                 maxInstructionDefs,
                 maxStackElements,
+                maxTwilightPoints,
                 ppem,
                 pointSize,
                 scale,

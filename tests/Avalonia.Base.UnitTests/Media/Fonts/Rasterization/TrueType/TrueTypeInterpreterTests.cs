@@ -24,6 +24,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
                 maxFunctionDefs: 32,
                 maxInstructionDefs: 8,
                 maxStackElements: 64,
+                maxTwilightPoints: 8,
                 ppem: ppem,
                 pointSize26Dot6: ppem * 48,
                 scale16Dot16: 0x8000,
@@ -322,9 +323,6 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
             Assert.Equal(new[] { 77 }, StackOf(program));
 
             Assert.Equal(TrueTypeError.InvalidOpcode, ErrorOf(new TtAsm().Op(0x28)));
-
-            // A real-but-unbuilt opcode never routes through IDEF.
-            Assert.Equal(TrueTypeError.UnsupportedOpcode, ErrorOf(new TtAsm().PushB(1).Op(TtAsm.Mdap0)));
         }
 
         [Fact]

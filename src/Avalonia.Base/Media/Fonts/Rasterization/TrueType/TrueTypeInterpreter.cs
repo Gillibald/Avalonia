@@ -96,6 +96,18 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         private readonly TrueTypeRenderClass _renderClass;
         private readonly bool _isVariation;
 
+        // The twilight zone is size state like the CVT: prep builds it, and every glyph run
+        // works on a fresh copy so no run can leak points into another.
+        private readonly TrueTypeZone _twilight;
+        private TrueTypeZone? _workingTwilight;
+        private TrueTypeZone _activeTwilight;
+        private TrueTypeZone? _glyphZone;
+
+        // The movement vector: freedom scaled by 1/(freedom . projection), in 16.16, zero
+        // when the vectors are prohibitively orthogonal. Recomputed on every vector change.
+        private int _moveX;
+        private int _moveY;
+
         private TrueTypeCodeRange _initialRange;
         private TrueTypeCodeRange _currentRange;
         private ReadOnlyMemory<byte> _code;
@@ -115,12 +127,18 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             int maxFunctionDefs,
             int maxInstructionDefs,
             int maxStackElements,
+            int maxTwilightPoints,
             int ppem,
             int pointSize26Dot6,
             int scale16Dot16,
             TrueTypeRenderClass renderClass,
             bool isVariation)
         {
+            _twilight = new TrueTypeZone(Math.Clamp(maxTwilightPoints, 1, 0xFFFF), 1)
+            {
+                PointCount = Math.Clamp(maxTwilightPoints, 1, 0xFFFF),
+            };
+            _activeTwilight = _twilight;
             _fontProgram = fontProgram;
             _cvtProgram = cvtProgram;
             _cvt = cvt;
@@ -159,6 +177,20 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
         public ReadOnlySpan<int> PristineStorage => _storage;
 
+        /// <summary>The size-owned twilight zone as prep left it.</summary>
+        public TrueTypeZone PristineTwilight => _twilight;
+
+        /// <summary>The twilight zone the current run works on.</summary>
+        public TrueTypeZone ActiveTwilight => _activeTwilight;
+
+        /// <summary>The outline zone of the current glyph run; installed by the loader.</summary>
+        public TrueTypeZone? GlyphZone => _glyphZone;
+
+        /// <summary>Composite glyph programs get wider DELTAP/SHPIX exceptions under v40.</summary>
+        public bool IsCompositeGlyph;
+
+        public void SetGlyphZone(TrueTypeZone? zone) => _glyphZone = zone;
+
         public bool RunFontProgram() => Execute(TrueTypeCodeRange.FontProgram, _fontProgram);
 
         public bool RunControlValueProgram() => Execute(TrueTypeCodeRange.ControlValueProgram, _cvtProgram);
@@ -176,11 +208,24 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _cvtCopied = false;
             _storageCopied = false;
 
+            // Twilight is small and glyph programs routinely move its points, so every run
+            // simply works on a fresh copy of the post-prep zone. It stays observable after
+            // the run; the next Execute reselects the zone for its range.
+            _workingTwilight ??= new TrueTypeZone(_twilight.PointCount, 1);
+            _workingTwilight.CopyFrom(_twilight);
+            _activeTwilight = _workingTwilight;
+
             return Execute(TrueTypeCodeRange.Glyph, code);
         }
 
         private bool Execute(TrueTypeCodeRange range, ReadOnlyMemory<byte> code)
         {
+            if (range != TrueTypeCodeRange.Glyph)
+            {
+                // The control programs build the size-owned twilight zone directly.
+                _activeTwilight = _twilight;
+            }
+
             Error = TrueTypeError.None;
             _initialRange = range;
             _currentRange = range;
@@ -192,9 +237,13 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _loopcallCounter = 0;
             _negJumpCounter = 0;
 
-            // The reference heuristic for runs without outline points; recomputed with point
-            // counts when the point engine lands.
-            _loopcallCounterMax = 300 + 22L * _cvt.Length;
+            // The reference heuristic: sized from the outline when hinting a glyph, from the
+            // control value count for the control programs.
+            _loopcallCounterMax = _glyphZone is { PointCount: > 0 } zone && range == TrueTypeCodeRange.Glyph
+                ? Math.Max(50, 10L * zone.PointCount) + Math.Max(50, _cvt.Length / 10)
+                : 300 + 22L * _cvt.Length;
+
+            RefreshVectors();
 
             while (true)
             {
@@ -531,6 +580,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                     gs.ProjectionY = y;
                     gs.DualX = x;
                     gs.DualY = y;
+                    RefreshVectors();
                     break;
                 }
 
@@ -543,6 +593,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                     gs.ProjectionY = y;
                     gs.DualX = x;
                     gs.DualY = y;
+                    RefreshVectors();
                     break;
                 }
 
@@ -550,23 +601,46 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 case 0x05:  // SFVTCA[x]
                     gs.FreedomX = (short)(opcode == 0x05 ? 0x4000 : 0);
                     gs.FreedomY = (short)(opcode == 0x05 ? 0 : 0x4000);
+                    RefreshVectors();
+                    break;
+
+                case 0x06 or 0x07:  // SPVTL[a]: pops point1 (top), point2
+                    if (Pop2(out a, out b) && SetVectorToLine(b, a, (opcode & 1) != 0, out var lpx, out var lpy))
+                    {
+                        gs.ProjectionX = lpx;
+                        gs.ProjectionY = lpy;
+                        gs.DualX = lpx;
+                        gs.DualY = lpy;
+                        RefreshVectors();
+                    }
+                    break;
+
+                case 0x08 or 0x09:  // SFVTL[a]
+                    if (Pop2(out a, out b) && SetVectorToLine(b, a, (opcode & 1) != 0, out var lfx, out var lfy))
+                    {
+                        gs.FreedomX = lfx;
+                        gs.FreedomY = lfy;
+                        RefreshVectors();
+                    }
                     break;
 
                 case 0x0A:  // SPVFS: pops y (top), x
-                    if (Pop2(out a, out b) && Normalize(a, b, out var px, out var py))
+                    if (Pop2(out a, out b) && Normalize((short)a, (short)b, out var px, out var py))
                     {
                         gs.ProjectionX = px;
                         gs.ProjectionY = py;
                         gs.DualX = px;
                         gs.DualY = py;
+                        RefreshVectors();
                     }
                     break;
 
                 case 0x0B:  // SFVFS
-                    if (Pop2(out a, out b) && Normalize(a, b, out var fx, out var fy))
+                    if (Pop2(out a, out b) && Normalize((short)a, (short)b, out var fx, out var fy))
                     {
                         gs.FreedomX = fx;
                         gs.FreedomY = fy;
+                        RefreshVectors();
                     }
                     break;
 
@@ -583,6 +657,12 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 case 0x0E:  // SFVTPV
                     gs.FreedomX = gs.ProjectionX;
                     gs.FreedomY = gs.ProjectionY;
+                    RefreshVectors();
+                    break;
+
+                case 0x86 or 0x87:  // SDPVTL[a]: dual from originals, projection from currents
+                    if (Pop2(out a, out b))
+                        SetDualVectorsToLine(p1: b, p2: a, (opcode & 1) != 0);
                     break;
 
                 // ---- reference points, zones, simple GS setters --------------------------
@@ -1041,22 +1121,102 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                         Jump(a);
                     break;
 
-                // ---- the point engine (not built yet) ------------------------------------
+                // ---- the point engine ----------------------------------------------------
 
-                case >= 0x06 and <= 0x09:  // SPVTL, SFVTL
-                case 0x0F:                 // ISECT
-                case 0x27:                 // ALIGNPTS
-                case 0x29:                 // UTP
-                case 0x2E or 0x2F:         // MDAP
-                case >= 0x30 and <= 0x3C:  // IUP, SHP, SHC, SHZ, SHPIX, IP, MSIRP, ALIGNRP
-                case 0x3E or 0x3F:         // MIAP
-                case >= 0x46 and <= 0x4A:  // GC, SCFS, MD
-                case 0x5D:                 // DELTAP1
-                case 0x71 or 0x72:         // DELTAP2, DELTAP3
-                case >= 0x80 and <= 0x82:  // FLIPPT, FLIPRGON, FLIPRGOFF
-                case 0x86 or 0x87:         // SDPVTL
-                case >= 0xC0:              // MDRP, MIRP
-                    Fail(TrueTypeError.UnsupportedOpcode);
+                case 0x0F:  // ISECT
+                    Isect();
+                    break;
+
+                case 0x27:  // ALIGNPTS
+                    AlignPoints();
+                    break;
+
+                case 0x29:  // UTP
+                    if (Pop(out a))
+                        UntouchPoint(a);
+                    break;
+
+                case 0x2E or 0x2F:  // MDAP[a]
+                    if (Pop(out a))
+                        MoveDirectAbsolutePoint(a, round: (opcode & 1) != 0);
+                    break;
+
+                case 0x30 or 0x31:  // IUP[a]
+                    InterpolateUntouchedPoints(opcode);
+                    break;
+
+                case 0x32 or 0x33:  // SHP[a]
+                    ShiftPoints(opcode);
+                    break;
+
+                case 0x34 or 0x35:  // SHC[a]
+                    if (Pop(out a))
+                        ShiftContour(opcode, a);
+                    break;
+
+                case 0x36 or 0x37:  // SHZ[a]
+                    if (Pop(out a))
+                        ShiftZone(opcode, a);
+                    break;
+
+                case 0x38:  // SHPIX
+                    ShiftPointsByPixels();
+                    break;
+
+                case 0x39:  // IP
+                    InterpolatePoints();
+                    break;
+
+                case 0x3A or 0x3B:  // MSIRP[a]: pops distance (top), point
+                    if (Pop2(out a, out b))
+                        MoveStackIndirectRelativePoint(point: a, distance: b, setRp0: (opcode & 1) != 0);
+                    break;
+
+                case 0x3C:  // ALIGNRP
+                    AlignToReferencePoint();
+                    break;
+
+                case 0x3E or 0x3F:  // MIAP[a]: pops cvt entry (top), point
+                    if (Pop2(out a, out b))
+                        MoveIndirectAbsolutePoint(point: a, cvtEntry: b, roundAndCutIn: (opcode & 1) != 0);
+                    break;
+
+                case 0x46 or 0x47:  // GC[a]
+                    if (Pop(out a))
+                        Push(GetCoordinate(a, original: (opcode & 1) != 0));
+                    break;
+
+                case 0x48:  // SCFS: pops value (top), point
+                    if (Pop2(out a, out b))
+                        SetCoordinateFromStack(point: a, value: b);
+                    break;
+
+                case 0x49 or 0x4A:  // MD[a]: pops point K (top), point L; flag inverted per the reference
+                    if (Pop2(out a, out b))
+                        Push(MeasureDistance(pointL: a, pointK: b, current: (opcode & 1) != 0));
+                    break;
+
+                case 0x5D or 0x71 or 0x72:  // DELTAP1..3
+                    DeltaP(opcode);
+                    break;
+
+                case 0x80:  // FLIPPT
+                    FlipPoints();
+                    break;
+
+                case 0x81 or 0x82:  // FLIPRGON, FLIPRGOFF: pops high (top), low
+                    if (Pop2(out a, out b))
+                        FlipRange(low: a, high: b, on: opcode == 0x81);
+                    break;
+
+                case >= 0xC0 and <= 0xDF:  // MDRP[abcde]
+                    if (Pop(out a))
+                        MoveDirectRelativePoint(opcode, a);
+                    break;
+
+                case >= 0xE0:  // MIRP[abcde]: pops cvt index (top), point
+                    if (Pop2(out a, out b))
+                        MoveIndirectRelativePoint(opcode, point: a, cvtIndex: b);
                     break;
 
                 default:
@@ -1104,24 +1264,21 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             }
         }
 
-        private bool Normalize(int x, int y, out short unitX, out short unitY)
+        private bool Normalize(long x, long y, out short unitX, out short unitY)
         {
             unitX = 0;
             unitY = 0;
 
-            var sx = (short)x;
-            var sy = (short)y;
-
-            if (sx == 0 && sy == 0)
+            if (x == 0 && y == 0)
             {
                 return !Fail(TrueTypeError.BadArgument);
             }
 
             // Math.Sqrt is IEEE-correctly-rounded, so this stays bit-deterministic.
-            var length = Math.Sqrt((double)sx * sx + (double)sy * sy);
+            var length = Math.Sqrt((double)x * x + (double)y * y);
 
-            unitX = (short)Math.Floor(sx * 16384.0 / length + 0.5);
-            unitY = (short)Math.Floor(sy * 16384.0 / length + 0.5);
+            unitX = (short)Math.Floor(x * 16384.0 / length + 0.5);
+            unitY = (short)Math.Floor(y * 16384.0 / length + 0.5);
             return true;
         }
 
@@ -1544,5 +1701,1298 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 BackwardCompatibility = (value & 4) ^ 4;
             }
         }
+
+        // ---- point-engine machinery ----------------------------------------------------
+
+        private static readonly TrueTypeZone s_emptyZone = new(0, 0);
+
+        private TrueTypeZone ZoneOf(byte zonePointer) =>
+            zonePointer == 0 ? _activeTwilight : _glyphZone ?? s_emptyZone;
+
+        private TrueTypeZone Zp0 => ZoneOf(GraphicsState.Zp0);
+
+        private TrueTypeZone Zp1 => ZoneOf(GraphicsState.Zp1);
+
+        private TrueTypeZone Zp2 => ZoneOf(GraphicsState.Zp2);
+
+        /// <summary>
+        /// Recomputes the movement vector from the graphics state, the reference formula:
+        /// collinear vectors move by the plain distance, near-orthogonal pairs move nothing,
+        /// everything else scales freedom by the inverse projection of itself.
+        /// </summary>
+        private void RefreshVectors()
+        {
+            ref var gs = ref GraphicsState;
+
+            var fDotP =
+                ((long)gs.ProjectionX * gs.FreedomX +
+                 (long)gs.ProjectionY * gs.FreedomY + 0x2000) >> 14;
+
+            if (fDotP >= 0x3FFE)
+            {
+                _moveX = gs.FreedomX * 4;
+                _moveY = gs.FreedomY * 4;
+            }
+            else if (fDotP > -0x400 && fDotP < 0x400)
+            {
+                _moveX = 0;
+                _moveY = 0;
+            }
+            else
+            {
+                _moveX = (int)(gs.FreedomX * 0x10000L / fDotP);
+                _moveY = (int)(gs.FreedomY * 0x10000L / fDotP);
+            }
+        }
+
+        /// <summary>(ax*bx + ay*by) / 2^14 with the reference rounding phase.</summary>
+        private static int DotFix14(long ax, long ay, int bx, int by)
+        {
+            var c = ax * bx + ay * by;
+
+            c += 0x2000 + (c >> 63);
+
+            return (int)(c >> 14);
+        }
+
+        private int Project(long dx, long dy)
+        {
+            ref var gs = ref GraphicsState;
+
+            if (gs.ProjectionX == 0x4000)
+                return (int)dx;
+            if (gs.ProjectionY == 0x4000)
+                return (int)dy;
+
+            return DotFix14(dx, dy, gs.ProjectionX, gs.ProjectionY);
+        }
+
+        private int DualProject(long dx, long dy)
+        {
+            ref var gs = ref GraphicsState;
+
+            if (gs.DualX == 0x4000)
+                return (int)dx;
+            if (gs.DualY == 0x4000)
+                return (int)dy;
+
+            return DotFix14(dx, dy, gs.DualX, gs.DualY);
+        }
+
+        /// <summary>
+        /// Moves a point along the freedom vector, applying the v40 gates: x never moves in
+        /// compatibility mode, y freezes post-IUP, and the touch flags always land so IUP
+        /// still treats the point as instructed.
+        /// </summary>
+        private void MovePoint(TrueTypeZone zone, int point, int distance)
+        {
+            if (_moveX != 0)
+            {
+                if (BackwardCompatibility == 0)
+                {
+                    zone.CurX[point] = unchecked(zone.CurX[point] + F26Dot6.MulFix(distance, _moveX));
+                }
+
+                zone.Tags[point] |= TrueTypeZone.TouchX;
+            }
+
+            if (_moveY != 0)
+            {
+                if (BackwardCompatibility != 0x7)
+                {
+                    zone.CurY[point] = unchecked(zone.CurY[point] + F26Dot6.MulFix(distance, _moveY));
+                }
+
+                zone.Tags[point] |= TrueTypeZone.TouchY;
+            }
+        }
+
+        /// <summary>Moves a point's original position; no gates, no touch.</summary>
+        private void MoveOriginal(TrueTypeZone zone, int point, int distance)
+        {
+            if (_moveX != 0)
+            {
+                zone.OrgX[point] = unchecked(zone.OrgX[point] + F26Dot6.MulFix(distance, _moveX));
+            }
+
+            if (_moveY != 0)
+            {
+                zone.OrgY[point] = unchecked(zone.OrgY[point] + F26Dot6.MulFix(distance, _moveY));
+            }
+        }
+
+        /// <summary>The zp2 displacement move SHP/SHC/SHPIX share, gated like MovePoint.</summary>
+        private void MoveZp2Point(int point, int dx, int dy)
+        {
+            var zone = Zp2;
+            ref var gs = ref GraphicsState;
+
+            if (gs.FreedomX != 0)
+            {
+                if (BackwardCompatibility == 0)
+                {
+                    zone.CurX[point] = unchecked(zone.CurX[point] + dx);
+                }
+
+                zone.Tags[point] |= TrueTypeZone.TouchX;
+            }
+
+            if (gs.FreedomY != 0)
+            {
+                if (BackwardCompatibility != 0x7)
+                {
+                    zone.CurY[point] = unchecked(zone.CurY[point] + dy);
+                }
+
+                zone.Tags[point] |= TrueTypeZone.TouchY;
+            }
+        }
+
+        /// <summary>
+        /// The displacement of the reference point selected by the shift opcode's flag bit,
+        /// decomposed along the freedom vector. Returns false when the reference is out of
+        /// bounds; <paramref name="excludeReference"/> reports the reference index when it
+        /// lives in the zone the caller is about to shift.
+        /// </summary>
+        private bool ComputePointDisplacement(byte opcode, TrueTypeZone? excludeIn, out int dx, out int dy, out int excludeReference)
+        {
+            TrueTypeZone zone;
+            int p;
+
+            if ((opcode & 1) != 0)
+            {
+                zone = Zp0;
+                p = GraphicsState.Rp1;
+            }
+            else
+            {
+                zone = Zp1;
+                p = GraphicsState.Rp2;
+            }
+
+            if ((uint)p >= (uint)zone.PointCount)
+            {
+                dx = 0;
+                dy = 0;
+                excludeReference = -1;
+                return false;
+            }
+
+            excludeReference = ReferenceEquals(zone, excludeIn) ? p : -1;
+
+            var d = Project(zone.CurX[p] - (long)zone.OrgX[p], zone.CurY[p] - (long)zone.OrgY[p]);
+
+            dx = F26Dot6.MulFix(d, _moveX);
+            dy = F26Dot6.MulFix(d, _moveY);
+            return true;
+        }
+
+        private bool SetVectorToLine(int aIdx1, int aIdx2, bool perpendicular, out short unitX, out short unitY)
+        {
+            unitX = 0;
+            unitY = 0;
+
+            var zp1 = Zp1;
+            var zp2 = Zp2;
+
+            if ((uint)aIdx2 >= (uint)zp1.PointCount || (uint)aIdx1 >= (uint)zp2.PointCount)
+            {
+                return false;
+            }
+
+            long a = zp1.CurX[aIdx2] - (long)zp2.CurX[aIdx1];
+            long b = zp1.CurY[aIdx2] - (long)zp2.CurY[aIdx1];
+
+            // Identical points behave like the x-axis without rotation, per the reference.
+            if (a == 0 && b == 0)
+            {
+                a = 0x4000;
+                perpendicular = false;
+            }
+
+            if (perpendicular)
+            {
+                (a, b) = (-b, a);
+            }
+
+            return Normalize(a, b, out unitX, out unitY);
+        }
+
+        private void SetDualVectorsToLine(int p1, int p2, bool perpendicular)
+        {
+            ref var gs = ref GraphicsState;
+            var zp1 = Zp1;
+            var zp2 = Zp2;
+
+            if ((uint)p2 >= (uint)zp1.PointCount || (uint)p1 >= (uint)zp2.PointCount)
+            {
+                return;
+            }
+
+            // The dual vector measures the original outline, the projection the current one.
+            long a = zp1.OrgX[p2] - (long)zp2.OrgX[p1];
+            long b = zp1.OrgY[p2] - (long)zp2.OrgY[p1];
+            var rotate = perpendicular;
+
+            if (a == 0 && b == 0)
+            {
+                a = 0x4000;
+                rotate = false;
+                perpendicular = false;
+            }
+
+            if (rotate)
+            {
+                (a, b) = (-b, a);
+            }
+
+            if (!Normalize(a, b, out var dualX, out var dualY))
+            {
+                return;
+            }
+
+            gs.DualX = dualX;
+            gs.DualY = dualY;
+
+            a = zp1.CurX[p2] - (long)zp2.CurX[p1];
+            b = zp1.CurY[p2] - (long)zp2.CurY[p1];
+            rotate = perpendicular;
+
+            if (a == 0 && b == 0)
+            {
+                a = 0x4000;
+                rotate = false;
+            }
+
+            if (rotate)
+            {
+                (a, b) = (-b, a);
+            }
+
+            if (Normalize(a, b, out var projX, out var projY))
+            {
+                gs.ProjectionX = projX;
+                gs.ProjectionY = projY;
+                RefreshVectors();
+            }
+        }
+
+        // ---- geometric instructions ----------------------------------------------------
+
+        private void MoveDirectAbsolutePoint(int point, bool round)
+        {
+            var zone = Zp0;
+
+            if ((uint)point >= (uint)zone.PointCount)
+            {
+                return;
+            }
+
+            var distance = 0;
+
+            if (round)
+            {
+                var current = Project(zone.CurX[point], zone.CurY[point]);
+
+                distance = RoundValue(current, 0) - current;
+            }
+
+            MovePoint(zone, point, distance);
+
+            GraphicsState.Rp0 = point;
+            GraphicsState.Rp1 = point;
+        }
+
+        private void MoveIndirectAbsolutePoint(int point, int cvtEntry, bool roundAndCutIn)
+        {
+            var zone = Zp0;
+
+            if ((uint)point < (uint)zone.PointCount && (uint)cvtEntry < (uint)_activeCvt.Length)
+            {
+                var distance = _activeCvt[cvtEntry];
+
+                // Twilight points are created here: the original position becomes the
+                // unrounded control value along the freedom vector, which is what lets IP
+                // work in the twilight zone (the Arial/Times prep idiom).
+                if (GraphicsState.Zp0 == 0)
+                {
+                    zone.OrgX[point] = DotFix14(distance, 0, GraphicsState.FreedomX, 0);
+                    zone.OrgY[point] = DotFix14(distance, 0, GraphicsState.FreedomY, 0);
+                    zone.CurX[point] = zone.OrgX[point];
+                    zone.CurY[point] = zone.OrgY[point];
+                }
+
+                var orgDist = Project(zone.CurX[point], zone.CurY[point]);
+
+                if (roundAndCutIn)
+                {
+                    var delta = distance - orgDist;
+
+                    if (delta < 0)
+                    {
+                        delta = -delta;
+                    }
+
+                    if (delta > GraphicsState.ControlValueCutIn)
+                    {
+                        distance = orgDist;
+                    }
+
+                    distance = RoundValue(distance, 0);
+                }
+
+                MovePoint(zone, point, distance - orgDist);
+            }
+
+            GraphicsState.Rp0 = point;
+            GraphicsState.Rp1 = point;
+        }
+
+        private void MoveDirectRelativePoint(byte opcode, int point)
+        {
+            ref var gs = ref GraphicsState;
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+
+            if ((uint)point < (uint)zp1.PointCount && (uint)gs.Rp0 < (uint)zp0.PointCount)
+            {
+                int orgDist;
+
+                // Original distances come from the unscaled outline except in twilight,
+                // where only scaled originals exist.
+                if (gs.Zp0 == 0 || gs.Zp1 == 0)
+                {
+                    orgDist = DualProject(
+                        zp1.OrgX[point] - (long)zp0.OrgX[gs.Rp0],
+                        zp1.OrgY[point] - (long)zp0.OrgY[gs.Rp0]);
+                }
+                else
+                {
+                    orgDist = F26Dot6.MulFix(
+                        DualProject(
+                            zp1.OrusX[point] - (long)zp0.OrusX[gs.Rp0],
+                            zp1.OrusY[point] - (long)zp0.OrusY[gs.Rp0]),
+                        _scale);
+                }
+
+                // Single-width cut-in.
+                if (gs.SingleWidthCutIn > 0 &&
+                    orgDist < gs.SingleWidthValue + gs.SingleWidthCutIn &&
+                    orgDist > gs.SingleWidthValue - gs.SingleWidthCutIn)
+                {
+                    orgDist = orgDist >= 0 ? gs.SingleWidthValue : -gs.SingleWidthValue;
+                }
+
+                var distance = (opcode & 4) != 0
+                    ? RoundValue(orgDist, 0)
+                    : RoundNone(orgDist);
+
+                if ((opcode & 8) != 0)
+                {
+                    if (orgDist >= 0)
+                    {
+                        if (distance < gs.MinimumDistance)
+                        {
+                            distance = gs.MinimumDistance;
+                        }
+                    }
+                    else if (distance > -gs.MinimumDistance)
+                    {
+                        distance = -gs.MinimumDistance;
+                    }
+                }
+
+                var currentDist = Project(
+                    zp1.CurX[point] - (long)zp0.CurX[gs.Rp0],
+                    zp1.CurY[point] - (long)zp0.CurY[gs.Rp0]);
+
+                MovePoint(zp1, point, distance - currentDist);
+            }
+
+            gs.Rp1 = gs.Rp0;
+            gs.Rp2 = point;
+
+            if ((opcode & 16) != 0)
+            {
+                gs.Rp0 = point;
+            }
+        }
+
+        private void MoveIndirectRelativePoint(byte opcode, int point, int cvtIndex)
+        {
+            ref var gs = ref GraphicsState;
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+
+            // cvt[-1] reads zero by long-standing rasterizer convention.
+            var cvtEntry = cvtIndex + 1;
+
+            if ((uint)point < (uint)zp1.PointCount &&
+                (uint)cvtEntry < (uint)_activeCvt.Length + 1 &&
+                (uint)gs.Rp0 < (uint)zp0.PointCount)
+            {
+                var cvtDist = cvtEntry == 0 ? 0 : _activeCvt[cvtEntry - 1];
+
+                // Single-width cut-in applies to the control value here.
+                var delta = cvtDist - gs.SingleWidthValue;
+
+                if (delta < 0)
+                {
+                    delta = -delta;
+                }
+
+                if (delta < gs.SingleWidthCutIn)
+                {
+                    cvtDist = cvtDist >= 0 ? gs.SingleWidthValue : -gs.SingleWidthValue;
+                }
+
+                // Twilight points spring into being relative to the reference point.
+                if (gs.Zp1 == 0)
+                {
+                    zp1.OrgX[point] = zp0.OrgX[gs.Rp0] + DotFix14(cvtDist, 0, gs.FreedomX, 0);
+                    zp1.OrgY[point] = zp0.OrgY[gs.Rp0] + DotFix14(cvtDist, 0, gs.FreedomY, 0);
+                    zp1.CurX[point] = zp1.OrgX[point];
+                    zp1.CurY[point] = zp1.OrgY[point];
+                }
+
+                var orgDist = DualProject(
+                    zp1.OrgX[point] - (long)zp0.OrgX[gs.Rp0],
+                    zp1.OrgY[point] - (long)zp0.OrgY[gs.Rp0]);
+                var currentDist = Project(
+                    zp1.CurX[point] - (long)zp0.CurX[gs.Rp0],
+                    zp1.CurY[point] - (long)zp0.CurY[gs.Rp0]);
+
+                if (gs.AutoFlip && (orgDist ^ cvtDist) < 0)
+                {
+                    cvtDist = -cvtDist;
+                }
+
+                int distance;
+
+                if ((opcode & 4) != 0)
+                {
+                    // The cut-in only applies when both points live in the same zone.
+                    if (gs.Zp0 == gs.Zp1)
+                    {
+                        delta = cvtDist - orgDist;
+
+                        if (delta < 0)
+                        {
+                            delta = -delta;
+                        }
+
+                        if (delta > gs.ControlValueCutIn)
+                        {
+                            cvtDist = orgDist;
+                        }
+                    }
+
+                    distance = RoundValue(cvtDist, 0);
+                }
+                else
+                {
+                    distance = RoundNone(cvtDist);
+                }
+
+                if ((opcode & 8) != 0)
+                {
+                    if (orgDist >= 0)
+                    {
+                        if (distance < gs.MinimumDistance)
+                        {
+                            distance = gs.MinimumDistance;
+                        }
+                    }
+                    else if (distance > -gs.MinimumDistance)
+                    {
+                        distance = -gs.MinimumDistance;
+                    }
+                }
+
+                MovePoint(zp1, point, distance - currentDist);
+            }
+
+            gs.Rp1 = gs.Rp0;
+            gs.Rp2 = point;
+
+            if ((opcode & 16) != 0)
+            {
+                gs.Rp0 = point;
+            }
+        }
+
+        private void MoveStackIndirectRelativePoint(int point, int distance, bool setRp0)
+        {
+            ref var gs = ref GraphicsState;
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+
+            if ((uint)point < (uint)zp1.PointCount && (uint)gs.Rp0 < (uint)zp0.PointCount)
+            {
+                if (gs.Zp1 == 0)
+                {
+                    zp1.OrgX[point] = zp0.OrgX[gs.Rp0];
+                    zp1.OrgY[point] = zp0.OrgY[gs.Rp0];
+                    MoveOriginal(zp1, point, distance);
+                    zp1.CurX[point] = zp1.OrgX[point];
+                    zp1.CurY[point] = zp1.OrgY[point];
+                }
+
+                var currentDist = Project(
+                    zp1.CurX[point] - (long)zp0.CurX[gs.Rp0],
+                    zp1.CurY[point] - (long)zp0.CurY[gs.Rp0]);
+
+                MovePoint(zp1, point, distance - currentDist);
+            }
+
+            gs.Rp1 = gs.Rp0;
+            gs.Rp2 = point;
+
+            if (setRp0)
+            {
+                gs.Rp0 = point;
+            }
+        }
+
+        private void AlignToReferencePoint()
+        {
+            var loop = GraphicsState.Loop;
+
+            GraphicsState.Loop = 1;
+
+            if (_top < loop)
+            {
+                return;
+            }
+
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+            var valid = (uint)GraphicsState.Rp0 < (uint)zp0.PointCount;
+
+            while (loop-- > 0)
+            {
+                Pop(out var point);
+
+                if (!valid || (uint)point >= (uint)zp1.PointCount)
+                {
+                    continue;
+                }
+
+                var distance = Project(
+                    zp1.CurX[point] - (long)zp0.CurX[GraphicsState.Rp0],
+                    zp1.CurY[point] - (long)zp0.CurY[GraphicsState.Rp0]);
+
+                MovePoint(zp1, point, -distance);
+            }
+        }
+
+        private void AlignPoints()
+        {
+            if (!Pop2(out var p1, out var p2))
+            {
+                return;
+            }
+
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+
+            if ((uint)p1 >= (uint)zp1.PointCount || (uint)p2 >= (uint)zp0.PointCount)
+            {
+                return;
+            }
+
+            var distance = Project(
+                zp0.CurX[p2] - (long)zp1.CurX[p1],
+                zp0.CurY[p2] - (long)zp1.CurY[p1]) / 2;
+
+            MovePoint(zp1, p1, distance);
+            MovePoint(zp0, p2, -distance);
+        }
+
+        private void Isect()
+        {
+            if (_top < 5)
+            {
+                Fail(TrueTypeError.TooFewArguments);
+                return;
+            }
+
+            Pop(out var b1);
+            Pop(out var b0);
+            Pop(out var a1);
+            Pop(out var a0);
+            Pop(out var point);
+
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+            var zp2 = Zp2;
+
+            if ((uint)b0 >= (uint)zp0.PointCount || (uint)b1 >= (uint)zp0.PointCount ||
+                (uint)a0 >= (uint)zp1.PointCount || (uint)a1 >= (uint)zp1.PointCount ||
+                (uint)point >= (uint)zp2.PointCount)
+            {
+                return;
+            }
+
+            var dbx = zp0.CurX[b1] - zp0.CurX[b0];
+            var dby = zp0.CurY[b1] - zp0.CurY[b0];
+            var dax = zp1.CurX[a1] - zp1.CurX[a0];
+            var day = zp1.CurY[a1] - zp1.CurY[a0];
+            var dx = zp0.CurX[b0] - zp1.CurX[a0];
+            var dy = zp0.CurY[b0] - zp1.CurY[a0];
+
+            var discriminant = F26Dot6.MulDivRounded(dax, -dby, 0x40) +
+                               F26Dot6.MulDivRounded(day, dbx, 0x40);
+            var dotProduct = F26Dot6.MulDivRounded(dax, dbx, 0x40) +
+                             F26Dot6.MulDivRounded(day, dby, 0x40);
+
+            // Grazing intersections (under about 3 degrees) snap to the middle of the four
+            // ends instead, the reference's stability rule.
+            if (19L * Math.Abs(discriminant) > Math.Abs((long)dotProduct))
+            {
+                var val = F26Dot6.MulDivRounded(dx, -dby, 0x40) +
+                          F26Dot6.MulDivRounded(dy, dbx, 0x40);
+
+                zp2.CurX[point] = unchecked(zp1.CurX[a0] + F26Dot6.MulDivRounded(val, dax, discriminant));
+                zp2.CurY[point] = unchecked(zp1.CurY[a0] + F26Dot6.MulDivRounded(val, day, discriminant));
+            }
+            else
+            {
+                zp2.CurX[point] = (int)(((long)zp1.CurX[a0] + zp1.CurX[a1] + zp0.CurX[b0] + zp0.CurX[b1]) / 4);
+                zp2.CurY[point] = (int)(((long)zp1.CurY[a0] + zp1.CurY[a1] + zp0.CurY[b0] + zp0.CurY[b1]) / 4);
+            }
+
+            zp2.Tags[point] |= TrueTypeZone.TouchBoth;
+        }
+
+        private void ShiftPoints(byte opcode)
+        {
+            var loop = GraphicsState.Loop;
+
+            GraphicsState.Loop = 1;
+
+            if (_top < loop)
+            {
+                return;
+            }
+
+            var valid = ComputePointDisplacement(opcode, excludeIn: null, out var dx, out var dy, out _);
+            var zp2 = Zp2;
+
+            while (loop-- > 0)
+            {
+                Pop(out var point);
+
+                if (valid && (uint)point < (uint)zp2.PointCount)
+                {
+                    MoveZp2Point(point, dx, dy);
+                }
+            }
+        }
+
+        private void ShiftContour(byte opcode, int contour)
+        {
+            var zp2 = Zp2;
+            var contourBound = GraphicsState.Zp2 == 0 ? 1 : zp2.ContourCount;
+
+            if ((uint)contour >= (uint)contourBound ||
+                !ComputePointDisplacement(opcode, excludeIn: zp2, out var dx, out var dy, out var reference))
+            {
+                return;
+            }
+
+            var start = contour == 0 ? 0 : zp2.ContourEnds[contour - 1] + 1 - zp2.FirstPoint;
+
+            // The twilight zone has one virtual contour spanning every point.
+            var limit = GraphicsState.Zp2 == 0
+                ? zp2.PointCount
+                : zp2.ContourEnds[contour] + 1 - zp2.FirstPoint;
+
+            for (var i = start; i < limit; i++)
+            {
+                if (i != reference)
+                {
+                    MoveZp2Point(i, dx, dy);
+                }
+            }
+        }
+
+        private void ShiftZone(byte opcode, int zoneNumber)
+        {
+            if ((uint)zoneNumber > 1)
+            {
+                return;
+            }
+
+            TrueTypeZone zone;
+            int limit;
+
+            if (zoneNumber == 0)
+            {
+                zone = _activeTwilight;
+                limit = zone.PointCount;
+            }
+            else
+            {
+                zone = _glyphZone ?? s_emptyZone;
+
+                // The phantom points never shift with the zone.
+                limit = zone.PointCount > 4 ? zone.PointCount - 4 : 0;
+            }
+
+            if (!ComputePointDisplacement(opcode, excludeIn: zone, out var dx, out var dy, out var reference))
+            {
+                return;
+            }
+
+            // Zone shifts move without touching, with the usual per-axis v40 gates.
+            if (dx != 0 && BackwardCompatibility == 0)
+            {
+                for (var i = 0; i < limit; i++)
+                {
+                    if (i != reference)
+                    {
+                        zone.CurX[i] = unchecked(zone.CurX[i] + dx);
+                    }
+                }
+            }
+
+            if (dy != 0 && BackwardCompatibility != 0x7)
+            {
+                for (var i = 0; i < limit; i++)
+                {
+                    if (i != reference)
+                    {
+                        zone.CurY[i] = unchecked(zone.CurY[i] + dy);
+                    }
+                }
+            }
+        }
+
+        private void ShiftPointsByPixels()
+        {
+            if (!Pop(out var amount))
+            {
+                return;
+            }
+
+            var loop = GraphicsState.Loop;
+
+            GraphicsState.Loop = 1;
+
+            if (_top < loop)
+            {
+                return;
+            }
+
+            ref var gs = ref GraphicsState;
+            var zp2 = Zp2;
+            var inTwilight = gs.Zp0 == 0 || gs.Zp1 == 0 || gs.Zp2 == 0;
+            var dx = DotFix14(amount, 0, gs.FreedomX, 0);
+            var dy = DotFix14(amount, 0, gs.FreedomY, 0);
+
+            while (loop-- > 0)
+            {
+                Pop(out var point);
+
+                if ((uint)point >= (uint)zp2.PointCount)
+                {
+                    continue;
+                }
+
+                if (BackwardCompatibility != 0)
+                {
+                    // Twilight moves always pass; outline moves only pre-IUP for composite
+                    // y adjustment or already y-touched points, and then y-only. This is
+                    // the reference's unbreak-Rokkitt rule.
+                    if (inTwilight ||
+                        (BackwardCompatibility != 0x7 &&
+                         ((IsCompositeGlyph && gs.FreedomY != 0) ||
+                          (zp2.Tags[point] & TrueTypeZone.TouchY) != 0)))
+                    {
+                        MoveZp2Point(point, 0, dy);
+                    }
+                }
+                else
+                {
+                    MoveZp2Point(point, dx, dy);
+                }
+            }
+        }
+
+        private void InterpolatePoints()
+        {
+            var loop = GraphicsState.Loop;
+
+            GraphicsState.Loop = 1;
+
+            if (_top < loop)
+            {
+                return;
+            }
+
+            ref var gs = ref GraphicsState;
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+            var zp2 = Zp2;
+
+            if ((uint)gs.Rp1 >= (uint)zp0.PointCount)
+            {
+                // The reference still consumes the points when rp1 is invalid.
+                while (loop-- > 0)
+                {
+                    Pop(out _);
+                }
+
+                return;
+            }
+
+            // Twilight orus values are all zero by definition, so scaled originals stand in;
+            // for outline points the unscaled originals measure the old range, and because
+            // the interpolation is a pure ratio the scale cancels.
+            var twilight = gs.Zp0 == 0 || gs.Zp1 == 0 || gs.Zp2 == 0;
+
+            long orusBaseX, orusBaseY;
+
+            if (twilight)
+            {
+                orusBaseX = zp0.OrgX[gs.Rp1];
+                orusBaseY = zp0.OrgY[gs.Rp1];
+            }
+            else
+            {
+                orusBaseX = zp0.OrusX[gs.Rp1];
+                orusBaseY = zp0.OrusY[gs.Rp1];
+            }
+
+            long curBaseX = zp0.CurX[gs.Rp1];
+            long curBaseY = zp0.CurY[gs.Rp1];
+
+            var oldRange = 0;
+            var curRange = 0;
+
+            if ((uint)gs.Rp2 < (uint)zp1.PointCount)
+            {
+                oldRange = twilight
+                    ? DualProject(zp1.OrgX[gs.Rp2] - orusBaseX, zp1.OrgY[gs.Rp2] - orusBaseY)
+                    : DualProject(zp1.OrusX[gs.Rp2] - orusBaseX, zp1.OrusY[gs.Rp2] - orusBaseY);
+                curRange = Project(zp1.CurX[gs.Rp2] - curBaseX, zp1.CurY[gs.Rp2] - curBaseY);
+            }
+
+            while (loop-- > 0)
+            {
+                Pop(out var point);
+
+                if ((uint)point >= (uint)zp2.PointCount)
+                {
+                    continue;
+                }
+
+                var orgDist = twilight
+                    ? DualProject(zp2.OrgX[point] - orusBaseX, zp2.OrgY[point] - orusBaseY)
+                    : DualProject(zp2.OrusX[point] - orusBaseX, zp2.OrusY[point] - orusBaseY);
+                var curDist = Project(zp2.CurX[point] - curBaseX, zp2.CurY[point] - curBaseY);
+                int newDist;
+
+                if (orgDist != 0)
+                {
+                    newDist = oldRange != 0
+                        ? F26Dot6.MulDivRounded(orgDist, curRange, oldRange)
+                        : orgDist;
+                }
+                else
+                {
+                    newDist = 0;
+                }
+
+                MovePoint(zp2, point, newDist - curDist);
+            }
+        }
+
+        private int GetCoordinate(int point, bool original)
+        {
+            var zone = Zp2;
+
+            if ((uint)point >= (uint)zone.PointCount)
+            {
+                return 0;
+            }
+
+            return original
+                ? DualProject(zone.OrgX[point], zone.OrgY[point])
+                : Project(zone.CurX[point], zone.CurY[point]);
+        }
+
+        private void SetCoordinateFromStack(int point, int value)
+        {
+            var zone = Zp2;
+
+            if ((uint)point >= (uint)zone.PointCount)
+            {
+                return;
+            }
+
+            var current = Project(zone.CurX[point], zone.CurY[point]);
+
+            MovePoint(zone, point, value - current);
+
+            // Twilight points remember the write as their original position too.
+            if (GraphicsState.Zp2 == 0)
+            {
+                zone.OrgX[point] = zone.CurX[point];
+                zone.OrgY[point] = zone.CurY[point];
+            }
+        }
+
+        private int MeasureDistance(int pointL, int pointK, bool current)
+        {
+            var zp0 = Zp0;
+            var zp1 = Zp1;
+
+            if ((uint)pointL >= (uint)zp0.PointCount || (uint)pointK >= (uint)zp1.PointCount)
+            {
+                return 0;
+            }
+
+            if (current)
+            {
+                return Project(
+                    zp0.CurX[pointL] - (long)zp1.CurX[pointK],
+                    zp0.CurY[pointL] - (long)zp1.CurY[pointK]);
+            }
+
+            if (GraphicsState.Zp0 == 0 || GraphicsState.Zp1 == 0)
+            {
+                return DualProject(
+                    zp0.OrgX[pointL] - (long)zp1.OrgX[pointK],
+                    zp0.OrgY[pointL] - (long)zp1.OrgY[pointK]);
+            }
+
+            return F26Dot6.MulFix(
+                DualProject(
+                    zp0.OrusX[pointL] - (long)zp1.OrusX[pointK],
+                    zp0.OrusY[pointL] - (long)zp1.OrusY[pointK]),
+                _scale);
+        }
+
+        private void UntouchPoint(int point)
+        {
+            var zone = Zp0;
+
+            if ((uint)point >= (uint)zone.PointCount)
+            {
+                return;
+            }
+
+            var mask = (byte)0xFF;
+
+            if (GraphicsState.FreedomX != 0)
+            {
+                mask &= unchecked((byte)~TrueTypeZone.TouchX);
+            }
+
+            if (GraphicsState.FreedomY != 0)
+            {
+                mask &= unchecked((byte)~TrueTypeZone.TouchY);
+            }
+
+            zone.Tags[point] &= mask;
+        }
+
+        private void FlipPoints()
+        {
+            var loop = GraphicsState.Loop;
+
+            GraphicsState.Loop = 1;
+
+            if (_top < loop)
+            {
+                return;
+            }
+
+            // Post-IUP flips fix monochrome pixel patterns and only dent AA rendering; the
+            // arguments are still consumed.
+            var blocked = BackwardCompatibility == 0x7;
+            var zone = _glyphZone ?? s_emptyZone;
+
+            while (loop-- > 0)
+            {
+                Pop(out var point);
+
+                if (!blocked && (uint)point < (uint)zone.PointCount)
+                {
+                    zone.Tags[point] ^= TrueTypeZone.OnCurve;
+                }
+            }
+        }
+
+        private void FlipRange(int low, int high, bool on)
+        {
+            if (BackwardCompatibility == 0x7)
+            {
+                return;
+            }
+
+            var zone = _glyphZone ?? s_emptyZone;
+
+            if ((uint)low >= (uint)zone.PointCount || (uint)high >= (uint)zone.PointCount)
+            {
+                return;
+            }
+
+            for (var i = low; i <= high; i++)
+            {
+                if (on)
+                {
+                    zone.Tags[i] |= TrueTypeZone.OnCurve;
+                }
+                else
+                {
+                    zone.Tags[i] &= unchecked((byte)~TrueTypeZone.OnCurve);
+                }
+            }
+        }
+
+        private void DeltaP(byte opcode)
+        {
+            if (!Pop(out var count))
+            {
+                return;
+            }
+
+            count = Math.Clamp(count, 0, _top / 2);
+
+            ref var gs = ref GraphicsState;
+            var zone = Zp0;
+
+            var basePpem = _ppem - gs.DeltaBase + opcode switch
+            {
+                0x71 => -16,
+                0x72 => -32,
+                _ => 0,
+            };
+
+            var magnitude = 1 << (6 - gs.DeltaShift);
+
+            while (count-- > 0)
+            {
+                Pop(out var point);
+                Pop(out var arg);
+
+                if ((basePpem & ~0xF) != 0 ||
+                    (arg & 0xF0) >> 4 != basePpem ||
+                    (uint)point >= (uint)zone.PointCount)
+                {
+                    continue;
+                }
+
+                var steps = (arg & 0xF) - 8;
+
+                if (steps >= 0)
+                {
+                    steps++;
+                }
+
+                steps *= magnitude;
+
+                if (BackwardCompatibility != 0)
+                {
+                    if (BackwardCompatibility != 0x7 &&
+                        ((IsCompositeGlyph && gs.FreedomY != 0) ||
+                         (zone.Tags[point] & TrueTypeZone.TouchY) != 0))
+                    {
+                        MovePoint(zone, point, steps);
+                    }
+                }
+                else
+                {
+                    MovePoint(zone, point, steps);
+                }
+            }
+        }
+
+        private void InterpolateUntouchedPoints(byte opcode)
+        {
+            // Track the per-axis IUP state for the v40 curfews; the second call on an axis
+            // pair completes the outline and later ones are no-ops.
+            if (BackwardCompatibility == 0x7)
+            {
+                return;
+            }
+
+            if (BackwardCompatibility != 0)
+            {
+                BackwardCompatibility |= 1 << (opcode & 1);
+            }
+
+            if (_glyphZone is not { ContourCount: > 0 } zone)
+            {
+                return;
+            }
+
+            var xAxis = (opcode & 1) != 0;
+            var mask = xAxis ? TrueTypeZone.TouchX : TrueTypeZone.TouchY;
+            var point = 0;
+
+            for (var contour = 0; contour < zone.ContourCount; contour++)
+            {
+                var endPoint = zone.ContourEnds[contour] - zone.FirstPoint;
+                var firstPoint = point;
+
+                if (endPoint >= zone.PointCount)
+                {
+                    endPoint = zone.PointCount - 1;
+                }
+
+                while (point <= endPoint && (zone.Tags[point] & mask) == 0)
+                {
+                    point++;
+                }
+
+                if (point <= endPoint)
+                {
+                    var firstTouched = point;
+                    var currentTouched = point;
+
+                    point++;
+
+                    while (point <= endPoint)
+                    {
+                        if ((zone.Tags[point] & mask) != 0)
+                        {
+                            IupInterpolate(zone, xAxis, currentTouched + 1, point - 1, currentTouched, point);
+                            currentTouched = point;
+                        }
+
+                        point++;
+                    }
+
+                    if (currentTouched == firstTouched)
+                    {
+                        IupShift(zone, xAxis, firstPoint, endPoint, currentTouched);
+                    }
+                    else
+                    {
+                        IupInterpolate(zone, xAxis, currentTouched + 1, endPoint, currentTouched, firstTouched);
+
+                        if (firstTouched > 0)
+                        {
+                            IupInterpolate(zone, xAxis, firstPoint, firstTouched - 1, currentTouched, firstTouched);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static void IupShift(TrueTypeZone zone, bool xAxis, int p1, int p2, int p)
+        {
+            var cur = xAxis ? zone.CurX : zone.CurY;
+            var org = xAxis ? zone.OrgX : zone.OrgY;
+            var delta = cur[p] - org[p];
+
+            if (delta == 0)
+            {
+                return;
+            }
+
+            for (var i = p1; i < p; i++)
+            {
+                cur[i] = unchecked(cur[i] + delta);
+            }
+
+            for (var i = p + 1; i <= p2; i++)
+            {
+                cur[i] = unchecked(cur[i] + delta);
+            }
+        }
+
+        private static void IupInterpolate(TrueTypeZone zone, bool xAxis, int p1, int p2, int ref1, int ref2)
+        {
+            if (p1 > p2 ||
+                (uint)ref1 >= (uint)zone.PointCount ||
+                (uint)ref2 >= (uint)zone.PointCount)
+            {
+                return;
+            }
+
+            var cur = xAxis ? zone.CurX : zone.CurY;
+            var org = xAxis ? zone.OrgX : zone.OrgY;
+            var orus = xAxis ? zone.OrusX : zone.OrusY;
+
+            var orus1 = orus[ref1];
+            var orus2 = orus[ref2];
+
+            if (orus1 > orus2)
+            {
+                (orus1, orus2) = (orus2, orus1);
+                (ref1, ref2) = (ref2, ref1);
+            }
+
+            var org1 = org[ref1];
+            var org2 = org[ref2];
+            var cur1 = cur[ref1];
+            var cur2 = cur[ref2];
+            var delta1 = cur1 - org1;
+            var delta2 = cur2 - org2;
+
+            if (cur1 == cur2 || orus1 == orus2)
+            {
+                for (var i = p1; i <= p2; i++)
+                {
+                    var x = org[i];
+
+                    if (x <= org1)
+                    {
+                        x = unchecked(x + delta1);
+                    }
+                    else if (x >= org2)
+                    {
+                        x = unchecked(x + delta2);
+                    }
+                    else
+                    {
+                        x = cur1;
+                    }
+
+                    cur[i] = x;
+                }
+            }
+            else
+            {
+                var scale = 0L;
+                var scaleValid = false;
+
+                for (var i = p1; i <= p2; i++)
+                {
+                    var x = org[i];
+
+                    if (x <= org1)
+                    {
+                        x = unchecked(x + delta1);
+                    }
+                    else if (x >= org2)
+                    {
+                        x = unchecked(x + delta2);
+                    }
+                    else
+                    {
+                        if (!scaleValid)
+                        {
+                            scaleValid = true;
+                            scale = Math.Clamp(
+                                ((long)(cur2 - cur1) << 16) / (orus2 - orus1),
+                                int.MinValue, int.MaxValue);
+                        }
+
+                        x = unchecked(cur1 + F26Dot6.MulFix(orus[i] - orus1, (int)scale));
+                    }
+
+                    cur[i] = x;
+                }
+            }
+        }
+
+        /// <summary>Engine compensation without rounding, the NROUND/unrounded-MDRP form.</summary>
+        private static int RoundNone(int distance) => distance;
     }
 }
