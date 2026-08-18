@@ -16,9 +16,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
     /// <summary>
     /// The interpreter's graphics state: everything the GS-setter opcodes mutate. A struct
     /// so the per-size defaults snapshot (post-prep) and the per-run working copy are plain
-    /// value copies. Super-round parameters live here too — SROUND always sets them together
-    /// with the round state, and keeping them in the snapshot means a prep that ends in a
-    /// super round carries it into every glyph run exactly like the reference engines.
+    /// value copies. Super-round parameters live here because SROUND sets them together with
+    /// the round state; note that neither survives the prep - the size state hands only the
+    /// sanctioned scalar set from the cvt program to glyph runs.
     /// </summary>
     internal struct TrueTypeGraphicsState
     {
