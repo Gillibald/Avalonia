@@ -160,6 +160,89 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Identity_Hinting_Lands_Ink_Exactly_Where_The_Unhinted_Build_Does()
+        {
+            // A glyph without instructions in an eligible font rides the hinted branch as
+            // pure identity; composed onto a canvas, its ink must match the unhinted build
+            // pixel for pixel. Any offset here is a placement defect in the hinted branch.
+            var typeface = CreateNoto();
+            var glyfTable = typeface.GlyfTable!;
+            ushort quiet = 0;
+
+            for (var glyph = 1; glyph < typeface.GlyphCount; glyph++)
+            {
+                if (!glyfTable.TryGetGlyphData(glyph, out var data) || data.Length < 12)
+                {
+                    continue;
+                }
+
+                var span = data.Span;
+                int contours = BinaryPrimitives.ReadInt16BigEndian(span);
+
+                if (contours > 0 && span.Length >= 12 + contours * 2 &&
+                    BinaryPrimitives.ReadUInt16BigEndian(span.Slice(10 + contours * 2, 2)) == 0)
+                {
+                    quiet = (ushort)glyph;
+                    break;
+                }
+            }
+
+            Assert.NotEqual(0, quiet);
+
+            var hinted = BuildMask(typeface, quiet, GlyphMaskMode.Antialiased, gridFit: true);
+            var unhinted = BuildMask(typeface, quiet, GlyphMaskMode.Antialiased, gridFit: false);
+
+            Assert.False(hinted.IsEmpty);
+            Assert.False(unhinted.IsEmpty);
+
+            // Identical placement is exact; coverage may wiggle by the 26.6 quantization
+            // (the hinted path snaps coordinates to 1/64 px before emission), which moves
+            // AA edge bytes slightly but must never shift ink by a pixel.
+            Assert.Equal(unhinted.Left, hinted.Left);
+            Assert.Equal(unhinted.Top, hinted.Top);
+
+            var composedHinted = Compose(hinted);
+            var composedUnhinted = Compose(unhinted);
+            var worst = 0;
+
+            for (var i = 0; i < composedHinted.Length; i++)
+            {
+                worst = Math.Max(worst, Math.Abs(composedHinted[i] - composedUnhinted[i]));
+            }
+
+            Assert.True(worst <= 24,
+                $"identity-hinted coverage deviates by {worst} - more than quantization can explain");
+
+            static byte[] Compose(GlyphMask mask)
+            {
+                const int size = 64;
+                var canvas = new byte[size * size];
+
+                for (var y = 0; y < mask.Height; y++)
+                {
+                    var row = 40 + mask.Top + y;
+
+                    if (row < 0 || row >= size)
+                    {
+                        continue;
+                    }
+
+                    for (var x = 0; x < mask.Width; x++)
+                    {
+                        var column = 8 + mask.Left + x;
+
+                        if (column >= 0 && column < size)
+                        {
+                            canvas[row * size + column] = mask.Alpha[y * mask.Width + x];
+                        }
+                    }
+                }
+
+                return canvas;
+            }
+        }
+
+        [Fact]
         public void All_Mask_Modes_Build_Hinted()
         {
             var typeface = CreateNoto();
