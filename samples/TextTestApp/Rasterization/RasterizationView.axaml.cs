@@ -26,6 +26,11 @@ namespace TextTestApp
         private CheckBox _gammaBox = null!;
         private CheckBox _bgrBox = null!;
         private CheckBox _tintTiersBox = null!;
+        private TextBlock _hintingTitle = null!;
+        private TextBlock _engineText = null!;
+        private DockPanel _scrubRow = null!;
+        private Slider _stepSlider = null!;
+        private TextBlock _stepText = null!;
         private Image _hintingImage = null!;
         private Image _maskImage = null!;
         private Image _lcdImage = null!;
@@ -35,6 +40,8 @@ namespace TextTestApp
         private string? _label;
         private float _size = 13;
         private bool _initialized;
+        private TrueTypeHintingProbe? _probe;
+        private bool _scrubbing;
 
         /// <summary>Raised by the Back button; the host swaps the explorer back in.</summary>
         public event Action? BackRequested;
@@ -49,6 +56,11 @@ namespace TextTestApp
             _gammaBox = this.FindControl<CheckBox>("GammaBox")!;
             _bgrBox = this.FindControl<CheckBox>("BgrBox")!;
             _tintTiersBox = this.FindControl<CheckBox>("TintTiersBox")!;
+            _hintingTitle = this.FindControl<TextBlock>("HintingTitle")!;
+            _engineText = this.FindControl<TextBlock>("EngineText")!;
+            _scrubRow = this.FindControl<DockPanel>("ScrubRow")!;
+            _stepSlider = this.FindControl<Slider>("StepSlider")!;
+            _stepText = this.FindControl<TextBlock>("StepText")!;
             _hintingImage = this.FindControl<Image>("HintingImage")!;
             _maskImage = this.FindControl<Image>("MaskImage")!;
             _lcdImage = this.FindControl<Image>("LcdImage")!;
@@ -63,6 +75,13 @@ namespace TextTestApp
             _bgrBox.IsCheckedChanged += (_, _) => Rebuild();
             _tintTiersBox.IsCheckedChanged += (_, _) =>
                 TextTierDiagnostics.TintTiers = _tintTiersBox.IsChecked == true;
+            _stepSlider.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty && !_scrubbing)
+                {
+                    RenderHintingFigure();
+                }
+            };
 
             _initialized = true;
 
@@ -123,11 +142,80 @@ namespace TextTestApp
             _glyphText.Text = FormattableString.Invariant(
                 $"{label} — {typeface.FamilyName}, {size:0.#} px");
 
-            SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, _glyph, label, size, hinting));
+            // Which engine fits this mask, mirroring GlyphMasks.Build: the font's own
+            // programs when eligible and not vetoed, the auto-hinter otherwise.
+            _probe = null;
+
+            string? engineNote = null;
+
+            if (hinting != TextHintingMode.None)
+            {
+                _probe = TrueTypeHintingProbe.TryCreate(typeface, _glyph, size,
+                    Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased,
+                    stemSnap: hinting == TextHintingMode.Strong, out engineNote);
+            }
+
+            if (_probe is { } probe)
+            {
+                _hintingTitle.Text = "Hinting — the font's own bytecode";
+
+                var interpretation = probe.FullInterpretation ? "full interpretation" : "v40 class (y only)";
+                var scrubNote = probe.CanScrub ? "" : " (composite — scrubber off)";
+
+                _engineText.Text = FormattableString.Invariant(
+                    $"engine: TrueType bytecode, {interpretation}, {probe.InstructionsExecuted} ops{scrubNote}");
+
+                _scrubbing = true;
+                _scrubRow.IsVisible = probe.CanScrub;
+                _stepSlider.Maximum = probe.StepCount;
+                _stepSlider.Value = probe.StepCount;
+                _scrubbing = false;
+            }
+            else
+            {
+                _hintingTitle.Text = "Hinting — zones, stroke pairs, and the warp";
+                _engineText.Text = hinting == TextHintingMode.None
+                    ? "engine: none (outlines scaled only)"
+                    : typeface.HasTrueTypeHinting
+                        ? $"engine: auto-hinter ({engineNote ?? "bytecode unavailable"})"
+                        : "engine: auto-hinter (the font ships no hinting machinery)";
+                _scrubRow.IsVisible = false;
+            }
+
+            RenderHintingFigure();
             SetImage(_maskImage, PipelineFigures.MaskAnatomy(typeface, _glyph, label, "Hamburgefonstiv", size));
             SetImage(_lcdImage, PipelineFigures.ClearTypePipeline(typeface, _glyph, label, size,
                 _bgrBox.IsChecked == true, _gammaBox.IsChecked == true, hinting));
             SetImage(_slugImage, PipelineFigures.SlugBands(typeface, _glyph, label));
+        }
+
+        /// <summary>The hinting figure alone - cheap enough to re-render per scrub tick.</summary>
+        private void RenderHintingFigure()
+        {
+            if (_typeface is not { } typeface || _glyph >= typeface.GlyphCount)
+            {
+                return;
+            }
+
+            var hinting = _hintingBox.SelectedItem is TextHintingMode mode ? mode : TextHintingMode.Light;
+            var size = Math.Clamp(_size, 6, 96);
+            var label = _label is null ? $"#{_glyph}" : $"{_label} (#{_glyph})";
+
+            if (_probe is { } probe)
+            {
+                var step = probe.CanScrub ? (int)Math.Round(_stepSlider.Value) : probe.StepCount;
+
+                _stepText.Text = probe.CanScrub
+                    ? FormattableString.Invariant($"{step}/{probe.StepCount}  {probe.StepLabel(step)}")
+                    : string.Empty;
+
+                SetImage(_hintingImage,
+                    PipelineFigures.BytecodeHintingAnatomy(typeface, _glyph, label, size, hinting, probe, step));
+            }
+            else
+            {
+                SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, _glyph, label, size, hinting));
+            }
         }
 
         internal static GlyphTypeface? ResolveTypeface(string familyName)

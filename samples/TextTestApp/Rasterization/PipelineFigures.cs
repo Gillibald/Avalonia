@@ -182,6 +182,167 @@ namespace TextTestApp
         }
 
         /// <summary>
+        /// The bytecode engine's version of the hinting figure: the mask on the grid, the
+        /// unhinted outline (red), the outline the font's own programs produced (blue) at a
+        /// chosen instruction step, per-point displacement indicators colored by touch axis,
+        /// and the phantom points. The auto-hinter's zones and warps do not apply here.
+        /// </summary>
+        public static SKBitmap BytecodeHintingAnatomy(GlyphTypeface typeface, ushort glyph, string label,
+            float size, TextHintingMode hinting, TrueTypeHintingProbe probe, int step)
+        {
+            var scaleQ = GlyphMaskKey.QuantizeScale(size);
+            var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
+            var stemSnap = hinting == TextHintingMode.Strong;
+
+            var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: true, stemSnap));
+
+            var unhinted = new GlyphPathBuilder();
+
+            typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, -scale, 0, 0), unhinted);
+
+            var fitted = new GlyphPathBuilder();
+
+            probe.EmitAt(step, new Matrix(1, 0, 0, -1, 0, 0), fitted);
+
+            var zoom = Math.Clamp(400 / Math.Max(mask.Width, Math.Max(mask.Height, 1)), 6, 30);
+            const int marginLeft = 40;
+            const int marginTop = 28;
+            var width = Math.Max(marginLeft + mask.Width * zoom + 40, 560);
+            var height = marginTop + mask.Height * zoom + 96;
+            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            using var canvas = new SKCanvas(bitmap);
+
+            canvas.Clear(SKColors.White);
+
+            using (var cell = new SKPaint())
+            using (var grid = new SKPaint { Color = s_grid, IsStroke = true })
+            {
+                for (var y = 0; y < mask.Height; y++)
+                {
+                    for (var x = 0; x < mask.Width; x++)
+                    {
+                        var coverage = mask.IsEmpty ? (byte)0 : mask.Alpha[y * mask.Width + x];
+
+                        if (coverage > 0)
+                        {
+                            cell.Color = new SKColor(0x30, 0x30, 0x30, coverage);
+                            canvas.DrawRect(marginLeft + x * zoom, marginTop + y * zoom, zoom, zoom, cell);
+                        }
+                    }
+                }
+
+                for (var x = 0; x <= mask.Width; x++)
+                {
+                    canvas.DrawLine(marginLeft + x * zoom, marginTop, marginLeft + x * zoom,
+                        marginTop + mask.Height * zoom, grid);
+                }
+
+                for (var y = 0; y <= mask.Height; y++)
+                {
+                    canvas.DrawLine(marginLeft, marginTop + y * zoom, marginLeft + mask.Width * zoom,
+                        marginTop + y * zoom, grid);
+                }
+            }
+
+            float DeviceX(float x) => marginLeft + (x - mask.Left) * zoom;
+            float DeviceY(float y) => marginTop + (y - mask.Top) * zoom;
+
+            DrawOutline(canvas, unhinted, DeviceX, DeviceY, s_unhinted);
+            DrawOutline(canvas, fitted, DeviceX, DeviceY, s_hinted);
+
+            // Per-point displacement: a connector from the scaled original to the current
+            // position, colored by which axes the program touched. Phantoms draw as crosses.
+            var zone = probe.Zone;
+            var (curX, curY, tags) = probe.StateAt(step);
+            var outlinePoints = Math.Min(zone.PointCount - 4, curX.Length);
+            var bothTouched = new SKColor(0x88, 0x33, 0xAA);
+            var untouched = new SKColor(0x90, 0x90, 0x90);
+
+            using (var connector = new SKPaint { IsStroke = true, StrokeWidth = 1.5f, IsAntialias = true })
+            using (var dot = new SKPaint { IsAntialias = true })
+            {
+                for (var i = 0; i < outlinePoints; i++)
+                {
+                    var fromX = DeviceX(zone.OrgX[i] / 64f);
+                    var fromY = DeviceY(-zone.OrgY[i] / 64f);
+                    var toX = DeviceX(curX[i] / 64f);
+                    var toY = DeviceY(-curY[i] / 64f);
+
+                    var touchX = (tags[i] & Avalonia.Media.Fonts.Rasterization.TrueType.TrueTypeZone.TouchX) != 0;
+                    var touchY = (tags[i] & Avalonia.Media.Fonts.Rasterization.TrueType.TrueTypeZone.TouchY) != 0;
+                    var color = touchX && touchY ? bothTouched :
+                        touchY ? s_zone :
+                        touchX ? s_stroke : untouched;
+
+                    if (Math.Abs(toX - fromX) + Math.Abs(toY - fromY) > 1.5f)
+                    {
+                        connector.Color = color.WithAlpha(0xA0);
+                        canvas.DrawLine(fromX, fromY, toX, toY, connector);
+                        dot.Color = color.WithAlpha(0x70);
+                        canvas.DrawCircle(fromX, fromY, 2f, dot);
+                    }
+
+                    dot.Color = color;
+                    canvas.DrawCircle(toX, toY, 2.6f, dot);
+                }
+
+                // Points the currently shown instruction moved get a highlight ring.
+                if (probe.CanScrub && step > 0 && step <= probe.StepCount)
+                {
+                    var (prevX, prevY, _) = probe.StateAt(step - 1);
+
+                    using var ring = new SKPaint
+                    {
+                        Color = new SKColor(0xE0, 0x30, 0x30), IsStroke = true, StrokeWidth = 2, IsAntialias = true,
+                    };
+
+                    for (var i = 0; i < outlinePoints && i < prevX.Length; i++)
+                    {
+                        if (curX[i] != prevX[i] || curY[i] != prevY[i])
+                        {
+                            canvas.DrawCircle(DeviceX(curX[i] / 64f), DeviceY(-curY[i] / 64f), 6, ring);
+                        }
+                    }
+                }
+
+                // Phantom points: origin, advance, top, bottom.
+                using var cross = new SKPaint
+                {
+                    Color = new SKColor(0x30, 0x30, 0x30), IsStroke = true, StrokeWidth = 1.5f, IsAntialias = true,
+                };
+
+                for (var i = Math.Max(outlinePoints, 0); i < zone.PointCount && i < curX.Length; i++)
+                {
+                    var x = DeviceX(curX[i] / 64f);
+                    var y = DeviceY(-curY[i] / 64f);
+
+                    canvas.DrawLine(x - 4, y, x + 4, y, cross);
+                    canvas.DrawLine(x, y - 4, x, y + 4, cross);
+                }
+            }
+
+            using (var font = new SKFont(SKTypeface.Default, 13))
+            using (var text = new SKPaint { Color = SKColors.Black })
+            {
+                var engine = probe.FullInterpretation ? "full interpretation" : "v40 class (y only)";
+
+                canvas.DrawText(
+                    Inv($"{label} {size:0.#}px  hinting {hinting}  |  engine: TrueType bytecode, {engine}, {probe.InstructionsExecuted} ops"),
+                    6, height - 46, SKTextAlign.Left, font, text);
+                canvas.DrawText(
+                    "red unhinted, blue fitted by the font's program  |  connectors original→current",
+                    6, height - 28, SKTextAlign.Left, font, text);
+                canvas.DrawText(
+                    "points: green y-touched, orange x-touched, purple both, gray untouched, crosses phantom",
+                    6, height - 10, SKTextAlign.Left, font, text);
+            }
+
+            return bitmap;
+        }
+
+        /// <summary>
         /// Mask anatomy: the focus glyph's mask magnified with its apron marked, the cache key
         /// fields, and a run composed from per-glyph masks shown at 1x and 4x.
         /// </summary>
@@ -224,8 +385,45 @@ namespace TextTestApp
                 penX += metrics.AdvanceWidth * scale;
             }
 
-            var width = Math.Max(Math.Max(maskPanelWidth + 480, runWidth * 3 + 40), 600);
-            var height = Math.Max(mask.Height * zoom, 126) + runHeight * 4 + 104;
+            // Every mask variant this glyph builds at this size: the hinting ladder across
+            // the three mask modes, each through the real Build with its real key.
+            var variantModes = new[]
+            {
+                ("antialiased", GlyphMaskMode.Antialiased),
+                ("subpixel", GlyphMaskMode.Subpixel),
+                ("aliased", GlyphMaskMode.Aliased),
+            };
+            var variantHintings = new[]
+            {
+                ("None", false, false), ("Light", true, false), ("Strong", true, true),
+            };
+            var variants = new GlyphMask[variantModes.Length, variantHintings.Length];
+            var variantZoom = 3;
+            var variantCellWidth = 0;
+            var variantCellHeight = 0;
+
+            for (var m = 0; m < variantModes.Length; m++)
+            {
+                for (var h = 0; h < variantHintings.Length; h++)
+                {
+                    var (_, gridFit, stemSnap) = variantHintings[h];
+
+                    variants[m, h] = GlyphMasks.Build(typeface, scratch, new GlyphMaskKey(
+                        glyph, scaleQ, 0, variantModes[m].Item2, gridFit, stemSnap));
+                    variantCellWidth = Math.Max(variantCellWidth, variants[m, h].Width);
+                    variantCellHeight = Math.Max(variantCellHeight, variants[m, h].Height);
+                }
+            }
+
+            variantZoom = Math.Clamp(96 / Math.Max(Math.Max(variantCellWidth, variantCellHeight), 1), 1, 8);
+
+            var variantColumnWidth = Math.Max(variantCellWidth * variantZoom + 16, 120);
+            var variantRowHeight = variantCellHeight * variantZoom + 34;
+            var variantTop = Math.Max(mask.Height * zoom, 126) + runHeight * 4 + 96;
+
+            var width = Math.Max(Math.Max(Math.Max(maskPanelWidth + 480, runWidth * 3 + 40), 600),
+                70 + variantColumnWidth * variantHintings.Length);
+            var height = variantTop + 30 + variantRowHeight * variantModes.Length + 16;
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using var canvas = new SKCanvas(bitmap);
@@ -288,6 +486,81 @@ namespace TextTestApp
                     new SKSamplingOptions(SKFilterMode.Nearest));
             }
 
+            // The variant matrix: every (mode, hinting) mask the pipeline can build for this
+            // glyph at this size, straight from Build, with its cached bounds.
+            using (var font = new SKFont(SKTypeface.Default, 13))
+            using (var small = new SKFont(SKTypeface.Default, 11))
+            using (var text = new SKPaint { Color = SKColors.Black })
+            using (var faint = new SKPaint { Color = new SKColor(0x60, 0x60, 0x60) })
+            using (var cell = new SKPaint())
+            {
+                canvas.DrawText($"every mask variant at this size ({variantZoom}x):", 10, variantTop - 6,
+                    SKTextAlign.Left, font, text);
+
+                for (var h = 0; h < variantHintings.Length; h++)
+                {
+                    canvas.DrawText(variantHintings[h].Item1, 70 + h * variantColumnWidth, variantTop + 12,
+                        SKTextAlign.Left, small, faint);
+                }
+
+                for (var m = 0; m < variantModes.Length; m++)
+                {
+                    var rowTop = variantTop + 22 + m * variantRowHeight;
+
+                    canvas.DrawText(variantModes[m].Item1, 10, rowTop + 30, SKTextAlign.Left, small, faint);
+
+                    for (var h = 0; h < variantHintings.Length; h++)
+                    {
+                        var variant = variants[m, h];
+                        var cellX = 70 + h * variantColumnWidth;
+
+                        if (variant.IsEmpty)
+                        {
+                            canvas.DrawText("empty", cellX, rowTop + 30, SKTextAlign.Left, small, faint);
+                            continue;
+                        }
+
+                        for (var y = 0; y < variant.Height; y++)
+                        {
+                            for (var x = 0; x < variant.Width; x++)
+                            {
+                                if (variant.Channels == 3)
+                                {
+                                    var r = variant.Alpha[(y * variant.Width + x) * 3];
+                                    var g = variant.Alpha[(y * variant.Width + x) * 3 + 1];
+                                    var b = variant.Alpha[(y * variant.Width + x) * 3 + 2];
+
+                                    if (r == 0 && g == 0 && b == 0)
+                                    {
+                                        continue;
+                                    }
+
+                                    cell.Color = new SKColor((byte)(255 - r), (byte)(255 - g), (byte)(255 - b));
+                                }
+                                else
+                                {
+                                    var coverage = variant.Alpha[y * variant.Width + x];
+
+                                    if (coverage == 0)
+                                    {
+                                        continue;
+                                    }
+
+                                    cell.Color = new SKColor(0x20, 0x20, 0x20, coverage);
+                                }
+
+                                canvas.DrawRect(cellX + x * variantZoom, rowTop + y * variantZoom,
+                                    variantZoom, variantZoom, cell);
+                            }
+                        }
+
+                        canvas.DrawText(
+                            Inv($"{variant.Width}x{variant.Height} @ ({variant.Left},{variant.Top})"),
+                            cellX, rowTop + variantCellHeight * variantZoom + 12, SKTextAlign.Left, small, faint);
+                    }
+                }
+            }
+
             return bitmap;
         }
 
@@ -312,21 +585,32 @@ namespace TextTestApp
                 return new SKBitmap(new SKImageInfo(320, 60));
             }
 
-            // Reproduce the 3x raster the way GlyphMasks does, warps included.
+            // Reproduce the 3x raster the way GlyphMasks does: through the font's own
+            // programs when the bytecode engine fit this mask, the auto-warps otherwise.
             var contours = new GlyphPathBuilder();
+            var lcdProbe = gridFit
+                ? TrueTypeHintingProbe.TryCreate(typeface, glyph, size, GlyphMaskMode.Subpixel, stemSnap, out _)
+                : null;
 
-            typeface.TryBuildGlyphContours(glyph, new Matrix(scale * 3, 0, 0, -scale, 0, 0), contours);
-
-            if (gridFit)
+            if (lcdProbe is not null)
             {
-                contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, scaleQ,
-                    typeface.StemWidths.HorizontalStrokeWidths));
+                lcdProbe.EmitAt(lcdProbe.StepCount, new Matrix(3, 0, 0, -1, 0, 0), contours);
             }
-
-            if (stemSnap)
+            else
             {
-                contours.ApplyHorizontalWarp(StemFit.BuildWarp(contours, 3f,
-                    typeface.StemWidths.VerticalStemWidths, scale));
+                typeface.TryBuildGlyphContours(glyph, new Matrix(scale * 3, 0, 0, -scale, 0, 0), contours);
+
+                if (gridFit)
+                {
+                    contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, scaleQ,
+                        typeface.StemWidths.HorizontalStrokeWidths));
+                }
+
+                if (stemSnap)
+                {
+                    contours.ApplyHorizontalWarp(StemFit.BuildWarp(contours, 3f,
+                        typeface.StemWidths.VerticalStemWidths, scale));
+                }
             }
 
             var raw = new byte[mask.Width * 3 * mask.Height];
