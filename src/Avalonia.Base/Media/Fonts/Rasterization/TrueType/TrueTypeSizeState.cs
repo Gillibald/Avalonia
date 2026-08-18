@@ -77,7 +77,8 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             int maxStackElements,
             int maxTwilightPoints,
             TrueTypeRenderClass renderClass,
-            bool isVariation)
+            bool isVariation,
+            int[]? cvtDeltasFdot6 = null)
         {
             if (unitsPerEm <= 0 || pixelsPerEm26Dot6 <= 0)
             {
@@ -99,8 +100,17 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
             for (var i = 0; i < cvt.Length; i++)
             {
-                cvt[i] = F26Dot6.MulFix(
-                    BinaryPrimitives.ReadInt16BigEndian(rawCvt.Slice(i * 2, 2)), scale);
+                var units = (int)BinaryPrimitives.ReadInt16BigEndian(rawCvt.Slice(i * 2, 2));
+
+                // cvar deltas arrive in 26.6 font units; the reference folds them into its
+                // 26.6-stored CVT and divides back to whole units (truncating) before the
+                // scale - the same division sensitivity its scaling comment calls out.
+                if (cvtDeltasFdot6 is not null && i < cvtDeltasFdot6.Length)
+                {
+                    units = ((units << 6) + cvtDeltasFdot6[i]) / 64;
+                }
+
+                cvt[i] = F26Dot6.MulFix(units, scale);
             }
 
             var storage = new int[maxStorage];

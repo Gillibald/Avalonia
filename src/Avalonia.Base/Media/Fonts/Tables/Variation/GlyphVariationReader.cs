@@ -508,7 +508,7 @@ namespace Avalonia.Media.Fonts.Tables.Variation
         // ----- Helpers -----
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void ReadF2dot14Array(ReadOnlySpan<byte> data, ref int pos, Span<float> output)
+        internal static void ReadF2dot14Array(ReadOnlySpan<byte> data, ref int pos, Span<float> output)
         {
             for (var i = 0; i < output.Length; i++)
             {
@@ -527,7 +527,7 @@ namespace Avalonia.Media.Fonts.Tables.Variation
         /// read past <paramref name="end"/> — the data is attacker-controlled and an over-run
         /// must corrupt at most the current tuple.
         /// </summary>
-        private static bool TryReadPackedPointNumbers(
+        internal static bool TryReadPackedPointNumbers(
             ReadOnlySpan<byte> data,
             ref int pos,
             int end,
@@ -626,7 +626,7 @@ namespace Avalonia.Media.Fonts.Tables.Variation
         /// past <paramref name="end"/>; the output contents are then undefined and the caller
         /// must skip the tuple.
         /// </summary>
-        private static bool TryReadPackedDeltas(
+        internal static bool TryReadPackedDeltas(
             ReadOnlySpan<byte> data,
             ref int pos,
             int end,
