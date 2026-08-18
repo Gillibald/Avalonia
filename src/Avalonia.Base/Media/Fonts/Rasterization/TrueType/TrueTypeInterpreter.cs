@@ -291,7 +291,15 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
                 if (Trace is { } trace)
                 {
-                    trace($"{_currentRange}:{_ip:D4} {TrueTypeOpcodeName.Of(opcode)} stack={_top}");
+                    var tops = _top switch
+                    {
+                        0 => "",
+                        1 => $" [{_stack[_top - 1]}]",
+                        2 => $" [{_stack[_top - 2]},{_stack[_top - 1]}]",
+                        _ => $" [{_stack[_top - 3]},{_stack[_top - 2]},{_stack[_top - 1]}]",
+                    };
+
+                    trace($"{_currentRange}:{_ip:D4} {TrueTypeOpcodeName.Of(opcode)}({opcode:X2}) stack={_top}{tops}");
                 }
 
                 Dispatch(opcode, span);

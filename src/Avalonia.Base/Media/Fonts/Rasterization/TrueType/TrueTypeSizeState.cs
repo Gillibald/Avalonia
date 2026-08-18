@@ -146,11 +146,31 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 Scale = scale,
             };
 
+            // The undocumented MS rule the reference engines enforce: only these scalars may
+            // be handed from the cvt program to glyph runs. All working state - vectors,
+            // round state, loop, reference points, zone pointers - reverts to spec defaults,
+            // because glyph programs are written against fresh defaults: Tahoma's prep ends
+            // with the y axis projected, and letting that leak runs every glyph's leading
+            // x-pass against y, wrecking the outline.
+            var prep = interpreter.GraphicsState;
+            var snapshot = TrueTypeGraphicsState.Default;
+
+            snapshot.MinimumDistance = prep.MinimumDistance;
+            snapshot.ControlValueCutIn = prep.ControlValueCutIn;
+            snapshot.SingleWidthCutIn = prep.SingleWidthCutIn;
+            snapshot.SingleWidthValue = prep.SingleWidthValue;
+            snapshot.DeltaBase = prep.DeltaBase;
+            snapshot.DeltaShift = prep.DeltaShift;
+            snapshot.AutoFlip = prep.AutoFlip;
+            snapshot.InstructControl = prep.InstructControl;
+            snapshot.ScanControl = prep.ScanControl;
+            snapshot.ScanType = prep.ScanType;
+
             // INSTCTRL bit 2 asks for prep's graphics-state changes to be discarded; the
             // revert also wipes the waiver bit, exactly as the reference reads it.
             state.DefaultGraphicsState = (state.InstructControl & 2) != 0
                 ? TrueTypeGraphicsState.Default
-                : interpreter.GraphicsState;
+                : snapshot;
 
             return state;
         }

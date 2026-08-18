@@ -84,6 +84,21 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Prep_Vectors_Do_Not_Leak_Into_Glyph_Runs()
+        {
+            // A prep that ends y-projected with a lowered round state - the shape Tahoma's
+            // prep leaves behind. The glyph program's leading x-pass must still measure and
+            // round along x with round-to-grid; only the sanctioned scalars survive.
+            var prep = new TtAsm().Op(TtAsm.Svtca0).Op(TtAsm.Rdtg).Build();
+            var zone = BuildZone((100, 100, 200, 200));
+
+            RunGlyph(new TtAsm().PushB(0).Op(0x2F), zone, state: CreateState(prep: prep));
+
+            Assert.Equal(128, zone.CurX[0]);
+            Assert.Equal(100, zone.CurY[0]);
+        }
+
+        [Fact]
         public void Mdap_Rounds_The_Point_Along_The_Projection()
         {
             var zone = BuildZone((100, 50, 200, 100));
