@@ -109,5 +109,48 @@ namespace Avalonia.Media.Fonts.Tables
             return (behavior & GridFit) != 0 &&
                    (behavior & (DoGray | SymmetricGridFit | SymmetricSmoothing)) == 0;
         }
+
+        /// <summary>
+        /// Whether the font asks for its instructions to drive the grid fit at this size:
+        /// <see cref="GridFit"/> set with neither grayscale-smoothing flag. Unlike
+        /// <see cref="WantsFullGridFit"/> this admits <see cref="SymmetricGridFit"/> - the
+        /// ClearType-era strong-hinting signature (Tahoma and Verdana declare it from 9 to
+        /// 16 ppem with no <see cref="DoGray"/>), where GDI renders hinted bi-level. Only
+        /// meaningful when a bytecode interpreter actually stands behind the request; the
+        /// auto-hinter cannot honor it faithfully, which is why the caller gates on that.
+        /// </summary>
+        public bool WantsBytecodeGridFit(double pixelsPerEm)
+        {
+            var behavior = GetBehavior(pixelsPerEm);
+
+            return (behavior & GridFit) != 0 &&
+                   (behavior & (DoGray | SymmetricSmoothing)) == 0;
+        }
+
+        /// <summary>
+        /// Whether this size sits below the font's hinted floor: the covering range requests
+        /// no grid fitting while some larger size does. That shape is the designer's
+        /// small-size veto (Tahoma declares it at 8 ppem and below), which DirectWrite
+        /// honors by rendering unhinted. A table that never grid-fits anywhere stays out -
+        /// hostile webfont-era tables say never-gridfit wholesale, and honoring those would
+        /// wash body text.
+        /// </summary>
+        public bool IsBelowHintingFloor(double pixelsPerEm)
+        {
+            if ((GetBehavior(pixelsPerEm) & GridFit) != 0)
+            {
+                return false;
+            }
+
+            foreach (var (maxPpem, behavior) in _ranges)
+            {
+                if (maxPpem > pixelsPerEm && (behavior & GridFit) != 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }
