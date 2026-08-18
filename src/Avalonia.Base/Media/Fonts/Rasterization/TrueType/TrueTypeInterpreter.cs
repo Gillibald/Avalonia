@@ -167,6 +167,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
         public TrueTypeError Error { get; private set; }
 
+        /// <summary>Instructions dispatched by the most recent run, for shared budgeting.</summary>
+        public int InstructionsExecuted => _instructionCount;
+
         public ReadOnlySpan<int> Stack => _stack.AsSpan(0, _top);
 
         public ReadOnlySpan<int> ActiveCvt => _activeCvt;
