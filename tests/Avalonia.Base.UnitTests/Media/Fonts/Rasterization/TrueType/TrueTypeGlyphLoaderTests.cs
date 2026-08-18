@@ -2,6 +2,7 @@ using System;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Fonts.Rasterization.TrueType;
+using Avalonia.Media.Fonts.Tables.Variation;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -67,6 +68,117 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
 
             Assert.Equal(expectedUnits, zone.OrusX[pp2]);
             Assert.Equal(F26Dot6.Round(F26Dot6.MulFix(expectedUnits, scale)), zone.CurX[pp2]);
+        }
+
+        [Fact]
+        public void Half_Unit_Gvar_Deltas_Round_Up_In_Orus_And_Survive_Into_The_Scale()
+        {
+            // The reference keeps varied points in two precisions: the outline rounds the
+            // accumulated position to whole units half-up (Math.Round would banker's a
+            // 0.5 down), and the scaled original comes from the unrounded 26.6-unit value.
+            // A +1 delta at half strength lands exactly on the .5 boundary and exposes both.
+            var typeface = CreateTypeface();
+            var glyphIndex = typeface.CharacterToGlyphMap['H'];
+
+            Assert.True(typeface.TryGetGlyphMetrics(glyphIndex, out var metrics));
+
+            var plain = new TrueTypeGlyphLoader();
+            var unitScale = 1 << 16;
+
+            Assert.True(plain.TryLoadSimple(typeface.GlyfTable!, glyphIndex, null, default,
+                metrics.XBearing, metrics.AdvanceWidth, typeface.Metrics.DesignEmHeight, unitScale));
+
+            var plainOrusX = plain.Zone.OrusX[0];
+            var plainOrgX = plain.Zone.OrgX[0];
+            var plainOrusY0 = plain.Zone.OrusY[0];
+
+            var gvarBytes = BuildGvarWithSinglePointDelta(glyphIndex, deltaX: 1, deltaY: 0);
+
+            var font = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular);
+
+            font.Replace("gvar", gvarBytes);
+
+            var grafted = font.CreateGlyphTypeface();
+
+            Assert.True(GvarTable.TryLoad(grafted, 1, glyphIndex + 1, out var gvar));
+
+            var varied = new TrueTypeGlyphLoader();
+            Span<float> coords = stackalloc float[] { 0.5f };
+
+            Assert.True(varied.TryLoadSimple(grafted.GlyfTable!, glyphIndex, gvar, coords,
+                metrics.XBearing, metrics.AdvanceWidth, grafted.Metrics.DesignEmHeight, unitScale));
+
+            // +0.5 units: orus rounds up, and at unit scale the org carries the same +1;
+            // the untouched y axis stays put.
+            Assert.Equal(plainOrusX + 1, varied.Zone.OrusX[0]);
+            Assert.Equal(plainOrgX + 1, varied.Zone.OrgX[0]);
+            Assert.Equal(plainOrusY0, varied.Zone.OrusY[0]);
+        }
+
+        /// <summary>A gvar whose last glyph entry moves point 0 by (deltaX, deltaY) at a
+        /// full-strength axis-1 peak; every other glyph is delta-free.</summary>
+        private static byte[] BuildGvarWithSinglePointDelta(int glyphIndex, sbyte deltaX, sbyte deltaY)
+        {
+            var entry = new System.Collections.Generic.List<byte>
+            {
+                0x00, 0x01,             // one tuple, no shared points
+                0x00, 0x0A,             // serialized data at entry offset 10
+            };
+
+            var serialized = new byte[]
+            {
+                0x01, 0x00, 0x00,       // packed points: count 1, run of 1 byte, point 0
+                0x00, unchecked((byte)deltaX),
+                0x00, unchecked((byte)deltaY),
+            };
+
+            entry.Add(0x00);
+            entry.Add((byte)serialized.Length);
+            entry.Add(0xA0);            // embedded peak + private points
+            entry.Add(0x00);
+            entry.Add(0x40);            // peak 1.0 (F2Dot14)
+            entry.Add(0x00);
+            entry.AddRange(serialized);
+
+            // Short offsets store byte offsets divided by two, so entries pad to even.
+            if (entry.Count % 2 != 0)
+            {
+                entry.Add(0x00);
+            }
+
+            var glyphCount = glyphIndex + 1;
+            var table = new System.Collections.Generic.List<byte>
+            {
+                0x00, 0x01, 0x00, 0x00, // version 1.0
+                0x00, 0x01,             // axisCount 1
+                0x00, 0x00,             // sharedTupleCount 0
+                0x00, 0x00, 0x00, 0x14, // sharedTuplesOffset (header end)
+            };
+
+            table.Add((byte)(glyphCount >> 8));
+            table.Add((byte)glyphCount);
+            table.Add(0x00);
+            table.Add(0x00);            // flags: short offsets (stored / 2)
+
+            var dataArrayOffset = 20 + (glyphCount + 1) * 2;
+
+            table.Add((byte)(dataArrayOffset >> 24));
+            table.Add((byte)(dataArrayOffset >> 16));
+            table.Add((byte)(dataArrayOffset >> 8));
+            table.Add((byte)dataArrayOffset);
+
+            // Every glyph before the target is empty (offset 0..0); the target spans the
+            // whole entry. Short offsets store byte offsets divided by two.
+            for (var i = 0; i <= glyphCount; i++)
+            {
+                var offset = i <= glyphIndex ? 0 : entry.Count / 2;
+
+                table.Add((byte)(offset >> 8));
+                table.Add((byte)offset);
+            }
+
+            table.AddRange(entry);
+            return table.ToArray();
         }
 
         [Fact]
