@@ -49,6 +49,7 @@ Several committed tests are measurement tools rather than gates; they skip unles
 | `COLOR_GLYPH_DIAG_DIR=<dir>` / `COLOR_GLYPH_PROBE=1` | color glyph ink dumps and resolved paint-tree dumps |
 | `TRUETYPE_FUZZ=<n>` | extended hostile-input soak over the bytecode engine with fresh randomness (the committed smokes use a fixed seed) |
 | `DW_HINTING_PARITY=1` | RMSE tables for instructed system fonts vs a DirectWrite host render at the same integer pens: v40 / full / auto-hinter columns at 9-16 px |
+| `TRUETYPE_COST_PROBE=1` | bytecode cost landscape: per-size program setup and cold mask builds per glyph, bytecode vs auto-hinter, including a CJK face — the churn scenario, since warm frames draw cached masks and never execute either engine |
 
 ## The demo app
 
