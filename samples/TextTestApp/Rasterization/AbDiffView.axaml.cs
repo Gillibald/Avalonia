@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -36,12 +37,28 @@ namespace TextTestApp
         private ComboBox _renderingB = null!;
         private TextBlock _statsText = null!;
         private Image _resultImage = null!;
+        private Button _copyButton = null!;
+        private RadioButton _stripA = null!;
+        private RadioButton _stripB = null!;
+        private RadioButton _stripOverlay = null!;
+        private RadioButton _stripHeat = null!;
+        private ComboBox _zoomBox = null!;
+        private Border _verdictBorder = null!;
+        private TextBlock _verdictText = null!;
+        private ScrollViewer _stripScroller = null!;
+
+        /// <summary>A, B, overlay, heat map - one strip at a time behind the Show selector.</summary>
+        private readonly Bitmap?[] _strips = new Bitmap?[4];
 
         private SKBitmap? _lastA;
         private SKBitmap? _referenceB;
         private string? _referenceName;
         private string _fontFamily = "Segoe UI";
         private double _fontSize = 13;
+
+        private static readonly IBrush s_matchBrush = new SolidColorBrush(Color.FromArgb(0x28, 0x3C, 0xB3, 0x71));
+        private static readonly IBrush s_noticeBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xF5, 0xA6, 0x23));
+        private static readonly IBrush s_alarmBrush = new SolidColorBrush(Color.FromArgb(0x26, 0xD4, 0x22, 0x22));
 
         public AbDiffView()
         {
@@ -61,6 +78,15 @@ namespace TextTestApp
             _renderingB = this.FindControl<ComboBox>("RenderingB")!;
             _statsText = this.FindControl<TextBlock>("StatsText")!;
             _resultImage = this.FindControl<Image>("ResultImage")!;
+            _copyButton = this.FindControl<Button>("CopyButton")!;
+            _stripA = this.FindControl<RadioButton>("StripA")!;
+            _stripB = this.FindControl<RadioButton>("StripB")!;
+            _stripOverlay = this.FindControl<RadioButton>("StripOverlay")!;
+            _stripHeat = this.FindControl<RadioButton>("StripHeat")!;
+            _zoomBox = this.FindControl<ComboBox>("ZoomBox")!;
+            _verdictBorder = this.FindControl<Border>("VerdictBorder")!;
+            _verdictText = this.FindControl<TextBlock>("VerdictText")!;
+            _stripScroller = this.FindControl<ScrollViewer>("StripScroller")!;
 
             foreach (var box in new[] { _modeA, _modeB })
             {
@@ -75,12 +101,23 @@ namespace TextTestApp
 
             foreach (var box in new[] { _renderingA, _renderingB })
             {
-                box.ItemsSource = Enum.GetValues<TextRenderingMode>();
-                box.SelectedItem = TextRenderingMode.Unspecified;
+                box.ItemsSource = RenderingChoice.All();
+                box.SelectedIndex = 0;
             }
 
             _modeA.SelectedIndex = 0;   // A: Managed
             _modeB.SelectedIndex = 1;   // B: Backend
+
+            _zoomBox.ItemsSource = new[] { "Fit", "1x", "2x", "3x" };
+            _zoomBox.SelectedIndex = 0;
+            _zoomBox.SelectionChanged += (_, _) => UpdateStripDisplay();
+
+            foreach (var strip in new[] { _stripA, _stripB, _stripOverlay, _stripHeat })
+            {
+                strip.IsCheckedChanged += (_, _) => UpdateStripDisplay();
+            }
+
+            _copyButton.Click += (_, _) => CopyReport();
 
             // Every setting re-renders live once the first comparison is up; the button
             // stays as a manual refresh.
@@ -190,7 +227,7 @@ namespace TextTestApp
             TextOptions.SetTextHintingMode(textBlock,
                 hintingBox.SelectedItem is TextHintingMode hinting ? hinting : TextHintingMode.Unspecified);
             TextOptions.SetTextRenderingMode(textBlock,
-                renderingBox.SelectedItem is TextRenderingMode rendering ? rendering : TextRenderingMode.Unspecified);
+                renderingBox.SelectedItem is RenderingChoice rendering ? rendering.Mode : TextRenderingMode.Unspecified);
 
             var host = new Border
             {
@@ -222,9 +259,6 @@ namespace TextTestApp
 
         private void ShowDiff(SKBitmap a, SKBitmap b, SKBitmap? disposeB)
         {
-            const int zoom = 3;
-            const int gap = 14;
-
             var width = Math.Min(a.Width, b.Width);
             var height = Math.Min(a.Height, b.Height);
 
@@ -284,50 +318,97 @@ namespace TextTestApp
             _statsText.Text = FormattableString.Invariant(
                 $"RMSE {rmse:0.00}  |  {differing} differing pixels ({percent:0.00}%)  |  max channel delta {max}{reference}{mismatch}");
 
-            // Compose: A, B, overlay, heat map at 3x nearest, stacked vertically so the
-            // same glyph sits in one column across all four bands.
-            var panelW = width * zoom;
-            var panelH = height * zoom;
-            var bandHeight = panelH + 22;
-            var composed = new SKBitmap(new SKImageInfo(panelW, bandHeight * 4 + gap * 3,
-                SKColorType.Bgra8888, SKAlphaType.Premul));
+            // Verdict first: the numbers only mean something against a scale, so state the
+            // scale. Managed-vs-Backend LCD output lands in the antialiasing-level band.
+            var (verdict, banner) = differing == 0
+                ? ("Pixel-identical output.", s_matchBrush)
+                : percent < 15 && rmse < 20
+                    ? ("Differences read as antialiasing-level (coverage and gamma), not structural.", s_matchBrush)
+                    : percent < 40
+                        ? ("Noticeable differences - check the overlay for positioning shifts.", s_noticeBrush)
+                        : ("Large differences - inspect the heat map for structural drift.", s_alarmBrush);
 
-            using (var canvas = new SKCanvas(composed))
-            using (var font = new SKFont(SKTypeface.Default, 12))
-            using (var label = new SKPaint { Color = SKColors.Black })
+            _verdictText.Text = verdict;
+            _verdictBorder.Background = banner;
+            _verdictBorder.IsVisible = true;
+
+            var previous = (Bitmap?[])_strips.Clone();
+
+            _strips[0] = ToBitmap(a);
+            _strips[1] = ToBitmap(b);
+            _strips[2] = ToBitmap(overlay);
+            _strips[3] = ToBitmap(heat);
+
+            UpdateStripDisplay();
+
+            foreach (var old in previous)
             {
-                canvas.Clear(SKColors.White);
-
-                var titles = new[] { "A", "B", "overlay (A red / B blue)", "difference heat map" };
-                var images = new[] { a, b, overlay, heat };
-
-                for (var i = 0; i < 4; i++)
-                {
-                    var y = i * (bandHeight + gap);
-
-                    canvas.DrawText(titles[i], 0, y + 14, SKTextAlign.Left, font, label);
-
-                    using var image = SKImage.FromBitmap(images[i]);
-
-                    canvas.DrawImage(image, new SKRect(0, y + 22, panelW, y + 22 + panelH),
-                        new SKSamplingOptions(SKFilterMode.Nearest));
-                }
+                old?.Dispose();
             }
 
-            var previous = _resultImage.Source as IDisposable;
-
-            using (composed)
-            using (var image = SKImage.FromBitmap(composed))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
-            {
-                _resultImage.Source = new Bitmap(stream);
-            }
-
-            previous?.Dispose();
             heat.Dispose();
             overlay.Dispose();
             disposeB?.Dispose();
+        }
+
+        private void UpdateStripDisplay()
+        {
+            var index = _stripA.IsChecked == true ? 0
+                : _stripB.IsChecked == true ? 1
+                : _stripHeat.IsChecked == true ? 3
+                : 2;
+
+            if (_strips[index] is not { } bitmap)
+            {
+                return;
+            }
+
+            _resultImage.Source = bitmap;
+
+            if (_zoomBox.SelectedIndex <= 0)
+            {
+                // Fit: bounded by the viewport, shrink-only, smooth resampling.
+                _resultImage.Width = double.NaN;
+                _resultImage.StretchDirection = StretchDirection.DownOnly;
+                _stripScroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                RenderOptions.SetBitmapInterpolationMode(_resultImage, BitmapInterpolationMode.HighQuality);
+            }
+            else
+            {
+                // Explicit zoom: nearest-neighbor so device pixels stay inspectable.
+                var zoom = _zoomBox.SelectedIndex;
+
+                _resultImage.Width = bitmap.PixelSize.Width * zoom;
+                _resultImage.StretchDirection = StretchDirection.Both;
+                _stripScroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+                RenderOptions.SetBitmapInterpolationMode(_resultImage, BitmapInterpolationMode.None);
+            }
+        }
+
+        private void CopyReport()
+        {
+            static string Config(ComboBox mode, ComboBox hinting, ComboBox rendering) =>
+                $"{mode.SelectedItem}, hinting {hinting.SelectedItem}, rendering {rendering.SelectedItem}";
+
+            var b = _referenceName is { } referenceName
+                ? $"reference {referenceName}"
+                : Config(_modeB, _hintingB, _renderingB);
+
+            ClipboardHelper.Copy(this, string.Join(Environment.NewLine,
+                $"A/B text diff: \"{_textBox.Text}\" - {_fontText.Text}",
+                $"A: {Config(_modeA, _hintingA, _renderingA)}",
+                $"B: {b}",
+                _statsText.Text,
+                _verdictText.Text));
+        }
+
+        private static Bitmap ToBitmap(SKBitmap bitmap)
+        {
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            using var stream = new MemoryStream(data.ToArray());
+
+            return new Bitmap(stream);
         }
 
         private async System.Threading.Tasks.Task SaveReferenceAsync()
