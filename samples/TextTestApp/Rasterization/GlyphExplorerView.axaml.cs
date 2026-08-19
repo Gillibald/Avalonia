@@ -71,6 +71,10 @@ namespace TextTestApp
         {
             AvaloniaXamlLoader.Load(this);
 
+            // The grid is keyboard-navigable: arrows, Home/End, PageUp/Down move the
+            // selection, Enter opens the inspector.
+            Focusable = true;
+
             _filterBox = this.FindControl<ComboBox>("FilterBox")!;
             _searchBox = this.FindControl<TextBox>("SearchBox")!;
             _prevButton = this.FindControl<Button>("PrevButton")!;
@@ -316,18 +320,19 @@ namespace TextTestApp
                 return;
             }
 
+            var theme = FigureTheme.Current;
             var bitmap = new SKBitmap(new SKImageInfo(Columns * Cell + 1, Rows * Cell + 1,
                 SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using (var canvas = new SKCanvas(bitmap))
-            using (var grid = new SKPaint { Color = new SKColor(0xE6, 0xE6, 0xE6), IsStroke = true })
+            using (var grid = new SKPaint { Color = theme.Grid, IsStroke = true })
             using (var cellPaint = new SKPaint())
             using (var badge = new SKPaint())
             using (var label = new SKPaint { Color = new SKColor(0x90, 0x90, 0x90) })
             using (var labelFont = new SKFont(SKTypeface.Default, 9))
-            using (var selection = new SKPaint { Color = new SKColor(0x22, 0x44, 0xCC), IsStroke = true, StrokeWidth = 2 })
+            using (var selection = new SKPaint { Color = theme.Hinted, IsStroke = true, StrokeWidth = 2 })
             {
-                canvas.Clear(SKColors.White);
+                canvas.Clear(theme.Background);
 
                 var scratch = new GlyphPathBuilder();
                 var scaleQ = GlyphMaskKey.QuantizeScale(CellRenderSize);
@@ -393,7 +398,7 @@ namespace TextTestApp
 
                                     if (coverage > 0)
                                     {
-                                        cellPaint.Color = new SKColor(0x20, 0x20, 0x20, coverage);
+                                        cellPaint.Color = theme.Ink.WithAlpha(coverage);
                                         canvas.DrawRect(originX + x, originY + y, 1, 1, cellPaint);
                                     }
                                 }
@@ -463,6 +468,8 @@ namespace TextTestApp
 
         private void OnGridPressed(object? sender, PointerPressedEventArgs e)
         {
+            Focus();
+
             var position = e.GetPosition(_gridImage);
             var column = (int)(position.X / Cell);
             var row = (int)(position.Y / Cell);
@@ -482,10 +489,18 @@ namespace TextTestApp
             _selectedIndex = index;
             UpdateInfo();
             RenderPage();
+            RaiseSelected();
+        }
 
-            if (_typeface is { } typeface)
+        /// <summary>Repaints the current page - the host calls this on theme changes,
+        /// which figure bitmaps cannot follow by themselves.</summary>
+        public void Repaint() => RenderPage();
+
+        private void RaiseSelected()
+        {
+            if (_typeface is { } typeface && _selectedIndex >= 0 && _selectedIndex < _glyphs.Count)
             {
-                var glyph = _glyphs[index];
+                var glyph = _glyphs[_selectedIndex];
                 var codepoints = GetCodepoints(typeface, glyph);
                 var label = codepoints.Count > 0 && codepoints[0] is >= 0x20
                     ? $"'{char.ConvertFromUtf32(codepoints[0])}'"
@@ -493,6 +508,52 @@ namespace TextTestApp
 
                 GlyphSelected?.Invoke(typeface, glyph, label);
             }
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            // Text boxes own their keys; the grid reacts only when the view has focus.
+            if (e.Handled || e.Source is TextBox || _typeface is null || _glyphs.Count == 0)
+            {
+                base.OnKeyDown(e);
+                return;
+            }
+
+            var current = _selectedIndex >= 0 ? _selectedIndex : _page * PageSize;
+            int? target = e.Key switch
+            {
+                Key.Left => current - 1,
+                Key.Right => current + 1,
+                Key.Up => current - Columns,
+                Key.Down => current + Columns,
+                Key.PageUp => current - PageSize,
+                Key.PageDown => current + PageSize,
+                Key.Home => 0,
+                Key.End => _glyphs.Count - 1,
+                _ => null,
+            };
+
+            if (target is { } index)
+            {
+                index = Math.Clamp(index, 0, _glyphs.Count - 1);
+
+                if (index / PageSize != _page)
+                {
+                    ShowPage(index / PageSize);
+                }
+
+                _selectedIndex = index;
+                UpdateInfo();
+                RenderPage();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter && _selectedIndex >= 0)
+            {
+                RaiseSelected();
+                e.Handled = true;
+            }
+
+            base.OnKeyDown(e);
         }
 
         private void UpdateInfo()

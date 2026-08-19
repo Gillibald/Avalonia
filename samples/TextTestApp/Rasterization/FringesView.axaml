@@ -5,11 +5,11 @@
     <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
         <TextBlock Text="Sample" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <TextBox x:Name="SampleBox" Width="280" Text="Hamburgefonstiv fi ffl" />
+        <TextBox x:Name="SampleBox" Width="280" Text="Hamburgefonstiv fi ffl" AutomationProperties.Name="Sample text" />
         <TextBlock Text="Hinting" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="HintingBox" Width="100" />
+        <ComboBox x:Name="HintingBox" Width="100" AutomationProperties.Name="Hinting mode" />
         <TextBlock Text="Zoom" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="ZoomBox" Width="70" />
+        <ComboBox x:Name="ZoomBox" Width="70" AutomationProperties.Name="Zoom" />
         <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
         <Button x:Name="CopyButton" Content="Copy stats" FontSize="12"
                 ToolTip.Tip="Copy the fringe counts and verdict as text." />

@@ -6,7 +6,7 @@
       <StackPanel Spacing="6">
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="Text" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-          <TextBox x:Name="TextBox" Width="340" Text="Hamburgefonstiv fi ffl 0123" />
+          <TextBox x:Name="TextBox" Width="340" Text="Hamburgefonstiv fi ffl 0123" AutomationProperties.Name="Sample text" />
           <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
           <Button x:Name="RenderButton" Content="Render" FontWeight="SemiBold" />
           <Button x:Name="SaveButton" Content="Save A as reference..." />
@@ -17,13 +17,13 @@
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="A:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#D43322" />
-          <ComboBox x:Name="ModeA" Width="110" />
-          <ComboBox x:Name="HintingA" Width="110" />
-          <ComboBox x:Name="RenderingA" Width="150" />
+          <ComboBox x:Name="ModeA" Width="110" AutomationProperties.Name="A rasterization mode" />
+          <ComboBox x:Name="HintingA" Width="110" AutomationProperties.Name="A hinting mode" />
+          <ComboBox x:Name="RenderingA" Width="150" AutomationProperties.Name="A rendering mode" />
           <TextBlock Text="B:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#2244CC" Margin="18,0,0,0" />
-          <ComboBox x:Name="ModeB" Width="110" />
-          <ComboBox x:Name="HintingB" Width="110" />
-          <ComboBox x:Name="RenderingB" Width="150" />
+          <ComboBox x:Name="ModeB" Width="110" AutomationProperties.Name="B rasterization mode" />
+          <ComboBox x:Name="HintingB" Width="110" AutomationProperties.Name="B hinting mode" />
+          <ComboBox x:Name="RenderingB" Width="150" AutomationProperties.Name="B rendering mode" />
           <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11" TextWrapping="Wrap" MaxWidth="420"
                      Text="Renders true LCD (the target carries stripe geometry). Unspecified hinting resolves to Light on both stacks." />
         </StackPanel>
@@ -36,7 +36,7 @@
           <RadioButton x:Name="StripHeat" GroupName="AbStrip" Content="Heat map"
                        ToolTip.Tip="Per-pixel channel delta: white match, yellow to 8, orange to 32, red above." />
           <TextBlock Text="Zoom" VerticalAlignment="Center" Opacity="0.7" FontSize="12" Margin="12,0,0,0" />
-          <ComboBox x:Name="ZoomBox" Width="70" />
+          <ComboBox x:Name="ZoomBox" Width="70" AutomationProperties.Name="Zoom" />
         </StackPanel>
       </StackPanel>
     </Border>

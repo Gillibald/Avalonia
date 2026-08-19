@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Styling;
 
 namespace TextTestApp
 {
@@ -44,6 +45,7 @@ namespace TextTestApp
                 AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode ==
                 TextRasterizationMode.Backend ? 1 : 0;
             _rasterBox.SelectionChanged += (_, _) => OnRasterModeChanged();
+            _themeToggle.IsCheckedChanged += (_, _) => OnThemeChanged();
 
             _nav.SelectionChanged += (_, _) => OnNavChanged();
             _nav.SelectedItem = NavGlyphs;
@@ -171,11 +173,32 @@ namespace TextTestApp
             PushFontContext();
         }
 
+        private void OnThemeChanged()
+        {
+            Application.Current!.RequestedThemeVariant = _themeToggle.IsChecked == true
+                ? ThemeVariant.Dark
+                : ThemeVariant.Light;
+
+            // Figures are bitmaps outside the styling system - rebuild them with the
+            // matching palette. The A/B diff intentionally stays black-on-white so saved
+            // reference PNGs remain comparable across themes.
+            PushFontContext();
+            _explorer.Repaint();
+            _colorInspector.Repaint();
+        }
+
         private void ShowInspector(bool visible)
         {
             _raster.IsVisible = visible;
             _colorInspector.IsVisible = false;
             _explorer.IsVisible = !visible;
+
+            // Coming back from an inspector lands focus on the grid so arrow keys keep
+            // working - Escape, move, Enter is the keyboard loop.
+            if (!visible)
+            {
+                _explorer.Focus();
+            }
         }
 
         private void ShowColorInspector()
