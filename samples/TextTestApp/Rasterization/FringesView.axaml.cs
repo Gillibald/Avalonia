@@ -46,6 +46,9 @@ namespace TextTestApp
             _sampleBox.TextChanged += (_, _) => Rebuild();
             _hintingBox.SelectionChanged += (_, _) => Rebuild();
             _zoomBox.SelectionChanged += (_, _) => Rebuild();
+            this.FindControl<Button>("CopyButton")!.Click += (_, _) => ClipboardHelper.Copy(this,
+                $"LCD fringe analysis: \"{_sampleBox.Text}\" - {_fontText.Text}, hinting {_hintingBox.SelectedItem}"
+                + Environment.NewLine + _statsText.Text);
 
             _initialized = true;
         }

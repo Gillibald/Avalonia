@@ -538,23 +538,25 @@ namespace TextTestApp
 
                 double y = Math.Max(inkBounds.Bottom, lineBounds.Bottom) + VerticalSpacing * 2;
 
+                // Plain words first, API identifiers in parentheses: the diagram teaches
+                // the caret model, the parenthetical names the method that answers it.
                 if (NextHitStroke != null)
                 {
                     RenderHits(context, NextHitPen, textLine, textLine.GetNextCaretCharacterHit, new CharacterHit(0), ref y);
-                    RenderLabel(context, nameof(textLine.GetNextCaretCharacterHit), NextHitStroke, labelX, y);
+                    RenderLabel(context, "next caret stop (GetNextCaretCharacterHit)", NextHitStroke, labelX, y);
                     y += VerticalSpacing * 2;
                 }
 
                 if (PreviousHitStroke != null)
                 {
-                    RenderLabel(context, nameof(textLine.GetPreviousCaretCharacterHit), PreviousHitStroke, labelX, y);
+                    RenderLabel(context, "previous caret stop (GetPreviousCaretCharacterHit)", PreviousHitStroke, labelX, y);
                     RenderHits(context, PreviousHitPen, textLine, textLine.GetPreviousCaretCharacterHit, new CharacterHit(textLine.Length), ref y);
                     y += VerticalSpacing * 2;
                 }
 
                 if (BackspaceHitStroke != null)
                 {
-                    RenderLabel(context, nameof(textLine.GetBackspaceCaretCharacterHit), BackspaceHitStroke, labelX, y);
+                    RenderLabel(context, "backspace stop (GetBackspaceCaretCharacterHit)", BackspaceHitStroke, labelX, y);
                     RenderHits(context, BackspaceHitPen, textLine, textLine.GetBackspaceCaretCharacterHit, new CharacterHit(textLine.Length), ref y);
                     y += VerticalSpacing * 2;
                 }
@@ -563,7 +565,7 @@ namespace TextTestApp
                 {
                     y += VerticalSpacing;
 
-                    var label = RenderLabel(context, nameof(textLine.GetDistanceFromCharacterHit), DistanceStroke, 0, y);
+                    var label = RenderLabel(context, "distance from hit (GetDistanceFromCharacterHit)", DistanceStroke, 0, y);
                     y += label.Height;
 
                     for (int i = 0; i < textLine.Length; i++)

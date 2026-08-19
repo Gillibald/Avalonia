@@ -11,6 +11,8 @@
         <TextBlock Text="Zoom" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
         <ComboBox x:Name="ZoomBox" Width="70" />
         <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+        <Button x:Name="CopyButton" Content="Copy stats" FontSize="12"
+                ToolTip.Tip="Copy the fringe counts and verdict as text." />
       </StackPanel>
     </Border>
     <ScrollViewer HorizontalScrollBarVisibility="Auto">
