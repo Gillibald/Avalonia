@@ -49,14 +49,19 @@
               <Setter Property="Padding" Value="12,12,12,2" />
             </Style>
           </ListBox.Styles>
+          <ListBoxItem Classes="section" Content="SHOWCASE" />
+          <ListBoxItem Name="NavSpecimen" Content="Specimen" />
           <ListBoxItem Classes="section" Content="EXPLORE" />
           <ListBoxItem Name="NavGlyphs" Content="Glyphs" />
           <ListBoxItem Name="NavVariable" Content="Variable fonts" />
+          <ListBoxItem Name="NavFontInfo" Content="Font info" />
           <ListBoxItem Classes="section" Content="DIAGNOSE" />
           <ListBoxItem Name="NavWaterfall" Content="Waterfall" />
           <ListBoxItem Name="NavFringes" Content="Fringes" />
           <ListBoxItem Name="NavAbDiff" Content="A/B diff" />
           <ListBoxItem Name="NavHitTesting" Content="Hit testing" />
+          <ListBoxItem Classes="section" Content="LEARN" />
+          <ListBoxItem Name="NavPipeline" Content="Pipeline" />
         </ListBox>
       </Border>
 
@@ -69,7 +74,10 @@
           <local:ColorGlyphInspectorView Name="_colorInspector" IsVisible="False" />
         </Panel>
 
+        <local:ShowcaseView Name="_showcase" IsVisible="False" />
         <local:VariableFontsView Name="_variable" IsVisible="False" />
+        <local:FontInfoView Name="_fontInfo" IsVisible="False" />
+        <local:LearnPipelineView Name="_learn" IsVisible="False" />
         <local:WaterfallView Name="_waterfall" IsVisible="False" />
         <local:FringesView Name="_fringes" IsVisible="False" />
         <local:AbDiffView Name="_abDiff" IsVisible="False" />
