@@ -456,9 +456,8 @@ namespace Avalonia.Base.UnitTests.Media
                 overridden.VariationPosition.GetCoordinateOrDefault(s_wghtTag));
             Assert.Equal(1f, overridden.VariationPosition.GetCoordinateOrDefault(OpenTypeTag.Parse("opsz")));
 
-            // The public entry point measures from the design default instead.
-            Assert.False(semiBold.WithVariations(FontVariationSettings.Parse("opsz=32"))
-                .VariationPosition.TryGetCoordinate(s_wghtTag, out _));
+            // The public entry point composes over the receiver's position the same way.
+            Assert.Same(overridden, semiBold.WithVariations(FontVariationSettings.Parse("opsz=32")));
         }
 
         private static int IndexOfInstance(GlyphTypeface gt, string name)

@@ -3415,28 +3415,40 @@ namespace Avalonia.Media
         /// The desired axis values in user space (e.g. <c>wght = 700</c>), as declared by
         /// the font's <c>fvar</c> table. Values are clamped to each axis range and axes
         /// the font does not declare are ignored. <c>null</c> or
-        /// <see cref="FontVariationSettings.Empty"/> means the design defaults.
+        /// <see cref="FontVariationSettings.Empty"/> means no explicit overrides — the
+        /// receiver's own position (for example the platform-derived weight of a styled
+        /// match) stays in effect.
         /// </param>
         /// <param name="instanceIndex">
         /// Optional index of a named instance (see <see cref="NamedInstances"/>) to use
         /// as the base position; explicit <paramref name="settings"/> values override the
-        /// instance's value per axis.
+        /// instance's value per axis. A named instance defines every axis, so it replaces
+        /// the receiver's position outright.
         /// </param>
         /// <returns>
-        /// <c>this</c> for static fonts, for design-default requests, and for requests
-        /// matching the receiver's own position; otherwise a cached or freshly-cloned
-        /// typeface. Settings are normalized per font before caching, so two settings
-        /// that resolve to the same position (for example two values clamped to the same
-        /// axis maximum) share one clone.
+        /// <c>this</c> for static fonts and for requests matching the receiver's own
+        /// position; otherwise a cached or freshly-cloned typeface. Settings are
+        /// normalized per font before caching, so two settings that resolve to the same
+        /// position (for example two values clamped to the same axis maximum) share one
+        /// clone.
         /// </returns>
+        /// <remarks>
+        /// Composition follows CSS: explicit settings beat the receiver's current
+        /// position per mentioned axis — including a mention that puts an axis back at
+        /// its default — while unmentioned axes keep the receiver's position. That is
+        /// what keeps a platform-styled match (Bold → <c>wght 700</c>) bold when the
+        /// user only sets <c>wdth</c>.
+        /// </remarks>
         public GlyphTypeface WithVariations(FontVariationSettings? settings, int? instanceIndex = null)
-            => WithVariation(CreateNormalizedPosition(settings, instanceIndex));
+            => instanceIndex is null
+                ? WithVariationOverrides(settings)
+                : WithVariation(CreateNormalizedPosition(settings, instanceIndex));
 
         /// <summary>
         /// Returns a <see cref="GlyphTypeface"/> at this typeface's own
         /// <see cref="VariationPosition"/> with the axes named by <paramref name="settings"/>
-        /// replaced. Unlike <see cref="WithVariations"/>, which measures settings from the
-        /// design default, the axes the settings leave out keep the values font matching chose.
+        /// replaced, so the axes the settings leave out keep the values font matching chose.
+        /// This is <see cref="WithVariations"/> without a named instance.
         /// </summary>
         internal GlyphTypeface WithVariationOverrides(FontVariationSettings? settings)
             => WithVariation(CreateNormalizedPosition(settings, _variationPosition));
