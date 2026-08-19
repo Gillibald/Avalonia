@@ -47,6 +47,9 @@ namespace TextTestApp
         private Button _resetCountersButton = null!;
         private Button _exportFiguresButton = null!;
         private TextBlock _exportStatusText = null!;
+        private Border _emptyPanel = null!;
+        private TextBlock _emptyText = null!;
+        private Button _suggestFontButton = null!;
         private Image _gridImage = null!;
         private DispatcherTimer? _hudTimer;
 
@@ -59,6 +62,10 @@ namespace TextTestApp
         /// <summary>Raised when a cell is selected; the label carries the first mapped
         /// character when the reverse cmap knows one.</summary>
         public event Action<GlyphTypeface, ushort, string?>? GlyphSelected;
+
+        /// <summary>Raised by the empty state's suggestion button; the host switches the
+        /// app-global font selector to the named family.</summary>
+        public event Action<string>? FontRequested;
 
         public GlyphExplorerView()
         {
@@ -78,7 +85,12 @@ namespace TextTestApp
             _resetCountersButton = this.FindControl<Button>("ResetCountersButton")!;
             _exportFiguresButton = this.FindControl<Button>("ExportFiguresButton")!;
             _exportStatusText = this.FindControl<TextBlock>("ExportStatusText")!;
+            _emptyPanel = this.FindControl<Border>("EmptyPanel")!;
+            _emptyText = this.FindControl<TextBlock>("EmptyText")!;
+            _suggestFontButton = this.FindControl<Button>("SuggestFontButton")!;
             _gridImage = this.FindControl<Image>("GridImage")!;
+
+            _suggestFontButton.Click += (_, _) => FontRequested?.Invoke("Segoe UI Emoji");
 
             _countTiersBox.IsCheckedChanged += (_, _) =>
                 Avalonia.Skia.TextTierDiagnostics.CountTiers = _countTiersBox.IsChecked == true;
@@ -261,6 +273,24 @@ namespace TextTestApp
             _summaryText.Text = _typeface is null
                 ? "no typeface"
                 : $"{_typeface.FamilyName}: {_glyphs.Count} of {_typeface.GlyphCount} glyphs";
+
+            // An empty filter result gets a reason and, for the color filters, a
+            // color-capable system font one click away.
+            var empty = _typeface is not null && _glyphs.Count == 0;
+
+            _emptyPanel.IsVisible = empty;
+
+            if (empty)
+            {
+                _emptyText.Text = _filterBox.SelectedIndex switch
+                {
+                    1 => $"{_typeface!.FamilyName} has no COLR color glyphs.",
+                    2 => $"{_typeface!.FamilyName} has no bitmap strikes.",
+                    3 => $"Every glyph in {_typeface!.FamilyName} has an outline.",
+                    _ => $"{_typeface!.FamilyName} has no glyphs.",
+                };
+                _suggestFontButton.IsVisible = _filterBox.SelectedIndex is 1 or 2;
+            }
 
             ShowPage(0);
         }

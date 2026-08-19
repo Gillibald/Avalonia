@@ -16,6 +16,7 @@
         <TextBlock x:Name="SummaryText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
       </StackPanel>
     </Border>
+    <Panel>
     <Grid ColumnDefinitions="Auto,260">
       <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto">
         <Image x:Name="GridImage" Stretch="None" VerticalAlignment="Top" HorizontalAlignment="Left"
@@ -42,5 +43,15 @@
         </ScrollViewer>
       </Border>
     </Grid>
+    <Border x:Name="EmptyPanel" IsVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center"
+            Padding="24,18" BorderBrush="#40808080" BorderThickness="1" CornerRadius="4" Background="#F8F8F8">
+      <StackPanel Spacing="10" MaxWidth="420">
+        <TextBlock x:Name="EmptyText" TextWrapping="Wrap" Text="Nothing matches this filter." />
+        <TextBlock Opacity="0.7" FontSize="12" TextWrapping="Wrap"
+                   Text="Color filters need a font with COLR layers or paint graphs, or embedded bitmap strikes." />
+        <Button x:Name="SuggestFontButton" Content="Switch to Segoe UI Emoji" HorizontalAlignment="Left" />
+      </StackPanel>
+    </Border>
+    </Panel>
   </DockPanel>
 </UserControl>
