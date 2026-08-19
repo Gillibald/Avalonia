@@ -31,10 +31,15 @@ namespace TextTestApp
         private ComboBox _sizeBox = null!;
         private ComboBox _paletteBox = null!;
         private TextBlock _paletteLabel = null!;
+        private TextBox _searchBox = null!;
         private Button _prevButton = null!;
         private Button _nextButton = null!;
-        private TextBlock _pageText = null!;
+        private TextBox _pageBox = null!;
+        private TextBlock _pageCountText = null!;
         private TextBlock _summaryText = null!;
+        private Border _emptyPanel = null!;
+        private TextBlock _emptyText = null!;
+        private Button _suggestFontButton = null!;
         private TextBlock _infoText = null!;
         private TextBlock _layersHeader = null!;
         private TextBlock _layersText = null!;
@@ -51,6 +56,10 @@ namespace TextTestApp
         /// <summary>Raised when the selected glyph should open in the color inspector.</summary>
         public event Action<GlyphTypeface, ushort, string?>? InspectRequested;
 
+        /// <summary>Raised by the empty state's suggestion button; the host switches the
+        /// app-global font selector to the named family.</summary>
+        public event Action<string>? FontRequested;
+
         public ColorGlyphsView()
         {
             AvaloniaXamlLoader.Load(this);
@@ -58,10 +67,15 @@ namespace TextTestApp
             _sizeBox = this.FindControl<ComboBox>("SizeBox")!;
             _paletteBox = this.FindControl<ComboBox>("PaletteBox")!;
             _paletteLabel = this.FindControl<TextBlock>("PaletteLabel")!;
+            _searchBox = this.FindControl<TextBox>("SearchBox")!;
             _prevButton = this.FindControl<Button>("PrevButton")!;
             _nextButton = this.FindControl<Button>("NextButton")!;
-            _pageText = this.FindControl<TextBlock>("PageText")!;
+            _pageBox = this.FindControl<TextBox>("PageBox")!;
+            _pageCountText = this.FindControl<TextBlock>("PageCountText")!;
             _summaryText = this.FindControl<TextBlock>("SummaryText")!;
+            _emptyPanel = this.FindControl<Border>("EmptyPanel")!;
+            _emptyText = this.FindControl<TextBlock>("EmptyText")!;
+            _suggestFontButton = this.FindControl<Button>("SuggestFontButton")!;
             _infoText = this.FindControl<TextBlock>("InfoText")!;
             _layersHeader = this.FindControl<TextBlock>("LayersHeader")!;
             _layersText = this.FindControl<TextBlock>("LayersText")!;
@@ -84,6 +98,54 @@ namespace TextTestApp
                     InspectRequested?.Invoke(typeface, _glyphs[_selectedIndex], null);
                 }
             };
+
+            _searchBox.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    Search();
+                    e.Handled = true;
+                }
+            };
+
+            _pageBox.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter && int.TryParse(_pageBox.Text, out var page))
+                {
+                    ShowPage(page - 1);
+                    e.Handled = true;
+                }
+            };
+
+            _suggestFontButton.Click += (_, _) => FontRequested?.Invoke("Segoe UI Emoji");
+        }
+
+        /// <summary>Jumps to the queried glyph when it has a color representation.</summary>
+        private void Search()
+        {
+            if (_typeface is not { } typeface || _searchBox.Text is not { Length: > 0 } query)
+            {
+                return;
+            }
+
+            if (!GlyphQuery.TryResolve(typeface, query, out var glyph))
+            {
+                _infoText.Text = $"nothing found for \"{query}\"\n{GlyphQuery.Hint}";
+                return;
+            }
+
+            var index = _glyphs.IndexOf(glyph);
+
+            if (index < 0)
+            {
+                _infoText.Text = $"glyph {glyph} has no color representation in this font";
+                return;
+            }
+
+            ShowPage(index / PageSize);
+            _selectedIndex = index;
+            UpdateInfo();
+            RenderPage();
         }
 
         private int RenderSize => _sizeBox.SelectedItem is int size ? size : 48;
@@ -157,6 +219,17 @@ namespace TextTestApp
                     ? $"{_typeface.FamilyName}: no color glyphs"
                     : $"{_typeface.FamilyName}: {_glyphs.Count} color glyphs";
 
+            // Empty state instead of a silently dead view: name the reason and offer a
+            // known-good system font one click away.
+            var empty = _typeface is not null && _glyphs.Count == 0;
+
+            _emptyPanel.IsVisible = empty;
+
+            if (empty)
+            {
+                _emptyText.Text = $"{_typeface!.FamilyName} has no color glyphs.";
+            }
+
             ShowPage(0);
         }
 
@@ -165,7 +238,8 @@ namespace TextTestApp
             var pageCount = Math.Max(1, (_glyphs.Count + PageSize - 1) / PageSize);
 
             _page = Math.Clamp(page, 0, pageCount - 1);
-            _pageText.Text = $"page {_page + 1} / {pageCount}";
+            _pageBox.Text = $"{_page + 1}";
+            _pageCountText.Text = $"/ {pageCount}";
             _selectedIndex = -1;
             UpdateInfo();
             RenderPage();

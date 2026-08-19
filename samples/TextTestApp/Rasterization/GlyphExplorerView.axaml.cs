@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Fonts.Rasterization.Slug;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using SkiaSharp;
 
@@ -33,15 +34,19 @@ namespace TextTestApp
         private static readonly string[] s_filters = { "All", "Color (COLR)", "Bitmap strikes", "No outline" };
 
         private ComboBox _filterBox = null!;
+        private TextBox _searchBox = null!;
         private Button _prevButton = null!;
         private Button _nextButton = null!;
-        private TextBlock _pageText = null!;
+        private TextBox _pageBox = null!;
+        private TextBlock _pageCountText = null!;
         private TextBlock _summaryText = null!;
         private TextBlock _infoText = null!;
         private TextBlock _metricsText = null!;
         private TextBlock _hudText = null!;
         private CheckBox _countTiersBox = null!;
         private Button _resetCountersButton = null!;
+        private Button _exportFiguresButton = null!;
+        private TextBlock _exportStatusText = null!;
         private Image _gridImage = null!;
         private DispatcherTimer? _hudTimer;
 
@@ -60,15 +65,19 @@ namespace TextTestApp
             AvaloniaXamlLoader.Load(this);
 
             _filterBox = this.FindControl<ComboBox>("FilterBox")!;
+            _searchBox = this.FindControl<TextBox>("SearchBox")!;
             _prevButton = this.FindControl<Button>("PrevButton")!;
             _nextButton = this.FindControl<Button>("NextButton")!;
-            _pageText = this.FindControl<TextBlock>("PageText")!;
+            _pageBox = this.FindControl<TextBox>("PageBox")!;
+            _pageCountText = this.FindControl<TextBlock>("PageCountText")!;
             _summaryText = this.FindControl<TextBlock>("SummaryText")!;
             _infoText = this.FindControl<TextBlock>("InfoText")!;
             _metricsText = this.FindControl<TextBlock>("MetricsText")!;
             _hudText = this.FindControl<TextBlock>("HudText")!;
             _countTiersBox = this.FindControl<CheckBox>("CountTiersBox")!;
             _resetCountersButton = this.FindControl<Button>("ResetCountersButton")!;
+            _exportFiguresButton = this.FindControl<Button>("ExportFiguresButton")!;
+            _exportStatusText = this.FindControl<TextBlock>("ExportStatusText")!;
             _gridImage = this.FindControl<Image>("GridImage")!;
 
             _countTiersBox.IsCheckedChanged += (_, _) =>
@@ -85,6 +94,89 @@ namespace TextTestApp
             _prevButton.Click += (_, _) => ShowPage(_page - 1);
             _nextButton.Click += (_, _) => ShowPage(_page + 1);
             _gridImage.PointerPressed += OnGridPressed;
+
+            _searchBox.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter)
+                {
+                    Search();
+                    e.Handled = true;
+                }
+            };
+
+            _pageBox.KeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter && int.TryParse(_pageBox.Text, out var page))
+                {
+                    ShowPage(page - 1);
+                    e.Handled = true;
+                }
+            };
+
+            _exportFiguresButton.Click += async (_, _) => await ExportFiguresAsync();
+        }
+
+        /// <summary>Jumps to the queried glyph; widens the filter when it hides the match.</summary>
+        private void Search()
+        {
+            if (_typeface is not { } typeface || _searchBox.Text is not { Length: > 0 } query)
+            {
+                return;
+            }
+
+            if (!GlyphQuery.TryResolve(typeface, query, out var glyph))
+            {
+                _infoText.Text = $"nothing found for \"{query}\"\n{GlyphQuery.Hint}";
+                return;
+            }
+
+            var index = _glyphs.IndexOf(glyph);
+
+            if (index < 0 && _filterBox.SelectedIndex != 0)
+            {
+                _filterBox.SelectedIndex = 0;   // rebuilds the list synchronously
+                index = _glyphs.IndexOf(glyph);
+            }
+
+            if (index < 0)
+            {
+                _infoText.Text = $"glyph {glyph} is not in this font";
+                return;
+            }
+
+            ShowPage(index / PageSize);
+            _selectedIndex = index;
+            UpdateInfo();
+            RenderPage();
+        }
+
+        private async System.Threading.Tasks.Task ExportFiguresAsync()
+        {
+            if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage)
+            {
+                return;
+            }
+
+            var folders = await storage.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
+            {
+                Title = "Export doc figures",
+                AllowMultiple = false,
+            });
+
+            if (folders.Count != 1 || folders[0].TryGetLocalPath() is not { } directory)
+            {
+                return;
+            }
+
+            var typeface = PipelineFigures.LoadRepoInter() ?? _typeface;
+
+            if (typeface is null)
+            {
+                return;
+            }
+
+            PipelineFigures.ExportAll(directory, typeface);
+            _exportStatusText.Text = $"figures written to {directory}";
         }
 
         public void SetTypeface(GlyphTypeface? typeface)
@@ -178,7 +270,8 @@ namespace TextTestApp
             var pageCount = Math.Max(1, (_glyphs.Count + PageSize - 1) / PageSize);
 
             _page = Math.Clamp(page, 0, pageCount - 1);
-            _pageText.Text = $"page {_page + 1} / {pageCount}";
+            _pageBox.Text = $"{_page + 1}";
+            _pageCountText.Text = $"/ {pageCount}";
             _selectedIndex = -1;
             _infoText.Text = string.Empty;
 
