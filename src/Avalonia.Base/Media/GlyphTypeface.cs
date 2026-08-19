@@ -2639,22 +2639,77 @@ namespace Avalonia.Media
         /// The desired axis values in user space (e.g. <c>wght = 700</c>), as declared by
         /// the font's <c>fvar</c> table. Values are clamped to each axis range and axes
         /// the font does not declare are ignored. <c>null</c> or
-        /// <see cref="FontVariationSettings.Empty"/> means the design defaults.
+        /// <see cref="FontVariationSettings.Empty"/> means no explicit overrides — the
+        /// receiver's own position (for example the platform-derived weight of a styled
+        /// match) stays in effect.
         /// </param>
         /// <param name="instanceIndex">
         /// Optional index of a named instance (see <see cref="NamedInstances"/>) to use
         /// as the base position; explicit <paramref name="settings"/> values override the
-        /// instance's value per axis.
+        /// instance's value per axis. A named instance defines every axis, so it replaces
+        /// the receiver's position outright.
         /// </param>
         /// <returns>
-        /// <c>this</c> for static fonts, for design-default requests, and for requests
-        /// matching the receiver's own position; otherwise a cached or freshly-cloned
-        /// typeface. Settings are normalized per font before caching, so two settings
-        /// that resolve to the same position (for example two values clamped to the same
-        /// axis maximum) share one clone.
+        /// <c>this</c> for static fonts and for requests matching the receiver's own
+        /// position; otherwise a cached or freshly-cloned typeface. Settings are
+        /// normalized per font before caching, so two settings that resolve to the same
+        /// position (for example two values clamped to the same axis maximum) share one
+        /// clone.
         /// </returns>
+        /// <remarks>
+        /// Composition follows CSS: explicit settings beat the receiver's current
+        /// position per mentioned axis — including a mention that puts an axis back at
+        /// its default — while unmentioned axes keep the receiver's position. That is
+        /// what keeps a platform-styled match (Bold → <c>wght 700</c>) bold when the
+        /// user only sets <c>wdth</c>.
+        /// </remarks>
         public GlyphTypeface WithVariations(FontVariationSettings? settings, int? instanceIndex = null)
-            => WithVariation(CreateNormalizedPosition(settings, instanceIndex));
+        {
+            var position = CreateNormalizedPosition(settings, instanceIndex);
+
+            if (!_variationPosition.IsDefault && instanceIndex is null)
+            {
+                position = ComposeOverCurrentPosition(settings, position);
+            }
+
+            return WithVariation(position);
+        }
+
+        /// <summary>
+        /// Merges explicit settings over the receiver's current position, per axis: axes
+        /// the settings mention follow the explicit (normalized) value — absent from
+        /// <paramref name="explicitPosition"/> when mentioned at the axis default — and
+        /// every other axis keeps the receiver's coordinate.
+        /// </summary>
+        private NormalizedVariationPosition ComposeOverCurrentPosition(
+            FontVariationSettings? settings,
+            NormalizedVariationPosition explicitPosition)
+        {
+            Dictionary<OpenTypeTag, float>? merged = null;
+
+            foreach (var coordinate in _variationPosition.Coordinates)
+            {
+                if (settings?.TryGetValue(coordinate.Axis, out _) == true)
+                {
+                    continue;
+                }
+
+                (merged ??= new Dictionary<OpenTypeTag, float>())[coordinate.Axis] = coordinate.NormalizedValue;
+            }
+
+            if (merged is null)
+            {
+                // Every current axis is explicitly overridden; the explicit position stands alone.
+                return explicitPosition;
+            }
+
+            foreach (var coordinate in explicitPosition.Coordinates)
+            {
+                merged[coordinate.Axis] = coordinate.NormalizedValue;
+            }
+
+            return NormalizedVariationPosition.FromCoordinates(merged);
+        }
 
         /// <summary>
         /// Returns a <see cref="GlyphTypeface"/> bound to the same underlying font face
