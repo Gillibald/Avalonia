@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Avalonia;
+using Avalonia.Animation;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -38,6 +39,7 @@ namespace TextLab
         private TextBlock _coordsText = null!;
         private TextBlock _matchText = null!;
         private Image _specimenImage = null!;
+        private TextBlock _propertyBlock = null!;
         private TextBlock _ladderTitle = null!;
         private Image _ladderImage = null!;
         private TextBlock _engineText = null!;
@@ -81,7 +83,20 @@ namespace TextLab
             _coordsText = this.FindControl<TextBlock>("CoordsText")!;
             _matchText = this.FindControl<TextBlock>("MatchText")!;
             _specimenImage = this.FindControl<Image>("SpecimenImage")!;
+            _propertyBlock = this.FindControl<TextBlock>("PropertyBlock")!;
             _ladderTitle = this.FindControl<TextBlock>("LadderTitle")!;
+
+            // The V2 dogfood: every slider-driven FontVariations assignment animates.
+            // The sliders mention every axis, so the sets always match and the
+            // transition interpolates per axis instead of switching discretely.
+            _propertyBlock.Transitions = new Transitions
+            {
+                new FontVariationSettingsTransition
+                {
+                    Property = TextBlock.FontVariationsProperty,
+                    Duration = TimeSpan.FromMilliseconds(250),
+                },
+            };
             _ladderImage = this.FindControl<Image>("LadderImage")!;
             _engineText = this.FindControl<TextBlock>("EngineText")!;
             _cacheText = this.FindControl<TextBlock>("CacheText")!;
@@ -295,10 +310,20 @@ namespace TextLab
             }
 
             var size = (float)Math.Clamp(_size, 6, 200);
-            var position = source.CreateNormalizedPosition(ToSettings(_userValues));
+            var settings = ToSettings(_userValues);
+            var position = source.CreateNormalizedPosition(settings);
             var clone = source.WithVariation(position);
 
             SetImage(_specimenImage, RenderRun(clone, sample, size));
+
+            // The property-pipeline block: identical axis values through the
+            // TextElement.FontVariations dependency property. The assignment animates
+            // via the transition attached in the constructor.
+            _propertyBlock.Text = sample;
+            _propertyBlock.FontFamily = new FontFamily(source.FamilyName);
+            _propertyBlock.FontSize = size;
+            _propertyBlock.FontVariations = settings;
+
             RenderLadder(source, sample);
             RenderOverlay(source, clone, sample);
             UpdateCoordinates(source, position);
