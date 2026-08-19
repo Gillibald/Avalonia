@@ -6,6 +6,11 @@
     <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <IncludeAvaloniaGenerators>true</IncludeAvaloniaGenerators>
+
+    <!-- Native AOT publish, opt-in so the flag stays scoped to this project (a global
+         PublishAot fails the netstandard tooling projects in the closure):
+         dotnet publish -c Release -r win-x64 /p:TextLabAot=true -->
+    <PublishAot Condition="'$(TextLabAot)' == 'true'">true</PublishAot>
   </PropertyGroup>
 
   <ItemGroup>
