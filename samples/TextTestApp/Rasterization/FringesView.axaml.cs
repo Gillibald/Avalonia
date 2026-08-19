@@ -76,14 +76,17 @@ namespace TextTestApp
             var size = (float)Math.Clamp(_size, 6, 96);
 
             var figure = PipelineFigures.FringeAnalysis(typeface, sample, size, hinting, zoom,
-                out var fringed, out var warmLeft, out var coolRight, out var wrongPolarity, out var inkPixels);
+                out var fringed, out var warmEdges, out var coolEdges, out var wrongPolarity, out var inkPixels);
 
             var percent = inkPixels == 0 ? 0 : 100.0 * fringed / inkPixels;
 
             var verdict = wrongPolarity == 0 ? "  —  healthy" : "  —  CHECK STRIPE ORDER / BLENDING";
 
+            // Healthy polarity sides mirror when the theme renders light ink on dark.
+            var dark = FigureTheme.Current.IsDark;
+
             _statsText.Text = FormattableString.Invariant(
-                $"{fringed} fringed pixels ({percent:0.0}% of {inkPixels} inked)  |  warm-left {warmLeft}  |  cool-right {coolRight}  |  wrong polarity {wrongPolarity}{verdict}");
+                $"{fringed} fringed pixels ({percent:0.0}% of {inkPixels} inked)  |  warm-{(dark ? "right" : "left")} {warmEdges}  |  cool-{(dark ? "left" : "right")} {coolEdges}  |  wrong polarity {wrongPolarity}{verdict}");
 
             var previous = _resultImage.Source as IDisposable;
 

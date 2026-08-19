@@ -22,11 +22,10 @@ namespace TextTestApp
         /// <summary>Figure labels render invariant — a de-DE machine must not draw "6,5".</summary>
         private static string Inv(FormattableString text) => FormattableString.Invariant(text);
 
-        private static readonly SKColor s_grid = new(0xE6, 0xE6, 0xE6);
-        private static readonly SKColor s_unhinted = new(0xD4, 0x33, 0x22);
-        private static readonly SKColor s_hinted = new(0x22, 0x44, 0xCC);
-        private static readonly SKColor s_zone = new(0x22, 0x99, 0x33);
-        private static readonly SKColor s_stroke = new(0xEE, 0x88, 0x00);
+        /// <summary>Ambient theme override; the doc export pins Light for determinism.</summary>
+        internal static FigureTheme? ThemeOverride;
+
+        private static FigureTheme Theme => ThemeOverride ?? FigureTheme.Current;
 
         /// <summary>
         /// One glyph on the pixel grid: the rasterized mask, the outline before (red) and
@@ -37,6 +36,7 @@ namespace TextTestApp
             TextHintingMode hinting, out string legend, bool embedCaption = true)
         {
             legend = "red unhinted, blue grid-fit, green zones (dashed = source), orange stroke pairs";
+            var t = Theme;
 
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
@@ -83,11 +83,11 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(t.Background);
 
             // Mask cells and the pixel grid.
             using (var cell = new SKPaint())
-            using (var grid = new SKPaint { Color = s_grid, IsStroke = true })
+            using (var grid = new SKPaint { Color = t.Grid, IsStroke = true })
             {
                 for (var y = 0; y < mask.Height; y++)
                 {
@@ -97,7 +97,7 @@ namespace TextTestApp
 
                         if (coverage > 0)
                         {
-                            cell.Color = new SKColor(0x30, 0x30, 0x30, coverage);
+                            cell.Color = t.Ink.WithAlpha(coverage);
                             canvas.DrawRect(marginLeft + x * zoom, marginTop + y * zoom, zoom, zoom, cell);
                         }
                     }
@@ -122,14 +122,14 @@ namespace TextTestApp
             // Zone rows: solid green at the landed row, dashed at the pre-snap source.
             if (gridFit && !zones.IsIdentity)
             {
-                using var zonePaint = new SKPaint { Color = s_zone, IsStroke = true, StrokeWidth = 2 };
+                using var zonePaint = new SKPaint { Color = t.Zone, IsStroke = true, StrokeWidth = 2 };
                 using var sourcePaint = new SKPaint
                 {
-                    Color = s_zone.WithAlpha(0x90), IsStroke = true,
+                    Color = t.Zone.WithAlpha(0x90), IsStroke = true,
                     PathEffect = SKPathEffect.CreateDash(new float[] { 4, 4 }, 0),
                 };
                 using var font = new SKFont(SKTypeface.Default, 12);
-                using var text = new SKPaint { Color = s_zone };
+                using var text = new SKPaint { Color = t.Zone };
 
                 for (var i = 0; i < zones.From.Length; i++)
                 {
@@ -156,9 +156,9 @@ namespace TextTestApp
             // Per-glyph stroke pairs.
             if (strokeKnots > 0)
             {
-                using var strokePaint = new SKPaint { Color = s_stroke, IsStroke = true, StrokeWidth = 2 };
+                using var strokePaint = new SKPaint { Color = t.Stroke, IsStroke = true, StrokeWidth = 2 };
                 using var font = new SKFont(SKTypeface.Default, 12);
-                using var text = new SKPaint { Color = s_stroke };
+                using var text = new SKPaint { Color = t.Stroke };
                 var right = marginLeft + mask.Width * zoom;
 
                 for (var i = 0; i < strokeKnots; i++)
@@ -169,13 +169,13 @@ namespace TextTestApp
                 }
             }
 
-            DrawOutline(canvas, unhinted, DeviceX, DeviceY, s_unhinted);
-            DrawOutline(canvas, hinted, DeviceX, DeviceY, s_hinted);
+            DrawOutline(canvas, unhinted, DeviceX, DeviceY, t.Unhinted);
+            DrawOutline(canvas, hinted, DeviceX, DeviceY, t.Hinted);
 
             if (embedCaption)
             {
                 using var font = new SKFont(SKTypeface.Default, 13);
-                using var text = new SKPaint { Color = SKColors.Black };
+                using var text = new SKPaint { Color = t.Label };
 
                 canvas.DrawText(Inv($"{label} {size:0.#}px  hinting {hinting}  |  {legend}"),
                     6, height - 10, SKTextAlign.Left, font, text);
@@ -197,6 +197,7 @@ namespace TextTestApp
             legend = "red unhinted, blue fitted by the font's program  |  connectors original→current" +
                 Environment.NewLine +
                 "points: green y-touched, orange x-touched, purple both, gray untouched, crosses phantom";
+            var t = Theme;
 
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
@@ -222,10 +223,10 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(t.Background);
 
             using (var cell = new SKPaint())
-            using (var grid = new SKPaint { Color = s_grid, IsStroke = true })
+            using (var grid = new SKPaint { Color = t.Grid, IsStroke = true })
             {
                 for (var y = 0; y < mask.Height; y++)
                 {
@@ -235,7 +236,7 @@ namespace TextTestApp
 
                         if (coverage > 0)
                         {
-                            cell.Color = new SKColor(0x30, 0x30, 0x30, coverage);
+                            cell.Color = t.Ink.WithAlpha(coverage);
                             canvas.DrawRect(marginLeft + x * zoom, marginTop + y * zoom, zoom, zoom, cell);
                         }
                     }
@@ -257,15 +258,15 @@ namespace TextTestApp
             float DeviceX(float x) => marginLeft + (x - mask.Left) * zoom;
             float DeviceY(float y) => marginTop + (y - mask.Top) * zoom;
 
-            DrawOutline(canvas, unhinted, DeviceX, DeviceY, s_unhinted);
-            DrawOutline(canvas, fitted, DeviceX, DeviceY, s_hinted);
+            DrawOutline(canvas, unhinted, DeviceX, DeviceY, t.Unhinted);
+            DrawOutline(canvas, fitted, DeviceX, DeviceY, t.Hinted);
 
             // Per-point displacement: a connector from the scaled original to the current
             // position, colored by which axes the program touched. Phantoms draw as crosses.
             var zone = probe.Zone;
             var (curX, curY, tags) = probe.StateAt(step);
             var outlinePoints = Math.Min(zone.PointCount - 4, curX.Length);
-            var bothTouched = new SKColor(0x88, 0x33, 0xAA);
+            var bothTouched = t.Both;
             var untouched = new SKColor(0x90, 0x90, 0x90);
 
             using (var connector = new SKPaint { IsStroke = true, StrokeWidth = 1.5f, IsAntialias = true })
@@ -281,8 +282,8 @@ namespace TextTestApp
                     var touchX = (tags[i] & Avalonia.Media.Fonts.Rasterization.TrueType.TrueTypeZone.TouchX) != 0;
                     var touchY = (tags[i] & Avalonia.Media.Fonts.Rasterization.TrueType.TrueTypeZone.TouchY) != 0;
                     var color = touchX && touchY ? bothTouched :
-                        touchY ? s_zone :
-                        touchX ? s_stroke : untouched;
+                        touchY ? t.Zone :
+                        touchX ? t.Stroke : untouched;
 
                     if (Math.Abs(toX - fromX) + Math.Abs(toY - fromY) > 1.5f)
                     {
@@ -303,7 +304,7 @@ namespace TextTestApp
 
                     using var ring = new SKPaint
                     {
-                        Color = new SKColor(0xE0, 0x30, 0x30), IsStroke = true, StrokeWidth = 2, IsAntialias = true,
+                        Color = t.Ring, IsStroke = true, StrokeWidth = 2, IsAntialias = true,
                     };
 
                     for (var i = 0; i < outlinePoints && i < prevX.Length; i++)
@@ -318,7 +319,7 @@ namespace TextTestApp
                 // Phantom points: origin, advance, top, bottom.
                 using var cross = new SKPaint
                 {
-                    Color = new SKColor(0x30, 0x30, 0x30), IsStroke = true, StrokeWidth = 1.5f, IsAntialias = true,
+                    Color = t.Ink, IsStroke = true, StrokeWidth = 1.5f, IsAntialias = true,
                 };
 
                 for (var i = Math.Max(outlinePoints, 0); i < zone.PointCount && i < curX.Length; i++)
@@ -334,7 +335,7 @@ namespace TextTestApp
             if (embedCaption)
             {
                 using var font = new SKFont(SKTypeface.Default, 13);
-                using var text = new SKPaint { Color = SKColors.Black };
+                using var text = new SKPaint { Color = t.Label };
                 var engine = probe.FullInterpretation ? "full interpretation" : "v40 class (y only)";
 
                 canvas.DrawText(
@@ -359,6 +360,7 @@ namespace TextTestApp
             out string keyInfo, bool embedInfo = true)
         {
             // Compact enough for a quadrant; the run redraws at 3x instead of 4x.
+            var t = Theme;
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
@@ -389,7 +391,7 @@ namespace TextTestApp
                     new GlyphMaskKey(g, scaleQ, 0, GlyphMaskMode.Antialiased));
 
                 RunMaskComposer.ComposeTinted(glyphMask, (int)Math.Round(penX), baseline,
-                    RunMaskComposer.MakeTint(255, 0, 0, 0), run, runWidth, runHeight);
+                    RunMaskComposer.MakeTint(255, t.Ink.Red, t.Ink.Green, t.Ink.Blue), run, runWidth, runHeight);
 
                 typeface.TryGetGlyphMetrics(g, out var metrics);
                 penX += metrics.AdvanceWidth * scale;
@@ -444,14 +446,14 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(t.Background);
 
             // Focus mask with apron.
             using (var cell = new SKPaint())
-            using (var grid = new SKPaint { Color = s_grid, IsStroke = true })
+            using (var grid = new SKPaint { Color = t.Grid, IsStroke = true })
             using (var apron = new SKPaint
                    {
-                       Color = s_stroke, IsStroke = true, StrokeWidth = 2,
+                       Color = t.Stroke, IsStroke = true, StrokeWidth = 2,
                        PathEffect = SKPathEffect.CreateDash(new float[] { 5, 3 }, 0),
                    })
             {
@@ -463,7 +465,7 @@ namespace TextTestApp
 
                         if (coverage > 0)
                         {
-                            cell.Color = new SKColor(0x30, 0x30, 0x30, coverage);
+                            cell.Color = t.Ink.WithAlpha(coverage);
                             canvas.DrawRect(10 + x * zoom, 28 + y * zoom, zoom, zoom, cell);
                         }
                     }
@@ -475,7 +477,7 @@ namespace TextTestApp
             }
 
             using (var font = new SKFont(SKTypeface.Default, 13))
-            using (var text = new SKPaint { Color = SKColors.Black })
+            using (var text = new SKPaint { Color = t.Label })
             {
                 canvas.DrawText($"{label} mask, dashed = {GlyphMasks.Apron}px apron", 10, 18, SKTextAlign.Left, font, text);
 
@@ -498,7 +500,7 @@ namespace TextTestApp
             using (var image = SKImage.FromPixelCopy(
                        new SKImageInfo(runWidth, runHeight, SKColorType.Bgra8888, SKAlphaType.Premul), run))
             using (var font = new SKFont(SKTypeface.Default, 13))
-            using (var text = new SKPaint { Color = SKColors.Black })
+            using (var text = new SKPaint { Color = t.Label })
             {
                 canvas.DrawText(Inv($"run mask composed from per-glyph masks at integer pens (\"{runText}\" {size:0.#}px), 1x and 4x:"),
                     10, runTop - 8, SKTextAlign.Left, font, text);
@@ -512,8 +514,8 @@ namespace TextTestApp
             // glyph at this size, straight from Build, with its cached bounds.
             using (var font = new SKFont(SKTypeface.Default, 13))
             using (var small = new SKFont(SKTypeface.Default, 11))
-            using (var text = new SKPaint { Color = SKColors.Black })
-            using (var faint = new SKPaint { Color = new SKColor(0x60, 0x60, 0x60) })
+            using (var text = new SKPaint { Color = t.Label })
+            using (var faint = new SKPaint { Color = t.Faint })
             using (var cell = new SKPaint())
             {
                 canvas.DrawText($"every mask variant at this size ({variantZoom}x):", 10, variantTop - 6,
@@ -557,7 +559,7 @@ namespace TextTestApp
                                         continue;
                                     }
 
-                                    cell.Color = new SKColor((byte)(255 - r), (byte)(255 - g), (byte)(255 - b));
+                                    cell.Color = t.Blend(r, g, b);
                                 }
                                 else
                                 {
@@ -568,7 +570,7 @@ namespace TextTestApp
                                         continue;
                                     }
 
-                                    cell.Color = new SKColor(0x20, 0x20, 0x20, coverage);
+                                    cell.Color = t.Ink.WithAlpha(coverage);
                                 }
 
                                 canvas.DrawRect(cellX + x * variantZoom, rowTop + y * variantZoom,
@@ -595,6 +597,7 @@ namespace TextTestApp
             bool bgr, bool gamma, TextHintingMode hinting, out string legend, bool embedCaption = true)
         {
             legend = "3x raster → (1,2,3,2,1)/9 FIR per stripe → interleaved RGB mask → per-channel blend";
+            var t = Theme;
 
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
@@ -651,11 +654,11 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(t.Background);
 
             using var cell = new SKPaint();
             using var font = new SKFont(SKTypeface.Default, 13);
-            using var text = new SKPaint { Color = SKColors.Black };
+            using var text = new SKPaint { Color = t.Label };
 
             // Panel 1: raw 3x coverage.
             for (var y = 0; y < mask.Height; y++)
@@ -666,7 +669,7 @@ namespace TextTestApp
 
                     if (coverage > 0)
                     {
-                        cell.Color = new SKColor(0x30, 0x30, 0x30, coverage);
+                        cell.Color = t.Ink.WithAlpha(coverage);
                         canvas.DrawRect(10 + x * (zoom / 3f), 28 + y * zoom, zoom / 3f, zoom, cell);
                     }
                 }
@@ -699,8 +702,9 @@ namespace TextTestApp
                 canvas.DrawText($"{channelNames[channel]} (5-tap FIR)", panelX, 18, SKTextAlign.Left, font, text);
             }
 
-            // Panel 5: composite black-on-white, per channel: 255 - g(coverage).
-            var table = gamma ? MaskGamma.GetLcdTable(0, 0, 0) : null;
+            // Panel 5: composite ink-on-background per channel; the gamma table is picked
+            // for the ink color, exactly as the blender buckets by text color.
+            var table = gamma ? MaskGamma.GetLcdTable(t.Ink.Red, t.Ink.Green, t.Ink.Blue) : null;
             var compositeX = 10 + raw3Width + gap + (panelWidth + gap) * 3;
 
             for (var y = 0; y < mask.Height; y++)
@@ -720,7 +724,7 @@ namespace TextTestApp
 
                     if (r > 0 || g > 0 || b > 0)
                     {
-                        cell.Color = new SKColor((byte)(255 - r), (byte)(255 - g), (byte)(255 - b));
+                        cell.Color = t.Blend(r, g, b);
                         canvas.DrawRect(compositeX + x * zoom, 28 + y * zoom, zoom, zoom, cell);
                     }
                 }
@@ -745,6 +749,7 @@ namespace TextTestApp
         public static SKBitmap SlugBands(GlyphTypeface typeface, ushort glyph, string label,
             out string info, bool embedCaption = true)
         {
+            var t = Theme;
             var sink = new SlugContourSink();
 
             sink.Reset();
@@ -759,9 +764,9 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
             using var font = new SKFont(SKTypeface.Default, 13);
-            using var text = new SKPaint { Color = SKColors.Black };
+            using var text = new SKPaint { Color = t.Label };
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(t.Background);
 
             if (data is null)
             {
@@ -778,8 +783,8 @@ namespace TextTestApp
             float MapX(float x) => left + (x - data.MinX) * s;
             float MapY(float y) => top + (data.MaxY - y) * s;   // em space is y-up
 
-            using (var bandPaint = new SKPaint { Color = s_zone.WithAlpha(0x60), IsStroke = true })
-            using (var bandText = new SKPaint { Color = s_zone })
+            using (var bandPaint = new SKPaint { Color = t.Zone.WithAlpha(0x60), IsStroke = true })
+            using (var bandText = new SKPaint { Color = t.Zone })
             using (var small = new SKFont(SKTypeface.Default, 11))
             {
                 for (var i = 0; i <= data.HorizontalBandCount; i++)
@@ -815,7 +820,7 @@ namespace TextTestApp
 
             using (var curvePaint = new SKPaint
                    {
-                       Color = new SKColor(0x20, 0x20, 0x20), IsStroke = true, StrokeWidth = 2, IsAntialias = true,
+                       Color = t.Ink, IsStroke = true, StrokeWidth = 2, IsAntialias = true,
                    })
             using (var path = new SKPath())
             {
@@ -902,6 +907,8 @@ namespace TextTestApp
         public static SKBitmap WaterfallMatrix(GlyphTypeface typeface, string text,
             TextRenderingMode rendering)
         {
+            var t = Theme;
+            var inkBrush = new SolidColorBrush(Color.FromRgb(t.Ink.Red, t.Ink.Green, t.Ink.Blue));
             float[] sizes = { 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24 };
 
             // Unspecified sits last: the explicit ladder first, then the policy column showing
@@ -942,7 +949,7 @@ namespace TextTestApp
 
             using var surface = SKSurface.Create(info, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
 
-            surface.Canvas.Clear(SKColors.White);
+            surface.Canvas.Clear(t.Background);
 
             using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
                    {
@@ -968,7 +975,7 @@ namespace TextTestApp
                         using var run = CreateRun(typeface, text, sizes[row],
                             new Point(labelWidth + columnWidth * column + 8.3, y + sizes[row] * 1.15));
 
-                        context.DrawGlyphRun(Brushes.Black, run);
+                        context.DrawGlyphRun(inkBrush, run);
                         y += rowHeights[row];
                     }
 
@@ -977,7 +984,7 @@ namespace TextTestApp
             }
 
             using (var font = new SKFont(SKTypeface.Default, 12))
-            using (var label = new SKPaint { Color = new SKColor(0x60, 0x60, 0x60) })
+            using (var label = new SKPaint { Color = t.Faint })
             {
                 for (var column = 0; column < hintings.Length; column++)
                 {
@@ -1009,15 +1016,19 @@ namespace TextTestApp
 
         /// <summary>
         /// Renders the sample subpixel on an RGB-striped surface and classifies every fringed
-        /// pixel (|R-B| beyond a threshold) by polarity: warm on a left edge and cool on a
-        /// right edge is physically correct for RGB stripes; anything else is flagged. The
-        /// returned strip stacks the rendering over the classification map, and the counters
-        /// come back for the caller's stats line.
+        /// pixel (|R-B| beyond a threshold) by polarity: for dark ink on a light ground, warm
+        /// on a left edge and cool on a right edge is physically correct for RGB stripes;
+        /// light ink on a dark ground mirrors the sides (the first lit subpixels at a stem's
+        /// left edge are the pixel's blue end). Anything else is flagged. The returned strip
+        /// stacks the rendering over the classification map, and the counters come back for
+        /// the caller's stats line.
         /// </summary>
         public static SKBitmap FringeAnalysis(GlyphTypeface typeface, string text, float size,
             TextHintingMode hinting, int zoom,
-            out int fringed, out int warmLeft, out int coolRight, out int wrongPolarity, out int inkPixels)
+            out int fringed, out int warmEdges, out int coolEdges, out int wrongPolarity, out int inkPixels)
         {
+            var t = Theme;
+            var inkBrush = new SolidColorBrush(Color.FromRgb(t.Ink.Red, t.Ink.Green, t.Ink.Blue));
             var scale = size / typeface.Metrics.DesignEmHeight;
             var advance = 0f;
 
@@ -1036,7 +1047,7 @@ namespace TextTestApp
 
             using var surface = SKSurface.Create(info, new SKSurfaceProperties(SKPixelGeometry.RgbHorizontal));
 
-            surface.Canvas.Clear(SKColors.White);
+            surface.Canvas.Clear(t.Background);
 
             using (var context = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
                    {
@@ -1054,7 +1065,7 @@ namespace TextTestApp
 
                 using var run = CreateRun(typeface, text, size, new Point(10.3, size * 1.25));
 
-                context.DrawGlyphRun(Brushes.Black, run);
+                context.DrawGlyphRun(inkBrush, run);
                 context.PopTextOptions();
             }
 
@@ -1064,8 +1075,8 @@ namespace TextTestApp
             snapshot.ReadPixels(info, render.GetPixels(), render.RowBytes, 0, 0);
 
             fringed = 0;
-            warmLeft = 0;
-            coolRight = 0;
+            warmEdges = 0;
+            coolEdges = 0;
             wrongPolarity = 0;
             inkPixels = 0;
 
@@ -1073,42 +1084,52 @@ namespace TextTestApp
 
             static int Luma(SKColor c) => 54 * c.Red + 183 * c.Green + 19 * c.Blue;
 
+            var bgLuma = Luma(t.Background);
+            var darkInk = !t.IsDark;
+
+            bool IsInk(SKColor c) => darkInk ? Luma(c) < 240 * 256 : Luma(c) > bgLuma + 15 * 256;
+            bool Inkier(SKColor a, SKColor b) => darkInk ? Luma(a) < Luma(b) : Luma(a) > Luma(b);
+
             for (var y = 0; y < height; y++)
             {
                 for (var x = 0; x < width; x++)
                 {
                     var pixel = render.GetPixel(x, y);
 
-                    if (Luma(pixel) < 240 * 256)
+                    if (IsInk(pixel))
                     {
                         inkPixels++;
                     }
 
                     if (x == 0 || x == width - 1 || Math.Abs(pixel.Red - pixel.Blue) <= 8)
                     {
-                        map.SetPixel(x, y, SKColors.White);
+                        map.SetPixel(x, y, t.Background);
                         continue;
                     }
 
                     fringed++;
 
-                    var leftInk = Luma(render.GetPixel(x - 1, y)) < Luma(pixel);
-                    var rightInk = Luma(render.GetPixel(x + 1, y)) < Luma(pixel);
+                    var leftInk = Inkier(render.GetPixel(x - 1, y), pixel);
+                    var rightInk = Inkier(render.GetPixel(x + 1, y), pixel);
+                    var onLeftEdge = rightInk && !leftInk;    // the stem continues rightward
+                    var onRightEdge = leftInk && !rightInk;
+                    var warmHealthy = darkInk ? onLeftEdge : onRightEdge;
+                    var coolHealthy = darkInk ? onRightEdge : onLeftEdge;
 
-                    if (pixel.Red > pixel.Blue && rightInk && !leftInk)
+                    if (pixel.Red > pixel.Blue && warmHealthy)
                     {
-                        warmLeft++;
+                        warmEdges++;
                         map.SetPixel(x, y, new SKColor(0xE0, 0x50, 0x30));
                     }
-                    else if (pixel.Blue > pixel.Red && leftInk && !rightInk)
+                    else if (pixel.Blue > pixel.Red && coolHealthy)
                     {
-                        coolRight++;
+                        coolEdges++;
                         map.SetPixel(x, y, new SKColor(0x30, 0x60, 0xE0));
                     }
-                    else if ((pixel.Red > pixel.Blue && leftInk && !rightInk) ||
-                             (pixel.Blue > pixel.Red && rightInk && !leftInk))
+                    else if ((pixel.Red > pixel.Blue && coolHealthy) ||
+                             (pixel.Blue > pixel.Red && warmHealthy))
                     {
-                        // Warm on a right edge or cool on a left edge — swapped stripe order
+                        // Warm where cool belongs or the reverse — swapped stripe order
                         // or a double-blend; this is the defect signal.
                         wrongPolarity++;
                         map.SetPixel(x, y, new SKColor(0xE0, 0x00, 0xE0));
@@ -1127,11 +1148,13 @@ namespace TextTestApp
 
             using (var canvas = new SKCanvas(composed))
             using (var font = new SKFont(SKTypeface.Default, 12))
-            using (var label = new SKPaint { Color = SKColors.Black })
+            using (var label = new SKPaint { Color = t.Label })
             {
-                canvas.Clear(SKColors.White);
+                canvas.Clear(t.Background);
                 canvas.DrawText(Inv($"rendered output ({zoom}x)"), 0, 14, SKTextAlign.Left, font, label);
-                canvas.DrawText("fringe map: red = warm left edge, blue = cool right edge, magenta = WRONG polarity, amber = interior",
+                canvas.DrawText(darkInk
+                        ? "fringe map: red = warm left edge, blue = cool right edge, magenta = WRONG polarity, amber = interior"
+                        : "fringe map: red = warm right edge, blue = cool left edge, magenta = WRONG polarity, amber = interior",
                     0, height * zoom + 34, SKTextAlign.Left, font, label);
 
                 using var renderImage = SKImage.FromBitmap(render);
@@ -1176,13 +1199,24 @@ namespace TextTestApp
         {
             Directory.CreateDirectory(directory);
 
-            Save(HintingAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", 12, TextHintingMode.Light, out _),
-                Path.Combine(directory, "hinting-anatomy.png"));
-            Save(MaskAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", "Hamburg", 13, out _),
-                Path.Combine(directory, "mask-anatomy.png"));
-            Save(ClearTypePipeline(typeface, typeface.CharacterToGlyphMap['e'], "'e'", 13, bgr: false, gamma: true,
-                TextHintingMode.Light, out _), Path.Combine(directory, "cleartype-pipeline.png"));
-            Save(SlugBands(typeface, typeface.CharacterToGlyphMap['g'], "'g'", out _), Path.Combine(directory, "slug-bands.png"));
+            // Doc figures embed into fixed documentation: pin the light palette so exports
+            // stay deterministic whatever theme the app happens to run in.
+            ThemeOverride = FigureTheme.Light;
+
+            try
+            {
+                Save(HintingAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", 12, TextHintingMode.Light, out _),
+                    Path.Combine(directory, "hinting-anatomy.png"));
+                Save(MaskAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", "Hamburg", 13, out _),
+                    Path.Combine(directory, "mask-anatomy.png"));
+                Save(ClearTypePipeline(typeface, typeface.CharacterToGlyphMap['e'], "'e'", 13, bgr: false, gamma: true,
+                    TextHintingMode.Light, out _), Path.Combine(directory, "cleartype-pipeline.png"));
+                Save(SlugBands(typeface, typeface.CharacterToGlyphMap['g'], "'g'", out _), Path.Combine(directory, "slug-bands.png"));
+            }
+            finally
+            {
+                ThemeOverride = null;
+            }
         }
 
         private static void Save(SKBitmap bitmap, string path)

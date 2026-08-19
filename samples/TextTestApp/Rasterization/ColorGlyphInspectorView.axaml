@@ -7,9 +7,9 @@
         <Button x:Name="BackButton" Content="&#x2190; Back" ToolTip.Tip="Back to the color glyphs (Esc)" />
         <TextBlock x:Name="TitleText" VerticalAlignment="Center" FontWeight="SemiBold" />
         <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" Margin="12,0,0,0" />
-        <ComboBox x:Name="SizeBox" Width="80" />
+        <ComboBox x:Name="SizeBox" Width="80" AutomationProperties.Name="Inspection size" />
         <TextBlock x:Name="PaletteLabel" Text="Palette" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="PaletteBox" Width="110" />
+        <ComboBox x:Name="PaletteBox" Width="110" AutomationProperties.Name="Palette" />
         <Button x:Name="CopyButton" Content="Copy report" FontSize="12"
                 ToolTip.Tip="Copy the glyph kind, structure dump and altitude diff stats as text." />
       </StackPanel>

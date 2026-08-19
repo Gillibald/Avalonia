@@ -9,16 +9,23 @@
            that says which of them the active view honors. -->
       <DockPanel DockPanel.Dock="Top" Margin="5">
         <Button DockPanel.Dock="Right" VerticalAlignment="Center" Click="OnNewWindowClick"
+                AutomationProperties.Name="New window"
                 ToolTip.Tip="Open another window for side-by-side comparisons" Margin="5,0,0,0">+</Button>
+        <ToggleSwitch DockPanel.Dock="Right" Name="_themeToggle" OnContent="Dark" OffContent="Light"
+                      VerticalAlignment="Center" Margin="10,0,0,0" AutomationProperties.Name="Theme"
+                      ToolTip.Tip="App theme. Figures re-render with a matching palette; the A/B diff keeps rendering black on white so saved references stay comparable." />
         <ComboBox DockPanel.Dock="Right" Name="_rasterBox" Width="110" VerticalAlignment="Center"
+                  AutomationProperties.Name="Rasterization mode"
                   ToolTip.Tip="App-wide TextRasterizationMode: Managed is Avalonia's own rasterizer, Backend is the render backend's text stack (SKTextBlob on Skia)." />
         <Label DockPanel.Dock="Right" Content="_Raster:" Target="{Binding ElementName=_rasterBox}"
                VerticalAlignment="Center" Margin="10,0,0,0" />
-        <TextBox DockPanel.Dock="Right" Name="_size" VerticalAlignment="Center" Text="64" MinWidth="50" />
+        <TextBox DockPanel.Dock="Right" Name="_size" VerticalAlignment="Center" Text="64" MinWidth="50"
+                 AutomationProperties.Name="Font size" />
         <Label DockPanel.Dock="Right" Content="_Size:" Target="{Binding ElementName=_size}"
                VerticalAlignment="Center" Margin="5,0,0,0" />
         <Label Content="_Font:" Target="{Binding ElementName=_font}" VerticalAlignment="Center" />
         <AutoCompleteBox Name="_font" Width="380" HorizontalAlignment="Left" VerticalAlignment="Center"
+                         AutomationProperties.Name="Font family"
                          PlaceholderText="type to search fonts" FilterMode="Contains" MinimumPrefixLength="0"
                          MaxDropDownHeight="480"
                          ItemsSource="{Binding SystemFonts, Source={x:Static FontManager.Current}}"
@@ -30,7 +37,7 @@
       <!-- Sidebar navigation: sections mirror the audit IA; more sections arrive with
            their views (Showcase, Font info, Variable fonts, Learn). -->
       <Border DockPanel.Dock="Left" BorderBrush="#30808080" BorderThickness="0,1,1,0" Background="#08808080">
-        <ListBox Name="_nav" Width="150" Background="Transparent">
+        <ListBox Name="_nav" Width="150" Background="Transparent" AutomationProperties.Name="Views">
           <ListBox.Styles>
             <Style Selector="ListBoxItem">
               <Setter Property="Padding" Value="12,7" />
@@ -69,27 +76,29 @@
           <DockPanel DockPanel.Dock="Top" Margin="5">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
               <Label Content="Fea_tures:" Target="{Binding ElementName=_features}" VerticalAlignment="Center" Margin="5,0,0,0" />
-              <TextBox Name="_features" VerticalAlignment="Center" Text="calt clig kern liga" />
+              <TextBox Name="_features" VerticalAlignment="Center" Text="calt clig kern liga"
+                       AutomationProperties.Name="OpenType features" />
             </StackPanel>
             <Label Content="_Text:" Target="{Binding ElementName=_text}" VerticalAlignment="Center" />
-            <TextBox Name="_text" Text="Hello!" VerticalAlignment="Center" />
+            <TextBox Name="_text" Text="Hello!" VerticalAlignment="Center"
+                     AutomationProperties.Name="Sample text" />
           </DockPanel>
 
-          <Border DockPanel.Dock="Bottom" Background="WhiteSmoke" BorderThickness="0,1,0,0" BorderBrush="Silver" Padding="2">
+          <Border DockPanel.Dock="Bottom" Background="#10808080" BorderThickness="0,1,0,0" BorderBrush="#40808080" Padding="2">
             <DockPanel>
               <ToggleSwitch Name="_hitRangeToggle" DockPanel.Dock="Right" OnContent="Range" OffContent="Position"
-                            IsCheckedChanged="OnHitTestMethodChanged"
+                            IsCheckedChanged="OnHitTestMethodChanged" AutomationProperties.Name="Hit test method"
                             ToolTip.Tip="Method behind the readout and row selection: on = TextLayout.HitTestTextRange over the selected rows, off = TextLayout.HitTestTextPosition for a single index." />
               <TextBlock DockPanel.Dock="Right" Text="Hit test:" VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.8" />
               <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <TextBlock Text="Pointer:" Margin="5,0"
                            ToolTip.Tip="Pointer position over the line in layout coordinates - the input to TextLayout.HitTestPoint." />
                 <TextBlock Name="_coordinates" MinWidth="120" />
-                <Border Width="5" BorderThickness="1,0,0,0" BorderBrush="Silver" UseLayoutRounding="True" Margin="5,0,0,0" />
+                <Border Width="5" BorderThickness="1,0,0,0" BorderBrush="#40808080" UseLayoutRounding="True" Margin="5,0,0,0" />
                 <TextBlock Text="Text position:" Margin="5,0"
                            ToolTip.Tip="TextHitTestResult of HitTestPoint: text position, then character hit as index+trailing; T marks a trailing-edge hit." />
                 <TextBlock Name="_hit" MinWidth="60" />
-                <Border Width="5" BorderThickness="1,0,0,0" BorderBrush="Silver" UseLayoutRounding="True" Margin="5,0,0,0" />
+                <Border Width="5" BorderThickness="1,0,0,0" BorderBrush="#40808080" UseLayoutRounding="True" Margin="5,0,0,0" />
               </StackPanel>
             </DockPanel>
           </Border>
@@ -116,16 +125,16 @@
 
             <GridSplitter Grid.Row="1" />
 
-            <TabControl Name="_tabs" Grid.Row="2" Background="White" BorderBrush="Whitesmoke" BorderThickness="0,1,0,0">
+            <TabControl Name="_tabs" Grid.Row="2" Background="Transparent" BorderBrush="#30808080" BorderThickness="0,1,0,0">
               <TabItem Header="Shaped Buffer">
                 <ListBox Name="_buffer" Grid.IsSharedSizeScope="True" ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectionMode="Multiple" SelectionChanged="OnBufferSelectionChanged" Background="Transparent">
                   <ListBox.Styles>
                     <Style Selector="ListBoxItem">
                       <Setter Property="Padding" Value="0"/>
-                      <Setter Property="Background" Value="White" />
+                      <Setter Property="Background" Value="Transparent" />
                     </Style>
                   </ListBox.Styles>
-                  <Border Background="WhiteSmoke" BorderBrush="Silver" BorderThickness="0,1">
+                  <Border Background="#18808080" BorderBrush="#40808080" BorderThickness="0,1">
                     <local:GridRow ColumnSpacing="10">
                       <TextBlock Text="" />
                       <TextBlock Text="Index" />
@@ -145,10 +154,10 @@
                   <ListBox.Styles>
                     <Style Selector="ListBoxItem">
                       <Setter Property="Padding" Value="0"/>
-                      <Setter Property="Background" Value="White" />
+                      <Setter Property="Background" Value="Transparent" />
                     </Style>
                   </ListBox.Styles>
-                  <Border Background="WhiteSmoke" BorderBrush="Silver" BorderThickness="0,1">
+                  <Border Background="#18808080" BorderBrush="#40808080" BorderThickness="0,1">
                     <local:GridRow ColumnSpacing="10">
                       <TextBlock Text="" />
                       <TextBlock Text="Backspace Hit" />

@@ -167,7 +167,7 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(FigureTheme.Current.Background);
 
             using var impl = Avalonia.Skia.Helpers.DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
             using var context = new PlatformDrawingContext(impl, ownsImpl: false);
@@ -194,7 +194,7 @@ namespace TextTestApp
 
             using var canvas = new SKCanvas(bitmap);
 
-            canvas.Clear(SKColors.White);
+            canvas.Clear(FigureTheme.Current.Background);
 
             using var impl = new Avalonia.Skia.DrawingContextImpl(new Avalonia.Skia.DrawingContextImpl.CreateInfo
             {
@@ -235,7 +235,7 @@ namespace TextTestApp
                     maxDelta = Math.Max(maxDelta, delta);
 
                     var color = delta == 0
-                        ? SKColors.White
+                        ? FigureTheme.Current.Background
                         : delta <= 32
                             ? new SKColor(0xFF, 0xDC, 0x78)
                             : new SKColor(0xDC, 0x00, 0x00);
@@ -413,11 +413,11 @@ namespace TextTestApp
 
             using (var canvas = new SKCanvas(bitmap))
             using (var paint = new SKPaint())
-            using (var grid = new SKPaint { Color = new SKColor(0xE6, 0xE6, 0xE6), IsStroke = true })
+            using (var grid = new SKPaint { Color = FigureTheme.Current.Grid, IsStroke = true })
             using (var label = new SKPaint { Color = new SKColor(0x90, 0x90, 0x90) })
             using (var labelFont = new SKFont(SKTypeface.Default, 9))
             {
-                canvas.Clear(SKColors.White);
+                canvas.Clear(FigureTheme.Current.Background);
 
                 for (var step = 0; step < steps; step++)
                 {
@@ -475,12 +475,16 @@ namespace TextTestApp
             _structureText.Text = $"{layers.Length} layers, palette {PaletteIndex}";
         }
 
+        /// <summary>Repaints all quadrants - the host calls this on theme changes, which
+        /// figure bitmaps cannot follow by themselves.</summary>
+        public void Repaint() => RenderAll();
+
         private static SKBitmap NewCanvasBitmap(int width, int height)
         {
             var bitmap = new SKBitmap(new SKImageInfo(Math.Max(1, width), Math.Max(1, height),
                 SKColorType.Bgra8888, SKAlphaType.Premul));
 
-            bitmap.Erase(SKColors.White);
+            bitmap.Erase(FigureTheme.Current.Background);
 
             return bitmap;
         }
