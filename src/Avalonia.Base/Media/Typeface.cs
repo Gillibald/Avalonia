@@ -18,16 +18,22 @@ namespace Avalonia.Media
         /// <param name="style">The font style.</param>
         /// <param name="weight">The font weight.</param>
         /// <param name="stretch">The font stretch.</param>
+        /// <param name="fontVariations">
+        /// Optional variable-font axis values in user space (e.g. <c>wght = 700</c>),
+        /// applied when the resolved font is a variable font. <c>null</c> and
+        /// <see cref="FontVariationSettings.Empty"/> both mean the design defaults.
+        /// </param>
         public Typeface(FontFamily fontFamily,
             FontStyle style = FontStyle.Normal,
             FontWeight weight = FontWeight.Normal,
-            FontStretch stretch = FontStretch.Normal)
+            FontStretch stretch = FontStretch.Normal,
+            FontVariationSettings? fontVariations = null)
         {
             if (weight <= 0)
             {
                 throw new ArgumentException("Font weight must be > 0.");
             }
-            
+
             if ((int)stretch < 1)
             {
                 throw new ArgumentException("Font stretch must be > 1.");
@@ -37,6 +43,10 @@ namespace Avalonia.Media
             Style = style;
             Weight = weight;
             Stretch = stretch;
+
+            // Empty and null both mean "design defaults"; store the canonical form so
+            // equality, hashing and cache keys never distinguish the two spellings.
+            FontVariations = fontVariations is { IsEmpty: true } ? null : fontVariations;
         }
 
         /// <summary>
@@ -46,12 +56,18 @@ namespace Avalonia.Media
         /// <param name="style">The font style.</param>
         /// <param name="weight">The font weight.</param>
         /// <param name="stretch">The font stretch.</param>
+        /// <param name="fontVariations">
+        /// Optional variable-font axis values in user space (e.g. <c>wght = 700</c>),
+        /// applied when the resolved font is a variable font. <c>null</c> and
+        /// <see cref="FontVariationSettings.Empty"/> both mean the design defaults.
+        /// </param>
         public Typeface(string fontFamilyName,
             FontStyle style = FontStyle.Normal,
             FontWeight weight = FontWeight.Normal,
-            FontStretch stretch = FontStretch.Normal)
+            FontStretch stretch = FontStretch.Normal,
+            FontVariationSettings? fontVariations = null)
             : this(string.IsNullOrEmpty(fontFamilyName) ? FontFamily.Default : new FontFamily(fontFamilyName),
-                  style, weight, stretch)
+                  style, weight, stretch, fontVariations)
         {
         }
 
@@ -78,6 +94,14 @@ namespace Avalonia.Media
         public FontStretch Stretch { get; }
 
         /// <summary>
+        /// Gets the variable-font axis values in user space, or <c>null</c> when the
+        /// typeface uses the font's design defaults. Never
+        /// <see cref="FontVariationSettings.Empty"/> — empty settings are normalized to
+        /// <c>null</c> at construction.
+        /// </summary>
+        public FontVariationSettings? FontVariations { get; }
+
+        /// <summary>
         /// Gets the glyph typeface.
         /// </summary>
         /// <value>
@@ -93,7 +117,7 @@ namespace Avalonia.Media
                 }
 
                 throw new InvalidOperationException(
-                    $"Could not create glyphTypeface. Font family: {FontFamily?.Name} (key: {FontFamily?.Key}). Style: {Style}. Weight: {Weight}. Stretch: {Stretch}");
+                    $"Could not create glyphTypeface. Font family: {FontFamily?.Name} (key: {FontFamily?.Key}). Style: {Style}. Weight: {Weight}. Stretch: {Stretch}. Variations: {FontVariations?.ToString() ?? "none"}");
             }
         }
 
@@ -114,8 +138,11 @@ namespace Avalonia.Media
 
         public bool Equals(Typeface other)
         {
-            return FontFamily == other.FontFamily && Style == other.Style && 
-                   Weight == other.Weight && Stretch == other.Stretch;
+            // FontVariations is stored canonically (Empty coerced to null), so the
+            // reference-null fast path plus structural equality covers all cases.
+            return FontFamily == other.FontFamily && Style == other.Style &&
+                   Weight == other.Weight && Stretch == other.Stretch &&
+                   Equals(FontVariations, other.FontVariations);
         }
 
         public override int GetHashCode()
@@ -126,6 +153,7 @@ namespace Avalonia.Media
                 hashCode = (hashCode * 397) ^ (int)Style;
                 hashCode = (hashCode * 397) ^ (int)Weight;
                 hashCode = (hashCode * 397) ^ (int)Stretch;
+                hashCode = (hashCode * 397) ^ (FontVariations?.GetHashCode() ?? 0);
                 return hashCode;
             }
         }
@@ -203,7 +231,7 @@ namespace Avalonia.Media
             normalizedFamilyName = (normalizedFamilyNameBuilder?.ToString() ?? normalizedFamilyName).TrimEnd();
 
             //Preserve old font source
-            return new Typeface(FontFamily, style, weight, stretch);
+            return new Typeface(FontFamily, style, weight, stretch, FontVariations);
         }
     }
 }
