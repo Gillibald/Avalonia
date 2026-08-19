@@ -1230,7 +1230,7 @@ namespace TextTestApp
             }
         }
 
-        private static void DrawOutline(SKCanvas canvas, GlyphPathBuilder contours,
+        internal static void DrawOutline(SKCanvas canvas, GlyphPathBuilder contours,
             Func<float, float> mapX, Func<float, float> mapY, SKColor color)
         {
             using var paint = new SKPaint { Color = color, IsStroke = true, StrokeWidth = 2, IsAntialias = true };

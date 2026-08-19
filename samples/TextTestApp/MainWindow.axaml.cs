@@ -69,13 +69,8 @@ namespace TextTestApp
             };
             _raster.BackRequested += () => ShowInspector(false);
             _colorInspector.BackRequested += () => ShowInspector(false);
-            _explorer.FontRequested += name =>
-            {
-                if (FindSystemFont(name) is { } family)
-                {
-                    _font.SelectedItem = family;
-                }
-            };
+            _explorer.FontRequested += SelectFontByName;
+            _variable.FontRequested += SelectFontByName;
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -141,6 +136,7 @@ namespace TextTestApp
             }
 
             _glyphsHost.IsVisible = item == NavGlyphs;
+            _variable.IsVisible = item == NavVariable;
             _waterfall.IsVisible = item == NavWaterfall;
             _fringes.IsVisible = item == NavFringes;
             _abDiff.IsVisible = item == NavAbDiff;
@@ -149,6 +145,7 @@ namespace TextTestApp
             // The scope capsule answers "which of the global inputs does this view use".
             _scopeText.Text =
                 item == NavGlyphs ? "uses: font. Cells render managed masks and color drawings; click a cell to inspect." :
+                item == NavVariable ? "uses: font, size. Renders WithVariation clones through the managed pipeline." :
                 item == NavWaterfall ? "uses: font. Fixed 8-24 px ladder through the managed pipeline." :
                 item == NavFringes ? "uses: font, size. Managed subpixel output." :
                 item == NavAbDiff ? "uses: font, size. Each side sets its own mode, hinting and rendering." :
@@ -185,6 +182,7 @@ namespace TextTestApp
             PushFontContext();
             _explorer.Repaint();
             _colorInspector.Repaint();
+            _variable.Repaint();
         }
 
         private void ShowInspector(bool visible)
@@ -217,6 +215,14 @@ namespace TextTestApp
             => FontManager.Current.SystemFonts.FirstOrDefault(f =>
                 string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
 
+        private void SelectFontByName(string name)
+        {
+            if (FindSystemFont(name) is { } family)
+            {
+                _font.SelectedItem = family;
+            }
+        }
+
         private void PushFontContext()
         {
             var familyName = (_font.SelectedItem as FontFamily)?.Name ?? "Segoe UI";
@@ -230,6 +236,7 @@ namespace TextTestApp
             size = Math.Clamp(size, 4, 300);
 
             _explorer.SetTypeface(typeface);
+            _variable.SetContext(typeface, size);
             _raster.SetContext(typeface, size);
             _waterfall.SetTypeface(typeface);
             _fringes.SetContext(typeface, size);
