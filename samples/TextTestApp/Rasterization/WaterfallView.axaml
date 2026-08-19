@@ -5,11 +5,11 @@
     <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
         <TextBlock Text="Sample" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <TextBox x:Name="SampleBox" Width="320" Text="Hamburgefonstiv Base8S 123" />
+        <TextBox x:Name="SampleBox" Width="320" Text="Hamburgefonstiv Base8S 123" AutomationProperties.Name="Sample text" />
         <TextBlock Text="Rendering" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="RenderingBox" Width="160" />
+        <ComboBox x:Name="RenderingBox" Width="160" AutomationProperties.Name="Rendering mode" />
         <TextBlock Text="Zoom" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="ZoomBox" Width="70" />
+        <ComboBox x:Name="ZoomBox" Width="70" AutomationProperties.Name="Zoom" />
         <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
       </StackPanel>
     </Border>

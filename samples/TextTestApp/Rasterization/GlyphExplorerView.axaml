@@ -5,11 +5,12 @@
     <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
         <TextBlock Text="Filter" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="FilterBox" Width="140" />
+        <ComboBox x:Name="FilterBox" Width="140" AutomationProperties.Name="Glyph filter" />
         <TextBox x:Name="SearchBox" Width="170" PlaceholderText="find: A, U+0048, #43"
+                 AutomationProperties.Name="Glyph search"
                  ToolTip.Tip="Search: a character, U+0048, or a glyph id like #43. Enter jumps to the match; digits mean glyph id, so search U+0038 for the character 8." />
         <Button x:Name="PrevButton" Content="&lt;" />
-        <TextBox x:Name="PageBox" Width="44" TextAlignment="Center"
+        <TextBox x:Name="PageBox" Width="44" TextAlignment="Center" AutomationProperties.Name="Page number"
                  ToolTip.Tip="Page number - type one and press Enter." />
         <TextBlock x:Name="PageCountText" VerticalAlignment="Center" FontWeight="SemiBold" MinWidth="40" />
         <Button x:Name="NextButton" Content="&gt;" />
@@ -20,7 +21,7 @@
     <Grid ColumnDefinitions="Auto,260">
       <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto">
         <Image x:Name="GridImage" Stretch="None" VerticalAlignment="Top" HorizontalAlignment="Left"
-               Margin="8" />
+               AutomationProperties.Name="Glyph grid" Margin="8" />
       </ScrollViewer>
       <Border Grid.Column="1" Padding="12" BorderBrush="#30808080" BorderThickness="1,0,0,0">
         <ScrollViewer>
