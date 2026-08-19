@@ -56,6 +56,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// <param name="components">A read-only span containing the glyph components that make up the composite glyph. The span must remain
         /// valid for the lifetime of the CompositeGlyph instance.</param>
         /// <param name="instructions">The composite instruction stream following the last component, or empty when absent.</param>
+        /// <param name="instructionsOffset">The instruction stream's offset from the start of the component data, so callers holding the stable glyph memory can re-slice it.</param>
         /// <param name="usesPointMatching">Indicates whether any component is positioned by point matching rather than by an x/y offset.</param>
         /// <param name="rentedBuffer">An optional array used as a rented buffer for internal storage. If provided, the buffer may be used to
         /// optimize memory usage.</param>

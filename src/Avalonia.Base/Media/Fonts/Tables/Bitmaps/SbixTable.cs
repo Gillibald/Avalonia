@@ -21,10 +21,10 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
     {
         private const int MaxStrikes = 64;
         private const int DecodedBudgetBytes = 4 * 1024 * 1024;
-        private static readonly uint s_pngTag = 0x706E6720;    // 'png '
-        private static readonly uint s_jpgTag = 0x6A706720;    // 'jpg '
-        private static readonly uint s_tiffTag = 0x74696666;   // 'tiff'
-        private static readonly uint s_dupeTag = 0x64757065;   // 'dupe'
+        private const uint PngTag = 0x706E6720;    // 'png '
+        private const uint JpgTag = 0x6A706720;    // 'jpg '
+        private const uint TiffTag = 0x74696666;   // 'tiff'
+        private const uint DupeTag = 0x64757065;   // 'dupe'
 
         internal static OpenTypeTag Tag { get; } = OpenTypeTag.Parse("sbix");
 
@@ -198,14 +198,14 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             var record = span.Slice((int)start, (int)(end - start));
             var graphicType = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(4));
 
-            if (graphicType == s_dupeTag)
+            if (graphicType == DupeTag)
             {
                 return record.Length >= 10 &&
                     TryGetRecord(strikeIndex, BinaryPrimitives.ReadUInt16BigEndian(record.Slice(8)), depth + 1,
                         out png, out originX, out originY);
             }
 
-            if (graphicType != s_pngTag && graphicType != s_jpgTag && graphicType != s_tiffTag)
+            if (graphicType != PngTag && graphicType != JpgTag && graphicType != TiffTag)
             {
                 return false;   // unknown graphic types stay opaque — future tags are not images
             }
