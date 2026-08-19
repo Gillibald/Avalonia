@@ -51,6 +51,7 @@
           </ListBox.Styles>
           <ListBoxItem Classes="section" Content="EXPLORE" />
           <ListBoxItem Name="NavGlyphs" Content="Glyphs" />
+          <ListBoxItem Name="NavVariable" Content="Variable fonts" />
           <ListBoxItem Classes="section" Content="DIAGNOSE" />
           <ListBoxItem Name="NavWaterfall" Content="Waterfall" />
           <ListBoxItem Name="NavFringes" Content="Fringes" />
@@ -68,6 +69,7 @@
           <local:ColorGlyphInspectorView Name="_colorInspector" IsVisible="False" />
         </Panel>
 
+        <local:VariableFontsView Name="_variable" IsVisible="False" />
         <local:WaterfallView Name="_waterfall" IsVisible="False" />
         <local:FringesView Name="_fringes" IsVisible="False" />
         <local:AbDiffView Name="_abDiff" IsVisible="False" />
