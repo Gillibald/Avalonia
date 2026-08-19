@@ -2189,10 +2189,13 @@ namespace Avalonia.Media
             // A foreground-substituting drawing (CPAL 0xFFFF entries follow the text color) is
             // built uncached: the drawing cache keys by (glyph, palette) only, and widening every
             // key for the rare foreground-tinted glyph costs more than a per-record parse.
+            // Bitmap-only fonts reach this point without COLR/CPAL, and a hostile COLR without
+            // its palette must fall through to the cached path rather than dereference.
             if (options?.Foreground is { } fg &&
-                _colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out var v1Record))
+                _colrTable is { HasV1Data: true } colrV1 && _cpalTable is { } cpalV1 &&
+                colrV1.TryGetBaseGlyphV1Record(glyphIndex, out var v1Record))
             {
-                return new ColorGlyphV1Drawing(this, _colrTable, _cpalTable, glyphIndex, v1Record,
+                return new ColorGlyphV1Drawing(this, colrV1, cpalV1, glyphIndex, v1Record,
                     NormalizePaletteIndex(options), fg);
             }
 
