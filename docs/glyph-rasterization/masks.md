@@ -31,7 +31,7 @@ Masks carry a transparent apron so filtering and warping never clip: `Apron = 1`
 
 ![Mask anatomy: the per-glyph mask with its apron marked, the cache key fields, and a run composed from per-glyph masks at 1x and 4x](images/mask-anatomy.png)
 
-*(Generated figure: run TextTestApp with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in TextTestApp's Rasterization tab.)*
+*(Generated figure: run TextTestApp with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in TextTestApp's Glyphs view (click a glyph to open the pipeline inspector).)*
 
 ## Caches and budgets
 

@@ -56,7 +56,7 @@ The rounding policy was measured against DirectWrite output rather than assumed:
 
 ![Zones, warp and stroke pairs for Inter 'g' at 12 px: the mask on the pixel grid, the unhinted outline in red, the grid-fit outline in blue, zone rows in green with dashed pre-snap sources](images/hinting-anatomy.png)
 
-*(Generated figure: run TextTestApp with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in TextTestApp's Rasterization tab.)*
+*(Generated figure: run TextTestApp with `GLYPH_FIGURE_EXPORT_DIR=<dir>` to regenerate; the interactive version lives in TextTestApp's Glyphs view (click a glyph to open the pipeline inspector).)*
 
 ### Per-glyph stroke fitting: GetGlyphWarp
 

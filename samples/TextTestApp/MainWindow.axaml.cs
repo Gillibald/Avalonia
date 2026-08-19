@@ -36,9 +36,20 @@ namespace TextTestApp
                 (item is FontFamily family && family.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
             _font.SelectionChanged += (_, _) => PushFontContext();
             _size.TextChanged += (_, _) => PushFontContext();
+
+            // The context bar's raster selector flips the app-wide TextRasterizationMode;
+            // glyph runs read it at creation, so affected views rebuild their runs.
+            _rasterBox.ItemsSource = new[] { "Managed", "Backend" };
+            _rasterBox.SelectedIndex =
+                AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode ==
+                TextRasterizationMode.Backend ? 1 : 0;
+            _rasterBox.SelectionChanged += (_, _) => OnRasterModeChanged();
+
+            _nav.SelectionChanged += (_, _) => OnNavChanged();
+            _nav.SelectedItem = NavGlyphs;
             PushFontContext();
-            // The Rasterization tab alternates: the explorer owns the full page until a
-            // glyph is selected, then the inspector takes it; Back (or Escape) returns.
+            // The Glyphs view alternates: the explorer owns the full page until a glyph
+            // is selected, then the matching inspector takes it; Back (or Escape) returns.
             _explorer.GlyphSelected += (typeface, glyph, label) =>
             {
                 // Color-capable glyphs get the color inspector - the mono pipeline view
@@ -56,18 +67,7 @@ namespace TextTestApp
             };
             _raster.BackRequested += () => ShowInspector(false);
             _colorInspector.BackRequested += () => ShowInspector(false);
-            _colorView.InspectRequested += (typeface, glyph, label) =>
-            {
-                _colorTabInspector.ShowGlyph(typeface, glyph, label);
-                _colorTabInspector.IsVisible = true;
-                _colorView.IsVisible = false;
-            };
-            _colorTabInspector.BackRequested += () =>
-            {
-                _colorTabInspector.IsVisible = false;
-                _colorView.IsVisible = true;
-            };
-            _colorView.FontRequested += name =>
+            _explorer.FontRequested += name =>
             {
                 if (FindSystemFont(name) is { } family)
                 {
@@ -114,13 +114,14 @@ namespace TextTestApp
 
             if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
             {
-                _globalTabs.SelectedIndex = inspect switch
+                // "color" kept for preset compatibility: color glyphs now live in the
+                // Glyphs explorer (Color filter) since the shell merge.
+                _nav.SelectedItem = inspect switch
                 {
-                    "waterfall" => 2,
-                    "fringes" => 3,
-                    "ab" => 4,
-                    "color" => 5,
-                    _ => 1,
+                    "waterfall" => NavWaterfall,
+                    "fringes" => NavFringes,
+                    "ab" => NavAbDiff,
+                    _ => NavGlyphs,
                 };
 
                 if (inspect is "1" or "tint")
@@ -128,6 +129,46 @@ namespace TextTestApp
                     ShowInspector(true);
                 }
             }
+        }
+
+        private void OnNavChanged()
+        {
+            if (_nav.SelectedItem is not ListBoxItem item)
+            {
+                return;
+            }
+
+            _glyphsHost.IsVisible = item == NavGlyphs;
+            _waterfall.IsVisible = item == NavWaterfall;
+            _fringes.IsVisible = item == NavFringes;
+            _abDiff.IsVisible = item == NavAbDiff;
+            _hitTesting.IsVisible = item == NavHitTesting;
+
+            // The scope capsule answers "which of the global inputs does this view use".
+            _scopeText.Text =
+                item == NavGlyphs ? "uses: font. Cells render managed masks and color drawings; click a cell to inspect." :
+                item == NavWaterfall ? "uses: font. Fixed 8-24 px ladder through the managed pipeline." :
+                item == NavFringes ? "uses: font, size. Managed subpixel output." :
+                item == NavAbDiff ? "uses: font, size. Each side sets its own mode, hinting and rendering." :
+                item == NavHitTesting ? "uses: font, size, features and the raster mode." :
+                string.Empty;
+        }
+
+        private void OnRasterModeChanged()
+        {
+            if (AvaloniaLocator.Current.GetService<FontManagerOptions>() is not { } options)
+            {
+                return;
+            }
+
+            options.TextRasterizationMode = _rasterBox.SelectedIndex == 1
+                ? TextRasterizationMode.Backend
+                : TextRasterizationMode.Managed;
+
+            // Runs are created during formatting, so rebuild the line and push the font
+            // context; other app text picks the mode up on its next re-layout.
+            _rendering.Refresh();
+            PushFontContext();
         }
 
         private void ShowInspector(bool visible)
@@ -170,9 +211,6 @@ namespace TextTestApp
             _waterfall.SetTypeface(typeface);
             _fringes.SetContext(typeface, size);
             _abDiff.SetFont(familyName, size);
-            // The Color tab stays enabled for every font: without color glyphs it shows an
-            // empty state that names the reason and offers a color-capable font.
-            _colorView.SetTypeface(typeface);
         }
 
         private void OnNewWindowClick(object? sender, RoutedEventArgs e)
@@ -185,21 +223,15 @@ namespace TextTestApp
         {
             if (e.Key == Key.F5)
             {
-                _rendering.InvalidateVisual();
-                OnShapeBufferChanged();
+                // Full line rebuild: recreates the glyph runs, so mode flips apply too.
+                _rendering.Refresh();
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)
             {
-                if (_globalTabs.SelectedIndex == 1 && (_raster.IsVisible || _colorInspector.IsVisible))
+                if (_nav.SelectedItem == NavGlyphs && (_raster.IsVisible || _colorInspector.IsVisible))
                 {
                     ShowInspector(false);
-                    e.Handled = true;
-                }
-                else if (_globalTabs.SelectedIndex == 5 && _colorTabInspector.IsVisible)
-                {
-                    _colorTabInspector.IsVisible = false;
-                    _colorView.IsVisible = true;
                     e.Handled = true;
                 }
                 else if (_hits.IsKeyboardFocusWithin && _hits.SelectedIndex != -1)
@@ -367,7 +399,7 @@ namespace TextTestApp
                 border.DoubleTapped += (_, _) =>
                 {
                     _raster.ShowGlyph(rowTypeface, rowGlyph, rowLabel);
-                    _globalTabs.SelectedIndex = 1;
+                    _nav.SelectedItem = NavGlyphs;
                     ShowInspector(true);
                 };
 
