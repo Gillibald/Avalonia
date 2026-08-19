@@ -4,12 +4,14 @@
   <DockPanel>
     <Border DockPanel.Dock="Top" Background="#18808080" Padding="10,6">
       <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-        <Button x:Name="BackButton" Content="&#x2190; Back" />
+        <Button x:Name="BackButton" Content="&#x2190; Back" ToolTip.Tip="Back to the color glyphs (Esc)" />
         <TextBlock x:Name="TitleText" VerticalAlignment="Center" FontWeight="SemiBold" />
         <TextBlock Text="Size" VerticalAlignment="Center" Opacity="0.7" FontSize="12" Margin="12,0,0,0" />
         <ComboBox x:Name="SizeBox" Width="80" />
         <TextBlock x:Name="PaletteLabel" Text="Palette" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
         <ComboBox x:Name="PaletteBox" Width="110" />
+        <Button x:Name="CopyButton" Content="Copy report" FontSize="12"
+                ToolTip.Tip="Copy the glyph kind, structure dump and altitude diff stats as text." />
       </StackPanel>
     </Border>
     <Grid ColumnDefinitions="*,*" RowDefinitions="*,*" Margin="8">
@@ -37,11 +39,9 @@
       </DockPanel>
       <DockPanel Grid.Column="1" Grid.Row="1" Margin="4">
         <TextBlock DockPanel.Dock="Top" Text="Altitude diff (drawing vs production)" FontWeight="SemiBold" FontSize="13" />
+        <TextBlock DockPanel.Dock="Top" x:Name="DiffText" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,2" />
         <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <StackPanel Spacing="6" Margin="0,6,0,0">
-            <Image x:Name="DiffImage" Stretch="None" HorizontalAlignment="Left" />
-            <TextBlock x:Name="DiffText" FontSize="12" TextWrapping="Wrap" />
-          </StackPanel>
+          <Image x:Name="DiffImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,4,0,0" />
         </ScrollViewer>
       </DockPanel>
     </Grid>

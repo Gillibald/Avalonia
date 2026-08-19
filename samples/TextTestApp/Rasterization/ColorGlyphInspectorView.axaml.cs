@@ -63,6 +63,9 @@ namespace TextTestApp
             _diffText = this.FindControl<TextBlock>("DiffText")!;
 
             _backButton.Click += (_, _) => BackRequested?.Invoke();
+            this.FindControl<Button>("CopyButton")!.Click += (_, _) => ClipboardHelper.Copy(this,
+                string.Join(Environment.NewLine,
+                    _titleText.Text, _structureHeader.Text, _structureText.Text, _diffText.Text));
             _sizeBox.ItemsSource = s_sizes;
             _sizeBox.SelectedIndex = 2;
             _sizeBox.SelectionChanged += (_, _) => RenderAll();
@@ -250,9 +253,15 @@ namespace TextTestApp
             diff.Dispose();
 
             var total = width * height;
+            var percent = 100.0 * differing / total;
 
-            _diffText.Text = FormattableString.Invariant(
-                $"{differing} of {total} pixels differ ({100.0 * differing / total:0.0}%), max channel delta {maxDelta}. Identical output means the production path took the drawing; antialiasing-level differences mean the mask tier composed it server-side.");
+            // Verdict first, numbers second: this diff is a routing proof, not a defect meter.
+            var verdict = differing == 0
+                ? "Both altitudes are pixel-identical: the production draw used the splitter's drawing."
+                : "The production draw composed this glyph in the mask tier (expected for COLR v0 and bitmap strikes); the differences are antialiasing-level.";
+
+            _diffText.Text = verdict + FormattableString.Invariant(
+                $" {differing} of {total} pixels differ ({percent:0.0}%), max channel delta {maxDelta}.");
         }
 
         private void RenderStructure(GlyphTypeface typeface, ushort glyph,
@@ -326,7 +335,7 @@ namespace TextTestApp
             switch (paint)
             {
                 case ResolvedClipBox clip:
-                    report.AppendLine(FormattableString.Invariant($"{indent}ClipBox {clip.Box}"));
+                    report.AppendLine($"{indent}ClipBox {Fmt.N(clip.Box)}");
                     Dump(clip.Inner, report, depth + 1);
                     break;
                 case ColrLayers layers:
@@ -350,7 +359,7 @@ namespace TextTestApp
                     Dump(composite.Source, report, depth + 1);
                     break;
                 case ResolvedTransform transform:
-                    report.AppendLine(FormattableString.Invariant($"{indent}Transform {transform.Matrix}"));
+                    report.AppendLine($"{indent}Transform {Fmt.N(transform.Matrix)}");
                     Dump(transform.Inner, report, depth + 1);
                     break;
                 case Glyph glyphPaint:

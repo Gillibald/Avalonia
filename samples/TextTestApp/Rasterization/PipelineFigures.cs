@@ -34,8 +34,10 @@ namespace TextTestApp
         /// positions dashed) and the per-glyph stroke pairs (orange).
         /// </summary>
         public static SKBitmap HintingAnatomy(GlyphTypeface typeface, ushort glyph, string label, float size,
-            TextHintingMode hinting)
+            TextHintingMode hinting, out string legend, bool embedCaption = true)
         {
+            legend = "red unhinted, blue grid-fit, green zones (dashed = source), orange stroke pairs";
+
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var gridFit = hinting != TextHintingMode.None;
@@ -75,7 +77,7 @@ namespace TextTestApp
             const int marginLeft = 96;
             const int marginTop = 28;
             var width = marginLeft + mask.Width * zoom + 150;
-            var height = marginTop + mask.Height * zoom + 76;
+            var height = marginTop + mask.Height * zoom + (embedCaption ? 76 : 20);
 
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
 
@@ -170,11 +172,12 @@ namespace TextTestApp
             DrawOutline(canvas, unhinted, DeviceX, DeviceY, s_unhinted);
             DrawOutline(canvas, hinted, DeviceX, DeviceY, s_hinted);
 
-            using (var font = new SKFont(SKTypeface.Default, 13))
-            using (var text = new SKPaint { Color = SKColors.Black })
+            if (embedCaption)
             {
-                canvas.DrawText(
-                    Inv($"{label} {size:0.#}px  hinting {hinting}  |  red unhinted, blue grid-fit, green zones (dashed = source), orange stroke pairs"),
+                using var font = new SKFont(SKTypeface.Default, 13);
+                using var text = new SKPaint { Color = SKColors.Black };
+
+                canvas.DrawText(Inv($"{label} {size:0.#}px  hinting {hinting}  |  {legend}"),
                     6, height - 10, SKTextAlign.Left, font, text);
             }
 
@@ -188,8 +191,13 @@ namespace TextTestApp
         /// and the phantom points. The auto-hinter's zones and warps do not apply here.
         /// </summary>
         public static SKBitmap BytecodeHintingAnatomy(GlyphTypeface typeface, ushort glyph, string label,
-            float size, TextHintingMode hinting, TrueTypeHintingProbe probe, int step)
+            float size, TextHintingMode hinting, TrueTypeHintingProbe probe, int step,
+            out string legend, bool embedCaption = true)
         {
+            legend = "red unhinted, blue fitted by the font's program  |  connectors original→current" +
+                Environment.NewLine +
+                "points: green y-touched, orange x-touched, purple both, gray untouched, crosses phantom";
+
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var stemSnap = hinting == TextHintingMode.Strong;
@@ -209,7 +217,7 @@ namespace TextTestApp
             const int marginLeft = 40;
             const int marginTop = 28;
             var width = Math.Max(marginLeft + mask.Width * zoom + 40, 560);
-            var height = marginTop + mask.Height * zoom + 96;
+            var height = marginTop + mask.Height * zoom + (embedCaption ? 96 : 16);
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using var canvas = new SKCanvas(bitmap);
@@ -323,9 +331,10 @@ namespace TextTestApp
                 }
             }
 
-            using (var font = new SKFont(SKTypeface.Default, 13))
-            using (var text = new SKPaint { Color = SKColors.Black })
+            if (embedCaption)
             {
+                using var font = new SKFont(SKTypeface.Default, 13);
+                using var text = new SKPaint { Color = SKColors.Black };
                 var engine = probe.FullInterpretation ? "full interpretation" : "v40 class (y only)";
 
                 canvas.DrawText(
@@ -346,7 +355,8 @@ namespace TextTestApp
         /// Mask anatomy: the focus glyph's mask magnified with its apron marked, the cache key
         /// fields, and a run composed from per-glyph masks shown at 1x and 4x.
         /// </summary>
-        public static SKBitmap MaskAnatomy(GlyphTypeface typeface, ushort glyph, string label, string runText, float size)
+        public static SKBitmap MaskAnatomy(GlyphTypeface typeface, ushort glyph, string label, string runText, float size,
+            out string keyInfo, bool embedInfo = true)
         {
             // Compact enough for a quadrant; the run redraws at 3x instead of 4x.
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
@@ -421,7 +431,13 @@ namespace TextTestApp
             var variantRowHeight = variantCellHeight * variantZoom + 34;
             var variantTop = Math.Max(mask.Height * zoom, 126) + runHeight * 4 + 96;
 
-            var width = Math.Max(Math.Max(Math.Max(maskPanelWidth + 480, runWidth * 3 + 40), 600),
+            keyInfo = string.Join(Environment.NewLine,
+                Inv($"GlyphMaskKey: glyph {glyph}, scaleQ {scaleQ} ({scaleQ / GlyphMaskKey.ScaleQuantum:0.###} px/em)"),
+                $"phase 0 of {GlyphMaskKey.PhaseCount}, mode Antialiased, GridFit, no StemSnap",
+                $"mask {mask.Width}x{mask.Height} at ({mask.Left},{mask.Top}), pen-relative",
+                $"cache: {typeface.MaskCache.Count} masks resident, budget {GlyphMaskCache.DefaultBudgetBytes / (1024 * 1024)} MB");
+
+            var width = Math.Max(Math.Max(Math.Max(maskPanelWidth + (embedInfo ? 480 : 0), runWidth * 3 + 40), 600),
                 70 + variantColumnWidth * variantHintings.Length);
             var height = variantTop + 30 + variantRowHeight * variantModes.Length + 16;
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
@@ -461,13 +477,19 @@ namespace TextTestApp
             using (var font = new SKFont(SKTypeface.Default, 13))
             using (var text = new SKPaint { Color = SKColors.Black })
             {
-                var infoX = Math.Max(10 + mask.Width * zoom + 24, 180);
-
                 canvas.DrawText($"{label} mask, dashed = {GlyphMasks.Apron}px apron", 10, 18, SKTextAlign.Left, font, text);
-                canvas.DrawText(Inv($"GlyphMaskKey: glyph {glyph}, scaleQ {scaleQ} ({scaleQ / GlyphMaskKey.ScaleQuantum:0.###} px/em)"), infoX, 46, SKTextAlign.Left, font, text);
-                canvas.DrawText($"phase 0 of {GlyphMaskKey.PhaseCount}, mode Antialiased, GridFit, no StemSnap", infoX, 66, SKTextAlign.Left, font, text);
-                canvas.DrawText($"mask {mask.Width}x{mask.Height} at ({mask.Left},{mask.Top}), pen-relative", infoX, 86, SKTextAlign.Left, font, text);
-                canvas.DrawText($"cache: {typeface.MaskCache.Count} masks resident, budget {GlyphMaskCache.DefaultBudgetBytes / (1024 * 1024)} MB", infoX, 106, SKTextAlign.Left, font, text);
+
+                if (embedInfo)
+                {
+                    var infoX = Math.Max(10 + mask.Width * zoom + 24, 180);
+                    var infoY = 46;
+
+                    foreach (var line in keyInfo.Split(Environment.NewLine))
+                    {
+                        canvas.DrawText(line, infoX, infoY, SKTextAlign.Left, font, text);
+                        infoY += 20;
+                    }
+                }
             }
 
             // The composed run at 1x and 4x.
@@ -570,8 +592,10 @@ namespace TextTestApp
         /// gamma correction, optionally BGR stripe order).
         /// </summary>
         public static SKBitmap ClearTypePipeline(GlyphTypeface typeface, ushort glyph, string label, float size,
-            bool bgr, bool gamma, TextHintingMode hinting)
+            bool bgr, bool gamma, TextHintingMode hinting, out string legend, bool embedCaption = true)
         {
+            legend = "3x raster → (1,2,3,2,1)/9 FIR per stripe → interleaved RGB mask → per-channel blend";
+
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var gridFit = hinting != TextHintingMode.None;
@@ -622,7 +646,7 @@ namespace TextTestApp
             var panelWidth = mask.Width * zoom;
             var raw3Width = mask.Width * 3 * (zoom / 3);
             var width = raw3Width + (panelWidth + gap) * 4 + gap + 20;
-            var height = mask.Height * zoom + 74;
+            var height = mask.Height * zoom + (embedCaption ? 74 : 40);
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using var canvas = new SKCanvas(bitmap);
@@ -704,9 +728,12 @@ namespace TextTestApp
 
             canvas.DrawText($"composite ({(bgr ? "BGR" : "RGB")}, gamma {(gamma ? "on" : "off")})",
                 compositeX, 18, SKTextAlign.Left, font, text);
-            canvas.DrawText(
-                Inv($"{label} {size:0.#}px  |  3x raster → (1,2,3,2,1)/9 FIR per stripe → interleaved RGB mask → per-channel blend"),
-                10, height - 10, SKTextAlign.Left, font, text);
+
+            if (embedCaption)
+            {
+                canvas.DrawText(Inv($"{label} {size:0.#}px  |  {legend}"),
+                    10, height - 10, SKTextAlign.Left, font, text);
+            }
 
             return bitmap;
         }
@@ -715,7 +742,8 @@ namespace TextTestApp
         /// The Slug payload for one glyph: em-space quadratic chains with the horizontal and
         /// vertical band partition the shader walks, plus the payload statistics.
         /// </summary>
-        public static SKBitmap SlugBands(GlyphTypeface typeface, ushort glyph, string label)
+        public static SKBitmap SlugBands(GlyphTypeface typeface, ushort glyph, string label,
+            out string info, bool embedCaption = true)
         {
             var sink = new SlugContourSink();
 
@@ -726,7 +754,8 @@ namespace TextTestApp
                 ? SlugBandEncoder.Encode(sink)
                 : null;
 
-            var bitmap = new SKBitmap(new SKImageInfo(560, 520, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var figureHeight = embedCaption ? 520 : 452;
+            var bitmap = new SKBitmap(new SKImageInfo(560, figureHeight, SKColorType.Bgra8888, SKAlphaType.Premul));
 
             using var canvas = new SKCanvas(bitmap);
             using var font = new SKFont(SKTypeface.Default, 13);
@@ -736,8 +765,8 @@ namespace TextTestApp
 
             if (data is null)
             {
-                canvas.DrawText($"{label}: no Slug payload (no contours or caps exceeded — the tier declines)",
-                    10, 30, SKTextAlign.Left, font, text);
+                info = $"{label}: no Slug payload (no contours or caps exceeded — the tier declines)";
+                canvas.DrawText(info, 10, 30, SKTextAlign.Left, font, text);
                 return bitmap;
             }
 
@@ -813,14 +842,22 @@ namespace TextTestApp
                 worstBand = Math.Max(worstBand, data.GetVerticalBand(i).Length);
             }
 
-            canvas.DrawText(
-                $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
+            info = $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
                 $"{data.HorizontalBandCount}x{data.VerticalBandCount} bands (worst list {worstBand} of {SlugTexelSerializer.MaxBandListLength}), " +
-                $"payload {data.RetainedBytes} B, {data.FillRule}",
-                10, 520 - 40, SKTextAlign.Left, font, text);
-            canvas.DrawText(
-                "green counts = curves per band list; encoded once per glyph ever, in em space",
-                10, 520 - 20, SKTextAlign.Left, font, text);
+                $"payload {data.RetainedBytes} B, {data.FillRule}" + Environment.NewLine +
+                "green counts = curves per band list; encoded once per glyph ever, in em space";
+
+            if (embedCaption)
+            {
+                canvas.DrawText(
+                    $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
+                    $"{data.HorizontalBandCount}x{data.VerticalBandCount} bands (worst list {worstBand} of {SlugTexelSerializer.MaxBandListLength}), " +
+                    $"payload {data.RetainedBytes} B, {data.FillRule}",
+                    10, figureHeight - 40, SKTextAlign.Left, font, text);
+                canvas.DrawText(
+                    "green counts = curves per band list; encoded once per glyph ever, in em space",
+                    10, figureHeight - 20, SKTextAlign.Left, font, text);
+            }
 
             return bitmap;
         }
@@ -944,7 +981,12 @@ namespace TextTestApp
             {
                 for (var column = 0; column < hintings.Length; column++)
                 {
-                    surface.Canvas.DrawText($"{hintings[column]}", labelWidth + columnWidth * column + 8, 16,
+                    // "Unspecified" alone reads as a bug; name the policy that resolves it.
+                    var header = hintings[column] == TextHintingMode.Unspecified
+                        ? "Unspecified (font gasp policy)"
+                        : $"{hintings[column]}";
+
+                    surface.Canvas.DrawText(header, labelWidth + columnWidth * column + 8, 16,
                         SKTextAlign.Left, font, label);
                 }
 
@@ -1088,7 +1130,7 @@ namespace TextTestApp
             using (var label = new SKPaint { Color = SKColors.Black })
             {
                 canvas.Clear(SKColors.White);
-                canvas.DrawText("rendering", 0, 14, SKTextAlign.Left, font, label);
+                canvas.DrawText(Inv($"rendered output ({zoom}x)"), 0, 14, SKTextAlign.Left, font, label);
                 canvas.DrawText("fringe map: red = warm left edge, blue = cool right edge, magenta = WRONG polarity, amber = interior",
                     0, height * zoom + 34, SKTextAlign.Left, font, label);
 
@@ -1134,13 +1176,13 @@ namespace TextTestApp
         {
             Directory.CreateDirectory(directory);
 
-            Save(HintingAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", 12, TextHintingMode.Light),
+            Save(HintingAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", 12, TextHintingMode.Light, out _),
                 Path.Combine(directory, "hinting-anatomy.png"));
-            Save(MaskAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", "Hamburg", 13),
+            Save(MaskAnatomy(typeface, typeface.CharacterToGlyphMap['g'], "'g'", "Hamburg", 13, out _),
                 Path.Combine(directory, "mask-anatomy.png"));
             Save(ClearTypePipeline(typeface, typeface.CharacterToGlyphMap['e'], "'e'", 13, bgr: false, gamma: true,
-                TextHintingMode.Light), Path.Combine(directory, "cleartype-pipeline.png"));
-            Save(SlugBands(typeface, typeface.CharacterToGlyphMap['g'], "'g'"), Path.Combine(directory, "slug-bands.png"));
+                TextHintingMode.Light, out _), Path.Combine(directory, "cleartype-pipeline.png"));
+            Save(SlugBands(typeface, typeface.CharacterToGlyphMap['g'], "'g'", out _), Path.Combine(directory, "slug-bands.png"));
         }
 
         private static void Save(SKBitmap bitmap, string path)
