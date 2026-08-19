@@ -342,6 +342,11 @@ namespace TextTestApp
             TextOptions.SetTextRenderingMode(this, TextRenderingMode.SubpixelAntialias);
         }
 
+        /// <summary>Rebuilds the line from scratch. Glyph runs and their platform resources
+        /// are recreated, so settings read at run creation (the rasterization mode) take
+        /// effect - invalidating visuals alone would redraw the cached runs.</summary>
+        public void Refresh() => InvalidateTextLine();
+
         private void InvalidateTextRunProperties()
         {
             _textRunProperties = null;
