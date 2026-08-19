@@ -1,0 +1,7 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="TextLab.LearnPipelineView">
+  <ScrollViewer>
+    <StackPanel x:Name="Host" Margin="24,16" Spacing="10" MaxWidth="980" HorizontalAlignment="Left" />
+  </ScrollViewer>
+</UserControl>

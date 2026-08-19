@@ -79,7 +79,7 @@ src/Skia/Avalonia.Skia/                        Skia-side implementations
     SkiaFontData.cs             zero-copy font table access
     SkiaBitmapGlyphDecoder.cs   PNG/JPEG strike decoding
 samples/GlyphRasterDemo/                       capability tour and A/B visual review surface
-samples/TextTestApp/Rasterization/             pipeline inspector, glyph explorer, doc figure export
+samples/TextLab/Rasterization/             pipeline inspector, glyph explorer, doc figure export
 ```
 
 ## Status
