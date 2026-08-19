@@ -7,12 +7,17 @@
     <DockPanel>
       <Border DockPanel.Dock="Bottom" Background="WhiteSmoke" BorderThickness="0,1,0,0" BorderBrush="Silver" Padding="2">
         <DockPanel>
-          <ToggleSwitch Name="_hitRangeToggle" DockPanel.Dock="Right" OnContent="HitTestTextRange" OffContent="HitTestTextPosition" IsCheckedChanged="OnHitTestMethodChanged" />
+          <ToggleSwitch Name="_hitRangeToggle" DockPanel.Dock="Right" OnContent="Range" OffContent="Position"
+                        IsCheckedChanged="OnHitTestMethodChanged"
+                        ToolTip.Tip="Method behind the readout and row selection: on = TextLayout.HitTestTextRange over the selected rows, off = TextLayout.HitTestTextPosition for a single index." />
+          <TextBlock DockPanel.Dock="Right" Text="Hit test:" VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.8" />
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-            <TextBlock Text="HitTestPoint:" Margin="5,0" />
+            <TextBlock Text="Pointer:" Margin="5,0"
+                       ToolTip.Tip="Pointer position over the line in layout coordinates - the input to TextLayout.HitTestPoint." />
             <TextBlock Name="_coordinates" MinWidth="120" />
             <Border Width="5" BorderThickness="1,0,0,0" BorderBrush="Silver" UseLayoutRounding="True" Margin="5,0,0,0" />
-            <TextBlock Text="TextPosition:" Margin="5,0" />
+            <TextBlock Text="Text position:" Margin="5,0"
+                       ToolTip.Tip="TextHitTestResult of HitTestPoint: text position, then character hit as index+trailing; T marks a trailing-edge hit." />
             <TextBlock Name="_hit" MinWidth="60" />
             <Border Width="5" BorderThickness="1,0,0,0" BorderBrush="Silver" UseLayoutRounding="True" Margin="5,0,0,0" />
           </StackPanel>
@@ -20,11 +25,16 @@
       </Border>
 
       <DockPanel DockPanel.Dock="Top" Margin="5">
-        <Button DockPanel.Dock="Right" VerticalAlignment="Center" Click="OnNewWindowClick" ToolTip.Tip="New window" Margin="5,0,0,0">+</Button>
+        <Button DockPanel.Dock="Right" VerticalAlignment="Center" Click="OnNewWindowClick"
+                ToolTip.Tip="Open another window for side-by-side comparisons" Margin="5,0,0,0">+</Button>
         <Label DockPanel.Dock="Right" Content="_Size:" Target="{Binding ElementName=_size}" VerticalAlignment="Center" Margin="5,0,0,0" />
         <TextBox DockPanel.Dock="Right" Name="_size" VerticalAlignment="Center" Text="64" MinWidth="50" />
         <Label Content="_Font:" Target="{Binding ElementName=_font}" VerticalAlignment="Center" />
-        <ComboBox Name="_font" ItemsSource="{Binding SystemFonts, Source={x:Static FontManager.Current}}" HorizontalAlignment="Stretch" />
+        <AutoCompleteBox Name="_font" Width="380" HorizontalAlignment="Left" VerticalAlignment="Center"
+                         PlaceholderText="type to search fonts" FilterMode="Contains" MinimumPrefixLength="0"
+                         MaxDropDownHeight="480"
+                         ItemsSource="{Binding SystemFonts, Source={x:Static FontManager.Current}}"
+                         ValueMemberBinding="{Binding Name, x:DataType=FontFamily}" />
       </DockPanel>
 
       <TabControl Name="_globalTabs" Padding="0" Margin="0,2,0,0">
@@ -42,7 +52,7 @@
         <local:InteractiveLineControl Name="_rendering" DockPanel.Dock="Top" Margin="16" HorizontalAlignment="Center" 
                                   
                                       Text="{Binding Text, ElementName=_text}"
-                                      FontFamily="{Binding SelectedValue, ElementName=_font}"
+                                      FontFamily="{Binding SelectedItem, ElementName=_font}"
                                       FontFeatures="{Binding Text, ElementName=_features}"
                                       FontSize="{Binding Text, ElementName=_size}"
                                       Background="BlanchedAlmond"
