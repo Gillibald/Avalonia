@@ -12,6 +12,8 @@
           <Button x:Name="SaveButton" Content="Save A as reference..." />
           <Button x:Name="LoadButton" Content="Load reference as B..." />
           <Button x:Name="ClearButton" Content="Clear reference" IsEnabled="False" />
+          <Button x:Name="CopyButton" Content="Copy report"
+                  ToolTip.Tip="Copy the configurations, stats and verdict as text." />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="A:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#D43322" />
@@ -22,16 +24,31 @@
           <ComboBox x:Name="ModeB" Width="110" />
           <ComboBox x:Name="HintingB" Width="110" />
           <ComboBox x:Name="RenderingB" Width="150" />
-          <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11"
+          <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11" TextWrapping="Wrap" MaxWidth="420"
                      Text="Renders true LCD (the target carries stripe geometry). Unspecified hinting resolves to Light on both stacks." />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="Show" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+          <RadioButton x:Name="StripA" GroupName="AbStrip" Content="A" />
+          <RadioButton x:Name="StripB" GroupName="AbStrip" Content="B" />
+          <RadioButton x:Name="StripOverlay" GroupName="AbStrip" Content="Overlay" IsChecked="True"
+                       ToolTip.Tip="A ink red, B ink blue, shared ink dark - misalignment shows as colored edges." />
+          <RadioButton x:Name="StripHeat" GroupName="AbStrip" Content="Heat map"
+                       ToolTip.Tip="Per-pixel channel delta: white match, yellow to 8, orange to 32, red above." />
+          <TextBlock Text="Zoom" VerticalAlignment="Center" Opacity="0.7" FontSize="12" Margin="12,0,0,0" />
+          <ComboBox x:Name="ZoomBox" Width="70" />
         </StackPanel>
       </StackPanel>
     </Border>
-    <ScrollViewer HorizontalScrollBarVisibility="Auto">
-      <StackPanel Margin="12" Spacing="8">
-        <TextBlock x:Name="StatsText" FontWeight="SemiBold" />
-        <Image x:Name="ResultImage" Stretch="None" HorizontalAlignment="Left" />
+    <Border DockPanel.Dock="Top" x:Name="VerdictBorder" Padding="12,7" IsVisible="False">
+      <StackPanel Spacing="2">
+        <TextBlock x:Name="VerdictText" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock x:Name="StatsText" Opacity="0.85" FontSize="12" TextWrapping="Wrap" />
       </StackPanel>
+    </Border>
+    <ScrollViewer x:Name="StripScroller" HorizontalScrollBarVisibility="Disabled">
+      <Image x:Name="ResultImage" Stretch="Uniform" StretchDirection="DownOnly"
+             HorizontalAlignment="Left" VerticalAlignment="Top" Margin="12" />
     </ScrollViewer>
   </DockPanel>
 </UserControl>
