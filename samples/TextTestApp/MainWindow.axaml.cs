@@ -48,7 +48,7 @@ namespace TextTestApp
             _themeToggle.IsCheckedChanged += (_, _) => OnThemeChanged();
 
             _nav.SelectionChanged += (_, _) => OnNavChanged();
-            _nav.SelectedItem = NavGlyphs;
+            _nav.SelectedItem = NavSpecimen;
             PushFontContext();
             // The Glyphs view alternates: the explorer owns the full page until a glyph
             // is selected, then the matching inspector takes it; Back (or Escape) returns.
@@ -71,6 +71,12 @@ namespace TextTestApp
             _colorInspector.BackRequested += () => ShowInspector(false);
             _explorer.FontRequested += SelectFontByName;
             _variable.FontRequested += SelectFontByName;
+            _fontInfo.VariableFontsRequested += () => _nav.SelectedItem = NavVariable;
+            _learn.InspectRequested += () =>
+            {
+                _nav.SelectedItem = NavGlyphs;
+                ShowInspector(true);
+            };
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -135,8 +141,11 @@ namespace TextTestApp
                 return;
             }
 
+            _showcase.IsVisible = item == NavSpecimen;
             _glyphsHost.IsVisible = item == NavGlyphs;
             _variable.IsVisible = item == NavVariable;
+            _fontInfo.IsVisible = item == NavFontInfo;
+            _learn.IsVisible = item == NavPipeline;
             _waterfall.IsVisible = item == NavWaterfall;
             _fringes.IsVisible = item == NavFringes;
             _abDiff.IsVisible = item == NavAbDiff;
@@ -144,8 +153,11 @@ namespace TextTestApp
 
             // The scope capsule answers "which of the global inputs does this view use".
             _scopeText.Text =
+                item == NavSpecimen ? "uses: font and the raster mode. Live application text, no figures." :
                 item == NavGlyphs ? "uses: font. Cells render managed masks and color drawings; click a cell to inspect." :
                 item == NavVariable ? "uses: font, size. Renders WithVariation clones through the managed pipeline." :
+                item == NavFontInfo ? "uses: font. Read from the font's own tables." :
+                item == NavPipeline ? "self-contained: deterministic figures from the repo's Inter asset." :
                 item == NavWaterfall ? "uses: font. Fixed 8-24 px ladder through the managed pipeline." :
                 item == NavFringes ? "uses: font, size. Managed subpixel output." :
                 item == NavAbDiff ? "uses: font, size. Each side sets its own mode, hinting and rendering." :
@@ -164,9 +176,10 @@ namespace TextTestApp
                 ? TextRasterizationMode.Backend
                 : TextRasterizationMode.Managed;
 
-            // Runs are created during formatting, so rebuild the line and push the font
-            // context; other app text picks the mode up on its next re-layout.
+            // Runs are created during formatting, so rebuild the line, the specimen and
+            // the font context; other app text picks the mode up on its next re-layout.
             _rendering.Refresh();
+            _showcase.Refresh();
             PushFontContext();
         }
 
@@ -183,6 +196,7 @@ namespace TextTestApp
             _explorer.Repaint();
             _colorInspector.Repaint();
             _variable.Repaint();
+            _learn.Repaint();
         }
 
         private void ShowInspector(bool visible)
@@ -235,8 +249,11 @@ namespace TextTestApp
 
             size = Math.Clamp(size, 4, 300);
 
+            _showcase.SetContext(familyName);
             _explorer.SetTypeface(typeface);
             _variable.SetContext(typeface, size);
+            _fontInfo.SetContext(typeface);
+            _learn.SetContext(typeface);
             _raster.SetContext(typeface, size);
             _waterfall.SetTypeface(typeface);
             _fringes.SetContext(typeface, size);
