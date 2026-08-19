@@ -31,6 +31,9 @@ namespace TextTestApp
 
             // The global font and size drive every view; the explorer's selection drives
             // the inspector beside it.
+            _font.ItemFilter = (search, item) =>
+                string.IsNullOrEmpty(search) ||
+                (item is FontFamily family && family.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
             _font.SelectionChanged += (_, _) => PushFontContext();
             _size.TextChanged += (_, _) => PushFontContext();
             PushFontContext();
@@ -64,6 +67,13 @@ namespace TextTestApp
                 _colorTabInspector.IsVisible = false;
                 _colorView.IsVisible = true;
             };
+            _colorView.FontRequested += name =>
+            {
+                if (FindSystemFont(name) is { } family)
+                {
+                    _font.SelectedItem = family;
+                }
+            };
 
             // Figure export for docs/glyph-rasterization/images: deterministic Inter renders
             // through the same code the Rasterization tab shows live.
@@ -90,8 +100,16 @@ namespace TextTestApp
 
             if (Environment.GetEnvironmentVariable("GLYPH_FONT") is { Length: > 0 } presetFont)
             {
-                _font.SelectedItem = FontManager.Current.SystemFonts
-                    .FirstOrDefault(f => string.Equals(f.Name, presetFont, StringComparison.OrdinalIgnoreCase));
+                _font.SelectedItem = FindSystemFont(presetFont);
+            }
+
+            // First run: reflect the actually-resolved default in the picker instead of
+            // rendering through an unnamed fallback behind an empty box.
+            if (_font.SelectedItem is null)
+            {
+                _font.SelectedItem = FindSystemFont(FontManager.Current.DefaultFontFamily.Name)
+                    ?? FindSystemFont("Segoe UI")
+                    ?? FontManager.Current.SystemFonts.FirstOrDefault();
             }
 
             if (Environment.GetEnvironmentVariable("GLYPH_INSPECTOR") is { Length: > 0 } inspect)
@@ -131,9 +149,13 @@ namespace TextTestApp
                 (colr.HasColorLayers(glyph) || colr.TryGetBaseGlyphV1Record(glyph, out _))) ||
                typeface.BitmapSource?.HasGlyphImage(glyph) == true;
 
+        private static FontFamily? FindSystemFont(string name)
+            => FontManager.Current.SystemFonts.FirstOrDefault(f =>
+                string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+
         private void PushFontContext()
         {
-            var familyName = _font.SelectedValue?.ToString() ?? "Segoe UI";
+            var familyName = (_font.SelectedItem as FontFamily)?.Name ?? "Segoe UI";
             var typeface = RasterizationView.ResolveTypeface(familyName);
 
             if (!double.TryParse(_size.Text, out var size))
@@ -148,8 +170,9 @@ namespace TextTestApp
             _waterfall.SetTypeface(typeface);
             _fringes.SetContext(typeface, size);
             _abDiff.SetFont(familyName, size);
+            // The Color tab stays enabled for every font: without color glyphs it shows an
+            // empty state that names the reason and offers a color-capable font.
             _colorView.SetTypeface(typeface);
-            _colorTab.IsEnabled = typeface is { } t && (t.ColorTable is not null || t.BitmapSource is not null);
         }
 
         private void OnNewWindowClick(object? sender, RoutedEventArgs e)
@@ -260,6 +283,9 @@ namespace TextTestApp
                 var prevHit = textLine.GetPreviousCaretCharacterHit(hit);
                 var nextHit = textLine.GetNextCaretCharacterHit(hit);
                 var bkspHit = textLine.GetBackspaceCaretCharacterHit(hit);
+                var distance = textLine.GetDistanceFromCharacterHit(hit);
+                var distanceBlock = new TextBlock { Text = Fmt.N(distance) };
+                ToolTip.SetTip(distanceBlock, Fmt.Full(distance));
 
                 GridRow row = new GridRow { ColumnSpacing = 10 };
                 row.Children.Add(new Control());
@@ -269,7 +295,7 @@ namespace TextTestApp
                 row.Children.Add(new TextBlock { Text = $"{nextHit.FirstCharacterIndex}+{nextHit.TrailingLength}" });
                 row.Children.Add(new TextBlock { Text = clusterHex });
                 row.Children.Add(new TextBlock { Text = clusterText });
-                row.Children.Add(new TextBlock { Text = textLine.GetDistanceFromCharacterHit(hit).ToString() });
+                row.Children.Add(distanceBlock);
                 row.Tag = i;
 
                 _hits.Items.Add(row);
@@ -309,6 +335,9 @@ namespace TextTestApp
                 border.Background = oddCluster ? TransparentAliceBlue : TransparentAntiqueWhite;
 
 
+                var advanceBlock = new TextBlock { Text = Fmt.N(info.GlyphAdvance) };
+                ToolTip.SetTip(advanceBlock, Fmt.Full(info.GlyphAdvance));
+
                 GridRow row = new GridRow { ColumnSpacing = 10 };
                 row.Children.Add(new Control());
                 row.Children.Add(new TextBlock { Text = clusterStart.ToString() });
@@ -316,15 +345,15 @@ namespace TextTestApp
                 row.Children.Add(new TextBlock { Text = clusterHex, TextWrapping = TextWrapping.Wrap });
                 row.Children.Add(new Image { Source = CreateGlyphDrawing(shapedRun.GlyphRun.GlyphTypeface, FontSize, info), Margin = new Thickness(2) });
                 row.Children.Add(new TextBlock { Text = info.GlyphIndex.ToString() });
-                row.Children.Add(new TextBlock { Text = info.GlyphAdvance.ToString() });
-                row.Children.Add(new TextBlock { Text = info.GlyphOffset.ToString() });
+                row.Children.Add(advanceBlock);
+                row.Children.Add(new TextBlock { Text = Fmt.N(info.GlyphOffset) });
 
                 Geometry glyph = GetGlyphOutline(shapedRun.GlyphRun.GlyphTypeface, shapedRun.GlyphRun.FontRenderingEmSize, info);
                 Rect glyphBounds = glyph.Bounds;
                 Rect offsetBounds = glyphBounds.Translate(new Vector(currentX + info.GlyphOffset.X, info.GlyphOffset.Y));
 
-                TextBlock boundsBlock = new TextBlock { Text = offsetBounds.ToString() };
-                ToolTip.SetTip(boundsBlock, "Origin bounds: " + glyphBounds);
+                TextBlock boundsBlock = new TextBlock { Text = Fmt.N(offsetBounds) };
+                ToolTip.SetTip(boundsBlock, $"full: {Fmt.Full(offsetBounds)}\norigin bounds: {Fmt.N(glyphBounds)}");
                 row.Children.Add(boundsBlock);
 
                 border.Child = row;
@@ -388,7 +417,7 @@ namespace TextTestApp
 
             PointerPoint pointerPoint = e.GetCurrentPoint(lineControl);
             Point point = new Point(pointerPoint.Position.X - lineBounds.Left, pointerPoint.Position.Y - lineBounds.Top);
-            _coordinates.Text = $"{pointerPoint.Position.X:F4}, {pointerPoint.Position.Y:F4}";
+            _coordinates.Text = Fmt.N(pointerPoint.Position);
 
             TextHitTestResult textHit = textLayout.HitTestPoint(point);
             _hit.Text = $"{textHit.TextPosition} ({textHit.CharacterHit.FirstCharacterIndex}+{textHit.CharacterHit.TrailingLength})";

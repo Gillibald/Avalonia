@@ -33,7 +33,7 @@ namespace TextTestApp
             _fontText = this.FindControl<TextBlock>("FontText")!;
             _matrixImage = this.FindControl<Image>("MatrixImage")!;
 
-            _renderingBox.ItemsSource = new[] { TextRenderingMode.SubpixelAntialias, TextRenderingMode.Antialias };
+            _renderingBox.ItemsSource = RenderingChoice.Output();
             _renderingBox.SelectedIndex = 0;
             _zoomBox.ItemsSource = new[] { "1x", "2x", "3x" };
             _zoomBox.SelectedIndex = 0;
@@ -60,8 +60,8 @@ namespace TextTestApp
                 return;
             }
 
-            var rendering = _renderingBox.SelectedItem is TextRenderingMode mode
-                ? mode
+            var rendering = _renderingBox.SelectedItem is RenderingChoice choice
+                ? choice.Mode
                 : TextRenderingMode.SubpixelAntialias;
             var zoom = _zoomBox.SelectedIndex + 1;
 
