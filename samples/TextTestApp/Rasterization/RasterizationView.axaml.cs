@@ -31,6 +31,11 @@ namespace TextTestApp
         private DockPanel _scrubRow = null!;
         private Slider _stepSlider = null!;
         private TextBlock _stepText = null!;
+        private TextBlock _hintLegendText = null!;
+        private TextBlock _maskInfoText = null!;
+        private TextBlock _lcdLegendText = null!;
+        private TextBlock _slugInfoText = null!;
+        private Button _copyButton = null!;
         private Image _hintingImage = null!;
         private Image _maskImage = null!;
         private Image _lcdImage = null!;
@@ -61,6 +66,11 @@ namespace TextTestApp
             _scrubRow = this.FindControl<DockPanel>("ScrubRow")!;
             _stepSlider = this.FindControl<Slider>("StepSlider")!;
             _stepText = this.FindControl<TextBlock>("StepText")!;
+            _hintLegendText = this.FindControl<TextBlock>("HintLegendText")!;
+            _maskInfoText = this.FindControl<TextBlock>("MaskInfoText")!;
+            _lcdLegendText = this.FindControl<TextBlock>("LcdLegendText")!;
+            _slugInfoText = this.FindControl<TextBlock>("SlugInfoText")!;
+            _copyButton = this.FindControl<Button>("CopyButton")!;
             _hintingImage = this.FindControl<Image>("HintingImage")!;
             _maskImage = this.FindControl<Image>("MaskImage")!;
             _lcdImage = this.FindControl<Image>("LcdImage")!;
@@ -69,6 +79,8 @@ namespace TextTestApp
             _hintingBox.ItemsSource = new[] { TextHintingMode.Light, TextHintingMode.None, TextHintingMode.Strong };
             _hintingBox.SelectedIndex = 0;
             _backButton.Click += (_, _) => BackRequested?.Invoke();
+            _copyButton.Click += (_, _) => ClipboardHelper.Copy(this, string.Join(Environment.NewLine,
+                _glyphText.Text, _engineText.Text, _maskInfoText.Text, _slugInfoText.Text));
 
             _hintingBox.SelectionChanged += (_, _) => Rebuild();
             _gammaBox.IsCheckedChanged += (_, _) => Rebuild();
@@ -183,10 +195,16 @@ namespace TextTestApp
             }
 
             RenderHintingFigure();
-            SetImage(_maskImage, PipelineFigures.MaskAnatomy(typeface, _glyph, label, "Hamburgefonstiv", size));
+            SetImage(_maskImage, PipelineFigures.MaskAnatomy(typeface, _glyph, label, "Hamburgefonstiv", size,
+                out var maskInfo, embedInfo: false));
+            _maskInfoText.Text = maskInfo;
             SetImage(_lcdImage, PipelineFigures.ClearTypePipeline(typeface, _glyph, label, size,
-                _bgrBox.IsChecked == true, _gammaBox.IsChecked == true, hinting));
-            SetImage(_slugImage, PipelineFigures.SlugBands(typeface, _glyph, label));
+                _bgrBox.IsChecked == true, _gammaBox.IsChecked == true, hinting,
+                out var lcdLegend, embedCaption: false));
+            _lcdLegendText.Text = lcdLegend;
+            SetImage(_slugImage, PipelineFigures.SlugBands(typeface, _glyph, label,
+                out var slugInfo, embedCaption: false));
+            _slugInfoText.Text = slugInfo;
         }
 
         /// <summary>The hinting figure alone - cheap enough to re-render per scrub tick.</summary>
@@ -210,11 +228,15 @@ namespace TextTestApp
                     : string.Empty;
 
                 SetImage(_hintingImage,
-                    PipelineFigures.BytecodeHintingAnatomy(typeface, _glyph, label, size, hinting, probe, step));
+                    PipelineFigures.BytecodeHintingAnatomy(typeface, _glyph, label, size, hinting, probe, step,
+                        out var legend, embedCaption: false));
+                _hintLegendText.Text = legend;
             }
             else
             {
-                SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, _glyph, label, size, hinting));
+                SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, _glyph, label, size, hinting,
+                    out var legend, embedCaption: false));
+                _hintLegendText.Text = legend;
             }
         }
 
