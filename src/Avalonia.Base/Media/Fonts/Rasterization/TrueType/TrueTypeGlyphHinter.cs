@@ -28,9 +28,12 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
     /// result; this pipeline's charter is that ambiguity degrades, never misfits.
     ///
     /// Assembly semantics mirror the reference exactly: component transforms and offsets
-    /// apply to the current points only, so the assembled originals stay component-local.
-    /// Contours never span components, which keeps per-contour interpolation coherent, and
-    /// composite programs measure current positions for everything cross-component.
+    /// apply to the current points only, so the assembled originals stay component-local
+    /// during assembly. Before the composite's own program runs, both original arrays are
+    /// rebuilt from the assembled current points and original distances measure at unity
+    /// scale - the reference's undocumented rule that composite instructions refer
+    /// entirely to the already-hinted subglyphs. Contours never span components, which
+    /// keeps per-contour interpolation coherent.
     /// </summary>
     internal sealed class TrueTypeGlyphHinter
     {
@@ -229,6 +232,21 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
             if (instructionsLength > 0 && outlinePoints > 0)
             {
+                // The reference's undocumented composite rule: the composite program
+                // refers entirely to the already-hinted subglyphs. Both original arrays
+                // become the assembled current points (phantoms included, before their
+                // rounding below), and original distances measure at unity scale - the
+                // interpreter switches on the composite flag. Component-local originals
+                // here would make cross-component measurements read garbage: Arabic dot
+                // components fly by their own offset.
+                for (var i = 0; i < assembly.PointCount; i++)
+                {
+                    assembly.OrgX[i] = assembly.CurX[i];
+                    assembly.OrgY[i] = assembly.CurY[i];
+                    assembly.OrusX[i] = assembly.CurX[i];
+                    assembly.OrusY[i] = assembly.CurY[i];
+                }
+
                 assembly.CurX[outlinePoints + 0] = F26Dot6.Round(assembly.CurX[outlinePoints + 0]);
                 assembly.CurX[outlinePoints + 1] = F26Dot6.Round(assembly.CurX[outlinePoints + 1]);
                 assembly.CurY[outlinePoints + 2] = F26Dot6.Round(assembly.CurY[outlinePoints + 2]);

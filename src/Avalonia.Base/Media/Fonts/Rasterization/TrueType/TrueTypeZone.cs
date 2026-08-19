@@ -74,20 +74,23 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
         public void EnsureCapacity(int pointCount, int contourCount)
         {
+            // Growth preserves contents: composite assembly appends components one at a
+            // time and grows the zone mid-build, so a discarding reallocation would erase
+            // everything already assembled.
             if (CurX.Length < pointCount)
             {
-                CurX = new int[pointCount];
-                CurY = new int[pointCount];
-                OrgX = new int[pointCount];
-                OrgY = new int[pointCount];
-                OrusX = new int[pointCount];
-                OrusY = new int[pointCount];
-                Tags = new byte[pointCount];
+                Array.Resize(ref CurX, pointCount);
+                Array.Resize(ref CurY, pointCount);
+                Array.Resize(ref OrgX, pointCount);
+                Array.Resize(ref OrgY, pointCount);
+                Array.Resize(ref OrusX, pointCount);
+                Array.Resize(ref OrusY, pointCount);
+                Array.Resize(ref Tags, pointCount);
             }
 
             if (ContourEnds.Length < contourCount)
             {
-                ContourEnds = new ushort[contourCount];
+                Array.Resize(ref ContourEnds, contourCount);
             }
         }
     }
