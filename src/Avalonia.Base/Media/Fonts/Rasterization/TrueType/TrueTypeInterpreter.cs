@@ -207,6 +207,14 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         public bool IsCompositeGlyph;
 
         /// <summary>
+        /// The scale original-distance measurements apply to unscaled originals. Composite
+        /// programs refer entirely to the already-hinted assembly (their originals are
+        /// device-space copies), so they measure at unity - the reference swaps its metrics
+        /// scale the same way while SSW and WCVTF keep the true units-to-device scale.
+        /// </summary>
+        private int MeasurementScale => IsCompositeGlyph ? 1 << 16 : _scale;
+
+        /// <summary>
         /// Diagnostic hook: receives one line per dispatched instruction when set. Costs a
         /// null check when unset; string building happens only while tracing.
         /// </summary>
@@ -2108,7 +2116,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                         DualProject(
                             zp1.OrusX[point] - (long)zp0.OrusX[gs.Rp0],
                             zp1.OrusY[point] - (long)zp0.OrusY[gs.Rp0]),
-                        _scale);
+                        MeasurementScale);
                 }
 
                 // Single-width cut-in.
@@ -2708,7 +2716,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 DualProject(
                     zp0.OrusX[pointL] - (long)zp1.OrusX[pointK],
                     zp0.OrusY[pointL] - (long)zp1.OrusY[pointK]),
-                _scale);
+                MeasurementScale);
         }
 
         private void UntouchPoint(int point)

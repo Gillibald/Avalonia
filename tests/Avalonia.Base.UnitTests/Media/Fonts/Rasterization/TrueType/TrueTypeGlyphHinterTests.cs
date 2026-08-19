@@ -112,6 +112,147 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Composite_Programs_Measure_Originals_On_The_Assembled_Outline()
+        {
+            // The reference's undocumented composite rule: a composite program refers
+            // entirely to the already-hinted subglyphs - the originals and unscaled
+            // originals become the assembled current points, and original distances
+            // measure at unity scale. Arabic fonts position their dot components exactly
+            // this way: an MDRP measuring the original distance between a base point and
+            // a dot point must see the assembled offset, not the component-local
+            // coordinates, which would read zero and collapse the dots onto the base.
+            var compositeProgram = new TtAsm()
+                .Op(TtAsm.Svtca0)
+                .PushB(0).Op(TtAsm.Srp0)
+                .PushB(4).Op(0xC0)
+                .Build();
+
+            // Two identical squares; the second sits 1000 units up (500 in 26.6).
+            var glyf = BuildGlyf(
+                BuildSimpleSquare(100, instructions: null),
+                BuildComposite(
+                    new[]
+                    {
+                        Component(CompositeFlags.ArgsAreXYValues | CompositeFlags.ArgsAreWords | CompositeFlags.MoreComponents, 0, 0, 0),
+                        Component(CompositeFlags.ArgsAreXYValues | CompositeFlags.ArgsAreWords | CompositeFlags.WeHaveInstructions, 0, 0, 1000),
+                    },
+                    compositeProgram));
+
+            var hinter = CreateHinter(glyf);
+
+            Assert.True(hinter.TryHint(1, backwardCompatibility: 0));
+
+            var zone = hinter.Zone!;
+
+            // Point 4 = the offset square's first point, assembled at y 500. The MDRP
+            // moves it to rp0 plus the original distance; with assembled originals at
+            // unity scale that distance IS 500, so the point must not move.
+            Assert.Equal(500, zone.CurY[4]);
+        }
+
+        [Theory]
+        [InlineData(952)]   // Arabic sheen: base plus a three-dots component at (959, 840)
+        [InlineData(919)]   // Arabic teh form: base plus a dots component at (-99, 970)
+        public void Tahoma_Arabic_Dot_Composites_Keep_Their_Assembled_Bounds(int glyph)
+        {
+            Assert.SkipWhen(!OperatingSystem.IsWindows() || !System.IO.File.Exists(@"C:\Windows\Fonts\tahoma.ttf"),
+                "needs the Tahoma system font");
+
+            // These composites carry their own programs that re-position the dot
+            // components; measuring originals component-locally threw the dots several
+            // pixels off (the missing-ink report in Arabic and Devanagari text).
+            var typeface = SyntheticFont.FromBytes(System.IO.File.ReadAllBytes(@"C:\Windows\Fonts\tahoma.ttf"))
+                .CreateGlyphTypeface();
+
+            using var scratch = new Avalonia.Media.Fonts.Rasterization.GlyphPathBuilder();
+            var scaleQ = Avalonia.Media.Fonts.Rasterization.GlyphMaskKey.QuantizeScale(16f);
+
+            var unhinted = Avalonia.Media.Fonts.Rasterization.GlyphMasks.Build(typeface, scratch,
+                new Avalonia.Media.Fonts.Rasterization.GlyphMaskKey((ushort)glyph, scaleQ, 0,
+                    Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased, GridFit: false));
+            var hinted = Avalonia.Media.Fonts.Rasterization.GlyphMasks.Build(typeface, scratch,
+                new Avalonia.Media.Fonts.Rasterization.GlyphMaskKey((ushort)glyph, scaleQ, 0,
+                    Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased, GridFit: true));
+
+            Assert.False(unhinted.IsEmpty);
+            Assert.False(hinted.IsEmpty);
+
+            // Grid fitting nudges bounds by a pixel or two; a dot component thrown by its
+            // own offset shows up as several pixels of growth.
+            Assert.True(Math.Abs(hinted.Top - unhinted.Top) <= 3,
+                $"hinted top {hinted.Top} vs unhinted {unhinted.Top}");
+            Assert.True(Math.Abs(hinted.Height - unhinted.Height) <= 3,
+                $"hinted height {hinted.Height} vs unhinted {unhinted.Height}");
+            Assert.True(Math.Abs(hinted.Width - unhinted.Width) <= 3,
+                $"hinted width {hinted.Width} vs unhinted {unhinted.Width}");
+        }
+
+        [Fact]
+        public void Growing_A_Zone_Preserves_Its_Contents()
+        {
+            // AppendComponent grows the assembly zone mid-build; a capacity grow that
+            // discards contents silently erases every component already assembled (the
+            // missing Arabic base under freshly created hinters).
+            var zone = new TrueTypeZone(4, 1);
+
+            zone.PointCount = 2;
+            zone.ContourCount = 1;
+            zone.CurX[0] = 11;
+            zone.CurY[1] = 22;
+            zone.OrusX[1] = 33;
+            zone.Tags[0] = TrueTypeZone.OnCurve;
+            zone.ContourEnds[0] = 1;
+
+            zone.EnsureCapacity(128, 16);
+
+            Assert.Equal(11, zone.CurX[0]);
+            Assert.Equal(22, zone.CurY[1]);
+            Assert.Equal(33, zone.OrusX[1]);
+            Assert.Equal(TrueTypeZone.OnCurve, zone.Tags[0]);
+            Assert.Equal(1, zone.ContourEnds[0]);
+        }
+
+        [Fact]
+        public void Assemblies_Past_The_Initial_Capacity_Keep_Early_Components()
+        {
+            // Seventeen squares of four points cross the assembly zone's initial 64-point
+            // capacity mid-append; the first component's ink must survive the growth.
+            var components = new List<(CompositeFlags, ushort, short, short)>();
+
+            for (var i = 0; i < 17; i++)
+            {
+                var flags = CompositeFlags.ArgsAreXYValues | CompositeFlags.ArgsAreWords;
+
+                if (i < 16)
+                {
+                    flags |= CompositeFlags.MoreComponents;
+                }
+
+                components.Add(Component(flags, 0, (short)(i * 200), 0));
+            }
+
+            var glyf = BuildGlyf(
+                BuildSimpleSquare(100, instructions: null),
+                BuildComposite(components.ToArray(), instructions: null));
+
+            var hinter = CreateHinter(glyf);
+
+            Assert.True(hinter.TryHint(1, backwardCompatibility: 4));
+
+            var zone = hinter.Zone!;
+
+            Assert.Equal(17 * 4 + 4, zone.PointCount);
+
+            // The first square spans (0..100, 0..100) units = 0..50 in 26.6; a wiped
+            // assembly would leave its points at zero.
+            Assert.Equal(50, zone.CurX[1]);
+            Assert.Equal(50, zone.CurY[2]);
+
+            // And the last component sits at its own offset (16 * 200 units = 1600 in 26.6).
+            Assert.Equal(1600, zone.CurX[64]);
+        }
+
+        [Fact]
         public void Point_Matching_Aligns_The_Component_Exactly()
         {
             // Match the accent's origin onto the base's far corner (100, 100) units, which
