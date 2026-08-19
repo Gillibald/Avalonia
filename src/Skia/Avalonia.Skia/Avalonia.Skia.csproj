@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>$(AvsCurrentTargetFramework);$(AvsLegacyTargetFrameworks)</TargetFrameworks>
     <IncludeLinuxSkia>true</IncludeLinuxSkia>
@@ -21,7 +21,7 @@
   <ItemGroup Label="InternalsVisibleTo">
     <InternalsVisibleTo Include="Avalonia.Skia.RenderTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="GlyphRasterDemo, PublicKey=$(AvaloniaPublicKey)" />
-    <InternalsVisibleTo Include="TextTestApp, PublicKey=$(AvaloniaPublicKey)" />
+    <InternalsVisibleTo Include="TextLab, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Skia.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Benchmarks, PublicKey=$(AvaloniaPublicKey)" />
   </ItemGroup>

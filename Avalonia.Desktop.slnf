@@ -1,4 +1,4 @@
-﻿{
+{
   "solution": {
     "path": "Avalonia.slnx",
     "projects": [
@@ -13,7 +13,7 @@
       "samples\\RenderDemo\\RenderDemo.csproj",
       "samples\\SampleControls\\ControlSamples.csproj",
       "samples\\Sandbox\\Sandbox.csproj",
-      "samples\\TextTestApp\\TextTestApp.csproj",
+      "samples\\TextLab\\TextLab.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContextPlug\\UnloadableAssemblyLoadContextPlug.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext.csproj",
       "samples\\XEmbedSample\\XEmbedSample.csproj",
