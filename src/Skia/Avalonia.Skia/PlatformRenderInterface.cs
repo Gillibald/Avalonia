@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Metal;
@@ -79,6 +80,67 @@ namespace Avalonia.Skia
         public IGeometryImpl CreateCombinedGeometry(GeometryCombineMode combineMode, IGeometryImpl g1, IGeometryImpl g2)
         {
             return CombinedGeometryImpl.ForceCreate(combineMode, g1, g2);
+        }
+
+        public IPlatformTypeface CreateTypeface(GlyphTypeface glyphTypeface)
+        {
+            if (glyphTypeface.FontMemory is SfntFace face)
+            {
+                // The lease keeps the font file bytes alive until Skia releases the data; the pin
+                // handle lives in the release closure so the pointer stays valid for memory that
+                // is not natively allocated as well. Disposal order in the closure matters: unpin
+                // before the lease release can dispose the underlying memory owner.
+                var lease = face.Clone();
+
+                if (!lease.TryGetFontFileData(out var data, out var faceIndex))
+                {
+                    lease.Dispose();
+
+                    throw new InvalidOperationException(
+                        "The glyph typeface's font memory cannot provide the font file data needed to create a render typeface.");
+                }
+
+                var handle = data.Pin();
+
+                SKData skData;
+
+                unsafe
+                {
+                    skData = SKData.Create((IntPtr)handle.Pointer, data.Length, (_, _) =>
+                    {
+                        handle.Dispose();
+                        lease.Dispose();
+                    });
+                }
+
+                using (skData)
+                {
+                    if (SKTypeface.FromData(skData, faceIndex) is not { } skTypeface)
+                    {
+                        throw new InvalidOperationException("Skia could not create a typeface from the font data.");
+                    }
+
+                    return new SkiaTypeface(skTypeface, glyphTypeface.FontSimulations);
+                }
+            }
+
+            // Fallback for font memories without whole-file data: round-trip a stream.
+            if (glyphTypeface.FontMemory is IPlatformTypeface platformTypeface &&
+                platformTypeface.TryGetStream(out var stream))
+            {
+                using (stream)
+                {
+                    if (SKTypeface.FromStream(stream) is not { } skTypeface)
+                    {
+                        throw new InvalidOperationException("Skia could not create a typeface from the font stream.");
+                    }
+
+                    return new SkiaTypeface(skTypeface, glyphTypeface.FontSimulations);
+                }
+            }
+
+            throw new InvalidOperationException(
+                "The glyph typeface's font memory cannot provide font data for the render typeface.");
         }
 
         public IGeometryImpl BuildGlyphRunGeometry(GlyphRun glyphRun)

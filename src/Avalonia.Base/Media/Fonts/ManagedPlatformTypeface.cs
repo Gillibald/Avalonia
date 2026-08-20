@@ -35,6 +35,30 @@ namespace Avalonia.Media.Fonts
         public FontSimulations FontSimulations { get; }
 
         /// <summary>
+        /// Attempts to create a managed platform typeface over the same font data as the specified
+        /// memory-backed glyph typeface, without re-parsing the font. Used as the render typeface of
+        /// backends that do not rasterize (headless).
+        /// </summary>
+        /// <param name="glyphTypeface">The glyph typeface providing font data and properties.</param>
+        /// <param name="platformTypeface">The created typeface, if the operation succeeds.</param>
+        /// <returns><see langword="true"/> if the glyph typeface is backed by an <see cref="SfntFace"/>; otherwise, <see langword="false"/>.</returns>
+        public static bool TryCreate(GlyphTypeface glyphTypeface,
+            [NotNullWhen(true)] out ManagedPlatformTypeface? platformTypeface)
+        {
+            platformTypeface = null;
+
+            if (glyphTypeface.FontMemory is not SfntFace face)
+            {
+                return false;
+            }
+
+            platformTypeface = new ManagedPlatformTypeface(face.Clone(), glyphTypeface.FamilyName,
+                glyphTypeface.Weight, glyphTypeface.Style, glyphTypeface.Stretch, glyphTypeface.FontSimulations);
+
+            return true;
+        }
+
+        /// <summary>
         /// Attempts to create a managed platform typeface from the first face of the specified stream.
         /// </summary>
         /// <param name="stream">A readable stream positioned at the beginning of the font data.</param>

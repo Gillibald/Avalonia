@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
@@ -140,6 +141,20 @@ namespace Avalonia.Headless
             Point baselineOrigin)
         {
             return new HeadlessGlyphRunStub(glyphTypeface, fontRenderingEmSize, baselineOrigin);
+        }
+
+        public IPlatformTypeface CreateTypeface(GlyphTypeface glyphTypeface)
+        {
+            // The headless backend never rasterizes, but the handle still serves font tables:
+            // legacy consumers (the font manager seam used by test managers) treat platform
+            // typefaces as font memory during the transition.
+            if (!ManagedPlatformTypeface.TryCreate(glyphTypeface, out var platformTypeface))
+            {
+                throw new InvalidOperationException(
+                    "The glyph typeface's font memory cannot provide font data for the render typeface.");
+            }
+
+            return platformTypeface;
         }
 
         internal class HeadlessGlyphRunStub : IGlyphRunImpl
