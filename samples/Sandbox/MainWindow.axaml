@@ -1,4 +1,248 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-        x:Class="Sandbox.MainWindow">
+        x:Class="Sandbox.MainWindow"
+        Width="780" Height="640" CanResize="False"
+        Title="Backdrop comparison">
+  <DockPanel>
+    <TextBlock x:Name="ImplLabel" DockPanel.Dock="Top" Margin="12,8,12,0"
+               FontSize="13" FontWeight="Bold" Text="implementation: ?" />
+
+    <TabControl x:Name="Tabs" Margin="4">
+
+      <!-- ============================================================= -->
+      <TabItem Header="1 Card">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="16,8" Spacing="4">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+              <RadioButton x:Name="ShadowNone" GroupName="shadow" Content="No shadow" />
+              <RadioButton x:Name="ShadowBox" GroupName="shadow" Content="BoxShadow" IsChecked="True" />
+              <RadioButton x:Name="ShadowEffect" GroupName="shadow" Content="DropShadowEffect" />
+            </StackPanel>
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="An elevated glass card: translucent rounded Border with BackdropEffect blur plus a shadow. Watch: does the blur stay inside the card outline, and does the shadow fall on sharp background?" />
+          </StackPanel>
+          <Panel Width="680" Height="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Panel>
+              <Panel.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                  <GradientStop Color="#FF3A7BD5" Offset="0" />
+                  <GradientStop Color="#FF00D2FF" Offset="1" />
+                </LinearGradientBrush>
+              </Panel.Background>
+              <Ellipse Width="160" Height="160" Fill="#FFFF5F6D"
+                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="24" />
+              <Ellipse Width="200" Height="200" Fill="#FFFFC371"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="24" />
+              <TextBlock Text="Live content" FontSize="42" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+            <Border x:Name="Card" Width="360" Height="150"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    CornerRadius="16" Background="#30FFFFFF"
+                    BorderBrush="#50FFFFFF" BorderThickness="1"
+                    BoxShadow="0 12 28 2 #A0000000">
+              <Border.BackdropEffect>
+                <BlurEffect Radius="18" />
+              </Border.BackdropEffect>
+              <TextBlock Text="Glass card" FontSize="20" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Panel>
+        </DockPanel>
+      </TabItem>
+
+      <!-- ============================================================= -->
+      <TabItem Header="2 Shape">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="16,8" Spacing="4">
+            <CheckBox x:Name="PillClip" Content="ClipToBounds workaround" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="A pill-shaped glass button (CornerRadius 45) with a BoxShadow. Watch: does the blur follow the rounded outline? With the ClipToBounds workaround: what happens to the shadow, and are the corners fixed?" />
+          </StackPanel>
+          <Panel Width="680" Height="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Panel>
+              <Panel.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                  <GradientStop Color="#FF614385" Offset="0" />
+                  <GradientStop Color="#FF516395" Offset="1" />
+                </LinearGradientBrush>
+              </Panel.Background>
+              <Ellipse Width="180" Height="180" Fill="#FF5F6DFF"
+                       HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="40" />
+              <Ellipse Width="140" Height="140" Fill="#FFFFC371"
+                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="40" />
+              <TextBlock Text="Live content" FontSize="42" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+            <Border x:Name="Pill" Width="320" Height="90"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    CornerRadius="45" Background="#30FFFFFF"
+                    BorderBrush="#50FFFFFF" BorderThickness="1"
+                    BoxShadow="0 10 24 0 #80000000">
+              <Border.BackdropEffect>
+                <BlurEffect Radius="18" />
+              </Border.BackdropEffect>
+              <TextBlock Text="Pill" FontSize="20" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Panel>
+        </DockPanel>
+      </TabItem>
+
+      <!-- ============================================================= -->
+      <TabItem Header="3 Overflow">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="16,8" Spacing="4">
+            <CheckBox x:Name="AnimateBadge" Content="Animate badge" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="A badge overhangs the panel's top-right corner via RenderTransform. Watch: does the glass area change because a child sticks out? While animating: does the glass edge move every frame?" />
+          </StackPanel>
+          <Panel Width="680" Height="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Panel>
+              <Panel.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                  <GradientStop Color="#FF11998E" Offset="0" />
+                  <GradientStop Color="#FF38EF7D" Offset="1" />
+                </LinearGradientBrush>
+              </Panel.Background>
+              <Ellipse Width="120" Height="120" Fill="#FFFF5F6D"
+                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="200,55,0,0" />
+              <Ellipse Width="110" Height="110" Fill="#FFFFC371"
+                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="465,145,0,0" />
+              <TextBlock Text="Live content" FontSize="42" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,72,0,0" />
+            </Panel>
+            <Border Width="340" Height="150"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    CornerRadius="12" Background="#30FFFFFF"
+                    BorderBrush="#50FFFFFF" BorderThickness="1">
+              <Border.BackdropEffect>
+                <BlurEffect Radius="18" />
+              </Border.BackdropEffect>
+              <Panel>
+                <TextBlock Text="Panel" FontSize="20" Foreground="White"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <Border x:Name="Badge" Width="72" Height="72" CornerRadius="36" Background="#FFFF5F6D"
+                        HorizontalAlignment="Right" VerticalAlignment="Top">
+                  <TextBlock Text="3" FontSize="24" FontWeight="Bold" Foreground="White"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+              </Panel>
+            </Border>
+          </Panel>
+        </DockPanel>
+      </TabItem>
+
+      <!-- ============================================================= -->
+      <TabItem Header="4 Decorator">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="16,8" Spacing="4">
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="BackdropEffect on an auto-sized (zero-size) Canvas holding two small positioned shapes far apart. The layout box is empty; the subtree is two disjoint circles. Watch: what region becomes glass?" />
+          </StackPanel>
+          <Panel Width="680" Height="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Panel>
+              <Panel.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                  <GradientStop Color="#FFFC5C7D" Offset="0" />
+                  <GradientStop Color="#FF6A82FB" Offset="1" />
+                </LinearGradientBrush>
+              </Panel.Background>
+              <Ellipse Width="150" Height="150" Fill="#FFFFC371"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <TextBlock Text="Live content" FontSize="42" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" />
+            </Panel>
+            <Canvas HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Canvas.BackdropEffect>
+                <BlurEffect Radius="14" />
+              </Canvas.BackdropEffect>
+              <Ellipse Canvas.Left="-190" Canvas.Top="-95" Width="70" Height="70"
+                       Fill="#60FFFFFF" Stroke="#90FFFFFF" StrokeThickness="1" />
+              <Ellipse Canvas.Left="120" Canvas.Top="55" Width="70" Height="70"
+                       Fill="#60FFFFFF" Stroke="#90FFFFFF" StrokeThickness="1" />
+            </Canvas>
+          </Panel>
+        </DockPanel>
+      </TabItem>
+
+      <!-- ============================================================= -->
+      <TabItem Header="5 Mask">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="16,8" Spacing="4">
+            <CheckBox x:Name="MaskOn" Content="OpacityMask on the surrounding group" IsChecked="True" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="The whole scene (background and glass) sits in a group with a bottom fade-out OpacityMask, like a list edge fade or a fading page transition. Watch: does the glass still blur while the group renders through an intermediate layer?" />
+          </StackPanel>
+          <Panel x:Name="MaskedGroup" Width="680" Height="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Panel.OpacityMask>
+              <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                <GradientStop Color="#FFFFFFFF" Offset="0" />
+                <GradientStop Color="#FFFFFFFF" Offset="0.65" />
+                <GradientStop Color="#00FFFFFF" Offset="1" />
+              </LinearGradientBrush>
+            </Panel.OpacityMask>
+            <Panel>
+              <Panel.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                  <GradientStop Color="#FFC33764" Offset="0" />
+                  <GradientStop Color="#FF1D2671" Offset="1" />
+                </LinearGradientBrush>
+              </Panel.Background>
+              <Ellipse Width="180" Height="180" Fill="#FFFFC371"
+                       HorizontalAlignment="Left" VerticalAlignment="Top" Margin="30" />
+              <TextBlock Text="Live content" FontSize="42" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+            <Border Width="360" Height="150"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    CornerRadius="16" Background="#30FFFFFF"
+                    BorderBrush="#50FFFFFF" BorderThickness="1">
+              <Border.BackdropEffect>
+                <BlurEffect Radius="18" />
+              </Border.BackdropEffect>
+              <TextBlock Text="Glass in a masked group" FontSize="20" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Panel>
+        </DockPanel>
+      </TabItem>
+
+      <!-- ============================================================= -->
+      <TabItem Header="6 Parity">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Margin="16,8" Spacing="4">
+            <CheckBox x:Name="AnimateBehind" Content="Animate content behind the glass" IsChecked="True" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" FontSize="12"
+                       Text="Content moves behind a static glass panel. Both implementations are expected to handle this: the glass follows the live content. This scenario was never the disagreement." />
+          </StackPanel>
+          <Panel Width="680" Height="400" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Panel>
+              <Panel.Background>
+                <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                  <GradientStop Color="#FF3A7BD5" Offset="0" />
+                  <GradientStop Color="#FF00D2FF" Offset="1" />
+                </LinearGradientBrush>
+              </Panel.Background>
+              <Ellipse x:Name="BehindBall" Width="140" Height="140" Fill="#FFFF5F6D"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+              <TextBlock Text="Live content" FontSize="42" FontWeight="Bold" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,24,0,0" />
+            </Panel>
+            <Border Width="360" Height="150"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    CornerRadius="16" Background="#30FFFFFF"
+                    BorderBrush="#50FFFFFF" BorderThickness="1">
+              <Border.BackdropEffect>
+                <BlurEffect Radius="18" />
+              </Border.BackdropEffect>
+              <TextBlock Text="Static glass" FontSize="20" Foreground="White"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+          </Panel>
+        </DockPanel>
+      </TabItem>
+
+    </TabControl>
+  </DockPanel>
 </Window>
