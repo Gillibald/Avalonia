@@ -63,8 +63,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var platformTypeface = glyphTypeface.PlatformTypeface;
 
-                Assert.IsType<SkiaTypeface>(platformTypeface);
-                Assert.Equal("Inter", platformTypeface.FamilyName);
+                var skiaTypeface = Assert.IsType<SkiaTypeface>(platformTypeface);
+                Assert.Equal("Inter", skiaTypeface.FamilyName);
                 Assert.Same(platformTypeface, glyphTypeface.PlatformTypeface);
 
                 glyphTypeface.Dispose();

@@ -1,7 +1,4 @@
 using System;
-using System.Buffers;
-using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables;
@@ -21,7 +18,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             var success = HeadTable.TryLoad(typeface, out var headTable);
 
@@ -36,7 +33,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal((ushort)1, headTable.Version.Major);
@@ -50,7 +47,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(0x5F0F3CF5u, headTable.MagicNumber);
@@ -63,7 +60,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(2816, headTable.UnitsPerEm);
@@ -76,7 +73,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(-2080, headTable.XMin);
@@ -92,7 +89,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(IndexToLocFormat.Long, headTable.IndexToLocFormat);
@@ -105,7 +102,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(GlyphDataFormat.Current, headTable.GlyphDataFormat);
@@ -118,7 +115,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(6, headTable.LowestRecPPEM);
@@ -131,7 +128,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.True(headTable.FontRevision.ToFloat() > 0);
@@ -144,7 +141,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.True(headTable.Created > new DateTime(1904, 1, 1));
@@ -158,7 +155,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.True(headTable.Modified > new DateTime(1904, 1, 1));
@@ -172,7 +169,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
 
@@ -186,71 +183,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
 
             using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-            var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+            var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
             Assert.True(HeadTable.TryLoad(typeface, out var headTable));
             Assert.Equal(FontDirectionHint.LeftToRightWithNeutrals, headTable.FontDirectionHint);
         }
-    }
-    
-    internal class CustomPlatformTypeface : IPlatformTypeface
-    {
-        private readonly UnmanagedFontMemory _fontMemory;
-
-        public CustomPlatformTypeface(Stream stream, string fontFamily = "Custom")
-        {
-            _fontMemory = UnmanagedFontMemory.LoadFromStream(stream);
-            FamilyName = fontFamily;
-        }
-
-        public FontWeight Weight => FontWeight.Normal;
-
-        public FontStyle Style => FontStyle.Normal;
-
-        public FontStretch Stretch => FontStretch.Normal;
-
-        public string FamilyName { get; }
-
-        public FontSimulations FontSimulations => FontSimulations.None;
-
-        public void Dispose()
-        {
-            ((IDisposable)_fontMemory).Dispose();
-        }
-
-        public unsafe bool TryGetStream([NotNullWhen(true)] out Stream stream)
-        {
-            var memory = _fontMemory.Memory;
-
-            var handle = memory.Pin();
-            stream = new PinnedUnmanagedMemoryStream(handle, memory.Length);
-
-            return true;
-        }
-
-        private sealed class PinnedUnmanagedMemoryStream : UnmanagedMemoryStream
-        {
-            private MemoryHandle _handle;
-
-            public unsafe PinnedUnmanagedMemoryStream(MemoryHandle handle, long length)
-                : base((byte*)handle.Pointer, length)
-            {
-                _handle = handle;
-            }
-
-            protected override void Dispose(bool disposing)
-            {
-                try
-                {
-                    base.Dispose(disposing);
-                }
-                finally
-                {
-                    _handle.Dispose();
-                }
-            }
-        }
-
-        public bool TryGetTable(OpenTypeTag tag, out ReadOnlyMemory<byte> table) => _fontMemory.TryGetTable(tag, out table);
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
@@ -13,8 +12,8 @@ namespace Avalonia.Benchmarks.Text;
 
 /// <summary>
 /// Shared font loading for the CFF / CFF2 outline benchmarks. Loads each format
-/// directly through <see cref="SkiaTypeface"/> (the same pattern the Variation
-/// benchmarks use) so glyf, CFF and CFF2 fonts can be addressed independently.
+/// directly through the managed loader (the same pattern the Variation benchmarks
+/// use) so glyf, CFF and CFF2 fonts can be addressed independently.
 /// </summary>
 internal static class CffFonts
 {
@@ -29,14 +28,13 @@ internal static class CffFonts
     {
         var assetLoader = new StandardAssetLoader();
         using var stream = assetLoader.Open(new Uri(assetUri));
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
 
-        var skData = SKData.CreateCopy(memory.ToArray());
-        var skTypeface = SKTypeface.FromData(skData)
-            ?? throw new InvalidOperationException($"SkiaSharp failed to load the font at '{assetUri}'.");
+        if (!SfntFace.TryLoad(stream, out var face))
+        {
+            throw new InvalidOperationException($"Failed to load the font at '{assetUri}'.");
+        }
 
-        return new GlyphTypeface(new SkiaTypeface(skTypeface, FontSimulations.None));
+        return new GlyphTypeface(face);
     }
 
     public static GlyphTypeface Vary(GlyphTypeface gt, double weight)

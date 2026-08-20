@@ -126,7 +126,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     return;
                 }
 
-                if (!glyphTypeface.PlatformTypeface.TryGetTable(ColrTable.Tag, out var colrData))
+                if (!glyphTypeface.FontMemory.TryGetTable(ColrTable.Tag, out var colrData))
                 {
                     return;
                 }
@@ -200,7 +200,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     return;
                 }
 
-                if (!glyphTypeface.PlatformTypeface.TryGetTable(ColrTable.Tag, out var colrData))
+                if (!glyphTypeface.FontMemory.TryGetTable(ColrTable.Tag, out var colrData))
                 {
                     return;
                 }
@@ -282,7 +282,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
 
                 // Get the COLR data for parsing
-                if (!glyphTypeface.PlatformTypeface.TryGetTable(ColrTable.Tag, out var colrData))
+                if (!glyphTypeface.FontMemory.TryGetTable(ColrTable.Tag, out var colrData))
                 {
                     return;
                 }
@@ -392,7 +392,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     return;
                 }
 
-                if (!glyphTypeface.PlatformTypeface.TryGetTable(ColrTable.Tag, out var colrData))
+                if (!glyphTypeface.FontMemory.TryGetTable(ColrTable.Tag, out var colrData))
                 {
                     return;
                 }

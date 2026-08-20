@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables;
 using Avalonia.Media.Fonts.Tables.Glyf;
 using Avalonia.Platform;
@@ -18,7 +19,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
         {
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(InterFontUri));
-            return new GlyphTypeface(new CustomPlatformTypeface(stream));
+            return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
         }
 
         private static GlyfTable LoadGlyf(GlyphTypeface typeface)

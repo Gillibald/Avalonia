@@ -17,8 +17,8 @@ namespace Avalonia.Benchmarks.Media.Variation
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Typefaces are loaded directly via the asset-resource stream + <see cref="SkiaTypeface"/>
-    /// constructor (the same pattern <c>tests/Avalonia.RenderTests/Media/GlyphOutlineRenderTests</c>
+    /// Typefaces are loaded directly from the asset-resource stream through the managed
+    /// loader (the same pattern <c>tests/Avalonia.RenderTests/Media/GlyphOutlineRenderTests</c>
     /// uses) so we can address Inter-Regular and InterVariable independently, sidestepping
     /// the family-name collision they'd cause if resolved through <see cref="FontManager"/>.
     /// </para>
@@ -101,19 +101,28 @@ namespace Avalonia.Benchmarks.Media.Variation
         {
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(assetUri));
+
+            if (!SfntFace.TryLoad(stream, out var face))
+            {
+                throw new InvalidOperationException($"Failed to load the font at '{assetUri}'.");
+            }
+
+            return new GlyphTypeface(face);
+        }
+
+        /// <summary>
+        /// Loads the font at <paramref name="assetUri"/> as a native Skia typeface, the baseline
+        /// the managed advance lookups are measured against.
+        /// </summary>
+        public static SKTypeface LoadSkTypeface(string assetUri)
+        {
+            var assetLoader = new StandardAssetLoader();
+            using var stream = assetLoader.Open(new Uri(assetUri));
             using var memory = new MemoryStream();
             stream.CopyTo(memory);
 
-            // SKData.CreateCopy keeps the font bytes alive for the SKTypeface's table
-            // reads even after the source stream disposes — the same pattern the
-            // GlyphOutlineRenderTests use to avoid the family-name collision through
-            // FontManager.
-            var skData = SKData.CreateCopy(memory.ToArray());
-            var skTypeface = SKTypeface.FromData(skData)
-                ?? throw new InvalidOperationException(
-                    $"SkiaSharp failed to load the font at '{assetUri}'.");
-
-            return new GlyphTypeface(new SkiaTypeface(skTypeface, FontSimulations.None));
+            return SKTypeface.FromData(SKData.CreateCopy(memory.ToArray()))
+                ?? throw new InvalidOperationException($"SkiaSharp failed to load the font at '{assetUri}'.");
         }
 
         private static ushort[] MapChars(GlyphTypeface gt, string sample, int count)

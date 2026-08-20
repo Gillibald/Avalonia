@@ -113,26 +113,13 @@ namespace Avalonia.Skia
                     });
                 }
 
+                // SkiaSharp cannot create a typeface at variation coordinates, so a varied glyph
+                // typeface renders with the default instance's outlines.
                 using (skData)
                 {
                     if (SKTypeface.FromData(skData, faceIndex) is not { } skTypeface)
                     {
                         throw new InvalidOperationException("Skia could not create a typeface from the font data.");
-                    }
-
-                    return new SkiaTypeface(skTypeface, glyphTypeface.FontSimulations);
-                }
-            }
-
-            // Fallback for font memories without whole-file data: round-trip a stream.
-            if (glyphTypeface.FontMemory is IPlatformTypeface platformTypeface &&
-                platformTypeface.TryGetStream(out var stream))
-            {
-                using (stream)
-                {
-                    if (SKTypeface.FromStream(stream) is not { } skTypeface)
-                    {
-                        throw new InvalidOperationException("Skia could not create a typeface from the font stream.");
                     }
 
                     return new SkiaTypeface(skTypeface, glyphTypeface.FontSimulations);

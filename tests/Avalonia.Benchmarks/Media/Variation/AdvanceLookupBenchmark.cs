@@ -99,9 +99,8 @@ namespace Avalonia.Benchmarks.Media.Variation
 
             _advances2000 = new ushort[2000];
 
-            // Skia baseline: pull the SKTypeface back out of the variable Inter
-            // typeface's platform impl and create an SKFont over it.
-            var skTypeface = ((SkiaTypeface)_variableDefault.PlatformTypeface).SKTypeface;
+            // Skia baseline: a native typeface over the same variable Inter bytes.
+            var skTypeface = VariationFixtures.LoadSkTypeface(VariationFixtures.InterVariableAsset);
             _skFont = new SKFont(skTypeface, size: 16);
             _skBounds2000 = new SKRect[2000];
             _skWidths2000 = new float[2000];

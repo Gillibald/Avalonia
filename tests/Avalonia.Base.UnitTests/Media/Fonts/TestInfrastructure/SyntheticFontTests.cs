@@ -91,19 +91,19 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.TestInfrastructure
         }
 
         [Fact]
-        public void ToPlatformTypeface_Snapshots_The_Tables_At_Call_Time()
+        public void ToFontMemory_Snapshots_The_Tables_At_Call_Time()
         {
             var font = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular);
 
             var headTag = OpenTypeTag.Parse("head");
             var beforeMutation = font.GetTable("head");
 
-            var platformTypeface = font.ToPlatformTypeface();
+            var fontMemory = font.ToFontMemory();
 
             // Mutate the source after taking the snapshot.
             font.PatchUInt16("head", 18, 0x1234);
 
-            Assert.True(platformTypeface.TryGetTable(headTag, out var snapshot));
+            Assert.True(fontMemory.TryGetTable(headTag, out var snapshot));
 
             // The snapshot reflects the pre-mutation bytes; the source reflects the mutation.
             Assert.Equal(beforeMutation, snapshot.ToArray());
@@ -114,11 +114,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.TestInfrastructure
         public void ToBytes_RoundTrips_Through_The_Real_Sfnt_Parser()
         {
             // ToBytes() must emit a directory the production UnmanagedFontMemory parser
-            // accepts. CustomPlatformTypeface wraps UnmanagedFontMemory.LoadFromStream.
+            // accepts.
             var rebuilt = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).ToBytes();
 
-            var platformTypeface = new CustomPlatformTypeface(new MemoryStream(rebuilt));
-            var typeface = GlyphTypeface.TryCreate(platformTypeface);
+            var typeface = GlyphTypeface.TryCreate(UnmanagedFontMemory.LoadFromStream(new MemoryStream(rebuilt)));
 
             Assert.NotNull(typeface);
             Assert.True(typeface!.GlyphCount > 0);

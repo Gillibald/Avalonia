@@ -24,7 +24,7 @@ namespace Avalonia.Base.UnitTests.Media
         {
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(assetUri));
-            return new GlyphTypeface(new CustomPlatformTypeface(stream));
+            return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
         }
 
         private static NormalizedVariationPosition WghtPosition(GlyphTypeface gt, double weight)
@@ -179,17 +179,18 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void Clone_Shares_PlatformTypeface_With_Source_When_Override_Is_No_Op()
+        public void Clone_Derives_Its_Own_PlatformTypeface()
         {
-            // With the default no-op IPlatformTypeface.WithVariation override, the clone
-            // reuses the source's platform handle. This pins the current behavior; when
-            // a platform implementation overrides WithVariation to actually clone the
-            // underlying face (e.g. via SKTypeface.Clone), this assertion should be
-            // updated to !Same against that platform.
-            var gt = LoadTypeface(InterVariableAsset);
-            var varied = gt.WithVariation(WghtPosition(gt, 700));
+            // The render interface derives a render typeface per glyph typeface, so a
+            // backend that can instantiate variations draws each clone at its position.
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
+            {
+                var gt = LoadTypeface(InterVariableAsset);
+                var varied = gt.WithVariation(WghtPosition(gt, 700));
 
-            Assert.Same(gt.PlatformTypeface, varied.PlatformTypeface);
+                Assert.NotSame(gt.PlatformTypeface, varied.PlatformTypeface);
+                Assert.Same(varied.PlatformTypeface, varied.PlatformTypeface);
+            }
         }
 
         [Fact]

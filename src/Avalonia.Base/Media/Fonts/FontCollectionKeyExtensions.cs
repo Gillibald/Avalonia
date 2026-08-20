@@ -51,28 +51,5 @@ namespace Avalonia.Media.Fonts
                 Variation = glyphTypeface.VariationPosition
             };
         }
-
-        /// <summary>
-        /// Creates a new FontCollectionKey based on the style, weight, stretch, and
-        /// variation settings of the specified platform typeface.
-        /// </summary>
-        /// <param name="platformTypeface">The platform typeface to extract the key fields from. Cannot be null.</param>
-        /// <returns>
-        /// A FontCollectionKey representing the style, weight, stretch, and active
-        /// variation point of the specified platform typeface.
-        /// </returns>
-        /// <exception cref="ArgumentNullException">Thrown if platformTypeface is null.</exception>
-        public static FontCollectionKey ToFontCollectionKey(this IPlatformTypeface platformTypeface)
-        {
-            if (platformTypeface == null)
-            {
-                throw new ArgumentNullException(nameof(platformTypeface));
-            }
-
-            return new FontCollectionKey(platformTypeface.Style, platformTypeface.Weight, platformTypeface.Stretch)
-            {
-                Variation = platformTypeface.VariationPosition
-            };
-        }
     }
 }

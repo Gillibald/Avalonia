@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Linq;
-using Avalonia.Base.UnitTests.Media.Fonts.Tables;
 using Avalonia.Harfbuzz;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
@@ -132,7 +132,7 @@ public class HarfBuzzTextShaperTests
 
         using var stream = assetLoader.Open(new Uri(s_InterFontUri));
 
-        var typeface = new GlyphTypeface(new CustomPlatformTypeface(stream));
+        var typeface = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
 
         return new TextShaperOptions(
             typeface,

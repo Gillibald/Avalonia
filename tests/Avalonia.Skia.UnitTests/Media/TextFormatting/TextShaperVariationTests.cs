@@ -4,7 +4,6 @@ using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
-using SkiaSharp;
 using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media.TextFormatting
@@ -98,7 +97,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(InterVariableAsset));
 
-            return new GlyphTypeface(new SkiaTypeface(SKTypeface.FromStream(stream), FontSimulations.None));
+            return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
         }
 
         private static IDisposable Start()

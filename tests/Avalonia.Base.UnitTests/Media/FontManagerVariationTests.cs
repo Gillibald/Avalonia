@@ -86,7 +86,7 @@ namespace Avalonia.Base.UnitTests.Media
                 // font, the way font matching picks a named instance or axis value.
                 var assetLoader = new StandardAssetLoader();
                 using var stream = assetLoader.Open(new Uri(InterVariableAsset));
-                var root = new GlyphTypeface(new CustomPlatformTypeface(stream));
+                var root = new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
                 var semiBold = root.WithVariations(FontVariationSettings.Parse("wght=600"));
 
                 var collection = new PresetFontCollection(new Uri("fonts:preset", UriKind.Absolute));

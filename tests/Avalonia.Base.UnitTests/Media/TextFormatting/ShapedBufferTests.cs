@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Base.UnitTests.Media.Fonts.Tables;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
 using Xunit;
@@ -16,7 +17,7 @@ public class ShapedBufferTests
     {
         var assetLoader = new StandardAssetLoader();
         using var stream = assetLoader.Open(new Uri(InterFontUri));
-        return new GlyphTypeface(new CustomPlatformTypeface(stream));
+        return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
     }
 
     [Fact]

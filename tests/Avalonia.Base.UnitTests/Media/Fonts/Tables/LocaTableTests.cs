@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables;
 using Avalonia.Platform;
 using Xunit;
@@ -15,7 +16,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
         {
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(InterFontUri));
-            return new GlyphTypeface(new CustomPlatformTypeface(stream));
+            return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
         }
 
         private static LocaTable LoadLoca(GlyphTypeface typeface)

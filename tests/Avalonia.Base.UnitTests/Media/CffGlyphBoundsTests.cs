@@ -35,7 +35,7 @@ namespace Avalonia.Base.UnitTests.Media
         {
             var assetLoader = new StandardAssetLoader();
             using var stream = assetLoader.Open(new Uri(assetUri));
-            return new GlyphTypeface(new CustomPlatformTypeface(stream));
+            return new GlyphTypeface(UnmanagedFontMemory.LoadFromStream(stream));
         }
 
         private static GlyphBounds BoundsOf(GlyphTypeface gt, char ch)

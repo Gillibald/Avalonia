@@ -21,13 +21,13 @@ namespace Avalonia.UnitTests
     /// means a faithful test font is just a <c>tag → bytes</c> map: <see cref="SyntheticFont"/>
     /// parses a real font's sfnt table directory into one, lets a test mutate a single
     /// table (truncate it, remove it, or patch a specific offset / count to a hostile
-    /// value), and hands the result back as an <see cref="IPlatformTypeface"/> that serves
+    /// value), and hands the result back as an <see cref="IFontMemory"/> that serves
     /// the (possibly corrupted) tables verbatim.
     /// </para>
     /// <para>
     /// Seeding from a real font (rather than hand-building every required table) keeps the
     /// base font valid for free, so a test can corrupt exactly one thing and attribute any
-    /// behaviour change to that corruption. Use <see cref="ToPlatformTypeface"/> for the
+    /// behaviour change to that corruption. Use <see cref="ToFontMemory"/> for the
     /// common path (it drives <see cref="GlyphTypeface"/> and the table parsers directly);
     /// use <see cref="ToBytes"/> when a test specifically needs the real
     /// <c>UnmanagedFontMemory</c> sfnt-directory parser in the loop.
@@ -207,13 +207,13 @@ namespace Avalonia.UnitTests
         }
 
         /// <summary>
-        /// Returns an <see cref="IPlatformTypeface"/> that serves the current (possibly
+        /// Returns an <see cref="IFontMemory"/> that serves the current (possibly
         /// corrupted) tables. This is the primary seam: it drives the
         /// <see cref="GlyphTypeface"/> constructor and every table parser without an sfnt
         /// round-trip. Each call snapshots the current table set, so a typeface is
         /// unaffected by later mutation of this <see cref="SyntheticFont"/>.
         /// </summary>
-        public IPlatformTypeface ToPlatformTypeface(string familyName = "Synthetic")
+        public IFontMemory ToFontMemory()
         {
             var snapshot = new Dictionary<OpenTypeTag, byte[]>(_tables.Count);
             foreach (var kvp in _tables)
@@ -221,7 +221,7 @@ namespace Avalonia.UnitTests
                 snapshot[kvp.Key] = (byte[])kvp.Value.Clone();
             }
 
-            return new SyntheticPlatformTypeface(snapshot, familyName);
+            return new SyntheticFontMemory(snapshot);
         }
 
         /// <summary>
@@ -231,7 +231,7 @@ namespace Avalonia.UnitTests
         /// and turned into a null result).
         /// </summary>
         public GlyphTypeface? TryCreateGlyphTypeface(FontSimulations simulations = FontSimulations.None)
-            => GlyphTypeface.TryCreate(ToPlatformTypeface(), simulations);
+            => GlyphTypeface.TryCreate(ToFontMemory(), simulations);
 
         /// <summary>
         /// Builds a <see cref="GlyphTypeface"/> via the public constructor, which does
@@ -239,14 +239,14 @@ namespace Avalonia.UnitTests
         /// throws out of construction (vs. degrading gracefully).
         /// </summary>
         public GlyphTypeface CreateGlyphTypeface(FontSimulations simulations = FontSimulations.None)
-            => new GlyphTypeface(ToPlatformTypeface(), simulations);
+            => new GlyphTypeface(ToFontMemory(), simulations);
 
         /// <summary>
         /// Re-assembles the current table set into a valid sfnt byte array (offset table +
         /// 4-byte-aligned tables, directory sorted by tag). Table checksums are written as
         /// zero — the loader does not validate them. Use this only when a test needs the
         /// real <c>UnmanagedFontMemory</c> directory parser in the loop; otherwise prefer
-        /// <see cref="ToPlatformTypeface"/>.
+        /// <see cref="ToFontMemory"/>.
         /// </summary>
         public byte[] ToBytes()
         {
@@ -323,24 +323,17 @@ namespace Avalonia.UnitTests
         private static int Align4(int length) => (length + 3) & ~3;
 
         /// <summary>
-        /// An <see cref="IPlatformTypeface"/> that serves a fixed <c>tag → bytes</c> map.
+        /// An <see cref="IFontMemory"/> that serves a fixed <c>tag → bytes</c> map.
         /// No SkiaSharp face, no real stream — just enough for the managed font pipeline.
         /// </summary>
-        private sealed class SyntheticPlatformTypeface : IPlatformTypeface
+        private sealed class SyntheticFontMemory : IFontMemory
         {
             private readonly Dictionary<OpenTypeTag, byte[]> _tables;
 
-            public SyntheticPlatformTypeface(Dictionary<OpenTypeTag, byte[]> tables, string familyName)
+            public SyntheticFontMemory(Dictionary<OpenTypeTag, byte[]> tables)
             {
                 _tables = tables;
-                FamilyName = familyName;
             }
-
-            public string FamilyName { get; }
-            public FontWeight Weight => FontWeight.Normal;
-            public FontStyle Style => FontStyle.Normal;
-            public FontStretch Stretch => FontStretch.Normal;
-            public FontSimulations FontSimulations => FontSimulations.None;
 
             public bool TryGetTable(OpenTypeTag tag, out ReadOnlyMemory<byte> table)
             {
@@ -351,12 +344,6 @@ namespace Avalonia.UnitTests
                 }
 
                 table = default;
-                return false;
-            }
-
-            public bool TryGetStream([NotNullWhen(true)] out Stream? stream)
-            {
-                stream = null;
                 return false;
             }
 

@@ -178,6 +178,10 @@ namespace Avalonia.Platform
         /// mirroring the text shaper's typeface factory. The result is cached 1:1 on
         /// <see cref="GlyphTypeface.PlatformTypeface"/> and disposed with the glyph typeface.
         /// </summary>
+        /// <remarks>Each variation of a variable font is its own glyph typeface over the shared font
+        /// data and gets its own render typeface. The font data holds the default instance; a
+        /// backend that can instantiate variations reads the glyph typeface's variation position,
+        /// one that cannot renders the default instance's outlines.</remarks>
         /// <param name="glyphTypeface">The glyph typeface providing the font data.</param>
         /// <returns>An <see cref="IPlatformTypeface"/> render typeface.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the backend cannot create a typeface

@@ -33,8 +33,7 @@ namespace Avalonia.Media
         /// </param>
         /// <remarks>
         /// <para>
-        /// The default implementation returns <c>this</c> unchanged, the same contract
-        /// used by <see cref="IPlatformTypeface.WithVariation"/>: a shaper without
+        /// The default implementation returns <c>this</c> unchanged: a shaper without
         /// variation support shapes every variation at the default instance. The
         /// HarfBuzz shaper returns <c>this</c> for its own position and otherwise a new
         /// instance owning an <c>hb_font_t</c> sub-font with the requested normalized

@@ -116,10 +116,8 @@ namespace Avalonia.Media
         // Whether this typeface owns its PlatformTypeface (and therefore disposes it).
         // True for default-instance typefaces and for every typeface that derives its
         // platform typeface from its font data, variation clones included. A variation
-        // clone of a platform-backed typeface goes through IPlatformTypeface.WithVariation
-        // on the source's instead; when the default no-op override returns the source's
-        // instance the clone shares it and doesn't own it. Written under
-        // _platformTypefaceLock.
+        // clone of a typeface built over a caller-supplied platform typeface shares the
+        // source's instead and doesn't own it. Written under _platformTypefaceLock.
         private bool _ownsPlatformTypeface;
 
         // Variation point this typeface is bound to. default(NormalizedVariationPosition)
@@ -194,8 +192,10 @@ namespace Avalonia.Media
         /// cannot be <c>null</c>.</param>
         /// <param name="fontSimulations">The font simulations to apply, such as bold or oblique. The default is <see cref="FontSimulations.None"/>.</param>
         /// <exception cref="InvalidOperationException">Thrown if required font tables (e.g., 'maxp') cannot be loaded.</exception>
+        [Obsolete("Platform typefaces no longer carry font data; construct the GlyphTypeface over an IFontMemory instead.")]
         public GlyphTypeface(IPlatformTypeface typeface, FontSimulations fontSimulations = FontSimulations.None)
-            : this((IFontMemory)(typeface ?? throw new ArgumentNullException(nameof(typeface))), fontSimulations)
+            : this(typeface as IFontMemory ?? throw new NotSupportedException(
+                "The platform typeface does not carry font data; construct the GlyphTypeface over an IFontMemory instead."), fontSimulations)
         {
             _platformTypeface = typeface;
         }
@@ -479,10 +479,9 @@ namespace Avalonia.Media
         /// <see cref="FontMetrics"/> struct here at clone time.
         /// </para>
         /// <para>
-        /// Per-clone: the lazily created platform typeface (derived via
-        /// <see cref="IPlatformTypeface.WithVariation"/> — a no-op when the platform
-        /// hasn't overridden it, an actual variation-bound face when it has), the
-        /// variation position, the lazy shaper typeface (cleared so the clone
+        /// Per-clone: the lazily created platform typeface (derived from the shared font
+        /// data by <see cref="IPlatformRenderInterface.CreateTypeface"/>, which can read
+        /// the clone's <see cref="VariationPosition"/>), the variation position, the lazy shaper typeface (cleared so the clone
         /// materializes its own variation-aware shaper), and <see cref="Weight"/> /
         /// <see cref="Style"/> / <see cref="Stretch"/>, which are projected from the
         /// <c>wght</c>, <c>ital</c> / <c>slnt</c> and <c>wdth</c> axes of the position.
@@ -814,25 +813,6 @@ namespace Avalonia.Media
                 unitsPerEm = 2048;
 
             return unitsPerEm;
-        }
-
-        internal static GlyphTypeface? TryCreate(IPlatformTypeface typeface, FontSimulations fontSimulations = FontSimulations.None)
-        {
-            try
-            {
-                return new GlyphTypeface(typeface, fontSimulations);
-            }
-            catch (Exception ex)
-            {
-                Logger.TryGet(LogEventLevel.Warning, LogArea.Fonts)?.Log(
-                    null,
-                    "Could not create glyph typeface from platform typeface named {FamilyName} with simulations {Simulations}: {Exception}",
-                    typeface.FamilyName,
-                    fontSimulations,
-                    ex);
-
-                return null;
-            }
         }
 
         internal static GlyphTypeface? TryCreate(IFontMemory fontMemory, FontSimulations fontSimulations = FontSimulations.None)
@@ -1521,56 +1501,32 @@ namespace Avalonia.Media
                     throw new ObjectDisposedException(nameof(GlyphTypeface));
                 }
 
-                // A variation clone of a platform-backed typeface reads its tables through the
-                // source's platform typeface, so its handle is derived from that one.
-                if (_sourceTypeface is { } source && _fontMemory is not SfntFace)
+                // A variation clone of a typeface built over a caller-supplied platform typeface
+                // has no font data a render typeface can be derived from, so it shares the
+                // source's handle and leaves its release to the source.
+                if (_sourceTypeface is { } source && _fontMemory is IPlatformTypeface)
                 {
                     var sourcePlatformTypeface = source.PlatformTypeface;
-                    var variedPlatformTypeface = sourcePlatformTypeface.WithVariation(_variationPosition);
 
-                    _ownsPlatformTypeface = !ReferenceEquals(variedPlatformTypeface, sourcePlatformTypeface);
-                    _platformTypeface = variedPlatformTypeface;
+                    _ownsPlatformTypeface = false;
+                    _platformTypeface = sourcePlatformTypeface;
 
-                    return variedPlatformTypeface;
+                    return sourcePlatformTypeface;
                 }
 
                 // The render backend derives its typeface from the glyph typeface's font data,
                 // mirroring the text shaper's typeface factory. A variation clone derives its own
                 // from the shared font data and owns it.
-                if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is { } renderInterface)
-                {
-                    var renderTypeface = renderInterface.CreateTypeface(this);
-
-                    _ownsPlatformTypeface = true;
-                    _platformTypeface = renderTypeface;
-
-                    return renderTypeface;
-                }
-
-                // Legacy fallback for lifetimes without a render interface: materialize the platform
-                // typeface from the font file bytes through the platform font manager instead.
-                if (_fontMemory is not SfntFace face || !face.TryGetFontFileData(out var data, out _))
-                {
-                    throw new InvalidOperationException(
-                        "The glyph typeface's font memory cannot provide the font file data needed to create a platform typeface.");
-                }
-
-                var fontManager = AvaloniaLocator.Current.GetService<IFontManagerImpl>()
+                var renderInterface = AvaloniaLocator.Current.GetService<IPlatformRenderInterface>()
                     ?? throw new InvalidOperationException(
-                        "No platform font manager is available to create a platform typeface.");
+                        "No render interface is available to create a platform typeface.");
 
-                using var stream = new MemoryStream(data.ToArray(), writable: false);
-
-                if (!fontManager.TryCreateGlyphTypeface(stream, FontSimulations, out var platformTypeface))
-                {
-                    throw new InvalidOperationException(
-                        "The platform font manager could not create a platform typeface from the font data.");
-                }
+                var renderTypeface = renderInterface.CreateTypeface(this);
 
                 _ownsPlatformTypeface = true;
-                _platformTypeface = platformTypeface;
+                _platformTypeface = renderTypeface;
 
-                return platformTypeface;
+                return renderTypeface;
             }
         }
 
@@ -2830,14 +2786,15 @@ namespace Avalonia.Media
         /// </returns>
         /// <remarks>
         /// <para>
-        /// Variation tracking lives on the <see cref="GlyphTypeface"/> layer. The
-        /// platform layer (<see cref="IPlatformTypeface"/>) and shaping layer
-        /// (<see cref="ITextShaperTypeface"/>) participate via their own
-        /// <c>WithVariation</c> overrides; when a platform hasn't implemented the
-        /// override the default returns <c>this</c>, so the varied
-        /// <see cref="GlyphTypeface"/> still tracks the requested position and the
-        /// outline-API consumers that read <see cref="VariationPosition"/> become
-        /// variation-correct independently of native rendering.
+        /// Variation tracking lives on the <see cref="GlyphTypeface"/> layer. The render
+        /// backend receives the varied <see cref="GlyphTypeface"/> through
+        /// <see cref="IPlatformRenderInterface.CreateTypeface"/> and can read
+        /// <see cref="VariationPosition"/> from it; the shaping layer
+        /// (<see cref="ITextShaperTypeface"/>) participates via its own
+        /// <c>WithVariation</c> override. When a backend ignores the position, the varied
+        /// <see cref="GlyphTypeface"/> still tracks it and the outline-API consumers that
+        /// read <see cref="VariationPosition"/> become variation-correct independently of
+        /// native rendering.
         /// </para>
         /// <para>
         /// Per-variation typefaces are cached on the source. The cache key is the
