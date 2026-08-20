@@ -25,6 +25,7 @@ using Image = SixLabors.ImageSharp.Image;
 using Avalonia.Harfbuzz;
 using Avalonia.OpenGL.Egl;
 using Avalonia.Skia;
+using Avalonia.Media.Fonts;
 
 namespace Avalonia.Skia.RenderTests;
 
@@ -36,6 +37,10 @@ static class TestRenderHelper
         AvaloniaLocator.CurrentMutable.Bind<IAssetLoader>().ToConstant(new StandardAssetLoader());
         AvaloniaLocator.CurrentMutable.Bind<ITextShaperImpl>().ToConstant(new HarfBuzzTextShaper());
         AvaloniaLocator.CurrentMutable.Bind<ICursorFactory>().ToConstant(new NullCursorFactory());
+
+        // The app builder registers the render subsystem's system fonts; render tests skip the builder.
+        FontManager.Current.AddFontCollection(
+            new SystemFontCollection(FontManager.SystemFontsKey, new SkiaFontProvider()));
     }
 
     private sealed class NullCursorFactory : ICursorFactory
