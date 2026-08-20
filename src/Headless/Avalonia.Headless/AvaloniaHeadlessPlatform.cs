@@ -1,6 +1,8 @@
 ﻿using System;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Rendering.Composition;
@@ -140,12 +142,36 @@ namespace Avalonia.Headless
     {
         public static AppBuilder UseHeadless(this AppBuilder builder, AvaloniaHeadlessPlatformOptions opts)
         {
-            if(opts.UseHeadlessDrawing)
-                builder = builder.UseRenderingSubsystem(HeadlessPlatformRenderInterface.Initialize, "Headless");
+            if (opts.UseHeadlessDrawing)
+            {
+                builder = builder
+                    .UseRenderingSubsystem(HeadlessPlatformRenderInterface.Initialize, "Headless")
+                    // The headless platform's system fonts are a static set (BareMinimum); an app
+                    // registering its own system font provider later in the chain replaces it.
+                    // With headless drawing disabled the render backend's registration applies,
+                    // so Skia-backed headless keeps real system fonts.
+                    .ConfigureFonts(fontManager => fontManager.AddFontCollection(
+                        new SystemFontCollection(FontManager.SystemFontsKey, CreateHeadlessFontProvider())));
+            }
+
             return builder
                 .UseStandardRuntimePlatformSubsystem()
                 .UseWindowingSubsystem(() => AvaloniaHeadlessPlatform.Initialize(opts), "Headless")
                 .UseHarfBuzz();
+        }
+
+        private static StaticFontProvider CreateHeadlessFontProvider()
+        {
+            var provider = new StaticFontProvider();
+
+            var assetLoader = new StandardAssetLoader(typeof(AvaloniaHeadlessPlatformExtensions).Assembly);
+
+            using var stream = assetLoader.Open(
+                new Uri("resm:Avalonia.Headless.BareMinimum.ttf?assembly=Avalonia.Headless"));
+
+            provider.AddFont(stream);
+
+            return provider;
         }
     }
 }
