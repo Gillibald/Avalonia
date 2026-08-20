@@ -309,7 +309,10 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Create_Synthetic_Typeface()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            // The Skia render interface is required: it derives the render typefaces this test
+            // inspects from the glyph typefaces' font data.
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+                renderInterface: new PlatformRenderInterface(), fontManagerImpl: new FontManagerImpl())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {

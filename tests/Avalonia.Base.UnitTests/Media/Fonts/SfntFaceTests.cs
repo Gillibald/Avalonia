@@ -4,6 +4,7 @@ using System.IO;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts
@@ -274,6 +275,33 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             glyphTypeface.Dispose();
 
             Assert.False(face.TryGetTable(new OpenTypeTag('n', 'a', 'm', 'e'), out _));
+        }
+
+        [Fact]
+        public void PlatformTypeface_Should_Be_Created_By_Render_Interface()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
+            {
+                using var stream = SfntFaceTestHelper.OpenAsset(InterFontUri);
+
+                Assert.True(SfntFace.TryLoad(stream, out var face));
+
+                var glyphTypeface = new GlyphTypeface(face);
+
+                var platformTypeface = glyphTypeface.PlatformTypeface;
+
+                // The headless render interface hands out a managed, table-serving handle.
+                Assert.IsType<ManagedPlatformTypeface>(platformTypeface);
+                Assert.Equal("Inter", platformTypeface.FamilyName);
+                Assert.True(platformTypeface.TryGetTable(new OpenTypeTag('n', 'a', 'm', 'e'), out _));
+                Assert.Same(platformTypeface, glyphTypeface.PlatformTypeface);
+
+                glyphTypeface.Dispose();
+
+                // The cascade disposes the render typeface and the font memory.
+                Assert.False(platformTypeface.TryGetTable(new OpenTypeTag('n', 'a', 'm', 'e'), out _));
+                Assert.False(face.TryGetTable(new OpenTypeTag('n', 'a', 'm', 'e'), out _));
+            }
         }
 
     }

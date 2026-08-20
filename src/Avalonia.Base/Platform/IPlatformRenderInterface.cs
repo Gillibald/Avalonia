@@ -174,6 +174,18 @@ namespace Avalonia.Platform
         IGlyphRunImpl CreateGlyphRun(GlyphTypeface glyphTypeface, double fontRenderingEmSize, IReadOnlyList<GlyphInfo> glyphInfos, Point baselineOrigin);
 
         /// <summary>
+        /// Derives the backend's render typeface from the specified glyph typeface's font data,
+        /// mirroring the text shaper's typeface factory. The result is cached 1:1 on
+        /// <see cref="GlyphTypeface.PlatformTypeface"/> and disposed with the glyph typeface.
+        /// </summary>
+        /// <param name="glyphTypeface">The glyph typeface providing the font data.</param>
+        /// <returns>An <see cref="IPlatformTypeface"/> render typeface.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when the backend cannot create a typeface
+        /// from the font data. By the time this runs the managed parser has validated the font, so
+        /// failure is exceptional, not a match-miss signal.</exception>
+        IPlatformTypeface CreateTypeface(GlyphTypeface glyphTypeface);
+
+        /// <summary>
         /// Creates a backend-specific object using a low-level API graphics context
         /// </summary>
         /// <param name="graphicsApiContext">An underlying low-level graphics context (e. g. wrapped OpenGL context, Vulkan device, D3DDevice, etc)</param>

@@ -698,11 +698,19 @@ namespace Avalonia.Media
                     throw new ObjectDisposedException(nameof(GlyphTypeface));
                 }
 
-                // Interim bridge: memory-backed glyph typefaces materialize their platform typeface
-                // from the font file bytes through the platform font manager, so they stay renderable
-                // while the render backends still consume IPlatformTypeface. The render interface
-                // will derive its typeface from the GlyphTypeface directly in a later step, like the
-                // text shaper already does.
+                // The render backend derives its typeface from the glyph typeface's font data,
+                // mirroring the text shaper's typeface factory.
+                if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is { } renderInterface)
+                {
+                    var renderTypeface = renderInterface.CreateTypeface(this);
+
+                    _platformTypeface = renderTypeface;
+
+                    return renderTypeface;
+                }
+
+                // Legacy fallback for lifetimes without a render interface: materialize the platform
+                // typeface from the font file bytes through the platform font manager instead.
                 if (_fontMemory is not SfntFace face || !face.TryGetFontFileData(out var data, out _))
                 {
                     throw new InvalidOperationException(
