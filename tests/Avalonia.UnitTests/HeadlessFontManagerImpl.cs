@@ -4,8 +4,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using Avalonia.Headless;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 
 namespace Avalonia.UnitTests
@@ -62,9 +62,11 @@ namespace Avalonia.UnitTests
 
         public bool TryCreateGlyphTypeface(Stream stream, FontSimulations fontSimulations, [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
         {
-            platformTypeface = new HeadlessPlatformTypeface(stream);
+            var result = ManagedPlatformTypeface.TryCreate(stream, fontSimulations, null, out var managedTypeface);
 
-            return true;
+            platformTypeface = managedTypeface;
+
+            return result;
         }
 
         public bool TryCreateGlyphTypeface(string familyName, FontStyle style, FontWeight weight,

@@ -3,8 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
-using Avalonia.Headless;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 
 namespace Avalonia.UnitTests;
@@ -46,9 +46,12 @@ public class TestFontManager : IFontManagerImpl
         {
             var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
 
-            var stream = assetLoader.Open(new Uri(_interFontUri));
+            using var stream = assetLoader.Open(new Uri(_interFontUri));
 
-            platformTypeface = new HeadlessPlatformTypeface(stream);
+            if (ManagedPlatformTypeface.TryCreate(stream, FontSimulations.None, null, out var managedTypeface))
+            {
+                platformTypeface = managedTypeface;
+            }
         }
 
         TryCreateGlyphTypefaceCount++;
@@ -59,11 +62,13 @@ public class TestFontManager : IFontManagerImpl
     public virtual bool TryCreateGlyphTypeface(Stream stream, FontSimulations fontSimulations,
         [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
     {
-        platformTypeface = new HeadlessPlatformTypeface(stream);
+        var result = ManagedPlatformTypeface.TryCreate(stream, fontSimulations, null, out var managedTypeface);
+
+        platformTypeface = managedTypeface;
 
         TryCreateGlyphTypefaceCount++;
 
-        return true;
+        return result;
     }
 
     public bool TryGetFamilyTypefaces(string familyName,
