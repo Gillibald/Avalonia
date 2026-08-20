@@ -34,8 +34,6 @@ namespace Avalonia.Media.Fonts
 
         private readonly object _fontFamiliesLock = new();
         private volatile FontFamily[] _fontFamilies = Array.Empty<FontFamily>();
-        private readonly IFontManagerImpl _fontManagerImpl;
-        private readonly IAssetLoader _assetLoader;
 
         // Font matching data of each variable face, built on the first request the face's
         // registered keys cannot answer.
@@ -52,12 +50,6 @@ namespace Avalonia.Media.Fonts
             new(StringComparer.OrdinalIgnoreCase);
 
         private readonly record struct ScriptFallbackKey(Script Script, string? CultureName);
-
-        protected FontCollectionBase()
-        {
-            _fontManagerImpl = AvaloniaLocator.Current.GetRequiredService<IFontManagerImpl>();
-            _assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
-        }
 
         public abstract Uri Key { get; }
 
@@ -583,10 +575,9 @@ namespace Avalonia.Media.Fonts
             }
 
             // A synthetic for this key may already be cached under the source family, reached
-            // through another of its names or by another thread. Building a second one copies the
-            // whole font file through TryGetStream, then loses the slot below to the instance
-            // already there, so nothing caches it, nothing disposes it, and its native typeface is
-            // never released.
+            // through another of its names or by another thread. Building a second one loses the
+            // slot below to the instance already there, so nothing caches it, nothing disposes it,
+            // and its font data and native typeface are never released.
             if (glyphTypefaces.TryGetValue(key, out var cachedGlyphTypeface) &&
                 cachedGlyphTypeface is not null &&
                 cachedGlyphTypeface.FontSimulations == fontSimulations)
@@ -596,55 +587,80 @@ namespace Avalonia.Media.Fonts
                 return true;
             }
 
-            if (glyphTypeface.PlatformTypeface.TryGetStream(out var stream))
+            if (glyphTypeface.FontMemory is SfntFace face)
             {
-                using (stream)
+                // The synthetic face shares the source's font file bytes: no whole-file copy, and
+                // the same face of a TrueType collection stays pinned instead of being re-resolved
+                // from a stream through the platform.
+                var clone = face.Clone();
+
+                syntheticGlyphTypeface = GlyphTypeface.TryCreate(clone, fontSimulations);
+
+                if (syntheticGlyphTypeface is null)
                 {
-                    if (_fontManagerImpl.TryCreateGlyphTypeface(stream, fontSimulations, out var platformTypeface))
-                    {
-                        syntheticGlyphTypeface = GlyphTypeface.TryCreate(platformTypeface, fontSimulations);
-                        if (syntheticGlyphTypeface is null)
-                            return false;
-
-                        // The stream of a face inside a font collection (.ttc) loads the
-                        // collection's first face, which may be another family or style (an
-                        // oblique "Yu Gothic UI" would come back as "Yu Gothic Medium"). Keep the
-                        // unsimulated face rather than cache a different one under its name.
-                        if (!IsSameFace(glyphTypeface, syntheticGlyphTypeface))
-                        {
-                            syntheticGlyphTypeface.Dispose();
-                            syntheticGlyphTypeface = null;
-                            return false;
-                        }
-
-                        // The stream holds the default instance, so a varied face is simulated by
-                        // moving the simulated default instance to the same position.
-                        if (!glyphTypeface.VariationPosition.IsDefault)
-                        {
-                            _variedSyntheticSources.Add(syntheticGlyphTypeface);
-                            syntheticGlyphTypeface =
-                                syntheticGlyphTypeface.WithVariation(glyphTypeface.VariationPosition);
-                        }
-
-                        //Add the TypographicFamilyName to the cache
-                        if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
-                        {
-                            TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, syntheticGlyphTypeface);
-                        }
-
-                        foreach (var kvp in glyphTypeface.FamilyNames)
-                        {
-                            TryAddGlyphTypeface(kvp.Value, key, syntheticGlyphTypeface);
-                        }
-
-                        return true;
-                    }
+                    clone.Dispose();
 
                     return false;
                 }
             }
+            else if (glyphTypeface.PlatformTypeface.TryGetStream(out var stream))
+            {
+                // Platform-backed typeface: round-trip the stream through the platform font
+                // manager, as before.
+                using (stream)
+                {
+                    var fontManager = AvaloniaLocator.Current.GetService<IFontManagerImpl>();
 
-            return false;
+                    if (fontManager is null ||
+                        !fontManager.TryCreateGlyphTypeface(stream, fontSimulations, out var platformTypeface))
+                    {
+                        return false;
+                    }
+
+                    syntheticGlyphTypeface = GlyphTypeface.TryCreate(platformTypeface, fontSimulations);
+
+                    if (syntheticGlyphTypeface is null)
+                    {
+                        return false;
+                    }
+
+                    // The stream of a face inside a font collection (.ttc) loads the
+                    // collection's first face, which may be another family or style (an
+                    // oblique "Yu Gothic UI" would come back as "Yu Gothic Medium"). Keep the
+                    // unsimulated face rather than cache a different one under its name.
+                    if (!IsSameFace(glyphTypeface, syntheticGlyphTypeface))
+                    {
+                        syntheticGlyphTypeface.Dispose();
+                        syntheticGlyphTypeface = null;
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                return false;
+            }
+
+            // The font data holds the default instance, so a varied face is simulated by moving
+            // the simulated default instance to the same position.
+            if (!glyphTypeface.VariationPosition.IsDefault)
+            {
+                _variedSyntheticSources.Add(syntheticGlyphTypeface);
+                syntheticGlyphTypeface = syntheticGlyphTypeface.WithVariation(glyphTypeface.VariationPosition);
+            }
+
+            //Add the TypographicFamilyName to the cache
+            if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
+            {
+                TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, syntheticGlyphTypeface);
+            }
+
+            foreach (var kvp in glyphTypeface.FamilyNames)
+            {
+                TryAddGlyphTypeface(kvp.Value, key, syntheticGlyphTypeface);
+            }
+
+            return true;
         }
 
         private static bool IsSameFace(GlyphTypeface expected, GlyphTypeface actual)
@@ -1020,14 +1036,23 @@ namespace Avalonia.Media.Fonts
         /// langword="false"/>.</returns>
         public bool TryAddGlyphTypeface(Stream stream, [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
         {
-            if (!_fontManagerImpl.TryCreateGlyphTypeface(stream, FontSimulations.None, out var platformTypeface))
+            glyphTypeface = null;
+
+            if (!SfntFace.TryLoad(stream, out var face))
             {
-                glyphTypeface = null;
                 return false;
             }
 
-            glyphTypeface = GlyphTypeface.TryCreate(platformTypeface);
-            return glyphTypeface is not null && TryAddGlyphTypeface(glyphTypeface);
+            glyphTypeface = GlyphTypeface.TryCreate(face);
+
+            if (glyphTypeface is null)
+            {
+                face.Dispose();
+
+                return false;
+            }
+
+            return TryAddGlyphTypeface(glyphTypeface);
         }
 
         /// <summary>
@@ -1055,15 +1080,23 @@ namespace Avalonia.Media.Fonts
                 case "avares":
                 case "resm":
                     {
+                        var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
+
                         var fontAssets = FontFamilyLoader.LoadFontAssets(source);
 
                         foreach (var fontAsset in fontAssets)
                         {
-                            var stream = _assetLoader.Open(fontAsset);
+                            using var stream = assetLoader.Open(fontAsset);
 
-                            if (!_fontManagerImpl.TryCreateGlyphTypeface(stream, FontSimulations.None, out var platformTypeface) ||
-                                GlyphTypeface.TryCreate(platformTypeface) is not { } glyphTypeface)
+                            if (!SfntFace.TryLoad(stream, out var face))
                             {
+                                continue;
+                            }
+
+                            if (GlyphTypeface.TryCreate(face) is not { } glyphTypeface)
+                            {
+                                face.Dispose();
+
                                 continue;
                             }
 
@@ -1085,11 +1118,7 @@ namespace Avalonia.Media.Fonts
                                 return false;
                             }
 
-                            using var stream = File.OpenRead(source.LocalPath);
-
-                            if (_fontManagerImpl.TryCreateGlyphTypeface(stream, FontSimulations.None, out var platformTypeface) &&
-                                GlyphTypeface.TryCreate(platformTypeface) is { } glyphTypeface &&
-                                TryAddGlyphTypeface(glyphTypeface))
+                            if (TryAddFontFile(source.LocalPath))
                             {
                                 result = true;
                             }
@@ -1104,16 +1133,9 @@ namespace Avalonia.Media.Fonts
 
                             foreach (var file in Directory.EnumerateFiles(source.LocalPath))
                             {
-                                if (FontFamilyLoader.IsFontFile(file))
+                                if (FontFamilyLoader.IsFontFile(file) && TryAddFontFile(file))
                                 {
-                                    using var stream = File.OpenRead(file);
-
-                                    if (_fontManagerImpl.TryCreateGlyphTypeface(stream, FontSimulations.None, out var platformTypeface) &&
-                                        GlyphTypeface.TryCreate(platformTypeface) is { } glyphTypeface &&
-                                        TryAddGlyphTypeface(glyphTypeface))
-                                    {
-                                        result = true;
-                                    }
+                                    result = true;
                                 }
                             }
                         }
@@ -1126,6 +1148,29 @@ namespace Avalonia.Media.Fonts
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Attempts to load the first face of the specified font file (memory-mapped where the
+        /// platform supports it) and add it to the collection.
+        /// </summary>
+        /// <param name="path">The path of the font file.</param>
+        /// <returns><see langword="true"/> if the face was loaded and added; otherwise, <see langword="false"/>.</returns>
+        private bool TryAddFontFile(string path)
+        {
+            if (!SfntFace.TryLoad(path, 0, out var face))
+            {
+                return false;
+            }
+
+            if (GlyphTypeface.TryCreate(face) is not { } glyphTypeface)
+            {
+                face.Dispose();
+
+                return false;
+            }
+
+            return TryAddGlyphTypeface(glyphTypeface);
         }
 
         /// <summary>
