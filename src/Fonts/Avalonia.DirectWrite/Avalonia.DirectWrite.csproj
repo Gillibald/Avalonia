@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>$(AvsCurrentTargetFramework);$(AvsLegacyTargetFrameworks)</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UseMicroComGeneratorRoslyn>true</UseMicroComGeneratorRoslyn>
+  </PropertyGroup>
+  <ItemGroup Label="InternalsVisibleTo">
+    <InternalsVisibleTo Include="Avalonia.DirectWrite.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
+  </ItemGroup>
+  <ItemGroup>
+    <MicroComIdl Include="**/*.idl" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
+    <ProjectReference Include="..\..\Avalonia.Controls\Avalonia.Controls.csproj" />
+    <ProjectReference Include="..\..\Avalonia.MicroCom\Avalonia.MicroCom.csproj" />
+  </ItemGroup>
+  <Import Project="..\..\..\build\MicroCOM.props" />
+  <Import Project="..\..\..\build\BuildTargets.targets" />
+  <Import Project="..\..\..\build\NullableEnable.props" />
+</Project>
