@@ -575,10 +575,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 });
 
                 Assert.False(FontManager.Current.TryGetGlyphTypeface(new Typeface(fontUri), out _));
-                Assert.Equal(loggedTemplate, "Could not create glyph typeface from platform typeface named {FamilyName} with simulations {Simulations}: {Exception}");
-                Assert.Equal(3, loggedValues.Length);
-                Assert.Equal("TestFontNoCmap412", Assert.IsType<string>(loggedValues[0]));
-                Assert.Equal("No suitable cmap subtable found.", Assert.IsType<InvalidOperationException>(loggedValues[2]).Message);
+                Assert.Equal(loggedTemplate, "Could not create glyph typeface from font memory with simulations {Simulations}: {Exception}");
+                Assert.Equal(2, loggedValues.Length);
+                Assert.Equal("No suitable cmap subtable found.", Assert.IsType<InvalidOperationException>(loggedValues[1]).Message);
             }
         }
 
