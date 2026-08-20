@@ -1,0 +1,168 @@
+@clr-namespace Avalonia.Media.Fonts
+@clr-access internal
+@clr-map BOOL int
+@clr-map UINT16 ushort
+@clr-map UINT32 uint
+@clr-map UINT64 ulong
+@clr-map FLOAT float
+@clr-map WCHAR System.Char
+
+// Minimal DirectWrite surface for the system font provider. Methods this binding calls carry
+// their real signatures; methods that only occupy vtable slots are declared with void*
+// placeholders. All IIDs and slot orders are verified against the Windows SDK 10.0.26100
+// headers (dwrite.h, dwrite_1.h, dwrite_2.h); everything used is documented API, stable
+// since Windows 8.1. Raw int returns are HRESULTs checked by the caller; enum parameters and
+// returns are declared int and mapped in managed code.
+
+[uuid(08256209-099a-4b34-b86d-c22b110e7771)]
+interface IDWriteLocalizedStrings : IUnknown
+{
+    UINT32 GetCount();
+    int FindLocaleName(WCHAR* localeName, UINT32* index, BOOL* exists);
+    int GetLocaleNameLength(UINT32 index, UINT32* length);
+    int GetLocaleName(UINT32 index, WCHAR* localeName, UINT32 size);
+    int GetStringLength(UINT32 index, UINT32* length);
+    int GetString(UINT32 index, WCHAR* stringBuffer, UINT32 size);
+}
+
+[uuid(727cad4e-d6af-4c9e-8a08-d695b11caa49)]
+interface IDWriteFontFileLoader : IUnknown
+{
+    int CreateStreamFromKey(void* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, void** fontFileStream);
+}
+
+[uuid(b2d9f3ec-c9fe-4a11-a2ec-d86208f7c0a2)]
+interface IDWriteLocalFontFileLoader : IDWriteFontFileLoader
+{
+    int GetFilePathLengthFromKey(void* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, UINT32* filePathLength);
+    int GetFilePathFromKey(void* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, WCHAR* filePath, UINT32 filePathSize);
+    int GetLastWriteTimeFromKey(void* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, void* lastWriteTime);
+}
+
+[uuid(739d886a-cef5-47dc-8769-1a8b41bebbb0)]
+interface IDWriteFontFile : IUnknown
+{
+    int GetReferenceKey(void** fontFileReferenceKey, UINT32* fontFileReferenceKeySize);
+    int GetLoader(void** fontFileLoader);
+    int Analyze(BOOL* isSupportedFontType, int* fontFileType, int* fontFaceType, UINT32* numberOfFaces);
+}
+
+[uuid(5f49804d-7024-4d43-bfa9-d25984f53849)]
+interface IDWriteFontFace : IUnknown
+{
+    int GetType();
+    int GetFiles(UINT32* numberOfFiles, void** fontFiles);
+    UINT32 GetIndex();
+    int GetSimulations();
+    BOOL IsSymbolFont();
+    void GetMetrics(void* fontFaceMetrics);
+    UINT16 GetGlyphCount();
+    int GetDesignGlyphMetrics(UINT16* glyphIndices, UINT32 glyphCount, void* glyphMetrics, BOOL isSideways);
+    int GetGlyphIndices(UINT32* codePoints, UINT32 codePointCount, UINT16* glyphIndices);
+    int TryGetFontTable(UINT32 openTypeTableTag, void** tableData, UINT32* tableSize, void** tableContext, BOOL* exists);
+    void ReleaseFontTable(void* tableContext);
+    int GetGlyphRunOutline(FLOAT emSize, UINT16* glyphIndices, FLOAT* glyphAdvances, void* glyphOffsets, UINT32 glyphCount, BOOL isSideways, BOOL isRightToLeft, void* geometrySink);
+    int GetRecommendedRenderingMode(FLOAT emSize, FLOAT pixelsPerDip, int measuringMode, void* renderingParams, int* renderingMode);
+    int GetGdiCompatibleMetrics(FLOAT emSize, FLOAT pixelsPerDip, void* transform, void* fontFaceMetrics);
+    int GetGdiCompatibleGlyphMetrics(FLOAT emSize, FLOAT pixelsPerDip, void* transform, BOOL useGdiNatural, UINT16* glyphIndices, UINT32 glyphCount, void* glyphMetrics, BOOL isSideways);
+}
+
+[uuid(1a0d8438-1d97-4ec1-aef9-a2fb86ed6acb)]
+interface IDWriteFontList : IUnknown
+{
+    int GetFontCollection(void** fontCollection);
+    UINT32 GetFontCount();
+    int GetFont(UINT32 index, void** font);
+}
+
+[uuid(da20d8ef-812a-4c43-9802-62ec4abd7add)]
+interface IDWriteFontFamily : IDWriteFontList
+{
+    int GetFamilyNames(void** names);
+    int GetFirstMatchingFont(int weight, int stretch, int style, void** matchingFont);
+    int GetMatchingFonts(int weight, int stretch, int style, void** matchingFonts);
+}
+
+[uuid(acd16696-8c14-4f5d-877e-fe3fc1d32737)]
+interface IDWriteFont : IUnknown
+{
+    int GetFontFamily(void** fontFamily);
+    int GetWeight();
+    int GetStretch();
+    int GetStyle();
+    BOOL IsSymbolFont();
+    int GetFaceNames(void** names);
+    int GetInformationalStrings(int informationalStringId, void** informationalStrings, BOOL* exists);
+    int GetSimulations();
+    void GetMetrics(void* fontMetrics);
+    int HasCharacter(UINT32 unicodeValue, BOOL* exists);
+    int CreateFontFace(void** fontFace);
+}
+
+[uuid(a84cee02-3eea-4eee-a827-87c1a02a0fcc)]
+interface IDWriteFontCollection : IUnknown
+{
+    UINT32 GetFontFamilyCount();
+    int GetFontFamily(UINT32 index, void** fontFamily);
+    int FindFamilyName(WCHAR* familyName, UINT32* index, BOOL* exists);
+    int GetFontFromFontFace(void* fontFace, void** font);
+}
+
+[uuid(688e1a58-5094-47c8-adc8-fbcea60ae92b)]
+interface IDWriteTextAnalysisSource : IUnknown
+{
+    int GetTextAtPosition(UINT32 textPosition, WCHAR** textString, UINT32* textLength);
+    int GetTextBeforePosition(UINT32 textPosition, WCHAR** textString, UINT32* textLength);
+    int GetParagraphReadingDirection();
+    int GetLocaleName(UINT32 textPosition, UINT32* textLength, WCHAR** localeName);
+    int GetNumberSubstitution(UINT32 textPosition, UINT32* textLength, void** numberSubstitution);
+}
+
+[uuid(efa008f9-f7a1-48bf-b05c-f224713cc0ff)]
+interface IDWriteFontFallback : IUnknown
+{
+    int MapCharacters(IDWriteTextAnalysisSource* analysisSource, UINT32 textPosition, UINT32 textLength, void* baseFontCollection, WCHAR* baseFamilyName, int baseWeight, int baseStyle, int baseStretch, UINT32* mappedLength, void** mappedFont, FLOAT* scale);
+}
+
+[uuid(b859ee5a-d838-4b5b-a2e8-1adc7d93db48)]
+interface IDWriteFactory : IUnknown
+{
+    int GetSystemFontCollection(void** fontCollection, BOOL checkForUpdates);
+    int CreateCustomFontCollection(void* collectionLoader, void* collectionKey, UINT32 collectionKeySize, void** fontCollection);
+    int RegisterFontCollectionLoader(void* fontCollectionLoader);
+    int UnregisterFontCollectionLoader(void* fontCollectionLoader);
+    int CreateFontFileReference(WCHAR* filePath, void* lastWriteTime, void** fontFile);
+    int CreateCustomFontFileReference(void* fontFileReferenceKey, UINT32 fontFileReferenceKeySize, void* fontFileLoader, void** fontFile);
+    int CreateFontFace(int fontFaceType, UINT32 numberOfFiles, void** fontFiles, UINT32 faceIndex, int fontFaceSimulationFlags, void** fontFace);
+    int CreateRenderingParams(void** renderingParams);
+    int CreateMonitorRenderingParams(void* monitor, void** renderingParams);
+    int CreateCustomRenderingParams(FLOAT gamma, FLOAT enhancedContrast, FLOAT clearTypeLevel, int pixelGeometry, int renderingMode, void** renderingParams);
+    int RegisterFontFileLoader(void* fontFileLoader);
+    int UnregisterFontFileLoader(void* fontFileLoader);
+    int CreateTextFormat(WCHAR* fontFamilyName, void* fontCollection, int fontWeight, int fontStyle, int fontStretch, FLOAT fontSize, WCHAR* localeName, void** textFormat);
+    int CreateTypography(void** typography);
+    int GetGdiInterop(void** gdiInterop);
+    int CreateTextLayout(WCHAR* text, UINT32 stringLength, void* textFormat, FLOAT maxWidth, FLOAT maxHeight, void** textLayout);
+    int CreateGdiCompatibleTextLayout(WCHAR* text, UINT32 stringLength, void* textFormat, FLOAT layoutWidth, FLOAT layoutHeight, FLOAT pixelsPerDip, void* transform, BOOL useGdiNatural, void** textLayout);
+    int CreateEllipsisTrimmingSign(void* textFormat, void** trimmingSign);
+    int CreateTextAnalyzer(void** textAnalyzer);
+    int CreateNumberSubstitution(int substitutionMethod, WCHAR* localeName, BOOL ignoreUserOverride, void** numberSubstitution);
+    int CreateGlyphRunAnalysis(void* glyphRun, FLOAT pixelsPerDip, void* transform, int renderingMode, int measuringMode, FLOAT baselineOriginX, FLOAT baselineOriginY, void** glyphRunAnalysis);
+}
+
+[uuid(30572f99-dac6-41db-a16e-0486307e606a)]
+interface IDWriteFactory1 : IDWriteFactory
+{
+    int GetEudcFontCollection(void** fontCollection, BOOL checkForUpdates);
+    int CreateCustomRenderingParams1(FLOAT gamma, FLOAT enhancedContrast, FLOAT enhancedContrastGrayscale, FLOAT clearTypeLevel, int pixelGeometry, int renderingMode, void** renderingParams);
+}
+
+[uuid(0439fc60-ca44-4994-8dee-3a9af7b732ec)]
+interface IDWriteFactory2 : IDWriteFactory1
+{
+    int GetSystemFontFallback(void** fontFallback);
+    int CreateFontFallbackBuilder(void** fontFallbackBuilder);
+    int TranslateColorGlyphRun(FLOAT baselineOriginX, FLOAT baselineOriginY, void* glyphRun, void* glyphRunDescription, int measuringMode, void* worldToDeviceTransform, UINT32 colorPaletteIndex, void** colorLayers);
+    int CreateCustomRenderingParams2(FLOAT gamma, FLOAT enhancedContrast, FLOAT grayscaleEnhancedContrast, FLOAT clearTypeLevel, int pixelGeometry, int renderingMode, int gridFitMode, void** renderingParams);
+    int CreateGlyphRunAnalysis2(void* glyphRun, void* transform, int renderingMode, int measuringMode, int gridFitMode, int antialiasMode, FLOAT baselineOriginX, FLOAT baselineOriginY, void** glyphRunAnalysis);
+}
