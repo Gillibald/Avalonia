@@ -124,21 +124,6 @@ namespace Avalonia.Skia
                 }
             }
 
-            // Fallback for font memories without whole-file data: round-trip a stream.
-            if (glyphTypeface.FontMemory is IPlatformTypeface platformTypeface &&
-                platformTypeface.TryGetStream(out var stream))
-            {
-                using (stream)
-                {
-                    if (SKTypeface.FromStream(stream) is not { } skTypeface)
-                    {
-                        throw new InvalidOperationException("Skia could not create a typeface from the font stream.");
-                    }
-
-                    return new SkiaTypeface(skTypeface, glyphTypeface.FontSimulations);
-                }
-            }
-
             throw new InvalidOperationException(
                 "The glyph typeface's font memory cannot provide font data for the render typeface.");
         }

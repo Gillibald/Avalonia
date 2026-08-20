@@ -145,16 +145,15 @@ namespace Avalonia.Headless
 
         public IPlatformTypeface CreateTypeface(GlyphTypeface glyphTypeface)
         {
-            // The headless backend never rasterizes, but the handle still serves font tables:
-            // legacy consumers (the font manager seam used by test managers) treat platform
-            // typefaces as font memory during the transition.
-            if (!ManagedPlatformTypeface.TryCreate(glyphTypeface, out var platformTypeface))
-            {
-                throw new InvalidOperationException(
-                    "The glyph typeface's font memory cannot provide font data for the render typeface.");
-            }
+            // The headless backend never rasterizes; the render typeface is a trivial handle.
+            return new HeadlessRenderTypeface();
+        }
 
-            return platformTypeface;
+        private sealed class HeadlessRenderTypeface : IPlatformTypeface
+        {
+            public void Dispose()
+            {
+            }
         }
 
         internal class HeadlessGlyphRunStub : IGlyphRunImpl

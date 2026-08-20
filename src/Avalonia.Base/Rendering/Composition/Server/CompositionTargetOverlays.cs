@@ -46,16 +46,12 @@ internal class CompositionTargetOverlays
         {
             if (field is null)
             {
-                // We are running in some unit test context without usable fonts when neither a
-                // legacy platform font manager nor a registered, non-empty system font collection
-                // is available.
-                if (AvaloniaLocator.Current.GetService<IFontManagerImpl>() == null)
-                {
-                    var fontManager = AvaloniaLocator.Current.GetService<FontManager>();
+                // We are running in some unit test context without usable fonts when no
+                // registered, non-empty system font collection is available.
+                var fontManager = AvaloniaLocator.Current.GetService<FontManager>();
 
-                    if (fontManager == null || fontManager.SystemFonts.Count == 0)
-                        return null;
-                }
+                if (fontManager == null || fontManager.SystemFonts.Count == 0)
+                    return null;
 
                 field = new DiagnosticTextRenderer(Typeface.Default.GlyphTypeface, 12.0);
             }

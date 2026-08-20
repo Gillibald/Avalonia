@@ -68,8 +68,10 @@ namespace Avalonia.Media
         /// cannot be <c>null</c>.</param>
         /// <param name="fontSimulations">The font simulations to apply, such as bold or oblique. The default is <see cref="FontSimulations.None"/>.</param>
         /// <exception cref="InvalidOperationException">Thrown if required font tables (e.g., 'maxp') cannot be loaded.</exception>
+        [Obsolete("Platform typefaces no longer carry font data; construct the GlyphTypeface over an IFontMemory instead.")]
         public GlyphTypeface(IPlatformTypeface typeface, FontSimulations fontSimulations = FontSimulations.None)
-            : this((IFontMemory)(typeface ?? throw new ArgumentNullException(nameof(typeface))), fontSimulations)
+            : this(typeface as IFontMemory ?? throw new NotSupportedException(
+                "The platform typeface does not carry font data; construct the GlyphTypeface over an IFontMemory instead."), fontSimulations)
         {
             _platformTypeface = typeface;
         }
@@ -288,25 +290,6 @@ namespace Avalonia.Media
                 unitsPerEm = 2048;
 
             return unitsPerEm;
-        }
-
-        internal static GlyphTypeface? TryCreate(IPlatformTypeface typeface, FontSimulations fontSimulations = FontSimulations.None)
-        {
-            try
-            {
-                return new GlyphTypeface(typeface, fontSimulations);
-            }
-            catch (Exception ex)
-            {
-                Logger.TryGet(LogEventLevel.Warning, LogArea.Fonts)?.Log(
-                    null,
-                    "Could not create glyph typeface from platform typeface named {FamilyName} with simulations {Simulations}: {Exception}",
-                    typeface.FamilyName,
-                    fontSimulations,
-                    ex);
-
-                return null;
-            }
         }
 
         internal static GlyphTypeface? TryCreate(IFontMemory fontMemory, FontSimulations fontSimulations = FontSimulations.None)
@@ -700,38 +683,15 @@ namespace Avalonia.Media
 
                 // The render backend derives its typeface from the glyph typeface's font data,
                 // mirroring the text shaper's typeface factory.
-                if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is { } renderInterface)
-                {
-                    var renderTypeface = renderInterface.CreateTypeface(this);
-
-                    _platformTypeface = renderTypeface;
-
-                    return renderTypeface;
-                }
-
-                // Legacy fallback for lifetimes without a render interface: materialize the platform
-                // typeface from the font file bytes through the platform font manager instead.
-                if (_fontMemory is not SfntFace face || !face.TryGetFontFileData(out var data, out _))
-                {
-                    throw new InvalidOperationException(
-                        "The glyph typeface's font memory cannot provide the font file data needed to create a platform typeface.");
-                }
-
-                var fontManager = AvaloniaLocator.Current.GetService<IFontManagerImpl>()
+                var renderInterface = AvaloniaLocator.Current.GetService<IPlatformRenderInterface>()
                     ?? throw new InvalidOperationException(
-                        "No platform font manager is available to create a platform typeface.");
+                        "No render interface is available to create a platform typeface.");
 
-                using var stream = new MemoryStream(data.ToArray(), writable: false);
+                var renderTypeface = renderInterface.CreateTypeface(this);
 
-                if (!fontManager.TryCreateGlyphTypeface(stream, FontSimulations, out var platformTypeface))
-                {
-                    throw new InvalidOperationException(
-                        "The platform font manager could not create a platform typeface from the font data.");
-                }
+                _platformTypeface = renderTypeface;
 
-                _platformTypeface = platformTypeface;
-
-                return platformTypeface;
+                return renderTypeface;
             }
         }
 

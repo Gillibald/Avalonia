@@ -563,46 +563,21 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
-            if (glyphTypeface.FontMemory is SfntFace face)
+            if (glyphTypeface.FontMemory is not SfntFace face)
             {
-                // The synthetic face shares the source's font file bytes: no whole-file copy, and
-                // the same face of a TrueType collection stays pinned instead of being re-resolved
-                // from a stream through the platform.
-                var clone = face.Clone();
-
-                syntheticGlyphTypeface = GlyphTypeface.TryCreate(clone, fontSimulations);
-
-                if (syntheticGlyphTypeface is null)
-                {
-                    clone.Dispose();
-
-                    return false;
-                }
+                return false;
             }
-            else if (glyphTypeface.PlatformTypeface.TryGetStream(out var stream))
+
+            // The synthetic face shares the source's font file bytes: no whole-file copy, and
+            // the same face of a TrueType collection stays pinned instead of being re-resolved.
+            var clone = face.Clone();
+
+            syntheticGlyphTypeface = GlyphTypeface.TryCreate(clone, fontSimulations);
+
+            if (syntheticGlyphTypeface is null)
             {
-                // Platform-backed typeface: round-trip the stream through the platform font
-                // manager, as before.
-                using (stream)
-                {
-                    var fontManager = AvaloniaLocator.Current.GetService<IFontManagerImpl>();
+                clone.Dispose();
 
-                    if (fontManager is null ||
-                        !fontManager.TryCreateGlyphTypeface(stream, fontSimulations, out var platformTypeface))
-                    {
-                        return false;
-                    }
-
-                    syntheticGlyphTypeface = GlyphTypeface.TryCreate(platformTypeface, fontSimulations);
-
-                    if (syntheticGlyphTypeface is null)
-                    {
-                        return false;
-                    }
-                }
-            }
-            else
-            {
                 return false;
             }
 

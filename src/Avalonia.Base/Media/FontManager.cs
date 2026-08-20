@@ -31,9 +31,9 @@ namespace Avalonia.Media
         private volatile bool _optionsResolved;
         private FontFamily? _defaultFontFamily;
 
-        public FontManager(IFontManagerImpl platformImpl)
+        [Obsolete("The platform font manager seam is replaced by ISystemFontProvider; the argument is ignored. Register a system font collection instead.")]
+        public FontManager(IFontManagerImpl platformImpl) : this()
         {
-            PlatformImpl = platformImpl;
         }
 
         internal FontManager()
@@ -54,12 +54,9 @@ namespace Avalonia.Media
                     return current;
                 }
 
-                // A platform font manager is no longer required: the system font collection is
-                // registered via AddFontCollection, with a locator-bound IFontManagerImpl wrapped
-                // as a transition fallback by TryGetFontCollection.
-                current = AvaloniaLocator.Current.GetService<IFontManagerImpl>() is { } fontManagerImpl
-                    ? new FontManager(fontManagerImpl)
-                    : new FontManager();
+                // No platform service is required: the system font collection arrives by
+                // registration via AddFontCollection.
+                current = new FontManager();
 
                 AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(current);
 
@@ -106,8 +103,6 @@ namespace Avalonia.Media
                 return new EmptySystemFontCollection();
             }
         }
-
-        internal IFontManagerImpl? PlatformImpl { get; }
 
         /// <summary>
         ///     Tries to get a glyph typeface for specified typeface.
@@ -417,19 +412,7 @@ namespace Avalonia.Media
                     return true;
                 }
 
-                // Transition fallback for service-only hosts (unit-test harnesses, apps that do not
-                // run the registration path): wrap the legacy platform font manager. Dies with
-                // IFontManagerImpl. The cached entry is replaced by any later registration.
-                var legacyImpl = PlatformImpl ?? AvaloniaLocator.Current.GetService<IFontManagerImpl>();
-
-                if (legacyImpl != null)
-                {
-                    fontCollection = GetOrCreateFontCollection(SystemFontsKey, legacyImpl,
-                        static (_, impl) => new LegacySystemFontCollection(impl));
-                    return true;
-                }
-
-                // No system fonts at all. Uncached, so a later registration is not shadowed.
+                // No system fonts registered. Uncached, so a later registration is not shadowed.
                 fontCollection = new EmptySystemFontCollection();
                 return true;
             }
@@ -491,15 +474,6 @@ namespace Avalonia.Media
                     return fontFamily;
                 }
 
-                // Transition step: when a registered system collection has no default of its own,
-                // a legacy platform font manager still answers. Dies with IFontManagerImpl.
-                var legacyImpl = PlatformImpl ?? AvaloniaLocator.Current.GetService<IFontManagerImpl>();
-
-                if (legacyImpl != null)
-                {
-                    defaultFontFamilyName = legacyImpl.GetDefaultFontFamilyName();
-                }
-
                 if (string.IsNullOrEmpty(defaultFontFamilyName) && SystemFonts.Count > 0)
                 {
                     defaultFontFamilyName = SystemFonts[0].Name;
@@ -532,7 +506,6 @@ namespace Avalonia.Media
                 pair.Value.Dispose();
 
             _fontCollections.Clear();
-            (PlatformImpl as IDisposable)?.Dispose();
         }
     }
 }

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
@@ -8,6 +9,7 @@ using Avalonia.Metadata;
 namespace Avalonia.Platform
 {
     [Unstable]
+    [Obsolete("The render backend no longer provides fonts; implement ISystemFontProvider and register the system font collection instead. This interface will be removed.")]
     public interface IFontManagerImpl
     {
         /// <summary>
