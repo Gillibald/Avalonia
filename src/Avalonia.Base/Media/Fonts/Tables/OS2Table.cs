@@ -155,7 +155,7 @@ namespace Avalonia.Media.Fonts.Tables
         {
             os2Table = default;
             
-            if (!fontFace.PlatformTypeface.TryGetTable(Tag, out var table))
+            if (!fontFace.FontMemory.TryGetTable(Tag, out var table))
             {
                 return false;
             }

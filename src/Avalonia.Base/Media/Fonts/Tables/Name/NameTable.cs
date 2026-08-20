@@ -125,7 +125,7 @@ namespace Avalonia.Media.Fonts.Tables.Name
 
         public static NameTable? Load(GlyphTypeface glyphTypeface)
         {
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var table))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var table))
             {
                 return null;
             }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Avalonia.Media.Fonts.Tables.Metrics
 {
@@ -20,7 +20,7 @@ namespace Avalonia.Media.Fonts.Tables.Metrics
 
         internal static HorizontalMetricsTable? Load(GlyphTypeface glyphTypeface, ushort numberOfHMetrics, int glyphCount)
         {
-            if (glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var table))
+            if (glyphTypeface.FontMemory.TryGetTable(Tag, out var table))
             {
                 return new HorizontalMetricsTable(table, numberOfHMetrics, glyphCount);
             }

@@ -29,7 +29,7 @@ namespace Avalonia.Media.Fonts.Tables
 
         public static FeatureListTable? LoadGSub(GlyphTypeface glyphTypeface)
         {
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(GSubTag, out var gPosTable))
+            if (!glyphTypeface.FontMemory.TryGetTable(GSubTag, out var gPosTable))
             {
                 return null;
             }
@@ -41,7 +41,7 @@ namespace Avalonia.Media.Fonts.Tables
 
         public static FeatureListTable? LoadGPos(GlyphTypeface glyphTypeface)
         {
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(GPosTag, out var gSubTable))
+            if (!glyphTypeface.FontMemory.TryGetTable(GPosTag, out var gSubTable))
             {
                 return null;
             }

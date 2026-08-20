@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables;
@@ -26,6 +27,10 @@ namespace Avalonia.Media
             new Dictionary<CultureInfo, string>(0);
 
         private bool _isDisposed;
+
+        private readonly IFontMemory _fontMemory;
+        private IPlatformTypeface? _platformTypeface;
+        private readonly object _platformTypefaceLock = new();
 
         private readonly NameTable? _nameTable;
         private readonly OS2Table _os2Table;
@@ -64,8 +69,23 @@ namespace Avalonia.Media
         /// <param name="fontSimulations">The font simulations to apply, such as bold or oblique. The default is <see cref="FontSimulations.None"/>.</param>
         /// <exception cref="InvalidOperationException">Thrown if required font tables (e.g., 'maxp') cannot be loaded.</exception>
         public GlyphTypeface(IPlatformTypeface typeface, FontSimulations fontSimulations = FontSimulations.None)
+            : this((IFontMemory)(typeface ?? throw new ArgumentNullException(nameof(typeface))), fontSimulations)
         {
-            PlatformTypeface = typeface;
+            _platformTypeface = typeface;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="GlyphTypeface"/> class over the specified font memory and
+        /// font simulations, without any platform typeface involvement.
+        /// </summary>
+        /// <remarks>All font properties are parsed from the memory's OpenType tables. A platform typeface for
+        /// rendering is created lazily on first access of <see cref="PlatformTypeface"/>.</remarks>
+        /// <param name="fontMemory">The font memory holding the face's OpenType tables. This parameter cannot be <c>null</c>.</param>
+        /// <param name="fontSimulations">The font simulations to apply, such as bold or oblique. The default is <see cref="FontSimulations.None"/>.</param>
+        /// <exception cref="InvalidOperationException">Thrown if required font tables (e.g., 'maxp') cannot be loaded.</exception>
+        public GlyphTypeface(IFontMemory fontMemory, FontSimulations fontSimulations = FontSimulations.None)
+        {
+            _fontMemory = fontMemory ?? throw new ArgumentNullException(nameof(fontMemory));
 
             _hasOs2Table = OS2Table.TryLoad(this, out _os2Table);
             _cmapTable = CmapTable.Load(this);
@@ -282,6 +302,24 @@ namespace Avalonia.Media
                     null,
                     "Could not create glyph typeface from platform typeface named {FamilyName} with simulations {Simulations}: {Exception}",
                     typeface.FamilyName,
+                    fontSimulations,
+                    ex);
+
+                return null;
+            }
+        }
+
+        internal static GlyphTypeface? TryCreate(IFontMemory fontMemory, FontSimulations fontSimulations = FontSimulations.None)
+        {
+            try
+            {
+                return new GlyphTypeface(fontMemory, fontSimulations);
+            }
+            catch (Exception ex)
+            {
+                Logger.TryGet(LogEventLevel.Warning, LogArea.Fonts)?.Log(
+                    null,
+                    "Could not create glyph typeface from font memory with simulations {Simulations}: {Exception}",
                     fontSimulations,
                     ex);
 
@@ -623,9 +661,71 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Gets the font memory holding the face's OpenType tables. All managed table parsing and
+        /// text shaping read font data through this property.
+        /// </summary>
+        public IFontMemory FontMemory => _fontMemory;
+
+        /// <summary>
         /// Gets the platform-specific typeface associated with this font.
         /// </summary>
-        public IPlatformTypeface PlatformTypeface { get; }
+        /// <remarks>For instances created over an <see cref="IFontMemory"/> the platform typeface is
+        /// created lazily on first access and cached for the lifetime of the <see cref="GlyphTypeface"/>.</remarks>
+        public IPlatformTypeface PlatformTypeface
+        {
+            get
+            {
+                if (_platformTypeface is { } platformTypeface)
+                {
+                    return platformTypeface;
+                }
+
+                return CreatePlatformTypeface();
+            }
+        }
+
+        private IPlatformTypeface CreatePlatformTypeface()
+        {
+            lock (_platformTypefaceLock)
+            {
+                if (_platformTypeface is { } existing)
+                {
+                    return existing;
+                }
+
+                if (_isDisposed)
+                {
+                    throw new ObjectDisposedException(nameof(GlyphTypeface));
+                }
+
+                // Interim bridge: memory-backed glyph typefaces materialize their platform typeface
+                // from the font file bytes through the platform font manager, so they stay renderable
+                // while the render backends still consume IPlatformTypeface. The render interface
+                // will derive its typeface from the GlyphTypeface directly in a later step, like the
+                // text shaper already does.
+                if (_fontMemory is not SfntFace face || !face.TryGetFontFileData(out var data, out _))
+                {
+                    throw new InvalidOperationException(
+                        "The glyph typeface's font memory cannot provide the font file data needed to create a platform typeface.");
+                }
+
+                var fontManager = AvaloniaLocator.Current.GetService<IFontManagerImpl>()
+                    ?? throw new InvalidOperationException(
+                        "No platform font manager is available to create a platform typeface.");
+
+                using var stream = new MemoryStream(data.ToArray(), writable: false);
+
+                if (!fontManager.TryCreateGlyphTypeface(stream, FontSimulations, out var platformTypeface))
+                {
+                    throw new InvalidOperationException(
+                        "The platform font manager could not create a platform typeface from the font data.");
+                }
+
+                _platformTypeface = platformTypeface;
+
+                return platformTypeface;
+            }
+        }
 
         /// <summary>
         /// Gets the typeface information used by the text shaper for this font.
@@ -957,19 +1057,36 @@ namespace Avalonia.Media
 
         private void Dispose(bool disposing)
         {
-            if (_isDisposed)
-            {
-                return;
-            }
+            IPlatformTypeface? platformTypeface;
 
-            _isDisposed = true;
+            lock (_platformTypefaceLock)
+            {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
+                _isDisposed = true;
+
+                platformTypeface = _platformTypeface;
+            }
 
             if (!disposing)
             {
                 return;
             }
 
-            PlatformTypeface.Dispose();
+            // Cascade: the glyph typeface owns its shaper typeface, its (possibly lazily created)
+            // platform typeface, and its font memory. The shaper typeface goes first because its
+            // table blobs may pin the font memory.
+            _textShaperTypeface?.Dispose();
+
+            platformTypeface?.Dispose();
+
+            if (!ReferenceEquals(_fontMemory, platformTypeface))
+            {
+                _fontMemory.Dispose();
+            }
         }
     }
 }

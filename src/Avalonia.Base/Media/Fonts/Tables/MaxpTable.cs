@@ -59,7 +59,7 @@ namespace Avalonia.Media.Fonts.Tables
 
         public static MaxpTable Load(GlyphTypeface fontFace)
         {
-            if (!fontFace.PlatformTypeface.TryGetTable(Tag, out var table))
+            if (!fontFace.FontMemory.TryGetTable(Tag, out var table))
             {
                 throw new InvalidOperationException($"Could not load the '{TableName}' table.");
             }

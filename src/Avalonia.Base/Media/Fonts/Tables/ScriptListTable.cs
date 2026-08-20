@@ -34,7 +34,7 @@ namespace Avalonia.Media.Fonts.Tables
         private static bool TryReadScriptList(GlyphTypeface glyphTypeface, OpenTypeTag tableTag,
             HashSet<OpenTypeTag> scriptTags)
         {
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(tableTag, out var table))
+            if (!glyphTypeface.FontMemory.TryGetTable(tableTag, out var table))
             {
                 // An absent table simply contributes no scripts
                 return true;

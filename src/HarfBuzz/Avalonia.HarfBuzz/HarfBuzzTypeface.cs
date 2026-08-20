@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Runtime.InteropServices;
 using Avalonia.Media;
 using HarfBuzzSharp;
 
@@ -24,34 +23,21 @@ namespace Avalonia.Harfbuzz
 
         private Blob? GetTable(Face face, Tag tag)
         {
-            if (!GlyphTypeface.PlatformTypeface.TryGetTable((uint)tag, out var table))
+            if (!GlyphTypeface.FontMemory.TryGetTable((uint)tag, out var table) || table.Length == 0)
             {
                 return null;
             }
 
-            // If table is backed by managed array, pin it and avoid copy.
-            if (MemoryMarshal.TryGetArray(table, out var seg))
-            {
-                var handle = GCHandle.Alloc(seg.Array!, GCHandleType.Pinned);
-                var basePtr = handle.AddrOfPinnedObject();
-                var ptr = IntPtr.Add(basePtr, seg.Offset);
+            // Pin the table memory for the lifetime of the blob. This is zero-copy for
+            // array-backed as well as native or memory-mapped font memories.
+            var handle = table.Pin();
 
-                var release = new ReleaseDelegate(() => handle.Free());
-
-                return new Blob(ptr, seg.Count, MemoryMode.ReadOnly, release);
-            }
-
-            // Fallback: allocate native memory and copy
-            var nativePtr = Marshal.AllocHGlobal(table.Length);
+            var release = new ReleaseDelegate(() => handle.Dispose());
 
             unsafe
             {
-                table.Span.CopyTo(new Span<byte>((void*)nativePtr, table.Length));
+                return new Blob((IntPtr)handle.Pointer, table.Length, MemoryMode.ReadOnly, release);
             }
-
-            var releaseDelegate = new ReleaseDelegate(() => Marshal.FreeHGlobal(nativePtr));
-
-            return new Blob(nativePtr, table.Length, MemoryMode.ReadOnly, releaseDelegate);
         }
 
         public void Dispose()
