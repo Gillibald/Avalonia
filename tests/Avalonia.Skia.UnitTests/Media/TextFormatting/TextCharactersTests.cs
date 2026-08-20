@@ -275,19 +275,13 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface()));
 
-            var fontManagerImpl = new CustomFontManagerImpl();
-
-            AvaloniaLocator.CurrentMutable
-                .Bind<IFontManagerImpl>().ToConstant(fontManagerImpl);
-
-            var fontManager = new FontManager(fontManagerImpl);
-
-            AvaloniaLocator.CurrentMutable
-                .Bind<FontManager>().ToConstant(fontManager);
+            // The curated set becomes the system fonts; the default family resolves against it.
+            AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(
+                new FontManagerOptions { DefaultFamilyName = "fonts:SystemFonts#Noto Mono" });
 
             // Register a curated system collection holding only the fonts each test needs. This excludes
             // the broad-coverage fonts bundled for other tests, so coverage is exactly the requested set.
-            fontManager.AddFontCollection(new CuratedSystemFontCollection(fontResourceNames));
+            FontManager.Current.AddFontCollection(new CuratedSystemFontCollection(fontResourceNames));
 
             return disposable;
         }

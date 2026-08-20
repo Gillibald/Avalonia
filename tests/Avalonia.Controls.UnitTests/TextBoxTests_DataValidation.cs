@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -152,7 +152,7 @@ namespace Avalonia.Controls.UnitTests
         private static TestServices Services => TestServices.MockThreadingInterface.With(
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new HeadlessFontManagerStub());
+            systemFontProvider: new HeadlessFontStub());
 
         private static IControlTemplate CreateTemplate()
         {

@@ -2475,13 +2475,13 @@ namespace Avalonia.Controls.UnitTests
             inputManager: new InputManager(),
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new TestFontManager());
+            systemFontProvider: new TestFontManager());
 
         private static TestServices Services => TestServices.MockThreadingInterface.With(
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             renderInterface: new HeadlessPlatformRenderInterface(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             assetLoader: new StandardAssetLoader());
 
         private static TextInputMethodClient GetInputMethodClient(TextBox textBox)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Reactive.Subjects;
 using Avalonia.Controls.Primitives;
@@ -292,7 +292,7 @@ namespace Avalonia.Controls.UnitTests
         }
 
         private static TestServices Services => TestServices.MockThreadingInterface.With(
-            fontManagerImpl: new HeadlessFontManagerStub(),
+            systemFontProvider: new HeadlessFontStub(),
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             textShaperImpl: new HarfBuzzTextShaper(),
             renderInterface: new HeadlessPlatformRenderInterface());

@@ -395,7 +395,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static IDisposable StartApp() =>
-            UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+            UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
         private static TestFontCollection BuildCollection(params string[] assetFileNames)
         {
@@ -451,13 +451,12 @@ namespace Avalonia.Skia.UnitTests.Media
         private static GlyphTypeface CreateGlyphTypeface(string resourceName, FontSimulations simulations)
         {
             var loader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
-            var fontManagerImpl = AvaloniaLocator.Current.GetRequiredService<IFontManagerImpl>();
 
             using var stream = loader.Open(new Uri($"resm:{resourceName}?assembly=Avalonia.Skia.UnitTests", UriKind.Absolute));
 
-            Assert.True(fontManagerImpl.TryCreateGlyphTypeface(stream, simulations, out var platformTypeface));
+            Assert.True(SfntFace.TryLoad(stream, out var face));
 
-            var glyphTypeface = GlyphTypeface.TryCreate(platformTypeface, simulations);
+            var glyphTypeface = GlyphTypeface.TryCreate(face, simulations);
             Assert.NotNull(glyphTypeface);
 
             return glyphTypeface!;

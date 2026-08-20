@@ -37,7 +37,7 @@ public class HugeTextLayout : IDisposable
         {
             testServices = testServices.With(
                 textShaperImpl: new HarfBuzzTextShaper(),
-                fontManagerImpl: new FontManagerImpl());
+                systemFontProvider: new SkiaFontProvider());
         }
 
         _app = UnitTestApplication.Start(testServices);

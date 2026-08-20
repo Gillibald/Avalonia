@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
@@ -143,7 +143,7 @@ namespace Avalonia.Controls.UnitTests
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             renderInterface: new HeadlessPlatformRenderInterface(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             keyboardDevice: () => new KeyboardDevice(),
             keyboardNavigation: () => new KeyboardNavigationHandler(),
             inputManager: new InputManager(),

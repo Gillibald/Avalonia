@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
@@ -27,12 +27,10 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void Should_Throw_When_Default_FamilyName_Is_Null_And_Installed_Font_Family_Names_Is_Empty()
+        public void Should_Throw_When_System_Fonts_Are_Empty()
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
-               .With(fontManagerImpl: new HeadlessFontManagerWithMultipleSystemFontsStub(
-                   installedFontFamilyNames: [],
-                   defaultFamilyName: null!))))
+               .With(systemFontProvider: new Avalonia.Media.Fonts.StaticFontProvider())))
             {
                 // The default font family resolves lazily, so the failure surfaces on the first
                 // access instead of at FontManager construction.
@@ -46,7 +44,7 @@ namespace Avalonia.Base.UnitTests.Media
             var options = new FontManagerOptions { DefaultFamilyName = "MyFont" };
 
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
-                .With(fontManagerImpl: new HeadlessFontManagerStub())))
+                .With(systemFontProvider: new HeadlessFontStub())))
             {
                 AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(options);
 
@@ -80,14 +78,26 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void Should_Return_First_Installed_Font_Family_Name_When_Default_Family_Name_Is_Null()
+        public void Should_Return_First_Registered_Font_Family_Name_When_Default_Family_Name_Is_Unset()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
-                .With(fontManagerImpl: new HeadlessFontManagerWithMultipleSystemFontsStub(
-                    installedFontFamilyNames: ["DejaVu", "Verdana"],
-                    defaultFamilyName: null!))))
+            var provider = new Avalonia.Media.Fonts.StaticFontProvider();
+
+            using (var stream = Avalonia.Base.UnitTests.Media.Fonts.SfntFaceTestHelper.OpenAsset(
+                "resm:Avalonia.Base.UnitTests.Assets.NotoMono-Regular.ttf?assembly=Avalonia.Base.UnitTests"))
             {
-                Assert.Equal("DejaVu", FontManager.Current.DefaultFontFamily.Name);
+                Assert.True(provider.AddFont(stream));
+            }
+
+            using (var stream = Avalonia.Base.UnitTests.Media.Fonts.SfntFaceTestHelper.OpenAsset(
+                "resm:Avalonia.Base.UnitTests.Assets.Inter-Regular.ttf?assembly=Avalonia.Base.UnitTests"))
+            {
+                Assert.True(provider.AddFont(stream));
+            }
+
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+                .With(systemFontProvider: provider)))
+            {
+                Assert.Equal("Noto Mono", FontManager.Current.DefaultFontFamily.Name);
             }
         }
 

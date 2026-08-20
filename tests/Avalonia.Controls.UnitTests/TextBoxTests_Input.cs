@@ -175,7 +175,7 @@ namespace Avalonia.Controls.UnitTests
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             renderInterface: new HeadlessPlatformRenderInterface(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             assetLoader: new StandardAssetLoader());
 
         internal static IControlTemplate CreateTemplate()

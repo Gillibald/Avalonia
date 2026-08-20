@@ -3,6 +3,7 @@
 using System;
 using Avalonia.Headless;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
 using Avalonia.UnitTests;
 using Xunit;
@@ -584,9 +585,16 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
         private static IDisposable Start()
         {
-            return UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
-                .With(renderInterface: new PlatformRenderInterface(null),
-                    fontManagerImpl: new CustomFontManagerImpl()));
+            var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+                .With(renderInterface: new PlatformRenderInterface(null)));
+
+            AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(
+                new FontManagerOptions { DefaultFamilyName = "fonts:SystemFonts#Noto Mono" });
+
+            FontManager.Current.AddFontCollection(new EmbeddedFontCollection(FontManager.SystemFontsKey,
+                new Uri("resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests")));
+
+            return disposable;
         }
     }
 }

@@ -21,14 +21,14 @@ namespace Avalonia.UnitTests
             renderInterface: new HeadlessPlatformRenderInterface(),
             standardCursorFactory: new HeadlessCursorFactoryStub(),
             theme: () => CreateSimpleTheme(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             textShaperImpl: new HarfBuzzTextShaper(),
             windowingPlatform: new MockWindowingPlatform());
 
         public static TestServices MockPlatformRenderInterface => new TestServices(
             assetLoader: new StandardAssetLoader(),
             renderInterface: new HeadlessPlatformRenderInterface(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             textShaperImpl: new HarfBuzzTextShaper());
 
         public static TestServices MockPlatformWrapper => new TestServices(
@@ -46,7 +46,7 @@ namespace Avalonia.UnitTests
             inputManager: new InputManager(),
             assetLoader: new StandardAssetLoader(),
             renderInterface: new HeadlessPlatformRenderInterface(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             textShaperImpl: new HarfBuzzTextShaper());
 
         public static TestServices FocusableWindow => new TestServices(
@@ -58,14 +58,14 @@ namespace Avalonia.UnitTests
             renderInterface: new HeadlessPlatformRenderInterface(),
             standardCursorFactory: new HeadlessCursorFactoryStub(),
             theme: () => CreateSimpleTheme(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             textShaperImpl: new HarfBuzzTextShaper(),
             windowingPlatform: new MockWindowingPlatform());
 
         public static TestServices TextServices => new TestServices(
             assetLoader: new StandardAssetLoader(),
             renderInterface: new HeadlessPlatformRenderInterface(),
-            fontManagerImpl: new TestFontManager(),
+            systemFontProvider: new TestFontManager(),
             textShaperImpl: new HarfBuzzTextShaper());
 
         internal TestServices(
@@ -80,7 +80,7 @@ namespace Avalonia.UnitTests
             IPlatformSettings? platformSettings = null,
             ICursorFactory? standardCursorFactory = null,
             Func<IStyle>? theme = null,
-            IFontManagerImpl? fontManagerImpl = null,
+            ISystemFontProvider? systemFontProvider = null,
             ITextShaperImpl? textShaperImpl = null,
             IWindowImpl? windowImpl = null,
             IWindowingPlatform? windowingPlatform = null,
@@ -96,7 +96,7 @@ namespace Avalonia.UnitTests
             Platform = platform;
             RenderInterface = renderInterface;
             PlatformSettings = platformSettings;
-            FontManagerImpl = fontManagerImpl;
+            SystemFontProvider = systemFontProvider;
             TextShaperImpl = textShaperImpl;
             StandardCursorFactory = standardCursorFactory;
             Theme = theme;
@@ -114,7 +114,7 @@ namespace Avalonia.UnitTests
         public IRuntimePlatform? Platform { get; }
         public IPlatformRenderInterface? RenderInterface { get; }
         public IPlatformSettings? PlatformSettings { get; }
-        public IFontManagerImpl? FontManagerImpl { get; }
+        public ISystemFontProvider? SystemFontProvider { get; }
         public ITextShaperImpl? TextShaperImpl { get; }
         public ICursorFactory? StandardCursorFactory { get; }
         public Func<IStyle>? Theme { get; }
@@ -136,7 +136,7 @@ namespace Avalonia.UnitTests
             IScheduler? scheduler = null,
             ICursorFactory? standardCursorFactory = null,
             Func<IStyle>? theme = null,
-            IFontManagerImpl? fontManagerImpl = null,
+            ISystemFontProvider? systemFontProvider = null,
             ITextShaperImpl? textShaperImpl = null,
             IWindowImpl? windowImpl = null,
             IWindowingPlatform? windowingPlatform = null)
@@ -152,7 +152,7 @@ namespace Avalonia.UnitTests
                 platform: platform ?? Platform,
                 renderInterface: renderInterface ?? RenderInterface,
                 platformSettings: platformSettings ?? PlatformSettings,
-                fontManagerImpl: fontManagerImpl ?? FontManagerImpl,
+                systemFontProvider: systemFontProvider ?? SystemFontProvider,
                 textShaperImpl: textShaperImpl ?? TextShaperImpl,
                 standardCursorFactory: standardCursorFactory ?? StandardCursorFactory,
                 theme: theme ?? Theme,

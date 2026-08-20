@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 using System;
 using System.Collections;
@@ -23,7 +23,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Theory]
         public void Should_Get_Near_Matching_Typeface(FontWeight fontWeight, FontStyle fontStyle)
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri("fonts:testFonts", UriKind.Absolute);
                 var source = new Uri(s_fontAssets, UriKind.Absolute);
@@ -41,7 +41,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Not_Get_Typeface_For_Invalid_FamilyName()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri("fonts:testFonts", UriKind.Absolute);
                 var source = new Uri(s_fontAssets, UriKind.Absolute);
@@ -55,7 +55,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Get_Typeface_For_Partial_FamilyName()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri("fonts:testFonts", UriKind.Absolute);
                 var source = new Uri(s_fontAssets, UriKind.Absolute);
@@ -71,7 +71,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Get_Typeface_For_TypographicFamilyName()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri("fonts:testFonts", UriKind.Absolute);
                 var source = new Uri(s_fontAssets, UriKind.Absolute);
@@ -89,7 +89,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Cache_Synthetic_GlyphTypeface()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri("fonts:testFonts", UriKind.Absolute);
                 var source = new Uri(s_fontAssets, UriKind.Absolute);
@@ -111,7 +111,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Cache_Nearest_Match_For_MiSans()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var source = new Uri(s_fontAssets, UriKind.Absolute);
 

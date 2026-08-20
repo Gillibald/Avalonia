@@ -64,7 +64,7 @@ namespace Avalonia.Benchmarks
                 .With(
                     renderInterface: new PlatformRenderInterface(),
                     textShaperImpl: new HarfBuzzTextShaper(),
-                    fontManagerImpl: new FontManagerImpl());
+                    systemFontProvider: new SkiaFontProvider());
             using var app = UnitTestApplication.Start(services);
 
             // Real Avalonia consumers (e.g. TextBlock) share a TextRunCache across

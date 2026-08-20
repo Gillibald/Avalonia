@@ -21,7 +21,7 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void TryGetFontCollection_SystemFontScheme_YieldsLegacySystemFontCollection()
+        public void TryGetFontCollection_SystemFontScheme_YieldsSystemFontCollection()
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
             {
@@ -29,7 +29,7 @@ namespace Avalonia.Base.UnitTests.Media
 
                 FontManager.Current.TryGetFontCollection(source, out var collection);
 
-                Assert.IsType<LegacySystemFontCollection>(collection);
+                Assert.IsType<SystemFontCollection>(collection);
             }
         }
 
@@ -59,13 +59,13 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void TryGetFontCollection_SystemFontsKey_YieldsLegacySystemFontCollection()
+        public void TryGetFontCollection_SystemFontsKey_YieldsSystemFontCollection()
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
             {
                 FontManager.Current.TryGetFontCollection(FontManager.SystemFontsKey, out var collection);
 
-                Assert.IsType<LegacySystemFontCollection>(collection);
+                Assert.IsType<SystemFontCollection>(collection);
             }
         }
 

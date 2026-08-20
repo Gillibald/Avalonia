@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.UnitTests;
@@ -466,8 +467,13 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable Start()
         {
             var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
-                .With(renderInterface: new PlatformRenderInterface(),
-                    fontManagerImpl: new CustomFontManagerImpl()));
+                .With(renderInterface: new PlatformRenderInterface()));
+
+            AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(
+                new FontManagerOptions { DefaultFamilyName = "fonts:SystemFonts#Noto Mono" });
+
+            FontManager.Current.AddFontCollection(new EmbeddedFontCollection(FontManager.SystemFontsKey,
+                new Uri("resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests")));
 
             return disposable;
         }

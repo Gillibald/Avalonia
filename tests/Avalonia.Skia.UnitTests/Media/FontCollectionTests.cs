@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 using System;
 using System.Collections.Concurrent;
@@ -21,9 +21,9 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Fact("Relies on some installed font family")]
         public void Should_Cache_Nearest_Match()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
-                var fontCollection = new TestSystemFontCollection(FontManager.Current.PlatformImpl!);
+                var fontCollection = new TestSystemFontCollection(new SkiaFontProvider());
 
                 Assert.True(fontCollection.TryGetGlyphTypeface("Arial", FontStyle.Normal, FontWeight.ExtraBlack, FontStretch.Normal, out var glyphTypeface));
 
@@ -39,9 +39,9 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private class TestSystemFontCollection : LegacySystemFontCollection
+        private class TestSystemFontCollection : SystemFontCollection
         {
-            public TestSystemFontCollection(IFontManagerImpl platformImpl) : base(platformImpl)
+            public TestSystemFontCollection(ISystemFontProvider provider) : base(FontManager.SystemFontsKey, provider)
             {
             }
 
@@ -51,7 +51,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Use_Fallback()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var source = new Uri(NotoMono, UriKind.Absolute);
 
@@ -68,7 +68,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Ignore_FontFamily()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri(NotoMono, UriKind.Absolute);
 

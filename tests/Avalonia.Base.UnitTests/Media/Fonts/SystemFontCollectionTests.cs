@@ -203,15 +203,15 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
-        public void Legacy_Fallback_Should_Serve_Default_Font_Family()
+        public void Preset_Provider_Should_Serve_Default_Font_Family()
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
             {
-                // Nothing registered: the system fonts key wraps the locator-bound legacy font
-                // manager, whose default family name drives the manager's default.
+                // The test preset registers a provider-backed system font collection, whose
+                // default face drives the manager's default family.
                 var fontManager = FontManager.Current;
 
-                Assert.IsType<LegacySystemFontCollection>(fontManager.SystemFonts);
+                Assert.IsType<SystemFontCollection>(fontManager.SystemFonts);
                 Assert.Equal("Inter", fontManager.DefaultFontFamily.Name);
             }
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Reactive.Linq;
 using System.Threading.Tasks;
@@ -1047,7 +1047,7 @@ namespace Avalonia.Controls.UnitTests
             keyboardNavigation: () => new KeyboardNavigationHandler(),
             inputManager: new InputManager(),
             renderInterface: new HeadlessPlatformRenderInterface(),
-            fontManagerImpl: new HeadlessFontManagerStub(),
+            systemFontProvider: new HeadlessFontStub(),
             textShaperImpl: new HarfBuzzTextShaper(),
             standardCursorFactory: Mock.Of<ICursorFactory>());
 
@@ -1055,7 +1055,7 @@ namespace Avalonia.Controls.UnitTests
             renderInterface: new HeadlessPlatformRenderInterface(),
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new HeadlessFontManagerStub());
+            systemFontProvider: new HeadlessFontStub());
 
         private static IControlTemplate CreateTemplate()
         {

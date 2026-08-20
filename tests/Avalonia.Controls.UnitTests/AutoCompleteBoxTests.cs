@@ -1310,7 +1310,7 @@ namespace Avalonia.Controls.UnitTests
             inputManager: new InputManager(),
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             textShaperImpl: new HarfBuzzTextShaper(),
-            fontManagerImpl: new HeadlessFontManagerStub());
+            systemFontProvider: new HeadlessFontStub());
 
         private class TestContextMenu : ContextMenu
         {
