@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.IO;
 using Avalonia.Base.UnitTests.Media.Fonts.Tables;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
@@ -116,49 +115,54 @@ namespace Avalonia.Base.UnitTests.Media
 
         private static IDisposable Start() =>
             UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
-                .With(fontManagerImpl: new VariableFontManagerStub()));
+                .With(systemFontProvider: new VariableFontProvider()));
 
         /// <summary>
-        /// Serves the embedded Inter Variable font for every family request, so the
-        /// resolution pipeline (FontManager → SystemFontCollection → platform impl) runs
-        /// for real against a variable font without depending on system fonts.
+        /// Serves the embedded Inter Variable font as the only system font, so the
+        /// resolution pipeline (FontManager, SystemFontCollection, provider) runs for real
+        /// against a variable font without depending on system fonts.
         /// </summary>
-        private class VariableFontManagerStub : IFontManagerImpl
+        private sealed class VariableFontProvider : ISystemFontProvider
         {
-            public string GetDefaultFontFamilyName() => "Inter Variable";
+            private StaticFontProvider? _inner;
 
-            public string[] GetInstalledFontFamilyNames(bool checkForUpdates = false) =>
-                new[] { "Inter Variable" };
+            public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
+                => GetInner().TryGetDefaultFontFace(out face);
 
-            public bool TryMatchCharacter(int codepoint, FontStyle fontStyle, FontWeight fontWeight,
-                FontStretch fontStretch, string? familyName, CultureInfo? culture,
-                [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
+            public IReadOnlyList<string> GetFontFamilyNames() => GetInner().GetFontFamilyNames();
+
+            public bool TryMatchFamily(string familyName, FontStyle style, FontWeight weight,
+                FontStretch stretch, [NotNullWhen(true)] out SystemFontFace? match)
+                => GetInner().TryMatchFamily(familyName, style, weight, stretch, out match);
+
+            public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight,
+                FontStretch stretch, string? familyName, CultureInfo? culture,
+                [NotNullWhen(true)] out SystemFontFace? match)
             {
-                platformTypeface = null;
+                match = null;
                 return false;
             }
 
-            public bool TryCreateGlyphTypeface(string familyName, FontStyle style, FontWeight weight,
-                FontStretch stretch, [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
-            {
-                var assetLoader = new StandardAssetLoader();
-                using var stream = assetLoader.Open(new Uri(InterVariableAsset));
-                platformTypeface = new CustomPlatformTypeface(stream, familyName);
-                return true;
-            }
+            public bool TryGetFamilyFaces(string familyName,
+                [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
+                => GetInner().TryGetFamilyFaces(familyName, out faces);
 
-            public bool TryCreateGlyphTypeface(Stream stream, FontSimulations fontSimulations,
-                [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
-            {
-                platformTypeface = new CustomPlatformTypeface(stream);
-                return true;
-            }
+            public void Dispose() => _inner?.Dispose();
 
-            public bool TryGetFamilyTypefaces(string familyName,
-                [NotNullWhen(true)] out IReadOnlyList<Typeface>? familyTypefaces)
+            // Loaded on first use so the font is parsed inside the test's service scope.
+            private StaticFontProvider GetInner()
             {
-                familyTypefaces = null;
-                return false;
+                if (_inner is null)
+                {
+                    _inner = new StaticFontProvider { DefaultFamilyName = "Inter Variable" };
+
+                    var assetLoader = new StandardAssetLoader();
+                    using var stream = assetLoader.Open(new Uri(InterVariableAsset));
+
+                    _inner.AddFont(stream);
+                }
+
+                return _inner;
             }
         }
     }

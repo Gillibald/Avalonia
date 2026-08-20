@@ -228,7 +228,7 @@ namespace Avalonia.Controls.UnitTests
         }
 
         private static TestServices FocusServices => TestServices.MockThreadingInterface.With(
-            fontManagerImpl: new HeadlessFontManagerStub(),
+            systemFontProvider: new HeadlessFontStub(),
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             textShaperImpl: new HarfBuzzTextShaper(),
             renderInterface: new HeadlessPlatformRenderInterface(),

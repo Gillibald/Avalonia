@@ -123,7 +123,7 @@ public class CffGlyphBoundsBenchmark : IDisposable
     {
         _app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
             renderInterface: new PlatformRenderInterface(),
-            fontManagerImpl: new FontManagerImpl()));
+            systemFontProvider: new SkiaFontProvider()));
 
         _glyf = CffFonts.Load(CffFonts.GlyfAsset);
         _glyfVariable = CffFonts.Load(CffFonts.GlyfVariableAsset);
@@ -221,7 +221,7 @@ public class CffGlyphOutlineBenchmark : IDisposable
     {
         _app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
             renderInterface: new PlatformRenderInterface(),
-            fontManagerImpl: new FontManagerImpl()));
+            systemFontProvider: new SkiaFontProvider()));
 
         _glyf = CffFonts.Load(CffFonts.GlyfAsset);
         _cff = CffFonts.Load(CffFonts.CffAsset);

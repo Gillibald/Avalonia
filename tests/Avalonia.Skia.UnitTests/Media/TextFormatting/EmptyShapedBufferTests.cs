@@ -69,17 +69,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface()));
 
-            var fontManagerImpl = new CustomFontManagerImpl();
-
-            AvaloniaLocator.CurrentMutable
-                .Bind<IFontManagerImpl>().ToConstant(fontManagerImpl);
-
-            var fontManager = new FontManager(fontManagerImpl);
-
-            AvaloniaLocator.CurrentMutable
-                .Bind<FontManager>().ToConstant(fontManager);
-
-            fontManager.AddFontCollection(new GlyphlessSystemFontCollection());
+            FontManager.Current.AddFontCollection(new GlyphlessSystemFontCollection());
 
             return disposable;
         }

@@ -9,6 +9,7 @@ using System.Threading;
 using Avalonia.Input.Platform;
 using Avalonia.Animation;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 
 namespace Avalonia.UnitTests
 {
@@ -83,7 +84,6 @@ namespace Avalonia.UnitTests
                 .Bind<IKeyboardNavigationHandler?>().ToFunc(Services.KeyboardNavigation ?? (() => null))
                 .Bind<IRuntimePlatform?>().ToConstant(Services.Platform)
                 .Bind<IPlatformRenderInterface?>().ToConstant(Services.RenderInterface)
-                .Bind<IFontManagerImpl?>().ToConstant(Services.FontManagerImpl)
                 .Bind<ITextShaperImpl?>().ToConstant(Services.TextShaperImpl)
                 .Bind<ICursorFactory?>().ToConstant(Services.StandardCursorFactory)
                 .Bind<IWindowingPlatform?>().ToConstant(Services.WindowingPlatform)
@@ -93,9 +93,22 @@ namespace Avalonia.UnitTests
 
             InitializeThemeVariant();
 
-            // This is a hack to make tests work, we need to refactor the way font manager is registered
-            // See https://github.com/AvaloniaUI/Avalonia/issues/10081
-            AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant((FontManager)null!);
+            if (Services.SystemFontProvider is { } systemFontProvider)
+            {
+                // The system font collection arrives by registration, like everywhere else; the
+                // manager is created here so per-scope services never leak between tests.
+                var fontManager = new FontManager();
+
+                fontManager.AddFontCollection(new SystemFontCollection(FontManager.SystemFontsKey, systemFontProvider));
+
+                AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(fontManager);
+            }
+            else
+            {
+                // This is a hack to make tests work, we need to refactor the way font manager is registered
+                // See https://github.com/AvaloniaUI/Avalonia/issues/10081
+                AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant((FontManager)null!);
+            }
             var theme = Services.Theme?.Invoke();
 
             if (theme is Style styles)

@@ -195,7 +195,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable Start(out GlyphTypeface interVariable, out VariableFontCollection collection)
         {
             var app = UnitTestApplication.Start(
-                TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+                TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
             collection = new VariableFontCollection(new Uri(CollectionKey, UriKind.Absolute));
             FontManager.Current.AddFontCollection(collection);

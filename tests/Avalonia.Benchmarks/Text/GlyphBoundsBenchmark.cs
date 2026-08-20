@@ -40,7 +40,7 @@ public class GlyphBoundsBenchmark : IDisposable
     {
         _app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
             renderInterface: new PlatformRenderInterface(),
-            fontManagerImpl: new FontManagerImpl()));
+            systemFontProvider: new SkiaFontProvider()));
 
         _glyphTypeface = Typeface.Default.GlyphTypeface;
         _skiaTypeface = (SkiaTypeface)_glyphTypeface.PlatformTypeface;

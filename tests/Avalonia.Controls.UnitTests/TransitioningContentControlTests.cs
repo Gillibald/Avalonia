@@ -326,7 +326,7 @@ namespace Avalonia.Controls.UnitTests
         {
             return UnitTestApplication.Start(
                 TestServices.MockThreadingInterface.With(
-                    fontManagerImpl: new HeadlessFontManagerStub(),
+                    systemFontProvider: new HeadlessFontStub(),
                     renderInterface: new HeadlessPlatformRenderInterface(),
                     textShaperImpl: new HarfBuzzTextShaper(),
                     assetLoader: new StandardAssetLoader()));

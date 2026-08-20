@@ -421,7 +421,7 @@ namespace Avalonia.Controls.UnitTests
                 assetLoader: new StandardAssetLoader(),
                 renderInterface: new HeadlessPlatformRenderInterface(),
                 textShaperImpl: new HarfBuzzTextShaper(),
-                fontManagerImpl: new TestFontManager());
+                systemFontProvider: new TestFontManager());
 
         private static SelectableTextBlock CreateSelectableTextBlockInTopLevel(IClipboardImpl clipboardImpl)
         {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using Avalonia.Media;
@@ -17,7 +17,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_AddGlyphTypeface_By_Stream()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontManager = FontManager.Current;
 
@@ -89,7 +89,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Enumerate_FontFamilies()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontManager = FontManager.Current;
 
@@ -134,7 +134,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_AddFontSource_From_File()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontManager = FontManager.Current;
                 var fontCollection = new CustomFontCollection(new Uri("fonts:custom", UriKind.Absolute));
@@ -162,7 +162,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_AddFontSource_From_Folder()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontManager = FontManager.Current;
                 var fontCollection = new CustomFontCollection(new Uri("fonts:custom", UriKind.Absolute));
@@ -190,7 +190,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_AddFontSource_From_Resource()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontManager = FontManager.Current;
                 var fontCollection = new CustomFontCollection(new Uri("fonts:custom", UriKind.Absolute));
@@ -223,7 +223,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(false)] // stream
         public void Should_Register_Localized_Family_Names(bool fromFontSource)
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontCollection = new CustomFontCollection(new Uri("fonts:custom", UriKind.Absolute));
 

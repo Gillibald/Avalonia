@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 using System;
 using System.Collections.Concurrent;
@@ -22,9 +22,9 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Fact("Relies on some installed font family")]
         public void Should_Cache_Nearest_Match()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
-                var fontCollection = new TestSystemFontCollection(FontManager.Current.PlatformImpl!);
+                var fontCollection = new TestSystemFontCollection(new SkiaFontProvider());
 
                 Assert.True(fontCollection.TryGetGlyphTypeface("Arial", FontStyle.Normal, FontWeight.ExtraBlack, FontStretch.Normal, out var glyphTypeface));
 
@@ -40,9 +40,9 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private class TestSystemFontCollection : LegacySystemFontCollection
+        private class TestSystemFontCollection : SystemFontCollection
         {
-            public TestSystemFontCollection(IFontManagerImpl platformImpl) : base(platformImpl)
+            public TestSystemFontCollection(ISystemFontProvider provider) : base(FontManager.SystemFontsKey, provider)
             {
             }
 
@@ -52,7 +52,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Use_Fallback()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var source = new Uri(NotoMono, UriKind.Absolute);
 
@@ -69,7 +69,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Ignore_FontFamily()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new CustomFontManagerImpl())))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri(NotoMono, UriKind.Absolute);
 
@@ -153,11 +153,11 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Cache_Synthetic_Match_Under_Requested_Family_Name()
         {
-            var fontManager = new AliasFontManagerImpl(alias: "MyAlias");
+            var fontProvider = new AliasFontProvider(alias: "MyAlias");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: fontManager)))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
-                var fontCollection = new TestSystemFontCollection(fontManager);
+                var fontCollection = new TestSystemFontCollection(fontProvider);
                 var blackKey = new FontCollectionKey(FontStyle.Normal, FontWeight.Black, FontStretch.Normal);
 
                 // Prime the cache with the bare family, as any control asking for the alias at a
@@ -174,7 +174,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 // pass against unfixed code.
                 Assert.Equal(FontSimulations.Bold, first.FontSimulations);
 
-                var creationsAfterFirstCall = fontManager.StreamTypefaceCreations;
+                var creationsAfterFirstCall = fontProvider.FamilyMatches;
 
                 for (var i = 0; i < 10; i++)
                 {
@@ -184,9 +184,9 @@ namespace Avalonia.Skia.UnitTests.Media
                     Assert.Same(first, next);
                 }
 
-                // Each synthesis copies the entire font file through IPlatformTypeface.TryGetStream,
-                // so an uncached synthetic means one full font copy per call.
-                Assert.Equal(creationsAfterFirstCall, fontManager.StreamTypefaceCreations);
+                // A cached result short-circuits the provider; an uncached synthetic goes back to
+                // the provider and loads the face again on every call.
+                Assert.Equal(creationsAfterFirstCall, fontProvider.FamilyMatches);
 
                 Assert.True(fontCollection.GlyphTypefaceCache.TryGetValue("MyAlias", out var cached));
                 Assert.True(cached.ContainsKey(blackKey));
@@ -196,11 +196,11 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Ignore_Family_Name_Casing_When_Resolving_A_Synthetic_Match()
         {
-            var fontManager = new AliasFontManagerImpl(alias: "MyAlias");
+            var fontProvider = new AliasFontProvider(alias: "MyAlias");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: fontManager)))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
-                var fontCollection = new TestSystemFontCollection(fontManager);
+                var fontCollection = new TestSystemFontCollection(fontProvider);
 
                 Assert.True(fontCollection.TryGetGlyphTypeface(
                     "MyAlias", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
@@ -214,7 +214,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.Equal(FontSimulations.Bold, upperCase.FontSimulations);
 
-                var creationsAfterFirstCall = fontManager.StreamTypefaceCreations;
+                var creationsAfterFirstCall = fontProvider.FamilyMatches;
 
                 Assert.True(fontCollection.TryGetGlyphTypeface(
                     "MyAlias", FontStyle.Normal, FontWeight.Black, FontStretch.Normal, out var mixedCase));
@@ -222,7 +222,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 // One shared cache entry, so the other casing neither re-synthesises nor gets a
                 // second instance of the same face.
                 Assert.Same(upperCase, mixedCase);
-                Assert.Equal(creationsAfterFirstCall, fontManager.StreamTypefaceCreations);
+                Assert.Equal(creationsAfterFirstCall, fontProvider.FamilyMatches);
             }
         }
 
@@ -231,11 +231,11 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The platform reports the family as "Noto Mono"; the caller asks in lower case, as any
             // XAML author may.
-            var fontManager = new AliasFontManagerImpl(alias: "Noto Mono");
+            var fontProvider = new AliasFontProvider(alias: "Noto Mono");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: fontManager)))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
-                var fontCollection = new TestSystemFontCollection(fontManager);
+                var fontCollection = new TestSystemFontCollection(fontProvider);
 
                 Assert.True(fontCollection.TryGetGlyphTypeface(
                     "noto mono", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
@@ -251,11 +251,11 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Reuse_An_Already_Cached_Synthetic_Glyph_Typeface()
         {
-            var fontManager = new AliasFontManagerImpl(alias: "MyAlias");
+            var fontProvider = new AliasFontProvider(alias: "MyAlias");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: fontManager)))
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
-                var fontCollection = new TestSystemFontCollection(fontManager);
+                var fontCollection = new TestSystemFontCollection(fontProvider);
 
                 Assert.True(fontCollection.TryGetGlyphTypeface(
                     "MyAlias", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out var regular));
@@ -265,7 +265,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.Equal(FontSimulations.Bold, first.FontSimulations);
 
-                var creationsAfterFirstCall = fontManager.StreamTypefaceCreations;
+                var creationsAfterFirstCall = fontProvider.FamilyMatches;
 
                 Assert.True(fontCollection.TryCreateSyntheticGlyphTypeface(
                     regular, FontStyle.Normal, FontWeight.Black, FontStretch.Normal, out var second));
@@ -275,13 +275,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 // and GlyphTypeface has no finalizer, so its native typeface is retained until the
                 // process exits.
                 Assert.Same(first, second);
-                Assert.Equal(creationsAfterFirstCall, fontManager.StreamTypefaceCreations);
+                Assert.Equal(creationsAfterFirstCall, fontProvider.FamilyMatches);
             }
         }
 
         /// <summary>
-        /// Font manager whose <c>MyAlias</c> family resolves through the platform but is absent from
-        /// the installed family list, the shape of a platform alias (for instance Android's
+        /// Font provider whose alias family resolves through the provider but is absent from the
+        /// installed family list, the shape of a platform alias (for instance Android's
         /// <c>&lt;alias name="arial" to="sans-serif"/&gt;</c> in <c>/system/etc/fonts.xml</c>).
         /// Such a family cannot be found again by the family-name search, so nothing repairs a
         /// missing cache entry.
@@ -289,7 +289,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// The alias is backed by an embedded test font rather than an installed one, so the test
         /// runs identically on every platform.
         /// </summary>
-        private sealed class AliasFontManagerImpl : IFontManagerImpl
+        private sealed class AliasFontProvider : ISystemFontProvider
         {
             /// <summary>Named explicitly rather than enumerated: the backing font must be a real
             /// text face, since a font that cannot be emboldened would make the test pass against
@@ -297,65 +297,77 @@ namespace Avalonia.Skia.UnitTests.Media
             private const string BackingFontUri =
                 "resm:Avalonia.Skia.UnitTests.Assets.NotoMono-Regular.ttf?assembly=Avalonia.Skia.UnitTests";
 
-            private readonly IFontManagerImpl _inner = new FontManagerImpl();
-            private readonly string _alias;
+            private const string BackingFamilyName = "Noto Mono";
 
-            public AliasFontManagerImpl(string alias)
+            private readonly string _alias;
+            private StaticFontProvider? _inner;
+
+            public AliasFontProvider(string alias)
             {
                 _alias = alias;
             }
 
-            /// <summary>Number of typefaces created from a stream: both the alias resolution and every
-            /// synthetic emboldening go through this overload, so the counter also proves that a cached
-            /// result short-circuits the platform call.</summary>
-            public int StreamTypefaceCreations { get; private set; }
+            /// <summary>Number of family matches served: every face the collection loads goes
+            /// through this call, so the counter proves that a cached result short-circuits the
+            /// provider.</summary>
+            public int FamilyMatches { get; private set; }
 
-            public string GetDefaultFontFamilyName() => _inner.GetDefaultFontFamilyName();
+            public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
+                => GetInner().TryGetDefaultFontFace(out face);
 
-            public string[] GetInstalledFontFamilyNames(bool checkForUpdates = false)
-                => Array.Empty<string>();
+            public IReadOnlyList<string> GetFontFamilyNames() => Array.Empty<string>();
 
-            public bool TryCreateGlyphTypeface(string familyName, FontStyle style, FontWeight weight,
-                FontStretch stretch, [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
+            public bool TryMatchFamily(string familyName, FontStyle style, FontWeight weight,
+                FontStretch stretch, [NotNullWhen(true)] out SystemFontFace? match)
             {
                 // The alias always resolves to the regular face of the backing font, never to the
                 // requested weight, exactly what a platform alias does.
                 if (string.Equals(familyName, _alias, StringComparison.OrdinalIgnoreCase))
                 {
-                    using var stream = OpenBackingFont();
+                    FamilyMatches++;
 
-                    return _inner.TryCreateGlyphTypeface(stream, FontSimulations.None, out platformTypeface);
+                    return GetInner().TryMatchFamily(BackingFamilyName, FontStyle.Normal, FontWeight.Normal,
+                        FontStretch.Normal, out match);
                 }
 
-                platformTypeface = null;
+                match = null;
 
                 return false;
             }
 
-            private static Stream OpenBackingFont()
+            public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
+                string? familyName, CultureInfo? culture, [NotNullWhen(true)] out SystemFontFace? match)
             {
-                var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
+                match = null;
 
-                return assetLoader.Open(new Uri(BackingFontUri, UriKind.Absolute));
+                return false;
             }
 
-            public bool TryCreateGlyphTypeface(Stream stream, FontSimulations fontSimulations,
-                [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
+            public bool TryGetFamilyFaces(string familyName,
+                [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
             {
-                StreamTypefaceCreations++;
+                faces = null;
 
-                return _inner.TryCreateGlyphTypeface(stream, fontSimulations, out platformTypeface);
+                return false;
             }
 
-            public bool TryGetFamilyTypefaces(string familyName,
-                [NotNullWhen(true)] out IReadOnlyList<Typeface>? familyTypefaces)
-                => _inner.TryGetFamilyTypefaces(familyName, out familyTypefaces);
+            public void Dispose() => _inner?.Dispose();
 
-            public bool TryMatchCharacter(int codepoint, FontStyle fontStyle, FontWeight fontWeight,
-                FontStretch fontStretch, string? familyName, CultureInfo? culture,
-                [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
-                => _inner.TryMatchCharacter(codepoint, fontStyle, fontWeight, fontStretch, familyName,
-                    culture, out platformTypeface);
+            private StaticFontProvider GetInner()
+            {
+                if (_inner is null)
+                {
+                    _inner = new StaticFontProvider();
+
+                    var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
+
+                    using var stream = assetLoader.Open(new Uri(BackingFontUri, UriKind.Absolute));
+
+                    _inner.AddFont(stream);
+                }
+
+                return _inner;
+            }
         }
     }
 }

@@ -36,7 +36,7 @@ namespace Avalonia.Skia.UnitTests.Media
         public void TryMatchCharacter_Returns_Same_Family_Regardless_Of_Add_Order()
         {
             using var app = UnitTestApplication.Start(
-                TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+                TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
             var orderings = new[]
             {
@@ -75,7 +75,7 @@ namespace Avalonia.Skia.UnitTests.Media
         public void TryMatchCharacter_Is_Stable_Across_Repeated_Invocations()
         {
             using var app = UnitTestApplication.Start(
-                TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+                TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
             var collection = BuildCollection(s_latinFontAssets);
 
@@ -99,7 +99,7 @@ namespace Avalonia.Skia.UnitTests.Media
         public void TryMatchCharacter_Result_Is_Independent_Of_Concurrent_Cache_Population()
         {
             using var app = UnitTestApplication.Start(
-                TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+                TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
             // Touch a variety of typefaces in different orders before the fallback call,
             // so each collection's _glyphTypefaceCache has different ConcurrentDictionary
@@ -137,7 +137,7 @@ namespace Avalonia.Skia.UnitTests.Media
         public void TryMatchCharacter_Cached_ScriptFallback_Lookup_Returns_Same_Family()
         {
             using var app = UnitTestApplication.Start(
-                TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+                TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
             var collection = BuildCollection(s_latinFontAssets);
 

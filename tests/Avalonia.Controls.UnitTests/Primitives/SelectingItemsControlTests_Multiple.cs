@@ -1348,7 +1348,7 @@ namespace Avalonia.Controls.UnitTests.Primitives
         {
             return UnitTestApplication.Start(
                 TestServices.MockThreadingInterface.With(
-                    fontManagerImpl: new HeadlessFontManagerStub(),
+                    systemFontProvider: new HeadlessFontStub(),
                     keyboardDevice: () => new KeyboardDevice(),
                     keyboardNavigation: () => new KeyboardNavigationHandler(),
                     inputManager: new InputManager(),

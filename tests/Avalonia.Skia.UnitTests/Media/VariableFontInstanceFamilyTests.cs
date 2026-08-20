@@ -185,7 +185,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable Start(out GlyphTypeface root, out EmbeddedFontCollection collection)
         {
             var app = UnitTestApplication.Start(
-                TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl()));
+                TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl()));
 
             collection = new EmbeddedFontCollection(
                 new Uri(CollectionKey, UriKind.Absolute),

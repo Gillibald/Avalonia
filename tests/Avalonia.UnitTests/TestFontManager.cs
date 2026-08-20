@@ -2,80 +2,71 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.IO;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 
 namespace Avalonia.UnitTests;
 
-public class TestFontManager : IFontManagerImpl
+/// <summary>
+/// System font provider serving Inter as the only system font, with "MyFont" as an alias.
+/// </summary>
+public class TestFontManager : ISystemFontProvider
 {
-    private readonly string _interFontUri = "avares://Avalonia.Fonts.Inter/Assets/Inter-Regular.ttf";
-    private readonly string _defaultFamilyName = "avares://Avalonia.Fonts.Inter/Assets#Inter";
+    private const string InterFontUri = "avares://Avalonia.Fonts.Inter/Assets/Inter-Regular.ttf";
+
+    private StaticFontProvider? _inner;
 
     public int TryCreateGlyphTypefaceCount { get; private set; }
 
-    public string GetDefaultFontFamilyName() => _defaultFamilyName;
+    public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
+        => GetInner().TryGetDefaultFontFace(out face);
 
-    string[] IFontManagerImpl.GetInstalledFontFamilyNames(bool checkForUpdates)
+    public IReadOnlyList<string> GetFontFamilyNames() => GetInner().GetFontFamilyNames();
+
+    public bool TryMatchFamily(string familyName, FontStyle style, FontWeight weight, FontStretch stretch,
+        [NotNullWhen(true)] out SystemFontFace? match)
     {
-        return new[] { _defaultFamilyName };
-    }
-
-    public bool TryMatchCharacter(
-        int codepoint,
-        FontStyle fontStyle,
-        FontWeight fontWeight,
-        FontStretch fontStretch,
-        string? familyName,
-        CultureInfo? culture,
-        out IPlatformTypeface platformTypeface)
-    {
-        platformTypeface = null!;
-
-        return false;
-    }
-
-    public virtual bool TryCreateGlyphTypeface(string familyName, FontStyle style, FontWeight weight,
-        FontStretch stretch, [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
-    {
-        platformTypeface = null;
+        TryCreateGlyphTypefaceCount++;
 
         if (familyName == "MyFont")
         {
-            var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
-
-            using var stream = assetLoader.Open(new Uri(_interFontUri));
-
-            if (ManagedPlatformTypeface.TryCreate(stream, FontSimulations.None, null, out var managedTypeface))
-            {
-                platformTypeface = managedTypeface;
-            }
+            familyName = "Inter";
         }
 
-        TryCreateGlyphTypefaceCount++;
-
-        return platformTypeface != null;
+        return GetInner().TryMatchFamily(familyName, style, weight, stretch, out match);
     }
 
-    public virtual bool TryCreateGlyphTypeface(Stream stream, FontSimulations fontSimulations,
-        [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
+    public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
+        string? familyName, CultureInfo? culture, [NotNullWhen(true)] out SystemFontFace? match)
     {
-        var result = ManagedPlatformTypeface.TryCreate(stream, fontSimulations, null, out var managedTypeface);
-
-        platformTypeface = managedTypeface;
-
-        TryCreateGlyphTypefaceCount++;
-
-        return result;
-    }
-
-    public bool TryGetFamilyTypefaces(string familyName,
-        [NotNullWhen(true)] out IReadOnlyList<Typeface>? familyTypefaces)
-    {
-        familyTypefaces = null;
+        match = null;
 
         return false;
+    }
+
+    public bool TryGetFamilyFaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
+    {
+        faces = null;
+
+        return false;
+    }
+
+    public void Dispose() => _inner?.Dispose();
+
+    private StaticFontProvider GetInner()
+    {
+        if (_inner is null)
+        {
+            _inner = new StaticFontProvider();
+
+            var assetLoader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
+
+            using var stream = assetLoader.Open(new Uri(InterFontUri));
+
+            _inner.AddFont(stream);
+        }
+
+        return _inner;
     }
 }

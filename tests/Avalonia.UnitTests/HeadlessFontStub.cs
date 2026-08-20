@@ -9,20 +9,14 @@ using Avalonia.Platform;
 namespace Avalonia.UnitTests
 {
     /// <summary>
-    /// System font provider over this assembly's embedded fonts (Noto Mono, Noto Sans,
-    /// Twitter Color Emoji, ...), with a configurable default family.
+    /// System font provider serving the headless platform's BareMinimum font as the only system
+    /// font. Replaces the legacy headless font manager stub in tests.
     /// </summary>
-    public class HeadlessFontManagerImpl : ISystemFontProvider
+    public class HeadlessFontStub : ISystemFontProvider
     {
-        private const string FontAssetsUri = "resm:Avalonia.UnitTests.Assets?assembly=Avalonia.UnitTests";
+        private const string BareMinimumFontUri = "resm:Avalonia.Headless.BareMinimum.ttf?assembly=Avalonia.Headless";
 
-        private readonly string _defaultFamilyName;
         private StaticFontProvider? _inner;
-
-        public HeadlessFontManagerImpl(string defaultFamilyName = "Noto Mono")
-        {
-            _defaultFamilyName = defaultFamilyName;
-        }
 
         public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
             => GetInner().TryGetDefaultFontFace(out face);
@@ -44,10 +38,18 @@ namespace Avalonia.UnitTests
 
         private StaticFontProvider GetInner()
         {
-            return _inner ??= new StaticFontProvider(new Uri(FontAssetsUri))
+            if (_inner is null)
             {
-                DefaultFamilyName = _defaultFamilyName,
-            };
+                _inner = new StaticFontProvider();
+
+                var assetLoader = new StandardAssetLoader(typeof(Avalonia.Headless.HeadlessPlatformRenderInterface).Assembly);
+
+                using var stream = assetLoader.Open(new Uri(BareMinimumFontUri));
+
+                _inner.AddFont(stream);
+            }
+
+            return _inner;
         }
     }
 }

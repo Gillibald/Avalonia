@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Avalonia.Themes.Simple;
 using Avalonia.Threading;
@@ -41,8 +42,8 @@ public class HeadlessUnitTestApplication : Application
                 // Popups default to dedicated top-levels here, matching the desktop platforms
                 // and the app used by Avalonia.Headless.UnitTests.
                 .UseHeadless(options ?? new AvaloniaHeadlessPlatformOptions { OverlayPopups = false })
-                .AfterPlatformServicesSetup(_ => AvaloniaLocator.CurrentMutable
-                    .Bind<IFontManagerImpl>().ToConstant(new TestFontManager()))
+                .ConfigureFonts(fontManager => fontManager.AddFontCollection(
+                    new SystemFontCollection(FontManager.SystemFontsKey, new TestFontManager())))
                 .SetupUnsafe();
         }
         catch
