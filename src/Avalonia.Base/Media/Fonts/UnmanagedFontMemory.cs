@@ -295,7 +295,8 @@ namespace Avalonia.Media.Fonts
             {
                 if (_ptr == IntPtr.Zero || _length == 0)
                 {
-                    return new MemoryHandle();
+                    // Pass this as the handle's pinnable so disposing it balances the pin count.
+                    return new MemoryHandle(null, default, this);
                 }
 
                 if (elementIndex > _length)
@@ -306,7 +307,7 @@ namespace Avalonia.Media.Fonts
                 unsafe
                 {
                     var p = (byte*)_ptr.ToPointer() + elementIndex;
-                    return new MemoryHandle(p);
+                    return new MemoryHandle(p, default, this);
                 }
             }
             finally

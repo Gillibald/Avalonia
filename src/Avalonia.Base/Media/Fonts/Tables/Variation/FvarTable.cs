@@ -100,7 +100,7 @@ namespace Avalonia.Media.Fonts.Tables.Variation
         {
             fvarTable = null;
 
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var data))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var data))
             {
                 return false;
             }

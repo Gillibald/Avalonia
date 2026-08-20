@@ -47,7 +47,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         {
             glyfTable = null;
 
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var glyfTableData))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var glyfTableData))
             {
                 return false;
             }

@@ -103,7 +103,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         {
             colrTable = null;
 
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var colrData))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var colrData))
             {
                 return false;
             }

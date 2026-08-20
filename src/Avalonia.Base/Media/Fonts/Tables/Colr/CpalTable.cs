@@ -66,7 +66,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         {
             cpalTable = null;
 
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var cpalData))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var cpalData))
             {
                 return false;
             }

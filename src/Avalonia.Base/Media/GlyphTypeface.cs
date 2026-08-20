@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.IO;
 using System.Threading;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
@@ -34,6 +35,10 @@ namespace Avalonia.Media
             new Dictionary<CultureInfo, string>(0);
 
         private bool _isDisposed;
+
+        private readonly IFontMemory _fontMemory;
+        private IPlatformTypeface? _platformTypeface;
+        private readonly object _platformTypefaceLock = new();
 
         private readonly NameTable? _nameTable;
         private readonly OS2Table _os2Table;
@@ -109,12 +114,12 @@ namespace Avalonia.Media
         private readonly GlyphTypeface? _sourceTypeface;
 
         // Whether this typeface owns its PlatformTypeface (and therefore disposes it).
-        // True for default-instance typefaces. For variation clones, depends on whether
-        // IPlatformTypeface.WithVariation returned a distinct instance — when the
-        // default no-op override is in play, clones share the source's platform
-        // typeface and don't own it; when a platform's override actually clones the
-        // underlying face the ownership flag flips on automatically.
-        private readonly bool _ownsPlatformTypeface;
+        // True for default-instance typefaces. A variation clone creates its platform
+        // typeface lazily through IPlatformTypeface.WithVariation on the source's; when
+        // the default no-op override returns the source's instance the clone shares it
+        // and doesn't own it, when a platform's override actually clones the underlying
+        // face the clone owns the result. Written under _platformTypefaceLock.
+        private bool _ownsPlatformTypeface;
 
         // Variation point this typeface is bound to. default(NormalizedVariationPosition)
         // for the source and for static fonts; non-default for variation clones.
@@ -189,8 +194,23 @@ namespace Avalonia.Media
         /// <param name="fontSimulations">The font simulations to apply, such as bold or oblique. The default is <see cref="FontSimulations.None"/>.</param>
         /// <exception cref="InvalidOperationException">Thrown if required font tables (e.g., 'maxp') cannot be loaded.</exception>
         public GlyphTypeface(IPlatformTypeface typeface, FontSimulations fontSimulations = FontSimulations.None)
+            : this((IFontMemory)(typeface ?? throw new ArgumentNullException(nameof(typeface))), fontSimulations)
         {
-            PlatformTypeface = typeface;
+            _platformTypeface = typeface;
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="GlyphTypeface"/> class over the specified font memory and
+        /// font simulations, without any platform typeface involvement.
+        /// </summary>
+        /// <remarks>All font properties are parsed from the memory's OpenType tables. A platform typeface for
+        /// rendering is created lazily on first access of <see cref="PlatformTypeface"/>.</remarks>
+        /// <param name="fontMemory">The font memory holding the face's OpenType tables. This parameter cannot be <c>null</c>.</param>
+        /// <param name="fontSimulations">The font simulations to apply, such as bold or oblique. The default is <see cref="FontSimulations.None"/>.</param>
+        /// <exception cref="InvalidOperationException">Thrown if required font tables (e.g., 'maxp') cannot be loaded.</exception>
+        public GlyphTypeface(IFontMemory fontMemory, FontSimulations fontSimulations = FontSimulations.None)
+        {
+            _fontMemory = fontMemory ?? throw new ArgumentNullException(nameof(fontMemory));
 
             // This is the default-instance constructor — the resulting typeface owns its
             // platform typeface and represents the unvaried design point.
@@ -458,7 +478,7 @@ namespace Avalonia.Media
         /// <see cref="FontMetrics"/> struct here at clone time.
         /// </para>
         /// <para>
-        /// Per-clone: the platform typeface (cloned via
+        /// Per-clone: the lazily created platform typeface (derived via
         /// <see cref="IPlatformTypeface.WithVariation"/> — a no-op when the platform
         /// hasn't overridden it, an actual variation-bound face when it has), the
         /// variation position, the lazy shaper typeface (cleared so the clone
@@ -467,17 +487,14 @@ namespace Avalonia.Media
         /// <c>wght</c>, <c>ital</c> / <c>slnt</c> and <c>wdth</c> axes of the position.
         /// </para>
         /// </remarks>
-        private GlyphTypeface(GlyphTypeface source, IPlatformTypeface platformTypeface, NormalizedVariationPosition variation)
+        private GlyphTypeface(GlyphTypeface source, NormalizedVariationPosition variation)
         {
             _sourceTypeface = source;
 
-            // The clone owns its platform typeface iff WithVariation produced a distinct
-            // instance. With the default no-op IPlatformTypeface.WithVariation override
-            // the source's platform typeface is returned unchanged, so clones share —
-            // and skip platform-typeface disposal.
-            _ownsPlatformTypeface = !ReferenceEquals(platformTypeface, source.PlatformTypeface);
+            // The font bytes are variation-invariant, so the clone reads its tables from the
+            // source's memory. The source owns that memory; the clone never disposes it.
+            _fontMemory = source._fontMemory;
 
-            PlatformTypeface = platformTypeface;
             _variationPosition = variation;
 
             // Reference-share all parsed tables.
@@ -810,6 +827,24 @@ namespace Avalonia.Media
                     null,
                     "Could not create glyph typeface from platform typeface named {FamilyName} with simulations {Simulations}: {Exception}",
                     typeface.FamilyName,
+                    fontSimulations,
+                    ex);
+
+                return null;
+            }
+        }
+
+        internal static GlyphTypeface? TryCreate(IFontMemory fontMemory, FontSimulations fontSimulations = FontSimulations.None)
+        {
+            try
+            {
+                return new GlyphTypeface(fontMemory, fontSimulations);
+            }
+            catch (Exception ex)
+            {
+                Logger.TryGet(LogEventLevel.Warning, LogArea.Fonts)?.Log(
+                    null,
+                    "Could not create glyph typeface from font memory with simulations {Simulations}: {Exception}",
                     fontSimulations,
                     ex);
 
@@ -1158,6 +1193,12 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Gets the font memory holding the face's OpenType tables. All managed table parsing and
+        /// text shaping read font data through this property.
+        /// </summary>
+        public IFontMemory FontMemory => _fontMemory;
+
+        /// <summary>
         /// Gets the variation point this typeface is bound to.
         /// </summary>
         /// <remarks>
@@ -1450,7 +1491,74 @@ namespace Avalonia.Media
         /// <summary>
         /// Gets the platform-specific typeface associated with this font.
         /// </summary>
-        public IPlatformTypeface PlatformTypeface { get; }
+        /// <remarks>For instances created over an <see cref="IFontMemory"/> the platform typeface is
+        /// created lazily on first access and cached for the lifetime of the <see cref="GlyphTypeface"/>.</remarks>
+        public IPlatformTypeface PlatformTypeface
+        {
+            get
+            {
+                if (_platformTypeface is { } platformTypeface)
+                {
+                    return platformTypeface;
+                }
+
+                return CreatePlatformTypeface();
+            }
+        }
+
+        private IPlatformTypeface CreatePlatformTypeface()
+        {
+            lock (_platformTypefaceLock)
+            {
+                if (_platformTypeface is { } existing)
+                {
+                    return existing;
+                }
+
+                if (_isDisposed)
+                {
+                    throw new ObjectDisposedException(nameof(GlyphTypeface));
+                }
+
+                if (_sourceTypeface is { } source)
+                {
+                    var sourcePlatformTypeface = source.PlatformTypeface;
+                    var variedPlatformTypeface = sourcePlatformTypeface.WithVariation(_variationPosition);
+
+                    _ownsPlatformTypeface = !ReferenceEquals(variedPlatformTypeface, sourcePlatformTypeface);
+                    _platformTypeface = variedPlatformTypeface;
+
+                    return variedPlatformTypeface;
+                }
+
+                // Interim bridge: memory-backed glyph typefaces materialize their platform typeface
+                // from the font file bytes through the platform font manager, so they stay renderable
+                // while the render backends still consume IPlatformTypeface. The render interface
+                // will derive its typeface from the GlyphTypeface directly in a later step, like the
+                // text shaper already does.
+                if (_fontMemory is not SfntFace face || !face.TryGetFontFileData(out var data, out _))
+                {
+                    throw new InvalidOperationException(
+                        "The glyph typeface's font memory cannot provide the font file data needed to create a platform typeface.");
+                }
+
+                var fontManager = AvaloniaLocator.Current.GetService<IFontManagerImpl>()
+                    ?? throw new InvalidOperationException(
+                        "No platform font manager is available to create a platform typeface.");
+
+                using var stream = new MemoryStream(data.ToArray(), writable: false);
+
+                if (!fontManager.TryCreateGlyphTypeface(stream, FontSimulations, out var platformTypeface))
+                {
+                    throw new InvalidOperationException(
+                        "The platform font manager could not create a platform typeface from the font data.");
+                }
+
+                _platformTypeface = platformTypeface;
+
+                return platformTypeface;
+            }
+        }
 
         /// <summary>
         /// Gets the typeface information used by the text shaper for this font.
@@ -2770,8 +2878,7 @@ namespace Avalonia.Media
         /// </summary>
         private GlyphTypeface CreateVariation(NormalizedVariationPosition variation)
         {
-            var platformVariation = PlatformTypeface.WithVariation(variation);
-            return new GlyphTypeface(this, platformVariation, variation);
+            return new GlyphTypeface(this, variation);
         }
 
         public void Dispose()
@@ -2918,12 +3025,19 @@ namespace Avalonia.Media
 
         private void Dispose(bool disposing)
         {
-            if (_isDisposed)
-            {
-                return;
-            }
+            IPlatformTypeface? platformTypeface;
 
-            _isDisposed = true;
+            lock (_platformTypefaceLock)
+            {
+                if (_isDisposed)
+                {
+                    return;
+                }
+
+                _isDisposed = true;
+
+                platformTypeface = _platformTypeface;
+            }
 
             if (!disposing)
             {
@@ -2944,6 +3058,9 @@ namespace Avalonia.Media
                 cache.Clear();
             }
 
+            // Cascade: the glyph typeface releases its shaper typeface unless it shares its source's,
+            // its (possibly lazily created) platform typeface, and its font memory. The shaper typeface
+            // goes first because its table blobs may pin the font memory.
             if (_ownsTextShaperTypeface)
             {
                 _textShaperTypeface?.Dispose();
@@ -2954,15 +3071,17 @@ namespace Avalonia.Media
             // can outlive the typeface, so clearing or disposing the cache on Dispose would risk a
             // use-after-free. The cache holds no unmanaged handles of its own.
 
-            // Only the source-of-truth owns and disposes the platform typeface. When
-            // the platform's WithVariation override returned 'this', the clone shares
-            // the source's IPlatformTypeface and skips the disposal call so the source
-            // can release it exactly once. When the override actually cloned (e.g. a
-            // real SKTypeface clone), the ownership flag flips on automatically and
-            // the cloned platform typeface is released here.
+            // A variation clone that shares the source's platform typeface leaves it to the
+            // source, which releases it exactly once.
             if (_ownsPlatformTypeface)
             {
-                PlatformTypeface.Dispose();
+                platformTypeface?.Dispose();
+            }
+
+            // Variation clones share the source's font memory.
+            if (_sourceTypeface is null && !ReferenceEquals(_fontMemory, platformTypeface))
+            {
+                _fontMemory.Dispose();
             }
         }
 

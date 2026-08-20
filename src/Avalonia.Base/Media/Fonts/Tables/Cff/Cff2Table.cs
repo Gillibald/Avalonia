@@ -59,7 +59,7 @@ namespace Avalonia.Media.Fonts.Tables.Cff
         {
             cff2Table = null;
 
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var data) || data.Length < 5)
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var data) || data.Length < 5)
             {
                 return false;
             }

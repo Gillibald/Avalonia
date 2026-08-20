@@ -59,7 +59,7 @@ namespace Avalonia.Media.Fonts.Tables
         /// <returns>A LocaTable instance, or null if the table cannot be loaded.</returns>
         public static LocaTable? Load(GlyphTypeface glyphTypeface, HeadTable head, MaxpTable maxp)
         {
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var locaData))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var locaData))
             {
                 return null;
             }

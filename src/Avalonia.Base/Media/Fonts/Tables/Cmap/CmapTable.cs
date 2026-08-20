@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Avalonia.Media.Fonts.Tables.Cmap
@@ -16,7 +16,7 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
 
         public static CharacterToGlyphMap Load(GlyphTypeface glyphTypeface)
         {
-            if (!glyphTypeface.PlatformTypeface.TryGetTable(Tag, out var table))
+            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var table))
             {
                 throw new InvalidOperationException("No cmap table found.");
             }
