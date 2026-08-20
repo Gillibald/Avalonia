@@ -69,60 +69,6 @@ namespace Avalonia.Headless
         }
     }
 
-    internal class HeadlessPlatformTypeface : IPlatformTypeface
-    {
-        private readonly UnmanagedFontMemory? _fontMemory;
-
-        public HeadlessPlatformTypeface(Stream stream, string? familyName = null)
-        {
-            _fontMemory = UnmanagedFontMemory.LoadFromStream(stream);
-
-            var dummy = new GlyphTypeface(this);
-
-            FamilyName = familyName ?? dummy.FamilyName;
-            Weight = dummy.Weight;
-            Style = dummy.Style;
-            Stretch = dummy.Stretch;
-        }
-
-        public string FamilyName { get; }
-
-        public FontWeight Weight { get; }
-
-        public FontStyle Style { get; }
-
-        public FontStretch Stretch { get; }
-
-        public FontSimulations FontSimulations => FontSimulations.None;
-
-        public void Dispose()
-        {
-            _fontMemory?.Dispose();
-        }
-
-        public bool TryGetStream([NotNullWhen(true)] out Stream? stream)
-        {
-            stream = null;
-            
-            if (_fontMemory is null)
-            {
-                return false;
-            }
-            
-            var data = _fontMemory.Memory.Span;
-
-            stream = new MemoryStream(data.ToArray());
-
-            return true;
-        }
-
-        public bool TryGetTable(OpenTypeTag tag, out ReadOnlyMemory<byte> table)
-        {
-            table = default;
-            
-            return _fontMemory is not null && _fontMemory.TryGetTable(tag, out table);
-        }
-    }
 }
 
 internal class HeadlessFontManagerStub : IFontManagerImpl
@@ -161,19 +107,23 @@ internal class HeadlessFontManagerStub : IFontManagerImpl
         var defaultFontUri = new Uri("resm:Avalonia.Headless.BareMinimum.ttf?assembly=Avalonia.Headless");
 
         var assetLoader = new StandardAssetLoader(typeof(HeadlessFontManagerStub).Assembly);
-        
-        var stream = assetLoader.Open(defaultFontUri);
-        
-        platformTypeface = new HeadlessPlatformTypeface(stream, familyName);
-        
-        return true;
+
+        using var stream = assetLoader.Open(defaultFontUri);
+
+        var result = ManagedPlatformTypeface.TryCreate(stream, FontSimulations.None, familyName, out var managedTypeface);
+
+        platformTypeface = managedTypeface;
+
+        return result;
     }
 
     public virtual bool TryCreateGlyphTypeface(Stream stream, FontSimulations fontSimulations, [NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
     {
-        platformTypeface = new HeadlessPlatformTypeface(stream);
-        
-        return true;
+        var result = ManagedPlatformTypeface.TryCreate(stream, fontSimulations, null, out var managedTypeface);
+
+        platformTypeface = managedTypeface;
+
+        return result;
     }
 
     public bool TryGetFamilyTypefaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<Typeface>? familyTypefaces)
