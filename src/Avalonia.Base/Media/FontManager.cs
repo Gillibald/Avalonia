@@ -25,19 +25,19 @@ namespace Avalonia.Media
         public const string CompositeFontScheme = "compositefont";
 
         private readonly ConcurrentDictionary<Uri, IFontCollection> _fontCollections = new ConcurrentDictionary<Uri, IFontCollection>();
-        private readonly IReadOnlyList<FontFallback>? _fontFallbacks;
-        private readonly IReadOnlyDictionary<string, FontFamily>? _fontFamilyMappings;
+        private IReadOnlyList<FontFallback>? _fontFallbacks;
+        private IReadOnlyDictionary<string, FontFamily>? _fontFamilyMappings;
+        private string? _defaultFamilyNameOverride;
+        private volatile bool _optionsResolved;
+        private FontFamily? _defaultFontFamily;
 
         public FontManager(IFontManagerImpl platformImpl)
         {
             PlatformImpl = platformImpl;
+        }
 
-            var options = AvaloniaLocator.Current.GetService<FontManagerOptions>();
-            _fontFallbacks = options?.FontFallbacks;
-            _fontFamilyMappings = options?.FontFamilyMappings;
-
-            var defaultFontFamilyName = GetDefaultFontFamilyName(options);
-            DefaultFontFamily = new FontFamily(defaultFontFamilyName);
+        internal FontManager()
+        {
         }
 
         /// <summary>
@@ -54,9 +54,12 @@ namespace Avalonia.Media
                     return current;
                 }
 
-                var fontManagerImpl = AvaloniaLocator.Current.GetRequiredService<IFontManagerImpl>();
-
-                current = new FontManager(fontManagerImpl);
+                // A platform font manager is no longer required: the system font collection is
+                // registered via AddFontCollection, with a locator-bound IFontManagerImpl wrapped
+                // as a transition fallback by TryGetFontCollection.
+                current = AvaloniaLocator.Current.GetService<IFontManagerImpl>() is { } fontManagerImpl
+                    ? new FontManager(fontManagerImpl)
+                    : new FontManager();
 
                 AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(current);
 
@@ -67,9 +70,24 @@ namespace Avalonia.Media
         /// <summary>
         ///     Gets the system's default font family.
         /// </summary>
-        public FontFamily DefaultFontFamily
+        /// <remarks>Resolved lazily on the first access: <see cref="FontManagerOptions.DefaultFamilyName"/>
+        /// wins, then the system font collection's own default, then its first family.</remarks>
+        public FontFamily DefaultFontFamily => _defaultFontFamily ??= CreateDefaultFontFamily();
+
+        private void EnsureOptions()
         {
-            get;
+            if (_optionsResolved)
+            {
+                return;
+            }
+
+            var options = AvaloniaLocator.Current.GetService<FontManagerOptions>();
+
+            _fontFallbacks = options?.FontFallbacks;
+            _fontFamilyMappings = options?.FontFamilyMappings;
+            _defaultFamilyNameOverride = options?.DefaultFamilyName;
+
+            _optionsResolved = true;
         }
 
         /// <summary>
@@ -89,7 +107,7 @@ namespace Avalonia.Media
             }
         }
 
-        internal IFontManagerImpl PlatformImpl { get; }
+        internal IFontManagerImpl? PlatformImpl { get; }
 
         /// <summary>
         ///     Tries to get a glyph typeface for specified typeface.
@@ -101,6 +119,8 @@ namespace Avalonia.Media
         /// </returns>
         public bool TryGetGlyphTypeface(Typeface typeface, [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
         {
+            EnsureOptions();
+
             glyphTypeface = null;
 
             var fontFamily = GetMappedFontFamily(typeface.FontFamily);
@@ -275,6 +295,8 @@ namespace Avalonia.Media
         internal bool TryMatchCharacter(int codepoint, FontStyle fontStyle, FontWeight fontWeight,
             FontStretch fontStretch, FontFamily? fontFamily, CultureInfo? culture, Script shapingScript, out Typeface typeface)
         {
+            EnsureOptions();
+
             if (_fontFallbacks != null)
             {
                 foreach (var fallback in _fontFallbacks)
@@ -386,12 +408,29 @@ namespace Avalonia.Media
             Debug.Assert(source.IsAbsoluteUri);
 
             // Both the systemfont: scheme and SystemFontsKey (fonts:SystemFonts) map to the system
-            // font collection. SystemFontsKey is checked before the generic IsFontCollection branch
-            // so that the SystemFontCollection is created on demand regardless of which URI form is used.
+            // font collection. The collection itself arrives via AddFontCollection (the platform's
+            // default or an app-supplied provider collection); the lookup only consults the registry.
             if (source.Scheme == SystemFontScheme || source == SystemFontsKey)
             {
-                fontCollection = GetOrCreateFontCollection(SystemFontsKey, PlatformImpl,
-                    static (_, impl) => new SystemFontCollection(impl));
+                if (_fontCollections.TryGetValue(SystemFontsKey, out fontCollection))
+                {
+                    return true;
+                }
+
+                // Transition fallback for service-only hosts (unit-test harnesses, apps that do not
+                // run the registration path): wrap the legacy platform font manager. Dies with
+                // IFontManagerImpl. The cached entry is replaced by any later registration.
+                var legacyImpl = PlatformImpl ?? AvaloniaLocator.Current.GetService<IFontManagerImpl>();
+
+                if (legacyImpl != null)
+                {
+                    fontCollection = GetOrCreateFontCollection(SystemFontsKey, legacyImpl,
+                        static (_, impl) => new LegacySystemFontCollection(impl));
+                    return true;
+                }
+
+                // No system fonts at all. Uncached, so a later registration is not shadowed.
+                fontCollection = new EmptySystemFontCollection();
                 return true;
             }
 
@@ -435,14 +474,36 @@ namespace Avalonia.Media
             return winner;
         }
 
-        private string GetDefaultFontFamilyName(FontManagerOptions? options)
+        private FontFamily CreateDefaultFontFamily()
         {
-            var defaultFontFamilyName = options?.DefaultFamilyName
-                ?? PlatformImpl.GetDefaultFontFamilyName();
+            EnsureOptions();
 
-            if (string.IsNullOrEmpty(defaultFontFamilyName) && SystemFonts.Count > 0)
+            var defaultFontFamilyName = _defaultFamilyNameOverride;
+
+            if (string.IsNullOrEmpty(defaultFontFamilyName))
             {
-                defaultFontFamilyName = SystemFonts[0].Name;
+                // The system font collection is the authority on the platform's default font.
+                if (SystemFonts is FontCollectionBase systemFontCollection &&
+                    systemFontCollection.TryGetDefaultFontFamily(out var fontFamily))
+                {
+                    ValidateDefaultFontFamilyName(fontFamily.Name);
+
+                    return fontFamily;
+                }
+
+                // Transition step: when a registered system collection has no default of its own,
+                // a legacy platform font manager still answers. Dies with IFontManagerImpl.
+                var legacyImpl = PlatformImpl ?? AvaloniaLocator.Current.GetService<IFontManagerImpl>();
+
+                if (legacyImpl != null)
+                {
+                    defaultFontFamilyName = legacyImpl.GetDefaultFontFamilyName();
+                }
+
+                if (string.IsNullOrEmpty(defaultFontFamilyName) && SystemFonts.Count > 0)
+                {
+                    defaultFontFamilyName = SystemFonts[0].Name;
+                }
             }
 
             if (string.IsNullOrEmpty(defaultFontFamilyName))
@@ -451,13 +512,18 @@ namespace Avalonia.Media
                     "Default font family name can't be null or empty.");
             }
 
+            ValidateDefaultFontFamilyName(defaultFontFamilyName);
+
+            return new FontFamily(defaultFontFamilyName);
+        }
+
+        private static void ValidateDefaultFontFamilyName(string defaultFontFamilyName)
+        {
             if (defaultFontFamilyName == FontFamily.DefaultFontFamilyName)
             {
                 throw new InvalidOperationException(
                     $"'{FontFamily.DefaultFontFamilyName}' is a placeholder and cannot be used as the default font family name. Provide a concrete font family name via {nameof(FontManagerOptions)} or the platform implementation.");
             }
-
-            return defaultFontFamilyName;
         }
 
         void IDisposable.Dispose()

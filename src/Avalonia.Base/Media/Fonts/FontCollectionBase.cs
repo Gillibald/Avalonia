@@ -33,9 +33,72 @@ namespace Avalonia.Media.Fonts
 
         public abstract Uri Key { get; }
 
-        public int Count => _fontFamilies.Length;
+        public int Count
+        {
+            get
+            {
+                EnsureFamilies();
 
-        public FontFamily this[int index] => _fontFamilies[index];
+                return _fontFamilies.Length;
+            }
+        }
+
+        public FontFamily this[int index]
+        {
+            get
+            {
+                EnsureFamilies();
+
+                return _fontFamilies[index];
+            }
+        }
+
+        /// <summary>
+        /// Hook for collections that enumerate their families lazily (system font collections
+        /// defer platform enumeration until the first query). Called before any read of the
+        /// family set. The default implementation does nothing.
+        /// </summary>
+        private protected virtual void EnsureFamilies()
+        {
+        }
+
+        /// <summary>
+        /// Tries to get the collection's default font family. The base implementation has no
+        /// default; system font collections answer the platform's UI font and embedded
+        /// collections their first family.
+        /// </summary>
+        /// <param name="fontFamily">The default font family, if the collection has one.</param>
+        /// <returns><see langword="true"/> if the collection has a default font family; otherwise, <see langword="false"/>.</returns>
+        public virtual bool TryGetDefaultFontFamily([NotNullWhen(true)] out FontFamily? fontFamily)
+        {
+            fontFamily = null;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Computes the algorithmic style simulations needed to satisfy a request from a face
+        /// with the specified designed properties: bold when a weight of at least 600 is requested
+        /// from a lighter face, oblique when a non-normal style is requested from an upright face.
+        /// One policy for all platform bindings; providers return designed properties only.
+        /// </summary>
+        private protected static FontSimulations GetFontSimulations(FontStyle requestedStyle, FontWeight requestedWeight,
+            FontStyle style, FontWeight weight)
+        {
+            var fontSimulations = FontSimulations.None;
+
+            if ((int)requestedWeight >= 600 && (int)weight < 600)
+            {
+                fontSimulations |= FontSimulations.Bold;
+            }
+
+            if (requestedStyle != FontStyle.Normal && style == FontStyle.Normal)
+            {
+                fontSimulations |= FontSimulations.Oblique;
+            }
+
+            return fontSimulations;
+        }
 
         public virtual bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
             string? familyName, CultureInfo? culture, out Typeface match)
@@ -50,6 +113,8 @@ namespace Avalonia.Media.Fonts
         internal bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
             string? familyName, CultureInfo? culture, Script shapingScript, out Typeface match)
         {
+            EnsureFamilies();
+
             match = default;
 
             var key = new FontCollectionKey { Style = style, Weight = weight, Stretch = stretch };
@@ -555,11 +620,18 @@ namespace Avalonia.Media.Fonts
             return true;
         }
 
-        public IEnumerator<FontFamily> GetEnumerator() => ((IEnumerable<FontFamily>)_fontFamilies).GetEnumerator();
+        public IEnumerator<FontFamily> GetEnumerator()
+        {
+            EnsureFamilies();
+
+            return ((IEnumerable<FontFamily>)_fontFamilies).GetEnumerator();
+        }
 
         public virtual bool TryGetGlyphTypeface(string familyName, FontStyle style, FontWeight weight,
                     FontStretch stretch, [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
         {
+            EnsureFamilies();
+
             var typeface = new Typeface(familyName, style, weight, stretch).Normalize(out familyName);
 
             var key = typeface.ToFontCollectionKey();
@@ -595,6 +667,8 @@ namespace Avalonia.Media.Fonts
 
         public bool TryGetNearestMatch(string familyName, FontStyle style, FontWeight weight, FontStretch stretch, [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
         {
+            EnsureFamilies();
+
             if (!_glyphTypefaceCache.TryGetValue(familyName, out var glyphTypefaces))
             {
                 glyphTypeface = null;
@@ -1311,6 +1385,19 @@ namespace Avalonia.Media.Fonts
 
         void IDisposable.Dispose()
         {
+            Dispose(true);
+
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Releases the collection's resources. The base implementation disposes every cached
+        /// glyph typeface; derived collections that own additional resources (e.g. a system font
+        /// provider) dispose them here.
+        /// </summary>
+        /// <param name="disposing">Always <see langword="true"/>; collections have no finalizer.</param>
+        protected virtual void Dispose(bool disposing)
+        {
             foreach (var glyphTypefaces in _glyphTypefaceCache.Values)
             {
                 foreach (var pair in glyphTypefaces)
@@ -1318,8 +1405,6 @@ namespace Avalonia.Media.Fonts
                     pair.Value?.Dispose();
                 }
             }
-
-            GC.SuppressFinalize(this);
         }
 
         IEnumerator IEnumerable.GetEnumerator()

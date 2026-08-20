@@ -23,7 +23,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
             {
-                var fontCollection = new TestSystemFontCollection(FontManager.Current.PlatformImpl);
+                var fontCollection = new TestSystemFontCollection(FontManager.Current.PlatformImpl!);
 
                 Assert.True(fontCollection.TryGetGlyphTypeface("Arial", FontStyle.Normal, FontWeight.ExtraBlack, FontStretch.Normal, out var glyphTypeface));
 
@@ -39,7 +39,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private class TestSystemFontCollection : SystemFontCollection
+        private class TestSystemFontCollection : LegacySystemFontCollection
         {
             public TestSystemFontCollection(IFontManagerImpl platformImpl) : base(platformImpl)
             {
