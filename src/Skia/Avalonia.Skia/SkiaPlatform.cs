@@ -20,8 +20,7 @@ namespace Avalonia.Skia
             var renderInterface = new PlatformRenderInterface(options.MaxGpuResourceSizeBytes, options.UseStencilBuffers);
 
             AvaloniaLocator.CurrentMutable
-                .Bind<IPlatformRenderInterface>().ToConstant(renderInterface)
-                .Bind<IFontManagerImpl>().ToConstant(new FontManagerImpl());
+                .Bind<IPlatformRenderInterface>().ToConstant(renderInterface);
         }
 
         /// <summary>
