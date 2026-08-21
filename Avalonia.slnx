@@ -138,6 +138,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/Avalonia.Base.UnitTests/Avalonia.Base.UnitTests.csproj" />
+    <Project Path="tests/Avalonia.CoreText.UnitTests/Avalonia.CoreText.UnitTests.csproj" />
     <Project Path="tests/Avalonia.DirectWrite.UnitTests/Avalonia.DirectWrite.UnitTests.csproj" />
     <Project Path="tests/Avalonia.Fontconfig.UnitTests/Avalonia.Fontconfig.UnitTests.csproj" />
     <Project Path="tests/Avalonia.Benchmarks/Avalonia.Benchmarks.csproj" />
@@ -202,6 +203,7 @@
   <Project Path="src/Avalonia.DesignerSupport/Avalonia.DesignerSupport.csproj" />
   <Project Path="src/Avalonia.Dialogs/Avalonia.Dialogs.csproj" />
   <Project Path="src/Avalonia.Fonts.Inter/Avalonia.Fonts.Inter.csproj" />
+  <Project Path="src/Fonts/Avalonia.CoreText/Avalonia.CoreText.csproj" />
   <Project Path="src/Fonts/Avalonia.DirectWrite/Avalonia.DirectWrite.csproj" />
   <Project Path="src/Fonts/Avalonia.Fontconfig/Avalonia.Fontconfig.csproj" />
   <Project Path="src/Avalonia.Metal/Avalonia.Metal.csproj" />
