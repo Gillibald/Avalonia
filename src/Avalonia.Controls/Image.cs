@@ -84,7 +84,12 @@ namespace Avalonia.Controls
 
         /// <inheritdoc />
         protected override bool BypassFlowDirectionPolicies => true;
-        
+
+        // Allocated lazily, only while the source is an ICompositionImage (e.g. an
+        // animated SVG): such a source renders as a render-thread-animating child
+        // visual instead of flat draw ops. Bitmap sources never touch this.
+        private CompositionImageHost? _compositionHost;
+
         /// <summary>
         /// Renders the control.
         /// </summary>
@@ -95,9 +100,17 @@ namespace Avalonia.Controls
 
             if (source != null && Bounds.Width > 0 && Bounds.Height > 0)
             {
-                Rect viewPort = new Rect(Bounds.Size);
                 Size sourceSize = source.Size;
 
+                // A hosted composition image draws itself through its child visual,
+                // so the control contributes no draw ops of its own this frame.
+                if (_compositionHost is { } host
+                    && host.TryHost(Bounds, sourceSize, Stretch, StretchDirection))
+                {
+                    return;
+                }
+
+                Rect viewPort = new Rect(Bounds.Size);
                 Vector scale = Stretch.CalculateScaling(Bounds.Size, sourceSize, StretchDirection);
                 Size scaledSize = sourceSize * scale;
                 Rect destRect = viewPort
@@ -128,6 +141,11 @@ namespace Avalonia.Controls
                 result = Stretch.CalculateSize(availableSize, source.Size, StretchDirection);
             }
 
+            // The layout pass is the safe place to attach the child composition
+            // visual: it runs before render (which must not invalidate) yet after
+            // the compositor is available.
+            _compositionHost?.EnsureAttached();
+
             return result;
         }
 
@@ -146,6 +164,36 @@ namespace Avalonia.Controls
             {
                 return new Size();
             }
+        }
+
+        /// <inheritdoc/>
+        protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+        {
+            base.OnPropertyChanged(change);
+
+            if (change.Property == SourceProperty)
+            {
+                // Spin up a host only for composition images; any other source
+                // tears down the one a previous composition image left behind.
+                if (Source is ICompositionImage)
+                    (_compositionHost ??= new CompositionImageHost(this)).SetSource(Source);
+                else
+                    _compositionHost?.SetSource(null);
+            }
+        }
+
+        /// <inheritdoc/>
+        protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnAttachedToVisualTree(e);
+            _compositionHost?.EnsureAttached();
+        }
+
+        /// <inheritdoc/>
+        protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+        {
+            base.OnDetachedFromVisualTree(e);
+            _compositionHost?.Detach();
         }
 
         protected override AutomationPeer OnCreateAutomationPeer()
