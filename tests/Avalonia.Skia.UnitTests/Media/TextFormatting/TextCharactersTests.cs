@@ -382,6 +382,64 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             return (double)advance / glyphTypeface.Metrics.DesignEmHeight;
         }
 
+        // The previous run's font is reused as an anti-thrashing bias. A space belongs to the primary
+        // font, so it forms a run of its own between two fallback words - and that run must not become
+        // the bias, or each word re-runs the fallback search and the two can land on different fonts.
+        [Fact]
+        public void GetShapeableCharacters_Keeps_The_Previous_Fallback_Across_A_Space()
+        {
+            using (Start(PrimaryFont, NotoSansScFont, NotoSansJpFont))
+            {
+                var fontManager = FontManager.Current;
+
+                var defaultProperties = new GenericTextRunProperties(Typeface.Default);
+
+                // The previous run resolved to the Simplified-Chinese font.
+                var scTypeface = new Typeface(new FontFamily("fonts:SystemFonts#Noto Sans SC"));
+                Assert.True(fontManager.TryGetGlyphTypeface(scTypeface, out var scGlyphTypeface));
+
+                const int han = 0x4E2D; // 中, covered by both regional fonts.
+
+                // Preconditions: the primary covers the space but not the ideograph, the previous font
+                // covers the ideograph, and a fresh search for it would pick the *other* font - so the
+                // font of the second run tells us whether the bias survived the space.
+                Assert.True(defaultProperties.CachedGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(' ', out _));
+                Assert.False(defaultProperties.CachedGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(han, out _));
+                Assert.True(scGlyphTypeface.CharacterToGlyphMap.TryGetGlyph(han, out _));
+
+                Assert.True(fontManager.TryMatchCharacter(han, FontStyle.Normal, FontWeight.Normal,
+                    FontStretch.Normal, defaultProperties.Typeface.FontFamily, null, out var freshMatch));
+                Assert.True(fontManager.TryGetGlyphTypeface(freshMatch, out var freshGlyphTypeface));
+                Assert.Equal("Noto Sans JP", freshGlyphTypeface.FamilyName);
+
+                var text = (" " + char.ConvertFromUtf32(han)).AsMemory();
+
+                var textCharacters = new TextCharacters(text, defaultProperties);
+
+                var results = FormattingObjectPool.Instance.TextRunLists.Rent();
+
+                try
+                {
+                    TextRunProperties? previousProperties = new GenericTextRunProperties(scTypeface);
+
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+
+                    Assert.Equal(2, results.Count);
+
+                    Assert.Equal(1, results[0].Length);
+                    Assert.Equal(defaultProperties.Typeface, results[0].Properties!.Typeface);
+
+                    Assert.True(fontManager.TryGetGlyphTypeface(results[1].Properties!.Typeface, out var runGlyphTypeface));
+                    Assert.Equal("Noto Sans SC", runGlyphTypeface.FamilyName);
+                }
+                finally
+                {
+                    FormattingObjectPool.RentedList<TextRun>? toReturn = results;
+                    FormattingObjectPool.Instance.TextRunLists.Return(ref toReturn);
+                }
+            }
+        }
+
         // A spread of combining marks (all grapheme-cluster Extend) likely present in a broad fallback
         // font but absent from a minimal monospace primary. The F1 test picks the first workable one.
         private static readonly int[] CombiningMarkCandidates =
