@@ -799,7 +799,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 Assert.NotNull(expectedTextLine);
 
-                var expectedRuns = expectedTextLine.TextRuns.Cast<ShapedTextRun>().ToList();
+                var expectedRuns = expectedTextLine.TextRuns.OfType<ShapedTextRun>().ToList();
 
                 var expectedGlyphs = expectedRuns
                     .SelectMany(run => run.GlyphRun.GlyphInfos, (_, glyph) => glyph.GlyphIndex)
@@ -822,7 +822,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                         Assert.NotNull(textLine);
 
-                        var shapedRuns = textLine.TextRuns.Cast<ShapedTextRun>().ToList();
+                        var shapedRuns = textLine.TextRuns.OfType<ShapedTextRun>().ToList();
 
                         var actualGlyphs = shapedRuns
                             .SelectMany(x => x.GlyphRun.GlyphInfos, (_, glyph) => glyph.GlyphIndex)

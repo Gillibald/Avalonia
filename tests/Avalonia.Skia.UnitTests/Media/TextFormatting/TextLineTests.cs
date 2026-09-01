@@ -262,10 +262,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 Assert.NotNull(textLine);
 
-                var clusters = textLine.TextRuns
-                    .Cast<ShapedTextRun>()
-                    .SelectMany(x => x.ShapedBuffer, (run, glyph) => glyph.GlyphCluster + TextTestHelper.GetStartCharIndex(run.Text))
-                    .ToArray();
+                var clusters = BuildGlyphClusters(textLine).ToArray();
 
                 var previousCharacterHit = new CharacterHit(text.Length);
 
@@ -316,10 +313,8 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 var currentDistance = 0.0;
 
-                foreach (var run in textLine.TextRuns)
+                foreach (var textRun in textLine.TextRuns.OfType<ShapedTextRun>())
                 {
-                    var textRun = (ShapedTextRun)run;
-
                     var glyphRun = textRun.GlyphRun;
 
                     for (var i = 0; i < glyphRun.GlyphInfos.Count; i++)
@@ -690,7 +685,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 Assert.NotNull(textLine);
 
-                var textRuns = textLine.TextRuns.Cast<ShapedTextRun>().ToList();
+                var textRuns = textLine.TextRuns.OfType<ShapedTextRun>().ToList();
 
                 var lineWidth = textLine.WidthIncludingTrailingWhitespace;
 
@@ -1366,21 +1361,33 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
         private static bool IsRightToLeft(TextLine textLine)
         {
-            return textLine.TextRuns.Cast<ShapedTextRun>().Any(x => !x.ShapedBuffer.IsLeftToRight);
+            return textLine.TextRuns.OfType<ShapedTextRun>().Any(x => !x.ShapedBuffer.IsLeftToRight);
         }
 
         private static List<int> BuildGlyphClusters(TextLine textLine)
         {
             var glyphClusters = new List<int>();
 
-            var shapedTextRuns = textLine.TextRuns.Cast<ShapedTextRun>().ToList();
-
             var lastCluster = -1;
 
-            foreach (var textRun in shapedTextRuns)
+            foreach (var textRun in textLine.TextRuns)
             {
-                var runOffset = TextTestHelper.GetStartCharIndex(textRun.Text);
-                var shapedBuffer = textRun.ShapedBuffer;
+                if (textRun is not ShapedTextRun shapedTextRun)
+                {
+                    // The line's break characters are carried by a run of their own rather than
+                    // shaped, so they contribute a caret stop with no glyph behind it.
+                    if (!textRun.Text.IsEmpty)
+                    {
+                        lastCluster = TextTestHelper.GetStartCharIndex(textRun.Text);
+
+                        glyphClusters.Add(lastCluster);
+                    }
+
+                    continue;
+                }
+
+                var runOffset = TextTestHelper.GetStartCharIndex(shapedTextRun.Text);
+                var shapedBuffer = shapedTextRun.ShapedBuffer;
 
                 var currentClusters = shapedBuffer.Select(glyph => glyph.GlyphCluster + runOffset).ToList();
 
@@ -1409,7 +1416,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
             var lastCluster = -1;
 
-            var shapedTextRuns = textLine.TextRuns.Cast<ShapedTextRun>().ToList();
+            var shapedTextRuns = textLine.TextRuns.OfType<ShapedTextRun>().ToList();
 
             foreach (var textRun in shapedTextRuns)
             {

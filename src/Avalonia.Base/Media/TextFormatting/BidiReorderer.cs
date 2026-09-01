@@ -113,7 +113,11 @@ namespace Avalonia.Media.TextFormatting
 
             if (run is TextEndOfLine)
             {
-                return 0;
+                // A run carrying the line's break characters belongs at the paragraph level: it
+                // terminates the line in logical order, so in an RTL paragraph it has to stay the
+                // visually first run rather than be reordered into the text as an LTR island would
+                // be. A bare marker from the text source keeps its historical level 0.
+                return run.Text.IsEmpty ? (sbyte)0 : defaultLevel;
             }
 
             if(previousLevel is not null)

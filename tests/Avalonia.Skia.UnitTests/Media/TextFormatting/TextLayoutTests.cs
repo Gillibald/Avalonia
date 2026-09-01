@@ -57,7 +57,8 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 var textLine = layout.TextLines[0];
 
-                Assert.Equal(3, textLine.TextRuns.Count);
+                // Three shaped runs plus the end of line run carrying the trailing break.
+                Assert.Equal(4, textLine.TextRuns.Count);
 
                 var textRun = textLine.TextRuns[1];
 
@@ -200,7 +201,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             static List<string> GetGlyphs(TextLayout textLayout)
                 => textLayout.TextLines
                     .Select(line => string.Join('|', line.TextRuns
-                        .Cast<ShapedTextRun>()
+                        .OfType<ShapedTextRun>()
                         .SelectMany(run => run.ShapedBuffer, (_, glyph) => glyph.GlyphIndex)))
                     .ToList();
         }
@@ -524,16 +525,24 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 Assert.Equal(2, layout.TextLines.Count);
 
-                Assert.Equal(1, layout.TextLines[0].TextRuns.Count);
+                var firstLine = layout.TextLines[0];
 
-                Assert.Equal(expectedLength, ((ShapedTextRun)layout.TextLines[0].TextRuns[0]).GlyphRun.GlyphInfos.Count);
+                Assert.Equal(expectedLength, firstLine.Length);
 
-                Assert.Equal(5, ((ShapedTextRun)layout.TextLines[0].TextRuns[0]).ShapedBuffer[5].GlyphCluster);
+                // The break characters are carried by an end of line run instead of being shaped,
+                // so the shaped run holds the visible text alone.
+                Assert.Equal(2, firstLine.TextRuns.Count);
 
-                if (expectedLength == 7)
-                {
-                    Assert.Equal(5, ((ShapedTextRun)layout.TextLines[0].TextRuns[0]).ShapedBuffer[6].GlyphCluster);
-                }
+                var shapedRun = Assert.IsType<ShapedTextRun>(firstLine.TextRuns[0]);
+
+                Assert.Equal("abcde", shapedRun.Text.ToString());
+                Assert.Equal(5, shapedRun.GlyphRun.GlyphInfos.Count);
+
+                var endOfLine = Assert.IsType<TextEndOfLine>(firstLine.TextRuns[1]);
+
+                Assert.Equal(text.Substring(5), endOfLine.Text.ToString());
+                Assert.Equal(expectedLength - 5, endOfLine.Length);
+                Assert.Equal(expectedLength - 5, firstLine.NewLineLength);
             }
         }
 
@@ -548,7 +557,8 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                     12.0f,
                     Brushes.Black.ToImmutable());
 
-                Assert.Equal(1, layout.TextLines[0].TextRuns.Count);
+                // One shaped run for "abcde"; the trailing break is carried by an end of line run.
+                Assert.Equal(1, layout.TextLines[0].TextRuns.OfType<ShapedTextRun>().Count());
             }
         }
 
@@ -719,10 +729,12 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 Assert.Equal(5, layout.TextLines.Count);
 
-                Assert.Equal("123\r\n", layout.TextLines[0].TextRuns[0].Text.ToString());
-                Assert.Equal("\r\n", layout.TextLines[1].TextRuns[0].Text.ToString());
-                Assert.Equal("456\r\n", layout.TextLines[2].TextRuns[0].Text.ToString());
-                Assert.Equal("\r\n", layout.TextLines[3].TextRuns[0].Text.ToString());
+                // The break characters live in their own end of line run, so a line's text is the
+                // concatenation of its runs rather than the text of a single run.
+                Assert.Equal("123\r\n", LineText(layout.TextLines[0]));
+                Assert.Equal("\r\n", LineText(layout.TextLines[1]));
+                Assert.Equal("456\r\n", LineText(layout.TextLines[2]));
+                Assert.Equal("\r\n", LineText(layout.TextLines[3]));
             }
         }
 
@@ -828,7 +840,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 }
 
                 var rects = layout.TextLines
-                    .SelectMany(x => x.TextRuns.Cast<ShapedTextRun>())
+                    .SelectMany(x => x.TextRuns.OfType<ShapedTextRun>())
                     .SelectMany(x => x.ShapedBuffer, (_, glyph) => glyph.GlyphAdvance)
                     .ToArray();
 
@@ -868,7 +880,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                     {
                         Assert.True(textLine.Width <= maxWidth);
 
-                        var actual = new string(textLine.TextRuns.Cast<ShapedTextRun>()
+                        var actual = new string(textLine.TextRuns.OfType<ShapedTextRun>()
                             .OrderBy(x => TextTestHelper.GetStartCharIndex(x.Text))
                             .SelectMany(x => x.Text.ToString())
                             .ToArray());
@@ -1046,7 +1058,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                     var textLine = layout.TextLines[0];
 
-                    var shapedRuns = textLine.TextRuns.Cast<ShapedTextRun>().ToList();
+                    var shapedRuns = textLine.TextRuns.OfType<ShapedTextRun>().ToList();
 
                     var runStarts = textLine
                         .GetTextBounds(textLine.FirstTextSourceIndex, textLine.Length)
@@ -1905,6 +1917,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 Assert.Equal(reference.Width, withTrailingSpace.Width, 3);
             }
         }
+
+        private static string LineText(TextLine textLine)
+            => string.Concat(textLine.TextRuns.Select(run => run.Text.ToString()));
 
         private static void AssertGreaterThan(double x, double y, string message) => Assert.True(x > y, $"{message}. {x} is not > {y}");
 

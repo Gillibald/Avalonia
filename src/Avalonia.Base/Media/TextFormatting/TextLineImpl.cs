@@ -552,7 +552,13 @@ namespace Avalonia.Media.TextFormatting
                     }
                 case TextRun:
                     {
-                        nextCharacterHit = new CharacterHit(currentPosition + currentRun.Length);
+                        // A run that carries text - the line's break characters - reports its last
+                        // caret stop as its own trailing edge, the way a cluster does, so stepping
+                        // back out of it lands inside the run again. A run with no text of its own
+                        // is just a position and hands the caret to whatever follows.
+                        nextCharacterHit = currentRun.Text.IsEmpty
+                            ? new CharacterHit(currentPosition + currentRun.Length)
+                            : new CharacterHit(currentPosition, currentRun.Length);
                         break;
                     }
             }
@@ -1078,9 +1084,15 @@ namespace Avalonia.Media.TextFormatting
                         }
                         else
                         {
-                            //Add potential TextEndOfParagraph
+                            // A run that ends the line: the paragraph marker, or the break
+                            // characters the line ends with. The latter spans more than one
+                            // character, so the requested range has to be clipped to it rather than
+                            // reported whole.
+                            var runOffset = Math.Max(0, firstTextSourceIndex - currentPosition);
+                            var boundsLength = Math.Min(currentRun.Length - runOffset, remainingLength);
+
                             var runBounds = new TextRunBounds(
-                               new Rect(endX, 0, 0, Height), currentPosition, currentRun.Length, currentRun);
+                               new Rect(endX, 0, 0, Height), currentPosition + runOffset, boundsLength, currentRun);
 
                             textRunBounds.Add(runBounds);
                         }
@@ -1222,7 +1234,9 @@ namespace Avalonia.Media.TextFormatting
 
             _textLineMetrics = CreateLineMetrics();
 
-            if (_textLineBreak is null && _textRuns.Length > 1 && _textRuns[_textRuns.Length - 1] is TextEndOfLine textEndOfLine)
+            // A line whose only run is the end of line - text that starts with a newline - still
+            // ends at an explicit break, so the length check allows a single run.
+            if (_textLineBreak is null && _textRuns.Length > 0 && _textRuns[_textRuns.Length - 1] is TextEndOfLine textEndOfLine)
             {
                 _textLineBreak = new TextLineBreak(textEndOfLine);
             }
@@ -1446,6 +1460,17 @@ namespace Avalonia.Media.TextFormatting
             {
                 var index = isRtl ? i : _textRuns.Length - 1 - i;
                 var currentRun = _textRuns[index];
+
+                // The break characters are carried by an end of line run rather than shaped, so the
+                // newline length is read off that run instead of walked out of a glyph run. It has
+                // no width, and the run before it may still contribute its own trailing whitespace.
+                if (currentRun is TextEndOfLine && !currentRun.Text.IsEmpty)
+                {
+                    newLineLength += currentRun.Length;
+                    trailingWhitespaceLength += currentRun.Length;
+
+                    continue;
+                }
 
                 if (currentRun is ShapedTextRun shapedText)
                 {

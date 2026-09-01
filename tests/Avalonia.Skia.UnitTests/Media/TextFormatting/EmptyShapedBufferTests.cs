@@ -11,10 +11,10 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 {
     /// <summary>
-    /// A shaper hides the default ignorables it substitutes for line breaks behind the font's space
-    /// glyph. A font that has no space glyph leaves it no way to do that, so those glyphs are deleted
-    /// instead and a run holding nothing but a line break shapes to an empty glyph buffer. The run
-    /// still owns its characters and has to survive, otherwise the line covers no text at all.
+    /// A shaper hides default ignorables behind the font's space glyph. A font that has no space
+    /// glyph leaves it no way to do that, so those glyphs are deleted instead and a run holding
+    /// nothing but ignorables shapes to an empty glyph buffer. The run still owns its characters
+    /// and has to survive, otherwise the line covers no text at all.
     /// </summary>
     public class EmptyShapedBufferTests
     {
@@ -23,8 +23,13 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
         private static readonly Typeface s_typeface = new("fonts:SystemFonts#BareMinimum");
 
-        [Fact]
-        public void Line_Break_That_Shapes_To_No_Glyphs_Keeps_Its_Characters()
+        // ZERO WIDTH JOINER, ZERO WIDTH SPACE and VARIATION SELECTOR-16. None of them is a line
+        // break, so none of them is hoisted out of the shaped text.
+        [Theory]
+        [InlineData("\u200D")]
+        [InlineData("\u200B")]
+        [InlineData("\uFE0F")]
+        public void Run_That_Shapes_To_No_Glyphs_Keeps_Its_Characters(string text)
         {
             using (Start())
             {
@@ -32,15 +37,15 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 var formatter = new TextFormatterImpl();
 
-                var textLine = formatter.FormatLine(new SingleBufferTextSource("\r\nfoo", defaultProperties), 0, 100,
+                var textLine = formatter.FormatLine(new SingleBufferTextSource(text, defaultProperties), 0, 100,
                     new GenericTextParagraphProperties(defaultProperties, textWrapping: TextWrapping.Wrap));
 
                 Assert.NotNull(textLine);
 
                 var run = Assert.IsType<ShapedTextRun>(Assert.Single(textLine.TextRuns));
 
-                Assert.Equal(2, run.Length);
-                Assert.Equal(2, textLine.Length);
+                Assert.Equal(text.Length, run.Length);
+                Assert.Equal(text.Length, textLine.Length);
 
                 // The premise of the test: shaping really did produce nothing for these characters.
                 Assert.Empty(run.ShapedBuffer);

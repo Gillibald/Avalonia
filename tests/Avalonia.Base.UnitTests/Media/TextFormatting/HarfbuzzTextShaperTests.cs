@@ -71,36 +71,6 @@ public class HarfBuzzTextShaperTests
     }
 
     [Fact]
-    public void ShapeText_WithCRLF_MergesBreakPair()
-    {
-        using (UnitTestApplication.Start(Services))
-        {
-            var text = "Line1\r\nLine2".AsMemory();
-            var options = CreateTextShaperOptions();
-            
-            var result = _shaper.ShapeText(text, options);
-            
-            Assert.NotNull(result);
-            Assert.NotEqual(0.0, result[5].GlyphAdvance);
-        }
-    }
-    
-    [Fact]
-    public void ShapeText_EndWithCRLF_MergesBreakPair()
-    {
-        using (UnitTestApplication.Start(Services))
-        {
-            var text = "Line1\r\n".AsMemory();
-            var options = CreateTextShaperOptions();
-            
-            var result = _shaper.ShapeText(text, options);
-            
-            Assert.NotNull(result);
-            Assert.Equal(0.0, result[5].GlyphAdvance);
-        }
-    }
-
-    [Fact]
     public void ShapeText_WithSlicedMemory_ClusterValuesAreSliceRelative()
     {
         using (UnitTestApplication.Start(Services))

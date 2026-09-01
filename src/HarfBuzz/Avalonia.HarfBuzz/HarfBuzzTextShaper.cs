@@ -46,8 +46,6 @@ namespace Avalonia.Harfbuzz
             var containingText = GetContainingMemory(text, out var start, out var length).Span;
             buffer.AddUtf16(containingText, start, length);
 
-            MergeBreakPair(buffer);
-
             buffer.GuessSegmentProperties();
 
             buffer.Direction = (bidiLevel & 1) == 0 ? Direction.LeftToRight : Direction.RightToLeft;
@@ -120,56 +118,6 @@ namespace Avalonia.Harfbuzz
         public ITextShaperTypeface CreateTypeface(GlyphTypeface glyphTypeface)
         {
             return new HarfBuzzTypeface(glyphTypeface);
-        }
-
-        private static void MergeBreakPair(Buffer buffer)
-        {
-            var length = buffer.Length;
-
-            if (length == 0) return;
-
-            var glyphInfos = buffer.GetGlyphInfoSpan();
-
-            var second = glyphInfos[length - 1];
-
-            if (!new Codepoint(second.Codepoint).IsBreakChar)
-            {
-                return;
-            }
-
-            if (length > 1 && glyphInfos[length - 2].Codepoint == '\r' && second.Codepoint == '\n')
-            {
-                var first = glyphInfos[length - 2];
-
-                first.Codepoint = '\u200C';
-                second.Codepoint = '\u200C';
-                second.Cluster = first.Cluster;
-
-                unsafe
-                {
-                    fixed (GlyphInfo* p = &glyphInfos[length - 2])
-                    {
-                        *p = first;
-                    }
-
-                    fixed (GlyphInfo* p = &glyphInfos[length - 1])
-                    {
-                        *p = second;
-                    }
-                }
-            }
-            else
-            {
-                second.Codepoint = '\u200C';
-
-                unsafe
-                {
-                    fixed (GlyphInfo* p = &glyphInfos[length - 1])
-                    {
-                        *p = second;
-                    }
-                }
-            }
         }
 
         private static Vector GetGlyphOffset(ReadOnlySpan<GlyphPosition> glyphPositions, int index, double textScale)

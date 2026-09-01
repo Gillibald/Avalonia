@@ -700,10 +700,26 @@ namespace Avalonia.Media.TextFormatting
                         {
                             if (TryGetLineBreak(textCharacters, out var runLineBreak))
                             {
-                                var splitResult = new TextCharacters(textCharacters.Text.Slice(0, runLineBreak.PositionWrap),
-                                    textCharacters.Properties);
+                                var text = textCharacters.Text;
+                                var breakStart = GetBreakSequenceStart(text.Span, runLineBreak.PositionWrap);
 
-                                textRuns.Add(splitResult);
+                                if (breakStart > 0)
+                                {
+                                    textRuns.Add(new TextCharacters(text.Slice(0, breakStart),
+                                        textCharacters.Properties));
+                                }
+
+                                if (breakStart < runLineBreak.PositionWrap)
+                                {
+                                    // The break characters keep their place in the text source but
+                                    // never reach the shaper, so what a line break looks like no
+                                    // longer depends on the font having a glyph to hide it behind.
+                                    endOfLine = new TextEndOfLine(
+                                        text.Slice(breakStart, runLineBreak.PositionWrap - breakStart),
+                                        textCharacters.Properties);
+
+                                    textRuns.Add(endOfLine);
+                                }
 
                                 textSourceLength += runLineBreak.PositionWrap;
 
@@ -725,6 +741,34 @@ namespace Avalonia.Media.TextFormatting
             }
 
             return textRuns;
+        }
+
+        /// <summary>
+        /// Returns the index the line's trailing break sequence starts at. <see cref="LineBreak"/>
+        /// cannot answer this: <see cref="LineBreak.PositionMeasure"/> also drops the whitespace in
+        /// front of the break ("abc  \r\n" measures to 3, wraps at 7), and for U+2028 it drops
+        /// nothing at all. Every break char is a single UTF-16 unit and CR+LF is the only pair.
+        /// </summary>
+        private static int GetBreakSequenceStart(ReadOnlySpan<char> text, int positionWrap)
+        {
+            if (positionWrap <= 0 || positionWrap > text.Length)
+            {
+                return positionWrap;
+            }
+
+            var index = positionWrap - 1;
+
+            if (!new Codepoint(text[index]).IsBreakChar)
+            {
+                return positionWrap;
+            }
+
+            if (text[index] == '\n' && index > 0 && text[index - 1] == '\r')
+            {
+                index--;
+            }
+
+            return index;
         }
 
         private static bool TryGetLineBreak(TextRun textRun, out LineBreak lineBreak)
