@@ -318,6 +318,31 @@ namespace Avalonia.Skia.RenderTests
             CompareImages();
         }
 
+        [Fact]
+        public async Task Oblique_Simulated_Raised_Marks()
+        {
+            // DejaVu Sans ships no italic face, so requesting one yields the oblique simulation. Its
+            // capitals carry marks through GPOS attachment with a vertical offset.
+            var typeface = new Typeface(
+                new FontFamily("resm:Avalonia.Skia.RenderTests.Fonts?assembly=Avalonia.Skia.RenderTests#DejaVu Sans"),
+                FontStyle.Italic);
+
+            Assert.Equal(FontSimulations.Oblique, typeface.GlyphTypeface.FontSimulations);
+
+            var t = new TextLayout("X́ Q̈", typeface, 72, Brushes.Black);
+
+            var target = new Border
+            {
+                Width = 200,
+                Height = 150,
+                Background = Brushes.White,
+                Child = new DrawnControl(c => t.Draw(c, new Point(10, 30))),
+            };
+
+            await RenderToFile(target);
+            CompareImages();
+        }
+
         private class DrawnControl : Control
         {
             private readonly Action<DrawingContext> _render;

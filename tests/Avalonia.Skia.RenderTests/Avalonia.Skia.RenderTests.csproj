@@ -18,6 +18,8 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\Avalonia.RenderTests\*\*.ttf" />
+    <!-- Kept out of Assets because Avalonia.Skia.UnitTests embeds that folder as its font collection. -->
+    <EmbeddedResource Include="..\Avalonia.Skia.UnitTests\Fonts\DejaVuSans.ttf" LinkBase="Fonts" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="../Avalonia.RenderTests/**/*.png" CopyToOutputDirectory="Always" />

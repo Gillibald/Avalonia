@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Media.TextFormatting.Unicode;
+using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -316,6 +317,91 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 var leadingBudget = firstTwo + advances[2] * 0.5;
                 Assert.Equal(2, second.FindLeadingCharCountWithinWidth(leadingBudget));
             }
+        }
+
+        [Fact]
+        public void Oblique_Simulation_Should_Shift_Raised_Marks_Along_The_Slant()
+        {
+            using (Start())
+            {
+                var (regular, oblique) = ShapeRegularAndOblique("X́");
+
+                Assert.Equal(2, regular.Length);
+                Assert.Equal(2, oblique.Length);
+
+                var regularOffset = regular[1].GlyphOffset;
+                var obliqueOffset = oblique[1].GlyphOffset;
+
+                // The mark sits above the base, so its offset points up (negative in y-down coordinates).
+                Assert.True(regularOffset.Y < -1);
+
+                Assert.Equal(regularOffset.X - 0.3 * regularOffset.Y, obliqueOffset.X, 0.01);
+                Assert.Equal(regularOffset.Y, obliqueOffset.Y, 0.01);
+                Assert.Equal(regular[0].GlyphOffset, oblique[0].GlyphOffset);
+
+                AssertEqualAdvances(regular, oblique);
+            }
+        }
+
+        [Fact]
+        public void Oblique_Simulation_Should_Not_Shift_Marks_Without_Vertical_Offset()
+        {
+            using (Start())
+            {
+                var (regular, oblique) = ShapeRegularAndOblique("x́");
+
+                Assert.Equal(2, regular.Length);
+                Assert.Equal(2, oblique.Length);
+
+                Assert.Equal(0, regular[1].GlyphOffset.Y);
+
+                for (var i = 0; i < regular.Length; i++)
+                {
+                    Assert.Equal(regular[i].GlyphOffset, oblique[i].GlyphOffset);
+                }
+
+                AssertEqualAdvances(regular, oblique);
+            }
+        }
+
+        private static (ShapedBuffer Regular, ShapedBuffer Oblique) ShapeRegularAndOblique(string text)
+        {
+            const double fontSize = 72;
+
+            var regularTypeface = CreateDejaVuSans(FontSimulations.None);
+            var obliqueTypeface = CreateDejaVuSans(FontSimulations.Oblique);
+
+            var regular = TextShaper.Current.ShapeText(text,
+                new TextShaperOptions(regularTypeface, fontSize, 0, CultureInfo.InvariantCulture));
+            var oblique = TextShaper.Current.ShapeText(text,
+                new TextShaperOptions(obliqueTypeface, fontSize, 0, CultureInfo.InvariantCulture));
+
+            return (regular, oblique);
+        }
+
+        private static void AssertEqualAdvances(ShapedBuffer expected, ShapedBuffer actual)
+        {
+            for (var i = 0; i < expected.Length; i++)
+            {
+                Assert.Equal(expected[i].GlyphAdvance, actual[i].GlyphAdvance);
+            }
+        }
+
+        private static GlyphTypeface CreateDejaVuSans(FontSimulations simulations)
+        {
+            var loader = AvaloniaLocator.Current.GetRequiredService<IAssetLoader>();
+            var fontManagerImpl = AvaloniaLocator.Current.GetRequiredService<IFontManagerImpl>();
+
+            using var stream = loader.Open(new Uri(
+                "resm:Avalonia.Skia.UnitTests.Fonts.DejaVuSans.ttf?assembly=Avalonia.Skia.UnitTests",
+                UriKind.Absolute));
+
+            Assert.True(fontManagerImpl.TryCreateGlyphTypeface(stream, simulations, out var platformTypeface));
+
+            var glyphTypeface = GlyphTypeface.TryCreate(platformTypeface, simulations);
+            Assert.NotNull(glyphTypeface);
+
+            return glyphTypeface!;
         }
 
         private static IDisposable Start()
