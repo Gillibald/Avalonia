@@ -91,6 +91,19 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
+        public void Unavailable_Style_Is_Simulated_On_The_Matched_Instance()
+        {
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, CreateInstanceProvider());
+
+            // The font has no italic axis: the provider's Bold instance is slanted, not a
+            // simulated default instance moved to the Bold position.
+            var boldItalic = Get(collection, "Test Variable", FontStyle.Italic, FontWeight.Bold);
+            var bold = Get(collection, "Test Variable", FontStyle.Normal, FontWeight.Bold);
+
+            Assert.Same(bold.WithSimulations(FontSimulations.Oblique), boldItalic);
+        }
+
+        [Fact]
         public void Real_Face_From_The_Provider_Beats_Simulating_A_Cached_Face()
         {
             var regular = CreateFile(InterRegularUri);

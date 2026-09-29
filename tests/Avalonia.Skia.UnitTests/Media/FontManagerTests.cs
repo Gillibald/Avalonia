@@ -333,7 +333,10 @@ namespace Avalonia.Skia.UnitTests.Media
                     Assert.True(FontManager.Current.TryGetGlyphTypeface(new Typeface("Noto Mono", FontStyle.Normal, FontWeight.Normal),
                        out var regularTypeface));
 
-                    Assert.NotEqual(((SkiaTypeface)regularTypeface.PlatformTypeface).SKTypeface, ((SkiaTypeface)italicBoldTypeface.PlatformTypeface).SKTypeface);
+                    // The synthetic is a view of the regular face: the renderer applies the simulations per
+                    // draw, so both share one render typeface.
+                    Assert.NotSame(regularTypeface, italicBoldTypeface);
+                    Assert.Same(regularTypeface.PlatformTypeface, italicBoldTypeface.PlatformTypeface);
                 }
             }
         }
@@ -559,7 +562,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     Assert.Equal(FontStyle.Normal, regularTypeface.Style);
 
-                    Assert.NotEqual(((SkiaTypeface)italicTypeface.GlyphTypeface.PlatformTypeface).SKTypeface, ((SkiaTypeface)regularTypeface.GlyphTypeface.PlatformTypeface).SKTypeface);
+                    // The oblique match is a simulated view of the face and may share its render typeface,
+                    // but it is never handed out for the regular request.
+                    Assert.NotSame(italicTypeface.GlyphTypeface, regularTypeface.GlyphTypeface);
                 }
             }
         }

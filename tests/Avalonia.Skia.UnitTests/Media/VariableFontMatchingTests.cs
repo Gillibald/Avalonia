@@ -87,6 +87,21 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Synthetic_Over_A_Varied_Face_Is_The_Variant_Of_That_Face()
+        {
+            using (Start(out var root))
+            {
+                var glyphTypeface = Resolve(new Typeface(InterVariable, FontStyle.Italic, (FontWeight)450));
+
+                var varied = root.WithVariation(Position(root, "wght=450"));
+
+                Assert.Same(varied.WithSimulations(FontSimulations.Oblique), glyphTypeface);
+                Assert.Same(root, glyphTypeface.RootTypeface);
+                Assert.Same(root.FontMemory, glyphTypeface.FontMemory);
+            }
+        }
+
+        [Fact]
         public void Resolved_Varied_Face_Is_Cached_Under_The_Requested_Key()
         {
             using (Start(out _))

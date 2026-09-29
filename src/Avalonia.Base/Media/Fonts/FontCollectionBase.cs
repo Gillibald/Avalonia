@@ -39,10 +39,6 @@ namespace Avalonia.Media.Fonts
         // registered keys cannot answer.
         private readonly ConditionalWeakTable<GlyphTypeface, VariableFace> _variableFaces = new();
 
-        // Simulated default instances created to vary a simulated face. Only their varied clones
-        // are registered, so the collection keeps the sources to release them on disposal.
-        private readonly ConcurrentBag<GlyphTypeface> _variedSyntheticSources = new();
-
         // Instance families of registered variable faces, keyed by the family name the font's
         // STAT table composes (e.g. "Inter Variable Display"). Their faces are created on
         // the first lookup of the family.
@@ -639,10 +635,11 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
+            // The source may itself be synthetic; its simulations stay part of the result.
+            fontSimulations |= glyphTypeface.FontSimulations;
+
             // A synthetic for this key may already be cached under the source family, reached
-            // through another of its names or by another thread. Building a second one loses the
-            // slot below to the instance already there, so nothing caches it, nothing disposes it,
-            // and its font data and native typeface are never released.
+            // through another of its names or by another thread.
             if (glyphTypefaces.TryGetValue(key, out var cachedGlyphTypeface) &&
                 cachedGlyphTypeface is not null &&
                 cachedGlyphTypeface.FontSimulations == fontSimulations)
@@ -652,31 +649,9 @@ namespace Avalonia.Media.Fonts
                 return true;
             }
 
-            if (glyphTypeface.FontMemory is not SfntFace face)
-            {
-                return false;
-            }
-
-            // The synthetic face shares the source's font file bytes: no whole-file copy, and
-            // the same face of a TrueType collection stays pinned instead of being re-resolved.
-            var clone = face.Clone();
-
-            syntheticGlyphTypeface = GlyphTypeface.TryCreate(clone, fontSimulations);
-
-            if (syntheticGlyphTypeface is null)
-            {
-                clone.Dispose();
-
-                return false;
-            }
-
-            // The font data holds the default instance, so a varied face is simulated by moving
-            // the simulated default instance to the same position.
-            if (!glyphTypeface.VariationPosition.IsDefault)
-            {
-                _variedSyntheticSources.Add(syntheticGlyphTypeface);
-                syntheticGlyphTypeface = syntheticGlyphTypeface.WithVariation(glyphTypeface.VariationPosition);
-            }
+            // The variant is cached on the source and shares its font data, render typeface and
+            // variation position, so every key that needs the same simulations gets one instance.
+            syntheticGlyphTypeface = glyphTypeface.WithSimulations(fontSimulations);
 
             //Add the TypographicFamilyName to the cache
             if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
@@ -1279,8 +1254,7 @@ namespace Avalonia.Media.Fonts
 
                         // TryCreateSyntheticGlyphTypeface registers the synthetic only under the
                         // source font's own family names, so a request arriving through a different
-                        // name would otherwise miss the cache and re-synthesise on every call,
-                        // copying the whole font file each time.
+                        // name would otherwise miss the cache and re-synthesise on every call.
                         TryAddGlyphTypeface(familyName, key, glyphTypeface);
                     }
 
@@ -2105,11 +2079,6 @@ namespace Avalonia.Media.Fonts
                 {
                     pair.Value?.RootTypeface.Dispose();
                 }
-            }
-
-            foreach (var source in _variedSyntheticSources)
-            {
-                source.Dispose();
             }
         }
 
