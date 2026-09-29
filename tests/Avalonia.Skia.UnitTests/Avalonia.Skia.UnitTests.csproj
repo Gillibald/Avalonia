@@ -15,6 +15,9 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\**\*.ttf" LinkBase="Assets" />
+    <!-- CFF and CFF2 fonts, kept out of Assets so the tests enumerating that folder see only TrueType fonts. -->
+    <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\SourceCodePro-Subset.otf" LinkBase="Fonts" />
+    <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\AdobeVFPrototype-Subset.otf" LinkBase="Fonts" />
     <None Remove="Fonts\**\*.ttf" />
     <EmbeddedResource Include="Fonts\**\*.ttf" />
     <!-- The headless platform's default font, reused here to cover fonts without a space glyph. -->

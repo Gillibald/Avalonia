@@ -27,6 +27,9 @@ namespace Avalonia.Media.Fonts
             if (point.Y > _maxY) _maxY = point.Y;
         }
 
+        /// <summary>Whether no point has been added, as for an empty glyph.</summary>
+        public bool IsEmpty => !_hasPoints;
+
         /// <summary>The accumulated control-point bounding box, or the zero box for an empty glyph.</summary>
         public GlyphBounds ToGlyphBounds()
             => _hasPoints

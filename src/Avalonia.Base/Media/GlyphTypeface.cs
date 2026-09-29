@@ -162,6 +162,14 @@ namespace Avalonia.Media
         // font memory, render typeface and shaper typeface, and owns none of them.
         private readonly GlyphTypeface? _simulationSource;
 
+        // Ink bounds of this face's simulated glyphs, packed as four shorts and computed on first
+        // use from the simulated outline. Zero marks a glyph that has not been computed.
+        private long[]? _simulatedBounds;
+
+        // An unsimulated view of a face whose simulations are baked in, created for its colour
+        // glyph drawings. It shares everything with this face and owns nothing.
+        private GlyphTypeface? _unsimulatedTypeface;
+
         private readonly bool _hasOs2Table;
         private readonly bool _hasHorizontalMetrics;
         private readonly bool _hasVerticalMetrics;
@@ -2075,28 +2083,38 @@ namespace Avalonia.Media
             (_glyfTable is not null && _gvarTable is not null && _activeCoords is not null);
 
         /// <summary>
-        /// Reads a single glyph's control-point ink box at this instance's variation point, from
-        /// whichever outline table the font carries, <b>without building geometry</b> (no render backend
-        /// required). Unlike <see cref="TryFillInkBounds"/> (which reports table presence and zero-fills
+        /// Reads a single glyph's control-point ink box at this instance's variation point and with its
+        /// simulations applied, from whichever outline table the font carries, <b>without building
+        /// geometry</b> (no render backend required). Unlike <see cref="TryFillInkBounds"/> (which reports table presence and zero-fills
         /// invalid glyphs), this returns <c>false</c> for an out-of-range or malformed glyph — the
         /// per-glyph contract the single <see cref="TryGetGlyphMetrics(ushort, out GlyphMetrics)"/> path
         /// and the COLR v1 paint-graph extents fallback need.
         /// </summary>
         internal bool TryGetGlyphInkBounds(ushort glyph, out GlyphBounds box)
         {
+            bool found;
+
             if (_glyfTable is not null)
             {
-                return TryGetGlyfBounds(glyph, out box);
+                found = TryGetGlyfBounds(glyph, out box);
             }
-
-            if (_cffTable is not null || _cff2Table is not null)
+            else if (_cffTable is not null || _cff2Table is not null)
             {
                 // CFF / CFF2 have no stored bbox; the unified cache memoises the interpreted box.
-                return TryGetCffBounds(glyph, out box);
+                found = TryGetCffBounds(glyph, out box);
+            }
+            else
+            {
+                box = default;
+                return false;
             }
 
-            box = default;
-            return false;
+            if (found)
+            {
+                box = SimulateBounds(glyph, box);
+            }
+
+            return found;
         }
 
         /// <summary>
@@ -2123,21 +2141,22 @@ namespace Avalonia.Media
                 {
                     _glyfTable.GetGlyphBounds(glyphIndices, bounds);
                 }
-
-                return true;
             }
-
-            if (_cffTable is not null || _cff2Table is not null)
+            else if (_cffTable is not null || _cff2Table is not null)
             {
                 for (int i = 0; i < glyphIndices.Length; i++)
                 {
                     bounds[i] = TryGetCffBounds(glyphIndices[i], out var box) ? box : default;
                 }
-
-                return true;
+            }
+            else
+            {
+                return false;
             }
 
-            return false;
+            SimulateBounds(glyphIndices, bounds);
+
+            return true;
         }
 
         /// <summary>
@@ -2311,7 +2330,8 @@ namespace Avalonia.Media
         /// Returns a COLR v1 paint-graph drawing when the font has a v1 record for the glyph,
         /// falls back to a COLR v0 layer drawing when only v0 data is available, and returns
         /// <c>null</c> for outline-only glyphs. Callers should fall back to
-        /// <see cref="GetGlyphOutline"/> when this returns <c>null</c>.
+        /// <see cref="GetGlyphOutline"/> when this returns <c>null</c>. The drawing's layer outlines do
+        /// not include <see cref="FontSimulations"/>.
         /// </remarks>
         /// <param name="glyphIndex">The identifier of the glyph to retrieve.</param>
         /// <param name="options">
@@ -2332,6 +2352,13 @@ namespace Avalonia.Media
             if (glyphIndex >= GlyphCount || _colrTable is null || _cpalTable is null)
             {
                 return null;
+            }
+
+            // Colour glyphs are drawn from their layers' design outlines; simulating a colour glyph
+            // is up to the renderer that draws the drawing.
+            if (FontSimulations != FontSimulations.None)
+            {
+                return UnsimulatedTypeface.GetGlyphDrawing(glyphIndex, options);
             }
 
             // Probe the colour-glyph kind up front so plain outline glyphs (the bulk of a text run)
@@ -2358,6 +2385,22 @@ namespace Avalonia.Media
             var entry = cache.GetColorEntry(glyphIndex, palette);
 
             return (IGlyphDrawing?)cache.GetOrBuildDrawing(entry, _buildColorDrawing ??= BuildColorDrawingEntry);
+        }
+
+        private GlyphTypeface UnsimulatedTypeface
+        {
+            get
+            {
+                if (_simulationSource is { FontSimulations: FontSimulations.None } source)
+                {
+                    return source;
+                }
+
+                return _unsimulatedTypeface ??
+                       Interlocked.CompareExchange(ref _unsimulatedTypeface,
+                           new GlyphTypeface(this, FontSimulations.None), null) ??
+                       _unsimulatedTypeface!;
+            }
         }
 
         // CPAL resolution: a request for a palette the font does not define uses the font's default
@@ -2426,6 +2469,137 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Gets how much wider and taller, in design units, simulated bold makes a glyph; zero
+        /// without it.
+        /// </summary>
+        /// <remarks>
+        /// The renderer's fake bold is size dependent: a stroke of 1/24 em up to 9 px that narrows
+        /// to 1/32 em from 36 px. Size-independent glyph data uses the widest, so bounds and
+        /// outlines contain the drawn glyph at every size.
+        /// </remarks>
+        private double EmboldenStrength => (FontSimulations & FontSimulations.Bold) != 0
+            ? Metrics.DesignEmHeight / 24.0
+            : 0;
+
+        /// <summary>
+        /// Gets the shear of simulated oblique, which leans a glyph towards the end of the line.
+        /// </summary>
+        private Matrix SimulationTransform => (FontSimulations & FontSimulations.Oblique) != 0
+            ? new Matrix(1, 0, FontSimulationConstants.ObliqueSlant, 1, 0, 0)
+            : Matrix.Identity;
+
+        private void SimulateBounds(ReadOnlySpan<ushort> glyphIndices, Span<GlyphBounds> bounds)
+        {
+            if (FontSimulations == FontSimulations.None)
+            {
+                return;
+            }
+
+            for (var i = 0; i < glyphIndices.Length; i++)
+            {
+                bounds[i] = SimulateBounds(glyphIndices[i], bounds[i]);
+            }
+        }
+
+        /// <summary>
+        /// Derives a simulated glyph's ink bounds from its unsimulated <paramref name="bounds"/>.
+        /// </summary>
+        /// <remarks>
+        /// The bounds are the exact curve extent of the simulated outline, rounded out to whole design
+        /// units and computed once per glyph: bold grows the outline by half of
+        /// <see cref="EmboldenStrength"/> per side, but a mitered corner reaches further, and a sheared
+        /// box overstates the ink by up to <c>ObliqueSlant</c> times the glyph height. Transforming the box is the fallback when the outline cannot be built.
+        /// </remarks>
+        private GlyphBounds SimulateBounds(ushort glyphIndex, GlyphBounds bounds)
+        {
+            // An empty glyph has no ink to embolden or slant.
+            if (FontSimulations == FontSimulations.None || (bounds.Width == 0 && bounds.Height == 0))
+            {
+                return bounds;
+            }
+
+            if (TryGetOutlineBounds(glyphIndex, out var outlineBounds))
+            {
+                return outlineBounds;
+            }
+
+            double xMin = bounds.XMin, yMin = bounds.YMin, xMax = bounds.XMax, yMax = bounds.YMax;
+
+            var outset = EmboldenStrength / 2;
+
+            xMin -= outset;
+            yMin -= outset;
+            xMax += outset;
+            yMax += outset;
+
+            if ((FontSimulations & FontSimulations.Oblique) != 0)
+            {
+                // The shear moves points right in proportion to their height, so the bottom-left
+                // and top-right corners bound the result.
+                xMin += FontSimulationConstants.ObliqueSlant * yMin;
+                xMax += FontSimulationConstants.ObliqueSlant * yMax;
+            }
+
+            return ToGlyphBounds(xMin, yMin, xMax, yMax);
+        }
+
+        private bool TryGetOutlineBounds(ushort glyphIndex, out GlyphBounds bounds)
+        {
+            bounds = default;
+
+            if (OutlineType == GlyphOutlineType.None || glyphIndex >= GlyphCount)
+            {
+                return false;
+            }
+
+            var cache = _simulatedBounds;
+
+            if (cache is null)
+            {
+                Interlocked.CompareExchange(ref _simulatedBounds, new long[GlyphCount], null);
+
+                cache = _simulatedBounds!;
+            }
+
+            // Zero marks a glyph not computed yet; an empty glyph never reaches this point.
+            var packed = Volatile.Read(ref cache[glyphIndex]);
+
+            if (packed == 0)
+            {
+                // The exact curve extent: after the oblique shear, the extrema of round contours lie
+                // between the outline's points, and the control points overshoot them.
+                var context = new CurveBoundsGeometryContext();
+
+                if (!TryBuildOutline(glyphIndex, context) || context.IsEmpty)
+                {
+                    return false;
+                }
+
+                bounds = context.ToGlyphBounds();
+
+                packed = (long)(ushort)bounds.XMin | (long)(ushort)bounds.YMin << 16 |
+                         (long)(ushort)bounds.XMax << 32 | (long)(ushort)bounds.YMax << 48;
+
+                Volatile.Write(ref cache[glyphIndex], packed);
+            }
+
+            bounds = new GlyphBounds((short)packed, (short)(packed >> 16), (short)(packed >> 32), (short)(packed >> 48));
+
+            return true;
+        }
+
+        private static GlyphBounds ToGlyphBounds(double xMin, double yMin, double xMax, double yMax)
+        {
+            return new GlyphBounds(
+                ClampToInt16(Math.Floor(xMin)),
+                ClampToInt16(Math.Floor(yMin)),
+                ClampToInt16(Math.Ceiling(xMax)),
+                ClampToInt16(Math.Ceiling(yMax)));
+
+            static short ClampToInt16(double value) => (short)Math.Clamp(value, short.MinValue, short.MaxValue);
+        }
+
+        /// <summary>
         /// Retrieves the vector outline geometry for the specified glyph, in font design-unit space.
         /// </summary>
         /// <remarks>
@@ -2435,7 +2609,9 @@ namespace Avalonia.Media
         /// depth limit exceeded). The outline is in font design units (Y-up): apply the
         /// <c>emSize / DesignEmHeight</c> scale, the Y-flip, and the glyph position yourself — via
         /// <c>IGeometryImpl.WithTransform</c> or a drawing-context transform. Variable-font axis
-        /// configuration is taken from the typeface instance itself.
+        /// configuration and <see cref="FontSimulations"/> are taken from the typeface instance
+        /// itself. The outline has no size, so simulated bold uses the renderer's strongest (small
+        /// size) emboldening, and the outline contains the drawn glyph at every size.
         /// </remarks>
         /// <param name="glyphIndex">The identifier of the glyph to retrieve.</param>
         /// <returns>
@@ -2510,10 +2686,11 @@ namespace Avalonia.Media
             // hit with no separate interpret pass, and both producers write bit-identical values (the
             // SetBoundsOnce race stays benign) because the box comes from the emitted control points,
             // not from a backend's notion of bounds. Static / default-instance glyf bounds come from
-            // the header (cheaper than this), so leave them unset here.
+            // the header (cheaper than this), so leave them unset here. A simulated face's outline is
+            // emboldened or sheared, so its box is not the unsimulated one those paths cache.
             var bounds = default(GlyphBounds);
             var hasBounds = false;
-            if (outline is not null && RetainsGlyphBounds)
+            if (outline is not null && RetainsGlyphBounds && FontSimulations == FontSimulations.None)
             {
                 bounds = controlBounds;
                 hasBounds = true;
@@ -2544,43 +2721,9 @@ namespace Avalonia.Media
                 // control-point box for the entry's ink bounds, without a second pass.
                 var counting = new SegmentCountingGeometryContext(ctx);
 
-                // Build the outline in font design-unit space (identity transform); callers apply
-                // the scale / position. Wrapped so the shared, cacheable result is immutable.
-                // glyf (TrueType), CFF and CFF2 (PostScript) are mutually exclusive outline formats.
-                bool built;
-                if (_glyfTable is not null)
-                {
-                    // The active variation coords are precomputed once at clone time and stored
-                    // on the typeface — see _activeCoords. Static fonts and default-instance
-                    // lookups (where _activeCoords is null) pass an empty span and skip the
-                    // gvar deformation path entirely.
-                    ReadOnlySpan<float> activeCoords = _gvarTable is not null && _activeCoords is not null
-                        ? _activeCoords
-                        : default;
-
-                    built = _glyfTable.TryBuildGlyphGeometry(
-                        (int)glyphIndex,
-                        Matrix.Identity,
-                        counting,
-                        _gvarTable,
-                        activeCoords);
-                }
-                else if (_cff2Table is not null)
-                {
-                    // CFF2 blends are intrinsic to the charstring and must be evaluated even for the
-                    // default instance. A null _activeCoords (source / default-instance clone) means the
-                    // origin — all-zero normalized coords — at which the blends yield the default master.
-                    Span<float> zeroCoords = stackalloc float[_fvarTable?.Axes.Length ?? 0];
-                    ReadOnlySpan<float> activeCoords = _activeCoords is not null ? _activeCoords : zeroCoords;
-
-                    built = _cff2Table.TryBuildGlyphGeometry((int)glyphIndex, Matrix.Identity, counting, activeCoords);
-                }
-                else
-                {
-                    built = _cffTable!.TryBuildGlyphGeometry((int)glyphIndex, Matrix.Identity, counting);
-                }
-
-                if (built)
+                // Build the outline in font design-unit space; callers apply the scale / position.
+                // Wrapped so the shared, cacheable result is immutable.
+                if (TryBuildOutline(glyphIndex, counting))
                 {
                     segmentCount = counting.SegmentCount;
                     controlBounds = counting.GetControlBounds();
@@ -2589,6 +2732,59 @@ namespace Avalonia.Media
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Emits a glyph's outline, with this face's simulations applied, in font design-unit space.
+        /// glyf (TrueType), CFF and CFF2 (PostScript) are mutually exclusive outline formats.
+        /// </summary>
+        private bool TryBuildOutline(ushort glyphIndex, IGeometryContext context)
+        {
+            var transform = SimulationTransform;
+            var emboldenStrength = EmboldenStrength;
+
+            if (_glyfTable is not null)
+            {
+                // The active variation coords are precomputed once at clone time and stored
+                // on the typeface — see _activeCoords. Static fonts and default-instance
+                // lookups (where _activeCoords is null) pass an empty span and skip the
+                // gvar deformation path entirely.
+                ReadOnlySpan<float> glyfCoords = _gvarTable is not null && _activeCoords is not null
+                    ? _activeCoords
+                    : default;
+
+                return _glyfTable.TryBuildGlyphGeometry(glyphIndex, transform, context, _gvarTable, glyfCoords,
+                    emboldenStrength);
+            }
+
+            // Charstrings emit curves rather than points, so a bold outline is collected whole and
+            // emboldened before the transform applies, the way glyf points are.
+            var emboldening = emboldenStrength > 0 ? new EmboldeningGeometryContext() : null;
+            IGeometryContext target = (IGeometryContext?)emboldening ?? context;
+            var targetTransform = emboldening is null ? transform : Matrix.Identity;
+
+            bool built;
+            if (_cff2Table is not null)
+            {
+                // CFF2 blends are intrinsic to the charstring and must be evaluated even for the
+                // default instance. A null _activeCoords (source / default-instance clone) means the
+                // origin — all-zero normalized coords — at which the blends yield the default master.
+                Span<float> zeroCoords = stackalloc float[_fvarTable?.Axes.Length ?? 0];
+                ReadOnlySpan<float> activeCoords = _activeCoords is not null ? _activeCoords : zeroCoords;
+
+                built = _cff2Table.TryBuildGlyphGeometry(glyphIndex, targetTransform, target, activeCoords);
+            }
+            else
+            {
+                built = _cffTable!.TryBuildGlyphGeometry(glyphIndex, targetTransform, target);
+            }
+
+            if (built && emboldening is not null)
+            {
+                emboldening.Emit(context, transform, emboldenStrength);
+            }
+
+            return built;
         }
 
         /// <summary>

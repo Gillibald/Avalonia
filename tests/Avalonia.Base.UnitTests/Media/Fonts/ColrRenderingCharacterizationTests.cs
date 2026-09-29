@@ -61,6 +61,25 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
+        public void Simulated_Face_Draws_Colour_Glyphs_Unsimulated()
+        {
+            var plain = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).TryCreateGlyphTypeface();
+            Assert.NotNull(plain);
+            var outlineGlyph = plain!.CharacterToGlyphMap['A'];
+
+            var typeface = ColrTestFont
+                .Graft(InterRegular(), BuildColrV1GlyphSolid(baseGlyph: 3, outlineGlyph, clip: null))
+                .TryCreateGlyphTypeface();
+            Assert.NotNull(typeface);
+
+            var variant = typeface!.WithSimulations(FontSimulations.Bold | FontSimulations.Oblique);
+
+            // The layer outlines are the font's own; the variant's emboldened and sheared outlines
+            // would widen the fallback bounds.
+            Assert.Same(typeface.GetGlyphDrawing(3), variant.GetGlyphDrawing(3));
+        }
+
+        [Fact]
         public void Palette_Selection_Memoises_Per_Palette_And_Normalizes_Undefined_Indices()
         {
             var plain = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).TryCreateGlyphTypeface();

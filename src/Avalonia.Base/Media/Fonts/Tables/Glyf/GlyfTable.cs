@@ -321,12 +321,17 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// "no variation requested" — the table is consulted only when both this span
         /// and <paramref name="gvarTable"/> are present.
         /// </param>
+        /// <param name="emboldenStrength">
+        /// How much wider and taller, in font design units, the outline is made before
+        /// <paramref name="transform"/> applies; zero leaves it unchanged. See <see cref="OutlineEmbolden"/>.
+        /// </param>
         public bool TryBuildGlyphGeometry(
             int glyphIndex,
             Matrix transform,
             IGeometryContext context,
             GvarTable? gvarTable = null,
-            ReadOnlySpan<float> activeCoords = default)
+            ReadOnlySpan<float> activeCoords = default,
+            double emboldenStrength = 0)
         {
             // TrueType outlines use the non-zero winding rule. The default geometry fill
             // rule in Avalonia is EvenOdd, which would XOR overlapping contours (e.g. the
@@ -338,7 +343,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
 
             try
             {
-                return TryBuildGlyphGeometryInternal(glyphIndex, context, transform, decycler, gvarTable, activeCoords);
+                return TryBuildGlyphGeometryInternal(glyphIndex, context, transform, decycler, gvarTable, activeCoords,
+                    emboldenStrength);
             }
             catch (DecyclerException ex)
             {
@@ -369,6 +375,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// <param name="glyphIndex">The glyph's index in the font. Used to look up its gvar entry.</param>
         /// <param name="gvarTable">Optional gvar table. <c>null</c> skips deformation.</param>
         /// <param name="activeCoords">Normalized variation coordinates (fvar order).</param>
+        /// <param name="emboldenStrength">How much wider and taller the outline is made; zero leaves it unchanged.</param>
         /// <returns>true if the glyph geometry was successfully built; otherwise, false.</returns>
         private static bool BuildSimpleGlyphGeometry(
             SimpleGlyph simpleGlyph,
@@ -376,7 +383,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             Matrix transform,
             int glyphIndex,
             GvarTable? gvarTable,
-            ReadOnlySpan<float> activeCoords)
+            ReadOnlySpan<float> activeCoords,
+            double emboldenStrength)
         {
             Point[]? pointsRented = null;
             bool[]? onCurveRented = null;
@@ -432,6 +440,20 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     {
                         points[i] = new Point(xCoords[i], yCoords[i]);
                     }
+                }
+
+                if (emboldenStrength > 0)
+                {
+                    Span<int> contourEnds = endPtsOfContours.Length <= 64
+                        ? stackalloc int[endPtsOfContours.Length]
+                        : new int[endPtsOfContours.Length];
+
+                    for (var i = 0; i < contourEnds.Length; i++)
+                    {
+                        contourEnds[i] = endPtsOfContours[i];
+                    }
+
+                    OutlineEmbolden.Embolden(points, contourEnds, emboldenStrength, emboldenStrength);
                 }
 
                 onCurveRented = ArrayPool<bool>.Shared.Rent(pointCount);
@@ -640,6 +662,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// <param name="decycler">A <see cref="GlyphDecycler"/> instance used to prevent infinite recursion when building composite glyphs.</param>
         /// <param name="gvarTable">Optional gvar table for variation deformation. <c>null</c> skips deformation.</param>
         /// <param name="activeCoords">Normalized variation coordinates in fvar axis order. Empty span means no variation.</param>
+        /// <param name="emboldenStrength">How much wider and taller the outline is made; zero leaves it unchanged.</param>
         /// <returns>true if the glyph geometry was successfully built and added to the context; otherwise, false.</returns>
         private bool TryBuildGlyphGeometryInternal(
             int glyphIndex,
@@ -647,7 +670,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             Matrix transform,
             GlyphDecycler decycler,
             GvarTable? gvarTable,
-            ReadOnlySpan<float> activeCoords)
+            ReadOnlySpan<float> activeCoords,
+            double emboldenStrength)
         {
             using var guard = decycler.Enter(glyphIndex);
 
@@ -660,11 +684,13 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
 
             if (descriptor.IsSimpleGlyph)
             {
-                return BuildSimpleGlyphGeometry(descriptor.SimpleGlyph, context, transform, glyphIndex, gvarTable, activeCoords);
+                return BuildSimpleGlyphGeometry(descriptor.SimpleGlyph, context, transform, glyphIndex, gvarTable,
+                    activeCoords, emboldenStrength);
             }
             else
             {
-                return BuildCompositeGlyphGeometry(descriptor.CompositeGlyph, context, transform, decycler, gvarTable, activeCoords);
+                return BuildCompositeGlyphGeometry(descriptor.CompositeGlyph, context, transform, decycler, gvarTable,
+                    activeCoords, emboldenStrength);
             }
         }
 
@@ -677,6 +703,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// <param name="decycler">A <see cref="GlyphDecycler"/> instance used to prevent infinite recursion when building composite glyphs.</param>
         /// <param name="gvarTable">Optional gvar table. Passed through to each child glyph for independent deformation.</param>
         /// <param name="activeCoords">Normalized variation coordinates in fvar axis order.</param>
+        /// <param name="emboldenStrength">How much wider and taller the outline is made; zero leaves it unchanged.</param>
         /// <returns>true if at least one component was successfully processed; otherwise, false.</returns>
         private bool BuildCompositeGlyphGeometry(
             CompositeGlyph compositeGlyph,
@@ -684,7 +711,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             Matrix transform,
             GlyphDecycler decycler,
             GvarTable? gvarTable,
-            ReadOnlySpan<float> activeCoords)
+            ReadOnlySpan<float> activeCoords,
+            double emboldenStrength)
         {
             try
             {
@@ -702,7 +730,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 // materialising path instead. The flag is computed once while parsing.
                 if (compositeGlyph.UsesPointMatching)
                 {
-                    return BuildPointMatchedComposite(components, context, transform, decycler);
+                    return BuildPointMatchedComposite(components, context, transform, decycler, emboldenStrength);
                 }
 
                 var hasGeometry = false;
@@ -719,7 +747,10 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     // component offsets) is not yet applied — accented characters get
                     // correctly-thickened components but at the designer's default
                     // placement, which is a follow-up.
-                    if (TryBuildGlyphGeometryInternal(component.GlyphIndex, wrappedContext, Matrix.Identity, decycler, gvarTable, activeCoords))
+                    // Each component is emboldened in its own coordinate space; component
+                    // transforms are offsets, or scales close to one, so the strength carries over.
+                    if (TryBuildGlyphGeometryInternal(component.GlyphIndex, wrappedContext, Matrix.Identity, decycler,
+                            gvarTable, activeCoords, emboldenStrength))
                     {
                         hasGeometry = true;
                     }
@@ -751,7 +782,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             ReadOnlySpan<GlyphComponent> components,
             IGeometryContext context,
             Matrix transform,
-            GlyphDecycler decycler)
+            GlyphDecycler decycler,
+            double emboldenStrength)
         {
             var outline = new ResolvedOutline(64);
 
@@ -803,6 +835,11 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 if (outline.PointCount == 0)
                 {
                     return false;
+                }
+
+                if (emboldenStrength > 0)
+                {
+                    OutlineEmbolden.Embolden(outline.Points, outline.ContourEnds, emboldenStrength, emboldenStrength);
                 }
 
                 EmitResolvedOutline(outline, transform, context);
@@ -959,7 +996,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
 
             public int ContourCount { get; private set; }
 
-            public ReadOnlySpan<Point> Points => _points.AsSpan(0, PointCount);
+            public Span<Point> Points => _points.AsSpan(0, PointCount);
 
             public ReadOnlySpan<bool> OnCurve => _onCurve.AsSpan(0, PointCount);
 

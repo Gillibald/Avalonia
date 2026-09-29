@@ -218,6 +218,62 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
             Assert.True(sawNonZero, "Expected the glyph to emit non-zero coordinates.");
         }
 
+        [Theory]
+        [InlineData('I')]
+        [InlineData('É')]
+        public void TryBuildGlyphGeometry_Emboldens_Outline(char c)
+        {
+            const double strength = 40;
+
+            var typeface = LoadInter();
+            var glyf = LoadGlyf(typeface);
+
+            var glyph = GlyphFor(typeface, c);
+
+            var plain = new RecordingGeometryContext();
+            Assert.True(glyf.TryBuildGlyphGeometry(glyph, Matrix.Identity, plain));
+
+            var bold = new RecordingGeometryContext();
+            Assert.True(glyf.TryBuildGlyphGeometry(glyph, Matrix.Identity, bold, emboldenStrength: strength));
+
+            Assert.Equal(plain.Points.Count, bold.Points.Count);
+
+            var plainBounds = GetBounds(plain.Points);
+            var boldBounds = GetBounds(bold.Points);
+
+            // Every side moves out by at least half the strength; only mitered corners go further.
+            Assert.True(boldBounds.Left <= plainBounds.Left - strength / 2 + 0.001);
+            Assert.True(boldBounds.Top <= plainBounds.Top - strength / 2 + 0.001);
+            Assert.True(boldBounds.Right >= plainBounds.Right + strength / 2 - 0.001);
+            Assert.True(boldBounds.Bottom >= plainBounds.Bottom + strength / 2 - 0.001);
+
+            if (c == 'I')
+            {
+                // A rectangle's corners are right angles, so it grows by exactly half the strength.
+                var expected = plainBounds.Inflate(strength / 2);
+
+                Assert.Equal(expected.Left, boldBounds.Left, 6);
+                Assert.Equal(expected.Top, boldBounds.Top, 6);
+                Assert.Equal(expected.Right, boldBounds.Right, 6);
+                Assert.Equal(expected.Bottom, boldBounds.Bottom, 6);
+            }
+        }
+
+        private static Rect GetBounds(List<Point> points)
+        {
+            double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+
+            foreach (var point in points)
+            {
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+            }
+
+            return new Rect(minX, minY, maxX - minX, maxY - minY);
+        }
+
         [Fact]
         public void TryBuildGlyphGeometry_Builds_Composite_Glyph()
         {
