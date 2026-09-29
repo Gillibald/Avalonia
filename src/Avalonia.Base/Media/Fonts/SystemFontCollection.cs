@@ -9,6 +9,8 @@ namespace Avalonia.Media.Fonts
 {
     internal class SystemFontCollection : FontCollectionBase
     {
+        private static readonly OpenTypeTag s_fvarTag = OpenTypeTag.Parse("fvar");
+
         private readonly IFontManagerImpl _platformImpl;
 
         public SystemFontCollection(IFontManagerImpl platformImpl)
@@ -27,6 +29,14 @@ namespace Avalonia.Media.Fonts
 
         public override bool TryGetGlyphTypeface(string familyName, FontStyle style, FontWeight weight,
             FontStretch stretch, [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
+        {
+            return TryGetGlyphTypeface(familyName, style, weight, stretch, allowDefaultInstanceFallback: true,
+                out glyphTypeface);
+        }
+
+        private bool TryGetGlyphTypeface(string familyName, FontStyle style, FontWeight weight,
+            FontStretch stretch, bool allowDefaultInstanceFallback,
+            [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
         {
             var typeface = new Typeface(familyName, style, weight, stretch).Normalize(out familyName);
             var key = typeface.ToFontCollectionKey();
@@ -65,6 +75,28 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
+            if (IsNonDefaultVariableInstance(glyphTypeface))
+            {
+                if (!allowDefaultInstanceFallback)
+                {
+                    glyphTypeface.Dispose();
+                    glyphTypeface = null;
+
+                    return false;
+                }
+
+                if (TryGetDefaultInstanceGlyphTypeface(familyName, key, glyphTypeface.ToFontCollectionKey(),
+                        out var defaultInstanceGlyphTypeface))
+                {
+                    glyphTypeface.Dispose();
+                    glyphTypeface = defaultInstanceGlyphTypeface;
+
+                    return true;
+                }
+
+                // The family has no usable default instance, so the platform's instance is the only face left.
+            }
+
             //Add to cache with platform typeface family name first
             TryAddGlyphTypeface(platformTypeface.FamilyName, key, glyphTypeface);
             
@@ -89,6 +121,65 @@ namespace Avalonia.Media.Fonts
 
             //Requested glyph typeface should be in cache now
             return TryGetGlyphTypeface(familyName, key, allowNearestMatch: false, out glyphTypeface);
+        }
+
+        /// <summary>
+        /// Resolves a request through the family's default instance when the platform answered it with another
+        /// named instance of a variable font.
+        /// </summary>
+        /// <remarks>
+        /// The default instance is resolved and cached first, then the requested key is produced from it by the
+        /// nearest match, which adds bold or oblique simulation where the request asks for it.
+        /// </remarks>
+        private bool TryGetDefaultInstanceGlyphTypeface(string familyName, FontCollectionKey key,
+            FontCollectionKey defaultInstanceKey, [NotNullWhen(true)] out GlyphTypeface? glyphTypeface)
+        {
+            glyphTypeface = null;
+
+            // The platform already answered a request for the default instance with another instance.
+            if (defaultInstanceKey == key)
+            {
+                return false;
+            }
+
+            // The request for the default instance must not fall back again; if the platform answers it with
+            // another instance as well, that request fails instead of recursing.
+            if (!TryGetGlyphTypeface(familyName, defaultInstanceKey.Style, defaultInstanceKey.Weight,
+                    defaultInstanceKey.Stretch, allowDefaultInstanceFallback: false, out var defaultInstance) ||
+                defaultInstance.FontSimulations != FontSimulations.None ||
+                IsNonDefaultVariableInstance(defaultInstance))
+            {
+                return false;
+            }
+
+            return TryGetGlyphTypeface(familyName, key, allowNearestMatch: true, out glyphTypeface);
+        }
+
+        /// <summary>
+        /// Determines whether the platform resolved a named instance of a variable font other than its default.
+        /// </summary>
+        /// <remarks>
+        /// Platforms such as DirectWrite expose the named instances of a variable font file as separate faces.
+        /// The managed layer reads the font's tables without applying variations, so metrics and shaping always
+        /// describe the default instance. Laying out any other instance would use the default's advances under
+        /// the instance's outlines. The OS/2 table describes the default instance, so a platform face whose
+        /// weight, width or slant disagrees with it is another instance. A slanted face over an upright default
+        /// is the platform's oblique simulation, which the managed layer cannot see either.
+        /// </remarks>
+        private static bool IsNonDefaultVariableInstance(GlyphTypeface glyphTypeface)
+        {
+            var platformTypeface = glyphTypeface.PlatformTypeface;
+
+            if (platformTypeface.Weight == glyphTypeface.Weight &&
+                platformTypeface.Stretch == glyphTypeface.Stretch &&
+                IsSlanted(platformTypeface.Style) == IsSlanted(glyphTypeface.Style))
+            {
+                return false;
+            }
+
+            return platformTypeface.TryGetTable(s_fvarTag, out _);
+
+            static bool IsSlanted(FontStyle style) => style != FontStyle.Normal;
         }
 
         public override bool TryGetFamilyTypefaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<Typeface>? familyTypefaces)

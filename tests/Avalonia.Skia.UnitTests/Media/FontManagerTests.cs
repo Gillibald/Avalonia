@@ -569,6 +569,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(FontManager.Current.TryGetGlyphTypeface(
                     new Typeface(familyName, FontStyle.Normal, FontWeight.Bold), out var glyphTypeface));
 
+                Assert.Equal(FontSimulations.Bold, glyphTypeface.FontSimulations);
+
                 AssertShapedAdvancesMatchRenderedAdvances(glyphTypeface, "Hamburg");
             }
         }
