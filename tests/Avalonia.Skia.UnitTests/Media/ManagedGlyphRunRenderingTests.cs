@@ -134,6 +134,154 @@ namespace Avalonia.Skia.UnitTests.Media
                 string.Join(Environment.NewLine, failures));
         }
 
+        [Theory]
+        [InlineData(FontSimulations.None)]
+        [InlineData(FontSimulations.Bold)]
+        [InlineData(FontSimulations.Oblique)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
+        public void Rotated_Varied_Runs_Draw_Their_Own_Instance(FontSimulations simulations)
+        {
+            using var scope = CreateVariedEnvironment(out var typeface, simulations, managed: true);
+
+            // The mask path draws the run axis-aligned. Rotated, the triage declines it and the
+            // run falls back past the mask path; the fallback must still draw the wght=900
+            // outlines, and rotation keeps the total ink, while the default instance (wght=400)
+            // has little more than half of it. Aliased, so that coverage is the same measure
+            // for text masks and filled paths.
+            var masked = RenderVaried(typeface, aliased: true, (context, run) =>
+                context.DrawGlyphRun(Brushes.Black, run.PlatformImpl.Item));
+            var rotated = RenderVaried(typeface, aliased: true, (context, run) =>
+            {
+                context.Transform = Matrix.CreateRotation(0.2) * Matrix.CreateTranslation(10, -14);
+                context.DrawGlyphRun(Brushes.Black, run.PlatformImpl.Item);
+            });
+
+            var inkRatio = Ink(rotated) / Ink(masked);
+
+            Assert.True(Math.Abs(inkRatio - 1) <= 0.06,
+                $"{simulations}: rotated ink is {inkRatio:0.000} of the axis-aligned run's");
+        }
+
+        [Theory]
+        [InlineData(FontSimulations.None)]
+        [InlineData(FontSimulations.Bold)]
+        [InlineData(FontSimulations.Oblique)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
+        public void Backend_Mode_Draws_Varied_Runs_At_Their_Instance(FontSimulations simulations)
+        {
+            byte[] managed;
+            byte[] backend;
+
+            using (CreateVariedEnvironment(out var typeface, simulations, managed: true))
+            {
+                managed = RenderVaried(typeface, aliased: false, (context, run) =>
+                    context.DrawGlyphRun(Brushes.Black, run.PlatformImpl.Item));
+            }
+
+            // Skia cannot vary a typeface, so a backend glyph run of a varied clone would draw
+            // the default instance.
+            using (CreateVariedEnvironment(out var typeface, simulations, managed: false))
+            {
+                backend = RenderVaried(typeface, aliased: false, (context, run) =>
+                    context.DrawGlyphRun(Brushes.Black, run.PlatformImpl.Item));
+            }
+
+            AssertSameInstance(managed, backend, simulations);
+        }
+
+        [Theory]
+        [InlineData(FontSimulations.None)]
+        [InlineData(FontSimulations.Bold)]
+        [InlineData(FontSimulations.Oblique)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
+        public void Varied_Run_Geometry_Has_The_Instance_Outlines(FontSimulations simulations)
+        {
+            using var scope = CreateVariedEnvironment(out var typeface, simulations, managed: true);
+
+            // Aliased: an antialiased path fill has no text contrast shaping and carries about a
+            // fifth more ink than a text mask of the same outlines.
+            var masked = RenderVaried(typeface, aliased: true, (context, run) =>
+                context.DrawGlyphRun(Brushes.Black, run.PlatformImpl.Item));
+            var filled = RenderVaried(typeface, aliased: true, (context, run) =>
+                context.DrawGeometry(Brushes.Black, null, new PlatformRenderInterface().BuildGlyphRunGeometry(run)));
+
+            AssertSameInstance(masked, filled, simulations);
+        }
+
+        private static void AssertSameInstance(byte[] expected, byte[] actual, FontSimulations simulations)
+        {
+            var rmse = Rmse(expected, actual);
+
+            Assert.True(rmse <= 0.045, $"{simulations}: RMSE {rmse:0.0000} exceeds 0.045");
+
+            // The default instance sits in almost the same place with far less weight, which a
+            // mostly white frame hides from the RMSE; the total ink does not.
+            var inkRatio = Ink(actual) / Ink(expected);
+
+            Assert.True(Math.Abs(inkRatio - 1) <= 0.06, $"{simulations}: ink is {inkRatio:0.000} of the reference");
+        }
+
+        private static byte[] RenderVaried(GlyphTypeface typeface, bool aliased,
+            Action<DrawingContextImpl, GlyphRun> draw)
+        {
+            const double emSize = 16;
+            var scale = emSize / typeface.Metrics.DesignEmHeight;
+            var infos = new List<GlyphInfo>();
+            var cluster = 0;
+
+            foreach (var c in "Managed glyphs 123")
+            {
+                var glyph = typeface.CharacterToGlyphMap[c];
+                typeface.TryGetGlyphMetrics(glyph, out var metrics);
+                infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * scale));
+            }
+
+            using var run = new GlyphRun(typeface, emSize, default, infos, new Point(8, 32));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            canvas.Clear(SKColors.White);
+            context.PushTextOptions(new TextOptions
+            {
+                TextHintingMode = TextHintingMode.None,
+                TextRenderingMode = aliased ? TextRenderingMode.Alias : TextRenderingMode.Antialias,
+            });
+            context.PushRenderOptions(new RenderOptions
+            {
+                EdgeMode = aliased ? EdgeMode.Aliased : EdgeMode.Antialias,
+            });
+
+            draw(context, run);
+
+            return bitmap.GetPixelSpan().ToArray();
+        }
+
+        private static IDisposable CreateVariedEnvironment(out GlyphTypeface typeface, FontSimulations simulations,
+            bool managed)
+        {
+            var scope = AvaloniaLocator.EnterScope();
+
+            AvaloniaLocator.CurrentMutable
+                .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
+            AvaloniaLocator.CurrentMutable
+                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                {
+                    TextRasterizationMode = managed ? TextRasterizationMode.Managed : TextRasterizationMode.Backend,
+                });
+
+            var bytes = LoadFontBytes("InterVariable.ttf");
+            Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face));
+
+            typeface = new GlyphTypeface(face)
+                .WithVariations(FontVariationSettings.Parse("wght=900"))
+                .WithSimulations(simulations);
+
+            return scope;
+        }
+
         [Fact]
         public void Managed_Run_Bounds_Cover_Simulated_Ink()
         {
