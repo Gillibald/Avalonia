@@ -32,7 +32,9 @@ namespace Avalonia.Skia
 
         public SKFont CreateSKFont(float size)
         {
-            return new(SKTypeface, size, skewX: (FontSimulations & FontSimulations.Oblique) != 0 ? -0.3f : 0.0f)
+            var skewX = (FontSimulations & FontSimulations.Oblique) != 0 ? -FontSimulationConstants.ObliqueSlant : 0.0f;
+
+            return new(SKTypeface, size, skewX: skewX)
             {
                 LinearMetrics = true,
                 Embolden = (FontSimulations & FontSimulations.Bold) != 0

@@ -73,6 +73,10 @@ namespace Avalonia.Harfbuzz
 
             var textScale = fontRenderingEmSize / scaleX;
 
+            var slant = (glyphTypeface.FontSimulations & FontSimulations.Oblique) != 0 ?
+                FontSimulationConstants.ObliqueSlant :
+                0.0;
+
             var bufferLength = buffer.Length;
 
             var shapedBuffer = new ShapedBuffer(text, bufferLength, glyphTypeface, fontRenderingEmSize, bidiLevel);
@@ -92,7 +96,7 @@ namespace Avalonia.Harfbuzz
 
                 var glyphAdvance = GetGlyphAdvance(glyphPositions, i, textScale) + options.LetterSpacing;
 
-                var glyphOffset = GetGlyphOffset(glyphPositions, i, textScale);
+                var glyphOffset = GetGlyphOffset(glyphPositions, i, textScale, slant);
 
                 if (originalCluster < containingText.Length && containingText[originalCluster] == '\t')
                 {
@@ -172,11 +176,16 @@ namespace Avalonia.Harfbuzz
             }
         }
 
-        private static Vector GetGlyphOffset(ReadOnlySpan<GlyphPosition> glyphPositions, int index, double textScale)
+        private static Vector GetGlyphOffset(ReadOnlySpan<GlyphPosition> glyphPositions, int index, double textScale,
+            double slant)
         {
             var position = glyphPositions[index];
 
-            var offsetX = position.XOffset * textScale;
+            // The oblique simulation skews every glyph about its own origin, so a mark raised by a
+            // vertical offset is sheared less than the point of the base glyph it attaches to. Shifting
+            // the mark along the slant keeps it on the anchor. Runs are always horizontal here, which is
+            // the only direction HarfBuzz applies the same correction for a synthetic slant.
+            var offsetX = (position.XOffset + slant * position.YOffset) * textScale;
 
             var offsetY = -position.YOffset * textScale;
 
