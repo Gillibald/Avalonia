@@ -279,6 +279,79 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Synthetic_Typeface_Should_Use_The_Same_Collection_Face()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                using var fontCollection = new CollectionFaceFontCollection();
+
+                var source = fontCollection.AddCollectionFace(faceIndex: 1);
+
+                Assert.Equal("DejaVu Sans", source.FamilyName);
+
+                Assert.True(fontCollection.TryGetGlyphTypeface(
+                    "DejaVu Sans", FontStyle.Normal, FontWeight.Bold, FontStretch.Normal, out var bold));
+                Assert.True(fontCollection.TryGetGlyphTypeface(
+                    "DejaVu Sans", FontStyle.Italic, FontWeight.Normal, FontStretch.Normal, out var italic));
+
+                Assert.Equal(FontSimulations.Bold, bold.FontSimulations);
+                Assert.Equal(FontSimulations.Oblique, italic.FontSimulations);
+
+                // Face 0 of the collection is Manrope Light, whose names and metrics differ from the
+                // source face, so a synthetic built from the wrong face fails both checks.
+                foreach (var synthetic in new[] { bold, italic })
+                {
+                    Assert.Equal(source.FamilyName, synthetic.FamilyName);
+                    Assert.Equal(source.Metrics, synthetic.Metrics);
+                }
+            }
+        }
+
+        [Fact]
+        public void Synthetic_Typeface_Should_Share_The_Native_Typeface_Of_Its_Source()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                using var fontCollection = new CollectionFaceFontCollection();
+
+                var source = fontCollection.AddCollectionFace(faceIndex: 1);
+
+                Assert.True(fontCollection.TryGetGlyphTypeface(
+                    "DejaVu Sans", FontStyle.Normal, FontWeight.Bold, FontStretch.Normal, out var bold));
+
+                Assert.Equal(FontSimulations.Bold, bold.FontSimulations);
+
+                Assert.Same(
+                    ((SkiaTypeface)source.PlatformTypeface).SKTypeface,
+                    ((SkiaTypeface)bold.PlatformTypeface).SKTypeface);
+            }
+        }
+
+        /// <summary>
+        /// Collection holding a single face of a TrueType collection, the shape a platform font
+        /// manager produces when it resolves a family to a face other than the first in a .ttc file.
+        /// </summary>
+        private sealed class CollectionFaceFontCollection : FontCollectionBase
+        {
+            private const string TestCollectionFont = "Avalonia.Skia.UnitTests.Fonts.TestCollection.ttc";
+
+            public override Uri Key { get; } = new Uri("fonts:TestCollection", UriKind.Absolute);
+
+            public GlyphTypeface AddCollectionFace(int faceIndex)
+            {
+                using var stream = typeof(FontCollectionTests).Assembly.GetManifestResourceStream(TestCollectionFont)!;
+
+                var skTypeface = SkiaSharp.SKTypeface.FromData(SkiaSharp.SKData.Create(stream), faceIndex);
+
+                var glyphTypeface = GlyphTypeface.TryCreate(new SkiaTypeface(skTypeface, FontSimulations.None))!;
+
+                Assert.True(TryAddGlyphTypeface(glyphTypeface));
+
+                return glyphTypeface;
+            }
+        }
+
         /// <summary>
         /// Font manager whose <c>MyAlias</c> family resolves through the platform but is absent from
         /// the installed family list, the shape of a platform alias (for instance Android's
