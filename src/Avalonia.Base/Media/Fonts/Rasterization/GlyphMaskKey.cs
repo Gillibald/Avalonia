@@ -86,11 +86,14 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <see cref="ApplySimulations"/> selects the typeface's simulated outline (bold, oblique),
     /// which only the transformed tier renders. Neither opacity nor foreground tint is part of
     /// the identity: opacity rides the draw call's own parameter and tint variants are a
-    /// run-mask concern, so animating either never touches this cache.
+    /// run-mask concern, so animating either never touches this cache. <see cref="EmboldenQ"/>
+    /// carries the upright bold simulation's outset in 1/64 device pixels: its strength follows
+    /// the em size a run was laid out at, which the scale bucket alone does not determine once
+    /// a transform scales the text.
     /// </summary>
     internal readonly record struct GlyphMaskKey(
         ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool StemSnap = false,
-        GlyphMaskTransform Transform = default, byte PhaseY = 0, bool ApplySimulations = false)
+        ushort EmboldenQ = 0, GlyphMaskTransform Transform = default, byte PhaseY = 0, bool ApplySimulations = false)
     {
         /// <summary>Number of subpixel x-phase buckets.</summary>
         public const int PhaseCount = 4;
@@ -106,6 +109,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The subpixel y offset this mask's coverage was sampled at.</summary>
         public float PhaseOffsetY => PhaseY * (1f / PhaseCount);
+
+        /// <summary>The bold simulation's outset in device pixels, zero when not emboldened.</summary>
+        public float EmboldenOutset => EmboldenQ * (1f / 64);
 
         /// <summary>
         /// Whether this mask is built by the transformed builder: any rotation, skew or

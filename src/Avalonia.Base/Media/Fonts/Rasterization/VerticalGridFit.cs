@@ -430,7 +430,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static float MeasureTop(GlyphTypeface typeface, char reference)
         {
             if (typeface.CharacterToGlyphMap.ContainsGlyph(reference) &&
-                typeface.TryGetGlyphInkBounds(typeface.CharacterToGlyphMap[reference], out var box) &&
+                typeface.TryGetUnsimulatedGlyphInkBounds(typeface.CharacterToGlyphMap[reference], out var box) &&
                 box.YMax > box.YMin)
             {
                 return box.YMax;
@@ -442,7 +442,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static float MeasureBottom(GlyphTypeface typeface, char reference)
         {
             if (typeface.CharacterToGlyphMap.ContainsGlyph(reference) &&
-                typeface.TryGetGlyphInkBounds(typeface.CharacterToGlyphMap[reference], out var box) &&
+                typeface.TryGetUnsimulatedGlyphInkBounds(typeface.CharacterToGlyphMap[reference], out var box) &&
                 box.YMax > box.YMin)
             {
                 return box.YMin;

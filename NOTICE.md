@@ -344,7 +344,7 @@ SOFTWARE.
 https://freetype.org
 https://gitlab.freedesktop.org/freetype/freetype
 
-The managed TrueType hinting engine (src/Avalonia.Base/Media/Fonts/Rasterization/TrueType and src/Avalonia.Base/Media/Fonts/Tables/Variation/CvarTable.cs) contains logic transformed to C# from the FreeType project's TrueType driver. Those files are modified versions of the original FreeType code, marked as such in their file headers, and are used under the FreeType Project License reproduced below. This software is based in part on the work of the FreeType Team.
+The managed TrueType hinting engine (src/Avalonia.Base/Media/Fonts/Rasterization/TrueType and src/Avalonia.Base/Media/Fonts/Tables/Variation/CvarTable.cs) contains logic transformed to C# from the FreeType project's TrueType driver, and the outline embolden in src/Avalonia.Base/Media/Fonts/Tables/Glyf/OutlineEmbolden.cs contains logic transformed from its outline processing (src/base/ftoutln.c). Those files are modified versions of the original FreeType code, marked as such in their file headers, and are used under the FreeType Project License reproduced below. This software is based in part on the work of the FreeType Team.
 
 Portions of this software are copyright (C) 2026 The FreeType Project (https://freetype.org). All rights reserved.
 
