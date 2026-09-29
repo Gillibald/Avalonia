@@ -34,7 +34,9 @@ namespace Avalonia.Base.UnitTests.Media
                    installedFontFamilyNames: [],
                    defaultFamilyName: null!))))
             {
-                Assert.Throws<InvalidOperationException>(() => FontManager.Current);
+                // The default font family resolves lazily, so the failure surfaces on the first
+                // access instead of at FontManager construction.
+                Assert.Throws<InvalidOperationException>(() => FontManager.Current.DefaultFontFamily);
             }
         }
 
