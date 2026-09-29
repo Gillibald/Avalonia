@@ -7,6 +7,7 @@ using Avalonia.Fonts.Inter;
 using Avalonia.Logging;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
@@ -552,6 +553,75 @@ namespace Avalonia.Skia.UnitTests.Media
                     Assert.NotEqual(((SkiaTypeface)italicTypeface.GlyphTypeface.PlatformTypeface).SKTypeface, ((SkiaTypeface)regularTypeface.GlyphTypeface.PlatformTypeface).SKTypeface);
                 }
             }
+        }
+
+        [Win32Fact("Windows specific font")]
+        public void Variable_System_Font_Instance_Should_Lay_Out_With_Rendered_Advances()
+        {
+            const string familyName = "Segoe UI Variable Text";
+
+            Assert.SkipUnless(
+                Array.IndexOf(SKFontManager.Default.GetFontFamilies(), familyName) >= 0,
+                $"Requires the {familyName} font");
+
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                Assert.True(FontManager.Current.TryGetGlyphTypeface(
+                    new Typeface(familyName, FontStyle.Normal, FontWeight.Bold), out var glyphTypeface));
+
+                AssertShapedAdvancesMatchRenderedAdvances(glyphTypeface, "Hamburg");
+            }
+        }
+
+        [Win32Fact("Windows specific font")]
+        public void Static_System_Font_Bold_Face_Should_Lay_Out_With_Rendered_Advances()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                Assert.True(FontManager.Current.TryGetGlyphTypeface(
+                    new Typeface("Arial", FontStyle.Normal, FontWeight.Bold), out var glyphTypeface));
+
+                Assert.Equal(FontSimulations.None, glyphTypeface.FontSimulations);
+                Assert.Equal(FontWeight.Bold, glyphTypeface.Weight);
+
+                AssertShapedAdvancesMatchRenderedAdvances(glyphTypeface, "Hamburg");
+            }
+        }
+
+        private static void AssertShapedAdvancesMatchRenderedAdvances(GlyphTypeface glyphTypeface, string text)
+        {
+            const float fontSize = 1000;
+
+            using var shapedBuffer = TextShaper.Current.ShapeText(text, new TextShaperOptions(glyphTypeface, fontSize));
+
+            var glyphIndices = new ushort[shapedBuffer.Length];
+            var shapedAdvances = new double[shapedBuffer.Length];
+
+            for (var i = 0; i < shapedBuffer.Length; i++)
+            {
+                glyphIndices[i] = shapedBuffer[i].GlyphIndex;
+                shapedAdvances[i] = shapedBuffer[i].GlyphAdvance;
+            }
+
+            using var font = ((SkiaTypeface)glyphTypeface.PlatformTypeface).CreateSKFont(fontSize);
+
+            font.Hinting = SKFontHinting.None;
+
+            var renderedAdvances = font.GetGlyphWidths(glyphIndices);
+
+            var shapedTotal = 0.0;
+            var renderedTotal = 0.0;
+            var matches = true;
+
+            for (var i = 0; i < glyphIndices.Length; i++)
+            {
+                shapedTotal += shapedAdvances[i];
+                renderedTotal += renderedAdvances[i];
+                matches &= Math.Abs(shapedAdvances[i] - renderedAdvances[i]) <= 0.5;
+            }
+
+            Assert.True(matches,
+                $"Shaped advances ({shapedTotal:F1}) differ from the advances the face renders with ({renderedTotal:F1}).");
         }
 
         [Fact]
