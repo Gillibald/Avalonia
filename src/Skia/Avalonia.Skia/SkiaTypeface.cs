@@ -57,7 +57,7 @@ namespace Avalonia.Skia
         {
             try
             {
-                var asset = SKTypeface.OpenStream();
+                using var asset = SKTypeface.OpenStream();
                 var size = asset.Length;
                 var buffer = new byte[size];
 
