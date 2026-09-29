@@ -971,8 +971,14 @@ namespace Avalonia.Skia
                     return;
                 }
 
+                var fallbackBlob = NativeTextBlob.TryGetTextBlob(managedRun, effectiveTextOptions, RenderOptions);
+
+                if (fallbackBlob is null)
+                {
+                    return;   // no native face to fall back to (synthetic typeface)
+                }
+
                 using var fallbackPaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds);
-                var fallbackBlob = ((SkiaManagedGlyphRunImpl)managedRun).GetTextBlob(effectiveTextOptions, RenderOptions);
 
                 Canvas.DrawText(fallbackBlob, (float)glyphRun.BaselineOrigin.X,
                     (float)glyphRun.BaselineOrigin.Y, fallbackPaint.Paint);

@@ -4,12 +4,12 @@ This document follows one glyph run through the managed path: creation, dispatch
 
 ## Run creation
 
-`FontManagerOptions.TextRasterizationMode` is read every time a glyph run is created. In `Managed` mode the platform render interface produces a [ManagedGlyphRunImpl](../../src/Avalonia.Base/Media/Fonts/Rasterization/ManagedGlyphRunImpl.cs) (on Skia the [SkiaManagedGlyphRunImpl](../../src/Skia/Avalonia.Skia/SkiaManagedGlyphRunImpl.cs) subclass) instead of the backend's blob-backed run. The managed run:
+`FontManagerOptions.TextRasterizationMode` is read every time a glyph run is created. In `Managed` mode, `GlyphRun` constructs a [ManagedGlyphRunImpl](../../src/Avalonia.Base/Media/Fonts/Rasterization/ManagedGlyphRunImpl.cs) directly in Avalonia.Base - backend-neutrally, without consulting the platform render interface - so every backend gets the mask-path floor without work of its own. The managed run:
 
 - computes ink bounds from font data: outline tables for monochrome glyphs, `TryGetColorGlyphInkBounds` for color glyphs (COLR v1 clip boxes, drawing bounds or v0 layer unions), so invalidation rectangles cover color ink that exceeds the base outline box;
 - answers `GetIntersections` (text decoration ink skipping) analytically from the captured outlines, baseline-relative, matching the `SKTextBlob.GetIntercepts` contract;
 - carries a disposal-tied slot for the Slug tier's per-run artifact (see [slug.md](slug.md));
-- on Skia, lazily creates a native `SKTextBlob` only when a draw actually falls through to the backend tier.
+- carries a second slot for the backend's native fallback: on Skia, [NativeTextBlob](../../src/Skia/Avalonia.Skia/NativeTextBlob.cs) lazily builds and caches an `SKTextBlob` on the run when a draw actually falls through to the backend tier (synthetic typefaces without a Skia face have no native fallback and skip such draws).
 
 ## Draw dispatch
 

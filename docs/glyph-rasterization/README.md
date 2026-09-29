@@ -70,7 +70,7 @@ src/Avalonia.Base/Media/Fonts/Rasterization/   the backend-neutral core
 src/Avalonia.Base/Media/Fonts/Tables/Colr/     COLR/CPAL parsing and painters
 src/Avalonia.Base/Media/Fonts/Tables/Bitmaps/  CBDT/CBLC, sbix, IBitmapGlyphSource
 src/Skia/Avalonia.Skia/                        Skia-side implementations
-    SkiaManagedGlyphRunImpl.cs  lazy native blob + exact intersections
+    NativeTextBlob.cs           lazy native blob fallback for managed runs
     LcdTextBlender.cs           runtime SkSL blender for subpixel text
     MaskGammaFilters.cs         per-bucket color filters for gamma
     SlugGlyphEffect.cs          the Slug SkSL shader host
