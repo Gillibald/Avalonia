@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
@@ -31,7 +32,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void CreateTypeface_Should_Apply_Font_Simulations()
+        public void CreateTypeface_Should_Not_Bake_Font_Simulations_Into_Render_Typeface()
         {
             var glyphTypeface = LoadGlyphTypeface(InterFontUri, FontSimulations.Bold | FontSimulations.Oblique);
 
@@ -41,12 +42,24 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var skiaTypeface = Assert.IsType<SkiaTypeface>(platformTypeface);
 
-            Assert.Equal(FontSimulations.Bold | FontSimulations.Oblique, skiaTypeface.FontSimulations);
+            // The simulations are passed per draw, so the render typeface carries none of its own.
+            var members = typeof(SkiaTypeface).GetMembers(
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
-            using (var skFont = skiaTypeface.CreateSKFont(16))
+            Assert.DoesNotContain(members, m =>
+                (m as FieldInfo)?.FieldType == typeof(FontSimulations) ||
+                (m as PropertyInfo)?.PropertyType == typeof(FontSimulations));
+
+            using (var skFont = skiaTypeface.CreateSKFont(16, FontSimulations.None))
+            {
+                Assert.False(skFont.Embolden);
+                Assert.Equal(0, skFont.SkewX);
+            }
+
+            using (var skFont = skiaTypeface.CreateSKFont(16, FontSimulations.Bold | FontSimulations.Oblique))
             {
                 Assert.True(skFont.Embolden);
-                Assert.True(skFont.SkewX < 0);
+                Assert.Equal(-FontSimulationConstants.ObliqueSlant, skFont.SkewX);
             }
 
             platformTypeface.Dispose();
@@ -91,7 +104,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var skiaTypeface = Assert.IsType<SkiaTypeface>(renderInterface.CreateTypeface(glyphTypeface));
 
-            using (var skFont = skiaTypeface.CreateSKFont(48))
+            using (var skFont = skiaTypeface.CreateSKFont(48, FontSimulations.None))
             using (var bitmap = new SKBitmap(64, 64))
             using (var canvas = new SKCanvas(bitmap))
             using (var paint = new SKPaint())

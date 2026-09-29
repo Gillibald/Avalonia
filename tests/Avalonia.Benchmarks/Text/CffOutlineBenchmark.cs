@@ -135,9 +135,9 @@ public class CffGlyphBoundsBenchmark : IDisposable
         _cffPool = CffFonts.BuildPool(_cff);
         _cff2Pool = CffFonts.BuildPool(_cff2);
 
-        _skGlyf = ((SkiaTypeface)_glyf.PlatformTypeface).CreateSKFont(16f);
-        _skCff = ((SkiaTypeface)_cff.PlatformTypeface).CreateSKFont(16f);
-        _skCff2 = ((SkiaTypeface)_cff2.PlatformTypeface).CreateSKFont(16f);
+        _skGlyf = ((SkiaTypeface)_glyf.PlatformTypeface).CreateSKFont(16f, FontSimulations.None);
+        _skCff = ((SkiaTypeface)_cff.PlatformTypeface).CreateSKFont(16f, FontSimulations.None);
+        _skCff2 = ((SkiaTypeface)_cff2.PlatformTypeface).CreateSKFont(16f, FontSimulations.None);
     }
 
     [GlobalSetup]
@@ -231,9 +231,9 @@ public class CffGlyphOutlineBenchmark : IDisposable
         _cffGlyph = _cff.CharacterToGlyphMap['O'];
         _cff2Glyph = _cff2.CharacterToGlyphMap['o'];
 
-        _skGlyf = ((SkiaTypeface)_glyf.PlatformTypeface).CreateSKFont(16f);
-        _skCff = ((SkiaTypeface)_cff.PlatformTypeface).CreateSKFont(16f);
-        _skCff2 = ((SkiaTypeface)_cff2.PlatformTypeface).CreateSKFont(16f);
+        _skGlyf = ((SkiaTypeface)_glyf.PlatformTypeface).CreateSKFont(16f, FontSimulations.None);
+        _skCff = ((SkiaTypeface)_cff.PlatformTypeface).CreateSKFont(16f, FontSimulations.None);
+        _skCff2 = ((SkiaTypeface)_cff2.PlatformTypeface).CreateSKFont(16f, FontSimulations.None);
     }
 
     [Benchmark(Baseline = true)]

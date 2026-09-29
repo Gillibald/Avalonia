@@ -11,6 +11,7 @@ namespace Avalonia.Skia
     internal class GlyphRunImpl : IGlyphRunImpl
     {
         private readonly SkiaTypeface _glyphTypefaceImpl;
+        private readonly FontSimulations _fontSimulations;
         private readonly ushort[] _glyphIndices;
         private readonly SKPoint[] _glyphPositions;
 
@@ -32,6 +33,7 @@ namespace Avalonia.Skia
             }
 
             _glyphTypefaceImpl = (SkiaTypeface)glyphTypeface.PlatformTypeface;
+            _fontSimulations = glyphTypeface.FontSimulations;
             FontRenderingEmSize = fontRenderingEmSize;
 
             var count = glyphInfos.Count;
@@ -170,7 +172,7 @@ namespace Avalonia.Skia
             // Baseline snap defaults to true unless explicitly disabled.
             var baselineSnap = textOptions.BaselinePixelAlignment != BaselinePixelAlignment.Unaligned;
 
-            var font = _glyphTypefaceImpl.CreateSKFont((float)FontRenderingEmSize);
+            var font = _glyphTypefaceImpl.CreateSKFont((float)FontRenderingEmSize, _fontSimulations);
 
             font.ForceAutoHinting = forceAutoHinting;
             font.Hinting = hinting;

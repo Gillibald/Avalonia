@@ -122,7 +122,7 @@ namespace Avalonia.Skia
                         throw new InvalidOperationException("Skia could not create a typeface from the font data.");
                     }
 
-                    return new SkiaTypeface(skTypeface, glyphTypeface.FontSimulations);
+                    return new SkiaTypeface(skTypeface);
                 }
             }
 
@@ -132,14 +132,14 @@ namespace Avalonia.Skia
 
         public IGeometryImpl BuildGlyphRunGeometry(GlyphRun glyphRun)
         {
-            if (glyphRun.GlyphTypeface.PlatformTypeface is not SkiaTypeface glyphTypeface)
+            if (glyphRun.GlyphTypeface.PlatformTypeface is not SkiaTypeface skiaTypeface)
             {
                 throw new InvalidOperationException("PlatformImpl can't be null.");
             }
 
             var fontRenderingEmSize = (float)glyphRun.FontRenderingEmSize;
 
-            using var skFont = glyphTypeface.CreateSKFont(fontRenderingEmSize);
+            using var skFont = skiaTypeface.CreateSKFont(fontRenderingEmSize, glyphRun.GlyphTypeface.FontSimulations);
 
             skFont.Hinting = SKFontHinting.None;
 

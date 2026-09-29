@@ -44,7 +44,7 @@ public class GlyphBoundsBenchmark : IDisposable
 
         _glyphTypeface = Typeface.Default.GlyphTypeface;
         _skiaTypeface = (SkiaTypeface)_glyphTypeface.PlatformTypeface;
-        _font = _skiaTypeface.CreateSKFont(Size);
+        _font = _skiaTypeface.CreateSKFont(Size, _glyphTypeface.FontSimulations);
 
         var map = _glyphTypeface.CharacterToGlyphMap;
         var pool = new List<ushort>();
@@ -92,7 +92,7 @@ public class GlyphBoundsBenchmark : IDisposable
     [Benchmark]
     public void Skia_PerRun()
     {
-        using var font = _skiaTypeface.CreateSKFont(Size);
+        using var font = _skiaTypeface.CreateSKFont(Size, _glyphTypeface.FontSimulations);
 
         var bounds = ArrayPool<SKRect>.Shared.Rent(GlyphCount);
         font.GetGlyphWidths(_glyphIndices, null, bounds.AsSpan(0, GlyphCount));

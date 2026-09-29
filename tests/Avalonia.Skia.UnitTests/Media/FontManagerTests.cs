@@ -324,11 +324,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     Assert.Equal("Noto Mono", italicBoldTypeface.FamilyName);
 
-                    var italicBoldRenderTypeface = Assert.IsType<SkiaTypeface>(italicBoldTypeface.PlatformTypeface);
+                    Assert.IsType<SkiaTypeface>(italicBoldTypeface.PlatformTypeface);
 
-                    Assert.True(italicBoldRenderTypeface.FontSimulations.HasFlag(FontSimulations.Bold));
+                    Assert.True(italicBoldTypeface.FontSimulations.HasFlag(FontSimulations.Bold));
 
-                    Assert.True(italicBoldRenderTypeface.FontSimulations.HasFlag(FontSimulations.Oblique));
+                    Assert.True(italicBoldTypeface.FontSimulations.HasFlag(FontSimulations.Oblique));
 
                     Assert.True(FontManager.Current.TryGetGlyphTypeface(new Typeface("Noto Mono", FontStyle.Normal, FontWeight.Normal),
                        out var regularTypeface));
