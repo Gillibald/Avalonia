@@ -506,6 +506,10 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
+            // The source may itself be synthetic. Its platform typeface wraps the unsimulated face,
+            // so the new one must carry the source's simulations as well as the missing ones.
+            fontSimulations |= glyphTypeface.FontSimulations;
+
             // A synthetic for this key may already be cached under the source family, reached
             // through another of its names or by another thread. Building a second one loses the
             // slot below to the instance already there, so nothing caches it and nothing disposes
