@@ -91,6 +91,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                         box = colorBox;
                     }
 
+                    // A simulated face reports the ink of its simulated outlines, emboldened with
+                    // the strongest stroke the renderer uses at any size, so the box already
+                    // contains the device-space simulation the masks apply after hinting.
                     runBounds = runBounds.Union(new Rect(
                         x + box.XMin * scale,
                         y - box.YMax * scale,
@@ -145,9 +148,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             var scratch = t_intersectionScratch ??= new GlyphPathBuilder();
             var intervals = new List<(float Start, float End)>();
 
-            // Cheap pre-filter: only glyphs whose ink box crosses the band get walked.
+            // Cheap pre-filter: only glyphs whose ink box crosses the band get walked. The boxes
+            // of a simulated face already cover its simulated ink.
             var bounds = _count <= 256 ? stackalloc GlyphBounds[_count] : new GlyphBounds[_count];
             var hasBounds = _glyphTypeface.TryGetGlyphBounds(GlyphIndices, bounds);
+
+            // Decorations skip the ink actually drawn, so the simulated outline is intersected.
+            var simulations = _glyphTypeface.FontSimulations;
+            var simulated = GlyphSimulation.AffectsOutline(simulations);
+            var emboldenOutset = GlyphSimulation.GetEmboldenOutset(simulations, (float)FontRenderingEmSize);
 
             for (var i = 0; i < _count; i++)
             {
@@ -165,12 +174,27 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 scratch.Reset();
 
-                var transform = new Matrix(scale, 0, 0, -scale,
-                    _positions[i * 2], _positions[i * 2 + 1]);
-
-                if (!_glyphTypeface.TryBuildGlyphContours(_indices[i], transform, scratch))
+                if (simulated)
                 {
-                    continue;
+                    // The slant pivots on the glyph origin, so the outline is simulated before
+                    // it moves to its pen position.
+                    if (!_glyphTypeface.TryBuildGlyphContours(_indices[i], new Matrix(scale, 0, 0, -scale, 0, 0), scratch))
+                    {
+                        continue;
+                    }
+
+                    GlyphSimulation.Apply(scratch, simulations, emboldenOutset, yDown: true);
+                    scratch.Translate(_positions[i * 2], _positions[i * 2 + 1]);
+                }
+                else
+                {
+                    var transform = new Matrix(scale, 0, 0, -scale,
+                        _positions[i * 2], _positions[i * 2 + 1]);
+
+                    if (!_glyphTypeface.TryBuildGlyphContours(_indices[i], transform, scratch))
+                    {
+                        continue;
+                    }
                 }
 
                 CollectBandExtents(scratch, lowerLimit, upperLimit, intervals);

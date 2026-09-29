@@ -1,3 +1,12 @@
+// The outline embolden in this file contains logic adapted to C# from the FreeType project
+// (https://freetype.org), src/base/ftoutln.c (FT_Outline_EmboldenXY), and is a modified
+// version of the original FreeType code, not the original.
+//
+// Copyright (C) 1996-2026 by David Turner, Robert Wilhelm, and Werner Lemberg.
+//
+// Used under the FreeType Project License (FTL); see NOTICE.md in the
+// repository root for the full license text and the required credit.
+
 using System;
 
 namespace Avalonia.Media.Fonts.Tables.Glyf
@@ -11,6 +20,11 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
     /// thin features collapse instead of crossing over. Unlike FreeType, which then shifts the
     /// result so the lower-left corner stays put, the outline grows evenly on every side, the way
     /// the renderer's stroke-based fake bold does.
+    /// <para>
+    /// The one embolden of the simulated bold: glyph outlines and ink bounds apply it in design
+    /// units with a size-independent strength, and the managed rasterizer applies it in device
+    /// space after hinting with the size-dependent strength of the render backend.
+    /// </para>
     /// </remarks>
     internal static class OutlineEmbolden
     {

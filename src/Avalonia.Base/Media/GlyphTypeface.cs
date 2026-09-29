@@ -2243,6 +2243,15 @@ namespace Avalonia.Media
                 => (short)Math.Clamp(value, short.MinValue, short.MaxValue);
         }
 
+        /// <summary>
+        /// The ink box of the glyph as the font draws it, without this face's simulations. The
+        /// managed rasterizer fits and sizes the real outline first and simulates it afterwards,
+        /// so its zones and mask boxes are measured on the unsimulated glyph.
+        /// </summary>
+        internal bool TryGetUnsimulatedGlyphInkBounds(ushort glyph, out GlyphBounds box)
+            => (FontSimulations == FontSimulations.None ? this : UnsimulatedTypeface)
+                .TryGetGlyphInkBounds(glyph, out box);
+
         internal bool TryGetGlyphInkBounds(ushort glyph, out GlyphBounds box)
         {
             bool found;

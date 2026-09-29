@@ -25,6 +25,9 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         [ThreadStatic]
         private static SlugContourSink? t_scratch;
 
+        [ThreadStatic]
+        private static GlyphPathBuilder? t_simulationScratch;
+
         private static readonly Func<ushort, GlyphTypeface, SlugGlyphData?> s_build =
             static (glyph, typeface) =>
             {
@@ -34,10 +37,32 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
                 // Em-normalized, y-up — no flip; device orientation rides the draw transform.
                 var scale = 1.0 / typeface.Metrics.DesignEmHeight;
+                var transform = new Matrix(scale, 0, 0, scale, 0, 0);
+                var simulations = typeface.FontSimulations;
 
-                return typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, scale, 0, 0), sink)
-                    ? SlugBandEncoder.Encode(sink)
-                    : null;
+                if (!GlyphSimulation.AffectsOutline(simulations))
+                {
+                    return typeface.TryBuildGlyphContours(glyph, transform, sink)
+                        ? SlugBandEncoder.Encode(sink)
+                        : null;
+                }
+
+                // Payloads are em-space and shared by every size, so the bold outset is the
+                // size-invariant large-text strength; SlugGlyphRunRenderer keeps smaller
+                // emboldened runs off this tier.
+                var path = t_simulationScratch ??= new GlyphPathBuilder();
+
+                path.Reset();
+
+                if (!typeface.TryBuildGlyphContours(glyph, transform, path))
+                {
+                    return null;
+                }
+
+                GlyphSimulation.Apply(path, simulations, GlyphSimulation.LargeBoldStrokeRatio * 0.5f, yDown: false);
+                path.ReplayTo(sink);
+
+                return SlugBandEncoder.Encode(sink);
             };
 
         private readonly SlugTexelSerializer _serializer = new();

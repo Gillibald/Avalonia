@@ -42,6 +42,15 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 return false;
             }
 
+            // Fake bold strength depends on the em size below the large-text anchor, but a Slug
+            // payload is shared by every size of the typeface; those runs take the native path,
+            // which emboldens them at their own size.
+            if ((typeface.FontSimulations & FontSimulations.Bold) != 0 &&
+                run.FontRenderingEmSize < GlyphSimulation.LargeBoldEmSize)
+            {
+                return false;
+            }
+
             // A singular transform cannot produce the per-draw em footprint; nothing sensible
             // to draw anyway.
             var determinant = transform.M11 * transform.M22 - transform.M12 * transform.M21;

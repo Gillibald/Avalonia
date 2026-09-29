@@ -37,7 +37,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
 
-            if (!typeface.TryGetGlyphInkBounds(key.Glyph, out var box) ||
+            if (!typeface.TryGetUnsimulatedGlyphInkBounds(key.Glyph, out var box) ||
                 box.XMax <= box.XMin || box.YMax <= box.YMin)
             {
                 return GlyphMask.Empty;
@@ -99,6 +99,26 @@ namespace Avalonia.Media.Fonts.Rasterization
                     scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor,
                         typeface.StemWidths.VerticalStemWidths, scale));
                 }
+            }
+
+            var simulations = typeface.FontSimulations;
+
+            if (GlyphSimulation.AffectsOutline(simulations))
+            {
+                // Synthesized weight and slant go onto the fitted outline, so the fit of the
+                // font's own stems survives; the mask box then comes from the result, since
+                // both simulations push ink past the table and hinted boxes.
+                GlyphSimulation.Apply(scratch, simulations, key.EmboldenOutset, yDown: true, subpixelFactor);
+
+                if (!scratch.TryGetPointBounds(out var minX, out var minY, out var maxX, out var maxY))
+                {
+                    return GlyphMask.Empty;
+                }
+
+                left = (int)MathF.Floor(minX / subpixelFactor) - apron;
+                top = (int)MathF.Floor(minY) - Apron;
+                width = (int)MathF.Ceiling(maxX / subpixelFactor) + apron - left;
+                height = (int)MathF.Ceiling(maxY) + Apron - top;
             }
 
             if (width <= 0 || height <= 0 || width > MaxMaskSize || height > MaxMaskSize)

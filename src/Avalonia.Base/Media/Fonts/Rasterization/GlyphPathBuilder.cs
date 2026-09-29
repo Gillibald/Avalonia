@@ -100,6 +100,80 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// The captured point values for in-place transforms such as
+        /// <see cref="GlyphSimulation.Apply"/>; the verb structure stays as captured.
+        /// </summary>
+        internal Span<float> WritablePoints => _points.AsSpan(0, _pointCount);
+
+        /// <summary>Offsets every captured point by (<paramref name="dx"/>, <paramref name="dy"/>).</summary>
+        internal void Translate(float dx, float dy)
+        {
+            for (var i = 0; i + 1 < _pointCount; i += 2)
+            {
+                _points[i] += dx;
+                _points[i + 1] += dy;
+            }
+        }
+
+        /// <summary>
+        /// The box of all captured points, control points included, so it contains the filled
+        /// outline. False for an empty path or one with non-finite coordinates.
+        /// </summary>
+        internal bool TryGetPointBounds(out float minX, out float minY, out float maxX, out float maxY)
+        {
+            minX = minY = float.MaxValue;
+            maxX = maxY = float.MinValue;
+
+            for (var i = 0; i + 1 < _pointCount; i += 2)
+            {
+                minX = MathF.Min(minX, _points[i]);
+                maxX = MathF.Max(maxX, _points[i]);
+                minY = MathF.Min(minY, _points[i + 1]);
+                maxY = MathF.Max(maxY, _points[i + 1]);
+            }
+
+            return minX <= maxX && minY <= maxY &&
+                   float.IsFinite(minX) && float.IsFinite(minY) && float.IsFinite(maxX) && float.IsFinite(maxY);
+        }
+
+        /// <summary>Emits the captured path into another geometry sink, verb for verb.</summary>
+        internal void ReplayTo(IGeometryContext sink)
+        {
+            sink.SetFillRule(FillRule);
+
+            var p = 0;
+
+            for (var v = 0; v < _verbCount; v++)
+            {
+                switch ((GlyphPathVerb)_verbs[v])
+                {
+                    case GlyphPathVerb.MoveTo:
+                        sink.BeginFigure(new Point(_points[p], _points[p + 1]));
+                        p += 2;
+                        break;
+                    case GlyphPathVerb.LineTo:
+                        sink.LineTo(new Point(_points[p], _points[p + 1]));
+                        p += 2;
+                        break;
+                    case GlyphPathVerb.QuadTo:
+                        sink.QuadraticBezierTo(new Point(_points[p], _points[p + 1]),
+                            new Point(_points[p + 2], _points[p + 3]));
+                        p += 4;
+                        break;
+                    case GlyphPathVerb.CubicTo:
+                        sink.CubicBezierTo(new Point(_points[p], _points[p + 1]),
+                            new Point(_points[p + 2], _points[p + 3]),
+                            new Point(_points[p + 4], _points[p + 5]));
+                        p += 6;
+                        break;
+                    case GlyphPathVerb.Close:
+                        sink.EndFigure(true);
+                        break;
+                }
+            }
+        }
+
         /// <summary>Clears the captured path so the instance can record another glyph.</summary>
         public void Reset()
         {
