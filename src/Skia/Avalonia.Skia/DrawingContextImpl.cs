@@ -824,6 +824,15 @@ namespace Avalonia.Skia
                     return;
                 }
 
+                if (ManagedGlyphOutlines.AreRequired(managedRun.GlyphTypeface))
+                {
+                    using var outlinePaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds);
+
+                    Canvas.DrawPath(NativeTextBlob.GetOutlinePath(managedRun), outlinePaint.Paint);
+
+                    return;
+                }
+
                 var fallbackBlob = NativeTextBlob.TryGetTextBlob(managedRun, effectiveTextOptions, RenderOptions);
 
                 if (fallbackBlob is null)

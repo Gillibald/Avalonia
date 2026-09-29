@@ -42,12 +42,50 @@ namespace Avalonia.Skia
             return cache.GetOrBuild(run, textOptions);
         }
 
+        /// <summary>
+        /// The fallback for runs whose Skia face draws the wrong outlines
+        /// (<see cref="ManagedGlyphOutlines.AreRequired"/>): the run's managed outlines as one
+        /// path in run coordinates, built once per run.
+        /// </summary>
+        public static SKPath GetOutlinePath(ManagedGlyphRunImpl run)
+        {
+            if (run.NativeTextArtifact is not Cache cache)
+            {
+                cache = new Cache();
+                run.NativeTextArtifact = cache;
+            }
+
+            return cache.GetOrBuildOutlinePath(run);
+        }
+
         private sealed class Cache : IDisposable
         {
             private readonly TwoLevelCache<TextOptions, SKTextBlob> _blobs =
                 new(secondarySize: 3, evictionAction: b => b?.Dispose());
 
             private SKPoint[]? _positions;
+            private SKPath? _outlinePath;
+
+            public SKPath GetOrBuildOutlinePath(ManagedGlyphRunImpl run)
+            {
+                if (_outlinePath is not null)
+                {
+                    return _outlinePath;
+                }
+
+                var path = ManagedGlyphOutlines.CreatePath();
+                var indices = run.GlyphIndices;
+                var positions = run.GlyphPositions;
+                var origin = run.BaselineOrigin;
+
+                for (var i = 0; i < indices.Length; i++)
+                {
+                    ManagedGlyphOutlines.AddGlyph(path, run.GlyphTypeface, run.FontRenderingEmSize, indices[i],
+                        (float)(origin.X + positions[i * 2]), (float)(origin.Y + positions[i * 2 + 1]));
+                }
+
+                return _outlinePath = path;
+            }
 
             public SKTextBlob GetOrBuild(ManagedGlyphRunImpl run, TextOptions textOptions)
             {
@@ -83,7 +121,12 @@ namespace Avalonia.Skia
                 });
             }
 
-            public void Dispose() => _blobs.ClearAndDispose();
+            public void Dispose()
+            {
+                _blobs.ClearAndDispose();
+                _outlinePath?.Dispose();
+                _outlinePath = null;
+            }
         }
     }
 }

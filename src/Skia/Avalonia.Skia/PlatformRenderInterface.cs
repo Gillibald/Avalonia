@@ -113,8 +113,9 @@ namespace Avalonia.Skia
                     });
                 }
 
-                // SkiaSharp cannot create a typeface at variation coordinates, so a varied glyph
-                // typeface renders with the default instance's outlines.
+                // SkiaSharp cannot create a typeface at variation coordinates, so the face of a
+                // varied glyph typeface is the default instance; ManagedGlyphOutlines keeps
+                // varied runs and their geometry off it.
                 using (skData)
                 {
                     if (SKTypeface.FromData(skData, faceIndex) is not { } skTypeface)
@@ -132,6 +133,11 @@ namespace Avalonia.Skia
 
         public IGeometryImpl BuildGlyphRunGeometry(GlyphRun glyphRun)
         {
+            if (ManagedGlyphOutlines.AreRequired(glyphRun.GlyphTypeface))
+            {
+                return BuildManagedGlyphRunGeometry(glyphRun);
+            }
+
             if (glyphRun.GlyphTypeface.PlatformTypeface is not SkiaTypeface skiaTypeface)
             {
                 throw new InvalidOperationException("PlatformImpl can't be null.");
@@ -158,6 +164,24 @@ namespace Avalonia.Skia
                 }
 
                 currentX += glyphRun.GlyphInfos[i].GlyphAdvance;
+            }
+
+            return new StreamGeometryImpl(path, path);
+        }
+
+        private static IGeometryImpl BuildManagedGlyphRunGeometry(GlyphRun glyphRun)
+        {
+            var typeface = glyphRun.GlyphTypeface;
+            var path = ManagedGlyphOutlines.CreatePath();
+            var (originX, originY) = glyphRun.BaselineOrigin;
+            var currentX = 0.0;
+
+            foreach (var info in glyphRun.GlyphInfos)
+            {
+                ManagedGlyphOutlines.AddGlyph(path, typeface, glyphRun.FontRenderingEmSize, info.GlyphIndex,
+                    (float)(originX + currentX + info.GlyphOffset.X), (float)(originY + info.GlyphOffset.Y));
+
+                currentX += info.GlyphAdvance;
             }
 
             return new StreamGeometryImpl(path, path);
