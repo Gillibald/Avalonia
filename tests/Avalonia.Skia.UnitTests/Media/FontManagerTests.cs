@@ -328,7 +328,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     Assert.True(FontManager.Current.TryGetGlyphTypeface(new Typeface("Noto Mono", FontStyle.Normal, FontWeight.Normal),
                        out var regularTypeface));
 
-                    Assert.NotEqual(((SkiaTypeface)regularTypeface.PlatformTypeface).SKTypeface, ((SkiaTypeface)italicBoldTypeface.PlatformTypeface).SKTypeface);
+                    Assert.Same(((SkiaTypeface)regularTypeface.PlatformTypeface).SKTypeface, ((SkiaTypeface)italicBoldTypeface.PlatformTypeface).SKTypeface);
                 }
             }
         }

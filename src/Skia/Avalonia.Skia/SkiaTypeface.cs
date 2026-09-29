@@ -9,9 +9,12 @@ namespace Avalonia.Skia
 {
     internal class SkiaTypeface : IPlatformTypeface
     {
-        public SkiaTypeface(SKTypeface typeface, FontSimulations fontSimulations)
+        private readonly bool _ownsTypeface;
+
+        public SkiaTypeface(SKTypeface typeface, FontSimulations fontSimulations, bool ownsTypeface = true)
         {
             SKTypeface = typeface ?? throw new ArgumentNullException(nameof(typeface));
+            _ownsTypeface = ownsTypeface;
             FontSimulations = fontSimulations;
             Weight = (FontWeight)typeface.FontWeight;
             Style = typeface.FontStyle.Slant.ToAvalonia();
@@ -75,9 +78,15 @@ namespace Avalonia.Skia
             }
         }
 
+        IPlatformTypeface? IPlatformTypeface.WithSimulations(FontSimulations fontSimulations)
+            => new SkiaTypeface(SKTypeface, fontSimulations, ownsTypeface: false);
+
         public void Dispose()
         {
-            SKTypeface.Dispose();
+            if (_ownsTypeface)
+            {
+                SKTypeface.Dispose();
+            }
         }
     }
 }

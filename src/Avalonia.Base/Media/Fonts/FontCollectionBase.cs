@@ -295,12 +295,11 @@ namespace Avalonia.Media.Fonts
         {
             var matchedKey = glyphTypeface.ToFontCollectionKey();
 
-            // The fallback search already found a font face that maps the codepoint. Synthesis
-            // (re-loading the stream with FontSimulations) is unsafe here: with .ttc collections
-            // the platform may resolve a different face from the same stream (e.g. asking for an
-            // oblique simulation of "Yu Gothic UI" returns "Yu Gothic Medium"). Accept the matched
-            // glyph typeface as-is and pre-cache it under the requested key so later
-            // GlyphTypeface lookups via the returned Typeface short-circuit through the cache.
+            // The fallback search already found a font face that maps the codepoint. Accept the
+            // matched glyph typeface as-is, without simulations, and pre-cache it under the requested
+            // key so later GlyphTypeface lookups via the returned Typeface short-circuit through the
+            // cache. Without that entry the lookup would take the nearest-match path and synthesize a
+            // face for the requested key instead of returning the one the fallback search chose.
             if (matchedKey != requestedKey)
             {
                 TryAddGlyphTypeface(glyphTypeface.FamilyName, requestedKey, glyphTypeface);
@@ -508,10 +507,9 @@ namespace Avalonia.Media.Fonts
             }
 
             // A synthetic for this key may already be cached under the source family, reached
-            // through another of its names or by another thread. Building a second one copies the
-            // whole font file through TryGetStream, then loses the slot below to the instance
-            // already there, so nothing caches it, nothing disposes it, and its native typeface is
-            // never released.
+            // through another of its names or by another thread. Building a second one loses the
+            // slot below to the instance already there, so nothing caches it and nothing disposes
+            // it; on the stream fallback that orphan also holds its own copy of the font file.
             if (glyphTypefaces.TryGetValue(key, out var cachedGlyphTypeface) &&
                 cachedGlyphTypeface is not null &&
                 cachedGlyphTypeface.FontSimulations == fontSimulations)
@@ -521,35 +519,47 @@ namespace Avalonia.Media.Fonts
                 return true;
             }
 
-            if (glyphTypeface.PlatformTypeface.TryGetStream(out var stream))
+            // The simulated platform typeface borrows the source's native face instead of reloading
+            // the font file, which keeps the face index inside a font collection. The source must
+            // outlive it, which holds because both are cached in this collection and are disposed
+            // together with it.
+            var platformTypeface = glyphTypeface.PlatformTypeface.WithSimulations(fontSimulations);
+
+            if (platformTypeface is null)
             {
+                if (!glyphTypeface.PlatformTypeface.TryGetStream(out var stream))
+                {
+                    return false;
+                }
+
                 using (stream)
                 {
-                    if (_fontManagerImpl.TryCreateGlyphTypeface(stream, fontSimulations, out var platformTypeface))
+                    if (!_fontManagerImpl.TryCreateGlyphTypeface(stream, fontSimulations, out platformTypeface))
                     {
-                        syntheticGlyphTypeface = GlyphTypeface.TryCreate(platformTypeface, fontSimulations);
-                        if (syntheticGlyphTypeface is null)
-                            return false;
-
-                        //Add the TypographicFamilyName to the cache
-                        if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
-                        {
-                            TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, syntheticGlyphTypeface);
-                        }
-
-                        foreach (var kvp in glyphTypeface.FamilyNames)
-                        {
-                            TryAddGlyphTypeface(kvp.Value, key, syntheticGlyphTypeface);
-                        }
-
-                        return true;
+                        return false;
                     }
-
-                    return false;
                 }
             }
 
-            return false;
+            syntheticGlyphTypeface = GlyphTypeface.TryCreate(platformTypeface, fontSimulations);
+
+            if (syntheticGlyphTypeface is null)
+            {
+                return false;
+            }
+
+            //Add the TypographicFamilyName to the cache
+            if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
+            {
+                TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, syntheticGlyphTypeface);
+            }
+
+            foreach (var kvp in glyphTypeface.FamilyNames)
+            {
+                TryAddGlyphTypeface(kvp.Value, key, syntheticGlyphTypeface);
+            }
+
+            return true;
         }
 
         public IEnumerator<FontFamily> GetEnumerator() => ((IEnumerable<FontFamily>)_fontFamilies).GetEnumerator();
@@ -876,7 +886,7 @@ namespace Avalonia.Media.Fonts
                         // TryCreateSyntheticGlyphTypeface registers the synthetic only under the
                         // source font's own family names, so a request arriving through a different
                         // name would otherwise miss the cache and re-synthesise on every call,
-                        // copying the whole font file each time.
+                        // creating a new glyph typeface each time.
                         TryAddGlyphTypeface(familyName, key, glyphTypeface);
                     }
 

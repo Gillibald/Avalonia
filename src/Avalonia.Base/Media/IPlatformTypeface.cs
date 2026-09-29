@@ -42,5 +42,18 @@ namespace Avalonia.Media
         /// <param name="stream">The stream.</param>
         /// <returns>Returns <c>true</c> if the stream can be obtained, otherwise <c>false</c>.</returns>
         bool TryGetStream([NotNullWhen(true)] out Stream? stream);
+
+        /// <summary>
+        /// Returns a platform typeface over the same underlying font face with the given simulations applied.
+        /// </summary>
+        /// <remarks>
+        /// The returned typeface shares the native resources of this instance, so it keeps the exact face,
+        /// including its index inside a font collection, without reloading the font file. It does not own
+        /// those resources: this instance must outlive it. Returns <c>null</c> when the platform cannot
+        /// create such a typeface; callers then fall back to creating one from <see cref="TryGetStream"/>.
+        /// </remarks>
+        /// <param name="fontSimulations">The simulations to apply.</param>
+        /// <returns>The simulated typeface, or <c>null</c> if the platform does not support it.</returns>
+        internal IPlatformTypeface? WithSimulations(FontSimulations fontSimulations) => null;
     }
 }
