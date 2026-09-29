@@ -103,8 +103,9 @@ namespace Avalonia.Media
         private readonly VvarTable? _vvarTable;
 
         // STAT table — style names of axis values, read only to group and name the instances of
-        // a variable font. Parsed on first access on the source typeface; clones read the source's.
-        // Parsing twice under a race is harmless (the results are equal), so no lock is taken.
+        // a variable font. Parsed on first access on the root typeface; variation clones and
+        // simulated variants read the root's. Parsing twice under a race is harmless (the
+        // results are equal), so no lock is taken.
         private StatTable? _statTable;
         private volatile bool _statTableLoaded;
 
@@ -152,6 +153,14 @@ namespace Avalonia.Media
         // delegate WithVariation through _sourceTypeface so a single cache is shared).
         // Lazy-allocated on first variation request.
         private ConcurrentDictionary<NormalizedVariationPosition, GlyphTypeface>? _variationCache;
+
+        // Simulated variants of this face, indexed by (int)simulations - 1. Only populated on a
+        // face that is not itself a variant, so simulations resolve from one base and never stack.
+        private GlyphTypeface?[]? _simulatedVariants;
+
+        // The face a simulated variant was derived from. A variant shares its source's tables,
+        // font memory, render typeface and shaper typeface, and owns none of them.
+        private readonly GlyphTypeface? _simulationSource;
 
         private readonly bool _hasOs2Table;
         private readonly bool _hasHorizontalMetrics;
@@ -579,6 +588,75 @@ namespace Avalonia.Media
                 _vvarRegionScalers = new float[source._vvarTable.Store.RegionCount];
                 source._vvarTable.Store.ComputeRegionScalers(_activeCoords, _vvarRegionScalers);
             }
+        }
+
+        /// <summary>
+        /// Clone constructor for <see cref="WithSimulations"/>. Builds a view of
+        /// <paramref name="source"/> that draws with <paramref name="simulations"/>.
+        /// </summary>
+        /// <remarks>
+        /// Simulations change only outlines and ink bounds, never advances, metrics or shaping
+        /// input, so everything is reference-shared with the source: parsed tables, font memory,
+        /// metrics, the variation position and its precomputed coordinates, and the lazily created
+        /// render and shaper typefaces (the renderer applies the simulations per draw). Only
+        /// <see cref="FontSimulations"/>, <see cref="Weight"/> and <see cref="Style"/> differ.
+        /// </remarks>
+        private GlyphTypeface(GlyphTypeface source, FontSimulations simulations)
+        {
+            _simulationSource = source;
+
+            _fontMemory = source._fontMemory;
+            _variationPosition = source._variationPosition;
+            _activeCoords = source._activeCoords;
+            _hvarRegionScalers = source._hvarRegionScalers;
+            _vvarRegionScalers = source._vvarRegionScalers;
+
+            _nameTable = source._nameTable;
+            _os2Table = source._os2Table;
+            _cmapTable = source._cmapTable;
+            _hhTable = source._hhTable;
+            _vhTable = source._vhTable;
+            _hmTable = source._hmTable;
+            _vmTable = source._vmTable;
+            _glyfTable = source._glyfTable;
+            _colrTable = source._colrTable;
+            _cpalTable = source._cpalTable;
+            _cffTable = source._cffTable;
+            _cff2Table = source._cff2Table;
+            _fvarTable = source._fvarTable;
+            _avarTable = source._avarTable;
+            _gvarTable = source._gvarTable;
+            _hvarTable = source._hvarTable;
+            _mvarTable = source._mvarTable;
+            _vvarTable = source._vvarTable;
+
+            _hasOs2Table = source._hasOs2Table;
+            _hasHorizontalMetrics = source._hasHorizontalMetrics;
+            _hasVerticalMetrics = source._hasVerticalMetrics;
+
+            _designLanguages = source._designLanguages;
+            _supportedLanguages = source._supportedLanguages;
+            CodePageCoverage = source.CodePageCoverage;
+
+            FamilyName = source.FamilyName;
+            TypographicFamilyName = source.TypographicFamilyName;
+            TypographicSubfamilyName = source.TypographicSubfamilyName;
+            FamilyNames = source.FamilyNames;
+            FaceNames = source.FaceNames;
+            GlyphCount = source.GlyphCount;
+            IsLastResort = source.IsLastResort;
+            Metrics = source.Metrics;
+            Stretch = source.Stretch;
+
+            FontSimulations = simulations;
+
+            // Font matching must see the simulated face as Bold / Italic so it does not simulate
+            // again on top of it; a face already heavier than Bold keeps its own weight.
+            Weight = (simulations & FontSimulations.Bold) != 0 && source.Weight < FontWeight.Bold
+                ? FontWeight.Bold
+                : source.Weight;
+
+            Style = (simulations & FontSimulations.Oblique) != 0 ? FontStyle.Italic : source.Style;
         }
 
         /// <summary>
@@ -1203,7 +1281,7 @@ namespace Avalonia.Media
         {
             get
             {
-                var source = _sourceTypeface ?? this;
+                var source = RootTypeface;
 
                 if (!source._statTableLoaded)
                 {
@@ -1501,6 +1579,17 @@ namespace Avalonia.Media
                     throw new ObjectDisposedException(nameof(GlyphTypeface));
                 }
 
+                // A simulated variant draws its source's render typeface with its own simulations.
+                if (_simulationSource is { } simulationSource)
+                {
+                    var sharedPlatformTypeface = simulationSource.PlatformTypeface;
+
+                    _ownsPlatformTypeface = false;
+                    _platformTypeface = sharedPlatformTypeface;
+
+                    return sharedPlatformTypeface;
+                }
+
                 // A variation clone of a typeface built over a caller-supplied platform typeface
                 // has no font data a render typeface can be derived from, so it shares the
                 // source's handle and leaves its release to the source.
@@ -1566,7 +1655,13 @@ namespace Avalonia.Media
                         return _textShaperTypeface;
                     }
 
-                    if (_sourceTypeface is not null)
+                    if (_simulationSource is not null)
+                    {
+                        // Simulations do not change shaping input, so a variant shapes with its
+                        // source's typeface.
+                        _textShaperTypeface = _simulationSource.TextShaperTypeface;
+                    }
+                    else if (_sourceTypeface is not null)
                     {
                         var sourceShaper = _sourceTypeface.TextShaperTypeface;
                         var variedShaper = sourceShaper.WithVariation(_variationPosition);
@@ -2813,6 +2908,13 @@ namespace Avalonia.Media
                 return this;
             }
 
+            // A simulated variant keeps its simulations at the new position: the result is the
+            // variant of the face at that position, which hangs off that face rather than this.
+            if (_simulationSource is { } simulationSource)
+            {
+                return simulationSource.WithVariation(variation).WithSimulations(FontSimulations);
+            }
+
             // Delegate to the source's cache so all variations of the same underlying
             // font share resources and a single ownership chain.
             var source = _sourceTypeface ?? this;
@@ -2850,6 +2952,69 @@ namespace Avalonia.Media
         private GlyphTypeface CreateVariation(NormalizedVariationPosition variation)
         {
             return new GlyphTypeface(this, variation);
+        }
+
+        /// <summary>
+        /// Returns this face drawn with <paramref name="simulations"/>, at this face's
+        /// variation position.
+        /// </summary>
+        /// <remarks>
+        /// Variants resolve from the face that is not itself a variant, so requesting
+        /// Bold | Oblique from a Bold variant yields the Bold | Oblique variant of the same base
+        /// rather than a variant of a variant. Simulations baked into a face at construction
+        /// cannot be removed, so they are always part of the result. Variants are cached on
+        /// their base face and own nothing; disposing the base disposes them.
+        /// </remarks>
+        internal GlyphTypeface WithSimulations(FontSimulations simulations)
+        {
+            if (simulations == FontSimulations)
+            {
+                return this;
+            }
+
+            var baseFace = _simulationSource ?? this;
+
+            simulations |= baseFace.FontSimulations;
+
+            if (simulations == baseFace.FontSimulations)
+            {
+                return baseFace;
+            }
+
+            var variants = baseFace._simulatedVariants;
+
+            if (variants is null)
+            {
+                Interlocked.CompareExchange(ref baseFace._simulatedVariants, new GlyphTypeface?[3], null);
+
+                variants = baseFace._simulatedVariants!;
+            }
+
+            var index = (int)simulations - 1;
+
+            if (Volatile.Read(ref variants[index]) is { } existing)
+            {
+                return existing;
+            }
+
+            // A variant owns nothing, so a racer that loses the slot drops its instance safely.
+            var created = new GlyphTypeface(baseFace, simulations);
+
+            return Interlocked.CompareExchange(ref variants[index], created, null) ?? created;
+        }
+
+        /// <summary>
+        /// Gets the default-instance face that owns the resources this face shares with its
+        /// variation clones and simulated variants. Disposing it releases all of them.
+        /// </summary>
+        internal GlyphTypeface RootTypeface
+        {
+            get
+            {
+                var face = _simulationSource ?? this;
+
+                return face._sourceTypeface ?? face;
+            }
         }
 
         public void Dispose()
@@ -3027,6 +3192,21 @@ namespace Avalonia.Media
                     entry.Value.Dispose();
                 }
                 cache.Clear();
+            }
+
+            var variants = _simulatedVariants;
+            if (variants is not null)
+            {
+                for (var i = 0; i < variants.Length; i++)
+                {
+                    Interlocked.Exchange(ref variants[i], null)?.Dispose();
+                }
+            }
+
+            // A simulated variant shares every resource with its source and releases none.
+            if (_simulationSource is not null)
+            {
+                return;
             }
 
             // Cascade: the glyph typeface releases its shaper typeface unless it shares its source's,

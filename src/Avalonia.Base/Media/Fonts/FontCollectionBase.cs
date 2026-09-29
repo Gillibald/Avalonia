@@ -2099,9 +2099,11 @@ namespace Avalonia.Media.Fonts
         {
             foreach (var glyphTypefaces in _glyphTypefaceCache.Values)
             {
+                // Variation clones and simulated variants are registered next to their faces but
+                // share the root's resources, so the root releases them all exactly once.
                 foreach (var pair in glyphTypefaces)
                 {
-                    pair.Value?.Dispose();
+                    pair.Value?.RootTypeface.Dispose();
                 }
             }
 
