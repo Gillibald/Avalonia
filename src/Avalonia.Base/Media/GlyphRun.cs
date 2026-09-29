@@ -893,8 +893,11 @@ namespace Avalonia.Media
             // than through the platform interface: every backend gets the mask-path floor
             // without work of its own, and the backend-specific fallbacks (the Skia blob,
             // the vector tier) attach at draw time. Typefaces with nothing to rasterize
-            // (no outlines, no strikes) keep the backend implementation.
-            if (Fonts.Rasterization.ColorGlyphRunSplitter.IsManagedTextRasterization() &&
+            // (no outlines, no strikes) keep the backend implementation. Varied clones take
+            // the managed run in every mode: a backend face cannot be varied, so the backend
+            // implementation would draw the default instance.
+            if ((Fonts.Rasterization.ColorGlyphRunSplitter.IsManagedTextRasterization() ||
+                 !GlyphTypeface.VariationPosition.IsDefault) &&
                 (GlyphTypeface.OutlineType != GlyphOutlineType.None || GlyphTypeface.BitmapSource is not null))
             {
                 _platformImpl = RefCountable.Create<IGlyphRunImpl>(
