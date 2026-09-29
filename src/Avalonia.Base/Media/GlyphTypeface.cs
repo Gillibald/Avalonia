@@ -2117,6 +2117,83 @@ namespace Avalonia.Media
         /// per-glyph contract the single <see cref="TryGetGlyphMetrics(ushort, out GlyphMetrics)"/> path
         /// and the COLR v1 paint-graph extents fallback need.
         /// </summary>
+        /// <summary>
+        /// Ink bounds for a color glyph in font units (y-up): the COLR v1 clip box — or the
+        /// built paint-graph drawing's extent when the font omits one — or the union of the
+        /// v0 layer outlines. Color ink routinely exceeds the base outline's box; a run that
+        /// declares base bounds under-invalidates and clips color glyphs on partial redraws.
+        /// </summary>
+        internal bool TryGetColorGlyphInkBounds(ushort glyphIndex, out GlyphBounds box)
+        {
+            box = default;
+
+            if (_colrTable is null)
+            {
+                return false;
+            }
+
+            if (_colrTable.TryGetBaseGlyphV1Record(glyphIndex, out _))
+            {
+                ReadOnlySpan<float> coords = _activeCoords ?? ReadOnlySpan<float>.Empty;
+
+                if (_colrTable.TryGetClipBox(glyphIndex, coords, out var clip))
+                {
+                    // Clip boxes are parsed in font space, y-up — a direct repackage.
+                    box = new GlyphBounds(
+                        ClampToShort(Math.Floor(clip.X)), ClampToShort(Math.Floor(clip.Y)),
+                        ClampToShort(Math.Ceiling(clip.Right)), ClampToShort(Math.Ceiling(clip.Bottom)));
+                    return true;
+                }
+
+                // No clip box: the built drawing knows its extent. Drawing space is y-down
+                // around the glyph origin, so the box flips back into font space. The drawing
+                // is cached, and a v1 glyph on a managed run gets built for drawing anyway, so
+                // this pre-warms rather than duplicates work.
+                if (GetGlyphDrawing(glyphIndex) is { } drawing)
+                {
+                    var b = drawing.Bounds;
+
+                    box = new GlyphBounds(
+                        ClampToShort(Math.Floor(b.X)), ClampToShort(Math.Floor(-b.Bottom)),
+                        ClampToShort(Math.Ceiling(b.Right)), ClampToShort(Math.Ceiling(-b.Y)));
+                    return true;
+                }
+            }
+
+            if (_cpalTable is not null && _colrTable.TryGetBaseGlyphRecord(glyphIndex, out var record))
+            {
+                var hasInk = false;
+                var minX = short.MaxValue;
+                var minY = short.MaxValue;
+                var maxX = short.MinValue;
+                var maxY = short.MinValue;
+
+                for (var layer = 0; layer < record.NumLayers; layer++)
+                {
+                    if (_colrTable.TryGetLayerRecord(record.FirstLayerIndex + layer, out var layerRecord) &&
+                        TryGetGlyphInkBounds(layerRecord.GlyphIndex, out var layerBounds))
+                    {
+                        hasInk = true;
+                        minX = Math.Min(minX, layerBounds.XMin);
+                        minY = Math.Min(minY, layerBounds.YMin);
+                        maxX = Math.Max(maxX, layerBounds.XMax);
+                        maxY = Math.Max(maxY, layerBounds.YMax);
+                    }
+                }
+
+                if (hasInk)
+                {
+                    box = new GlyphBounds(minX, minY, maxX, maxY);
+                    return true;
+                }
+            }
+
+            return false;
+
+            static short ClampToShort(double value)
+                => (short)Math.Clamp(value, short.MinValue, short.MaxValue);
+        }
+
         internal bool TryGetGlyphInkBounds(ushort glyph, out GlyphBounds box)
         {
             bool found;
