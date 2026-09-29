@@ -328,6 +328,63 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Bold_Italic_Resolved_After_Bold_Should_Keep_The_Bold_Simulation()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                using var fontCollection = new CollectionFaceFontCollection();
+
+                fontCollection.AddCollectionFace(faceIndex: 1);
+
+                Assert.True(fontCollection.TryGetGlyphTypeface(
+                    "DejaVu Sans", FontStyle.Normal, FontWeight.Bold, FontStretch.Normal, out var bold));
+
+                Assert.Equal(FontSimulations.Bold, bold.FontSimulations);
+
+                // The cached bold synthetic is nearer to bold italic than the regular face, so
+                // bold italic is synthesised from it.
+                Assert.True(fontCollection.TryGetGlyphTypeface(
+                    "DejaVu Sans", FontStyle.Italic, FontWeight.Bold, FontStretch.Normal, out var boldItalic));
+
+                AssertBoldItalicSynthetic(boldItalic);
+            }
+        }
+
+        [Theory]
+        [InlineData(FontStyle.Normal, FontWeight.Bold)]
+        [InlineData(FontStyle.Italic, FontWeight.Normal)]
+        public void Synthetic_Typeface_Over_A_Synthetic_Source_Should_Keep_Its_Simulations(
+            FontStyle firstStyle, FontWeight firstWeight)
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                using var fontCollection = new CollectionFaceFontCollection();
+
+                var source = fontCollection.AddCollectionFace(faceIndex: 1);
+
+                Assert.True(fontCollection.TryCreateSyntheticGlyphTypeface(
+                    source, firstStyle, firstWeight, FontStretch.Normal, out var first));
+
+                Assert.NotEqual(FontSimulations.None, first.FontSimulations);
+
+                Assert.True(fontCollection.TryCreateSyntheticGlyphTypeface(
+                    first, FontStyle.Italic, FontWeight.Bold, FontStretch.Normal, out var boldItalic));
+
+                AssertBoldItalicSynthetic(boldItalic);
+            }
+        }
+
+        private static void AssertBoldItalicSynthetic(GlyphTypeface glyphTypeface)
+        {
+            const FontSimulations expected = FontSimulations.Bold | FontSimulations.Oblique;
+
+            Assert.Equal(expected, glyphTypeface.FontSimulations);
+            Assert.Equal(expected, ((SkiaTypeface)glyphTypeface.PlatformTypeface).FontSimulations);
+            Assert.Equal(FontWeight.Bold, glyphTypeface.Weight);
+            Assert.Equal(FontStyle.Italic, glyphTypeface.Style);
+        }
+
         /// <summary>
         /// Collection holding a single face of a TrueType collection, the shape a platform font
         /// manager produces when it resolves a family to a face other than the first in a .ttc file.
