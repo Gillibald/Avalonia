@@ -62,6 +62,123 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(rmse <= 0.045, $"scale {scale}: managed vs backend RMSE {rmse:0.0000} exceeds 0.045");
         }
 
+        [Theory]
+        [InlineData(FontSimulations.Bold, 1.0)]
+        [InlineData(FontSimulations.Oblique, 1.0)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique, 1.0)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique, 2.0)]
+        public void Managed_Simulations_Shear_And_Embolden_The_Regular_Rendering(FontSimulations simulations,
+            double scale)
+        {
+            const double emSize = 20;
+
+            using var scope = CreateEnvironment(out var regular);
+
+            var expected = RenderStems(regular, emSize, scale);
+            var actual = RenderStems(regular.WithSimulations(simulations), emSize, scale);
+
+            // Fake bold widens every stem by one stroke, which follows the documented size
+            // table: 1/24 of the em size at 9 px and below, 1/32 at 36 px and above, linear in
+            // between, taken at the layout em size and applied in device pixels.
+            var ratio = emSize <= 9 ? 1.0 / 24
+                : emSize >= 36 ? 1.0 / 32
+                : 1.0 / 24 + (emSize - 9) / (36 - 9) * (1.0 / 32 - 1.0 / 24);
+            var stroke = (simulations & FontSimulations.Bold) != 0 ? emSize * ratio * scale : 0;
+
+            // Oblique shears each row by its height above the baseline; the embolden grows a
+            // stem symmetrically and leaves its centre where it was.
+            var slant = (simulations & FontSimulations.Oblique) != 0 ? FontSimulationConstants.ObliqueSlant : 0;
+
+            var baseline = StemsBaseline * scale;
+            var xHeight = InterXHeight * emSize * scale;
+            var failures = new List<string>();
+            var rows = 0;
+
+            for (var y = 0; y < Height; y++)
+            {
+                var height = baseline - (y + 0.5);
+
+                // The straight part of the stems only: bowls, shoulders and stem ends change
+                // their horizontal extent under an embolden in ways a row cannot isolate.
+                if (height < 0.3 * xHeight || height > 0.6 * xHeight)
+                {
+                    continue;
+                }
+
+                var regularStems = Spans(expected, y);
+                var simulatedStems = Spans(actual, y);
+
+                rows++;
+
+                if (regularStems.Count != simulatedStems.Count)
+                {
+                    failures.Add($"row {y}: {simulatedStems.Count} stems instead of {regularStems.Count}");
+                    continue;
+                }
+
+                for (var i = 0; i < regularStems.Count; i++)
+                {
+                    var widened = simulatedStems[i].Ink - regularStems[i].Ink;
+                    var shifted = simulatedStems[i].Centroid - regularStems[i].Centroid;
+
+                    if (Math.Abs(widened - stroke) > 0.1 || Math.Abs(shifted - slant * height) > 0.2)
+                    {
+                        failures.Add(FormattableString.Invariant(
+                            $"row {y} stem {i}: {widened:0.00} px wider (table {stroke:0.00}), moved {shifted:0.00} px (slant {slant * height:0.00})"));
+                    }
+                }
+            }
+
+            Assert.True(rows >= 2 * scale, $"only {rows} rows measured");
+            Assert.True(failures.Count == 0, $"{simulations} at scale {scale}:{Environment.NewLine}" +
+                string.Join(Environment.NewLine, failures));
+        }
+
+        [Fact]
+        public void Managed_Run_Bounds_Cover_Simulated_Ink()
+        {
+            using var regularScope = CreateEnvironment(out var regular);
+            using var regularRun = CreateRun(regular, TextRasterizationMode.Managed);
+
+            using var simulatedScope = CreateEnvironment(out var simulated,
+                FontSimulations.Bold | FontSimulations.Oblique);
+            using var simulatedRun = CreateRun(simulated, TextRasterizationMode.Managed);
+
+            // Emboldening grows the ink on every side and the slant pushes ascenders right, so
+            // the dirty region of the simulated run must be larger in both directions.
+            Assert.True(simulatedRun.Bounds.Top < regularRun.Bounds.Top);
+            Assert.True(simulatedRun.Bounds.Bottom > regularRun.Bounds.Bottom);
+            Assert.True(simulatedRun.Bounds.Right > regularRun.Bounds.Right + 1);
+
+            foreach (var simulations in new[]
+                     {
+                         FontSimulations.Bold, FontSimulations.Oblique, FontSimulations.Bold | FontSimulations.Oblique,
+                     })
+            {
+                using var scope = CreateEnvironment(out var typeface, simulations);
+                using var run = CreateRun(typeface, TextRasterizationMode.Managed);
+
+                // Every pixel the run inks lies inside its reported bounds, which antialiasing
+                // may bleed past by up to a pixel.
+                var covered = run.Bounds.Inflate(1);
+                var pixels = RenderScene(typeface, TextRasterizationMode.Managed, rotate: false);
+
+                for (var y = 0; y < Height; y++)
+                {
+                    for (var x = 0; x < Width; x++)
+                    {
+                        var i = (y * Width + x) * 4;
+
+                        if (pixels[i] < 250 || pixels[i + 1] < 250 || pixels[i + 2] < 250)
+                        {
+                            Assert.True(covered.Contains(new Point(x + 0.5, y + 0.5)),
+                                $"{simulations}: ink at ({x}, {y}) lies outside the run bounds {run.Bounds}");
+                        }
+                    }
+                }
+            }
+        }
+
         [Fact]
         public void Managed_Analytic_Intersections_Match_The_Backend_Within_Tolerance()
         {
@@ -254,6 +371,86 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        private const double StemsBaseline = 32;
+
+        // Inter's x-height is about 0.55 em.
+        private const double InterXHeight = 0.55;
+
+        /// <summary>
+        /// Upright stems between the baseline and the x-height, drawn through the managed mask
+        /// path without hinting.
+        /// </summary>
+        private static byte[] RenderStems(GlyphTypeface typeface, double emSize, double scale)
+        {
+            var designScale = emSize / typeface.Metrics.DesignEmHeight;
+            var infos = new List<GlyphInfo>();
+            var cluster = 0;
+
+            foreach (var c in "l m n l m n l m n")
+            {
+                var glyph = typeface.CharacterToGlyphMap[c];
+                typeface.TryGetGlyphMetrics(glyph, out var metrics);
+                infos.Add(new GlyphInfo(glyph, cluster++, metrics.AdvanceWidth * designScale));
+            }
+
+            using var run = new ManagedGlyphRunImpl(typeface, emSize, infos, new Point(8, StemsBaseline));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            canvas.Clear(SKColors.White);
+            context.PushTextOptions(new TextOptions { TextHintingMode = TextHintingMode.None });
+            context.Transform = Matrix.CreateScale(scale, scale);
+            context.DrawGlyphRun(Brushes.Black, run);
+
+            return bitmap.GetPixelSpan().ToArray();
+        }
+
+        /// <summary>
+        /// The ink spans of row <paramref name="y"/> of black text on white, each with its
+        /// coverage in pixels and its horizontal centroid. Coverage is read back through the
+        /// inverse of the text contrast table, so that it is linear in the covered area.
+        /// </summary>
+        private static List<(double Ink, double Centroid)> Spans(byte[] pixels, int y)
+        {
+            var table = MaskGamma.GetTable(0, 0, 0);
+            var spans = new List<(double Ink, double Centroid)>();
+            double ink = 0, moment = 0;
+
+            for (var x = 0; x <= Width; x++)
+            {
+                var coverage = 0.0;
+
+                if (x < Width)
+                {
+                    var shaded = 255 - pixels[(y * Width + x) * 4 + 1];
+                    var linear = 0;
+
+                    while (linear < 255 && table[linear] < shaded)
+                    {
+                        linear++;
+                    }
+
+                    coverage = linear / 255.0;
+                }
+
+                if (coverage > 0)
+                {
+                    ink += coverage;
+                    moment += coverage * (x + 0.5);
+                }
+                else if (ink > 0)
+                {
+                    spans.Add((ink, moment / ink));
+                    ink = moment = 0;
+                }
+            }
+
+            return spans;
+        }
+
         private static IGlyphRunImpl CreateBaseRun(GlyphTypeface typeface, string text = "Managed glyphs 123")
         {
             const double emSize = 16;
@@ -292,7 +489,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 : new GlyphRunImpl(typeface, emSize, infos, origin);
         }
 
-        private static IDisposable CreateEnvironment(out GlyphTypeface typeface)
+        private static IDisposable CreateEnvironment(out GlyphTypeface typeface,
+            FontSimulations simulations = FontSimulations.None)
         {
             var scope = AvaloniaLocator.EnterScope();
 
@@ -302,7 +500,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var bytes = LoadFontBytes("Inter-Regular.ttf");
             Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face));
 
-            typeface = new GlyphTypeface(face);
+            typeface = new GlyphTypeface(face).WithSimulations(simulations);
             return scope;
         }
 
@@ -318,6 +516,19 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.NotNull(directory);
 
             return File.ReadAllBytes(Path.Combine(directory!.FullName, "Avalonia.RenderTests", "Assets", fileName));
+        }
+
+        /// <summary>Total coverage of black text on white, summed over the color channels.</summary>
+        private static double Ink(byte[] pixels)
+        {
+            double sum = 0;
+
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                sum += 3 * 255 - pixels[i] - pixels[i + 1] - pixels[i + 2];
+            }
+
+            return sum / 255.0;
         }
 
         private static double Rmse(byte[] a, byte[] b)
