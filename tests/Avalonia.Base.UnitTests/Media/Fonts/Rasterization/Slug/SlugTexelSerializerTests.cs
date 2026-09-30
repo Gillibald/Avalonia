@@ -150,6 +150,34 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.Slug
         }
 
         [Fact]
+        public void Placement_Carries_The_Longest_Band_List_Per_Axis()
+        {
+            var data = Encode(sink => DrawStar(sink, 12, 0, 0), horizontalBandCount: 3, verticalBandCount: 5);
+            var serializer = new SlugTexelSerializer();
+
+            Assert.True(serializer.TryAdd(data, out var placement));
+
+            var longestHorizontal = 0;
+            var longestVertical = 0;
+
+            for (var band = 0; band < data.HorizontalBandCount; band++)
+            {
+                longestHorizontal = Math.Max(longestHorizontal, data.GetHorizontalBand(band).Length);
+            }
+
+            for (var band = 0; band < data.VerticalBandCount; band++)
+            {
+                longestVertical = Math.Max(longestVertical, data.GetVerticalBand(band).Length);
+            }
+
+            // The shader loops up to these bounds for every pixel of the glyph, so a smaller
+            // value would drop curves from the longest list.
+            Assert.NotEqual(longestHorizontal, longestVertical);
+            Assert.Equal(longestHorizontal, placement.LongestHorizontalList);
+            Assert.Equal(longestVertical, placement.LongestVerticalList);
+        }
+
+        [Fact]
         public void Oversized_Band_Lists_Are_Declined()
         {
             // A comb of 70 full-height verticals puts 70 curves into every horizontal band —

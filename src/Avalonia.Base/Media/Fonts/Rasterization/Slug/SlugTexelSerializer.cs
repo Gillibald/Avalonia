@@ -6,8 +6,9 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
     /// <summary>
     /// Where one glyph's payload landed in the shared textures, plus the per-glyph draw
     /// constants: the band-header location, band counts, the fill-rule flag, the em-space →
-    /// band-index transform (index = coordinate × scale + offset, clamped by the shader), and
-    /// the em-space control bounds the draw rect covers. Self-contained on purpose: a placement
+    /// band-index transform (index = coordinate × scale + offset, clamped by the shader), the
+    /// em-space control bounds the draw rect covers, and the longest band list per axis (the
+    /// shader's per-draw loop bound). Self-contained on purpose: a placement
     /// outlives the CPU payload it was serialized from, so a draw never needs the payload back.
     /// A default-valued placement (band counts of zero) is the documented "no ink" marker.
     /// </summary>
@@ -16,7 +17,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         public SlugGlyphPlacement(
             int glyphLocX, int glyphLocY, int horizontalBandCount, int verticalBandCount, bool evenOdd,
             float bandScaleX, float bandScaleY, float bandOffsetX, float bandOffsetY,
-            float minX, float minY, float maxX, float maxY)
+            float minX, float minY, float maxX, float maxY,
+            int longestHorizontalList, int longestVerticalList)
         {
             GlyphLocX = glyphLocX;
             GlyphLocY = glyphLocY;
@@ -31,6 +33,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             MinY = minY;
             MaxX = maxX;
             MaxY = maxY;
+            LongestHorizontalList = longestHorizontalList;
+            LongestVerticalList = longestVerticalList;
         }
 
         public int GlyphLocX { get; }
@@ -46,6 +50,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         public float MinY { get; }
         public float MaxX { get; }
         public float MaxY { get; }
+        public int LongestHorizontalList { get; }
+        public int LongestVerticalList { get; }
     }
 
     /// <summary>
@@ -175,9 +181,21 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
             bandCursor += headerLength;
 
+            var longestHorizontal = 0;
+            var longestVertical = 0;
+
             for (var band = 0; band < headerLength; band++)
             {
                 var length = GetBandListLength(data, hCount, band);
+
+                if (band < hCount)
+                {
+                    longestHorizontal = Math.Max(longestHorizontal, length);
+                }
+                else
+                {
+                    longestVertical = Math.Max(longestVertical, length);
+                }
 
                 if (length == 0)
                 {
@@ -228,7 +246,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 glyphLoc & ColumnMask, glyphLoc >> LogTextureWidth,
                 hCount, vCount, data.FillRule == FillRule.EvenOdd,
                 scaleX, scaleY, -data.MinX * scaleX, -data.MinY * scaleY,
-                data.MinX, data.MinY, data.MaxX, data.MaxY);
+                data.MinX, data.MinY, data.MaxX, data.MaxY,
+                longestHorizontal, longestVertical);
 
             return true;
         }

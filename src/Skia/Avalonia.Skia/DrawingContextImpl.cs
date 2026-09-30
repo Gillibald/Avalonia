@@ -536,6 +536,8 @@ namespace Avalonia.Skia
                 builder.Uniforms["glyphLoc"] = new SKPoint(placement.GlyphLocX, placement.GlyphLocY);
                 builder.Uniforms["bandCounts"] = new SKPoint(
                     placement.HorizontalBandCount, placement.VerticalBandCount);
+                builder.Uniforms["longestLists"] = new SKPoint(
+                    placement.LongestHorizontalList, placement.LongestVerticalList);
                 builder.Uniforms["bandTransform"] = new SKColorF(
                     placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY);
                 builder.Uniforms["evenOdd"] = placement.EvenOdd ? 1f : 0f;

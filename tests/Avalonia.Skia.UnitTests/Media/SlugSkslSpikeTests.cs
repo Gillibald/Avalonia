@@ -99,6 +99,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 ["pixelsPerEm"] = new[] { pixelsPerEmX, pixelsPerEmY },
                 ["glyphLoc"] = new[] { (float)placement.GlyphLocX, (float)placement.GlyphLocY },
                 ["bandCounts"] = new[] { (float)placement.HorizontalBandCount, (float)placement.VerticalBandCount },
+                ["longestLists"] = new[]
+                {
+                    (float)placement.LongestHorizontalList, (float)placement.LongestVerticalList,
+                },
                 ["bandTransform"] = new[]
                 {
                     placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY,

@@ -14,9 +14,9 @@ namespace Avalonia.Skia
     /// to the public domain — credit is required on distribution and given here), adapted to
     /// SkSL runtime-effect constraints: both textures are RGBA half-float at width 2048 read
     /// through raw nearest-sampled children (no integer samplers or texelFetch), the band-list
-    /// loops use the serializer's 64-curve cap as a constant bound with an early break, the
-    /// root-code table evaluates arithmetically, and fwidth becomes per-draw uniforms (constant
-    /// under an affine transform). The result compiles under the base runtime-effect profile —
+    /// loops use the serializer's 64-curve cap as a constant bound and exit only at the glyph's
+    /// longest list (a per-draw uniform), the root-code table evaluates arithmetically, and
+    /// fwidth becomes per-draw uniforms (constant under an affine transform). The result compiles under the base runtime-effect profile —
     /// no #version pragma — so every Skia backend accepts it.
     /// </summary>
     internal static class SlugGlyphEffect
@@ -27,6 +27,7 @@ uniform shader bandTex;
 uniform float2 pixelsPerEm;
 uniform float2 glyphLoc;
 uniform float2 bandCounts;
+uniform float2 longestLists;
 uniform float4 bandTransform;
 uniform float evenOdd;
 uniform half4 tint;
@@ -53,8 +54,13 @@ half4 main(float2 coord) {
     float2 hloc = CalcBandLoc(float(hband.y));
     float hcount = float(hband.x);
 
+    // Every texture read stays in uniform control flow: the loops exit only on the per-draw
+    // longest list, and entries past this band's list or curves wholly left of the pixel are
+    // masked out instead of ending the loop. A per-pixel exit ahead of the reads leaves the
+    // implicit derivatives of later samples undefined, and Mesa's llvmpipe and lavapipe then
+    // return empty gamma-table lookups for whole 2x2 quads, punching holes into the ink.
     for (int i = 0; i < 64; ++i) {
-        if (float(i) >= hcount) { break; }
+        if (float(i) >= longestLists.x) { break; }
         half4 entry = bandTex.eval(float2(hloc.x + float(i) + 0.5, hloc.y + 0.5));
         half4 c12 = curveTex.eval(float2(float(entry.x) + 0.5, float(entry.y) + 0.5));
         half4 c3 = curveTex.eval(float2(float(entry.x) + 1.5, float(entry.y) + 0.5));
@@ -62,9 +68,8 @@ half4 main(float2 coord) {
         float2 p2 = float2(c12.zw) - coord;
         float2 p3 = float2(c3.xy) - coord;
 
-        if (max(max(p1.x, p2.x), p3.x) * pixelsPerEm.x < -0.5) { break; }
-
-        float2 code = RootCode(p1.y, p2.y, p3.y);
+        float live = float(i) < hcount && max(max(p1.x, p2.x), p3.x) * pixelsPerEm.x >= -0.5 ? 1.0 : 0.0;
+        float2 code = RootCode(p1.y, p2.y, p3.y) * live;
 
         if (code.x + code.y > 0.0) {
             float a = p1.y - 2.0 * p2.y + p3.y;
@@ -92,7 +97,7 @@ half4 main(float2 coord) {
     float vcount = float(vband.x);
 
     for (int i = 0; i < 64; ++i) {
-        if (float(i) >= vcount) { break; }
+        if (float(i) >= longestLists.y) { break; }
         half4 entry = bandTex.eval(float2(vloc.x + float(i) + 0.5, vloc.y + 0.5));
         half4 c12 = curveTex.eval(float2(float(entry.x) + 0.5, float(entry.y) + 0.5));
         half4 c3 = curveTex.eval(float2(float(entry.x) + 1.5, float(entry.y) + 0.5));
@@ -100,9 +105,8 @@ half4 main(float2 coord) {
         float2 p2 = float2(c12.zw) - coord;
         float2 p3 = float2(c3.xy) - coord;
 
-        if (max(max(p1.y, p2.y), p3.y) * pixelsPerEm.y < -0.5) { break; }
-
-        float2 code = RootCode(p1.x, p2.x, p3.x);
+        float live = float(i) < vcount && max(max(p1.y, p2.y), p3.y) * pixelsPerEm.y >= -0.5 ? 1.0 : 0.0;
+        float2 code = RootCode(p1.x, p2.x, p3.x) * live;
 
         if (code.x + code.y > 0.0) {
             float a = p1.x - 2.0 * p2.x + p3.x;

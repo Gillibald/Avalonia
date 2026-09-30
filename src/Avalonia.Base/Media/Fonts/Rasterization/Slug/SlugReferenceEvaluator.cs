@@ -56,11 +56,12 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 var x3 = curve.X3 - emX;
                 var y3 = curve.Y3 - emY;
 
-                // Sorted descending by max x: once a curve is fully left of the pixel, the rest
-                // of the band is too.
+                // A curve fully left of the pixel is skipped, not a reason to stop: the shader
+                // masks it so its texture reads stay in uniform control flow. The list is sorted
+                // descending by max x, so every curve after it is skipped the same way.
                 if (MathF.Max(x1, MathF.Max(x2, x3)) * pixelsPerEmX < -0.5f)
                 {
-                    break;
+                    continue;
                 }
 
                 var code = CalcRootCode(y1, y2, y3);
@@ -106,7 +107,7 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
                 if (MathF.Max(y1, MathF.Max(y2, y3)) * pixelsPerEmY < -0.5f)
                 {
-                    break;
+                    continue;
                 }
 
                 var code = CalcRootCode(x1, x2, x3);
