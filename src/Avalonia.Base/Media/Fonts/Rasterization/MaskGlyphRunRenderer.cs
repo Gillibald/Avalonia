@@ -84,21 +84,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            if (run.GlyphTypeface.ColorTable is { HasV1Data: true } v1Colr)
+            if (HasColrV1OnlyGlyph(run))
             {
-                // COLR v1 rendering goes through the record-time drawing split, which is not
-                // wired yet: a glyph with only a v1 paint graph (no v0 layer fallback) must keep
-                // the backend's COLR rendering rather than draw as a monochrome outline.
-                var glyphs = run.GlyphIndices;
-
-                for (var i = 0; i < glyphs.Length; i++)
-                {
-                    if (v1Colr.TryGetBaseGlyphV1Record(glyphs[i], out _) &&
-                        !v1Colr.TryGetBaseGlyphRecord(glyphs[i], out _))
-                    {
-                        return false;
-                    }
-                }
+                return false;
             }
 
             var alpha = (byte)Math.Clamp(solid.Color.A * solid.Opacity + 0.5, 0, 255);
@@ -272,6 +260,33 @@ namespace Avalonia.Media.Fonts.Rasterization
             context.Transform = oldTransform;
 
             return true;
+        }
+
+        /// <summary>
+        /// Whether the run holds a glyph with only a COLR v1 paint graph. COLR v1 rendering goes
+        /// through the record-time drawing split, which is not wired yet: such a glyph (no v0
+        /// layer fallback) must keep the backend's COLR rendering rather than draw as a
+        /// monochrome outline.
+        /// </summary>
+        private static bool HasColrV1OnlyGlyph(ManagedGlyphRunImpl run)
+        {
+            if (run.GlyphTypeface.ColorTable is not { HasV1Data: true } v1Colr)
+            {
+                return false;
+            }
+
+            var glyphs = run.GlyphIndices;
+
+            for (var i = 0; i < glyphs.Length; i++)
+            {
+                if (v1Colr.TryGetBaseGlyphV1Record(glyphs[i], out _) &&
+                    !v1Colr.TryGetBaseGlyphRecord(glyphs[i], out _))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void GetPartRects(in RunMaskPart part, int originX, int originY,

@@ -9,9 +9,12 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// horizontal motion cycles the four origin phases. <see cref="Tint"/> is the premultiplied
     /// BGRA of a solid foreground, or zero for the untinted alpha variant (zero is not a
     /// drawable premultiplied tint, so the sentinel cannot collide). Opacity is deliberately
-    /// absent — it rides the draw call, so fades reuse the cached mask (D7).
+    /// absent — it rides the draw call, so fades reuse the cached mask (D7). A transformed run
+    /// also carries its quantized linear part and a vertical origin phase; upright runs leave
+    /// both at their defaults.
     /// </summary>
-    internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true, bool PenSnap = false);
+    internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true, bool PenSnap = false,
+        GlyphMaskTransform Transform = default, byte OriginPhaseY = 0);
 
     /// <summary>
     /// The portable subpixel draw payload: per-channel blending without backend support

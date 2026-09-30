@@ -27,6 +27,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private float[] _positions;   // interleaved x,y pairs, DIP relative to the baseline origin
         private readonly int _count;
         private RunMaskCache? _runMasks;
+        private RunMaskCache? _transformedRunMasks;
         private bool _disposed;
 
         public ManagedGlyphRunImpl(GlyphTypeface glyphTypeface, double fontRenderingEmSize,
@@ -128,6 +129,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The per-run composed-mask cache; created on first use by the renderer.</summary>
         internal RunMaskCache RunMasks => _runMasks ??= new RunMaskCache();
+
+        /// <summary>
+        /// The composed masks of rotated, skewed or anisotropically scaled draws, kept apart from
+        /// <see cref="RunMasks"/> so transformed variants never evict the upright ones.
+        /// </summary>
+        internal RunMaskCache TransformedRunMasks => _transformedRunMasks ??= new RunMaskCache();
 
         [ThreadStatic]
         private static GlyphPathBuilder? t_intersectionScratch;
@@ -412,6 +419,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _runMasks?.Dispose();
             _runMasks = null;
+            _transformedRunMasks?.Dispose();
+            _transformedRunMasks = null;
 
             SlugRunArtifact?.Dispose();
             SlugRunArtifact = null;
