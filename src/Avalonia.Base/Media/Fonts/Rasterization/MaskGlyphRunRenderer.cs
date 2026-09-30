@@ -317,8 +317,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Splits a composed union of <paramref name="width"/> columns into equal-width chunks
-        /// of at most <paramref name="maxSize"/> columns; the last chunk takes the remainder.
+        /// Splits a composed union of <paramref name="width"/> columns (or rows) into equal
+        /// chunks of at most <paramref name="maxSize"/>; the last chunk takes the remainder.
         /// </summary>
         private static int GetChunkCount(int width, int maxSize, out int chunkWidth)
         {

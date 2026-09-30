@@ -80,12 +80,13 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     /// <remarks>
     /// A run wider than the drawing context's run-mask bound is split into several parts, each
-    /// covering a disjoint range of device columns over the full height of the composed union.
-    /// Every part composes every glyph whose mask reaches into its columns, clipped at the part
-    /// edges, and each pixel's value depends only on the glyphs covering that pixel, in run
-    /// order. Every pixel therefore holds exactly the value a single mask would hold, and since
-    /// the parts do not overlap, each destination pixel is blended once. Glyph ink crossing a
-    /// part edge, overlapping neighbours and kerning need no special boundary rule.
+    /// covering a disjoint range of device columns over the full height of the composed union;
+    /// a transformed run can also be taller than the bound and splits into disjoint tiles in
+    /// both axes. Every part composes every glyph whose mask reaches into it, clipped at the
+    /// part edges, and each pixel's value depends only on the glyphs covering that pixel, in
+    /// run order. Every pixel therefore holds exactly the value a single mask would hold, and
+    /// since the parts do not overlap, each destination pixel is blended once. Glyph ink
+    /// crossing a part edge, overlapping neighbours and kerning need no special boundary rule.
     /// </remarks>
     internal sealed class RunMask : IDisposable
     {
@@ -97,7 +98,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             _parts = parts;
         }
 
-        /// <summary>The realized parts, left to right.</summary>
+        /// <summary>The realized parts, left to right, then top to bottom.</summary>
         public ReadOnlySpan<RunMaskPart> Parts => _parts;
 
         public void Dispose()

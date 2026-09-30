@@ -189,31 +189,37 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var width = maxX - minX;
                 var height = maxY - minY;
 
-                if (height > maxSize ||
-                    (long)width * height * (alphaContext is null ? 4 : 1) > MaxRunMaskBytes)
+                if ((long)width * height * (alphaContext is null ? 4 : 1) > MaxRunMaskBytes)
                 {
                     return false;
                 }
 
+                // Rotated and large text grows in both axes, so the union splits into tiles of
+                // at most the bound each way, row by row.
                 var columns = GetChunkCount(width, maxSize, out var tileWidth);
-                var parts = new RunMaskPart[columns];
+                var rows = GetChunkCount(height, maxSize, out var tileHeight);
+                var parts = new RunMaskPart[columns * rows];
                 var created = 0;
                 var scratch = t_scratch ??= new GlyphPathBuilder();
                 var state = (typeface, scratch);
 
                 try
                 {
-                    for (var column = 0; column < columns; column++)
+                    for (var row = 0; row < rows; row++)
                     {
-                        var tileX = minX + column * tileWidth;
-                        var tileY = minY;
-                        var w = Math.Min(tileWidth, maxX - tileX);
-                        var h = height;
+                        var tileY = minY + row * tileHeight;
+                        var h = Math.Min(tileHeight, maxY - tileY);
 
-                        parts[created++] = alphaContext is null
-                            ? ComposeTransformedTintedTile(typeface, state, items, itemCount, tileX, tileY, w, h)
-                            : ComposeTransformedAlphaTile(typeface, state, alphaContext, items, itemCount,
-                                tileX, tileY, w, h);
+                        for (var column = 0; column < columns; column++)
+                        {
+                            var tileX = minX + column * tileWidth;
+                            var w = Math.Min(tileWidth, maxX - tileX);
+
+                            parts[created++] = alphaContext is null
+                                ? ComposeTransformedTintedTile(typeface, state, items, itemCount, tileX, tileY, w, h)
+                                : ComposeTransformedAlphaTile(typeface, state, alphaContext, items, itemCount,
+                                    tileX, tileY, w, h);
+                        }
                     }
 
                     runMask = new RunMask(parts);
