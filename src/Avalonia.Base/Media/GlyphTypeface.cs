@@ -2203,6 +2203,12 @@ namespace Avalonia.Media
                 return false;
             }
 
+            // Colour glyphs are never simulated, so neither is the ink of their layers.
+            if (FontSimulations != FontSimulations.None)
+            {
+                return UnsimulatedTypeface.TryGetColorGlyphInkBounds(glyphIndex, out box);
+            }
+
             if (_colrTable.TryGetBaseGlyphV1Record(glyphIndex, out _))
             {
                 ReadOnlySpan<float> coords = _activeCoords ?? ReadOnlySpan<float>.Empty;
@@ -2933,8 +2939,10 @@ namespace Avalonia.Media
         /// </remarks>
         private GlyphBounds SimulateBounds(ushort glyphIndex, GlyphBounds bounds)
         {
-            // An empty glyph has no ink to embolden or slant.
-            if (FontSimulations == FontSimulations.None || (bounds.Width == 0 && bounds.Height == 0))
+            // An empty glyph has no ink to embolden or slant, and colour glyphs are never
+            // simulated.
+            if (FontSimulations == FontSimulations.None || (bounds.Width == 0 && bounds.Height == 0) ||
+                IsColorGlyph(glyphIndex))
             {
                 return bounds;
             }
@@ -3157,9 +3165,12 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Emits a glyph's outline, with this face's simulations applied, in font design-unit space.
+        /// A colour glyph's outline is never simulated, like the glyph itself.
         /// </summary>
         private bool TryBuildOutline(ushort glyphIndex, IGeometryContext context)
-            => TryBuildGlyphContours(glyphIndex, SimulationTransform, context, EmboldenStrength);
+            => FontSimulations != FontSimulations.None && IsColorGlyph(glyphIndex)
+                ? TryBuildGlyphContours(glyphIndex, Matrix.Identity, context)
+                : TryBuildGlyphContours(glyphIndex, SimulationTransform, context, EmboldenStrength);
 
         /// <summary>
         /// Builds the glyph's outline contours into an arbitrary geometry sink from whichever

@@ -93,7 +93,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     // A simulated face reports the ink of its simulated outlines, emboldened with
                     // the strongest stroke the renderer uses at any size, so the box already
-                    // contains the device-space simulation the masks apply after hinting.
+                    // contains the device-space simulation the masks apply after hinting. Colour
+                    // glyphs are never simulated and report the unsimulated face's box.
                     runBounds = runBounds.Union(new Rect(
                         x + box.XMin * scale,
                         y - box.YMax * scale,
@@ -174,7 +175,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 scratch.Reset();
 
-                if (simulated)
+                // Colour glyphs are never simulated, and their boxes above are unsimulated too.
+                if (simulated && !_glyphTypeface.IsColorGlyph(_indices[i]))
                 {
                     // The slant pivots on the glyph origin, so the outline is simulated before
                     // it moves to its pen position.
