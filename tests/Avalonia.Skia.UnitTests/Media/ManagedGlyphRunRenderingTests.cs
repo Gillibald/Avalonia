@@ -8,6 +8,7 @@ using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
 using Avalonia.Skia.Helpers;
+using Avalonia.UnitTests;
 using SkiaSharp;
 using Xunit;
 
@@ -259,6 +260,138 @@ namespace Avalonia.Skia.UnitTests.Media
             GradientStops = { new GradientStop(Colors.Black, 0), new GradientStop(Colors.Black, 1) },
         };
 
+        [Theory]
+        [InlineData(FontSimulations.None)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
+        public void Rotated_Varied_Colr_Runs_Draw_Their_Colour_Layers(FontSimulations simulations)
+        {
+            using var scope = CreateVariedEnvironment(out _, simulations, managed: true);
+
+            // Rotated and painted with a gradient, both mask tiers decline the run and the varied
+            // face falls back to its managed outlines, which carry no colour: the colour glyph
+            // must still paint its own drawing at the run's instance, exactly as the unsimulated
+            // face draws it. Its layer is in a palette colour, so the foreground does not reach it.
+            var typeface = CreateVariedColrTypeface(simulations, out var colorGlyph);
+
+            var actual = RenderVariedColr(typeface, colorGlyph, (context, run) =>
+                context.DrawGlyphRun(GradientBlack, run.PlatformImpl.Item));
+            var expected = RenderVariedColr(CreateVariedColrTypeface(FontSimulations.None, out _), colorGlyph,
+                DrawColourDrawings);
+
+            AssertSameColourGlyph(expected, actual, $"{simulations}");
+        }
+
+        private static GlyphTypeface CreateVariedColrTypeface(FontSimulations simulations, out ushort colorGlyph)
+        {
+            var baseFont = SyntheticFont.FromBytes(LoadFontBytes("InterVariable.ttf"));
+            var probe = baseFont.CreateGlyphTypeface();
+
+            colorGlyph = probe.CharacterToGlyphMap['H'];
+            var layerGlyph = probe.CharacterToGlyphMap['O'];
+
+            // COLR v0: the base glyph paints one layer on palette entry 0 (red).
+            var colr = new BigEndianBuffer();
+            colr.UInt16(0).UInt16(1).UInt32(14).UInt32(20).UInt16(1)
+                .UInt16(colorGlyph).UInt16(0).UInt16(1)
+                .UInt16(layerGlyph).UInt16(0);
+
+            var bytes = ColrTestFont.Graft(baseFont, colr.ToArray(),
+                ColrTestFont.Cpal(new[] { new[] { Colors.Red } })).ToBytes();
+
+            Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face), "the grafted font did not load");
+
+            return new GlyphTypeface(face)
+                .WithVariations(FontVariationSettings.Parse("wght=900"))
+                .WithSimulations(simulations);
+        }
+
+        private static byte[] RenderVariedColr(GlyphTypeface typeface, ushort colorGlyph,
+            Action<DrawingContextImpl, GlyphRun> draw)
+        {
+            const double emSize = 32;
+
+            typeface.TryGetGlyphMetrics(colorGlyph, out var metrics);
+
+            var infos = new List<GlyphInfo>
+            {
+                new(colorGlyph, 0, metrics.AdvanceWidth * emSize / typeface.Metrics.DesignEmHeight),
+            };
+
+            using var run = new GlyphRun(typeface, emSize, default, infos, new Point(24, 48));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            canvas.Clear(SKColors.White);
+            context.Transform = Matrix.CreateRotation(0.2) * Matrix.CreateTranslation(10, -14);
+
+            draw(context, run);
+
+            return bitmap.GetPixelSpan().ToArray();
+        }
+
+        /// <summary>
+        /// Draws each glyph of <paramref name="run"/> from its own colour drawing at its pen
+        /// position and nothing else: the unsimulated colour glyph a run must reproduce.
+        /// </summary>
+        private static void DrawColourDrawings(DrawingContextImpl context, GlyphRun run)
+        {
+            using var drawingContext = new PlatformDrawingContext(context, ownsImpl: false);
+
+            var typeface = run.GlyphTypeface;
+            var scale = run.FontRenderingEmSize / typeface.Metrics.DesignEmHeight;
+            var penX = run.BaselineOrigin.X;
+
+            foreach (var info in run.GlyphInfos)
+            {
+                var drawing = typeface.GetGlyphDrawing(info.GlyphIndex);
+
+                Assert.NotNull(drawing);
+
+                using (drawingContext.PushTransform(Matrix.CreateScale(scale, scale) *
+                                                    Matrix.CreateTranslation(penX + info.GlyphOffset.X,
+                                                        run.BaselineOrigin.Y + info.GlyphOffset.Y)))
+                {
+                    drawing!.Draw(drawingContext, default);
+                }
+
+                penX += info.GlyphAdvance;
+            }
+        }
+
+        private static void AssertSameColourGlyph(byte[] expected, byte[] actual, string label)
+        {
+            var differing = 0;
+
+            for (var i = 0; i < expected.Length; i++)
+            {
+                if (expected[i] != actual[i])
+                {
+                    differing++;
+                }
+            }
+
+            Assert.True(CountRed(expected) > 40, $"{label}: the colour drawing painted {CountRed(expected)} red pixels");
+            Assert.True(differing == 0, $"{label}: {differing} channel values differ from the colour glyph's drawing");
+        }
+
+        private static int CountRed(byte[] pixels)
+        {
+            var red = 0;
+
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                if (pixels[i + 2] > 150 && pixels[i] < 100 && pixels[i + 1] < 100)
+                {
+                    red++;
+                }
+            }
+
+            return red;
+        }
+
         private static void AssertSameInstance(byte[] expected, byte[] actual, FontSimulations simulations)
         {
             var rmse = Rmse(expected, actual);
@@ -324,7 +457,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 });
 
             var bytes = LoadFontBytes("InterVariable.ttf");
-            Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face));
+            Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face), "the grafted font did not load");
 
             typeface = new GlyphTypeface(face)
                 .WithVariations(FontVariationSettings.Parse("wght=900"))
@@ -705,7 +838,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
 
             var bytes = LoadFontBytes("Inter-Regular.ttf");
-            Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face));
+            Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face), "the grafted font did not load");
 
             typeface = new GlyphTypeface(face).WithSimulations(simulations);
             return scope;
