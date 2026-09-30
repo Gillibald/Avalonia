@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 
@@ -14,6 +15,42 @@ namespace Avalonia.Skia
         // The release callback only exists to keep the page array reachable until Skia drops
         // its last reference to an image wrapping it; the array is its context object.
         private static readonly SKImageRasterReleaseDelegate s_releasePage = static (_, _) => { };
+
+        [ThreadStatic]
+        private static SKPixmap? t_blitPixmap;
+
+        bool ITransformedGlyphContext.TryGetBlitTarget(out GlyphBlitTarget target)
+        {
+            target = default;
+
+            // Writing the surface directly is only equivalent to drawing through the canvas
+            // when the canvas would write the same pixels 1:1: no layer or opacity between the
+            // draw and the surface, source-over blending, device coordinates equal to canvas
+            // coordinates, and a clip that is exactly its bounds.
+            if (_grContext is not null || Surface is null || _saveLayerDepth != 0 || _currentOpacity != 1 ||
+                _postTransform.HasValue || !Canvas.IsClipRect ||
+                RenderOptions.BitmapBlendingMode is not (BitmapBlendingMode.Unspecified or BitmapBlendingMode.SourceOver))
+            {
+                return false;
+            }
+
+            var pixmap = t_blitPixmap ??= new SKPixmap();
+
+            if (!Surface.PeekPixels(pixmap) ||
+                pixmap.ColorType is not (SKColorType.Bgra8888 or SKColorType.Rgba8888) ||
+                pixmap.AlphaType is not (SKAlphaType.Premul or SKAlphaType.Opaque))
+            {
+                return false;
+            }
+
+            var clip = Canvas.DeviceClipBounds;
+
+            target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, pixmap.Width, pixmap.Height,
+                new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
+                pixmap.ColorType == SKColorType.Rgba8888);
+
+            return true;
+        }
 
         IDisposable ITransformedGlyphContext.CreateAtlasBatch(ReadOnlySpan<GlyphAtlasSprite> sprites,
             GlyphMask? standalone)

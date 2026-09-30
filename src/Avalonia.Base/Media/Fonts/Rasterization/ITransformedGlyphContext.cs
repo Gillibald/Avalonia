@@ -38,6 +38,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphRasterTarget RasterTarget { get; }
 
         /// <summary>
+        /// Grants direct write access to the raster surface when a draw may bypass the backend:
+        /// a CPU surface with no layer, no ambient opacity, no non-default blend mode and a
+        /// rectangular clip, drawn at device scale. Returns <c>false</c> otherwise, and the
+        /// caller draws through the backend.
+        /// </summary>
+        bool TryGetBlitTarget(out GlyphBlitTarget target);
+
+        /// <summary>
         /// Realizes the sprite arrays of one batch, sized exactly to <paramref name="sprites"/>
         /// so drawing the batch allocates nothing. With <paramref name="standalone"/> the batch
         /// draws from its own image of that mask (a glyph too large for an atlas page) instead

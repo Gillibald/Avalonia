@@ -108,6 +108,22 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The atlas the batches were built from.</summary>
         public GlyphMaskAtlas? BatchAtlas { get; private set; }
 
+        /// <summary>
+        /// The glyph masks the raster blitter reads, one per sprite; <c>null</c> until first
+        /// drawn on a raster context. Holding the masks keeps them valid after the glyph mask
+        /// cache evicts them, until the run rebuilds its sprites.
+        /// </summary>
+        public GlyphMask[]? Masks { get; internal set; }
+
+        /// <summary>
+        /// Pre-tinted per-sprite bitmaps for draws that cannot write the surface directly (a
+        /// layer, an opacity, a complex clip), tinted with <see cref="FallbackTint"/>.
+        /// </summary>
+        internal IDisposable?[]? FallbackImages { get; private set; }
+
+        /// <summary>The premultiplied BGRA tint <see cref="FallbackImages"/> were made with.</summary>
+        internal uint FallbackTint { get; private set; }
+
         public bool IsDisposed => _disposed;
 
         /// <summary>Bytes of the sprite arrays this set holds.</summary>
@@ -125,6 +141,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     {
                         cost += batch.Count * 32L;
                     }
+                }
+
+                if (Masks is not null)
+                {
+                    cost += (long)Masks.Length * IntPtr.Size;
                 }
 
                 return cost;
@@ -167,6 +188,43 @@ namespace Avalonia.Media.Fonts.Rasterization
             BatchAtlas = atlas;
         }
 
+        internal void SetFallbackImages(IDisposable?[] images, uint tint)
+        {
+            DisposeFallbackImages();
+
+            FallbackImages = images;
+            FallbackTint = tint;
+        }
+
+        private void DisposeFallbackImages()
+        {
+            if (FallbackImages is { } images)
+            {
+                // Sprites showing the same mask share one image.
+                for (var i = 0; i < images.Length; i++)
+                {
+                    var image = images[i];
+
+                    if (image is null)
+                    {
+                        continue;
+                    }
+
+                    image.Dispose();
+
+                    for (var j = i + 1; j < images.Length; j++)
+                    {
+                        if (ReferenceEquals(images[j], image))
+                        {
+                            images[j] = null;
+                        }
+                    }
+                }
+            }
+
+            FallbackImages = null;
+        }
+
         private void DisposeBatches()
         {
             if (_batches is { } batches)
@@ -190,6 +248,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _disposed = true;
             DisposeBatches();
+            DisposeFallbackImages();
         }
     }
 
