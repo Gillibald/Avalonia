@@ -66,9 +66,10 @@ half4 main(float2 coord) {
     // Every texture read stays in uniform control flow: the loops exit only on the per-draw
     // loop bound, and entries past this pixel's run or curves more than half a pixel behind
     // the pixel along its ray are masked out instead of ending the loop. Only the run's start
-    // and the ray direction vary per pixel. A per-pixel exit ahead of the reads leaves the
-    // implicit derivatives of later samples undefined, and Mesa's llvmpipe and lavapipe then
-    // return empty gamma-table lookups for whole 2x2 quads, punching holes into the ink.
+    // and the ray direction vary per pixel. Skia m119's runtime effects offer no
+    // derivative-free texture read: every child eval lowers to an implicit-LOD texture(), so a
+    // per-pixel exit would leave the reads inside the loops in non-uniform control flow, where
+    // their results are undefined.
     //
     // The backward ray gives the same winding: around closed contours the crossings of a whole
     // line sum to zero, so the crossings ahead of the pixel are minus those behind it, and

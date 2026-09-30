@@ -5,10 +5,17 @@ namespace Avalonia.Skia
 {
     /// <summary>
     /// Per-luminance-bucket <see cref="SKColorFilter"/>s applying the <see cref="MaskGamma"/>
-    /// coverage correction on the GPU paths: the table rides the alpha channel, where both the
-    /// A8 mask draw and the Slug tier's premultiplied-white shader output carry coverage.
-    /// Shared and never disposed — paints and composed filters take their own refs.
+    /// coverage correction to the A8 mask draw: the table rides the alpha channel, where the
+    /// mask carries coverage. Also the Slug tier's fallback when
+    /// <see cref="MaskGammaCurveFilters"/> cannot compile. Shared and never disposed; paints
+    /// and composed filters take their own refs.
     /// </summary>
+    /// <remarks>
+    /// The A8 draw keeps the table rather than the closed-form curve: on the raster pipeline
+    /// the table stage costs well under half of the runtime filter per mask, and a plain image
+    /// draw evaluates the table's texture reads in uniform control flow, so their implicit
+    /// derivatives are defined and the lookups return the table on the GPU too.
+    /// </remarks>
     internal static class MaskGammaFilters
     {
         private static readonly SKColorFilter?[] s_filters = new SKColorFilter?[MaskGamma.BucketCount];

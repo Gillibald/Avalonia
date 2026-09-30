@@ -39,12 +39,12 @@ namespace Avalonia.Skia
                 _filter?.Dispose();
 
                 // The shaders emit premultiplied white × coverage, so coverage sits in every
-                // channel; the gamma/contrast table corrects it first (inner), then the tint
-                // modulate applies color and alpha. The table filter is shared — composing
+                // channel; the gamma/contrast curve corrects it first (inner), then the tint
+                // modulate applies color and alpha. The curve filter is shared: composing
                 // refs it natively, so disposing the composite never invalidates it.
                 using var modulate = SKColorFilter.CreateBlendMode(new SKColor(tintArgb), SKBlendMode.Modulate);
 
-                _filter = SKColorFilter.CreateCompose(modulate, MaskGammaFilters.Get(
+                _filter = SKColorFilter.CreateCompose(modulate, MaskGammaCurveFilters.Get(
                     (byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb));
                 _filterTint = tintArgb;
             }

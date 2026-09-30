@@ -7,7 +7,9 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Fonts.Rasterization.Slug;
+using Avalonia.Rendering.SceneGraph;
 using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 using Xunit;
 
 namespace Avalonia.Skia.RenderTests
@@ -38,6 +40,64 @@ namespace Avalonia.Skia.RenderTests
             // Past 32 px per em each pixel walks only its side of the split band lists, so the
             // run start and ray direction vary per pixel inside a 2x2 quad.
             return AssertRotatedRunMatches(48, new Point(10, 60), 620, 110);
+        }
+
+        [Fact]
+        public async Task Closed_Form_Gamma_Filter_Matches_The_Mask_Gamma_Tables()
+        {
+            // One coverage ramp per luminance bucket through the Slug tint filter, on the CPU
+            // renderers and both Mesa GPU outputs; MaskGamma's tables are the specification.
+            var target = new GammaRampControl { Width = 256, Height = MaskGamma.BucketCount };
+
+            await RenderToFile(target);
+
+            AssertRampMatches("immediate");
+            AssertRampMatches("composited");
+
+            if (MesaSoftwareRenderer.GlEnabled)
+            {
+                AssertRampMatches("composited.gles");
+            }
+
+            if (MesaSoftwareRenderer.VulkanEnabled)
+            {
+                AssertRampMatches("composited.vulkan");
+            }
+        }
+
+        private void AssertRampMatches(string outputType,
+            [CallerMemberName] string testName = "")
+        {
+            using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(Path.Combine(OutputPath, $"{testName}.{outputType}.out.png"));
+
+            var maxError = 0;
+            var worst = "";
+
+            for (var bucket = 0; bucket < MaskGamma.BucketCount; bucket++)
+            {
+                var table = MaskGamma.GetTable(bucket);
+
+                for (var coverage = 0; coverage < 256; coverage++)
+                {
+                    var actual = image[coverage, bucket].A;
+                    var error = Math.Abs(actual - table[coverage]);
+
+                    if (error > maxError)
+                    {
+                        maxError = error;
+                        worst = FormattableString.Invariant(
+                            $" Worst: bucket {bucket}, coverage {coverage}: table {table[coverage]}, filter {actual}.");
+                    }
+                }
+
+                // The tables pin both endpoints: zero coverage never leaks ink, full stays opaque.
+                Assert.True(image[0, bucket].A == 0 && image[255, bucket].A == 255,
+                    $"{outputType}: bucket {bucket} endpoints are {image[0, bucket].A} and {image[255, bucket].A}.");
+            }
+
+            Xunit.TestContext.Current.TestOutputHelper?.WriteLine($"{outputType}: max error {maxError}.{worst}");
+
+            Assert.True(maxError <= 1, $"{outputType}: max error {maxError} levels.{worst}");
         }
 
         private async Task AssertRotatedRunMatches(double emSize, Point origin, int width, int height,
@@ -159,6 +219,63 @@ namespace Avalonia.Skia.RenderTests
             }
 
             return coverage;
+        }
+
+        private sealed class GammaRampControl : Control
+        {
+            public override void Render(DrawingContext context)
+                => context.Custom(new GammaRampOperation(new Rect(Bounds.Size)));
+        }
+
+        private sealed class GammaRampOperation : ICustomDrawOperation
+        {
+            public GammaRampOperation(Rect bounds) => Bounds = bounds;
+
+            public Rect Bounds { get; }
+
+            public bool HitTest(Point p) => false;
+
+            public bool Equals(ICustomDrawOperation? other) => false;
+
+            public void Dispose()
+            {
+            }
+
+            public void Render(ImmediateDrawingContext context)
+            {
+                var feature = context.TryGetFeature<ISkiaSharpApiLeaseFeature>();
+
+                Assert.NotNull(feature);
+
+                using var lease = feature!.Lease();
+
+                // The Slug shaders emit coverage as premultiplied white, so every channel is alpha.
+                var info = new SKImageInfo(256, MaskGamma.BucketCount, SKColorType.Rgba8888, SKAlphaType.Premul);
+                var ramp = new byte[info.BytesSize];
+
+                for (var i = 0; i < ramp.Length; i++)
+                {
+                    ramp[i] = (byte)(i / 4 % 256);
+                }
+
+                using var image = SKImage.FromPixelCopy(info, ramp, info.RowBytes);
+
+                for (var bucket = 0; bucket < MaskGamma.BucketCount; bucket++)
+                {
+                    // A gray whose luma lands mid-bucket, so the row exercises exactly that bucket.
+                    var gray = (uint)(bucket * 32 + 16);
+
+                    using var artifact = new SlugRunArtifact();
+                    using var paint = new SKPaint();
+
+                    paint.BlendMode = SKBlendMode.Src;
+                    paint.ColorFilter = artifact.GetFilter(0xFF000000 | gray << 16 | gray << 8 | gray);
+
+                    var row = new SKRect(0, bucket, 256, bucket + 1);
+
+                    lease.SkCanvas.DrawImage(image, row, row, new SKSamplingOptions(), paint);
+                }
+            }
         }
 
         private sealed class RotatedGlyphRunControl : Control

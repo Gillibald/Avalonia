@@ -94,6 +94,22 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [InlineData(Backend.NativeGl)]
+        [InlineData(Backend.Angle)]
+        public void The_Closed_Form_Gamma_Filter_Matches_The_Tables_On_Gpu(Backend backend)
+        {
+            using var gpu = GpuContext.TryCreate(backend, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
+
+            using var surface = SKSurface.Create(gpu!.GrContext, true, MaskGammaCurveFilterTests.RampInfo);
+
+            Assert.SkipWhen(surface is null, "GPU surface creation failed.");
+
+            MaskGammaCurveFilterTests.AssertMatchesTables(surface!, gpu.GrContext, backend.ToString());
+        }
+
+        [Theory]
         [InlineData(Backend.NativeGl, GRSurfaceOrigin.TopLeft, 30, 50, -30)]
         [InlineData(Backend.NativeGl, GRSurfaceOrigin.BottomLeft, 30, 50, -30)]
         [InlineData(Backend.Angle, GRSurfaceOrigin.TopLeft, 30, 50, -30)]
