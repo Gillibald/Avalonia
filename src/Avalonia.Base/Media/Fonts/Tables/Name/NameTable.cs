@@ -15,10 +15,12 @@ namespace Avalonia.Media.Fonts.Tables.Name
         internal static readonly OpenTypeTag Tag = OpenTypeTag.Parse(TableName);
 
         private const ushort USEnglishLanguageId = 0x0409;
+        private const ushort InvariantLanguageId = 0x007F;
+        private const ushort PrimaryLanguageMask = 0x03FF;
+        private const ushort EnglishPrimaryLanguageId = 0x0009;
+        private const ushort MacEnglishLanguageId = 0;
 
         private readonly NameRecord[] _names;
-        private string? _cachedFamilyName;
-        private string? _cachedTypographicFamilyName;
 
         internal NameTable(NameRecord[] names)
         {
@@ -50,21 +52,7 @@ namespace Avalonia.Media.Fonts.Tables.Name
         /// The name of the font.
         /// </value>
         public string FontFamilyName(ushort culture)
-        {
-            if (culture == USEnglishLanguageId && _cachedFamilyName is not null)
-            {
-                return _cachedFamilyName;
-            }
-
-            var value = GetNameById(culture, KnownNameIds.FontFamilyName);
-
-            if (culture == USEnglishLanguageId)
-            {
-                _cachedFamilyName = value;
-            }
-
-            return value;
-        }
+            => GetNameById(culture, KnownNameIds.FontFamilyName);
 
         /// <summary>
         /// Gets the name of the font.
@@ -75,50 +63,69 @@ namespace Avalonia.Media.Fonts.Tables.Name
         public string FontSubFamilyName(ushort culture)
             => GetNameById(culture, KnownNameIds.FontSubfamilyName);
 
+        /// <summary>
+        /// Gets the name with the given id, preferring the Windows record for <paramref name="culture"/>.
+        /// </summary>
+        /// <remarks>
+        /// Without an exact match, and always for the invariant culture, an English name is preferred:
+        /// US English, then any other English locale, then the Mac Roman English record, then a Unicode
+        /// platform record. Only when none of those exist does the first Windows record, then the first
+        /// record of any platform, win. Records are sorted by language ID, so taking the first Windows
+        /// record straight away would name a font with Chinese or Japanese records after those.
+        /// </remarks>
         public string GetNameById(ushort culture, KnownNameIds nameId)
         {
-            if (nameId == KnownNameIds.TypographicFamilyName && culture == USEnglishLanguageId && _cachedTypographicFamilyName is not null)
-            {
-                return _cachedTypographicFamilyName;
-            }
-
-            var languageId = culture;
-            NameRecord? usaVersion = null;
+            var hasExactLanguage = culture != InvariantLanguageId;
+            NameRecord? usEnglish = null;
+            NameRecord? otherEnglish = null;
+            NameRecord? macEnglish = null;
+            NameRecord? unicode = null;
             NameRecord? firstWindows = null;
             NameRecord? first = null;
 
             foreach (var name in _names)
             {
-                if (name.NameID == nameId)
+                if (name.NameID != nameId)
                 {
-                    first ??= name;
-                    if (name.Platform == PlatformID.Windows)
-                    {
-                        firstWindows ??= name;
-                        if (name.LanguageID == USEnglishLanguageId)
-                        {
-                            usaVersion ??= name;
-                        }
+                    continue;
+                }
 
-                        if (name.LanguageID == languageId)
+                first ??= name;
+
+                switch (name.Platform)
+                {
+                    case PlatformID.Windows:
+                    {
+                        if (hasExactLanguage && name.LanguageID == culture)
                         {
                             return name.GetValue();
                         }
+
+                        firstWindows ??= name;
+
+                        if (name.LanguageID == USEnglishLanguageId)
+                        {
+                            usEnglish ??= name;
+                        }
+                        else if ((name.LanguageID & PrimaryLanguageMask) == EnglishPrimaryLanguageId)
+                        {
+                            otherEnglish ??= name;
+                        }
+
+                        break;
                     }
+                    case PlatformID.Macintosh when name.LanguageID == MacEnglishLanguageId:
+                        macEnglish ??= name;
+                        break;
+                    case PlatformID.Unicode:
+                        unicode ??= name;
+                        break;
                 }
             }
 
-            var value = usaVersion?.GetValue() ??
-                       firstWindows?.GetValue() ??
-                       first?.GetValue() ??
-                       string.Empty;
+            var match = usEnglish ?? otherEnglish ?? macEnglish ?? unicode ?? firstWindows ?? first;
 
-            if (nameId == KnownNameIds.TypographicFamilyName && culture == USEnglishLanguageId)
-            {
-                _cachedTypographicFamilyName = value;
-            }
-
-            return value;
+            return match?.GetValue() ?? string.Empty;
         }
 
         public string GetNameById(ushort culture, ushort nameId)
