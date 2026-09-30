@@ -46,6 +46,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         bool TryGetBlitTarget(out GlyphBlitTarget target);
 
         /// <summary>
+        /// Draws a realized upright run mask from <see cref="IAlphaGlyphMaskContext"/> scaled
+        /// to <paramref name="destRect"/> with bilinear sampling, modulated by the straight ARGB
+        /// <paramref name="tintArgb"/> and the ambient opacity: the stand-in for rasterizing
+        /// during a zoom gesture. <paramref name="lcd"/> selects a subpixel mask.
+        /// </summary>
+        void DrawMaskStretched(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb, bool lcd);
+
+        /// <summary>
         /// Realizes the sprite arrays of one batch, sized exactly to <paramref name="sprites"/>
         /// so drawing the batch allocates nothing. With <paramref name="standalone"/> the batch
         /// draws from its own image of that mask (a glyph too large for an atlas page) instead

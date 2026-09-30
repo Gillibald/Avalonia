@@ -331,6 +331,25 @@ namespace Avalonia.Skia
         }
 
         void IAlphaGlyphMaskContext.DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb)
+            => DrawLcdMask(mask, sourceRect, destRect, tintArgb, new SKSamplingOptions());
+
+        void ITransformedGlyphContext.DrawMaskStretched(IDisposable mask, Rect sourceRect, Rect destRect,
+            uint tintArgb, bool lcd)
+        {
+            var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.None);
+
+            if (lcd)
+            {
+                DrawLcdMask(mask, sourceRect, destRect, tintArgb, sampling);
+            }
+            else
+            {
+                DrawAlphaMask(mask, sourceRect, destRect, tintArgb, sampling);
+            }
+        }
+
+        private void DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb,
+            SKSamplingOptions sampling)
         {
             CheckLease();
 
@@ -342,7 +361,7 @@ namespace Avalonia.Skia
             {
                 // Unreachable by policy — eligibility requires the compiled blender — but a
                 // driver losing the effect must not erase text silently.
-                ((IAlphaGlyphMaskContext)this).DrawAlphaMask(mask, sourceRect, destRect, tintArgb);
+                DrawAlphaMask(mask, sourceRect, destRect, tintArgb, sampling);
                 return;
             }
 
@@ -350,8 +369,9 @@ namespace Avalonia.Skia
 
             paint.Blender = blender;
 
-            // Masks are drawn 1:1 at device pixels; nearest sampling keeps coverage exact.
-            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), new SKSamplingOptions(), paint);
+            // Masks are drawn 1:1 at device pixels, where nearest sampling keeps coverage exact;
+            // only a stretched mask samples bilinearly.
+            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), sampling, paint);
             SKPaintCache.Shared.ReturnReset(paint);
         }
 
@@ -365,6 +385,10 @@ namespace Avalonia.Skia
         }
 
         void IAlphaGlyphMaskContext.DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb)
+            => DrawAlphaMask(mask, sourceRect, destRect, tintArgb, new SKSamplingOptions());
+
+        private void DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb,
+            SKSamplingOptions sampling)
         {
             CheckLease();
 
@@ -384,8 +408,9 @@ namespace Avalonia.Skia
             paint.ColorFilter = MaskGammaFilters.Get(
                 (byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb);
 
-            // Masks are drawn 1:1 at device pixels; nearest sampling keeps coverage exact.
-            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), new SKSamplingOptions(), paint);
+            // Masks are drawn 1:1 at device pixels, where nearest sampling keeps coverage exact;
+            // only a stretched mask samples bilinearly.
+            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), sampling, paint);
             SKPaintCache.Shared.ReturnReset(paint);
         }
 
@@ -1001,18 +1026,22 @@ namespace Avalonia.Skia
                 // only GPU contexts support. Declines of either fall through to the native blob.
                 if (MaskGlyphRunRenderer.TransformedTextRouting == TransformedTextRouting.Masks)
                 {
+                    // A run animating on a hardware GPU goes to the Slug tier from in there.
                     if (MaskGlyphRunRenderer.TryDrawTransformed(this, managedRun, foreground,
-                            effectiveTextOptions.TextRenderingMode))
+                            effectiveTextOptions.TextRenderingMode, out var drawnBySlug))
                     {
                         if (TextTierDiagnostics.CountTiers)
                         {
-                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
+                            System.Threading.Interlocked.Increment(ref drawnBySlug
+                                ? ref TextTierDiagnostics.SlugTierDraws
+                                : ref TextTierDiagnostics.TransformedMaskTierDraws);
                         }
 
                         if (TextTierDiagnostics.TintTiers)
                         {
-                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds,
-                                TextTierDiagnostics.TransformedMaskTierColor);
+                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, drawnBySlug
+                                ? TextTierDiagnostics.SlugTierColor
+                                : TextTierDiagnostics.TransformedMaskTierColor);
                         }
 
                         return;

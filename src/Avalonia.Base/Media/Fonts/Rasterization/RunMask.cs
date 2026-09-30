@@ -17,6 +17,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphMaskTransform Transform = default, byte OriginPhaseY = 0);
 
     /// <summary>
+    /// Which run mask an upright run's last static frame drew, and where: the key, the device
+    /// transform and the snapped origin pixel.
+    /// </summary>
+    internal readonly record struct SettledRunMask(RunMaskKey Key, Matrix Transform, int OriginX, int OriginY);
+
+    /// <summary>
     /// The portable subpixel draw payload: per-channel blending without backend support
     /// decomposes into two standard blits — a Multiply pass carrying the inverse corrected
     /// coverage and a Plus pass carrying the pre-tinted corrected coverage.

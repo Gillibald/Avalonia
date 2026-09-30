@@ -172,8 +172,25 @@ namespace Avalonia.Media.Fonts.Rasterization
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint, gridFit, penSnap);
 
             var cache = run.RunMasks;
+            var hit = cache.TryGet(key, out var runMask);
 
-            if (!cache.TryGet(key, out var runMask))
+            // An upright zoom gesture changes the scale every frame, so its masks would never be
+            // drawn twice. Where rasterizing each frame costs more than it gains (a CPU surface,
+            // a software GPU), the mask of the last static frame is drawn stretched to the new
+            // scale until the scale holds still; the first frame that repeats a scale
+            // rasterizes again. A hardware GPU keeps rasterizing, as that is cheap there.
+            if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.HardwareGpu } zoomContext &&
+                run.UprightChurn.Record(key.ScaleQ, default, hit) &&
+                run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
+                cache.TryGet(settled.Key, out var settledMask) && settled.Transform.TryInvert(out var inverse))
+            {
+                DrawStretchedRunMask(context, zoomContext, settledMask, settled, inverse * transform, mode,
+                    alphaContext, alpha, solid.Color);
+
+                return true;
+            }
+
+            if (!hit)
             {
                 // The bound only sizes the chunks, it is not part of the key: chunks partition
                 // the same pixels, so a mask composed for one context draws correctly on another.
@@ -194,6 +211,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 cache.Add(key, composed);
                 runMask = composed;
             }
+
+            run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
 
             // The mask is already in device pixels; draw it under an identity transform so the
             // canvas transform is not applied twice.
@@ -287,6 +306,51 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Draws a settled upright run mask mapped through <paramref name="delta"/>, the change
+        /// from its frame's transform to the current one, with bilinear sampling.
+        /// </summary>
+        private static void DrawStretchedRunMask(IDrawingContextImpl context, ITransformedGlyphContext stretchContext,
+            RunMask runMask, in SettledRunMask settled, in Matrix delta, GlyphMaskMode mode,
+            IAlphaGlyphMaskContext? alphaContext, byte alpha, Color color)
+        {
+            var oldTransform = context.Transform;
+            var straightTint = ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
+
+            context.Transform = Matrix.Identity;
+
+            foreach (var part in runMask.Parts)
+            {
+                GetPartRects(part, settled.OriginX, settled.OriginY, out var sourceRect, out var destRect);
+
+                var stretched = destRect.TransformToAABB(delta);
+
+                if (alphaContext is not null)
+                {
+                    stretchContext.DrawMaskStretched(part.Handle, sourceRect, stretched, straightTint,
+                        mode == GlyphMaskMode.Subpixel);
+                }
+                else if (mode == GlyphMaskMode.Subpixel)
+                {
+                    var pair = (LcdRunBitmaps)part.Handle;
+
+                    context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Multiply });
+                    context.DrawBitmap((IBitmapImpl)pair.Multiply, 1, sourceRect, stretched);
+                    context.PopRenderOptions();
+
+                    context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Plus });
+                    context.DrawBitmap((IBitmapImpl)pair.Plus, 1, sourceRect, stretched);
+                    context.PopRenderOptions();
+                }
+                else
+                {
+                    context.DrawBitmap((IBitmapImpl)part.Handle, 1, sourceRect, stretched);
+                }
+            }
+
+            context.Transform = oldTransform;
         }
 
         private static void GetPartRects(in RunMaskPart part, int originX, int originY,

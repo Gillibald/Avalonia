@@ -30,6 +30,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private RunMaskCache? _transformedRunMasks;
         private TransformedRunState? _transformedSprites;
         private TransformChurnGuard? _transformChurn;
+        private TransformChurnGuard? _uprightChurn;
         private bool _disposed;
 
         public ManagedGlyphRunImpl(GlyphTypeface glyphTypeface, double fontRenderingEmSize,
@@ -146,6 +147,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Recognizes an animated transform so its masks stay out of the caches.</summary>
         internal TransformChurnGuard TransformChurn => _transformChurn ??= new TransformChurnGuard();
+
+        /// <summary>Recognizes an upright zoom gesture, a scale that changes every frame.</summary>
+        internal TransformChurnGuard UprightChurn => _uprightChurn ??= new TransformChurnGuard();
+
+        /// <summary>The run mask of the last static upright frame, which a zoom gesture stretches.</summary>
+        internal SettledRunMask? SettledUpright;
 
         [ThreadStatic]
         private static GlyphPathBuilder? t_intersectionScratch;

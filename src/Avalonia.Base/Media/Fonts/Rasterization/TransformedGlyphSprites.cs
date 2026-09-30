@@ -287,6 +287,30 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// The sprite set the run's last static frame drew. While the run animates, this batch
+        /// drawn under the change from <see cref="SettledTransform"/> to the current transform
+        /// stands in for rasterizing every frame.
+        /// </summary>
+        public TransformedGlyphSprites? Settled { get; private set; }
+
+        /// <summary>The device transform of the last static frame.</summary>
+        public Matrix SettledTransform { get; private set; }
+
+        /// <summary>The snapped origin pixel of the last static frame.</summary>
+        public int SettledOriginX { get; private set; }
+
+        public int SettledOriginY { get; private set; }
+
+        /// <summary>Records a static frame.</summary>
+        public void Settle(TransformedGlyphSprites sprites, in Matrix transform, int originX, int originY)
+        {
+            Settled = sprites;
+            SettledTransform = transform;
+            SettledOriginX = originX;
+            SettledOriginY = originY;
+        }
+
         /// <summary>Bytes of all cached sprite arrays; for diagnostics and tests.</summary>
         public long ByteCost
         {
@@ -348,6 +372,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public void Dispose()
         {
+            Settled = null;
             _primary?.Dispose();
             _primary = null;
 

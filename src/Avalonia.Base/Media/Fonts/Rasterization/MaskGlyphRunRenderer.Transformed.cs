@@ -38,19 +38,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// extreme transform, a glyph or run past the mask bounds) and the caller falls back.
         /// </summary>
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
+            IBrush? foreground, TextRenderingMode textRenderingMode)
+            => TryDrawTransformed(context, run, foreground, textRenderingMode, out _);
+
+        /// <summary>
+        /// <see cref="TryDrawTransformed(IDrawingContextImpl, ManagedGlyphRunImpl, IBrush?, TextRenderingMode)"/>,
+        /// reporting whether the draw went to the Slug vector tier: a run whose transform
+        /// changes every frame on a hardware GPU draws its outlines there instead of
+        /// re-rasterizing masks per frame.
+        /// </summary>
+        public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode, out bool drawnBySlug)
         {
             drawnBySlug = false;
 
-            return TryDrawTransformed(context, run, foreground, textRenderingMode);
-        }
-
-        internal static bool TryDrawSettledStretched(IDrawingContextImpl context, ManagedGlyphRunImpl run, Color color)
-            => false;
-
-        public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
-            IBrush? foreground, TextRenderingMode textRenderingMode)
-        {
             var transform = context.Transform;
             var determinant = transform.M11 * transform.M22 - transform.M12 * transform.M21;
 
@@ -124,41 +125,57 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var state = run.TransformedSprites;
                 var hit = state.TryGet(spriteKey, out var sprites);
 
-                if (!run.TransformChurn.Record(key.ScaleQ, linear, hit))
+                if (run.TransformChurn.Record(key.ScaleQ, linear, hit))
                 {
-                    if (!hit)
+                    // The transform changes every frame, so masks rasterized now would never be
+                    // drawn again. A hardware GPU evaluates the outlines per pixel for little
+                    // cost; everywhere else, and when the vector tier declines, the last static
+                    // frame's batch is drawn under the change of transform since, softer but
+                    // without rasterizing or caching anything. The first frame that repeats its
+                    // transform rasterizes again, at the final transform.
+                    if (transformedContext.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                        context is Slug.ISlugGlyphRunContext slugContext &&
+                        Slug.SlugGlyphRunRenderer.TryDraw(slugContext, transform, run, foreground))
                     {
-                        if (!TryBuildSprites(run, spriteKey, transform, out var built))
-                        {
-                            return false;
-                        }
-
-                        if (built is null)
-                        {
-                            return true;   // no ink
-                        }
-
-                        state.Add(built);
-                        sprites = built;
+                        drawnBySlug = true;
+                        return true;
                     }
 
-                    if (transformedContext.RasterTarget == GlyphRasterTarget.Raster)
+                    if (TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
                     {
-                        DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY,
-                            RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B));
+                        return true;
                     }
-                    else
-                    {
-                        DrawFromAtlas(transformedContext, typeface, sprites, originX, originY,
-                            ToArgb(alpha, solid.Color));
-                    }
-
-                    return true;
                 }
 
-                // A run whose transform changes every frame composes from transient buffers.
-                return DrawThroughRunMask(context, run, key, transform, alphaContext, alpha, solid.Color,
-                    originX, originY, forceTransient: true);
+                if (!hit)
+                {
+                    if (!TryBuildSprites(run, spriteKey, transform, out var built))
+                    {
+                        return false;
+                    }
+
+                    if (built is null)
+                    {
+                        return true;   // no ink
+                    }
+
+                    state.Add(built);
+                    sprites = built;
+                }
+
+                state.Settle(sprites, transform, originX, originY);
+
+                if (transformedContext.RasterTarget == GlyphRasterTarget.Raster)
+                {
+                    DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY,
+                        RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B));
+                }
+                else
+                {
+                    DrawFromAtlas(transformedContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color));
+                }
+
+                return true;
             }
 
             return DrawThroughRunMask(context, run, key, transform, alphaContext, alpha, solid.Color,
@@ -457,6 +474,43 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Draws the run's settled batch, the sprites its last static frame drew, mapped from
+        /// that frame's device space into the current one and sampled bilinearly. Returns
+        /// <c>false</c> when the run has no settled frame.
+        /// </summary>
+        private static bool TryDrawStretched(ITransformedGlyphContext context, GlyphTypeface typeface,
+            TransformedRunState state, in Matrix transform, uint foregroundArgb)
+        {
+            if (state.Settled is not { IsDisposed: false } settled || !state.SettledTransform.TryInvert(out var inverse))
+            {
+                return false;
+            }
+
+            var atlas = typeface.MaskAtlas;
+
+            if (!settled.HasValidBatches(atlas))
+            {
+                BuildAtlasBatches(context, typeface, atlas, settled);
+            }
+
+            var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
+
+            DrawBatches(context, atlas, settled, placement, foregroundArgb, bilinear: true);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Draws the run's settled batch under the context's current transform, the draw an
+        /// animation frame makes. For tests: at the settled transform it must reproduce the
+        /// settled frame.
+        /// </summary>
+        internal static bool TryDrawSettledStretched(IDrawingContextImpl context, ManagedGlyphRunImpl run, Color color)
+            => context is ITransformedGlyphContext transformedContext &&
+               TryDrawStretched(transformedContext, run.GlyphTypeface, run.TransformedSprites, context.Transform,
+                   ToArgb(color.A, color));
+
+        /// <summary>
         /// Draws a sprite set from the typeface's atlas, one backend call per batch, placed at
         /// the run's snapped origin pixel.
         /// </summary>
@@ -528,9 +582,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                         try
                         {
-                            var mask = typeface.MaskCache.TryGet(key, out var cached)
-                                ? cached
-                                : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
+                            // A set drawn on a raster context already holds its masks.
+                            var mask = sprites.Masks?[i] ??
+                                (typeface.MaskCache.TryGet(key, out var cached)
+                                    ? cached
+                                    : GlyphMasks.BuildTransient(typeface, scratch, key, out rented));
 
                             if (mask.IsEmpty)
                             {
