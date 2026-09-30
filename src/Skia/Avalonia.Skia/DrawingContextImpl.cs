@@ -994,12 +994,13 @@ namespace Avalonia.Skia
                     {
                         if (TextTierDiagnostics.CountTiers)
                         {
-                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.MaskTierDraws);
+                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
                         }
 
                         if (TextTierDiagnostics.TintTiers)
                         {
-                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
+                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds,
+                                TextTierDiagnostics.TransformedMaskTierColor);
                         }
 
                         return;

@@ -238,11 +238,12 @@ namespace TextLab
             var store = typeface.SlugStore;
 
             var maskDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.MaskTierDraws);
+            var transformedDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.TransformedMaskTierDraws);
             var slugDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.SlugTierDraws);
             var blobDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.BlobTierDraws);
 
             _hudText.Text = FormattableString.Invariant(
-                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB of {GlyphMaskCache.DefaultBudgetBytes / 1024} KB{Environment.NewLine}Slug store: v{store.Version}, {store.CurveRowCount} curve + {store.BandRowCount} band rows{Environment.NewLine}tier draws: masks {maskDraws}, Slug {slugDraws}, blob {blobDraws}");
+                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB of {GlyphMaskCache.DefaultBudgetBytes / 1024} KB{Environment.NewLine}Slug store: v{store.Version}, {store.CurveRowCount} curve + {store.BandRowCount} band rows{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, Slug {slugDraws}, blob {blobDraws}");
         }
 
         private void RebuildList()

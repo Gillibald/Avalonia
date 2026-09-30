@@ -5,8 +5,8 @@ namespace Avalonia.Skia
     /// <summary>
     /// Debug-only visualization of glyph run tier routing: when enabled, every drawn run gets
     /// a translucent badge over its bounds colored by the tier that actually rendered it —
-    /// green for composed run masks, magenta for the Slug vector tier, orange for the native
-    /// blob fallback. Off by default; flipped by diagnostic tooling (the GlyphRasterDemo
+    /// green for upright run masks, blue for transformed run masks, magenta for the Slug
+    /// vector tier, orange for the native blob fallback. Off by default; flipped by diagnostic tooling (the GlyphRasterDemo
     /// inspector), never by product code.
     /// </summary>
     internal static class TextTierDiagnostics
@@ -18,17 +18,20 @@ namespace Avalonia.Skia
         public static volatile bool CountTiers;
 
         public static long MaskTierDraws;
+        public static long TransformedMaskTierDraws;
         public static long SlugTierDraws;
         public static long BlobTierDraws;
 
         public static void ResetCounters()
         {
             System.Threading.Interlocked.Exchange(ref MaskTierDraws, 0);
+            System.Threading.Interlocked.Exchange(ref TransformedMaskTierDraws, 0);
             System.Threading.Interlocked.Exchange(ref SlugTierDraws, 0);
             System.Threading.Interlocked.Exchange(ref BlobTierDraws, 0);
         }
 
         public static readonly SKColor MaskTierColor = new(0x22, 0xAA, 0x22, 0x46);
+        public static readonly SKColor TransformedMaskTierColor = new(0x22, 0x66, 0xDD, 0x46);
         public static readonly SKColor SlugTierColor = new(0xCC, 0x22, 0x99, 0x46);
         public static readonly SKColor BlobTierColor = new(0xDD, 0x88, 0x22, 0x46);
 

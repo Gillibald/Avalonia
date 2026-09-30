@@ -105,6 +105,34 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Null(run.NativeTextArtifact);
         }
 
+        [Fact]
+        public void Transformed_Draws_Count_As_Their_Own_Tier()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, "Counted text", 24, new Point(8, 32));
+
+            var counting = TextTierDiagnostics.CountTiers;
+
+            TextTierDiagnostics.CountTiers = true;
+            TextTierDiagnostics.ResetCounters();
+
+            try
+            {
+                DrawOnRaster(run, s_rotation);
+                DrawOnRaster(run, Matrix.CreateTranslation(3, 4));
+
+                Assert.Equal(1, TextTierDiagnostics.TransformedMaskTierDraws);
+                Assert.Equal(1, TextTierDiagnostics.MaskTierDraws);
+                Assert.Equal(0, TextTierDiagnostics.SlugTierDraws);
+                Assert.Equal(0, TextTierDiagnostics.BlobTierDraws);
+            }
+            finally
+            {
+                TextTierDiagnostics.CountTiers = counting;
+                TextTierDiagnostics.ResetCounters();
+            }
+        }
+
         /// <summary>Selects the transformed-text tier until disposed.</summary>
         internal static IDisposable RouteTransformedText(TransformedTextRouting routing)
         {

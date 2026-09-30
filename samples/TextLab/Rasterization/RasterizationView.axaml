@@ -14,7 +14,7 @@
         <CheckBox x:Name="BgrBox" Content="BGR"
                   ToolTip.Tip="Compose for blue-green-red subpixel stripe order instead of RGB." />
         <CheckBox x:Name="TintTiersBox" Content="Tint tiers"
-                  ToolTip.Tip="Badges every run in the window by the tier that drew it: green run masks, magenta Slug, orange native blob." />
+                  ToolTip.Tip="Badges every run in the window by the tier that drew it: green upright run masks, blue transformed run masks, magenta Slug, orange native blob." />
         <Button x:Name="CopyButton" Content="Copy details" FontSize="12"
                 ToolTip.Tip="Copy the glyph, engine, mask key and Slug payload details as text." />
       </StackPanel>
