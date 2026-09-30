@@ -84,7 +84,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             if (SystemFonts.TryMatchCharacter(codepoint, fontStyle, fontWeight, fontStretch, familyName, culture, out var glyphTypeface))
             {
-                platformTypeface = glyphTypeface.GlyphTypeface.PlatformTypeface;
+                platformTypeface = CreateOwnedCopy(glyphTypeface.GlyphTypeface);
 
                 return true;
             }
@@ -102,7 +102,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             if (SystemFonts.TryGetGlyphTypeface(familyName, style, weight, stretch, out var glyphTypeface))
             {
-                platformTypeface = glyphTypeface.PlatformTypeface;
+                platformTypeface = CreateOwnedCopy(glyphTypeface);
 
                 return true;
             }
@@ -122,6 +122,26 @@ namespace Avalonia.Skia.UnitTests.Media
             platformTypeface = new SkiaTypeface(skTypeface, fontSimulations);
 
             return true;
+        }
+
+        /// <summary>
+        /// The caller owns every platform typeface a font manager returns and disposes the ones it does not
+        /// keep, so the embedded collection's own instance must not be handed out: disposing it would release
+        /// the typeface that collection still renders with.
+        /// </summary>
+        private static IPlatformTypeface CreateOwnedCopy(GlyphTypeface glyphTypeface)
+        {
+            var source = glyphTypeface.PlatformTypeface;
+
+            if (!source.TryGetStream(out var stream))
+            {
+                throw new InvalidOperationException($"Could not read the font data of {source.FamilyName}.");
+            }
+
+            using (stream)
+            {
+                return new SkiaTypeface(SKTypeface.FromStream(stream), source.FontSimulations);
+            }
         }
 
         public void Dispose()

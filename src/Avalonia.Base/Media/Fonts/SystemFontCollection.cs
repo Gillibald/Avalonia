@@ -56,35 +56,34 @@ namespace Avalonia.Media.Fonts
             if (key != platformTypeface.ToFontCollectionKey() &&
                 TryGetGlyphTypeface(familyName, key, allowNearestMatch: true, out glyphTypeface))
             {
+                platformTypeface.Dispose();
+
                 return true;
             }
 
             glyphTypeface = GlyphTypeface.TryCreate(platformTypeface);
             if (glyphTypeface is null)
             {
+                platformTypeface.Dispose();
+
                 return false;
             }
 
             //Add to cache with platform typeface family name first
-            TryAddGlyphTypeface(platformTypeface.FamilyName, key, glyphTypeface);
+            var registered = TryAddGlyphTypeface(platformTypeface.FamilyName, key, glyphTypeface);
             
             // Then the requested family name
             if (!string.Equals(familyName, platformTypeface.FamilyName, StringComparison.OrdinalIgnoreCase))
-                TryAddGlyphTypeface(familyName, key, glyphTypeface);
+                registered |= TryAddGlyphTypeface(familyName, key, glyphTypeface);
 
             //Add to cache
             if (!TryAddGlyphTypeface(glyphTypeface))
             {
                 // Another thread may have added an entry for this key while we were creating the glyph typeface.
                 // Re-check the cache and yield the existing glyph typeface if present.
-                if (_glyphTypefaceCache.TryGetValue(familyName, out var existingMap) && existingMap.TryGetValue(key, out var existingTypeface) && existingTypeface != null)
-                {
-                    glyphTypeface = existingTypeface;
+                glyphTypeface = GetCachedAfterLostRace(glyphTypeface, registered, familyName, key);
 
-                    return true;
-                }
-
-                return false;
+                return glyphTypeface != null;
             }
 
             //Requested glyph typeface should be in cache now
@@ -126,6 +125,8 @@ namespace Avalonia.Media.Fonts
                 glyphTypefaces.TryGetValue(platformKey, out var existing) &&
                 existing != null)
             {
+                platformTypeface.Dispose();
+
                 glyphTypeface = existing;
                 return true;
             }
@@ -134,15 +135,49 @@ namespace Avalonia.Media.Fonts
 
             if (glyphTypeface is null)
             {
+                platformTypeface.Dispose();
+
                 return false;
             }
 
             // Register in the cache so future lookups can short-circuit through TryMatchCharacter's
             // Tier C without re-invoking the platform.
-            TryAddGlyphTypeface(platformTypeface.FamilyName, platformKey, glyphTypeface);
-            TryAddGlyphTypeface(glyphTypeface, platformKey);
+            var registered = TryAddGlyphTypeface(platformTypeface.FamilyName, platformKey, glyphTypeface);
+            registered |= TryAddGlyphTypeface(glyphTypeface, platformKey);
+
+            if (!registered)
+            {
+                glyphTypeface = GetCachedAfterLostRace(glyphTypeface, candidateRegistered: false,
+                    platformTypeface.FamilyName, platformKey);
+
+                return glyphTypeface != null;
+            }
 
             return true;
+        }
+
+        /// <summary>
+        /// Resolves the glyph typeface cached under <paramref name="familyName"/> and <paramref name="key"/>
+        /// after <paramref name="candidate"/> lost a cache registration, disposing the candidate when no cache
+        /// entry references it.
+        /// </summary>
+        /// <remarks>
+        /// The collection owns every glyph typeface it creates, and callers only ever receive the cached
+        /// instance, so a candidate that was registered nowhere has no other owner left to release its
+        /// platform typeface.
+        /// </remarks>
+        private GlyphTypeface? GetCachedAfterLostRace(GlyphTypeface candidate, bool candidateRegistered,
+            string familyName, FontCollectionKey key)
+        {
+            if (!candidateRegistered)
+            {
+                candidate.Dispose();
+            }
+
+            return _glyphTypefaceCache.TryGetValue(familyName, out var glyphTypefaces) &&
+                glyphTypefaces.TryGetValue(key, out var cached)
+                ? cached
+                : null;
         }
     }
 }
