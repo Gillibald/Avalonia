@@ -19,6 +19,8 @@ namespace Avalonia.Media.Fonts.Tables.Name
         private const ushort PrimaryLanguageMask = 0x03FF;
         private const ushort EnglishPrimaryLanguageId = 0x0009;
         private const ushort MacEnglishLanguageId = 0;
+        private const ushort MacRomanEncodingId = 0;
+        private const ushort IsoIso10646EncodingId = 1;
 
         private readonly NameRecord[] _names;
 
@@ -168,18 +170,28 @@ namespace Avalonia.Media.Fonts.Tables.Name
                 var nameStorage = table.Slice(storageOffset);
 
                 var names = new NameRecord[count];
+                var nameCount = 0;
 
                 for (var i = 0; i < count; i++)
                 {
                     var platform = reader.ReadUInt16<PlatformID>();
-                    var encodingId = reader.ReadUInt16<EncodingIDs>();
-                    var encoding = encodingId.AsEncoding();
+                    var encodingId = reader.ReadUInt16();
                     var languageID = reader.ReadUInt16();
                     var nameID = reader.ReadUInt16<KnownNameIds>();
                     var length = reader.ReadUInt16();
                     var offset = reader.ReadUInt16();
 
-                    names[i] = new NameRecord(nameStorage, platform, languageID, nameID, offset, length, encoding);
+                    if (!TryGetEncoding(platform, encodingId, out var encoding))
+                    {
+                        continue;
+                    }
+
+                    names[nameCount++] = new NameRecord(nameStorage, platform, languageID, nameID, offset, length, encoding);
+                }
+
+                if (nameCount < names.Length)
+                {
+                    Array.Resize(ref names, nameCount);
                 }
 
                 return new NameTable(names);
@@ -191,6 +203,34 @@ namespace Avalonia.Media.Fonts.Tables.Name
                 // exceptions are swallowed (end-of-span from BigEndianBinaryReader, out-of-range from
                 // Memory.Slice) so genuine/fatal failures still surface.
                 return null;
+            }
+        }
+
+        private static bool TryGetEncoding(PlatformID platform, ushort encodingId, out NameEncoding encoding)
+        {
+            switch (platform)
+            {
+                // OpenType stores every Unicode and Windows platform name string as UTF-16BE, whatever
+                // the encoding ID, including Windows Symbol and the Windows CJK code page IDs.
+                case PlatformID.Unicode:
+                case PlatformID.Windows:
+                    encoding = NameEncoding.Utf16BigEndian;
+                    return true;
+                // The deprecated ISO platform: ISO 10646 is UTF-16BE; its other encodings are ASCII
+                // and ISO 8859-1, which Latin-1 decodes.
+                case PlatformID.ISO:
+                    encoding = encodingId == IsoIso10646EncodingId ?
+                        NameEncoding.Utf16BigEndian :
+                        NameEncoding.Latin1;
+                    return true;
+                // Other Mac script encodings need legacy code pages that are not built in, so their
+                // records are skipped rather than decoded as garbage.
+                case PlatformID.Macintosh when encodingId == MacRomanEncodingId:
+                    encoding = NameEncoding.MacRoman;
+                    return true;
+                default:
+                    encoding = default;
+                    return false;
             }
         }
 

@@ -6,6 +6,13 @@ using System;
 
 namespace Avalonia.Media.Fonts.Tables.Name
 {
+    internal enum NameEncoding
+    {
+        Utf16BigEndian,
+        Latin1,
+        MacRoman
+    }
+
     internal readonly struct NameRecord
     {
         private readonly ReadOnlyMemory<byte> _stringStorage;
@@ -17,7 +24,7 @@ namespace Avalonia.Media.Fonts.Tables.Name
             KnownNameIds nameId,
             ushort offset,
             ushort length,
-            System.Text.Encoding encoding)
+            NameEncoding encoding)
         {
             _stringStorage = stringStorage;
 
@@ -39,7 +46,7 @@ namespace Avalonia.Media.Fonts.Tables.Name
 
         public ushort Length { get; }
 
-        public System.Text.Encoding Encoding { get; }
+        public NameEncoding Encoding { get; }
 
         public string GetValue()
         {
@@ -60,12 +67,21 @@ namespace Avalonia.Media.Fonts.Tables.Name
 
             var span = _stringStorage.Span.Slice(Offset, Length);
 
-            // The encodings NameTable selects substitute U+FFFD for malformed bytes, but guard
-            // against an exception-throwing decoder fallback so a corrupt record degrades to an
-            // empty value instead of denying the font.
+            if (Encoding == NameEncoding.MacRoman)
+            {
+                return MacRomanDecoder.GetString(span);
+            }
+
+            var encoding = Encoding == NameEncoding.Latin1 ?
+                System.Text.Encoding.Latin1 :
+                System.Text.Encoding.BigEndianUnicode;
+
+            // These encodings substitute U+FFFD for malformed bytes, but guard against an
+            // exception-throwing decoder fallback so a corrupt record degrades to an empty value
+            // instead of denying the font.
             try
             {
-                return Encoding.GetString(span);
+                return encoding.GetString(span);
             }
             catch (ArgumentException)
             {
