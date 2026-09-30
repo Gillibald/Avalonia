@@ -615,6 +615,10 @@ namespace Avalonia.Media
             _hmTable = source._hmTable;
             _vmTable = source._vmTable;
             _glyfTable = source._glyfTable;
+            _colrTable = source._colrTable;
+            _cpalTable = source._cpalTable;
+            _cbdtTable = source._cbdtTable;
+            _sbixTable = source._sbixTable;
             _cffTable = source._cffTable;
             _cff2Table = source._cff2Table;
             _fvarTable = source._fvarTable;
