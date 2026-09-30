@@ -1,3 +1,5 @@
+using System;
+using System.Runtime.CompilerServices;
 using SkiaSharp;
 
 namespace Avalonia.Skia
@@ -13,16 +15,56 @@ namespace Avalonia.Skia
         /// <summary>The Vulkan <c>VK_PHYSICAL_DEVICE_TYPE_CPU</c> device type.</summary>
         public const int VulkanCpuDeviceType = 4;
 
+        // Mesa's llvmpipe, softpipe, swrast and lavapipe, Google's SwiftShader (also behind
+        // ANGLE), Microsoft's WARP as ANGLE names it, and the Windows GDI OpenGL 1.1 fallback.
+        private static readonly string[] s_softwareNames =
+        {
+            "llvmpipe", "softpipe", "swrast", "lavapipe", "SwiftShader", "Microsoft Basic Render Driver",
+            "GDI Generic",
+        };
+
+        private static readonly ConditionalWeakTable<GRContext, object> s_software = new();
+        private static readonly object s_marker = new();
+
+        /// <summary>Records how <paramref name="context"/> was classified.</summary>
         public static void Register(GRContext context, bool isSoftware)
         {
+            if (isSoftware)
+            {
+                s_software.AddOrUpdate(context, s_marker);
+            }
+            else
+            {
+                s_software.Remove(context);
+            }
         }
 
-        public static bool IsSoftware(GRContext context) => false;
+        /// <summary>Whether <paramref name="context"/> was registered as a software rasterizer.</summary>
+        public static bool IsSoftware(GRContext context) => s_software.TryGetValue(context, out _);
 
         /// <summary>Whether a <c>GL_RENDERER</c> string names a software rasterizer.</summary>
-        public static bool IsSoftwareGlRenderer(string? renderer) => false;
+        public static bool IsSoftwareGlRenderer(string? renderer) => ContainsSoftwareName(renderer);
 
         /// <summary>Whether a Vulkan physical device is implemented on the CPU.</summary>
-        public static bool IsSoftwareVulkanDevice(int deviceType, string? deviceName) => false;
+        public static bool IsSoftwareVulkanDevice(int deviceType, string? deviceName)
+            => deviceType == VulkanCpuDeviceType || ContainsSoftwareName(deviceName);
+
+        private static bool ContainsSoftwareName(string? name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            foreach (var software in s_softwareNames)
+            {
+                if (name.Contains(software, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

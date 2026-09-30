@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Avalonia.Vulkan;
 using Avalonia.Platform;
 using Avalonia.Platform.Surfaces;
@@ -55,12 +56,35 @@ internal class VulkanSkiaGpu : ISkiaGpu
             
             if (maxResourceBytes.HasValue)
                 GrContext.SetResourceCacheLimit(maxResourceBytes.Value);
+
+            SkiaGpuRasterizer.Register(GrContext, IsSoftwareDevice(vulkan));
         }
 
         if (vulkan.TryGetFeature<IVulkanContextExternalObjectsFeature>(out var externalObjects))
             _externalObjects = new VulkanSkiaExternalObjectsFeature(this, vulkan, externalObjects);
     }
     
+    private static unsafe bool IsSoftwareDevice(IVulkanPlatformGraphicsContext vulkan)
+    {
+        var device = vulkan.Device;
+        var getProperties = vulkan.Instance.GetInstanceProcAddress(device.Instance.Handle,
+            "vkGetPhysicalDeviceProperties");
+
+        if (getProperties == IntPtr.Zero)
+            return false;
+
+        // VkPhysicalDeviceProperties opens with four uint32 fields, then the device type and
+        // the 256-byte device name; the whole struct is 824 bytes, so 1 KB holds it.
+        var properties = stackalloc byte[1024];
+
+        ((delegate* unmanaged[Stdcall]<IntPtr, byte*, void>)getProperties)(device.PhysicalDeviceHandle, properties);
+
+        var deviceType = *(int*)(properties + 16);
+        var deviceName = Marshal.PtrToStringUTF8((IntPtr)(properties + 20));
+
+        return SkiaGpuRasterizer.IsSoftwareVulkanDevice(deviceType, deviceName);
+    }
+
     public void Dispose()
     {
         if (Vulkan.IsLost)
