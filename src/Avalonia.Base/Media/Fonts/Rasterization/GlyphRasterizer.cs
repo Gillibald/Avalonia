@@ -139,20 +139,45 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private static void FlattenQuad(float x0, float y0, float cx, float cy, float x1, float y1,
-            Span<float> cells, int width, int height)
+        /// <summary>
+        /// The number of uniform pieces a quadratic flattens into: deviation of a quadratic
+        /// from its chord is |p0 - 2c + p1| / 4, and uniform subdivision into n pieces scales
+        /// it by 1 / n², so n is solved for at the tolerance.
+        /// </summary>
+        internal static int QuadSegmentCount(float x0, float y0, float cx, float cy, float x1, float y1)
         {
-            // Deviation of a quadratic from its chord is |p0 - 2c + p1| / 4, and uniform
-            // subdivision into n pieces scales it by 1 / n² — solve for n at the tolerance.
             var ddx = x0 - 2f * cx + x1;
             var ddy = y0 - 2f * cy + y1;
             var dd = MathF.Sqrt(ddx * ddx + ddy * ddy);
             var n = 1 + (int)MathF.Sqrt(dd * (1f / (4f * FlattenTolerance)));
 
-            if (n > MaxCurveSegments)
-            {
-                n = MaxCurveSegments;
-            }
+            return n > MaxCurveSegments ? MaxCurveSegments : n;
+        }
+
+        /// <summary>
+        /// The number of uniform pieces a cubic flattens into: a deviation bound from the two
+        /// second differences (kurbo/Skia-style estimate), scaled by 1 / n² under uniform
+        /// subdivision.
+        /// </summary>
+        internal static int CubicSegmentCount(float x0, float y0, float c1X, float c1Y, float c2X, float c2Y,
+            float x1, float y1)
+        {
+            var d1X = x0 - 2f * c1X + c2X;
+            var d1Y = y0 - 2f * c1Y + c2Y;
+            var d2X = c1X - 2f * c2X + x1;
+            var d2Y = c1Y - 2f * c2Y + y1;
+            var dd = MathF.Max(
+                MathF.Sqrt(d1X * d1X + d1Y * d1Y),
+                MathF.Sqrt(d2X * d2X + d2Y * d2Y));
+            var n = 1 + (int)MathF.Sqrt(dd * (3f / (4f * FlattenTolerance)));
+
+            return n > MaxCurveSegments ? MaxCurveSegments : n;
+        }
+
+        private static void FlattenQuad(float x0, float y0, float cx, float cy, float x1, float y1,
+            Span<float> cells, int width, int height)
+        {
+            var n = QuadSegmentCount(x0, y0, cx, cy, x1, y1);
 
             float prevX = x0, prevY = y0;
 
@@ -187,21 +212,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static void FlattenCubic(float x0, float y0, float c1X, float c1Y, float c2X, float c2Y,
             float x1, float y1, Span<float> cells, int width, int height)
         {
-            // Deviation bound from the two second differences (kurbo/Skia-style estimate),
-            // scaled by 1 / n² under uniform subdivision.
-            var d1X = x0 - 2f * c1X + c2X;
-            var d1Y = y0 - 2f * c1Y + c2Y;
-            var d2X = c1X - 2f * c2X + x1;
-            var d2Y = c1Y - 2f * c2Y + y1;
-            var dd = MathF.Max(
-                MathF.Sqrt(d1X * d1X + d1Y * d1Y),
-                MathF.Sqrt(d2X * d2X + d2Y * d2Y));
-            var n = 1 + (int)MathF.Sqrt(dd * (3f / (4f * FlattenTolerance)));
-
-            if (n > MaxCurveSegments)
-            {
-                n = MaxCurveSegments;
-            }
+            var n = CubicSegmentCount(x0, y0, c1X, c1Y, c2X, c2Y, x1, y1);
 
             float prevX = x0, prevY = y0;
 
