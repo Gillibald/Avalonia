@@ -12,7 +12,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// every subsequent frame is a single bitmap blit. Backend-independent — it uses only
     /// mandatory <see cref="IDrawingContextImpl"/> capabilities plus writeable-bitmap creation.
     /// </summary>
-    internal static class MaskGlyphRunRenderer
+    internal static partial class MaskGlyphRunRenderer
     {
         /// <summary>Above this device size the D4 triage sends the run to the caller's fallback.</summary>
         internal const double MaxPixelsPerEm = 160;
