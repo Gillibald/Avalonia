@@ -228,6 +228,16 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
+            if (IsNonDefaultVariableInstance(glyphTypeface) &&
+                TryGetDefaultInstanceGlyphTypeface(platformTypeface.FamilyName, key,
+                    glyphTypeface.ToFontCollectionKey(), out var defaultInstanceGlyphTypeface))
+            {
+                glyphTypeface.Dispose();
+                glyphTypeface = defaultInstanceGlyphTypeface;
+
+                return true;
+            }
+
             // Register in the cache so future lookups can short-circuit through TryMatchCharacter's
             // Tier C without re-invoking the platform.
             TryAddGlyphTypeface(platformTypeface.FamilyName, platformKey, glyphTypeface);
