@@ -106,7 +106,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode, tint,
                 GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: originPhaseY);
 
-            if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.Raster } atlasContext)
+            if (context is ITransformedGlyphContext transformedContext)
             {
                 // Sprites carry no colour: the backend tints each batch at draw time.
                 var spriteKey = key with { Tint = 0 };
@@ -131,12 +131,21 @@ namespace Avalonia.Media.Fonts.Rasterization
                         sprites = built;
                     }
 
-                    DrawFromAtlas(atlasContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color));
+                    if (transformedContext.RasterTarget == GlyphRasterTarget.Raster)
+                    {
+                        DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY,
+                            RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B));
+                    }
+                    else
+                    {
+                        DrawFromAtlas(transformedContext, typeface, sprites, originX, originY,
+                            ToArgb(alpha, solid.Color));
+                    }
 
                     return true;
                 }
 
-                // A GPU run whose transform changes every frame composes from transient buffers.
+                // A run whose transform changes every frame composes from transient buffers.
                 return DrawThroughRunMask(context, run, key, transform, alphaContext, alpha, solid.Color,
                     originX, originY, forceTransient: true);
             }
@@ -266,6 +275,174 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 ArrayPool<TransformedGlyphItem>.Shared.Return(items);
             }
+        }
+
+        /// <summary>
+        /// Draws a sprite set on a raster context: the cached glyph masks blended straight into
+        /// the surface when the context grants direct access, pre-tinted per-glyph bitmaps
+        /// through the backend otherwise. Either way no run-sized bitmap is involved.
+        /// </summary>
+        private static void DrawOnRaster(IDrawingContextImpl context, ITransformedGlyphContext rasterContext,
+            GlyphTypeface typeface, TransformedGlyphSprites sprites, int originX, int originY, uint tint)
+        {
+            var masks = EnsureMasks(typeface, sprites);
+
+            if (!rasterContext.TryGetBlitTarget(out var target))
+            {
+                DrawPerGlyph(context, sprites, masks, originX, originY, tint);
+                return;
+            }
+
+            var table = MaskGamma.GetTableForPremulBgra(tint);
+            var laidOut = sprites.Sprites;
+
+            for (var i = 0; i < laidOut.Length; i++)
+            {
+                ref readonly var sprite = ref laidOut[i];
+
+                switch (sprite.Kind)
+                {
+                    case TransformedSpriteKind.Foreground:
+                        GlyphMaskBlitter.Blend(target, masks[i], originX + sprite.X, originY + sprite.Y, tint, table);
+                        break;
+                    case TransformedSpriteKind.ForegroundLayer:
+                        GlyphMaskBlitter.Blend(target, masks[i], originX + sprite.X, originY + sprite.Y, tint, null);
+                        break;
+                    default:
+                        GlyphMaskBlitter.Blend(target, masks[i], originX + sprite.X, originY + sprite.Y,
+                            ToPremulTint(sprite.Color), null);
+                        break;
+                }
+            }
+        }
+
+        private static uint ToPremulTint(uint argb)
+            => RunMaskComposer.MakeTint((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+
+        /// <summary>
+        /// The glyph masks of a sprite set, fetched from the glyph mask cache once and held by
+        /// the set. A mask over the cache's entry bound is built for this set alone.
+        /// </summary>
+        private static GlyphMask[] EnsureMasks(GlyphTypeface typeface, TransformedGlyphSprites sprites)
+        {
+            if (sprites.Masks is { } existing)
+            {
+                return existing;
+            }
+
+            var cache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var state = (typeface, scratch);
+            var laidOut = sprites.Sprites;
+            var masks = new GlyphMask[laidOut.Length];
+
+            for (var i = 0; i < masks.Length; i++)
+            {
+                var key = sprites.GetGlyphKey(i);
+
+                masks[i] = laidOut[i].Width * laidOut[i].Height <= cache.MaxEntryBytes
+                    ? cache.GetOrBuild(key, state, s_buildMask)
+                    : GlyphMasks.Build(typeface, scratch, key);
+            }
+
+            sprites.Masks = masks;
+
+            return masks;
+        }
+
+        /// <summary>
+        /// Draws one pre-tinted bitmap per sprite through the backend's bitmap blit, which the
+        /// backend can clip, layer and fade like any other draw. The bitmaps are made once per
+        /// tint and held by the sprite set; sprites showing the same mask share one.
+        /// </summary>
+        private static void DrawPerGlyph(IDrawingContextImpl context, TransformedGlyphSprites sprites,
+            GlyphMask[] masks, int originX, int originY, uint tint)
+        {
+            if (sprites.FallbackImages is not { } images || sprites.FallbackTint != tint)
+            {
+                images = CreateFallbackImages(sprites, masks, tint);
+            }
+
+            var laidOut = sprites.Sprites;
+            var oldTransform = context.Transform;
+
+            // The sprites are in device pixels.
+            context.Transform = Matrix.Identity;
+
+            for (var i = 0; i < laidOut.Length; i++)
+            {
+                if (images[i] is not IBitmapImpl bitmap)
+                {
+                    continue;
+                }
+
+                ref readonly var sprite = ref laidOut[i];
+                var source = new Rect(0, 0, sprite.Width, sprite.Height);
+
+                context.DrawBitmap(bitmap, 1, source, source.Translate(new Vector(originX + sprite.X, originY + sprite.Y)));
+            }
+
+            context.Transform = oldTransform;
+        }
+
+        private static unsafe IDisposable?[] CreateFallbackImages(TransformedGlyphSprites sprites, GlyphMask[] masks,
+            uint tint)
+        {
+            // Resolved per build, not captured statically, like the outline build path.
+            var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
+            var images = new IDisposable?[masks.Length];
+            var shared = new Dictionary<(GlyphMask, TransformedSpriteKind, uint), IDisposable>();
+            var table = MaskGamma.GetTableForPremulBgra(tint);
+            var laidOut = sprites.Sprites;
+
+            try
+            {
+                for (var i = 0; i < masks.Length; i++)
+                {
+                    var mask = masks[i];
+
+                    if (mask.IsEmpty)
+                    {
+                        continue;
+                    }
+
+                    var kind = laidOut[i].Kind;
+                    var spriteTint = kind == TransformedSpriteKind.PaletteLayer ? ToPremulTint(laidOut[i].Color) : tint;
+
+                    if (shared.TryGetValue((mask, kind, spriteTint), out var existing))
+                    {
+                        images[i] = existing;
+                        continue;
+                    }
+
+                    var bitmap = renderInterface.CreateWriteableBitmap(new PixelSize(mask.Width, mask.Height),
+                        new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
+
+                    images[i] = bitmap;
+                    shared.Add((mask, kind, spriteTint), bitmap);
+
+                    using var framebuffer = bitmap.Lock();
+
+                    var span = new Span<byte>((void*)framebuffer.Address, framebuffer.RowBytes * mask.Height);
+
+                    span.Clear();
+                    RunMaskComposer.ComposeTinted(mask, -mask.Left, -mask.Top, spriteTint, span, mask.Width,
+                        mask.Height, framebuffer.RowBytes, kind == TransformedSpriteKind.Foreground ? table : null);
+                }
+            }
+            catch
+            {
+                foreach (var image in shared.Values)
+                {
+                    image.Dispose();
+                }
+
+                throw;
+            }
+
+            sprites.SetFallbackImages(images, tint);
+
+            return images;
         }
 
         /// <summary>

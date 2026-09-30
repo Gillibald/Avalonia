@@ -27,7 +27,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             DrawOnRaster(run, s_rotation);
 
-            Assert.Equal(1, run.TransformedRunMasks.Count);
+            Assert.Equal(1, run.TransformedSprites.Count);
+            Assert.Equal(0, run.TransformedRunMasks.Count);
             Assert.Null(run.NativeTextArtifact);
         }
 
@@ -43,7 +44,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             // A raster context has no Slug tier, so the draw ends on the native blob.
-            Assert.Equal(0, run.TransformedRunMasks.Count);
+            Assert.Equal(0, run.TransformedSprites.Count);
             Assert.NotNull(run.NativeTextArtifact);
         }
 
@@ -84,7 +85,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 DrawOnGpu(gpu!, run, s_rotation);
             }
 
-            Assert.Equal(0, run.TransformedRunMasks.Count);
+            Assert.Equal(0, run.TransformedSprites.Count);
             Assert.NotNull(run.SlugRunArtifact);
         }
 
@@ -102,7 +103,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             Assert.Equal(2, run.RunMasks.Count);
-            Assert.Equal(0, run.TransformedRunMasks.Count);
+            Assert.Equal(0, run.TransformedSprites.Count);
             Assert.Null(run.NativeTextArtifact);
         }
 
