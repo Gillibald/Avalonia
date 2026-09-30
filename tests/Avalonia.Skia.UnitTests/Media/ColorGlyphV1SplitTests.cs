@@ -166,7 +166,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.False(ColorGlyphRunSplitter.TryDraw(context, run, Brushes.Black));
         }
 
-        private static GlyphTypeface CreateV0Typeface(out ushort v0Glyph)
+        internal static GlyphTypeface CreateV0Typeface(out ushort v0Glyph)
         {
             var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = baseFont.TryCreateGlyphTypeface();
@@ -231,7 +231,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return new GlyphRun(typeface, 32, default, infos, new Point(8, 44));
         }
 
-        private static GlyphTypeface CreateV1Typeface(out ushort v1Glyph, int paletteIndex = 0)
+        internal static GlyphTypeface CreateV1Typeface(out ushort v1Glyph, int paletteIndex = 0)
         {
             var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = baseFont.TryCreateGlyphTypeface();
