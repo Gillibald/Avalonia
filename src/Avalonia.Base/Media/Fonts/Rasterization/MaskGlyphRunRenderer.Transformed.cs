@@ -38,6 +38,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// extreme transform, a glyph or run past the mask bounds) and the caller falls back.
         /// </summary>
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
+            IBrush? foreground, TextRenderingMode textRenderingMode, out bool drawnBySlug)
+        {
+            drawnBySlug = false;
+
+            return TryDrawTransformed(context, run, foreground, textRenderingMode);
+        }
+
+        internal static bool TryDrawSettledStretched(IDrawingContextImpl context, ManagedGlyphRunImpl run, Color color)
+            => false;
+
+        public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
         {
             var transform = context.Transform;
