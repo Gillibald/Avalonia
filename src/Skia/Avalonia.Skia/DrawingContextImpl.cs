@@ -983,10 +983,29 @@ namespace Avalonia.Skia
                     return;
                 }
 
-                // Slug vector tier: analytic GPU coverage for exactly the draws the mask triage
-                // rejected (rotation, skew, sizes past the mask ceiling). Declines fall through
-                // to the native blob like before.
-                if (SlugGlyphRunRenderer.TryDraw(this, Transform, managedRun, foreground))
+                // The draws the upright triage rejected (rotation, skew, anisotropic scale,
+                // sizes past the upright ceiling) take transformed masks on every context.
+                // The internal routing switch hands them to the Slug vector tier instead, which
+                // only GPU contexts support. Declines of either fall through to the native blob.
+                if (MaskGlyphRunRenderer.TransformedTextRouting == TransformedTextRouting.Masks)
+                {
+                    if (MaskGlyphRunRenderer.TryDrawTransformed(this, managedRun, foreground,
+                            effectiveTextOptions.TextRenderingMode))
+                    {
+                        if (TextTierDiagnostics.CountTiers)
+                        {
+                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.MaskTierDraws);
+                        }
+
+                        if (TextTierDiagnostics.TintTiers)
+                        {
+                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
+                        }
+
+                        return;
+                    }
+                }
+                else if (SlugGlyphRunRenderer.TryDraw(this, Transform, managedRun, foreground))
                 {
                     if (TextTierDiagnostics.CountTiers)
                     {

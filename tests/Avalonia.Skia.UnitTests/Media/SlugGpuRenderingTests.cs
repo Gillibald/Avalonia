@@ -45,6 +45,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var typeface = LoadTypeface();
 
             using var run = CreateRun(typeface, "gg", emSize: 48);
+            using var routing = TransformedTextRoutingTests.RouteTransformedText(TransformedTextRouting.Slug);
 
             var info = new SKImageInfo(240, 200, SKColorType.Bgra8888, SKAlphaType.Premul);
 
@@ -245,6 +246,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var typeface = LoadTypeface();
 
             using var managedRun = CreateRun(typeface, paragraph, emSize);
+            using var routing = TransformedTextRoutingTests.RouteTransformedText(TransformedTextRouting.Slug);
             using var backendRun = new GlyphRunImpl(typeface,
                 emSize, CreateInfos(typeface, paragraph, emSize), new Point(10, 60));
 

@@ -103,8 +103,9 @@ namespace Avalonia.Skia.RenderTests
         private async Task AssertRotatedRunMatches(double emSize, Point origin, int width, int height,
             [CallerMemberName] string testName = "")
         {
-            // Rotation keeps the run off the mask path, so the GPU outputs draw it through Slug.
-            // Heavy stems put many pixels deep inside the ink, where a lost sample shows as a hole.
+            // Rotation keeps the run off the upright mask path, and the routing switch sends it
+            // to Slug on the GPU outputs. Heavy stems put many pixels deep inside the ink, where
+            // a lost sample shows as a hole.
             var path = Path.Combine(TestRenderHelper.GetTestsDirectory(), "Avalonia.RenderTests", "Assets",
                 "Inter-Bold.ttf");
 
@@ -127,7 +128,18 @@ namespace Avalonia.Skia.RenderTests
                 Child = new RotatedGlyphRunControl(run, origin),
             };
 
-            await RenderToFile(target, testName);
+            var previous = MaskGlyphRunRenderer.TransformedTextRouting;
+
+            MaskGlyphRunRenderer.TransformedTextRouting = TransformedTextRouting.Slug;
+
+            try
+            {
+                await RenderToFile(target, testName);
+            }
+            finally
+            {
+                MaskGlyphRunRenderer.TransformedTextRouting = previous;
+            }
 
             var expected = Evaluate(typeface, run, emSize, origin, width, height);
 

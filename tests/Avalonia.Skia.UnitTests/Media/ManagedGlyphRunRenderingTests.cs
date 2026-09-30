@@ -105,15 +105,16 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Rotated_Draws_Fall_Back_To_The_Native_Blob_Identically()
+        public void Rotated_Gradient_Draws_Fall_Back_To_The_Native_Blob_Identically()
         {
             using var _ = CreateEnvironment(out var typeface);
 
-            var managed = RenderScene(typeface, TextRasterizationMode.Managed, rotate: true);
-            var backend = RenderScene(typeface, TextRasterizationMode.Backend, rotate: true);
+            var managed = RenderScene(typeface, TextRasterizationMode.Managed, rotate: true, gradient: true);
+            var backend = RenderScene(typeface, TextRasterizationMode.Backend, rotate: true, gradient: true);
 
-            // The triage rejects rotation, so the managed impl draws through its own native
-            // blob — the same machinery as the backend impl, so the frames match near-exactly.
+            // Both mask tiers reject a non-solid foreground, so the managed impl draws through
+            // its own native blob — the same machinery as the backend impl, so the frames match
+            // near-exactly.
             var rmse = Rmse(managed, backend);
 
             Assert.True(rmse <= 0.001, $"fallback vs backend RMSE {rmse:0.0000} exceeds 0.001");
@@ -215,7 +216,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static byte[] RenderScene(GlyphTypeface typeface, TextRasterizationMode mode, bool rotate,
-            double scale = 1.0)
+            double scale = 1.0, bool gradient = false)
         {
             var run = CreateRun(typeface, mode);
 
@@ -244,7 +245,14 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.Transform = Matrix.CreateScale(scale, scale);
                 }
 
-                context.DrawGlyphRun(Brushes.Black, run);
+                IBrush foreground = gradient
+                    ? new LinearGradientBrush
+                    {
+                        GradientStops = { new GradientStop(Colors.Black, 0), new GradientStop(Colors.DarkBlue, 1) },
+                    }
+                    : Brushes.Black;
+
+                context.DrawGlyphRun(foreground, run);
 
                 return bitmap.GetPixelSpan().ToArray();
             }

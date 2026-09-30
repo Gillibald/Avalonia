@@ -105,7 +105,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var context = DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
 
             // No GrContext: the per-fragment evaluation belongs on a GPU, so the whole tier
-            // stays cold here and rotated draws keep the native blob fallback.
+            // stays cold here and rotated draws routed to Slug end on the native blob.
             Assert.False(((ISlugGlyphRunContext)context).SupportsSlugRendering);
         }
 
