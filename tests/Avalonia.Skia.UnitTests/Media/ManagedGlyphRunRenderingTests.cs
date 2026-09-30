@@ -281,9 +281,37 @@ namespace Avalonia.Skia.UnitTests.Media
             AssertSameColourGlyph(expected, actual, $"{simulations}");
         }
 
-        private static GlyphTypeface CreateVariedColrTypeface(FontSimulations simulations, out ushort colorGlyph)
+        [Fact]
+        public void Rotated_Simulated_Colr_Runs_Draw_Their_Colour_Glyphs_Unsimulated()
         {
-            var baseFont = SyntheticFont.FromBytes(LoadFontBytes("InterVariable.ttf"));
+            using var scope = CreateVariedEnvironment(out _, FontSimulations.None, managed: true);
+
+            // Rotated and painted with a gradient, both mask tiers decline the run and a static
+            // face falls back to its native blob, which would slant and embolden the colour glyph
+            // with the face.
+            var typeface = CreateColrTypeface("Inter-Regular.ttf", FontSimulations.Bold | FontSimulations.Oblique,
+                out var colorGlyph);
+
+            var actual = RenderVariedColr(typeface, colorGlyph, (context, run) =>
+                context.DrawGlyphRun(GradientBlack, run.PlatformImpl.Item));
+            var expected = RenderVariedColr(CreateColrTypeface("Inter-Regular.ttf", FontSimulations.None, out _),
+                colorGlyph, DrawColourDrawings);
+
+            AssertSameColourGlyph(expected, actual, "Bold, Oblique");
+        }
+
+        private static GlyphTypeface CreateVariedColrTypeface(FontSimulations simulations, out ushort colorGlyph)
+            => new GlyphTypeface(CreateColrFace("InterVariable.ttf", out colorGlyph))
+                .WithVariations(FontVariationSettings.Parse("wght=900"))
+                .WithSimulations(simulations);
+
+        private static GlyphTypeface CreateColrTypeface(string fontFile, FontSimulations simulations,
+            out ushort colorGlyph)
+            => new GlyphTypeface(CreateColrFace(fontFile, out colorGlyph)).WithSimulations(simulations);
+
+        private static SfntFace CreateColrFace(string fontFile, out ushort colorGlyph)
+        {
+            var baseFont = SyntheticFont.FromBytes(LoadFontBytes(fontFile));
             var probe = baseFont.CreateGlyphTypeface();
 
             colorGlyph = probe.CharacterToGlyphMap['H'];
@@ -300,9 +328,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face), "the grafted font did not load");
 
-            return new GlyphTypeface(face)
-                .WithVariations(FontVariationSettings.Parse("wght=900"))
-                .WithSimulations(simulations);
+            return face!;
         }
 
         private static byte[] RenderVariedColr(GlyphTypeface typeface, ushort colorGlyph,
