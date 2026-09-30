@@ -127,7 +127,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
 
-            if (!FitsRunMaskBounds(context, run.Bounds, scaleX, scaleY, BytesPerPixel(mode, alphaContext)))
+            if (!FitsRunMaskBounds(context, run.Bounds, scaleX, scaleY, BytesPerPixel(mode, alphaContext),
+                    out var maxSize))
             {
                 return false;
             }
@@ -186,14 +187,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!cache.TryGet(key, out var runMask))
             {
+                // The bound only sizes the chunks, it is not part of the key: chunks partition
+                // the same pixels, so a mask composed for one context draws correctly on another.
                 var composed = mode == GlyphMaskMode.Subpixel
                     ? alphaContext is null
-                        ? ComposeLcdBitmaps(run, key, (float)scaleX, (float)scaleY, lcdGeometry,
+                        ? ComposeLcdBitmaps(run, key, (float)scaleX, (float)scaleY, maxSize, lcdGeometry,
                             alpha, solid.Color.R, solid.Color.G, solid.Color.B)
-                        : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, lcdGeometry)
+                        : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize, lcdGeometry)
                     : alphaContext is null
-                        ? Compose(run, key, (float)scaleX, (float)scaleY)
-                        : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY);
+                        ? Compose(run, key, (float)scaleX, (float)scaleY, maxSize)
+                        : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize);
 
                 if (composed is null)
                 {
@@ -209,21 +212,27 @@ namespace Avalonia.Media.Fonts.Rasterization
             var oldTransform = context.Transform;
             context.Transform = Matrix.Identity;
 
-            var sourceRect = new Rect(0, 0, runMask.Width, runMask.Height);
-            var destRect = sourceRect.Translate(new Vector(originX + runMask.OffsetX, originY + runMask.OffsetY));
+            // Parts cover disjoint columns of the composed union, so every destination pixel is
+            // blended exactly once, with the value a single mask would hold there.
+            var parts = runMask.Parts;
 
             if (alphaContext is not null)
             {
                 var straightTint = ((uint)alpha << 24) |
                     ((uint)solid.Color.R << 16) | ((uint)solid.Color.G << 8) | solid.Color.B;
 
-                if (mode == GlyphMaskMode.Subpixel)
+                foreach (var part in parts)
                 {
-                    alphaContext.DrawLcdMask(runMask.Handle, sourceRect, destRect, straightTint);
-                }
-                else
-                {
-                    alphaContext.DrawAlphaMask(runMask.Handle, sourceRect, destRect, straightTint);
+                    GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
+
+                    if (mode == GlyphMaskMode.Subpixel)
+                    {
+                        alphaContext.DrawLcdMask(part.Handle, sourceRect, destRect, straightTint);
+                    }
+                    else
+                    {
+                        alphaContext.DrawAlphaMask(part.Handle, sourceRect, destRect, straightTint);
+                    }
                 }
             }
             else if (mode == GlyphMaskMode.Subpixel)
@@ -231,19 +240,33 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // Per-channel blending through the portable interface: multiply the
                 // destination by the inverse corrected coverage, then add the pre-tinted
                 // corrected coverage — together exactly the per-channel lerp.
-                var pair = (LcdRunBitmaps)runMask.Handle;
-
                 context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Multiply });
-                context.DrawBitmap((IBitmapImpl)pair.Multiply, 1, sourceRect, destRect);
+
+                foreach (var part in parts)
+                {
+                    GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
+                    context.DrawBitmap((IBitmapImpl)((LcdRunBitmaps)part.Handle).Multiply, 1, sourceRect, destRect);
+                }
+
                 context.PopRenderOptions();
 
                 context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Plus });
-                context.DrawBitmap((IBitmapImpl)pair.Plus, 1, sourceRect, destRect);
+
+                foreach (var part in parts)
+                {
+                    GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
+                    context.DrawBitmap((IBitmapImpl)((LcdRunBitmaps)part.Handle).Plus, 1, sourceRect, destRect);
+                }
+
                 context.PopRenderOptions();
             }
             else
             {
-                context.DrawBitmap((IBitmapImpl)runMask.Handle, 1, sourceRect, destRect);
+                foreach (var part in parts)
+                {
+                    GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
+                    context.DrawBitmap((IBitmapImpl)part.Handle, 1, sourceRect, destRect);
+                }
             }
 
             context.Transform = oldTransform;
@@ -251,24 +274,50 @@ namespace Avalonia.Media.Fonts.Rasterization
             return true;
         }
 
+        private static void GetPartRects(in RunMaskPart part, int originX, int originY,
+            out Rect sourceRect, out Rect destRect)
+        {
+            sourceRect = new Rect(0, 0, part.Width, part.Height);
+            destRect = sourceRect.Translate(new Vector(originX + part.OffsetX, originY + part.OffsetY));
+        }
+
         /// <summary>
         /// Gates the run on the context's dimension bound and the memory bound before any
-        /// compose work. The composed union cannot exceed the scaled ink bounds by more than
-        /// <see cref="RunMaskMargin"/>, so gating on Bounds keeps Compose from ever producing an
-        /// oversized mask (which would otherwise be indistinguishable from "no ink").
+        /// compose work, and reports the bound that sizes the composed chunks. Width beyond
+        /// the bound is chunked; height is not, so it must fit. The composed union cannot
+        /// exceed the scaled ink bounds by more than <see cref="RunMaskMargin"/>, so gating on
+        /// Bounds keeps Compose from ever producing an oversized mask.
         /// </summary>
         private static bool FitsRunMaskBounds(IDrawingContextImpl context, Rect bounds,
-            double scaleX, double scaleY, int bytesPerPixel)
+            double scaleX, double scaleY, int bytesPerPixel, out int maxSize)
         {
-            var maxSize = context is IAlphaGlyphMaskContext bounded
+            maxSize = context is IAlphaGlyphMaskContext bounded
                 ? bounded.MaxRunMaskSize
                 : DefaultMaxRunMaskSize;
 
             var width = bounds.Width * scaleX + RunMaskMargin;
             var height = bounds.Height * scaleY + RunMaskMargin;
 
-            return width <= maxSize && height <= maxSize &&
-                   width * height * bytesPerPixel <= MaxRunMaskBytes;
+            return height <= maxSize && width * height * bytesPerPixel <= MaxRunMaskBytes;
+        }
+
+        /// <summary>
+        /// Splits a composed union of <paramref name="width"/> columns into equal-width chunks
+        /// of at most <paramref name="maxSize"/> columns; the last chunk takes the remainder.
+        /// </summary>
+        private static int GetChunkCount(int width, int maxSize, out int chunkWidth)
+        {
+            chunkWidth = Math.Min(width, Math.Max(1, maxSize));
+
+            return (width + chunkWidth - 1) / chunkWidth;
+        }
+
+        private static void DisposeParts(RunMaskPart[] parts, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                parts[i].Handle.Dispose();
+            }
         }
 
         /// <summary>
@@ -334,7 +383,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// grayscale floor, so a foreground change recomposes.
         /// </summary>
         private static unsafe RunMask? ComposeLcdBitmaps(ManagedGlyphRunImpl run, RunMaskKey key,
-            float scaleX, float scaleY, LcdMaskGeometry geometry, byte alpha, byte r, byte g, byte b)
+            float scaleX, float scaleY, int maxSize, LcdMaskGeometry geometry, byte alpha, byte r, byte g, byte b)
         {
             var typeface = run.GlyphTypeface;
             var maskCache = typeface.MaskCache;
@@ -367,37 +416,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            var width = maxX - minX;
             var height = maxY - minY;
-            var staging = ArrayPool<byte>.Shared.Rent(width * height * 4);
+            var chunkCount = GetChunkCount(maxX - minX, maxSize, out var chunkWidth);
+            var parts = new RunMaskPart[chunkCount];
+            var created = 0;
+            var staging = ArrayPool<byte>.Shared.Rent(chunkWidth * height * 4);
 
             try
             {
-                var span = staging.AsSpan(0, width * height * 4);
-                span.Clear();
-
-                for (var i = 0; i < count; i++)
-                {
-                    var relativeX = originFraction + positions[i * 2] * scaleX;
-                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
-                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
-
-                    var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
-                        state, s_buildMask);
-
-                    RunMaskComposer.ComposeLcd(mask, penX - minX, penY - minY,
-                        geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
-                }
-
                 var table = MaskGamma.GetLcdTable(r, g, b);
                 var renderInterface = AvaloniaLocator.Current.GetRequiredService<Avalonia.Platform.IPlatformRenderInterface>();
-
-                var multiply = renderInterface.CreateWriteableBitmap(
-                    new PixelSize(width, height), new Vector(96, 96),
-                    Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
-                var plus = renderInterface.CreateWriteableBitmap(
-                    new PixelSize(width, height), new Vector(96, 96),
-                    Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
 
                 // Straight tint premultiplied by the text alpha once; per pixel only the
                 // corrected coverage multiplies in.
@@ -405,47 +433,92 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var tintG = Div255(g * alpha);
                 var tintR = Div255(r * alpha);
 
-                using (var multiplyBuffer = multiply.Lock())
-                using (var plusBuffer = plus.Lock())
+                for (var chunk = 0; chunk < chunkCount; chunk++)
                 {
-                    var mSpan = new Span<byte>((void*)multiplyBuffer.Address, multiplyBuffer.RowBytes * height);
-                    var pSpan = new Span<byte>((void*)plusBuffer.Address, plusBuffer.RowBytes * height);
+                    var chunkX = minX + chunk * chunkWidth;
+                    var width = Math.Min(chunkWidth, maxX - chunkX);
+                    var span = staging.AsSpan(0, width * height * 4);
+                    span.Clear();
 
-                    for (var y = 0; y < height; y++)
+                    for (var i = 0; i < count; i++)
                     {
-                        var src = span.Slice(y * width * 4, width * 4);
-                        var mRow = mSpan.Slice(y * multiplyBuffer.RowBytes, width * 4);
-                        var pRow = pSpan.Slice(y * plusBuffer.RowBytes, width * 4);
+                        var relativeX = originFraction + positions[i * 2] * scaleX;
+                        SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                        var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                        for (var x = 0; x < width; x++)
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
+                            state, s_buildMask);
+
+                        RunMaskComposer.ComposeLcd(mask, penX - chunkX, penY - minY,
+                            geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
+                    }
+
+                    var multiply = renderInterface.CreateWriteableBitmap(
+                        new PixelSize(width, height), new Vector(96, 96),
+                        Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+                    IWriteableBitmapImpl plus;
+
+                    try
+                    {
+                        plus = renderInterface.CreateWriteableBitmap(
+                            new PixelSize(width, height), new Vector(96, 96),
+                            Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
+                    }
+                    catch
+                    {
+                        multiply.Dispose();
+                        throw;
+                    }
+
+                    parts[created++] = new RunMaskPart(new LcdRunBitmaps(multiply, plus), chunkX, minY, width, height);
+
+                    using (var multiplyBuffer = multiply.Lock())
+                    using (var plusBuffer = plus.Lock())
+                    {
+                        var mSpan = new Span<byte>((void*)multiplyBuffer.Address, multiplyBuffer.RowBytes * height);
+                        var pSpan = new Span<byte>((void*)plusBuffer.Address, plusBuffer.RowBytes * height);
+
+                        for (var y = 0; y < height; y++)
                         {
-                            var d = x * 4;
+                            var src = span.Slice(y * width * 4, width * 4);
+                            var mRow = mSpan.Slice(y * multiplyBuffer.RowBytes, width * 4);
+                            var pRow = pSpan.Slice(y * plusBuffer.RowBytes, width * 4);
 
-                            // Staging is RGBA semantic order; the bitmaps are BGRA bytes.
-                            var covR = table[src[d]];
-                            var covG = table[src[d + 1]];
-                            var covB = table[src[d + 2]];
-                            var covMax = covR > covG ? covR : covG;
-
-                            if (covB > covMax)
+                            for (var x = 0; x < width; x++)
                             {
-                                covMax = covB;
+                                var d = x * 4;
+
+                                // Staging is RGBA semantic order; the bitmaps are BGRA bytes.
+                                var covR = table[src[d]];
+                                var covG = table[src[d + 1]];
+                                var covB = table[src[d + 2]];
+                                var covMax = covR > covG ? covR : covG;
+
+                                if (covB > covMax)
+                                {
+                                    covMax = covB;
+                                }
+
+                                mRow[d] = (byte)(255 - covB);
+                                mRow[d + 1] = (byte)(255 - covG);
+                                mRow[d + 2] = (byte)(255 - covR);
+                                mRow[d + 3] = 255;
+
+                                pRow[d] = (byte)Div255(tintB * covB);
+                                pRow[d + 1] = (byte)Div255(tintG * covG);
+                                pRow[d + 2] = (byte)Div255(tintR * covR);
+                                pRow[d + 3] = (byte)Div255(alpha * covMax);
                             }
-
-                            mRow[d] = (byte)(255 - covB);
-                            mRow[d + 1] = (byte)(255 - covG);
-                            mRow[d + 2] = (byte)(255 - covR);
-                            mRow[d + 3] = 255;
-
-                            pRow[d] = (byte)Div255(tintB * covB);
-                            pRow[d + 1] = (byte)Div255(tintG * covG);
-                            pRow[d + 2] = (byte)Div255(tintR * covR);
-                            pRow[d + 3] = (byte)Div255(alpha * covMax);
                         }
                     }
                 }
 
-                return new RunMask(new LcdRunBitmaps(multiply, plus), minX, minY, width, height);
+                return new RunMask(parts);
+            }
+            catch
+            {
+                DisposeParts(parts, created);
+                throw;
             }
             finally
             {
@@ -461,7 +534,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// reachable for COLR-free typefaces on LCD-eligible contexts.
         /// </summary>
         private static RunMask? ComposeLcdMask(ManagedGlyphRunImpl run, RunMaskKey key,
-            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, LcdMaskGeometry geometry)
+            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, int maxSize, LcdMaskGeometry geometry)
         {
             var typeface = run.GlyphTypeface;
             var maskCache = typeface.MaskCache;
@@ -494,29 +567,44 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            var width = maxX - minX;
             var height = maxY - minY;
-            var staging = ArrayPool<byte>.Shared.Rent(width * height * 4);
+            var chunkCount = GetChunkCount(maxX - minX, maxSize, out var chunkWidth);
+            var parts = new RunMaskPart[chunkCount];
+            var created = 0;
+            var staging = ArrayPool<byte>.Shared.Rent(chunkWidth * height * 4);
 
             try
             {
-                var span = staging.AsSpan(0, width * height * 4);
-                span.Clear();
-
-                for (var i = 0; i < count; i++)
+                for (var chunk = 0; chunk < chunkCount; chunk++)
                 {
-                    var relativeX = originFraction + positions[i * 2] * scaleX;
-                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
-                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+                    var chunkX = minX + chunk * chunkWidth;
+                    var width = Math.Min(chunkWidth, maxX - chunkX);
+                    var span = staging.AsSpan(0, width * height * 4);
+                    span.Clear();
 
-                    var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
-                        state, s_buildMask);
+                    for (var i = 0; i < count; i++)
+                    {
+                        var relativeX = originFraction + positions[i * 2] * scaleX;
+                        SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                        var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                    RunMaskComposer.ComposeLcd(mask, penX - minX, penY - minY,
-                        geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
+                            state, s_buildMask);
+
+                        RunMaskComposer.ComposeLcd(mask, penX - chunkX, penY - minY,
+                            geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
+                    }
+
+                    parts[created++] = new RunMaskPart(alphaContext.CreateLcdMask(span, width, height),
+                        chunkX, minY, width, height);
                 }
 
-                return new RunMask(alphaContext.CreateLcdMask(span, width, height), minX, minY, width, height);
+                return new RunMask(parts);
+            }
+            catch
+            {
+                DisposeParts(parts, created);
+                throw;
             }
             finally
             {
@@ -529,7 +617,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// backend mask. Only reachable for COLR-free typefaces, so no layer expansion here.
         /// </summary>
         private static RunMask? ComposeAlphaMask(ManagedGlyphRunImpl run, RunMaskKey key,
-            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY)
+            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, int maxSize)
         {
             var typeface = run.GlyphTypeface;
             var maskCache = typeface.MaskCache;
@@ -562,28 +650,43 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            var width = maxX - minX;
             var height = maxY - minY;
-            var staging = ArrayPool<byte>.Shared.Rent(width * height);
+            var chunkCount = GetChunkCount(maxX - minX, maxSize, out var chunkWidth);
+            var parts = new RunMaskPart[chunkCount];
+            var created = 0;
+            var staging = ArrayPool<byte>.Shared.Rent(chunkWidth * height);
 
             try
             {
-                var span = staging.AsSpan(0, width * height);
-                span.Clear();
-
-                for (var i = 0; i < count; i++)
+                for (var chunk = 0; chunk < chunkCount; chunk++)
                 {
-                    var relativeX = originFraction + positions[i * 2] * scaleX;
-                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
-                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+                    var chunkX = minX + chunk * chunkWidth;
+                    var width = Math.Min(chunkWidth, maxX - chunkX);
+                    var span = staging.AsSpan(0, width * height);
+                    span.Clear();
 
-                    var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
-                        state, s_buildMask);
+                    for (var i = 0; i < count; i++)
+                    {
+                        var relativeX = originFraction + positions[i * 2] * scaleX;
+                        SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                        var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                    RunMaskComposer.ComposeAlpha(mask, penX - minX, penY - minY, span, width, height);
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
+                            state, s_buildMask);
+
+                        RunMaskComposer.ComposeAlpha(mask, penX - chunkX, penY - minY, span, width, height);
+                    }
+
+                    parts[created++] = new RunMaskPart(alphaContext.CreateAlphaMask(span, width, height),
+                        chunkX, minY, width, height);
                 }
 
-                return new RunMask(alphaContext.CreateAlphaMask(span, width, height), minX, minY, width, height);
+                return new RunMask(parts);
+            }
+            catch
+            {
+                DisposeParts(parts, created);
+                throw;
             }
             finally
             {
@@ -591,7 +694,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private static unsafe RunMask? Compose(ManagedGlyphRunImpl run, RunMaskKey key, float scaleX, float scaleY)
+        private static unsafe RunMask? Compose(ManagedGlyphRunImpl run, RunMaskKey key, float scaleX, float scaleY,
+            int maxSize)
         {
             var typeface = run.GlyphTypeface;
             var maskCache = typeface.MaskCache;
@@ -696,79 +800,97 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            var width = maxX - minX;
             var height = maxY - minY;
+            var chunkCount = GetChunkCount(maxX - minX, maxSize, out var chunkWidth);
+            var parts = new RunMaskPart[chunkCount];
+            var created = 0;
 
             // Resolved per compose (a cache miss), not captured statically — the same
             // locator-scope reasoning as the outline build path.
             var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
-            var bitmap = renderInterface.CreateWriteableBitmap(
-                new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
 
-            using (var framebuffer = bitmap.Lock())
+            try
             {
-                // Compose straight into the locked framebuffer — no staging buffer (D7). The
-                // bitmap is never locked again, so its backend image identity stays stable.
-                var span = new Span<byte>((void*)framebuffer.Address, framebuffer.RowBytes * height);
-                span.Clear();
-
-                for (var i = 0; i < count; i++)
+                for (var chunk = 0; chunk < chunkCount; chunk++)
                 {
-                    var relativeX = originFraction + positions[i * 2] * scaleX;
-                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
-                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+                    var chunkX = minX + chunk * chunkWidth;
+                    var width = Math.Min(chunkWidth, maxX - chunkX);
+                    var bitmap = renderInterface.CreateWriteableBitmap(
+                        new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
 
-                    if (TryGetBitmapRect(indices[i], penX, penY, out var placement, out var bx, out var by, out var bw, out var bh))
+                    parts[created++] = new RunMaskPart(bitmap, chunkX, minY, width, height);
+
+                    using (var framebuffer = bitmap.Lock())
                     {
-                        // Strike bitmap: decoded once per (glyph, strike) via the source's memo,
-                        // then blitted scaled, source-over.
-                        RunMaskComposer.ComposeBitmap(placement.Bitmap, bx - minX, by - minY, bw, bh,
-                            span, width, height, framebuffer.RowBytes);
-                    }
-                    else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
-                    {
-                        // COLR v0: flat-color layers composed bottom-to-top in record order. The
-                        // 0xFFFF palette sentinel means "use the text foreground" — the run's
-                        // tint, available right here on the mask path.
-                        for (var layer = 0; layer < baseRecord.NumLayers; layer++)
+                        // Compose straight into the locked framebuffer — no staging buffer (D7). The
+                        // bitmap is never locked again, so its backend image identity stays stable.
+                        var span = new Span<byte>((void*)framebuffer.Address, framebuffer.RowBytes * height);
+                        span.Clear();
+
+                        for (var i = 0; i < count; i++)
                         {
-                            if (!colr.TryGetLayerRecord(baseRecord.FirstLayerIndex + layer, out var layerRecord))
-                            {
-                                continue;
-                            }
+                            var relativeX = originFraction + positions[i * 2] * scaleX;
+                            SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                            var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                            uint layerTint;
-
-                            if (layerRecord.PaletteIndex == 0xFFFF)
+                            if (TryGetBitmapRect(indices[i], penX, penY, out var placement, out var bx, out var by, out var bw, out var bh))
                             {
-                                layerTint = key.Tint;
+                                // Strike bitmap: decoded once per (glyph, strike) via the source's memo,
+                                // then blitted scaled, source-over.
+                                RunMaskComposer.ComposeBitmap(placement.Bitmap, bx - chunkX, by - minY, bw, bh,
+                                    span, width, height, framebuffer.RowBytes);
                             }
-                            else if (cpal.TryGetColor(layerRecord.PaletteIndex, out var color))
+                            else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                             {
-                                layerTint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
+                                // COLR v0: flat-color layers composed bottom-to-top in record order. The
+                                // 0xFFFF palette sentinel means "use the text foreground" — the run's
+                                // tint, available right here on the mask path.
+                                for (var layer = 0; layer < baseRecord.NumLayers; layer++)
+                                {
+                                    if (!colr.TryGetLayerRecord(baseRecord.FirstLayerIndex + layer, out var layerRecord))
+                                    {
+                                        continue;
+                                    }
+
+                                    uint layerTint;
+
+                                    if (layerRecord.PaletteIndex == 0xFFFF)
+                                    {
+                                        layerTint = key.Tint;
+                                    }
+                                    else if (cpal.TryGetColor(layerRecord.PaletteIndex, out var color))
+                                    {
+                                        layerTint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
+                                    }
+                                    else
+                                    {
+                                        continue;
+                                    }
+
+                                    RunMaskComposer.ComposeTinted(GetMask(layerRecord.GlyphIndex, glyphPhase),
+                                        penX - chunkX, penY - minY, layerTint, span, width, height, framebuffer.RowBytes);
+                                }
                             }
                             else
                             {
-                                continue;
+                                // Monochrome text takes the gamma/contrast coverage correction; the
+                                // color layers above must not — the transform is non-linear, so
+                                // abutting layers whose coverages sum to full would show seams.
+                                RunMaskComposer.ComposeTinted(GetMask(indices[i], glyphPhase),
+                                    penX - chunkX, penY - minY, key.Tint, span, width, height, framebuffer.RowBytes,
+                                    MaskGamma.GetTableForPremulBgra(key.Tint));
                             }
-
-                            RunMaskComposer.ComposeTinted(GetMask(layerRecord.GlyphIndex, glyphPhase),
-                                penX - minX, penY - minY, layerTint, span, width, height, framebuffer.RowBytes);
                         }
                     }
-                    else
-                    {
-                        // Monochrome text takes the gamma/contrast coverage correction; the
-                        // color layers above must not — the transform is non-linear, so
-                        // abutting layers whose coverages sum to full would show seams.
-                        RunMaskComposer.ComposeTinted(GetMask(indices[i], glyphPhase),
-                            penX - minX, penY - minY, key.Tint, span, width, height, framebuffer.RowBytes,
-                            MaskGamma.GetTableForPremulBgra(key.Tint));
-                    }
                 }
-            }
 
-            return new RunMask(bitmap, minX, minY, width, height);
+                return new RunMask(parts);
+            }
+            catch
+            {
+                DisposeParts(parts, created);
+                throw;
+            }
         }
 
         private static void UnionMask(GlyphMask mask, int penX, int penY,

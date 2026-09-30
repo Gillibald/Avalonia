@@ -14,12 +14,6 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true, bool PenSnap = false);
 
     /// <summary>
-    /// An immutable composed run mask: a backend bitmap plus its placement relative to the run's
-    /// snapped origin pixel. The bitmap is written exactly once (inside the composing lock,
-    /// before first draw) and never mutated afterwards, which is what makes the backend's
-    /// image-identity caching turn it into a GPU-resident texture after the first draw (D8).
-    /// </summary>
-    /// <summary>
     /// The portable subpixel draw payload: per-channel blending without backend support
     /// decomposes into two standard blits — a Multiply pass carrying the inverse corrected
     /// coverage and a Plus pass carrying the pre-tinted corrected coverage.
@@ -43,9 +37,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
     }
 
-    internal sealed class RunMask : IDisposable
+    /// <summary>
+    /// One realized bitmap of a composed run mask plus its placement relative to the run's
+    /// snapped origin pixel.
+    /// </summary>
+    internal readonly struct RunMaskPart
     {
-        public RunMask(IDisposable handle, int offsetX, int offsetY, int width, int height)
+        public RunMaskPart(IDisposable handle, int offsetX, int offsetY, int width, int height)
         {
             Handle = handle;
             OffsetX = offsetX;
@@ -55,12 +53,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The realized drawable: a pre-tinted <see cref="IBitmapImpl"/> on the portable floor,
-        /// or a backend alpha-mask handle from <see cref="IAlphaGlyphMaskContext"/>.
+        /// The realized drawable: a pre-tinted <see cref="IBitmapImpl"/> or an
+        /// <see cref="LcdRunBitmaps"/> pair on the portable floor, or a backend mask handle from
+        /// <see cref="IAlphaGlyphMaskContext"/>.
         /// </summary>
         public IDisposable Handle { get; }
 
-        /// <summary>Mask top-left relative to the run's snapped origin pixel, device px.</summary>
+        /// <summary>Part top-left relative to the run's snapped origin pixel, device px.</summary>
         public int OffsetX { get; }
 
         public int OffsetY { get; }
@@ -68,8 +67,50 @@ namespace Avalonia.Media.Fonts.Rasterization
         public int Width { get; }
 
         public int Height { get; }
+    }
 
-        public void Dispose() => Handle.Dispose();
+    /// <summary>
+    /// An immutable composed run mask. Its bitmaps are written exactly once (inside the
+    /// composing lock, before first draw) and never mutated afterwards, which is what makes the
+    /// backend's image-identity caching turn them into GPU-resident textures after the first
+    /// draw (D8).
+    /// </summary>
+    /// <remarks>
+    /// A run wider than the drawing context's run-mask bound is split into several parts, each
+    /// covering a disjoint range of device columns over the full height of the composed union.
+    /// Every part composes every glyph whose mask reaches into its columns, clipped at the part
+    /// edges, and each pixel's value depends only on the glyphs covering that pixel, in run
+    /// order. Every pixel therefore holds exactly the value a single mask would hold, and since
+    /// the parts do not overlap, each destination pixel is blended once. Glyph ink crossing a
+    /// part edge, overlapping neighbours and kerning need no special boundary rule.
+    /// </remarks>
+    internal sealed class RunMask : IDisposable
+    {
+        private readonly RunMaskPart[] _parts;
+        private bool _disposed;
+
+        public RunMask(RunMaskPart[] parts)
+        {
+            _parts = parts;
+        }
+
+        /// <summary>The realized parts, left to right.</summary>
+        public ReadOnlySpan<RunMaskPart> Parts => _parts;
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            foreach (var part in _parts)
+            {
+                part.Handle.Dispose();
+            }
+        }
     }
 
     /// <summary>
