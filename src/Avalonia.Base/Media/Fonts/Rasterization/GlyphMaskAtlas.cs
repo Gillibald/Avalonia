@@ -173,8 +173,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Looks up an entry and stamps its page with <paramref name="tick"/>.</summary>
         public bool TryGet(in GlyphMaskKey key, long tick, out GlyphAtlasSlot slot)
         {
-            slot = default;
-            return false;
+            lock (_lock)
+            {
+                if (!_slots.TryGetValue(key, out slot))
+                {
+                    return false;
+                }
+
+                if (slot.Page is { } page)
+                {
+                    page.LastUse = tick;
+                }
+
+                return true;
+            }
         }
 
         /// <summary>
@@ -183,8 +195,164 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public bool TryAdd(in GlyphMaskKey key, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
         {
-            slot = default;
-            return false;
+            if (!mask.IsEmpty && !Fits(mask.Width, mask.Height))
+            {
+                slot = default;
+                return false;
+            }
+
+            lock (_lock)
+            {
+                if (_slots.TryGetValue(key, out slot))
+                {
+                    if (slot.Page is { } existing)
+                    {
+                        existing.LastUse = tick;
+                    }
+
+                    return true;
+                }
+
+                if (mask.IsEmpty)
+                {
+                    slot = default;
+                    _slots.Add(key, slot);
+                    return true;
+                }
+
+                var (page, x, y) = Place(mask.Width + 1, mask.Height + 1, tick);
+
+                Write(page, mask, x, y);
+                page.Keys.Add(key);
+                page.LastUse = tick;
+
+                slot = new GlyphAtlasSlot(page, x, y, mask.Width, mask.Height, mask.Left, mask.Top);
+                _slots.Add(key, slot);
+
+                return true;
+            }
+        }
+
+        private (GlyphAtlasPage Page, int X, int Y) Place(int width, int height, long tick)
+        {
+            // An open shelf of a similar height first, so short glyphs do not waste tall rows.
+            foreach (var page in _pages)
+            {
+                var shelves = page.Shelves;
+
+                for (var s = 0; s < shelves.Count; s++)
+                {
+                    var shelf = shelves[s];
+
+                    if (shelf.Height >= height && shelf.Height <= height + height / 4 + 2 &&
+                        shelf.X + width <= PageWidth)
+                    {
+                        shelves[s] = (shelf.Y, shelf.Height, shelf.X + width);
+                        return (page, shelf.X, shelf.Y);
+                    }
+                }
+            }
+
+            foreach (var page in _pages)
+            {
+                if (page.UsedHeight + height <= MaxPageHeight)
+                {
+                    return (page, 0, OpenShelf(page, width, height, tick));
+                }
+            }
+
+            var rows = RoundUp(height);
+
+            MakeRoom((long)PageWidth * rows, tick);
+
+            var fresh = new GlyphAtlasPage(rows);
+
+            _pages.Add(fresh);
+            Interlocked.Add(ref _allocated, fresh.Pixels.Length);
+
+            return (fresh, 0, OpenShelf(fresh, width, height, tick));
+        }
+
+        private int OpenShelf(GlyphAtlasPage page, int width, int height, long tick)
+        {
+            var y = page.UsedHeight;
+
+            // The page is about to take this entry, so the room made for its growth must
+            // come from other pages.
+            page.LastUse = tick;
+
+            if (y + height > page.Height)
+            {
+                var rows = Math.Min(MaxPageHeight, RoundUp(y + height));
+                var growth = (long)PageWidth * (rows - page.Height);
+
+                MakeRoom(growth, tick);
+
+                var before = page.Pixels.Length;
+
+                page.Grow(rows);
+                Interlocked.Add(ref _allocated, page.Pixels.Length - before);
+            }
+
+            page.Shelves.Add((y, height, width));
+            page.UsedHeight = y + height;
+
+            return y;
+        }
+
+        private static int RoundUp(int rows) => (rows + RowQuantum - 1) / RowQuantum * RowQuantum;
+
+        /// <summary>Drops the least recently used pages until <paramref name="bytes"/> more fit the budget.</summary>
+        private void MakeRoom(long bytes, long tick)
+        {
+            while (_allocated + bytes > _budget)
+            {
+                GlyphAtlasPage? victim = null;
+
+                foreach (var page in _pages)
+                {
+                    if (page.LastUse < tick && (victim is null || page.LastUse < victim.LastUse))
+                    {
+                        victim = page;
+                    }
+                }
+
+                if (victim is null)
+                {
+                    return;
+                }
+
+                Evict(victim);
+            }
+        }
+
+        private void Evict(GlyphAtlasPage page)
+        {
+            foreach (var key in page.Keys)
+            {
+                _slots.Remove(key);
+            }
+
+            _pages.Remove(page);
+            Interlocked.Add(ref _allocated, -page.Pixels.Length);
+            Interlocked.Increment(ref _evictions);
+
+            page.IsEvicted = true;
+            page.Realized?.Dispose();
+            page.Realized = null;
+        }
+
+        private static void Write(GlyphAtlasPage page, GlyphMask mask, int x, int y)
+        {
+            var pixels = page.Pixels;
+
+            for (var row = 0; row < mask.Height; row++)
+            {
+                mask.Alpha.AsSpan(row * mask.Width, mask.Width)
+                    .CopyTo(pixels.AsSpan((y + row) * PageWidth + x, mask.Width));
+            }
+
+            page.Version++;
         }
     }
 }

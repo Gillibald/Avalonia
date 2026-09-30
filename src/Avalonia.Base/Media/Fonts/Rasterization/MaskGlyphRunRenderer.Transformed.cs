@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 
@@ -105,19 +106,70 @@ namespace Avalonia.Media.Fonts.Rasterization
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode, tint,
                 GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: originPhaseY);
 
-            var cache = run.TransformedRunMasks;
-            var transient = false;
-
-            if (cache.TryGet(key, out var runMask))
+            if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.Raster } atlasContext)
             {
-                run.TransformChurn.Record(key.ScaleQ, linear, cacheHit: true);
+                // Sprites carry no colour: the backend tints each batch at draw time.
+                var spriteKey = key with { Tint = 0 };
+                var state = run.TransformedSprites;
+                var hit = state.TryGet(spriteKey, out var sprites);
+
+                if (!run.TransformChurn.Record(key.ScaleQ, linear, hit))
+                {
+                    if (!hit)
+                    {
+                        if (!TryBuildSprites(run, spriteKey, transform, out var built))
+                        {
+                            return false;
+                        }
+
+                        if (built is null)
+                        {
+                            return true;   // no ink
+                        }
+
+                        state.Add(built);
+                        sprites = built;
+                    }
+
+                    DrawFromAtlas(atlasContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color));
+
+                    return true;
+                }
+
+                // A GPU run whose transform changes every frame composes from transient buffers.
+                return DrawThroughRunMask(context, run, key, transform, alphaContext, alpha, solid.Color,
+                    originX, originY, forceTransient: true);
+            }
+
+            return DrawThroughRunMask(context, run, key, transform, alphaContext, alpha, solid.Color,
+                originX, originY, forceTransient: false);
+        }
+
+        private static uint ToArgb(byte alpha, Color color)
+            => ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
+
+        private static bool DrawThroughRunMask(IDrawingContextImpl context, ManagedGlyphRunImpl run, in RunMaskKey key,
+            in Matrix transform, IAlphaGlyphMaskContext? alphaContext, byte alpha, Color color, int originX, int originY,
+            bool forceTransient)
+        {
+            var cache = run.TransformedRunMasks;
+            var transient = forceTransient;
+            RunMask runMask;
+
+            if (!forceTransient && cache.TryGet(key, out var cached))
+            {
+                run.TransformChurn.Record(key.ScaleQ, key.Transform, cacheHit: true);
+                runMask = cached;
             }
             else
             {
                 // While the transform changes every frame, neither the run mask nor its glyph
                 // masks would be drawn again: compose from transient buffers and release the
                 // run mask after the draw, so an animation cannot evict static text's masks.
-                transient = run.TransformChurn.Record(key.ScaleQ, linear, cacheHit: false);
+                if (!forceTransient)
+                {
+                    transient = run.TransformChurn.Record(key.ScaleQ, key.Transform, cacheHit: false);
+                }
 
                 var maxSize = context is IAlphaGlyphMaskContext bounded
                     ? bounded.MaxRunMaskSize
@@ -143,7 +195,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             try
             {
-                DrawTransformedRunMask(context, runMask, originX, originY, alphaContext, alpha, solid.Color);
+                DrawTransformedRunMask(context, runMask, originX, originY, alphaContext, alpha, color);
             }
             finally
             {
@@ -157,6 +209,224 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             return true;
         }
+
+        /// <summary>
+        /// Lays the run's glyph masks out relative to its snapped origin pixel under the key's
+        /// transform and phases. Returns <c>false</c> when a glyph mask would exceed
+        /// <see cref="GlyphMasks.MaxMaskSize"/>, and <c>true</c> with a <c>null</c> set when the
+        /// run has no ink.
+        /// </summary>
+        private static bool TryBuildSprites(ManagedGlyphRunImpl run, in RunMaskKey key, in Matrix transform,
+            out TransformedGlyphSprites? sprites)
+        {
+            sprites = null;
+
+            var items = ArrayPool<TransformedGlyphItem>.Shared.Rent(Math.Max(1, run.GlyphCount));
+            var count = 0;
+
+            try
+            {
+                if (!TryCollectTransformedItems(run, key, transform, expandColorLayers: true, ref items, ref count,
+                        out _, out _, out _, out _))
+                {
+                    return false;
+                }
+
+                if (count == 0)
+                {
+                    return true;
+                }
+
+                var laidOut = new TransformedSprite[count];
+
+                for (var i = 0; i < count; i++)
+                {
+                    ref readonly var item = ref items[i];
+
+                    laidOut[i] = new TransformedSprite
+                    {
+                        Glyph = item.Key.Glyph,
+                        PhaseX = item.Key.Phase,
+                        PhaseY = item.Key.PhaseY,
+                        Kind = item.Kind,
+                        X = item.PenX + item.Left,
+                        Y = item.PenY + item.Top,
+                        Width = item.Width,
+                        Height = item.Height,
+                        Color = item.Color,
+                    };
+                }
+
+                sprites = new TransformedGlyphSprites(key, run.GlyphTypeface.FontSimulations != FontSimulations.None,
+                    laidOut);
+
+                return true;
+            }
+            finally
+            {
+                ArrayPool<TransformedGlyphItem>.Shared.Return(items);
+            }
+        }
+
+        /// <summary>
+        /// Draws a sprite set from the typeface's atlas, one backend call per batch, placed at
+        /// the run's snapped origin pixel.
+        /// </summary>
+        private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
+            TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb)
+        {
+            var atlas = typeface.MaskAtlas;
+
+            if (!sprites.HasValidBatches(atlas))
+            {
+                BuildAtlasBatches(context, typeface, atlas, sprites);
+            }
+
+            DrawBatches(context, atlas, sprites, Matrix.CreateTranslation(originX, originY), foregroundArgb,
+                bilinear: false);
+        }
+
+        private static void DrawBatches(ITransformedGlyphContext context, GlyphMaskAtlas atlas,
+            TransformedGlyphSprites sprites, in Matrix placement, uint foregroundArgb, bool bilinear)
+        {
+            var tick = atlas.Tick();
+
+            foreach (var batch in sprites.Batches!)
+            {
+                if (batch.Page is { } page)
+                {
+                    page.LastUse = tick;
+                }
+
+                var tint = batch.Kind == TransformedSpriteKind.PaletteLayer ? batch.Color : foregroundArgb;
+
+                context.DrawAtlasBatch(batch, placement, tint, batch.Kind == TransformedSpriteKind.Foreground, bilinear);
+            }
+        }
+
+        /// <summary>
+        /// Places every sprite's glyph mask in the atlas and groups consecutive sprites that
+        /// share a page and a colouring into batches, keeping the run's draw order. On a GPU
+        /// context the atlas is the masks' storage: a mask missing from it is rasterized into
+        /// a transient buffer and copied in, and never enters the glyph mask cache. A mask too
+        /// large for a page, or over the cache's entry bound, draws from its own image.
+        /// </summary>
+        private static void BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
+            GlyphMaskAtlas atlas, TransformedGlyphSprites sprites)
+        {
+            var tick = atlas.Tick();
+            var count = sprites.Count;
+            var geometry = ArrayPool<GlyphAtlasSprite>.Shared.Rent(Math.Max(1, count));
+            var batches = new List<GlyphAtlasBatch>();
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var maxEntryBytes = typeface.MaskCache.MaxEntryBytes;
+
+            GlyphAtlasPage? page = null;
+            var kind = TransformedSpriteKind.Foreground;
+            var color = 0u;
+            var start = 0;
+            var pending = 0;
+
+            try
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var sprite = sprites.Sprites[i];
+                    var key = sprites.GetGlyphKey(i);
+
+                    if (!atlas.TryGet(key, tick, out var slot))
+                    {
+                        byte[]? rented = null;
+
+                        try
+                        {
+                            var mask = typeface.MaskCache.TryGet(key, out var cached)
+                                ? cached
+                                : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
+
+                            if (mask.IsEmpty)
+                            {
+                                continue;
+                            }
+
+                            if (mask.Width * mask.Height > maxEntryBytes || !atlas.TryAdd(key, mask, tick, out slot))
+                            {
+                                Flush();
+                                batches.Add(new GlyphAtlasBatch(null, i, 1, sprite.Kind, sprite.Color,
+                                    context.CreateAtlasBatch(
+                                        new[] { new GlyphAtlasSprite(0, 0, mask.Width, mask.Height, sprite.X, sprite.Y) },
+                                        ToExactMask(mask))));
+                                continue;
+                            }
+                        }
+                        finally
+                        {
+                            if (rented is not null)
+                            {
+                                ArrayPool<byte>.Shared.Return(rented);
+                            }
+                        }
+                    }
+
+                    if (slot.IsEmpty)
+                    {
+                        continue;
+                    }
+
+                    if (pending > 0 && (slot.Page != page || sprite.Kind != kind || sprite.Color != color))
+                    {
+                        Flush();
+                    }
+
+                    if (pending == 0)
+                    {
+                        page = slot.Page;
+                        kind = sprite.Kind;
+                        color = sprite.Color;
+                        start = i;
+                    }
+
+                    geometry[pending++] = new GlyphAtlasSprite(slot.X, slot.Y, slot.Width, slot.Height,
+                        sprite.X, sprite.Y);
+                }
+
+                Flush();
+
+                sprites.SetBatches(atlas, batches.ToArray());
+            }
+            catch
+            {
+                foreach (var batch in batches)
+                {
+                    batch.Dispose();
+                }
+
+                throw;
+            }
+            finally
+            {
+                ArrayPool<GlyphAtlasSprite>.Shared.Return(geometry);
+            }
+
+            void Flush()
+            {
+                if (pending == 0)
+                {
+                    return;
+                }
+
+                batches.Add(new GlyphAtlasBatch(page, start, pending, kind, color,
+                    context.CreateAtlasBatch(geometry.AsSpan(0, pending), null)));
+                pending = 0;
+            }
+        }
+
+        /// <summary>A mask whose buffer is exactly its pixels, so a backend may keep or copy it whole.</summary>
+        private static GlyphMask ToExactMask(GlyphMask mask)
+            => mask.Alpha.Length == mask.Width * mask.Height
+                ? mask
+                : new GlyphMask(mask.Alpha.AsSpan(0, mask.Width * mask.Height).ToArray(), mask.Width, mask.Height,
+                    mask.Left, mask.Top);
 
         private static void DrawTransformedRunMask(IDrawingContextImpl context, RunMask runMask, int originX,
             int originY, IAlphaGlyphMaskContext? alphaContext, byte alpha, Color color)
@@ -202,6 +472,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             public int Height;
             public uint Tint;
             public bool CorrectCoverage;
+            public TransformedSpriteKind Kind;
+            public uint Color;
         }
 
         /// <summary>
@@ -337,14 +609,19 @@ namespace Avalonia.Media.Fonts.Rasterization
                         }
 
                         uint layerTint;
+                        uint layerColor = 0;
+                        TransformedSpriteKind kind;
 
                         if (layerRecord.PaletteIndex == 0xFFFF)
                         {
                             layerTint = key.Tint;
+                            kind = TransformedSpriteKind.ForegroundLayer;
                         }
                         else if (cpal.TryGetColor(layerRecord.PaletteIndex, out var color))
                         {
                             layerTint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
+                            layerColor = ((uint)color.A << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
+                            kind = TransformedSpriteKind.PaletteLayer;
                         }
                         else
                         {
@@ -352,14 +629,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                         }
 
                         if (!TryAddTransformedItem(typeface, glyphKey with { Glyph = layerRecord.GlyphIndex },
-                                penX, penY, layerTint, false, ref items, ref count,
+                                penX, penY, layerTint, false, kind, layerColor, ref items, ref count,
                                 ref minX, ref minY, ref maxX, ref maxY))
                         {
                             return false;
                         }
                     }
                 }
-                else if (!TryAddTransformedItem(typeface, glyphKey, penX, penY, key.Tint, true, ref items, ref count,
+                else if (!TryAddTransformedItem(typeface, glyphKey, penX, penY, key.Tint, true,
+                             TransformedSpriteKind.Foreground, 0, ref items, ref count,
                              ref minX, ref minY, ref maxX, ref maxY))
                 {
                     return false;
@@ -370,7 +648,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private static bool TryAddTransformedItem(GlyphTypeface typeface, in GlyphMaskKey glyphKey, int penX, int penY,
-            uint tint, bool correctCoverage, ref TransformedGlyphItem[] items, ref int count,
+            uint tint, bool correctCoverage, TransformedSpriteKind kind, uint color, ref TransformedGlyphItem[] items,
+            ref int count,
             ref int minX, ref int minY, ref int maxX, ref int maxY)
         {
             if (!GlyphMasks.TryGetTransformedPlacement(typeface, glyphKey,
@@ -404,6 +683,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Height = height,
                 Tint = tint,
                 CorrectCoverage = correctCoverage,
+                Kind = kind,
+                Color = color,
             };
 
             minX = Math.Min(minX, penX + left);
