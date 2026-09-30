@@ -17,15 +17,80 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
+    /// The linear part of a device transform a glyph mask is rasterized under, normalized to
+    /// unit determinant (the scale lives in <see cref="GlyphMaskKey.ScaleQ"/>) and quantized to
+    /// a 1/<see cref="Quantum"/> grid so floating-point noise cannot mint spurious variants.
+    /// Each element is stored as its offset from the identity, so the default value is the
+    /// identity and keys that never carry a transform keep their exact values.
+    /// </summary>
+    internal readonly record struct GlyphMaskTransform(short M11, short M12, short M21, short M22)
+    {
+        /// <summary>Quantization steps per unit of a matrix element.</summary>
+        public const float Quantum = 4096f;
+
+        /// <summary>Whether this is the upright, unscaled identity.</summary>
+        public bool IsIdentity => (M11 | M12 | M21 | M22) == 0;
+
+        /// <summary>The dequantized first row, x column.</summary>
+        public float Scale11 => 1f + M11 / Quantum;
+
+        /// <summary>The dequantized first row, y column.</summary>
+        public float Skew12 => M12 / Quantum;
+
+        /// <summary>The dequantized second row, x column.</summary>
+        public float Skew21 => M21 / Quantum;
+
+        /// <summary>The dequantized second row, y column.</summary>
+        public float Scale22 => 1f + M22 / Quantum;
+
+        /// <summary>
+        /// Quantizes a normalized linear part. Fails when an element falls outside the grid's
+        /// range (about eight times the unit scale), which only extreme anisotropy reaches.
+        /// </summary>
+        public static bool TryQuantize(double m11, double m12, double m21, double m22,
+            out GlyphMaskTransform transform)
+        {
+            transform = default;
+
+            if (!TryQuantizeElement(m11 - 1, out var q11) || !TryQuantizeElement(m12, out var q12) ||
+                !TryQuantizeElement(m21, out var q21) || !TryQuantizeElement(m22 - 1, out var q22))
+            {
+                return false;
+            }
+
+            transform = new GlyphMaskTransform(q11, q12, q21, q22);
+            return true;
+        }
+
+        private static bool TryQuantizeElement(double value, out short quantized)
+        {
+            var q = Math.Round(value * Quantum);
+
+            if (!(q >= short.MinValue && q <= short.MaxValue))
+            {
+                quantized = 0;
+                return false;
+            }
+
+            quantized = (short)q;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Cache identity of a rasterized glyph mask. Scale is quantized to 1/8 px-per-em steps so
     /// floating-point noise in transform math cannot mint spurious variants; the subpixel x
-    /// phase is bucketed to quarter pixels (y rides baseline snapping and has no phase). Neither
-    /// opacity nor foreground tint is part of the identity: opacity rides the draw call's own
-    /// parameter and tint variants are a run-mask concern, so animating either never touches
-    /// this cache.
+    /// phase is bucketed to quarter pixels. Upright draws ride baseline snapping and have no y
+    /// phase; a rotated or skewed draw moves glyph origins off the pixel grid in both axes, so
+    /// its masks carry a <see cref="Transform"/> and a quarter-pixel <see cref="PhaseY"/> too.
+    /// <see cref="ApplySimulations"/> selects the typeface's simulated outline (bold, oblique),
+    /// which only the transformed tier renders. Neither opacity nor foreground tint is part of
+    /// the identity: opacity rides the draw call's own parameter and tint variants are a
+    /// run-mask concern, so animating either never touches this cache.
     /// </summary>
     internal readonly record struct GlyphMaskKey(
-        ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool StemSnap = false)
+        ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool StemSnap = false,
+        GlyphMaskTransform Transform = default, byte PhaseY = 0, bool ApplySimulations = false)
     {
         /// <summary>Number of subpixel x-phase buckets.</summary>
         public const int PhaseCount = 4;
@@ -38,6 +103,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The subpixel x offset this mask's coverage was sampled at.</summary>
         public float PhaseOffset => Phase * (1f / PhaseCount);
+
+        /// <summary>The subpixel y offset this mask's coverage was sampled at.</summary>
+        public float PhaseOffsetY => PhaseY * (1f / PhaseCount);
+
+        /// <summary>
+        /// Whether this mask is built by the transformed builder: any rotation, skew or
+        /// anisotropic scale, a vertical phase, or a simulated outline. Everything else is the
+        /// upright mask the axis-aligned builder produces.
+        /// </summary>
+        public bool IsTransformed => !Transform.IsIdentity || PhaseY != 0 || ApplySimulations;
 
         public static GlyphMaskKey Create(ushort glyph, float pixelsPerEm, float penX, GlyphMaskMode mode)
         {

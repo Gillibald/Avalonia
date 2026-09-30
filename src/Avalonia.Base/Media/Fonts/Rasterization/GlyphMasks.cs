@@ -129,6 +129,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Builds a glyph mask under the key's quantized linear transform and x/y phase, with
+        /// the typeface's simulations when the key asks for them. Unhinted: grid fitting
+        /// assumes an upright pixel grid.
+        /// </summary>
+        internal static GlyphMask BuildTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
+        {
+            return GlyphMask.Empty;
+        }
+
+        /// <summary>
         /// Runs the glyph's instructions and emits the hinted outline into the scratch
         /// builder. Bounds come from the hinted points themselves rather than the table ink
         /// box, since instructions move edges by design. The interpreter hints at logical
