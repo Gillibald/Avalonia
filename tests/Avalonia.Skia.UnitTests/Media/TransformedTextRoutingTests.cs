@@ -133,6 +133,36 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void A_Warm_Transformed_Frame_Allocates_Nothing()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, "Warm rotated frames", 24, new Point(8, 32));
+
+            var info = new SKImageInfo(320, 240, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            context.Transform = s_rotation;
+
+            // The cold draw composes and caches; the second settles pools and the image wrap.
+            context.DrawGlyphRun(Brushes.Black, run);
+            context.DrawGlyphRun(Brushes.Black, run);
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+
+            for (var i = 0; i < 100; i++)
+            {
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.True(allocated == 0, $"100 warm transformed draws allocated {allocated} bytes");
+        }
+
         /// <summary>Selects the transformed-text tier until disposed.</summary>
         internal static IDisposable RouteTransformedText(TransformedTextRouting routing)
         {
