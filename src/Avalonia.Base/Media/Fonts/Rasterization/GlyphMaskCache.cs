@@ -37,6 +37,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private Entry? _hand;
         private int _count;
         private int _totalCost;
+        private long _evictions;
 
         public GlyphMaskCache(int budgetBytes = DefaultBudgetBytes)
         {
@@ -48,6 +49,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Total retained mask bytes.</summary>
         public int TotalCost => Volatile.Read(ref _totalCost);
+
+        /// <summary>
+        /// The largest mask worth caching: a sixteenth of the budget. A bigger mask (a glyph
+        /// near a thousand pixels per em) would evict a whole screen of text masks to be kept,
+        /// so callers compose it from a transient buffer instead.
+        /// </summary>
+        public int MaxEntryBytes => _budget / 16;
+
+        /// <summary>Masks evicted to stay within the budget since construction; for diagnostics and tests.</summary>
+        public long Evictions => Volatile.Read(ref _evictions);
 
         /// <summary>Peeks a cached mask without building. Lock-free; for diagnostics and tests.</summary>
         public bool TryGet(in GlyphMaskKey key, out GlyphMask mask)
@@ -118,6 +129,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 _totalCost -= Volatile.Read(ref victim.Mask)!.ByteCost;
+                Interlocked.Increment(ref _evictions);
                 RingRemove(victim);
                 Volatile.Write(ref victim.Mask, null);
                 _entries.TryRemove(victim.Key, out _);

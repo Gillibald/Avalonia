@@ -189,4 +189,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
     }
+
+    /// <summary>
+    /// Watches one run's transformed draws for a transform that changes every frame, such as a
+    /// rotation or zoom animation, whose masks are never drawn again.
+    /// </summary>
+    internal sealed class TransformChurnGuard
+    {
+        /// <summary>Consecutive transform changes after which the run counts as animating.</summary>
+        public const int Threshold = 3;
+    }
 }
