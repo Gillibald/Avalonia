@@ -717,8 +717,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                             continue;
                         }
 
-                        if (!TryAddTransformedItem(typeface, glyphKey with { Glyph = layerRecord.GlyphIndex },
-                                penX, penY, kind, layerColor, ref items, ref count))
+                        // Colour glyphs are never simulated, so neither are their layers.
+                        var layerKey = glyphKey with
+                        {
+                            Glyph = layerRecord.GlyphIndex, EmboldenQ = 0, Oblique = false,
+                        };
+
+                        if (!TryAddTransformedItem(typeface, layerKey, penX, penY, kind, layerColor, ref items,
+                                ref count))
                         {
                             return false;
                         }

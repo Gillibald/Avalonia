@@ -173,6 +173,28 @@ namespace Avalonia.Media
         internal Fonts.Tables.Bitmaps.IBitmapGlyphSource? BitmapSource =>
             _cbdtTable ?? (Fonts.Tables.Bitmaps.IBitmapGlyphSource?)_sbixTable;
 
+        /// <summary>
+        /// Whether <paramref name="glyph"/> is a colour glyph: a COLR v0 or v1 base glyph with a
+        /// palette to paint it, or a glyph with a CBDT or sbix strike image.
+        /// </summary>
+        /// <remarks>
+        /// Font simulations apply to outline glyphs only; every rendering, bounds and outline
+        /// path asks this to leave colour glyphs unsimulated. Colour fonts are overwhelmingly
+        /// emoji and pictographs, which have no bold or italic design to stand in for, and
+        /// Skia's own fake bold leaves colour layers and strikes untouched as well.
+        /// </remarks>
+        internal bool IsColorGlyph(ushort glyph)
+        {
+            if (_colrTable is not null && _cpalTable is not null &&
+                (_colrTable.HasColorLayers(glyph) ||
+                 (_colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyph, out _))))
+            {
+                return true;
+            }
+
+            return BitmapSource?.HasGlyphImage(glyph) ?? false;
+        }
+
         // Pre-computed per-region scaler arrays for each variation table's
         // ItemVariationStore. Built once at clone construction so per-glyph delta
         // lookups become array indices instead of per-axis F2DOT14 ramps. The active

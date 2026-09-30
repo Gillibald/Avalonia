@@ -159,13 +159,19 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        /// <summary>The full glyph mask key of sprite <paramref name="index"/>.</summary>
+        /// <summary>
+        /// The full glyph mask key of sprite <paramref name="index"/>. COLR layers are never
+        /// simulated (see <see cref="GlyphTypeface.IsColorGlyph"/>), so only foreground glyph
+        /// sprites carry the run's simulation.
+        /// </summary>
         public GlyphMaskKey GetGlyphKey(int index)
         {
             ref readonly var sprite = ref _sprites[index];
+            var simulated = sprite.Kind == TransformedSpriteKind.Foreground;
 
             return new GlyphMaskKey(sprite.Glyph, Key.ScaleQ, sprite.PhaseX, Key.Mode, GridFit: false, StemSnap: false,
-                EmboldenQ: EmboldenQ, Oblique: Oblique, Transform: Key.Transform, PhaseY: sprite.PhaseY);
+                EmboldenQ: simulated ? EmboldenQ : (ushort)0, Oblique: simulated && Oblique, Transform: Key.Transform,
+                PhaseY: sprite.PhaseY);
         }
 
         /// <summary>

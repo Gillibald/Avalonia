@@ -828,8 +828,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;
             }
 
-            GlyphMask GetMask(ushort glyph, byte phase)
-                => maskCache.GetOrBuild(new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.PenSnap, embolden, oblique), state, s_buildMask);
+            // Simulations apply to outline glyphs only (see GlyphTypeface.IsColorGlyph): COLR
+            // layers, strike images and a colour glyph's outline fallback are built unsimulated.
+            var simulated = embolden != 0 || oblique;
+
+            GlyphMask GetMask(ushort glyph, byte phase, bool simulate)
+                => maskCache.GetOrBuild(simulate
+                    ? new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.PenSnap, embolden, oblique)
+                    : new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.PenSnap), state, s_buildMask);
 
             // Two passes over the same (glyph → v0 layers) expansion: the first unions the
             // placements, the second composes. The second pass refetches every mask through the
@@ -862,14 +868,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                     {
                         if (colr.TryGetLayerRecord(baseRecord.FirstLayerIndex + layer, out var layerRecord))
                         {
-                            UnionMask(GetMask(layerRecord.GlyphIndex, glyphPhase), penX, penY,
+                            UnionMask(GetMask(layerRecord.GlyphIndex, glyphPhase, simulate: false), penX, penY,
                                 ref minX, ref minY, ref maxX, ref maxY);
                         }
                     }
                 }
                 else
                 {
-                    UnionMask(GetMask(indices[i], glyphPhase), penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+                    UnionMask(GetMask(indices[i], glyphPhase, simulated && !typeface.IsColorGlyph(indices[i])),
+                        penX, penY, ref minX, ref minY, ref maxX, ref maxY);
                 }
             }
 
@@ -945,7 +952,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                                         continue;
                                     }
 
-                                    RunMaskComposer.ComposeTinted(GetMask(layerRecord.GlyphIndex, glyphPhase),
+                                    RunMaskComposer.ComposeTinted(GetMask(layerRecord.GlyphIndex, glyphPhase, simulate: false),
                                         penX - chunkX, penY - minY, layerTint, span, width, height, framebuffer.RowBytes);
                                 }
                             }
@@ -954,7 +961,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                                 // Monochrome text takes the gamma/contrast coverage correction; the
                                 // color layers above must not — the transform is non-linear, so
                                 // abutting layers whose coverages sum to full would show seams.
-                                RunMaskComposer.ComposeTinted(GetMask(indices[i], glyphPhase),
+                                RunMaskComposer.ComposeTinted(
+                                    GetMask(indices[i], glyphPhase, simulated && !typeface.IsColorGlyph(indices[i])),
                                     penX - chunkX, penY - minY, key.Tint, span, width, height, framebuffer.RowBytes,
                                     MaskGamma.GetTableForPremulBgra(key.Tint));
                             }

@@ -12,6 +12,14 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// to drawings too. Direct <see cref="GlyphRun"/> draws that bypass this splitter still
     /// render correctly via the renderer's or backend's native handling.
     /// </summary>
+    /// <remarks>
+    /// The drawings are those of the unsimulated face, drawn without the oblique shear: font
+    /// simulations never apply to colour glyphs (see <see cref="GlyphTypeface.IsColorGlyph"/>).
+    /// The one exception is accepted rather than routed around: a direct glyph run draw under
+    /// backend rasterization reaches the backend's native text blob, and Skia skews the colour
+    /// glyphs of an oblique face along with its outlines. Text layout always comes through
+    /// here, so only direct draws see it.
+    /// </remarks>
     internal static class ColorGlyphRunSplitter
     {
         public static bool IsManagedTextRasterization()
