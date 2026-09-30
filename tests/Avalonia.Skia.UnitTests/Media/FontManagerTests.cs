@@ -576,6 +576,28 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Win32Fact("Windows specific font")]
+        public void Variable_System_Font_Instance_From_Character_Fallback_Should_Lay_Out_With_Rendered_Advances()
+        {
+            const string familyName = "Segoe UI Variable Text";
+
+            Assert.SkipUnless(
+                Array.IndexOf(SKFontManager.Default.GetFontFamilies(), familyName) >= 0,
+                $"Requires the {familyName} font");
+
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
+            {
+                Assert.True(FontManager.Current.TryMatchCharacter('H', FontStyle.Normal, FontWeight.Bold,
+                    FontStretch.Normal, new FontFamily(familyName), null, out var typeface));
+
+                Assert.True(FontManager.Current.TryGetGlyphTypeface(typeface, out var glyphTypeface));
+
+                Assert.Equal(FontSimulations.Bold, glyphTypeface.FontSimulations);
+
+                AssertShapedAdvancesMatchRenderedAdvances(glyphTypeface, "Hamburg");
+            }
+        }
+
+        [Win32Fact("Windows specific font")]
         public void Static_System_Font_Bold_Face_Should_Lay_Out_With_Rendered_Advances()
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(fontManagerImpl: new FontManagerImpl())))
