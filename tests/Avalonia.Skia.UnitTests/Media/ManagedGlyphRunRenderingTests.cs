@@ -135,6 +135,48 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [InlineData(FontSimulations.None, false)]
+        [InlineData(FontSimulations.Bold, false)]
+        [InlineData(FontSimulations.Oblique, false)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique, false)]
+        [InlineData(FontSimulations.None, true)]
+        [InlineData(FontSimulations.Bold, true)]
+        [InlineData(FontSimulations.Oblique, true)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique, true)]
+        public void Simulated_Variants_Render_The_Same_After_Their_Siblings(FontSimulations simulations, bool rotate)
+        {
+            byte[] cold;
+
+            // Rotated, the run takes the transformed mask tier, whose masks share the cache too.
+            using (CreateEnvironment(out var typeface, simulations))
+            {
+                cold = RenderScene(typeface, TextRasterizationMode.Managed, rotate);
+            }
+
+            using (CreateEnvironment(out var regular))
+            {
+                // Every sibling draws the same glyphs at the same size first, so a glyph mask
+                // any of them leaves behind for the others must not be mistaken for this one.
+                foreach (var sibling in new[]
+                         {
+                             FontSimulations.None, FontSimulations.Bold, FontSimulations.Oblique,
+                             FontSimulations.Bold | FontSimulations.Oblique,
+                         })
+                {
+                    if (sibling != simulations)
+                    {
+                        RenderScene(regular.WithSimulations(sibling), TextRasterizationMode.Managed, rotate);
+                    }
+                }
+
+                var warm = RenderScene(regular.WithSimulations(simulations), TextRasterizationMode.Managed, rotate);
+
+                Assert.True(cold.AsSpan().SequenceEqual(warm),
+                    $"{simulations}{(rotate ? ", rotated" : "")}: the warm frame differs");
+            }
+        }
+
+        [Theory]
         [InlineData(FontSimulations.None)]
         [InlineData(FontSimulations.Bold)]
         [InlineData(FontSimulations.Oblique)]
