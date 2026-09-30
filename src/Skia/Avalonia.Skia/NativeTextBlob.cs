@@ -45,7 +45,8 @@ namespace Avalonia.Skia
         /// <summary>
         /// The fallback for runs whose Skia face draws the wrong outlines
         /// (<see cref="ManagedGlyphOutlines.AreRequired"/>): the run's managed outlines as one
-        /// path in run coordinates, built once per run.
+        /// path in run coordinates, built once per run. Colour glyphs are left out; they draw
+        /// through <see cref="ColorGlyphRunSplitter.DrawColorGlyphs"/>.
         /// </summary>
         public static SKPath GetOutlinePath(ManagedGlyphRunImpl run)
         {
@@ -78,8 +79,16 @@ namespace Avalonia.Skia
                 var positions = run.GlyphPositions;
                 var origin = run.BaselineOrigin;
 
+                var typeface = run.GlyphTypeface;
+                var hasColor = typeface.ColorTable is not null || typeface.BitmapSource is not null;
+
                 for (var i = 0; i < indices.Length; i++)
                 {
+                    if (hasColor && ColorGlyphRunSplitter.IsDrawnAsColor(typeface, indices[i]))
+                    {
+                        continue;
+                    }
+
                     ManagedGlyphOutlines.AddGlyph(path, run.GlyphTypeface, run.FontRenderingEmSize, indices[i],
                         (float)(origin.X + positions[i * 2]), (float)(origin.Y + positions[i * 2 + 1]));
                 }

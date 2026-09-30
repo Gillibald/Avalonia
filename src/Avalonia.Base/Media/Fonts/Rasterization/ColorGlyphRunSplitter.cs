@@ -84,19 +84,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var segmentStart = 0;
             var segmentStartX = 0.0;
 
-            // A solid foreground rides into the paint resolver so CPAL 0xFFFF entries follow the
-            // text color (with the brush opacity folded into its alpha); built once per run.
-            GlyphDrawingOptions? drawingOptions = null;
-
-            if (foreground is ISolidColorBrush solid)
-            {
-                var color = solid.Color;
-                var alpha = (byte)Math.Clamp(color.A * solid.Opacity + 0.5, 0, 255);
-                drawingOptions = new GlyphDrawingOptions
-                {
-                    Foreground = Color.FromArgb(alpha, color.R, color.G, color.B),
-                };
-            }
+            var drawingOptions = CreateDrawingOptions(foreground);
 
             for (var i = 0; i <= infos.Count; i++)
             {
@@ -123,20 +111,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     break;
                 }
 
-                // Fetched with the run's foreground so sentinel palette entries resolve to it
-                // (foreground-bearing drawings build uncached; the plain probe above stayed on
-                // the cached path). Drawings render in font design units (the Y-flip is
-                // internal): scale to the run's em size and land the local origin on the pen.
-                var drawing = typeface.GetGlyphDrawing(info.GlyphIndex, drawingOptions)!;
-                var pen = new Point(
+                DrawGlyph(context, typeface, info.GlyphIndex, drawingOptions, scale, new Point(
                     baseline.X + currentX + info.GlyphOffset.X,
-                    baseline.Y + info.GlyphOffset.Y);
-
-                using (context.PushTransform(
-                    Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(pen.X, pen.Y)))
-                {
-                    drawing.Draw(context, default);
-                }
+                    baseline.Y + info.GlyphOffset.Y));
 
                 currentX += info.GlyphAdvance;
                 segmentStart = i + 1;
@@ -144,6 +121,80 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Whether <paramref name="glyph"/> draws through its colour drawing rather than as an
+        /// outline: a colour glyph whose drawing resolves.
+        /// </summary>
+        internal static bool IsDrawnAsColor(GlyphTypeface typeface, ushort glyph)
+            => typeface.IsColorGlyph(glyph) && typeface.GetGlyphDrawing(glyph) is not null;
+
+        /// <summary>
+        /// Draws only the colour glyphs of <paramref name="run"/> through their drawings, at the
+        /// run's positions; the caller draws every other glyph (see <see cref="IsDrawnAsColor"/>).
+        /// Used where a managed run falls back to plain outlines, which carry no colour.
+        /// </summary>
+        internal static void DrawColorGlyphs(DrawingContext context, ManagedGlyphRunImpl run, IBrush? foreground)
+        {
+            var typeface = run.GlyphTypeface;
+            var scale = run.FontRenderingEmSize / typeface.Metrics.DesignEmHeight;
+            var baseline = run.BaselineOrigin;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            GlyphDrawingOptions? drawingOptions = null;
+            var hasOptions = false;
+
+            for (var i = 0; i < indices.Length; i++)
+            {
+                if (!IsDrawnAsColor(typeface, indices[i]))
+                {
+                    continue;
+                }
+
+                if (!hasOptions)
+                {
+                    drawingOptions = CreateDrawingOptions(foreground);
+                    hasOptions = true;
+                }
+
+                DrawGlyph(context, typeface, indices[i], drawingOptions, scale,
+                    new Point(baseline.X + positions[i * 2], baseline.Y + positions[i * 2 + 1]));
+            }
+        }
+
+        // A solid foreground rides into the paint resolver so CPAL 0xFFFF entries follow the
+        // text color (with the brush opacity folded into its alpha); built once per run.
+        private static GlyphDrawingOptions? CreateDrawingOptions(IBrush? foreground)
+        {
+            if (foreground is not ISolidColorBrush solid)
+            {
+                return null;
+            }
+
+            var color = solid.Color;
+            var alpha = (byte)Math.Clamp(color.A * solid.Opacity + 0.5, 0, 255);
+
+            return new GlyphDrawingOptions
+            {
+                Foreground = Color.FromArgb(alpha, color.R, color.G, color.B),
+            };
+        }
+
+        private static void DrawGlyph(DrawingContext context, GlyphTypeface typeface, ushort glyph,
+            GlyphDrawingOptions? drawingOptions, double scale, Point pen)
+        {
+            // Fetched with the run's foreground so sentinel palette entries resolve to it
+            // (foreground-bearing drawings build uncached; the plain probe stayed on the cached
+            // path). Drawings render in font design units (the Y-flip is internal): scale to
+            // the run's em size and land the local origin on the pen.
+            var drawing = typeface.GetGlyphDrawing(glyph, drawingOptions)!;
+
+            using (context.PushTransform(
+                Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(pen.X, pen.Y)))
+            {
+                drawing.Draw(context, default);
+            }
         }
 
         private static void FlushSegment(DrawingContext context, IBrush foreground, GlyphRun run,

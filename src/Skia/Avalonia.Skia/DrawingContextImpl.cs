@@ -994,9 +994,20 @@ namespace Avalonia.Skia
 
                 if (ManagedGlyphOutlines.AreRequired(managedRun.GlyphTypeface))
                 {
-                    using var outlinePaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds);
+                    using (var outlinePaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds))
+                    {
+                        Canvas.DrawPath(NativeTextBlob.GetOutlinePath(managedRun), outlinePaint.Paint);
+                    }
 
-                    Canvas.DrawPath(NativeTextBlob.GetOutlinePath(managedRun), outlinePaint.Paint);
+                    // Outlines carry no colour: the path leaves colour glyphs out, and they draw
+                    // from their own drawings on top, at the run's variation.
+                    if (managedRun.GlyphTypeface.ColorTable is not null ||
+                        managedRun.GlyphTypeface.BitmapSource is not null)
+                    {
+                        using var colorContext = new PlatformDrawingContext(this, ownsImpl: false);
+
+                        ColorGlyphRunSplitter.DrawColorGlyphs(colorContext, managedRun, foreground);
+                    }
 
                     return;
                 }
