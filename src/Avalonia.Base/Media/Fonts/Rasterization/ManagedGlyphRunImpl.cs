@@ -28,6 +28,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly int _count;
         private RunMaskCache? _runMasks;
         private RunMaskCache? _transformedRunMasks;
+        private TransformedRunState? _transformedSprites;
         private TransformChurnGuard? _transformChurn;
         private bool _disposed;
 
@@ -136,6 +137,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <see cref="RunMasks"/> so transformed variants never evict the upright ones.
         /// </summary>
         internal RunMaskCache TransformedRunMasks => _transformedRunMasks ??= new RunMaskCache();
+
+        /// <summary>
+        /// The sprite sets of rotated, skewed or anisotropically scaled draws: glyph mask
+        /// placements drawn straight from the shared glyph storage.
+        /// </summary>
+        internal TransformedRunState TransformedSprites => _transformedSprites ??= new TransformedRunState();
 
         /// <summary>Recognizes an animated transform so its masks stay out of the caches.</summary>
         internal TransformChurnGuard TransformChurn => _transformChurn ??= new TransformChurnGuard();
@@ -425,6 +432,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             _runMasks = null;
             _transformedRunMasks?.Dispose();
             _transformedRunMasks = null;
+            _transformedSprites?.Dispose();
+            _transformedSprites = null;
 
             SlugRunArtifact?.Dispose();
             SlugRunArtifact = null;

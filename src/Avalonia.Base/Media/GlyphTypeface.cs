@@ -70,6 +70,7 @@ namespace Avalonia.Media
         // and outlines at its own variation point. The delegate is cached to keep the hot path alloc-free.
         private GlyphCache? _glyphCache;
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
+        private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
         private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
         private Fonts.Rasterization.StemWidthTable? _stemWidthTable;
         private Fonts.Tables.GaspTable? _gaspTable;
@@ -2455,6 +2456,14 @@ namespace Avalonia.Media
             _glyphMaskCache ?? GetOrCreateGlyphMaskCache();
 
         /// <summary>
+        /// The storage of transformed glyph masks on GPU contexts: A8 atlas pages the backend
+        /// draws batched runs from. Its budget is the mask cache's, so moving transformed masks
+        /// from the cache into the atlas does not change how much this typeface may retain.
+        /// </summary>
+        internal Fonts.Rasterization.GlyphMaskAtlas MaskAtlas =>
+            _glyphMaskAtlas ?? GetOrCreateGlyphMaskAtlas();
+
+        /// <summary>
         /// The vertical grid-fit zones for the mask pipeline, measured lazily once. A benign
         /// create race hands identical zones to whichever instance wins.
         /// </summary>
@@ -2604,6 +2613,13 @@ namespace Avalonia.Media
             var created = new Fonts.Rasterization.GlyphMaskCache();
 
             return Interlocked.CompareExchange(ref _glyphMaskCache, created, null) ?? created;
+        }
+
+        private Fonts.Rasterization.GlyphMaskAtlas GetOrCreateGlyphMaskAtlas()
+        {
+            var created = new Fonts.Rasterization.GlyphMaskAtlas(MaskCache.BudgetBytes);
+
+            return Interlocked.CompareExchange(ref _glyphMaskAtlas, created, null) ?? created;
         }
 
         /// <summary>

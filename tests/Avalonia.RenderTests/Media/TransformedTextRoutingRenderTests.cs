@@ -31,10 +31,13 @@ namespace Avalonia.Skia.RenderTests
 
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
-            // The CPU outputs compose one pre-tinted mask; the GPU outputs share one alpha mask.
+            // The CPU outputs compose one pre-tinted mask; the software GPU outputs draw one
+            // sprite set from the typeface's atlas.
             var gpu = MesaSoftwareRenderer.GlEnabled || MesaSoftwareRenderer.VulkanEnabled;
 
-            Assert.Equal(gpu ? 2 : 1, impl.TransformedRunMasks.Count);
+            Assert.Equal(1, impl.TransformedRunMasks.Count);
+            Assert.Equal(gpu ? 1 : 0, impl.TransformedSprites.Count);
+            Assert.Equal(gpu, impl.GlyphTypeface.MaskAtlas.Count > 0);
             Assert.Null(impl.SlugRunArtifact);
             Assert.Null(impl.NativeTextArtifact);
         }

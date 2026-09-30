@@ -1,3 +1,5 @@
+using System;
+
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
@@ -22,11 +24,34 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
+    /// One sprite of an atlas batch: the source rectangle in the batch's image and the
+    /// sprite's top-left in the batch's coordinate space.
+    /// </summary>
+    internal readonly record struct GlyphAtlasSprite(int SourceX, int SourceY, int Width, int Height, int X, int Y);
+
+    /// <summary>
     /// The backend services the transformed text tier draws through.
     /// </summary>
     internal interface ITransformedGlyphContext
     {
         /// <summary>What rasterizes this context's output.</summary>
         GlyphRasterTarget RasterTarget { get; }
+
+        /// <summary>
+        /// Realizes the sprite arrays of one batch, sized exactly to <paramref name="sprites"/>
+        /// so drawing the batch allocates nothing. With <paramref name="standalone"/> the batch
+        /// draws from its own image of that mask (a glyph too large for an atlas page) instead
+        /// of the batch's page. The caller owns the result and disposes it with the batch.
+        /// </summary>
+        IDisposable CreateAtlasBatch(ReadOnlySpan<GlyphAtlasSprite> sprites, GlyphMask? standalone);
+
+        /// <summary>
+        /// Draws a batch in one call, its sprites mapped through <paramref name="transform"/>
+        /// (batch space to device pixels), modulated by the straight ARGB
+        /// <paramref name="tintArgb"/> and the ambient opacity. <paramref name="gamma"/> applies
+        /// the tint's coverage correction; <paramref name="bilinear"/> samples bilinearly,
+        /// which a batch drawn under a scaling or rotating transform needs.
+        /// </summary>
+        void DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb, bool gamma, bool bilinear);
     }
 }

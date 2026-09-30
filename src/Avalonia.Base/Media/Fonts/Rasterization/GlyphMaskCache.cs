@@ -44,6 +44,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
         }
 
+        /// <summary>The byte budget of all cached masks together.</summary>
+        public int BudgetBytes => _budget;
+
         /// <summary>Number of cached masks.</summary>
         public int Count => _entries.Count;
 
