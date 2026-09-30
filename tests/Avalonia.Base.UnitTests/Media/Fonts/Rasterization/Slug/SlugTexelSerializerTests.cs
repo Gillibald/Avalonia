@@ -75,9 +75,15 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.Slug
                     ? data.GetHorizontalBand(band)
                     : data.GetVerticalBand(band - placement.HorizontalBandCount);
 
-                var (count, listX, listY) = SlugTexelDecoder.ReadBandHeader(
-                    bandTexels, placement.GlyphLocX, placement.GlyphLocY, band);
+                var expectedSegments = band < placement.HorizontalBandCount
+                    ? data.GetHorizontalSegments(band)
+                    : data.GetVerticalSegments(band - placement.HorizontalBandCount);
 
+                var (forwardOnly, shared, backwardOnly, listX, listY) = SlugTexelDecoder.ReadBandHeader(
+                    bandTexels, placement.GlyphLocX, placement.GlyphLocY, band);
+                var count = forwardOnly + shared + backwardOnly;
+
+                Assert.Equal(expectedSegments, (forwardOnly, shared, backwardOnly));
                 Assert.Equal(expected.Length, count);
 
                 for (var k = 0; k < count; k++)
@@ -159,22 +165,36 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.Slug
 
             var longestHorizontal = 0;
             var longestVertical = 0;
+            var longestHorizontalRun = 0;
+            var longestVerticalRun = 0;
 
             for (var band = 0; band < data.HorizontalBandCount; band++)
             {
+                var (forwardOnly, shared, backwardOnly) = data.GetHorizontalSegments(band);
+
                 longestHorizontal = Math.Max(longestHorizontal, data.GetHorizontalBand(band).Length);
+                longestHorizontalRun = Math.Max(longestHorizontalRun,
+                    Math.Max(forwardOnly + shared, shared + backwardOnly));
             }
 
             for (var band = 0; band < data.VerticalBandCount; band++)
             {
+                var (forwardOnly, shared, backwardOnly) = data.GetVerticalSegments(band);
+
                 longestVertical = Math.Max(longestVertical, data.GetVerticalBand(band).Length);
+                longestVerticalRun = Math.Max(longestVerticalRun,
+                    Math.Max(forwardOnly + shared, shared + backwardOnly));
             }
 
             // The shader loops up to these bounds for every pixel of the glyph, so a smaller
-            // value would drop curves from the longest list.
+            // value would drop curves from the longest list or run.
             Assert.NotEqual(longestHorizontal, longestVertical);
             Assert.Equal(longestHorizontal, placement.LongestHorizontalList);
             Assert.Equal(longestVertical, placement.LongestVerticalList);
+            Assert.Equal(longestHorizontalRun, placement.LongestHorizontalRun);
+            Assert.Equal(longestVerticalRun, placement.LongestVerticalRun);
+            Assert.True(longestHorizontalRun < longestHorizontal);
+            Assert.True(longestVerticalRun < longestVertical);
         }
 
         [Fact]

@@ -21,12 +21,15 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         /// Computes coverage in [0, 1] for the sample at (<paramref name="emX"/>,
         /// <paramref name="emY"/>). <paramref name="emsPerPixelX"/>/<paramref name="emsPerPixelY"/>
         /// are the em-space footprint of one device pixel per axis — what the HLSL derives with
-        /// fwidth, constant under an affine transform.
+        /// fwidth, constant under an affine transform. Band lists are walked split exactly where
+        /// the shader walks them split (<see cref="SlugGlyphPlacement.IsSplitEnabled"/>);
+        /// <paramref name="splitBands"/> = false walks every list whole with a forward ray, the
+        /// other half of the equivalence the split relies on.
         /// </summary>
         public static float Evaluate(
             ReadOnlySpan<Half> curveTexels, ReadOnlySpan<Half> bandTexels,
             in SlugGlyphPlacement placement, float emX, float emY,
-            float emsPerPixelX, float emsPerPixelY)
+            float emsPerPixelX, float emsPerPixelY, bool splitBands = true)
         {
             var pixelsPerEmX = 1f / emsPerPixelX;
             var pixelsPerEmY = 1f / emsPerPixelY;
@@ -41,12 +44,14 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
             float xcov = 0f, xwgt = 0f;
 
-            var (hCount, hListX, hListY) = SlugTexelDecoder.ReadBandHeader(
+            var hHeader = SlugTexelDecoder.ReadBandHeader(
                 bandTexels, placement.GlyphLocX, placement.GlyphLocY, bandY);
+            var (hStart, hEnd, hDir) = SelectRun(hHeader.ForwardOnly, hHeader.Shared, hHeader.BackwardOnly,
+                splitBands && SlugGlyphPlacement.IsSplitEnabled(pixelsPerEmX), emX >= placement.HorizontalSplit);
 
-            for (var i = 0; i < hCount; i++)
+            for (var i = hStart; i < hEnd; i++)
             {
-                var (cx, cy) = SlugTexelDecoder.ReadListEntry(bandTexels, hListX, hListY, i);
+                var (cx, cy) = SlugTexelDecoder.ReadListEntry(bandTexels, hHeader.ListX, hHeader.ListY, i);
                 var curve = SlugTexelDecoder.ReadCurve(curveTexels, cx, cy);
 
                 var x1 = curve.X1 - emX;
@@ -56,10 +61,10 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 var x3 = curve.X3 - emX;
                 var y3 = curve.Y3 - emY;
 
-                // A curve fully left of the pixel is skipped, not a reason to stop: the shader
-                // masks it so its texture reads stay in uniform control flow. The list is sorted
-                // descending by max x, so every curve after it is skipped the same way.
-                if (MathF.Max(x1, MathF.Max(x2, x3)) * pixelsPerEmX < -0.5f)
+                // A curve more than half a pixel behind the pixel along the ray contributes
+                // nothing; the shader masks it instead of leaving the loop so its texture reads
+                // stay in uniform control flow, and this skip mirrors that mask.
+                if (MathF.Max(hDir * x1, MathF.Max(hDir * x2, hDir * x3)) * pixelsPerEmX < -0.5f)
                 {
                     continue;
                 }
@@ -73,15 +78,19 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                     r1 *= pixelsPerEmX;
                     r2 *= pixelsPerEmX;
 
+                    // Around a closed contour the crossings of the whole line sum to zero, so
+                    // the winding a forward ray counts is minus the signed crossings behind the
+                    // pixel. With saturate(r + 0.5) + saturate(0.5 - r) = 1 per crossing, the
+                    // backward ray's filtered sum negates to the forward one.
                     if ((code & 1u) != 0)
                     {
-                        xcov += Saturate(r1 + 0.5f);
+                        xcov += hDir * Saturate(hDir * r1 + 0.5f);
                         xwgt = MathF.Max(xwgt, Saturate(1f - MathF.Abs(r1) * 2f));
                     }
 
                     if (code > 1u)
                     {
-                        xcov -= Saturate(r2 + 0.5f);
+                        xcov -= hDir * Saturate(hDir * r2 + 0.5f);
                         xwgt = MathF.Max(xwgt, Saturate(1f - MathF.Abs(r2) * 2f));
                     }
                 }
@@ -90,12 +99,14 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             float ycov = 0f, ywgt = 0f;
 
             // Vertical band headers follow all horizontal ones in the header block.
-            var (vCount, vListX, vListY) = SlugTexelDecoder.ReadBandHeader(
+            var vHeader = SlugTexelDecoder.ReadBandHeader(
                 bandTexels, placement.GlyphLocX, placement.GlyphLocY, placement.HorizontalBandCount + bandX);
+            var (vStart, vEnd, vDir) = SelectRun(vHeader.ForwardOnly, vHeader.Shared, vHeader.BackwardOnly,
+                splitBands && SlugGlyphPlacement.IsSplitEnabled(pixelsPerEmY), emY >= placement.VerticalSplit);
 
-            for (var i = 0; i < vCount; i++)
+            for (var i = vStart; i < vEnd; i++)
             {
-                var (cx, cy) = SlugTexelDecoder.ReadListEntry(bandTexels, vListX, vListY, i);
+                var (cx, cy) = SlugTexelDecoder.ReadListEntry(bandTexels, vHeader.ListX, vHeader.ListY, i);
                 var curve = SlugTexelDecoder.ReadCurve(curveTexels, cx, cy);
 
                 var x1 = curve.X1 - emX;
@@ -105,7 +116,7 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 var x3 = curve.X3 - emX;
                 var y3 = curve.Y3 - emY;
 
-                if (MathF.Max(y1, MathF.Max(y2, y3)) * pixelsPerEmY < -0.5f)
+                if (MathF.Max(vDir * y1, MathF.Max(vDir * y2, vDir * y3)) * pixelsPerEmY < -0.5f)
                 {
                     continue;
                 }
@@ -123,13 +134,13 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                     // contribution signs flip relative to the horizontal loop.
                     if ((code & 1u) != 0)
                     {
-                        ycov -= Saturate(r1 + 0.5f);
+                        ycov -= vDir * Saturate(vDir * r1 + 0.5f);
                         ywgt = MathF.Max(ywgt, Saturate(1f - MathF.Abs(r1) * 2f));
                     }
 
                     if (code > 1u)
                     {
-                        ycov += Saturate(r2 + 0.5f);
+                        ycov += vDir * Saturate(vDir * r2 + 0.5f);
                         ywgt = MathF.Max(ywgt, Saturate(1f - MathF.Abs(r2) * 2f));
                     }
                 }
@@ -149,6 +160,25 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             }
 
             return Saturate(coverage);
+        }
+
+        /// <summary>
+        /// The list range one ray walks and its direction (+1 toward +axis, -1 toward -axis).
+        /// Unsplit, the whole list forward; split, a pixel at or past the split point walks the
+        /// forward-only and shared segments forward, any other pixel the shared and
+        /// backward-only segments backward.
+        /// </summary>
+        private static (int Start, int End, float Direction) SelectRun(
+            int forwardOnly, int shared, int backwardOnly, bool split, bool atOrPastSplit)
+        {
+            if (!split)
+            {
+                return (0, forwardOnly + shared + backwardOnly, 1f);
+            }
+
+            return atOrPastSplit
+                ? (0, forwardOnly + shared, 1f)
+                : (forwardOnly, forwardOnly + shared + backwardOnly, -1f);
         }
 
         /// <summary>

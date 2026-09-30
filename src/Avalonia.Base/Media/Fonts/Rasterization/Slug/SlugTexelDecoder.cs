@@ -24,21 +24,24 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         }
 
         /// <summary>
-        /// Reads one band header of a glyph's header block and resolves its list location. The
-        /// header index counts horizontal bands first, then vertical ones.
+        /// Reads one band header of a glyph's header block, its three segment lengths and its
+        /// resolved list location. The header index counts horizontal bands first, then
+        /// vertical ones.
         /// </summary>
-        public static (int Count, int ListX, int ListY) ReadBandHeader(
+        public static (int ForwardOnly, int Shared, int BackwardOnly, int ListX, int ListY) ReadBandHeader(
             ReadOnlySpan<Half> bandTexels, int glyphLocX, int glyphLocY, int headerIndex)
         {
             var i = ((glyphLocY << SlugTexelSerializer.LogTextureWidth) + glyphLocX + headerIndex) * 4;
-            var count = (int)(float)bandTexels[i];
+            var forwardOnly = (int)(float)bandTexels[i];
             var offset = (int)(float)bandTexels[i + 1];
+            var shared = (int)(float)bandTexels[i + 2];
+            var backwardOnly = (int)(float)bandTexels[i + 3];
 
             // CalcBandLoc: the offset is linear from the glyph location and wraps to later rows.
             var x = glyphLocX + offset;
             var y = glyphLocY + (x >> SlugTexelSerializer.LogTextureWidth);
 
-            return (count, x & (SlugTexelSerializer.TextureWidth - 1), y);
+            return (forwardOnly, shared, backwardOnly, x & (SlugTexelSerializer.TextureWidth - 1), y);
         }
 
         /// <summary>Reads one curve-location entry of a band list.</summary>

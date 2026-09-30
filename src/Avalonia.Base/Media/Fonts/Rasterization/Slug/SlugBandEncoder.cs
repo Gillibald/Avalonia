@@ -12,12 +12,20 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
     /// The rules follow the upstream data format: a curve joins every band its exact per-axis
     /// extent overlaps, widened by <see cref="BandEpsilon"/> so band edges never drop a curve;
     /// straight horizontal lines never join horizontal bands (they cannot contribute winding to
-    /// a parallel ray), vertical lines never join vertical bands; each band's list is sorted
-    /// descending by the control-point maximum along the ray axis, because that hull maximum is
-    /// exactly what the pixel shader's early-out compares. Band counts are chosen per axis by
-    /// sweeping every candidate up to <see cref="MaxBandCount"/> and keeping the one that
+    /// a parallel ray), vertical lines never join vertical bands. Band counts are chosen per
+    /// axis by sweeping every candidate up to <see cref="MaxBandCount"/> and keeping the one that
     /// minimizes the largest per-band list, breaking ties toward fewer total entries, then
     /// fewer bands.
+    /// <para>
+    /// Each band's list is then partitioned around the glyph's midpoint along the ray axis, the
+    /// split point s, into three contiguous segments: curves only a forward ray (toward +axis)
+    /// from a pixel at or past s can reach, curves both directions can reach, and curves only a
+    /// backward ray (toward -axis) from a pixel before s can reach. A pixel at or past s walks
+    /// the first two segments with a forward ray, any other pixel the last two with a backward
+    /// ray, so neither walks the curves on the far side of the glyph; <see cref="SplitMargin"/>
+    /// says when this is exact. Within each segment curves are sorted descending by the
+    /// control-point maximum along the ray axis, ordinal breaking ties.
+    /// </para>
     /// </remarks>
     internal static class SlugBandEncoder
     {
@@ -30,10 +38,26 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         /// </summary>
         public const int MaxBandCount = 32;
 
+        /// <summary>
+        /// How far past the split point, in em units, a curve still joins the other side's
+        /// segment. A forward ray from a pixel at or past the split point s only accumulates
+        /// curves whose hull reaches within half a pixel left of it, so every curve with a hull
+        /// maximum below s minus the margin contributes nothing to it as long as half a pixel
+        /// is at most the margin; the backward side mirrors this. The split therefore only
+        /// applies to draws with at least 0.5 / <see cref="SplitMargin"/> (32) pixels per em
+        /// along the ray axis, and smaller draws walk the whole list. A wider margin enables
+        /// the split at smaller sizes but shares more curves between both sides.
+        /// </summary>
+        public const double SplitMargin = 1.0 / 64;
+
         private struct CurveInfo
         {
             public double MinX, MaxX, MinY, MaxY;
             public double HullMaxX, HullMaxY;
+
+            // The control-point hull as the shader reads it back from half-float texels, so
+            // the side a curve is assigned to agrees with the shader's own comparison.
+            public float TexelMinX, TexelMaxX, TexelMinY, TexelMaxY;
             public bool IsHorizontalLine, IsVerticalLine;
         }
 
@@ -97,6 +121,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                     info[ordinal].HullMaxY = Math.Max(curve.Y1, Math.Max(curve.Y2, curve.Y3));
                     info[ordinal].IsHorizontalLine = curve.Y1 == curve.Y2 && curve.Y2 == curve.Y3;
                     info[ordinal].IsVerticalLine = curve.X1 == curve.X2 && curve.X2 == curve.X3;
+                    (info[ordinal].TexelMinX, info[ordinal].TexelMaxX) = TexelHull(curve.X1, curve.X2, curve.X3);
+                    (info[ordinal].TexelMinY, info[ordinal].TexelMaxY) = TexelHull(curve.Y1, curve.Y2, curve.Y3);
 
                     minX = Math.Min(minX, Math.Min(curve.X1, Math.Min(curve.X2, curve.X3)));
                     maxX = Math.Max(maxX, info[ordinal].HullMaxX);
@@ -110,13 +136,30 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             var vCount = verticalBandCount ??
                 ChooseBandCount(info, minX, maxX, epsilon, horizontal: false);
 
-            var (hOffsets, hEntries) = BuildBands(info, hCount, minY, maxY, epsilon, horizontal: true);
-            var (vOffsets, vEntries) = BuildBands(info, vCount, minX, maxX, epsilon, horizontal: false);
+            // Computed in single precision from the stored bounds: this is the exact value the
+            // shader receives as a uniform and compares pixel coordinates against.
+            var horizontalSplit = ((float)minX + (float)maxX) * 0.5f;
+            var verticalSplit = ((float)minY + (float)maxY) * 0.5f;
+
+            var (hOffsets, hEntries, hSegments) = BuildBands(
+                info, hCount, minY, maxY, epsilon, horizontalSplit, horizontal: true);
+            var (vOffsets, vEntries, vSegments) = BuildBands(
+                info, vCount, minX, maxX, epsilon, verticalSplit, horizontal: false);
 
             return new SlugGlyphData(
                 points, contourStarts, contourCounts, sink.FillRule,
                 (float)minX, (float)minY, (float)maxX, (float)maxY,
-                hOffsets, hEntries, vOffsets, vEntries);
+                horizontalSplit, verticalSplit,
+                hOffsets, hEntries, hSegments, vOffsets, vEntries, vSegments);
+        }
+
+        private static (float Min, float Max) TexelHull(float p1, float p2, float p3)
+        {
+            var q1 = (float)(Half)p1;
+            var q2 = (float)(Half)p2;
+            var q3 = (float)(Half)p3;
+
+            return (MathF.Min(q1, MathF.Min(q2, q3)), MathF.Max(q1, MathF.Max(q2, q3)));
         }
 
         /// <summary>
@@ -217,9 +260,13 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             return bestCount;
         }
 
-        private static (int[] Offsets, int[] Entries) BuildBands(
+        /// <summary>
+        /// Builds one axis's band lists: per-band offsets into one entry array, and per band the
+        /// forward-only and shared segment lengths (the backward-only length is the rest).
+        /// </summary>
+        private static (int[] Offsets, int[] Entries, int[] Segments) BuildBands(
             CurveInfo[] info, int bandCount, double boundsMin, double boundsMax, double epsilon,
-            bool horizontal)
+            float split, bool horizontal)
         {
             var extent = boundsMax - boundsMin;
             var bandSize = extent > 0 ? extent / bandCount : 1;
@@ -265,24 +312,59 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 }
             }
 
-            // Descending by the hull maximum along the ray axis — the shader's early-out key.
-            // Ordinal breaks ties so the layout is deterministic.
+            // Segment first (forward-only, shared, backward-only), then descending by the hull
+            // maximum along the ray axis, then ordinal, so the layout is deterministic.
+            var segment = new int[info.Length];
+            var lowEdge = split - SplitMargin;
+            var highEdge = split + SplitMargin;
+
+            for (var ordinal = 0; ordinal < info.Length; ordinal++)
+            {
+                var texelMin = horizontal ? info[ordinal].TexelMinX : info[ordinal].TexelMinY;
+                var texelMax = horizontal ? info[ordinal].TexelMaxX : info[ordinal].TexelMaxY;
+                var forward = texelMax >= lowEdge;
+                var backward = texelMin <= highEdge;
+
+                // A curve short of lowEdge ends below highEdge, so every curve is on at least
+                // one side.
+                segment[ordinal] = forward ? (backward ? 1 : 0) : 2;
+            }
+
             var keys = info;
-            Comparison<int> comparison = horizontal
-                ? (a, b) => keys[b].HullMaxX != keys[a].HullMaxX
-                    ? keys[b].HullMaxX.CompareTo(keys[a].HullMaxX)
-                    : a.CompareTo(b)
-                : (a, b) => keys[b].HullMaxY != keys[a].HullMaxY
-                    ? keys[b].HullMaxY.CompareTo(keys[a].HullMaxY)
-                    : a.CompareTo(b);
+            Comparison<int> comparison = (a, b) =>
+            {
+                if (segment[a] != segment[b])
+                {
+                    return segment[a].CompareTo(segment[b]);
+                }
+
+                var keyA = horizontal ? keys[a].HullMaxX : keys[a].HullMaxY;
+                var keyB = horizontal ? keys[b].HullMaxX : keys[b].HullMaxY;
+
+                return keyA != keyB ? keyB.CompareTo(keyA) : a.CompareTo(b);
+            };
             var comparer = Comparer<int>.Create(comparison);
+            var segments = new int[bandCount * 2];
 
             for (var b = 0; b < bandCount; b++)
             {
                 Array.Sort(entries, offsets[b], offsets[b + 1] - offsets[b], comparer);
+
+                for (var k = offsets[b]; k < offsets[b + 1]; k++)
+                {
+                    switch (segment[entries[k]])
+                    {
+                        case 0:
+                            segments[b * 2]++;
+                            break;
+                        case 1:
+                            segments[b * 2 + 1]++;
+                            break;
+                    }
+                }
             }
 
-            return (offsets, entries);
+            return (offsets, entries, segments);
         }
     }
 }

@@ -7,9 +7,10 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
     /// Where one glyph's payload landed in the shared textures, plus the per-glyph draw
     /// constants: the band-header location, band counts, the fill-rule flag, the em-space →
     /// band-index transform (index = coordinate × scale + offset, clamped by the shader), the
-    /// em-space control bounds the draw rect covers, and the longest band list per axis (the
-    /// shader's per-draw loop bound). Self-contained on purpose: a placement
-    /// outlives the CPU payload it was serialized from, so a draw never needs the payload back.
+    /// em-space control bounds the draw rect covers, and per axis the split point plus the
+    /// longest whole list and longest split run (the shader's per-draw loop bounds).
+    /// Self-contained on purpose: a placement outlives the CPU payload it was serialized from,
+    /// so a draw never needs the payload back.
     /// A default-valued placement (band counts of zero) is the documented "no ink" marker.
     /// </summary>
     internal readonly struct SlugGlyphPlacement
@@ -18,7 +19,9 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             int glyphLocX, int glyphLocY, int horizontalBandCount, int verticalBandCount, bool evenOdd,
             float bandScaleX, float bandScaleY, float bandOffsetX, float bandOffsetY,
             float minX, float minY, float maxX, float maxY,
-            int longestHorizontalList, int longestVerticalList)
+            float horizontalSplit, float verticalSplit,
+            int longestHorizontalList, int longestVerticalList,
+            int longestHorizontalRun, int longestVerticalRun)
         {
             GlyphLocX = glyphLocX;
             GlyphLocY = glyphLocY;
@@ -33,8 +36,12 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             MinY = minY;
             MaxX = maxX;
             MaxY = maxY;
+            HorizontalSplit = horizontalSplit;
+            VerticalSplit = verticalSplit;
             LongestHorizontalList = longestHorizontalList;
             LongestVerticalList = longestVerticalList;
+            LongestHorizontalRun = longestHorizontalRun;
+            LongestVerticalRun = longestVerticalRun;
         }
 
         public int GlyphLocX { get; }
@@ -50,27 +57,56 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         public float MinY { get; }
         public float MaxX { get; }
         public float MaxY { get; }
+        /// <summary>The em-space x coordinate splitting the horizontal band lists.</summary>
+        public float HorizontalSplit { get; }
+
+        /// <summary>The em-space y coordinate splitting the vertical band lists.</summary>
+        public float VerticalSplit { get; }
+
+        /// <summary>The longest whole horizontal band list: forward-only, shared and backward-only.</summary>
         public int LongestHorizontalList { get; }
+
+        /// <summary>The longest whole vertical band list.</summary>
         public int LongestVerticalList { get; }
 
         /// <summary>
-        /// The horizontal-ray loop bound the shader runs for every pixel of a draw at
-        /// <paramref name="pixelsPerEm"/> along x: the longest horizontal list, at any scale.
+        /// The longest run a single horizontal ray walks under the split: over all horizontal
+        /// bands, the larger of forward-only plus shared and shared plus backward-only.
         /// </summary>
-        public int GetHorizontalLoopBound(float pixelsPerEm) => LongestHorizontalList;
+        public int LongestHorizontalRun { get; }
+
+        /// <summary>The longest run a single vertical ray walks under the split.</summary>
+        public int LongestVerticalRun { get; }
+
+        /// <summary>
+        /// Whether band lists along an axis drawn at <paramref name="pixelsPerEm"/> are walked
+        /// split: true once half a pixel fits inside <see cref="SlugBandEncoder.SplitMargin"/>,
+        /// so skipping the far side's curves cannot change coverage.
+        /// </summary>
+        public static bool IsSplitEnabled(float pixelsPerEm)
+            => pixelsPerEm >= (float)(0.5 / SlugBandEncoder.SplitMargin);
+
+        /// <summary>
+        /// The horizontal-ray loop bound the shader runs for every pixel of a draw at
+        /// <paramref name="pixelsPerEm"/> along x.
+        /// </summary>
+        public int GetHorizontalLoopBound(float pixelsPerEm)
+            => IsSplitEnabled(pixelsPerEm) ? LongestHorizontalRun : LongestHorizontalList;
 
         /// <summary>
         /// The vertical-ray loop bound the shader runs for every pixel of a draw at
-        /// <paramref name="pixelsPerEm"/> along y: the longest vertical list, at any scale.
+        /// <paramref name="pixelsPerEm"/> along y.
         /// </summary>
-        public int GetVerticalLoopBound(float pixelsPerEm) => LongestVerticalList;
+        public int GetVerticalLoopBound(float pixelsPerEm)
+            => IsSplitEnabled(pixelsPerEm) ? LongestVerticalRun : LongestVerticalList;
     }
 
     /// <summary>
     /// Packs per-glyph payloads into the two Slug textures as RGBA half-float texels: the curve
     /// texture holds (x1, y1, x2, y2) control-point pairs with each curve's end point read from
-    /// the next texel, and the band texture holds per-glyph header blocks of (count, offset)
-    /// followed by curve-location lists of (x, y).
+    /// the next texel, and the band texture holds per-glyph header blocks of
+    /// (forward-only count, offset, shared count, backward-only count) followed by
+    /// curve-location lists of (x, y), each list stored as its three segments back to back.
     /// </summary>
     /// <remarks>
     /// The layout rules mirror what the pixel shader actually reads. Only a band list's START is
@@ -90,7 +126,7 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         public const int LogTextureWidth = 11;
 
         /// <summary>
-        /// The decline threshold for a single band list. The measured worst case over the
+        /// The decline threshold for a single whole band list (all three segments). The measured worst case over the
         /// Inter / CFF / CJK corpus is 31 curves, so 64 gives the ES2-strict shader loop bound
         /// twice the observed headroom while keeping truncation impossible by construction.
         /// </summary>
@@ -195,18 +231,24 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
             var longestHorizontal = 0;
             var longestVertical = 0;
+            var longestHorizontalRun = 0;
+            var longestVerticalRun = 0;
 
             for (var band = 0; band < headerLength; band++)
             {
-                var length = GetBandListLength(data, hCount, band);
+                var (forwardOnly, shared, backwardOnly) = GetSegments(data, hCount, band);
+                var length = forwardOnly + shared + backwardOnly;
+                var run = Math.Max(forwardOnly + shared, shared + backwardOnly);
 
                 if (band < hCount)
                 {
                     longestHorizontal = Math.Max(longestHorizontal, length);
+                    longestHorizontalRun = Math.Max(longestHorizontalRun, run);
                 }
                 else
                 {
                     longestVertical = Math.Max(longestVertical, length);
+                    longestVerticalRun = Math.Max(longestVerticalRun, run);
                 }
 
                 if (length == 0)
@@ -259,7 +301,9 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 hCount, vCount, data.FillRule == FillRule.EvenOdd,
                 scaleX, scaleY, -data.MinX * scaleX, -data.MinY * scaleY,
                 data.MinX, data.MinY, data.MaxX, data.MaxY,
-                longestHorizontal, longestVertical);
+                data.HorizontalSplit, data.VerticalSplit,
+                longestHorizontal, longestVertical,
+                longestHorizontalRun, longestVerticalRun);
 
             return true;
         }
@@ -307,14 +351,17 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                     ? data.GetHorizontalBand(band)
                     : data.GetVerticalBand(band - hCount);
                 var listPosition = _listPositions[band];
+                var (forwardOnly, shared, backwardOnly) = GetSegments(data, hCount, band);
 
-                WriteBandTexel(glyphLoc + band, entries.Length, listPosition < 0 ? 0 : listPosition - glyphLoc);
+                WriteBandTexel(glyphLoc + band,
+                    forwardOnly, listPosition < 0 ? 0 : listPosition - glyphLoc, shared, backwardOnly);
 
                 for (var k = 0; k < entries.Length; k++)
                 {
                     var curvePosition = _curvePositions[entries[k]];
 
-                    WriteBandTexel(listPosition + k, curvePosition & ColumnMask, curvePosition >> LogTextureWidth);
+                    WriteBandTexel(listPosition + k,
+                        curvePosition & ColumnMask, curvePosition >> LogTextureWidth, 0, 0);
                 }
             }
         }
@@ -329,18 +376,21 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             _curveTexels[i + 3] = (Half)y2;
         }
 
-        private void WriteBandTexel(int position, int r, int g)
+        private void WriteBandTexel(int position, int r, int g, int b, int a)
         {
             var i = position * 4;
 
             _bandTexels[i] = (Half)(float)r;
             _bandTexels[i + 1] = (Half)(float)g;
+            _bandTexels[i + 2] = (Half)(float)b;
+            _bandTexels[i + 3] = (Half)(float)a;
         }
 
-        private static int GetBandListLength(SlugGlyphData data, int hCount, int band)
+        private static (int ForwardOnly, int Shared, int BackwardOnly) GetSegments(
+            SlugGlyphData data, int hCount, int band)
             => band < hCount
-                ? data.GetHorizontalBand(band).Length
-                : data.GetVerticalBand(band - hCount).Length;
+                ? data.GetHorizontalSegments(band)
+                : data.GetVerticalSegments(band - hCount);
 
         private static int NextRow(int cursor) => (cursor + TextureWidth) & ~ColumnMask;
 

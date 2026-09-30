@@ -14,8 +14,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
     /// stores (start, control) and borrows its end point from the next curve (wrapping to the
     /// contour's first point). Horizontal bands partition the y extent of the control-point
     /// bounds and are consulted by horizontal winding rays; vertical bands partition x. Band
-    /// lists hold global curve ordinals, sorted descending by the control-point maximum along
-    /// the ray axis — the same key the pixel shader's early-out tests.
+    /// lists hold global curve ordinals in three contiguous segments around the axis's split
+    /// point: forward-only, shared, backward-only (see <see cref="SlugBandEncoder"/>).
     /// </remarks>
     internal sealed class SlugGlyphData
     {
@@ -24,14 +24,17 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         private readonly int[] _contourCounts;
         private readonly int[] _horizontalOffsets;
         private readonly int[] _horizontalEntries;
+        private readonly int[] _horizontalSegments;
         private readonly int[] _verticalOffsets;
         private readonly int[] _verticalEntries;
+        private readonly int[] _verticalSegments;
 
         internal SlugGlyphData(
             float[] points, int[] contourStarts, int[] contourCounts, FillRule fillRule,
             float minX, float minY, float maxX, float maxY,
-            int[] horizontalOffsets, int[] horizontalEntries,
-            int[] verticalOffsets, int[] verticalEntries)
+            float horizontalSplit, float verticalSplit,
+            int[] horizontalOffsets, int[] horizontalEntries, int[] horizontalSegments,
+            int[] verticalOffsets, int[] verticalEntries, int[] verticalSegments)
         {
             _points = points;
             _contourStarts = contourStarts;
@@ -41,16 +44,20 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
             MinY = minY;
             MaxX = maxX;
             MaxY = maxY;
+            HorizontalSplit = horizontalSplit;
+            VerticalSplit = verticalSplit;
             _horizontalOffsets = horizontalOffsets;
             _horizontalEntries = horizontalEntries;
+            _horizontalSegments = horizontalSegments;
             _verticalOffsets = verticalOffsets;
             _verticalEntries = verticalEntries;
+            _verticalSegments = verticalSegments;
 
             RetainedBytes = 64 +
                 points.Length * sizeof(float) +
                 (contourStarts.Length + contourCounts.Length) * sizeof(int) +
-                (horizontalOffsets.Length + horizontalEntries.Length) * sizeof(int) +
-                (verticalOffsets.Length + verticalEntries.Length) * sizeof(int);
+                (horizontalOffsets.Length + horizontalEntries.Length + horizontalSegments.Length) * sizeof(int) +
+                (verticalOffsets.Length + verticalEntries.Length + verticalSegments.Length) * sizeof(int);
         }
 
         /// <summary>The fill rule the outline walker declared.</summary>
@@ -67,6 +74,16 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
         /// <inheritdoc cref="MinX"/>
         public float MaxY { get; }
+
+        /// <summary>
+        /// The em-space x coordinate that splits every horizontal band list into its forward
+        /// and backward runs: the midpoint of the x bounds, in the single precision the shader
+        /// compares against.
+        /// </summary>
+        public float HorizontalSplit { get; }
+
+        /// <summary>The em-space y coordinate that splits every vertical band list.</summary>
+        public float VerticalSplit { get; }
 
         /// <summary>The approximate managed size of the payload, for cache budgeting.</summary>
         public int RetainedBytes { get; }
@@ -114,10 +131,29 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
                 _horizontalOffsets[bandIndex],
                 _horizontalOffsets[bandIndex + 1] - _horizontalOffsets[bandIndex]);
 
+        /// <summary>
+        /// The segment lengths of one horizontal band list, in list order: curves only the
+        /// forward ray reaches, curves both rays reach, curves only the backward ray reaches.
+        /// </summary>
+        public (int ForwardOnly, int Shared, int BackwardOnly) GetHorizontalSegments(int bandIndex)
+            => GetSegments(_horizontalSegments, bandIndex, GetHorizontalBand(bandIndex).Length);
+
         /// <summary>The curve ordinals of one vertical band (a strip of the x extent).</summary>
         public ReadOnlySpan<int> GetVerticalBand(int bandIndex)
             => _verticalEntries.AsSpan(
                 _verticalOffsets[bandIndex],
                 _verticalOffsets[bandIndex + 1] - _verticalOffsets[bandIndex]);
+
+        /// <summary>The segment lengths of one vertical band list, in list order.</summary>
+        public (int ForwardOnly, int Shared, int BackwardOnly) GetVerticalSegments(int bandIndex)
+            => GetSegments(_verticalSegments, bandIndex, GetVerticalBand(bandIndex).Length);
+
+        private static (int, int, int) GetSegments(int[] segments, int bandIndex, int length)
+        {
+            var forwardOnly = segments[bandIndex * 2];
+            var shared = segments[bandIndex * 2 + 1];
+
+            return (forwardOnly, shared, length - forwardOnly - shared);
+        }
     }
 }

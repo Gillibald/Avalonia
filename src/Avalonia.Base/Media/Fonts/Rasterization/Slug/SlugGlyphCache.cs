@@ -32,7 +32,8 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
 
         private static readonly SlugGlyphData s_declined = new(
             Array.Empty<float>(), Array.Empty<int>(), Array.Empty<int>(), FillRule.NonZero,
-            0, 0, 0, 0, new int[1], Array.Empty<int>(), new int[1], Array.Empty<int>());
+            0, 0, 0, 0, 0, 0,
+            new int[1], Array.Empty<int>(), Array.Empty<int>(), new int[1], Array.Empty<int>(), Array.Empty<int>());
 
         private readonly ConcurrentDictionary<ushort, Entry> _entries = new();
         private readonly object _lock = new();

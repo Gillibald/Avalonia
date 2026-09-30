@@ -121,41 +121,67 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.Slug
             }
         }
 
+        private static (float Min, float Max) TexelHull(float p1, float p2, float p3)
+        {
+            var q1 = (float)(Half)p1;
+            var q2 = (float)(Half)p2;
+            var q3 = (float)(Half)p3;
+
+            return (Math.Min(q1, Math.Min(q2, q3)), Math.Max(q1, Math.Max(q2, q3)));
+        }
+
+        private static void AssertSegmented(SlugGlyphData data, ReadOnlySpan<int> band,
+            (int ForwardOnly, int Shared, int BackwardOnly) segments, float split, bool horizontal, string label)
+        {
+            Assert.Equal(band.Length, segments.ForwardOnly + segments.Shared + segments.BackwardOnly);
+
+            for (var i = 0; i < band.Length; i++)
+            {
+                var curve = data.GetCurve(band[i]);
+                var (lo, hi) = horizontal
+                    ? TexelHull(curve.X1, curve.X2, curve.X3)
+                    : TexelHull(curve.Y1, curve.Y2, curve.Y3);
+                var forward = hi >= split - SlugBandEncoder.SplitMargin;
+                var backward = lo <= split + SlugBandEncoder.SplitMargin;
+                var expectedSegment = i < segments.ForwardOnly ? 0 : i < segments.ForwardOnly + segments.Shared ? 1 : 2;
+                var actualSegment = forward ? (backward ? 1 : 0) : 2;
+
+                Assert.True(forward || backward, $"{label}: entry {i} is on neither side of the split.");
+                Assert.True(expectedSegment == actualSegment, $"{label}: entry {i} sits in the wrong segment.");
+
+                if (i > 0 && i != segments.ForwardOnly && i != segments.ForwardOnly + segments.Shared)
+                {
+                    var previous = data.GetCurve(band[i - 1]);
+                    var previousKey = horizontal
+                        ? Math.Max(previous.X1, Math.Max(previous.X2, previous.X3))
+                        : Math.Max(previous.Y1, Math.Max(previous.Y2, previous.Y3));
+                    var key = horizontal
+                        ? Math.Max(curve.X1, Math.Max(curve.X2, curve.X3))
+                        : Math.Max(curve.Y1, Math.Max(curve.Y2, curve.Y3));
+
+                    Assert.True(previousKey >= key, $"{label}: segment is not sorted at position {i}.");
+                }
+            }
+        }
+
         [Fact]
-        public void Band_Lists_Are_Sorted_By_The_Descending_Hull_Maximum()
+        public void Band_Lists_Are_Segmented_Around_The_Split_And_Sorted_Within_Each_Segment()
         {
             var data = SlugBandEncoder.Encode(BuildBlob())!;
 
+            Assert.Equal((data.MinX + data.MaxX) * 0.5f, data.HorizontalSplit);
+            Assert.Equal((data.MinY + data.MaxY) * 0.5f, data.VerticalSplit);
+
             for (var b = 0; b < data.HorizontalBandCount; b++)
             {
-                var band = data.GetHorizontalBand(b);
-
-                for (var i = 1; i < band.Length; i++)
-                {
-                    var previous = data.GetCurve(band[i - 1]);
-                    var current = data.GetCurve(band[i]);
-
-                    Assert.True(
-                        Math.Max(previous.X1, Math.Max(previous.X2, previous.X3)) >=
-                        Math.Max(current.X1, Math.Max(current.X2, current.X3)),
-                        $"Horizontal band {b} is not sorted at position {i}.");
-                }
+                AssertSegmented(data, data.GetHorizontalBand(b), data.GetHorizontalSegments(b),
+                    data.HorizontalSplit, horizontal: true, $"Horizontal band {b}");
             }
 
             for (var b = 0; b < data.VerticalBandCount; b++)
             {
-                var band = data.GetVerticalBand(b);
-
-                for (var i = 1; i < band.Length; i++)
-                {
-                    var previous = data.GetCurve(band[i - 1]);
-                    var current = data.GetCurve(band[i]);
-
-                    Assert.True(
-                        Math.Max(previous.Y1, Math.Max(previous.Y2, previous.Y3)) >=
-                        Math.Max(current.Y1, Math.Max(current.Y2, current.Y3)),
-                        $"Vertical band {b} is not sorted at position {i}.");
-                }
+                AssertSegmented(data, data.GetVerticalBand(b), data.GetVerticalSegments(b),
+                    data.VerticalSplit, horizontal: false, $"Vertical band {b}");
             }
         }
 

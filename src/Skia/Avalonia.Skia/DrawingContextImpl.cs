@@ -476,6 +476,10 @@ namespace Avalonia.Skia
             // the apron widens the rect by ~1.5 device pixels in em units.
             var bucketedEmsPerPixelX = GlyphMaskKey.ScaleQuantum / scaleQX;
             var bucketedEmsPerPixelY = GlyphMaskKey.ScaleQuantum / scaleQY;
+            var pixelsPerEmX = scaleQX / GlyphMaskKey.ScaleQuantum;
+            var pixelsPerEmY = scaleQY / GlyphMaskKey.ScaleQuantum;
+            var splitX = SlugGlyphPlacement.IsSplitEnabled(pixelsPerEmX);
+            var splitY = SlugGlyphPlacement.IsSplitEnabled(pixelsPerEmY);
             var apronX = bucketedEmsPerPixelX * 1.5f;
             var apronY = bucketedEmsPerPixelY * 1.5f;
 
@@ -528,16 +532,17 @@ namespace Avalonia.Skia
                     builder = sharedBuilder;
                     builder.Children["curveTex"] = curveShader!;
                     builder.Children["bandTex"] = bandShader!;
-                    builder.Uniforms["pixelsPerEm"] = new SKPoint(
-                        scaleQX / GlyphMaskKey.ScaleQuantum, scaleQY / GlyphMaskKey.ScaleQuantum);
+                    builder.Uniforms["pixelsPerEm"] = new SKPoint(pixelsPerEmX, pixelsPerEmY);
+                    builder.Uniforms["splitEnabled"] = new SKPoint(splitX ? 1f : 0f, splitY ? 1f : 0f);
                     builder.Uniforms["tint"] = new SKColorF(1, 1, 1, 1);
                 }
 
                 builder.Uniforms["glyphLoc"] = new SKPoint(placement.GlyphLocX, placement.GlyphLocY);
                 builder.Uniforms["bandCounts"] = new SKPoint(
                     placement.HorizontalBandCount, placement.VerticalBandCount);
-                builder.Uniforms["longestLists"] = new SKPoint(
-                    placement.LongestHorizontalList, placement.LongestVerticalList);
+                builder.Uniforms["loopBounds"] = new SKPoint(
+                    placement.GetHorizontalLoopBound(pixelsPerEmX), placement.GetVerticalLoopBound(pixelsPerEmY));
+                builder.Uniforms["splitPoints"] = new SKPoint(placement.HorizontalSplit, placement.VerticalSplit);
                 builder.Uniforms["bandTransform"] = new SKColorF(
                     placement.BandScaleX, placement.BandScaleY, placement.BandOffsetX, placement.BandOffsetY);
                 builder.Uniforms["evenOdd"] = placement.EvenOdd ? 1f : 0f;

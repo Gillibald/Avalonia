@@ -99,9 +99,16 @@ namespace Avalonia.Skia.UnitTests.Media
                 ["pixelsPerEm"] = new[] { pixelsPerEmX, pixelsPerEmY },
                 ["glyphLoc"] = new[] { (float)placement.GlyphLocX, (float)placement.GlyphLocY },
                 ["bandCounts"] = new[] { (float)placement.HorizontalBandCount, (float)placement.VerticalBandCount },
-                ["longestLists"] = new[]
+                ["loopBounds"] = new[]
                 {
-                    (float)placement.LongestHorizontalList, (float)placement.LongestVerticalList,
+                    (float)placement.GetHorizontalLoopBound(pixelsPerEmX),
+                    (float)placement.GetVerticalLoopBound(pixelsPerEmY),
+                },
+                ["splitPoints"] = new[] { placement.HorizontalSplit, placement.VerticalSplit },
+                ["splitEnabled"] = new[]
+                {
+                    SlugGlyphPlacement.IsSplitEnabled(pixelsPerEmX) ? 1f : 0f,
+                    SlugGlyphPlacement.IsSplitEnabled(pixelsPerEmY) ? 1f : 0f,
                 },
                 ["bandTransform"] = new[]
                 {

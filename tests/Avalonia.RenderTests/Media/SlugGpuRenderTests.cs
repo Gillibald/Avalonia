@@ -21,10 +21,7 @@ namespace Avalonia.Skia.RenderTests
     public class SlugGpuRenderTests : TestBase
     {
         private const string Text = "Hamburgefonstiv 0123";
-        private const double EmSize = 20;
         private const double Angle = 0.05;
-
-        private static readonly Point s_origin = new(10, 30);
 
         public SlugGpuRenderTests()
             : base(@"Media\GlyphRun")
@@ -32,7 +29,19 @@ namespace Avalonia.Skia.RenderTests
         }
 
         [Fact]
-        public async Task Rotated_Glyph_Run_Matches_The_Reference_Evaluator_On_Gpu()
+        public Task Rotated_Glyph_Run_Matches_The_Reference_Evaluator_On_Gpu()
+            => AssertRotatedRunMatches(20, new Point(10, 30), 260, 50);
+
+        [Fact]
+        public Task Rotated_Large_Glyph_Run_Matches_The_Reference_Evaluator_On_Gpu()
+        {
+            // Past 32 px per em each pixel walks only its side of the split band lists, so the
+            // run start and ray direction vary per pixel inside a 2x2 quad.
+            return AssertRotatedRunMatches(48, new Point(10, 60), 620, 110);
+        }
+
+        private async Task AssertRotatedRunMatches(double emSize, Point origin, int width, int height,
+            [CallerMemberName] string testName = "")
         {
             // Rotation keeps the run off the mask path, so the GPU outputs draw it through Slug.
             // Heavy stems put many pixels deep inside the ink, where a lost sample shows as a hole.
@@ -49,32 +58,31 @@ namespace Avalonia.Skia.RenderTests
                 glyphs[i] = typeface.CharacterToGlyphMap[Text[i]];
             }
 
-            var run = new GlyphRun(typeface, EmSize, Text.AsMemory(), glyphs, s_origin);
+            var run = new GlyphRun(typeface, emSize, Text.AsMemory(), glyphs, origin);
             var target = new Border
             {
-                Width = 260,
-                Height = 50,
+                Width = width,
+                Height = height,
                 Background = Brushes.White,
-                Child = new RotatedGlyphRunControl(run),
+                Child = new RotatedGlyphRunControl(run, origin),
             };
 
-            await RenderToFile(target);
+            await RenderToFile(target, testName);
 
-            var expected = Evaluate(typeface, run, 260, 50);
+            var expected = Evaluate(typeface, run, emSize, origin, width, height);
 
             if (MesaSoftwareRenderer.GlEnabled)
             {
-                AssertMatches(expected, "composited.gles");
+                AssertMatches(expected, "composited.gles", testName);
             }
 
             if (MesaSoftwareRenderer.VulkanEnabled)
             {
-                AssertMatches(expected, "composited.vulkan");
+                AssertMatches(expected, "composited.vulkan", testName);
             }
         }
 
-        private void AssertMatches(double[,] expected, string outputType,
-            [CallerMemberName] string testName = "")
+        private void AssertMatches(double[,] expected, string outputType, string testName)
         {
             using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(Path.Combine(OutputPath, $"{testName}.{outputType}.out.png"));
 
@@ -102,7 +110,8 @@ namespace Avalonia.Skia.RenderTests
             Assert.True(mismatches == 0, $"{outputType}: {mismatches} pixels disagree with the evaluator.{first}");
         }
 
-        private static double[,] Evaluate(GlyphTypeface typeface, GlyphRun run, int width, int height)
+        private static double[,] Evaluate(GlyphTypeface typeface, GlyphRun run, double emSize, Point origin,
+            int width, int height)
         {
             var store = typeface.SlugStore;
             var coverage = new double[width, height];
@@ -115,9 +124,9 @@ namespace Avalonia.Skia.RenderTests
 
                 if (placement.HorizontalBandCount != 0)
                 {
-                    var emToDevice = Matrix.CreateScale(EmSize, -EmSize) *
+                    var emToDevice = Matrix.CreateScale(emSize, -emSize) *
                         Matrix.CreateTranslation(penX, 0) * Matrix.CreateRotation(Angle) *
-                        Matrix.CreateTranslation(s_origin.X, s_origin.Y);
+                        Matrix.CreateTranslation(origin.X, origin.Y);
                     var deviceToEm = emToDevice.Invert();
 
                     // The production draw bakes the footprint quantized to the mask-cache grid.
@@ -155,13 +164,18 @@ namespace Avalonia.Skia.RenderTests
         private sealed class RotatedGlyphRunControl : Control
         {
             private readonly GlyphRun _run;
+            private readonly Point _origin;
 
-            public RotatedGlyphRunControl(GlyphRun run) => _run = run;
+            public RotatedGlyphRunControl(GlyphRun run, Point origin)
+            {
+                _run = run;
+                _origin = origin;
+            }
 
             public override void Render(DrawingContext context)
             {
-                using (context.PushTransform(Matrix.CreateTranslation(-s_origin.X, -s_origin.Y) *
-                           Matrix.CreateRotation(Angle) * Matrix.CreateTranslation(s_origin.X, s_origin.Y)))
+                using (context.PushTransform(Matrix.CreateTranslation(-_origin.X, -_origin.Y) *
+                           Matrix.CreateRotation(Angle) * Matrix.CreateTranslation(_origin.X, _origin.Y)))
                 {
                     context.DrawGlyphRun(Brushes.Black, _run);
                 }
