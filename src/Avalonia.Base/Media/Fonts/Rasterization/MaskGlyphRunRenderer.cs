@@ -17,8 +17,27 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Above this device size the D4 triage sends the run to the caller's fallback.</summary>
         internal const double MaxPixelsPerEm = 160;
 
-        /// <summary>Run masks wider than this fall back (chunking is deferred until profiling asks).</summary>
-        internal const int MaxRunMaskWidth = 2048;
+        /// <summary>
+        /// The run-mask dimension bound for contexts that do not report their own through
+        /// <see cref="IAlphaGlyphMaskContext.MaxRunMaskSize"/>: the OpenGL ES 3.0 guaranteed
+        /// minimum of GL_MAX_TEXTURE_SIZE, safe on any backend that uploads masks as textures.
+        /// </summary>
+        internal const int DefaultMaxRunMaskSize = 2048;
+
+        /// <summary>
+        /// The memory bound on one composed run mask, in bytes. An 8K-wide line at
+        /// <see cref="MaxPixelsPerEm"/> (7680 x ~210 px) in the heaviest format, the portable
+        /// subpixel pair at 8 bytes per pixel, needs about 13 MB, so realistic lines stay well
+        /// inside it; runs beyond it (an unwrapped paragraph, a huge single-line document) fall
+        /// back rather than hold tens of megabytes of mostly offscreen pixels.
+        /// </summary>
+        internal const long MaxRunMaskBytes = 32L * 1024 * 1024;
+
+        /// <summary>
+        /// Slack between the scaled ink bounds and the composed union: glyph mask aprons plus
+        /// pen phase and snapping.
+        /// </summary>
+        private const int RunMaskMargin = 8;
 
         [ThreadStatic]
         private static GlyphPathBuilder? t_scratch;
@@ -54,14 +73,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             var pixelsPerEm = run.FontRenderingEmSize * scaleX;
 
             if (pixelsPerEm <= 0 || pixelsPerEm > MaxPixelsPerEm)
-            {
-                return false;
-            }
-
-            // The composed union cannot exceed the scaled ink bounds by more than the apron and
-            // phase margins, so gating on Bounds here keeps Compose from ever producing an
-            // oversized mask (which would otherwise be indistinguishable from "no ink").
-            if (run.Bounds.Width * scaleX > MaxRunMaskWidth - 8)
             {
                 return false;
             }
@@ -115,6 +126,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             var deviceY = run.BaselineOrigin.Y * scaleY + transform.M32;
 
             var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
+
+            if (!FitsRunMaskBounds(context, run.Bounds, scaleX, scaleY, BytesPerPixel(mode, alphaContext)))
+            {
+                return false;
+            }
 
             // TextHintingMode drives the grid fit: None means outlines scaled only, Light
             // takes the natural fit (bytecode in the v40 compatibility class when the font
@@ -234,6 +250,35 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             return true;
         }
+
+        /// <summary>
+        /// Gates the run on the context's dimension bound and the memory bound before any
+        /// compose work. The composed union cannot exceed the scaled ink bounds by more than
+        /// <see cref="RunMaskMargin"/>, so gating on Bounds keeps Compose from ever producing an
+        /// oversized mask (which would otherwise be indistinguishable from "no ink").
+        /// </summary>
+        private static bool FitsRunMaskBounds(IDrawingContextImpl context, Rect bounds,
+            double scaleX, double scaleY, int bytesPerPixel)
+        {
+            var maxSize = context is IAlphaGlyphMaskContext bounded
+                ? bounded.MaxRunMaskSize
+                : DefaultMaxRunMaskSize;
+
+            var width = bounds.Width * scaleX + RunMaskMargin;
+            var height = bounds.Height * scaleY + RunMaskMargin;
+
+            return width <= maxSize && height <= maxSize &&
+                   width * height * bytesPerPixel <= MaxRunMaskBytes;
+        }
+
+        /// <summary>
+        /// Bytes per composed pixel of the variant this draw realizes: an A8 mask, an RGBA
+        /// stripe mask, a pre-tinted BGRA bitmap, or the portable subpixel Multiply/Plus pair.
+        /// </summary>
+        private static int BytesPerPixel(GlyphMaskMode mode, IAlphaGlyphMaskContext? alphaContext)
+            => mode == GlyphMaskMode.Subpixel
+                ? alphaContext is null ? 8 : 4
+                : alphaContext is null ? 4 : 1;
 
         /// <summary>
         /// Splits a glyph pen into placement pixel and phase. Under Strong hinting every pen

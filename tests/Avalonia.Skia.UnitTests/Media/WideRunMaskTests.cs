@@ -44,6 +44,26 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(HasInk(bitmap, 2100, info.Width), "no ink drawn beyond 2048 px");
         }
 
+        [Fact]
+        public void A_Run_Past_The_Run_Mask_Memory_Bound_Falls_Back()
+        {
+            using var scope = CreateEnvironment(out var typeface);
+            using var run = CreateRun(typeface, Repeat(Line, 16), MaskGlyphRunRenderer.MaxPixelsPerEm,
+                new Point(0, 160));
+
+            // Pre-tinted BGRA on a raster context: 4 bytes per composed pixel.
+            Assert.True(run.Bounds.Width * run.Bounds.Height * 4 > MaskGlyphRunRenderer.MaxRunMaskBytes,
+                "the run is not large enough to exceed the memory bound");
+
+            var info = new SKImageInfo(64, 64, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            Assert.False(MaskGlyphRunRenderer.TryDraw(context, run, Brushes.Black, TextRenderingMode.Antialias));
+        }
+
         internal static bool HasInk(SKBitmap bitmap, int fromX, int toX)
         {
             for (var y = 0; y < bitmap.Height; y++)

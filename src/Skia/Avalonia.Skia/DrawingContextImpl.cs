@@ -290,6 +290,10 @@ namespace Avalonia.Skia
 
         bool IAlphaGlyphMaskContext.PrefersAlphaMasks => GrContext is not null;
 
+        // Ganesh tiles a raster image larger than the texture limit when drawing it, but a mask
+        // that fits uploads as one cached texture and does not depend on that fallback.
+        int IAlphaGlyphMaskContext.MaxRunMaskSize => GrContext?.MaxTextureSize ?? int.MaxValue;
+
         bool IAlphaGlyphMaskContext.TryGetLcdGeometry(out LcdMaskGeometry geometry)
         {
             geometry = _lcdMaskGeometry ?? LcdMaskGeometry.RgbHorizontal;

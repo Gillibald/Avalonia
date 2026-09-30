@@ -27,6 +27,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         bool PrefersAlphaMasks { get; }
 
         /// <summary>
+        /// The largest width or height, in device pixels, of one realized run mask on this
+        /// context. A GPU context reports its maximum texture dimension; a raster context has
+        /// no texture to fit and reports <see cref="int.MaxValue"/>, leaving only the
+        /// renderer's memory bound. Contexts without this interface get
+        /// <see cref="MaskGlyphRunRenderer.DefaultMaxRunMaskSize"/>.
+        /// </summary>
+        int MaxRunMaskSize { get; }
+
+        /// <summary>
         /// Realizes an immutable alpha mask (row-major, stride equal to <paramref name="width"/>).
         /// The handle is owned by the caller's cache — disposed on eviction, drawn via
         /// <see cref="DrawAlphaMask"/> — and must stay valid across frames and device loss.
