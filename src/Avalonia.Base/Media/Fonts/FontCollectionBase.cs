@@ -254,7 +254,7 @@ namespace Avalonia.Media.Fonts
             return score;
         }
 
-        private static bool IsCultureCompatible(GlyphTypeface candidate, CultureInfo? culture, Script script)
+        internal static bool IsCultureCompatible(GlyphTypeface candidate, CultureInfo? culture, Script script)
         {
             // If no culture or codepoint is locale-insensitive, the candidate is fine.
             if (culture == null || !FontFallbackScriptHints.IsLocaleSensitive(script))
@@ -270,7 +270,10 @@ namespace Avalonia.Media.Fonts
             }
 
             // If the font has no localized family names at all, treat as compatible (no negative signal).
-            if (candidate.FamilyNames.Count == 0)
+            // A lone invariant name carries no locale either: it stands in for a font without a name
+            // table, or for one named only in Mac or Unicode platform records.
+            if (candidate.FamilyNames.Count == 0 ||
+                (candidate.FamilyNames.Count == 1 && candidate.FamilyNames.ContainsKey(CultureInfo.InvariantCulture)))
             {
                 return true;
             }

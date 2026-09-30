@@ -205,6 +205,8 @@ namespace Avalonia.Media
             {
                 Dictionary<CultureInfo, string>? familyNames = null;
                 Dictionary<CultureInfo, string>? faceNames = null;
+                var hasEnglishFamilyName = false;
+                var hasEnglishFaceName = false;
 
                 foreach (var nameRecord in _nameTable)
                 {
@@ -214,6 +216,8 @@ namespace Avalonia.Media
                         {
                             continue;
                         }
+
+                        hasEnglishFamilyName |= IsEnglish(nameRecord.LanguageID);
 
                         var culture = GetCulture(nameRecord.LanguageID);
 
@@ -232,6 +236,8 @@ namespace Avalonia.Media
                             continue;
                         }
 
+                        hasEnglishFaceName |= IsEnglish(nameRecord.LanguageID);
+
                         var culture = GetCulture(nameRecord.LanguageID);
 
                         faceNames ??= new Dictionary<CultureInfo, string>(1);
@@ -243,6 +249,19 @@ namespace Avalonia.Media
                     }
                 }
 
+                // Only Windows records carry a culture, so a font whose English name lives in a Mac or
+                // Unicode platform record would expose no English key at all and could not be found by
+                // that name. Register the invariant lookup's pick, which prefers those records.
+                if (!hasEnglishFamilyName)
+                {
+                    AddInvariantName(ref familyNames, FamilyName);
+                }
+
+                if (!hasEnglishFaceName)
+                {
+                    AddInvariantName(ref faceNames, _nameTable.FontSubFamilyName((ushort)CultureInfo.InvariantCulture.LCID));
+                }
+
                 FamilyNames = familyNames ?? s_emptyStringDictionary;
                 FaceNames = faceNames ?? s_emptyStringDictionary;
             }
@@ -250,6 +269,20 @@ namespace Avalonia.Media
             {
                 FamilyNames = new Dictionary<CultureInfo, string> { { CultureInfo.InvariantCulture, FamilyName } };
                 FaceNames = new Dictionary<CultureInfo, string> { { CultureInfo.InvariantCulture, Weight.ToString() } };
+            }
+
+            static bool IsEnglish(ushort languageId) => (languageId & 0x3FF) == 0x09;
+
+            static void AddInvariantName(ref Dictionary<CultureInfo, string>? names, string name)
+            {
+                if (string.IsNullOrEmpty(name) || names?.ContainsValue(name) == true)
+                {
+                    return;
+                }
+
+                names ??= new Dictionary<CultureInfo, string>(1);
+
+                names.TryAdd(CultureInfo.InvariantCulture, name);
             }
 
             static CultureInfo GetCulture(int lcid)

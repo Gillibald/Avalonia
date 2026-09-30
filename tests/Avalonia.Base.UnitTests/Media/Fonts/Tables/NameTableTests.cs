@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -161,6 +162,17 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
                 Assert.True(collection.TryGetFamilyTypefaces("Sample Sans", out _));
                 Assert.True(collection.TryGetFamilyTypefaces(JapaneseFamily, out _));
             }
+        }
+
+        [Fact]
+        public void Font_Named_Only_In_Mac_Records_Stays_Culture_Compatible_For_Han()
+        {
+            var typeface = CreateTypeface(new NameTableWriter()
+                .MacRoman(FamilyNameId, "Sample Sans")
+                .MacRoman(SubfamilyNameId, "Regular"));
+
+            Assert.True(FontCollectionBase.IsCultureCompatible(typeface, new CultureInfo("ja-JP"), Script.Han));
+            Assert.True(FontCollectionBase.IsCultureCompatible(typeface, new CultureInfo("zh-CN"), Script.Han));
         }
 
         private static NameTableWriter JapaneseWindowsWithMacEnglish()
