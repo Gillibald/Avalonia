@@ -132,5 +132,137 @@ namespace Avalonia.Skia.UnitTests.Media
 
             return right < 0 ? null : new Rect(left, top, right - left, bottom - top);
         }
+
+        public static IEnumerable<object[]> ColorKindsAndSimulations()
+        {
+            foreach (var kind in new[] { "ColrV0", "ColrV1", "Cbdt", "Sbix" })
+            {
+                foreach (var simulations in new[]
+                         {
+                             FontSimulations.Bold, FontSimulations.Oblique,
+                             FontSimulations.Bold | FontSimulations.Oblique,
+                         })
+                {
+                    yield return new object[] { kind, simulations };
+                }
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(ColorKindsAndSimulations))]
+        public void Simulated_Variants_Report_The_Source_Colour_Glyph_Bounds(string kind, FontSimulations simulations)
+        {
+            using var scope = CreateEnvironment();
+            var source = CreateTypeface(kind, out var colorGlyph);
+            var variant = source.WithSimulations(simulations);
+
+            Assert.True(variant.IsColorGlyph(colorGlyph));
+
+            // Colour glyphs are never simulated, so every bounds query of the variant answers
+            // exactly what the source face answers.
+            Assert.Equal(source.TryGetColorGlyphInkBounds(colorGlyph, out var sourceInk),
+                variant.TryGetColorGlyphInkBounds(colorGlyph, out var variantInk));
+            Assert.Equal(sourceInk, variantInk);
+
+            var sourceBounds = new GlyphBounds[1];
+            var variantBounds = new GlyphBounds[1];
+
+            Assert.Equal(source.TryGetGlyphBounds(new[] { colorGlyph }, sourceBounds),
+                variant.TryGetGlyphBounds(new[] { colorGlyph }, variantBounds));
+            Assert.Equal(sourceBounds[0], variantBounds[0]);
+
+            Assert.True(source.TryGetGlyphMetrics(colorGlyph, out var sourceMetrics));
+            Assert.True(variant.TryGetGlyphMetrics(colorGlyph, out var variantMetrics));
+            Assert.Equal(sourceMetrics, variantMetrics);
+
+            Assert.Equal(source.GetGlyphOutline(colorGlyph)?.Bounds, variant.GetGlyphOutline(colorGlyph)?.Bounds);
+
+            var infos = new List<GlyphInfo> { new(colorGlyph, 0, 32) };
+
+            using var sourceRun = new ManagedGlyphRunImpl(source, 32, infos, new Point(8, 40));
+            using var variantRun = new ManagedGlyphRunImpl(variant, 32, infos, new Point(8, 40));
+
+            Assert.Equal(sourceRun.Bounds, variantRun.Bounds);
+        }
+
+        [Theory]
+        [MemberData(nameof(ColorKindsAndSimulations))]
+        public void Simulated_Mixed_Run_Bounds_Cover_The_Drawn_Ink(string kind, FontSimulations simulations)
+        {
+            using var scope = CreateEnvironment();
+            var typeface = CreateTypeface(kind, out var colorGlyph).WithSimulations(simulations);
+            var plainGlyph = typeface.CharacterToGlyphMap['A'];
+
+            // The outline glyph still grows and slants, the colour glyph keeps its own box.
+            var infos = new List<GlyphInfo> { new(plainGlyph, 0, 40), new(colorGlyph, 1, 32) };
+
+            using var run = new ManagedGlyphRunImpl(typeface, 32, infos, new Point(8, 40));
+
+            var info = new SKImageInfo(120, 64, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var contextImpl = (DrawingContextImpl)Avalonia.Skia.Helpers.DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+            using var context = new PlatformDrawingContext(contextImpl, ownsImpl: false);
+
+            canvas.Clear(SKColors.White);
+
+            // The v1 glyph needs the split; the rest draws through the mask path.
+            using var glyphRun = new GlyphRun(typeface, 32, default, infos, new Point(8, 40));
+
+            if (!ColorGlyphRunSplitter.TryDraw(context, glyphRun, Brushes.Black))
+            {
+                Assert.True(MaskGlyphRunRenderer.TryDraw(contextImpl, run, Brushes.Black, TextRenderingMode.Antialias,
+                    TextHintingMode.None));
+            }
+
+            var pixels = bitmap.GetPixelSpan();
+            var covered = run.Bounds.Inflate(1);
+
+            for (var y = 0; y < info.Height; y++)
+            {
+                for (var x = 0; x < info.Width; x++)
+                {
+                    var i = (y * info.Width + x) * 4;
+
+                    if (pixels[i] < 250 || pixels[i + 1] < 250 || pixels[i + 2] < 250)
+                    {
+                        Assert.True(covered.Contains(new Point(x + 0.5, y + 0.5)),
+                            $"{kind} {simulations}: ink at ({x}, {y}) lies outside the run bounds {run.Bounds}");
+                    }
+                }
+            }
+        }
+
+        private static GlyphTypeface CreateTypeface(string kind, out ushort colorGlyph)
+        {
+            switch (kind)
+            {
+                case "ColrV0":
+                    return ColorGlyphV1SplitTests.CreateV0Typeface(out colorGlyph);
+                case "ColrV1":
+                    return ColorGlyphV1SplitTests.CreateV1Typeface(out colorGlyph);
+                case "Cbdt":
+                    return BitmapGlyphRenderingTests.CreateBitmapTypeface(out colorGlyph, out _);
+                default:
+                    return BitmapGlyphRenderingTests.CreateSbixTypeface(out colorGlyph);
+            }
+        }
+
+        private static IDisposable CreateEnvironment()
+        {
+            var scope = AvaloniaLocator.EnterScope();
+
+            AvaloniaLocator.CurrentMutable
+                .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
+            AvaloniaLocator.CurrentMutable
+                .Bind<IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
+            AvaloniaLocator.CurrentMutable
+                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                {
+                    TextRasterizationMode = TextRasterizationMode.Managed,
+                });
+
+            return scope;
+        }
     }
 }
