@@ -99,7 +99,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             var scratch = new GlyphPathBuilder();
             var rotation = Matrix.CreateRotation(Math.PI * degrees / 180);
 
-            foreach (var c in "gHaR8O")
+            // Glyphs whose contours do not overlap: where contours overlap, the nonzero fill
+            // covers their union, less than the summed contour areas.
+            foreach (var c in "gHaO8s")
             {
                 var glyph = typeface.CharacterToGlyphMap[c];
                 var key = CreateKey(glyph, 48f, rotation, phaseX, phaseY);

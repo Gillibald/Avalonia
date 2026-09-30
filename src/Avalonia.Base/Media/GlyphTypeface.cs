@@ -3108,6 +3108,15 @@ namespace Avalonia.Media
             => TryBuildGlyphContours(glyphIndex, SimulationTransform, context, EmboldenStrength);
 
         /// <summary>
+        /// Builds the glyph's contours like <see cref="TryBuildGlyphContours"/>, with this face's
+        /// simulations applied in design units before <paramref name="transform"/>: the same
+        /// outline <see cref="GetGlyphOutline(ushort)"/> produces, mapped straight to device
+        /// space for the managed rasterizer.
+        /// </summary>
+        internal bool TryBuildSimulatedGlyphContours(ushort glyphIndex, Matrix transform, IGeometryContext sink)
+            => TryBuildGlyphContours(glyphIndex, SimulationTransform * transform, sink, EmboldenStrength);
+
+        /// <summary>
         /// Builds the glyph's outline contours into an arbitrary geometry sink from whichever
         /// outline table the font carries — <c>glyf</c> (with gvar deformation at this instance's
         /// variation point), CFF or CFF2 — applying <paramref name="transform"/> to every emitted

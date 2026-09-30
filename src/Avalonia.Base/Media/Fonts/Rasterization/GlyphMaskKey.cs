@@ -29,7 +29,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         public const float Quantum = 4096f;
 
         /// <summary>Whether this is the upright, unscaled identity.</summary>
-        public bool IsIdentity => (M11 | M12 | M21 | M22) == 0;
+        public bool IsIdentity => M11 == 0 && M12 == 0 && M21 == 0 && M22 == 0;
 
         /// <summary>The dequantized first row, x column.</summary>
         public float Scale11 => 1f + M11 / Quantum;

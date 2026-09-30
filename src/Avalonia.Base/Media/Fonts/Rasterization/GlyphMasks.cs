@@ -35,6 +35,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public static GlyphMask Build(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
         {
+            if (key.IsTransformed)
+            {
+                return BuildTransformed(typeface, scratch, key);
+            }
+
             var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
 
             if (!typeface.TryGetGlyphInkBounds(key.Glyph, out var box) ||
@@ -135,7 +140,105 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static GlyphMask BuildTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
         {
-            return GlyphMask.Empty;
+            if (!TryGetTransformedPlacement(typeface, key, out var left, out var top, out var width, out var height) ||
+                width > MaxMaskSize || height > MaxMaskSize)
+            {
+                return GlyphMask.Empty;
+            }
+
+            var alpha = new byte[width * height];
+
+            return RasterizeTransformed(typeface, scratch, key, left, top, width, height, alpha)
+                ? new GlyphMask(alpha, width, height, left, top)
+                : GlyphMask.Empty;
+        }
+
+        /// <summary>
+        /// The placement of a transformed glyph mask relative to its snapped pen pixel, derived
+        /// without rasterizing: the ink box's corners through the design-to-device transform,
+        /// rounded out, plus the apron that absorbs the analytic bleed and the sub-pixel phase.
+        /// The box contains the ink, so its transformed corners bound the transformed ink for
+        /// any linear map; under the identity this is exactly the upright builder's placement.
+        /// Returns <c>false</c> for a glyph without ink. The size is not clamped to
+        /// <see cref="MaxMaskSize"/>, so callers can decline a draw before any work.
+        /// </summary>
+        internal static bool TryGetTransformedPlacement(GlyphTypeface typeface, in GlyphMaskKey key,
+            out int left, out int top, out int width, out int height)
+        {
+            left = top = width = height = 0;
+
+            if (!typeface.TryGetGlyphInkBounds(key.Glyph, out var box) ||
+                box.XMax <= box.XMin || box.YMax <= box.YMin)
+            {
+                return false;
+            }
+
+            GetDesignToDevice(typeface, key, out var a, out var b, out var c, out var d);
+
+            float minX = float.MaxValue, minY = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue;
+
+            Corner(box.XMin, box.YMin);
+            Corner(box.XMin, box.YMax);
+            Corner(box.XMax, box.YMin);
+            Corner(box.XMax, box.YMax);
+
+            left = (int)Math.Floor(minX) - Apron;
+            top = (int)Math.Floor(minY) - Apron;
+            width = (int)Math.Ceiling(maxX) + Apron - left;
+            height = (int)Math.Ceiling(maxY) + Apron - top;
+
+            return width > 0 && height > 0;
+
+            void Corner(short x, short y)
+            {
+                var deviceX = x * a + y * c;
+                var deviceY = x * b + y * d;
+
+                minX = Math.Min(minX, deviceX);
+                minY = Math.Min(minY, deviceY);
+                maxX = Math.Max(maxX, deviceX);
+                maxY = Math.Max(maxY, deviceY);
+            }
+        }
+
+        /// <summary>
+        /// The design-unit to device-pixel linear map of a transformed key, as the row-vector
+        /// matrix (a, b; c, d): the em scale with the y flip, then the key's linear part.
+        /// </summary>
+        private static void GetDesignToDevice(GlyphTypeface typeface, in GlyphMaskKey key,
+            out float a, out float b, out float c, out float d)
+        {
+            var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
+            var transform = key.Transform;
+
+            a = scale * transform.Scale11;
+            b = scale * transform.Skew12;
+            c = -scale * transform.Skew21;
+            d = -scale * transform.Scale22;
+        }
+
+        private static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            int left, int top, int width, int height, Span<byte> destination)
+        {
+            GetDesignToDevice(typeface, key, out var a, out var b, out var c, out var d);
+
+            scratch.Reset();
+
+            var transform = new Matrix(a, b, c, d, 0, 0);
+            var built = key.ApplySimulations
+                ? typeface.TryBuildSimulatedGlyphContours(key.Glyph, transform, scratch)
+                : typeface.TryBuildGlyphContours(key.Glyph, transform, scratch);
+
+            if (!built)
+            {
+                return false;
+            }
+
+            GlyphRasterizer.Rasterize(scratch, width, height, -left + key.PhaseOffset, -top + key.PhaseOffsetY,
+                key.Mode == GlyphMaskMode.Aliased, destination);
+
+            return true;
         }
 
         /// <summary>
