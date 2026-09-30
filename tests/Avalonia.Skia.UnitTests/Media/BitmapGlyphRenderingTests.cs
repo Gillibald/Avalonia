@@ -224,7 +224,7 @@ namespace Avalonia.Skia.UnitTests.Media
             run.Dispose();
         }
 
-        private static GlyphTypeface CreateSbixTypeface(out ushort bitmapGlyph,
+        internal static GlyphTypeface CreateSbixTypeface(out ushort bitmapGlyph,
             string graphicType = "png ", byte[]? imageBytes = null)
         {
             var font = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
@@ -282,7 +282,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private static GlyphTypeface CreateBitmapTypeface(out ushort bitmapGlyph, out ushort plainGlyph)
+        internal static GlyphTypeface CreateBitmapTypeface(out ushort bitmapGlyph, out ushort plainGlyph)
         {
             var font = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = font.TryCreateGlyphTypeface();
