@@ -23,6 +23,7 @@ namespace Avalonia.Skia
         IDrawingContextImplWithEffects,
         IDrawingContextImplWithLayers,
         IAlphaGlyphMaskContext,
+        ITransformedGlyphContext,
         ISlugGlyphRunContext
     {
         private IDisposable?[]? _disposables;
@@ -42,6 +43,7 @@ namespace Avalonia.Skia
         private Matrix? _currentTransform;
         private bool _disposed;
         private GRContext? _grContext;
+        private readonly GlyphRasterTarget _glyphRasterTarget;
         public GRContext? GrContext => _grContext;
         private readonly ISkiaGpu? _gpu;
         private readonly SKPaint _strokePaint = SKPaintCache.Shared.Get();
@@ -221,6 +223,11 @@ namespace Avalonia.Skia
                     _ => null,
                 };
             _grContext = createInfo.GrContext;
+            _glyphRasterTarget = _grContext is null
+                ? GlyphRasterTarget.Raster
+                : SkiaGpuRasterizer.IsSoftware(_grContext)
+                    ? GlyphRasterTarget.SoftwareGpu
+                    : GlyphRasterTarget.HardwareGpu;
             _gpu = createInfo.Gpu;
             if (_grContext != null)
                 Monitor.Enter(_grContext);
@@ -289,6 +296,11 @@ namespace Avalonia.Skia
         }
 
         bool IAlphaGlyphMaskContext.PrefersAlphaMasks => GrContext is not null;
+
+        /// <inheritdoc cref="ITransformedGlyphContext.RasterTarget"/>
+        internal GlyphRasterTarget GlyphRasterTarget => _glyphRasterTarget;
+
+        GlyphRasterTarget ITransformedGlyphContext.RasterTarget => _glyphRasterTarget;
 
         // Ganesh tiles a raster image larger than the texture limit when drawing it, but a mask
         // that fits uploads as one cached texture and does not depend on that fallback.
