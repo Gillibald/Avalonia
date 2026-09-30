@@ -52,6 +52,18 @@ namespace Avalonia.Media.Fonts.Rasterization.Slug
         public float MaxY { get; }
         public int LongestHorizontalList { get; }
         public int LongestVerticalList { get; }
+
+        /// <summary>
+        /// The horizontal-ray loop bound the shader runs for every pixel of a draw at
+        /// <paramref name="pixelsPerEm"/> along x: the longest horizontal list, at any scale.
+        /// </summary>
+        public int GetHorizontalLoopBound(float pixelsPerEm) => LongestHorizontalList;
+
+        /// <summary>
+        /// The vertical-ray loop bound the shader runs for every pixel of a draw at
+        /// <paramref name="pixelsPerEm"/> along y: the longest vertical list, at any scale.
+        /// </summary>
+        public int GetVerticalLoopBound(float pixelsPerEm) => LongestVerticalList;
     }
 
     /// <summary>
