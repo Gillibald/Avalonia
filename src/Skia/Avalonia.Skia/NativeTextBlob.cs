@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
@@ -15,6 +16,20 @@ namespace Avalonia.Skia
     /// </summary>
     internal static class NativeTextBlob
     {
+        /// <summary>
+        /// Whether the native blob of a run on <paramref name="typeface"/> leaves the colour
+        /// glyphs out for <see cref="ColorGlyphRunSplitter.DrawColorGlyphs"/> to draw: Skia applies
+        /// the face's simulations to every glyph of the blob, and colour glyphs are never
+        /// simulated.
+        /// </summary>
+        public static bool SplitsColorGlyphs(GlyphTypeface typeface)
+            => typeface.FontSimulations != FontSimulations.None &&
+               (typeface.ColorTable is not null || typeface.BitmapSource is not null);
+
+        /// <summary>
+        /// The run's native blob, or null when the face has no Skia platform face or no glyph
+        /// is left once <see cref="SplitsColorGlyphs"/> takes the colour glyphs out.
+        /// </summary>
         public static SKTextBlob? TryGetTextBlob(ManagedGlyphRunImpl run,
             TextOptions textOptions, RenderOptions renderOptions)
         {
@@ -65,6 +80,7 @@ namespace Avalonia.Skia
                 new(secondarySize: 3, evictionAction: b => b?.Dispose());
 
             private SKPoint[]? _positions;
+            private ushort[]? _glyphs;
             private SKPath? _outlinePath;
 
             public SKPath GetOrBuildOutlinePath(ManagedGlyphRunImpl run)
@@ -96,38 +112,59 @@ namespace Avalonia.Skia
                 return _outlinePath = path;
             }
 
-            public SKTextBlob GetOrBuild(ManagedGlyphRunImpl run, TextOptions textOptions)
+            public SKTextBlob? GetOrBuild(ManagedGlyphRunImpl run, TextOptions textOptions)
             {
+                if (_positions is null)
+                {
+                    BuildGlyphs(run);
+                }
+
+                if (_positions!.Length == 0)
+                {
+                    return null;
+                }
+
                 return _blobs.GetOrAdd(textOptions, _ =>
                 {
                     using var font = GlyphRunImpl.CreateFont(
                         (SkiaTypeface)run.GlyphTypeface.PlatformTypeface,
                         (float)run.FontRenderingEmSize, run.GlyphTypeface.FontSimulations, textOptions);
 
-                    if (_positions is null)
-                    {
-                        var positions = run.GlyphPositions;
-                        var points = new SKPoint[run.GlyphCount];
-
-                        for (var i = 0; i < points.Length; i++)
-                        {
-                            points[i] = new SKPoint(positions[i * 2], positions[i * 2 + 1]);
-                        }
-
-                        _positions = points;
-                    }
-
                     var builder = SKTextBlobBuilderCache.Shared.Get();
-                    var runBuffer = builder.AllocatePositionedRun(font, run.GlyphCount);
+                    var runBuffer = builder.AllocatePositionedRun(font, _positions.Length);
 
-                    runBuffer.SetPositions(_positions);
-                    runBuffer.SetGlyphs(run.GlyphIndices);
+                    runBuffer.SetPositions(_positions!);
+                    runBuffer.SetGlyphs(_glyphs!);
 
                     var textBlob = builder.Build()!;
 
                     SKTextBlobBuilderCache.Shared.Return(builder);
                     return textBlob;
                 });
+            }
+
+            private void BuildGlyphs(ManagedGlyphRunImpl run)
+            {
+                var typeface = run.GlyphTypeface;
+                var indices = run.GlyphIndices;
+                var positions = run.GlyphPositions;
+                var splitsColor = SplitsColorGlyphs(typeface);
+                var glyphs = new List<ushort>(indices.Length);
+                var points = new List<SKPoint>(indices.Length);
+
+                for (var i = 0; i < indices.Length; i++)
+                {
+                    if (splitsColor && ColorGlyphRunSplitter.IsDrawnAsColor(typeface, indices[i]))
+                    {
+                        continue;
+                    }
+
+                    glyphs.Add(indices[i]);
+                    points.Add(new SKPoint(positions[i * 2], positions[i * 2 + 1]));
+                }
+
+                _glyphs = glyphs.ToArray();
+                _positions = points.ToArray();
             }
 
             public void Dispose()
