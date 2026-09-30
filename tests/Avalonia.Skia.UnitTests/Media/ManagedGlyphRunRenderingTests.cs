@@ -139,6 +139,43 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(FontSimulations.Bold)]
         [InlineData(FontSimulations.Oblique)]
         [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
+        public void Simulated_Variants_Render_The_Same_After_Their_Siblings(FontSimulations simulations)
+        {
+            byte[] cold;
+
+            using (CreateEnvironment(out var typeface, simulations))
+            {
+                cold = RenderScene(typeface, TextRasterizationMode.Managed, rotate: false);
+            }
+
+            using (CreateEnvironment(out var regular))
+            {
+                // Every sibling draws the same glyphs at the same size first, so a glyph mask
+                // any of them leaves behind for the others must not be mistaken for this one.
+                foreach (var sibling in new[]
+                         {
+                             FontSimulations.None, FontSimulations.Bold, FontSimulations.Oblique,
+                             FontSimulations.Bold | FontSimulations.Oblique,
+                         })
+                {
+                    if (sibling != simulations)
+                    {
+                        RenderScene(regular.WithSimulations(sibling), TextRasterizationMode.Managed, rotate: false);
+                    }
+                }
+
+                var warm = RenderScene(regular.WithSimulations(simulations), TextRasterizationMode.Managed,
+                    rotate: false);
+
+                Assert.True(cold.AsSpan().SequenceEqual(warm), $"{simulations}: the warm frame differs");
+            }
+        }
+
+        [Theory]
+        [InlineData(FontSimulations.None)]
+        [InlineData(FontSimulations.Bold)]
+        [InlineData(FontSimulations.Oblique)]
+        [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
         public void Rotated_Varied_Runs_Draw_Their_Own_Instance(FontSimulations simulations)
         {
             using var scope = CreateVariedEnvironment(out var typeface, simulations, managed: true);
