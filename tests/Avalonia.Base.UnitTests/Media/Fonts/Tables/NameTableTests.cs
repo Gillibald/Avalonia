@@ -75,6 +75,49 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
                 Describe(typeface.FaceNames));
         }
 
+        [Fact]
+        public void Mac_Roman_Name_Decodes_High_Bytes()
+        {
+            var typeface = CreateTypeface(new NameTableWriter()
+                .Add(1, 0, 0, FamilyNameId, new byte[] { (byte)'C', (byte)'a', (byte)'f', 0x8E, (byte)' ', 0xA5 }));
+
+            Assert.Equal("Café •", typeface.FamilyName);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(3)]
+        [InlineData(4)]
+        [InlineData(6)]
+        public void Unicode_Platform_Name_Decodes_As_UTF16_Big_Endian(ushort encoding)
+        {
+            var typeface = CreateTypeface(new NameTableWriter()
+                .Add(0, encoding, 0, FamilyNameId, Encoding.BigEndianUnicode.GetBytes("Sample é")));
+
+            Assert.Equal("Sample é", typeface.FamilyName);
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(10)]
+        public void Windows_Name_Decodes_As_UTF16_Big_Endian_For_Any_Encoding(ushort encoding)
+        {
+            var typeface = CreateTypeface(new NameTableWriter()
+                .Add(3, encoding, 0x0409, FamilyNameId, Encoding.BigEndianUnicode.GetBytes("Sample é")));
+
+            Assert.Equal("Sample é", typeface.FamilyName);
+        }
+
+        [Fact]
+        public void Mac_Name_In_A_Non_Roman_Encoding_Is_Skipped()
+        {
+            var typeface = CreateTypeface(new NameTableWriter()
+                .Add(1, 1, 0, FamilyNameId, new byte[] { 0x83, 0x54, 0x83, 0x93 })
+                .Add(0, 3, 0, FamilyNameId, Encoding.BigEndianUnicode.GetBytes("Sample")));
+
+            Assert.Equal("Sample", typeface.FamilyName);
+        }
+
         private static GlyphTypeface CreateTypeface(NameTableWriter names)
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
