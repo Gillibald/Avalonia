@@ -33,6 +33,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         // covered.
         private const int FilterDivisorRounding = 1;
 
+        /// <summary>
+        /// Builds the mask <paramref name="key"/> describes. The key's simulation is applied, not
+        /// the typeface's, so a face and its simulated variants build interchangeable masks.
+        /// </summary>
         public static GlyphMask Build(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
         {
             var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
@@ -101,7 +105,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            var simulations = typeface.FontSimulations;
+            var simulations = key.Simulations;
 
             if (GlyphSimulation.AffectsOutline(simulations))
             {

@@ -24,11 +24,13 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// parameter and tint variants are a run-mask concern, so animating either never touches
     /// this cache. <see cref="EmboldenQ"/> carries the bold simulation's outset in 1/64 device
     /// pixels: its strength follows the em size a run was laid out at, which the scale bucket
-    /// alone does not determine once a transform scales the text.
+    /// alone does not determine once a transform scales the text. <see cref="EmboldenQ"/> and
+    /// <see cref="Oblique"/> together are the simulation the mask is built with, so the masks
+    /// of a face and of its simulated variants share one cache.
     /// </summary>
     internal readonly record struct GlyphMaskKey(
         ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool StemSnap = false,
-        ushort EmboldenQ = 0)
+        ushort EmboldenQ = 0, bool Oblique = false)
     {
         /// <summary>Number of subpixel x-phase buckets.</summary>
         public const int PhaseCount = 4;
@@ -44,6 +46,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The bold simulation's outset in device pixels, zero when not emboldened.</summary>
         public float EmboldenOutset => EmboldenQ * (1f / 64);
+
+        /// <summary>The simulations applied to the fitted outline of this mask.</summary>
+        public FontSimulations Simulations =>
+            (EmboldenQ > 0 ? FontSimulations.Bold : FontSimulations.None) |
+            (Oblique ? FontSimulations.Oblique : FontSimulations.None);
 
         public static GlyphMaskKey Create(ushort glyph, float pixelsPerEm, float penX, GlyphMaskMode mode)
         {

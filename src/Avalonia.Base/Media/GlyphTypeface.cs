@@ -2455,20 +2455,25 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// The per-instance rasterized-mask cache used by the managed text rasterization path —
-        /// the sibling of the outline cache, keyed by (glyph, scale bucket, phase, mode). Created
+        /// The rasterized-mask cache used by the managed text rasterization path — the sibling
+        /// of the outline cache, keyed by (glyph, scale bucket, phase, mode, simulation). Created
         /// on first use; a variation clone caches masks at its own variation point like every
-        /// other per-instance cache here.
+        /// other per-instance cache here. A simulated variant uses its unsimulated face's cache:
+        /// the key carries the simulation, and everything before it is the unsimulated glyph's.
         /// </summary>
         internal Fonts.Rasterization.GlyphMaskCache MaskCache =>
-            _glyphMaskCache ?? GetOrCreateGlyphMaskCache();
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.MaskCache
+                : _glyphMaskCache ?? GetOrCreateGlyphMaskCache();
 
         /// <summary>
         /// The vertical grid-fit zones for the mask pipeline, measured lazily once. A benign
         /// create race hands identical zones to whichever instance wins.
         /// </summary>
         internal Fonts.Rasterization.VerticalGridFit GridFit =>
-            _verticalGridFit ??= Fonts.Rasterization.VerticalGridFit.Create(this);
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.GridFit
+                : _verticalGridFit ??= Fonts.Rasterization.VerticalGridFit.Create(this);
 
         /// <summary>
         /// Font-wide standard stroke widths for the mask pipeline's width unification,
@@ -2476,14 +2481,18 @@ namespace Avalonia.Media
         /// instance wins.
         /// </summary>
         internal Fonts.Rasterization.StemWidthTable StemWidths =>
-            _stemWidthTable ??= Fonts.Rasterization.StemWidthTable.Create(this);
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.StemWidths
+                : _stemWidthTable ??= Fonts.Rasterization.StemWidthTable.Create(this);
 
         /// <summary>
         /// The font's grid-fitting policy table, <see cref="Fonts.Tables.GaspTable.Empty"/>
         /// when absent or malformed. Same benign create race as <see cref="StemWidths"/>.
         /// </summary>
         internal Fonts.Tables.GaspTable Gasp =>
-            _gaspTable ??= Fonts.Tables.GaspTable.Load(this);
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.Gasp
+                : _gaspTable ??= Fonts.Tables.GaspTable.Load(this);
 
         /// <summary>
         /// The raw TrueType hinting programs (fpgm/prep/cvt),
@@ -2492,9 +2501,11 @@ namespace Avalonia.Media
         /// Same benign create race as <see cref="StemWidths"/>.
         /// </summary>
         internal Fonts.Rasterization.TrueType.TrueTypeProgramTables ProgramTables =>
-            _programTables ??= _glyfTable is null
-                ? Fonts.Rasterization.TrueType.TrueTypeProgramTables.Empty
-                : Fonts.Rasterization.TrueType.TrueTypeProgramTables.Load(this);
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.ProgramTables
+                : _programTables ??= _glyfTable is null
+                    ? Fonts.Rasterization.TrueType.TrueTypeProgramTables.Empty
+                    : Fonts.Rasterization.TrueType.TrueTypeProgramTables.Load(this);
 
         /// <summary>
         /// Whether the font carries TrueType hinting worth running: glyf outlines plus real
@@ -2514,9 +2525,19 @@ namespace Avalonia.Media
         /// font is ineligible or its programs faulted at this size (memoised, so a broken
         /// prep costs one attempt).
         /// </summary>
+        /// <remarks>
+        /// A simulated variant hints through its unsimulated face: the simulation is applied
+        /// to the fitted outline, and the side bearings the hinter reads for its phantom
+        /// points must be those of the real glyph, not of the emboldened or slanted box.
+        /// </remarks>
         internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? GetTrueTypeHinter(
             ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
         {
+            if (FontSimulations != FontSimulations.None)
+            {
+                return UnsimulatedTypeface.GetTrueTypeHinter(scaleQ, mode);
+            }
+
             if (!HasTrueTypeHinting)
             {
                 return null;
@@ -2767,9 +2788,11 @@ namespace Avalonia.Media
         {
             get
             {
-                if (_simulationSource is { FontSimulations: FontSimulations.None } source)
+                // A variant of a face created with simulations derives from that face, so it
+                // reaches the unsimulated face through it and shares that face's caches.
+                if (_simulationSource is { } source)
                 {
-                    return source;
+                    return source.FontSimulations == FontSimulations.None ? source : source.UnsimulatedTypeface;
                 }
 
                 return _unsimulatedTypeface ??
