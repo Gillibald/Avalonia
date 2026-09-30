@@ -133,6 +133,28 @@ namespace Avalonia.Media.Fonts.Rasterization
         private (RunMaskKey Key, RunMask Mask)[]? _secondary;
         private int _nextEvict;
 
+        /// <summary>The number of cached masks; for diagnostics and tests.</summary>
+        public int Count
+        {
+            get
+            {
+                var count = _primary is null ? 0 : 1;
+
+                if (_secondary is { } secondary)
+                {
+                    foreach (var entry in secondary)
+                    {
+                        if (entry.Mask is not null)
+                        {
+                            count++;
+                        }
+                    }
+                }
+
+                return count;
+            }
+        }
+
         public bool TryGet(in RunMaskKey key, out RunMask mask)
         {
             if (_primary is { } primary && _primaryKey == key)

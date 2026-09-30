@@ -5,8 +5,27 @@ using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
+    /// <summary>
+    /// The tier that renders the draws the upright mask tier rejects: rotation, skew,
+    /// anisotropic scale and sizes past the upright ceiling.
+    /// </summary>
+    internal enum TransformedTextRouting
+    {
+        /// <summary>Transformed glyph masks, on every drawing context.</summary>
+        Masks,
+
+        /// <summary>The Slug vector tier on GPU contexts, the native fallback elsewhere.</summary>
+        Slug,
+    }
+
     internal static partial class MaskGlyphRunRenderer
     {
+        /// <summary>
+        /// Selects the tier for transformed draws. Internal: it lets measurements and the Slug
+        /// tests run the vector tier; applications always get <see cref="TransformedTextRouting.Masks"/>.
+        /// </summary>
+        internal static TransformedTextRouting TransformedTextRouting { get; set; }
+
         /// <summary>
         /// Attempts to draw a run the upright triage rejected (rotation, skew, anisotropic scale,
         /// sizes above <see cref="MaxPixelsPerEm"/>, a run too tall for one upright mask) through

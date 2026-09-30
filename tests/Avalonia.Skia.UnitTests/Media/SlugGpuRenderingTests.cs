@@ -366,7 +366,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return infos;
         }
 
-        private sealed class GpuContext : IDisposable
+        internal sealed class GpuContext : IDisposable
         {
             private readonly Action _cleanup;
 
