@@ -231,8 +231,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     };
                 }
 
-                sprites = new TransformedGlyphSprites(key, run.GlyphTypeface.FontSimulations != FontSimulations.None,
-                    laidOut);
+                var simulations = run.GlyphTypeface.FontSimulations;
+
+                sprites = new TransformedGlyphSprites(key,
+                    GlyphSimulation.QuantizeEmboldenOutset(simulations, run.FontRenderingEmSize, key.ScaleQ),
+                    (simulations & FontSimulations.Oblique) != 0, laidOut);
 
                 return true;
             }
@@ -659,7 +662,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             var typeface = run.GlyphTypeface;
             var colr = typeface.ColorTable;
             var cpal = typeface.ColorPaletteTable;
-            var simulated = typeface.FontSimulations != FontSimulations.None;
+            var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
+            var oblique = (typeface.FontSimulations & FontSimulations.Oblique) != 0;
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
 
@@ -683,7 +687,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 GlyphMaskKey.SnapPen(originFractionY + (x * m12 + y * m22), out var penY, out var phaseY);
 
                 var glyphKey = new GlyphMaskKey(indices[i], key.ScaleQ, phaseX, key.Mode, GridFit: false,
-                    StemSnap: false, Transform: key.Transform, PhaseY: phaseY, ApplySimulations: simulated);
+                    StemSnap: false, EmboldenQ: embolden, Oblique: oblique, Transform: key.Transform, PhaseY: phaseY);
 
                 if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                 {

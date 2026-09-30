@@ -117,6 +117,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Maps every captured point through the linear part (<paramref name="m11"/>,
+        /// <paramref name="m12"/>; <paramref name="m21"/>, <paramref name="m22"/>) in row-vector
+        /// form, <c>x' = x * m11 + y * m21</c> and <c>y' = x * m12 + y * m22</c>.
+        /// </summary>
+        internal void ApplyLinear(float m11, float m12, float m21, float m22)
+        {
+            for (var i = 0; i + 1 < _pointCount; i += 2)
+            {
+                var x = _points[i];
+                var y = _points[i + 1];
+
+                _points[i] = x * m11 + y * m21;
+                _points[i + 1] = x * m12 + y * m22;
+            }
+        }
+
+        /// <summary>
         /// The box of all captured points, control points included, so it contains the filled
         /// outline. False for an empty path or one with non-finite coordinates.
         /// </summary>

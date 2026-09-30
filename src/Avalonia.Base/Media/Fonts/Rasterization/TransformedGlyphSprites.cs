@@ -86,17 +86,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         private GlyphAtlasBatch[]? _batches;
         private bool _disposed;
 
-        public TransformedGlyphSprites(in RunMaskKey key, bool simulated, TransformedSprite[] sprites)
+        public TransformedGlyphSprites(in RunMaskKey key, ushort emboldenQ, bool oblique, TransformedSprite[] sprites)
         {
             Key = key;
-            Simulated = simulated;
+            EmboldenQ = emboldenQ;
+            Oblique = oblique;
             _sprites = sprites;
         }
 
         public RunMaskKey Key { get; }
 
-        /// <summary>Whether the glyph masks are the typeface's simulated (bold, oblique) outlines.</summary>
-        public bool Simulated { get; }
+        /// <summary>The bold simulation of the glyph masks, as <see cref="GlyphMaskKey.EmboldenQ"/>.</summary>
+        public ushort EmboldenQ { get; }
+
+        /// <summary>Whether the glyph masks are slanted, as <see cref="GlyphMaskKey.Oblique"/>.</summary>
+        public bool Oblique { get; }
 
         public ReadOnlySpan<TransformedSprite> Sprites => _sprites;
 
@@ -161,7 +165,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             ref readonly var sprite = ref _sprites[index];
 
             return new GlyphMaskKey(sprite.Glyph, Key.ScaleQ, sprite.PhaseX, Key.Mode, GridFit: false, StemSnap: false,
-                Transform: Key.Transform, PhaseY: sprite.PhaseY, ApplySimulations: Simulated);
+                EmboldenQ: EmboldenQ, Oblique: Oblique, Transform: Key.Transform, PhaseY: sprite.PhaseY);
         }
 
         /// <summary>

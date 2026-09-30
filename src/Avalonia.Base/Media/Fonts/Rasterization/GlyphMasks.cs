@@ -34,6 +34,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         // covered.
         private const int FilterDivisorRounding = 1;
 
+        /// <summary>
+        /// Builds the mask <paramref name="key"/> describes. The key's simulation is applied, not
+        /// the typeface's, so a face and its simulated variants build interchangeable masks.
+        /// </summary>
         public static GlyphMask Build(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
         {
             if (key.IsTransformed)
@@ -107,7 +111,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            var simulations = typeface.FontSimulations;
+            var simulations = key.Simulations;
 
             if (GlyphSimulation.AffectsOutline(simulations))
             {
@@ -156,8 +160,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Builds a glyph mask under the key's quantized linear transform and x/y phase, with
-        /// the typeface's simulations when the key asks for them. Unhinted: grid fitting
-        /// assumes an upright pixel grid.
+        /// the key's simulation applied through <see cref="GlyphSimulation"/> like the upright
+        /// builder does. Unhinted: grid fitting assumes an upright pixel grid.
         /// </summary>
         internal static GlyphMask BuildTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
         {
@@ -210,6 +214,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// rounded out, plus the apron that absorbs the analytic bleed and the sub-pixel phase.
         /// The box contains the ink, so its transformed corners bound the transformed ink for
         /// any linear map; under the identity this is exactly the upright builder's placement.
+        /// A simulated key takes the simulated face's design ink box, whose bold strength is
+        /// never below the device strength the key carries.
         /// Returns <c>false</c> for a glyph without ink. The size is not clamped to
         /// <see cref="MaxMaskSize"/>, so callers can decline a draw before any work.
         /// </summary>
@@ -218,7 +224,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             left = top = width = height = 0;
 
-            if (!typeface.TryGetGlyphInkBounds(key.Glyph, out var box) ||
+            if (!typeface.TryGetSimulatedGlyphInkBounds(key.Glyph, key.Simulations, out var box) ||
                 box.XMax <= box.XMin || box.YMax <= box.YMin)
             {
                 return false;
@@ -278,18 +284,35 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
             int left, int top, int width, int height, Span<byte> destination, int stride)
         {
-            GetDesignToDevice(typeface, key, out var a, out var b, out var c, out var d);
-
             scratch.Reset();
 
-            var transform = new Matrix(a, b, c, d, 0, 0);
-            var built = key.ApplySimulations
-                ? typeface.TryBuildSimulatedGlyphContours(key.Glyph, transform, scratch)
-                : typeface.TryBuildGlyphContours(key.Glyph, transform, scratch);
+            var simulations = key.Simulations;
 
-            if (!built)
+            if (GlyphSimulation.AffectsOutline(simulations))
             {
-                return false;
+                // The simulation is the upright builder's, applied to the glyph at its em scale,
+                // and the key's linear part then maps the simulated outline to the device.
+                var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
+
+                if (!typeface.TryBuildGlyphContours(key.Glyph, new Matrix(scale, 0, 0, -scale, 0, 0), scratch))
+                {
+                    return false;
+                }
+
+                GlyphSimulation.Apply(scratch, simulations, key.EmboldenOutset, yDown: true);
+
+                var linear = key.Transform;
+
+                scratch.ApplyLinear(linear.Scale11, linear.Skew12, linear.Skew21, linear.Scale22);
+            }
+            else
+            {
+                GetDesignToDevice(typeface, key, out var a, out var b, out var c, out var d);
+
+                if (!typeface.TryBuildGlyphContours(key.Glyph, new Matrix(a, b, c, d, 0, 0), scratch))
+                {
+                    return false;
+                }
             }
 
             GlyphRasterizer.Rasterize(scratch, width, height, -left + key.PhaseOffset, -top + key.PhaseOffsetY,

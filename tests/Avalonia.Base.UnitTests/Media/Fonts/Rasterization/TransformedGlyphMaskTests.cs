@@ -199,7 +199,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 var skewKey = CreateKey(glyph, pixelsPerEm, shear);
                 var skewed = GlyphMasks.BuildTransformed(regular, scratch, skewKey);
                 var simulated = GlyphMasks.BuildTransformed(oblique!, scratch,
-                    CreateKey(glyph, pixelsPerEm, Matrix.Identity, simulations: true));
+                    CreateKey(glyph, pixelsPerEm, Matrix.Identity, oblique: true));
 
                 Assert.False(skewed.IsEmpty);
                 Assert.False(simulated.IsEmpty);
@@ -354,14 +354,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         internal static GlyphMaskKey CreateKey(ushort glyph, float pixelsPerEm, Matrix linear,
-            byte phaseX = 0, byte phaseY = 0, bool simulations = false)
+            byte phaseX = 0, byte phaseY = 0, bool oblique = false)
         {
             Assert.True(GlyphMaskTransform.TryQuantize(linear.M11, linear.M12, linear.M21, linear.M22,
                 out var transform));
 
             return new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(pixelsPerEm), phaseX,
-                GlyphMaskMode.Antialiased, GridFit: false, Transform: transform, PhaseY: phaseY,
-                ApplySimulations: simulations);
+                GlyphMaskMode.Antialiased, GridFit: false, Oblique: oblique, Transform: transform, PhaseY: phaseY);
         }
 
         /// <summary>The design-unit to mask-pixel transform the builder applies for a key.</summary>
