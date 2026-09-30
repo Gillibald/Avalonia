@@ -1,7 +1,6 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -31,11 +30,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Attempts to draw a run the upright triage rejected (rotation, skew, anisotropic scale,
         /// sizes above <see cref="MaxPixelsPerEm"/>, a run too tall for one upright mask) through
         /// transformed glyph masks. Glyph masks are rasterized unhinted under the device
-        /// transform's quantized linear part and a quarter-pixel phase in both axes, composed
-        /// into a device-aligned run mask and cached on the run, so a static rotated paragraph
-        /// costs one blit per run per frame. Returns <c>false</c> when this draw cannot take
-        /// the run (non-solid foreground, bitmap strikes, a COLR v1-only glyph, a degenerate or
-        /// extreme transform, a glyph or run past the mask bounds) and the caller falls back.
+        /// transform's quantized linear part and a quarter-pixel phase in both axes, and the run
+        /// caches only their placements: a raster context blends the cached masks straight into
+        /// its surface, a GPU context draws them from the typeface's atlas in one batched call,
+        /// and any other context blits them one by one. Returns <c>false</c> when this draw
+        /// cannot take the run (non-solid foreground, bitmap strikes, a COLR v1-only glyph, a
+        /// degenerate or extreme transform, a glyph past the mask bounds) and the caller falls
+        /// back.
         /// </summary>
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
@@ -99,15 +100,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             // grayscale here.
             var mode = textRenderingMode == TextRenderingMode.Alias ? GlyphMaskMode.Aliased : GlyphMaskMode.Antialiased;
 
-            var alphaContext = typeface.ColorTable is null &&
-                context is IAlphaGlyphMaskContext { PrefersAlphaMasks: true } preferring
-                    ? preferring
-                    : null;
-
-            var tint = alphaContext is null
-                ? RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B)
-                : 0u;
-
             var origin = run.BaselineOrigin;
 
             GlyphMaskKey.SnapPen((float)(origin.X * transform.M11 + origin.Y * transform.M21 + transform.M31),
@@ -115,137 +107,74 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphMaskKey.SnapPen((float)(origin.X * transform.M12 + origin.Y * transform.M22 + transform.M32),
                 out var originY, out var originPhaseY);
 
-            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode, tint,
+            // Sprites carry no colour: every path tints at draw time.
+            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode, 0u,
                 GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: originPhaseY);
 
-            if (context is ITransformedGlyphContext transformedContext)
+            var state = run.TransformedSprites;
+            var hit = state.TryGet(key, out var sprites);
+            var transformedContext = context as ITransformedGlyphContext;
+
+            if (transformedContext is not null && run.TransformChurn.Record(key.ScaleQ, linear, hit))
             {
-                // Sprites carry no colour: the backend tints each batch at draw time.
-                var spriteKey = key with { Tint = 0 };
-                var state = run.TransformedSprites;
-                var hit = state.TryGet(spriteKey, out var sprites);
-
-                if (run.TransformChurn.Record(key.ScaleQ, linear, hit))
+                // The transform changes every frame, so masks rasterized now would never be
+                // drawn again. A hardware GPU evaluates the outlines per pixel for little cost;
+                // everywhere else, and when the vector tier declines, the last static frame's
+                // batch is drawn under the change of transform since, softer but without
+                // rasterizing or caching anything. The first frame that repeats its transform
+                // rasterizes again, at the final transform.
+                if (transformedContext.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                    context is Slug.ISlugGlyphRunContext slugContext &&
+                    Slug.SlugGlyphRunRenderer.TryDraw(slugContext, transform, run, foreground))
                 {
-                    // The transform changes every frame, so masks rasterized now would never be
-                    // drawn again. A hardware GPU evaluates the outlines per pixel for little
-                    // cost; everywhere else, and when the vector tier declines, the last static
-                    // frame's batch is drawn under the change of transform since, softer but
-                    // without rasterizing or caching anything. The first frame that repeats its
-                    // transform rasterizes again, at the final transform.
-                    if (transformedContext.RasterTarget == GlyphRasterTarget.HardwareGpu &&
-                        context is Slug.ISlugGlyphRunContext slugContext &&
-                        Slug.SlugGlyphRunRenderer.TryDraw(slugContext, transform, run, foreground))
-                    {
-                        drawnBySlug = true;
-                        return true;
-                    }
-
-                    if (TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
-                    {
-                        return true;
-                    }
+                    drawnBySlug = true;
+                    return true;
                 }
 
-                if (!hit)
+                if (TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
                 {
-                    if (!TryBuildSprites(run, spriteKey, transform, out var built))
-                    {
-                        return false;
-                    }
-
-                    if (built is null)
-                    {
-                        return true;   // no ink
-                    }
-
-                    state.Add(built);
-                    sprites = built;
+                    return true;
                 }
-
-                state.Settle(sprites, transform, originX, originY);
-
-                if (transformedContext.RasterTarget == GlyphRasterTarget.Raster)
-                {
-                    DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY,
-                        RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B));
-                }
-                else
-                {
-                    DrawFromAtlas(transformedContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color));
-                }
-
-                return true;
             }
 
-            return DrawThroughRunMask(context, run, key, transform, alphaContext, alpha, solid.Color,
-                originX, originY, forceTransient: false);
-        }
-
-        private static uint ToArgb(byte alpha, Color color)
-            => ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
-
-        private static bool DrawThroughRunMask(IDrawingContextImpl context, ManagedGlyphRunImpl run, in RunMaskKey key,
-            in Matrix transform, IAlphaGlyphMaskContext? alphaContext, byte alpha, Color color, int originX, int originY,
-            bool forceTransient)
-        {
-            var cache = run.TransformedRunMasks;
-            var transient = forceTransient;
-            RunMask runMask;
-
-            if (!forceTransient && cache.TryGet(key, out var cached))
+            if (!hit)
             {
-                run.TransformChurn.Record(key.ScaleQ, key.Transform, cacheHit: true);
-                runMask = cached;
-            }
-            else
-            {
-                // While the transform changes every frame, neither the run mask nor its glyph
-                // masks would be drawn again: compose from transient buffers and release the
-                // run mask after the draw, so an animation cannot evict static text's masks.
-                if (!forceTransient)
-                {
-                    transient = run.TransformChurn.Record(key.ScaleQ, key.Transform, cacheHit: false);
-                }
-
-                var maxSize = context is IAlphaGlyphMaskContext bounded
-                    ? bounded.MaxRunMaskSize
-                    : DefaultMaxRunMaskSize;
-
-                if (!TryComposeTransformed(run, key, transform, maxSize, alphaContext, !transient, out var composed))
+                if (!TryBuildSprites(run, key, transform, out var built))
                 {
                     return false;
                 }
 
-                if (composed is null)
+                if (built is null)
                 {
                     return true;   // no ink
                 }
 
-                if (!transient)
-                {
-                    cache.Add(key, composed);
-                }
-
-                runMask = composed;
+                state.Add(built);
+                sprites = built;
             }
 
-            try
+            state.Settle(sprites, transform, originX, originY);
+
+            var tint = RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B);
+
+            if (transformedContext is null)
             {
-                DrawTransformedRunMask(context, runMask, originX, originY, alphaContext, alpha, color);
+                DrawPerGlyph(context, sprites, EnsureMasks(typeface, sprites), originX, originY, tint);
             }
-            finally
+            else if (transformedContext.RasterTarget == GlyphRasterTarget.Raster)
             {
-                if (transient)
-                {
-                    // The backends retain what a pending draw still needs (a Skia image is
-                    // reference counted), so the handles can go right after the draw call.
-                    runMask.Dispose();
-                }
+                DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY, tint);
+            }
+            else
+            {
+                DrawFromAtlas(transformedContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color));
             }
 
             return true;
         }
+
+        private static uint ToArgb(byte alpha, Color color)
+            => ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 
         /// <summary>
         /// Lays the run's glyph masks out relative to its snapped origin pixel under the key's
@@ -263,8 +192,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             try
             {
-                if (!TryCollectTransformedItems(run, key, transform, expandColorLayers: true, ref items, ref count,
-                        out _, out _, out _, out _))
+                if (!TryCollectTransformedItems(run, key, transform, ref items, ref count))
                 {
                     return false;
                 }
@@ -672,38 +600,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 : new GlyphMask(mask.Alpha.AsSpan(0, mask.Width * mask.Height).ToArray(), mask.Width, mask.Height,
                     mask.Left, mask.Top);
 
-        private static void DrawTransformedRunMask(IDrawingContextImpl context, RunMask runMask, int originX,
-            int originY, IAlphaGlyphMaskContext? alphaContext, byte alpha, Color color)
-        {
-            // The mask is already in device pixels; draw it under an identity transform so the
-            // canvas transform is not applied twice.
-            var oldTransform = context.Transform;
-            context.Transform = Matrix.Identity;
-
-            // Parts cover disjoint tiles of the composed union, so every destination pixel is
-            // blended exactly once, with the value a single mask would hold there.
-            foreach (var part in runMask.Parts)
-            {
-                GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
-
-                if (alphaContext is not null)
-                {
-                    var straightTint = ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
-
-                    alphaContext.DrawAlphaMask(part.Handle, sourceRect, destRect, straightTint);
-                }
-                else
-                {
-                    context.DrawBitmap((IBitmapImpl)part.Handle, 1, sourceRect, destRect);
-                }
-            }
-
-            context.Transform = oldTransform;
-        }
-
         /// <summary>
         /// One glyph mask of a transformed run: a glyph or a COLR v0 layer glyph at its snapped
-        /// pen, with the mask placement known before rasterizing and the tint it composes with.
+        /// pen, with the mask placement known before rasterizing and how it is coloured.
         /// </summary>
         private struct TransformedGlyphItem
         {
@@ -714,104 +613,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             public int Top;
             public int Width;
             public int Height;
-            public uint Tint;
-            public bool CorrectCoverage;
             public TransformedSpriteKind Kind;
             public uint Color;
         }
 
         /// <summary>
-        /// Composes the transformed run into device-aligned parts. Returns <c>false</c> when the
-        /// run cannot be composed within the mask bounds, and <c>true</c> with a <c>null</c>
-        /// mask when the run has no ink.
-        /// </summary>
-        private static bool TryComposeTransformed(ManagedGlyphRunImpl run, in RunMaskKey key, in Matrix transform,
-            int maxSize, IAlphaGlyphMaskContext? alphaContext, bool cacheGlyphs, out RunMask? runMask)
-        {
-            runMask = null;
-
-            var typeface = run.GlyphTypeface;
-            var items = ArrayPool<TransformedGlyphItem>.Shared.Rent(Math.Max(1, run.GlyphCount));
-            var itemCount = 0;
-
-            try
-            {
-                if (!TryCollectTransformedItems(run, key, transform, alphaContext is null, ref items, ref itemCount,
-                        out var minX, out var minY, out var maxX, out var maxY))
-                {
-                    return false;
-                }
-
-                if (itemCount == 0)
-                {
-                    return true;
-                }
-
-                var width = maxX - minX;
-                var height = maxY - minY;
-
-                if ((long)width * height * (alphaContext is null ? 4 : 1) > MaxRunMaskBytes)
-                {
-                    return false;
-                }
-
-                // Rotated and large text grows in both axes, so the union splits into tiles of
-                // at most the bound each way, row by row.
-                var columns = GetChunkCount(width, maxSize, out var tileWidth);
-                var rows = GetChunkCount(height, maxSize, out var tileHeight);
-                var parts = new RunMaskPart[columns * rows];
-                var created = 0;
-                var scratch = t_scratch ??= new GlyphPathBuilder();
-                var state = (typeface, scratch, cacheGlyphs);
-
-                try
-                {
-                    for (var row = 0; row < rows; row++)
-                    {
-                        var tileY = minY + row * tileHeight;
-                        var h = Math.Min(tileHeight, maxY - tileY);
-
-                        for (var column = 0; column < columns; column++)
-                        {
-                            var tileX = minX + column * tileWidth;
-                            var w = Math.Min(tileWidth, maxX - tileX);
-
-                            parts[created++] = alphaContext is null
-                                ? ComposeTransformedTintedTile(state, items, itemCount, tileX, tileY, w, h)
-                                : ComposeTransformedAlphaTile(state, alphaContext, items, itemCount,
-                                    tileX, tileY, w, h);
-                        }
-                    }
-
-                    runMask = new RunMask(parts);
-                    return true;
-                }
-                catch
-                {
-                    DisposeParts(parts, created);
-                    throw;
-                }
-            }
-            finally
-            {
-                ArrayPool<TransformedGlyphItem>.Shared.Return(items);
-            }
-        }
-
-        /// <summary>
         /// Expands the run into glyph mask items (COLR v0 glyphs into their layers) with snapped
-        /// pens and placements, and unions their extents. Returns <c>false</c> when a glyph mask
-        /// would exceed <see cref="GlyphMasks.MaxMaskSize"/>.
+        /// pens and placements. Returns <c>false</c> when a glyph mask would exceed
+        /// <see cref="GlyphMasks.MaxMaskSize"/>.
         /// </summary>
         private static bool TryCollectTransformedItems(ManagedGlyphRunImpl run, in RunMaskKey key,
-            in Matrix transform, bool expandColorLayers, ref TransformedGlyphItem[] items, ref int count,
-            out int minX, out int minY, out int maxX, out int maxY)
+            in Matrix transform, ref TransformedGlyphItem[] items, ref int count)
         {
-            minX = minY = int.MaxValue;
-            maxX = maxY = int.MinValue;
-
             var typeface = run.GlyphTypeface;
-            var colr = expandColorLayers ? typeface.ColorTable : null;
+            var colr = typeface.ColorTable;
             var cpal = typeface.ColorPaletteTable;
             var simulated = typeface.FontSimulations != FontSimulations.None;
             var indices = run.GlyphIndices;
@@ -841,10 +656,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                 {
-                    // COLR v0: flat-color layers composed bottom-to-top in record order. The
-                    // 0xFFFF palette sentinel means "use the text foreground". Color layers skip
-                    // the coverage correction: it is non-linear, so abutting layers whose
-                    // coverages sum to full would show seams.
+                    // COLR v0: flat-color layers drawn bottom-to-top in record order. The 0xFFFF
+                    // palette sentinel means "use the text foreground".
                     for (var layer = 0; layer < baseRecord.NumLayers; layer++)
                     {
                         if (!colr.TryGetLayerRecord(baseRecord.FirstLayerIndex + layer, out var layerRecord))
@@ -852,18 +665,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                             continue;
                         }
 
-                        uint layerTint;
                         uint layerColor = 0;
                         TransformedSpriteKind kind;
 
                         if (layerRecord.PaletteIndex == 0xFFFF)
                         {
-                            layerTint = key.Tint;
                             kind = TransformedSpriteKind.ForegroundLayer;
                         }
                         else if (cpal.TryGetColor(layerRecord.PaletteIndex, out var color))
                         {
-                            layerTint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
                             layerColor = ((uint)color.A << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
                             kind = TransformedSpriteKind.PaletteLayer;
                         }
@@ -873,16 +683,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                         }
 
                         if (!TryAddTransformedItem(typeface, glyphKey with { Glyph = layerRecord.GlyphIndex },
-                                penX, penY, layerTint, false, kind, layerColor, ref items, ref count,
-                                ref minX, ref minY, ref maxX, ref maxY))
+                                penX, penY, kind, layerColor, ref items, ref count))
                         {
                             return false;
                         }
                     }
                 }
-                else if (!TryAddTransformedItem(typeface, glyphKey, penX, penY, key.Tint, true,
-                             TransformedSpriteKind.Foreground, 0, ref items, ref count,
-                             ref minX, ref minY, ref maxX, ref maxY))
+                else if (!TryAddTransformedItem(typeface, glyphKey, penX, penY, TransformedSpriteKind.Foreground, 0,
+                             ref items, ref count))
                 {
                     return false;
                 }
@@ -892,9 +700,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private static bool TryAddTransformedItem(GlyphTypeface typeface, in GlyphMaskKey glyphKey, int penX, int penY,
-            uint tint, bool correctCoverage, TransformedSpriteKind kind, uint color, ref TransformedGlyphItem[] items,
-            ref int count,
-            ref int minX, ref int minY, ref int maxX, ref int maxY)
+            TransformedSpriteKind kind, uint color, ref TransformedGlyphItem[] items, ref int count)
         {
             if (!GlyphMasks.TryGetTransformedPlacement(typeface, glyphKey,
                     out var left, out var top, out var width, out var height))
@@ -925,134 +731,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Top = top,
                 Width = width,
                 Height = height,
-                Tint = tint,
-                CorrectCoverage = correctCoverage,
                 Kind = kind,
                 Color = color,
             };
 
-            minX = Math.Min(minX, penX + left);
-            minY = Math.Min(minY, penY + top);
-            maxX = Math.Max(maxX, penX + left + width);
-            maxY = Math.Max(maxY, penY + top + height);
-
             return true;
-        }
-
-        private static bool IntersectsTile(in TransformedGlyphItem item, int tileX, int tileY, int width, int height)
-            => item.PenX + item.Left < tileX + width && item.PenX + item.Left + item.Width > tileX &&
-               item.PenY + item.Top < tileY + height && item.PenY + item.Top + item.Height > tileY;
-
-        /// <summary>
-        /// Fetches an item's glyph mask: from the cache when caching, otherwise a cached copy if
-        /// one exists or a transient mask over a rented buffer. Masks over the cache's entry
-        /// bound are always transient. <paramref name="rented"/> must go back to the pool
-        /// once the mask is composed.
-        /// </summary>
-        private static GlyphMask GetTransformedGlyphMask(
-            in (GlyphTypeface Typeface, GlyphPathBuilder Scratch, bool CacheGlyphs) state,
-            in TransformedGlyphItem item, out byte[]? rented)
-        {
-            rented = null;
-
-            var maskCache = state.Typeface.MaskCache;
-
-            if (state.CacheGlyphs && item.Width * item.Height <= maskCache.MaxEntryBytes)
-            {
-                return maskCache.GetOrBuild(item.Key, (state.Typeface, state.Scratch), s_buildMask);
-            }
-
-            return maskCache.TryGet(item.Key, out var cached)
-                ? cached
-                : GlyphMasks.BuildTransient(state.Typeface, state.Scratch, item.Key, out rented);
-        }
-
-        private static RunMaskPart ComposeTransformedAlphaTile(
-            in (GlyphTypeface Typeface, GlyphPathBuilder Scratch, bool CacheGlyphs) state,
-            IAlphaGlyphMaskContext alphaContext, TransformedGlyphItem[] items, int count,
-            int tileX, int tileY, int width, int height)
-        {
-            var staging = ArrayPool<byte>.Shared.Rent(width * height);
-
-            try
-            {
-                var span = staging.AsSpan(0, width * height);
-                span.Clear();
-
-                for (var i = 0; i < count; i++)
-                {
-                    ref readonly var item = ref items[i];
-
-                    if (!IntersectsTile(item, tileX, tileY, width, height))
-                    {
-                        continue;
-                    }
-
-                    var mask = GetTransformedGlyphMask(state, item, out var rented);
-
-                    RunMaskComposer.ComposeAlpha(mask, item.PenX - tileX, item.PenY - tileY, span, width, height);
-
-                    if (rented is not null)
-                    {
-                        ArrayPool<byte>.Shared.Return(rented);
-                    }
-                }
-
-                return new RunMaskPart(alphaContext.CreateAlphaMask(span, width, height), tileX, tileY, width, height);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(staging);
-            }
-        }
-
-        private static unsafe RunMaskPart ComposeTransformedTintedTile(
-            in (GlyphTypeface Typeface, GlyphPathBuilder Scratch, bool CacheGlyphs) state,
-            TransformedGlyphItem[] items, int count, int tileX, int tileY, int width, int height)
-        {
-            // Resolved per compose (a cache miss), not captured statically — the same
-            // locator-scope reasoning as the outline build path.
-            var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
-            var bitmap = renderInterface.CreateWriteableBitmap(
-                new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
-
-            try
-            {
-                using var framebuffer = bitmap.Lock();
-
-                // Compose straight into the locked framebuffer. The bitmap is never locked
-                // again, so its backend image identity stays stable.
-                var span = new Span<byte>((void*)framebuffer.Address, framebuffer.RowBytes * height);
-                span.Clear();
-
-                for (var i = 0; i < count; i++)
-                {
-                    ref readonly var item = ref items[i];
-
-                    if (!IntersectsTile(item, tileX, tileY, width, height))
-                    {
-                        continue;
-                    }
-
-                    var mask = GetTransformedGlyphMask(state, item, out var rented);
-
-                    RunMaskComposer.ComposeTinted(mask, item.PenX - tileX, item.PenY - tileY, item.Tint,
-                        span, width, height, framebuffer.RowBytes,
-                        item.CorrectCoverage ? MaskGamma.GetTableForPremulBgra(item.Tint) : null);
-
-                    if (rented is not null)
-                    {
-                        ArrayPool<byte>.Shared.Return(rented);
-                    }
-                }
-            }
-            catch
-            {
-                bitmap.Dispose();
-                throw;
-            }
-
-            return new RunMaskPart(bitmap, tileX, tileY, width, height);
         }
     }
 }

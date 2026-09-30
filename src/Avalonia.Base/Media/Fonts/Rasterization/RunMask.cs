@@ -86,11 +86,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     /// <remarks>
     /// A run wider than the drawing context's run-mask bound is split into several parts, each
-    /// covering a disjoint range of device columns over the full height of the composed union;
-    /// a transformed run can also be taller than the bound and splits into disjoint tiles in
-    /// both axes. Every part composes every glyph whose mask reaches into it, clipped at the
-    /// part edges, and each pixel's value depends only on the glyphs covering that pixel, in
-    /// run order. Every pixel therefore holds exactly the value a single mask would hold, and
+    /// covering a disjoint range of device columns over the full height of the composed union.
+    /// Every part composes every glyph whose mask reaches into it, clipped at the part edges,
+    /// and each pixel's value depends only on the glyphs covering that pixel, in run order. Every pixel therefore holds exactly the value a single mask would hold, and
     /// since the parts do not overlap, each destination pixel is blended once. Glyph ink
     /// crossing a part edge, overlapping neighbours and kerning need no special boundary rule.
     /// </remarks>
@@ -219,15 +217,15 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// Watches one run's transformed draws for a transform that changes every frame, such as a
-    /// rotation or zoom animation, whose masks are never drawn again.
+    /// Watches one run's draws for a transform that changes every frame, such as a rotation or
+    /// zoom animation, whose masks would never be drawn again.
     /// </summary>
     /// <remarks>
     /// Three consecutive changes mark the run as animating: a one-off relayout or zoom step,
     /// and a run drawn under two alternating transforms (a reflection, a second view), keep
-    /// caching, while an animation is recognized by its third frame, so at most three frames
-    /// of its masks enter the caches. A cache hit or a repeated transform resets the count,
-    /// which makes the first draw after the transform holds still cache again.
+    /// rasterizing, while an animation is recognized by its third frame, so at most three
+    /// frames of its masks enter the caches. A cache hit or a repeated transform resets the
+    /// count, which makes the first draw after the transform holds still rasterize again.
     /// </remarks>
     internal sealed class TransformChurnGuard
     {
@@ -240,8 +238,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         private int _changes;
 
         /// <summary>
-        /// Records a transformed draw of the run and returns whether its masks should stay out
-        /// of the caches.
+        /// Records a draw of the run and returns whether the run is animating, so its masks
+        /// should not be rasterized for this frame.
         /// </summary>
         public bool Record(ushort scaleQ, GlyphMaskTransform transform, bool cacheHit)
         {

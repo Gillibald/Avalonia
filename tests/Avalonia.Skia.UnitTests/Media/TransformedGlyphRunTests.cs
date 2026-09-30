@@ -11,11 +11,10 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// Runs drawn under a rotated, skewed, anisotropic or oversized transform compose into
-    /// device-aligned run masks. The composed run must land exactly the pixels of its glyph
-    /// masks blitted one by one at their snapped pens, whatever the variant or tiling.
+    /// Runs drawn under a rotated, skewed, anisotropic or oversized transform draw their glyph
+    /// masks one by one at their snapped pens, from sprite sets cached per run.
     /// </summary>
-    public class TransformedRunMaskTests
+    public class TransformedGlyphRunTests
     {
         internal const string Text = "Wavy AVATAR, fjord; 0123";
 
@@ -30,29 +29,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Transforms))]
-        public void A_Transformed_Alpha_Run_Matches_Its_Glyph_Masks_Blitted_Individually(string label, Matrix transform)
+        public void A_Transformed_Run_On_A_Canvas_Matches_Its_Glyph_Masks_Blitted_Individually(string label, Matrix transform)
         {
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 16, new Point(8.37, 32.61));
 
-            var context = new DeviceMaskContext(3200, 400, int.MaxValue) { Transform = transform };
-
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black, TextRenderingMode.Antialias),
-                $"{label}: the transformed tier declined the run");
-
-            var expected = ComposeExpected(typeface, run, transform, 3200, 400, out var inked);
-
-            Assert.True(inked > 0, $"{label}: expected ink");
-            AssertEqual(expected, context.Canvas, 3200, 1, label);
-        }
-
-        [Theory]
-        [MemberData(nameof(Transforms))]
-        public void A_Transformed_Tinted_Run_Matches_Its_Glyph_Masks_Blitted_Individually(string label, Matrix transform)
-        {
-            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-            using var run = WideRunMaskTests.CreateRun(typeface, Text, 16, new Point(8.37, 32.61));
-
+            // A canvas without a surface takes the per-glyph bitmaps.
             var info = new SKImageInfo(3200, 400, SKColorType.Bgra8888, SKAlphaType.Premul);
 
             using var bitmap = new SKBitmap(info);
@@ -80,103 +62,46 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void A_Transformed_Run_Mask_Is_Cached_Per_Linear_Transform_And_Phase()
+        public void Sprites_Are_Cached_Per_Linear_Transform_And_Phase()
         {
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 16, new Point(8, 32));
 
+            var info = new SKImageInfo(640, 480, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(info);
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+            {
+                Surface = surface,
+                Dpi = new Vector(96, 96),
+            });
+
             var rotation = Matrix.CreateRotation(0.3);
-            var context = new DeviceMaskContext(640, 480, int.MaxValue) { Transform = rotation * Matrix.CreateTranslation(50, 20) };
 
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black, TextRenderingMode.Antialias));
+            context.Transform = rotation * Matrix.CreateTranslation(50, 20);
+            context.DrawGlyphRun(Brushes.Black, run);
 
-            var created = context.Created;
+            Assert.Equal(1, run.TransformedSprites.Count);
+            Assert.True(run.TransformedSprites.TryGet(
+                TransformedAtlasTests.SpriteKey(run, rotation * Matrix.CreateTranslation(50, 20)), out var first));
 
-            Assert.True(created > 0);
-
-            // A whole-pixel move and a foreground change reuse the composed mask on an alpha
-            // context; another angle composes anew.
+            // A whole-pixel move and a foreground change reuse the sprites; another angle lays
+            // the run out anew.
             context.Transform = rotation * Matrix.CreateTranslation(57, 31);
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Red, TextRenderingMode.Antialias));
-            Assert.Equal(created, context.Created);
+            context.DrawGlyphRun(Brushes.Red, run);
+
+            Assert.Equal(1, run.TransformedSprites.Count);
+            Assert.True(run.TransformedSprites.TryGet(
+                TransformedAtlasTests.SpriteKey(run, rotation * Matrix.CreateTranslation(57, 31)), out var moved));
+            Assert.Same(first, moved);
 
             context.Transform = Matrix.CreateRotation(0.31) * Matrix.CreateTranslation(50, 20);
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black, TextRenderingMode.Antialias));
-            Assert.True(context.Created > created);
+            context.DrawGlyphRun(Brushes.Black, run);
 
-            // Upright run masks live apart from the transformed ones.
-            Assert.False(run.RunMasks.TryGet(new RunMaskKey(GlyphMaskKey.QuantizeScale(16f), 0,
-                GlyphMaskMode.Antialiased, 0u), out _));
-        }
+            Assert.Equal(2, run.TransformedSprites.Count);
 
-        [Theory]
-        [InlineData(false)]
-        [InlineData(true)]
-        public void A_Run_Tiled_In_Both_Axes_Matches_The_Single_Mask_Pixels(bool tinted)
-        {
-            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-
-            // Steep enough that the composed union is several bounds tall as well as wide, and
-            // an odd bound so tile edges cut through glyph ink.
-            var transform = Matrix.CreateRotation(Math.PI * 58 / 180) * Matrix.CreateTranslation(90.3, 12.8);
-
-            var single = RenderBounded(typeface, transform, int.MaxValue, tinted, out var singleDestinations);
-            var tiled = RenderBounded(typeface, transform, TileBound, tinted, out var tiledDestinations);
-
-            Assert.Single(singleDestinations);
-            Assert.True(CountDistinct(tiledDestinations, r => r.X) > 1 && CountDistinct(tiledDestinations, r => r.Y) > 1,
-                $"expected tiles in both axes, got {tiledDestinations.Count} parts");
-
-            foreach (var destination in tiledDestinations)
-            {
-                Assert.True(destination.Width <= TileBound && destination.Height <= TileBound,
-                    $"a part of {destination.Width} x {destination.Height} exceeds the bound");
-            }
-
-            AssertEqual(single, tiled, CanvasSize, tinted ? 4 : 1, tinted ? "tinted" : "alpha");
-        }
-
-        private const int TileBound = 61;
-
-        private const int CanvasSize = 400;
-
-        private static byte[] RenderBounded(GlyphTypeface typeface, Matrix transform, int maxRunMaskSize, bool tinted,
-            out List<Rect> destinations)
-        {
-            // A fresh run each time: the bound sizes the parts but is not part of the cache key.
-            using var run = WideRunMaskTests.CreateRun(typeface, Text, 24, new Point(8.37, 32.61));
-            var info = new SKImageInfo(CanvasSize, CanvasSize, SKColorType.Bgra8888, SKAlphaType.Premul);
-
-            using var bitmap = new SKBitmap(info);
-            using var canvas = new SKCanvas(bitmap);
-            using var inner = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
-
-            canvas.Clear(SKColors.Transparent);
-
-            var context = new DeviceMaskContext(CanvasSize, CanvasSize, maxRunMaskSize, tinted ? inner : null)
-            {
-                Transform = transform,
-            };
-
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run,
-                new ImmutableSolidColorBrush(Color.FromArgb(0xE0, 0x20, 0x40, 0x90)), TextRenderingMode.Antialias),
-                "the transformed tier declined the run");
-
-            destinations = context.Destinations;
-
-            return tinted ? bitmap.GetPixelSpan().ToArray() : context.Canvas;
-        }
-
-        private static int CountDistinct(List<Rect> rects, Func<Rect, double> selector)
-        {
-            var values = new HashSet<double>();
-
-            foreach (var rect in rects)
-            {
-                values.Add(selector(rect));
-            }
-
-            return values.Count;
+            // Upright run masks live apart from the transformed sprites.
+            Assert.Equal(0, run.RunMasks.Count);
         }
 
         /// <summary>

@@ -292,7 +292,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.DrawGlyphRun(Brushes.Black, run);
             });
 
-            Assert.Equal(0, run.TransformedRunMasks.Count);
             Assert.True(run.TransformedSprites.TryGet(TransformedAtlasTests.SpriteKey(run, s_rotation), out var sprites));
             Assert.NotNull(sprites.Masks);
             Assert.Null(sprites.FallbackImages);
@@ -356,7 +355,6 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 });
 
-            Assert.Equal(0, run.TransformedRunMasks.Count);
             Assert.True(run.TransformedSprites.TryGet(TransformedAtlasTests.SpriteKey(run, s_rotation), out var sprites));
             Assert.NotNull(sprites.FallbackImages);
 
@@ -424,7 +422,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var tint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
             var table = MaskGamma.GetTableForPremulBgra(tint);
 
-            foreach (var (mask, x, y) in TransformedRunMaskTests.GlyphMasksAtPens(typeface, run, transform))
+            foreach (var (mask, x, y) in TransformedGlyphRunTests.GlyphMasksAtPens(typeface, run, transform))
             {
                 RunMaskComposer.ComposeTinted(mask, x, y, tint, destination, width, height, coverageTable: table);
             }

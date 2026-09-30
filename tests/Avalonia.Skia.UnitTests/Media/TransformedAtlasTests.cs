@@ -42,7 +42,6 @@ namespace Avalonia.Skia.UnitTests.Media
             Draw(gpu, run, s_rotation, Brushes.Black);
 
             Assert.Equal(1, run.TransformedSprites.Count);
-            Assert.Equal(0, run.TransformedRunMasks.Count);
             Assert.True(typeface.MaskAtlas.Count > 0, "no glyph mask entered the atlas");
 
             // The atlas is the storage of these masks, not a second copy of cached ones.
@@ -118,7 +117,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     // Masks are in device pixels.
                     context.Transform = Matrix.Identity;
 
-                    foreach (var (mask, x, y) in TransformedRunMaskTests.GlyphMasksAtPens(typeface, run, s_rotation))
+                    foreach (var (mask, x, y) in TransformedGlyphRunTests.GlyphMasksAtPens(typeface, run, s_rotation))
                     {
                         if (mask.IsEmpty)
                         {
@@ -146,7 +145,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 22, new Point(8.37, 32.61), advanceScale: 0.8);
 
-            var masks = TransformedRunMaskTests.GlyphMasksAtPens(typeface, run, s_rotation);
+            var masks = TransformedGlyphRunTests.GlyphMasksAtPens(typeface, run, s_rotation);
 
             // Per pixel: the coverage of every glyph that inks it, in draw order.
             var coverages = new List<byte>?[Width * Height];

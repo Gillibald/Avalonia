@@ -28,7 +28,6 @@ namespace Avalonia.Skia.UnitTests.Media
             DrawOnRaster(run, s_rotation);
 
             Assert.Equal(1, run.TransformedSprites.Count);
-            Assert.Equal(0, run.TransformedRunMasks.Count);
             Assert.Null(run.NativeTextArtifact);
         }
 
@@ -63,7 +62,6 @@ namespace Avalonia.Skia.UnitTests.Media
             DrawOnGpu(gpu!, run, s_rotation);
 
             Assert.Equal(1, run.TransformedSprites.Count);
-            Assert.Equal(0, run.TransformedRunMasks.Count);
             Assert.Null(run.SlugRunArtifact);
             Assert.Null(run.NativeTextArtifact);
         }

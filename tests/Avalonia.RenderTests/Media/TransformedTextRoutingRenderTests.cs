@@ -35,7 +35,6 @@ namespace Avalonia.Skia.RenderTests
             // software GPU outputs draw it from the typeface's atlas.
             var gpu = MesaSoftwareRenderer.GlEnabled || MesaSoftwareRenderer.VulkanEnabled;
 
-            Assert.Equal(0, impl.TransformedRunMasks.Count);
             Assert.Equal(1, impl.TransformedSprites.Count);
             Assert.Equal(gpu, impl.GlyphTypeface.MaskAtlas.Count > 0);
             Assert.Null(impl.SlugRunArtifact);

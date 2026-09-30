@@ -1,14 +1,15 @@
 using System;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
+using SkiaSharp;
 using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
     /// A transform that changes every frame (a rotation or zoom animation) must not flood the
-    /// shared glyph mask cache or the run's mask cache with variants that are never drawn
-    /// again; once the transform holds still, the run caches as usual.
+    /// shared glyph mask cache with variants that are never drawn again; once the transform
+    /// holds still, the run rasterizes and caches as usual.
     /// </summary>
     public class TransformedMaskChurnTests
     {
@@ -20,71 +21,71 @@ namespace Avalonia.Skia.UnitTests.Media
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var upright = WideRunMaskTests.CreateRun(typeface, Text, 16, new Point(8, 32));
             using var animated = WideRunMaskTests.CreateRun(typeface, Text, 64, new Point(8, 80));
+            using var surface = SKSurface.Create(new SKImageInfo(1600, 1600, SKColorType.Bgra8888, SKAlphaType.Premul));
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+            {
+                Surface = surface,
+                Dpi = new Vector(96, 96),
+            });
 
-            var context = new TransformedRunMaskTests.DeviceMaskContext(1600, 1600, int.MaxValue);
             var cache = typeface.MaskCache;
 
-            Assert.True(MaskGlyphRunRenderer.TryDraw(context, upright, Brushes.Black, TextRenderingMode.Antialias));
+            context.DrawGlyphRun(Brushes.Black, upright);
 
             var uprightMasks = cache.Count;
-            var uprightRunMasks = context.Created;
 
             Assert.True(uprightMasks > 0);
 
-            // A hundred and fifty frames at a new angle each: unguarded, their glyph masks
+            // A hundred and fifty frames at a new angle each: rasterized, their glyph masks
             // would overflow the cache budget.
             for (var frame = 0; frame < 150; frame++)
             {
                 context.Transform = Matrix.CreateRotation(Math.PI * (5 + frame * 0.3) / 180) *
                     Matrix.CreateTranslation(300, 300);
-
-                Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, animated, Brushes.Black,
-                    TextRenderingMode.Antialias));
+                context.DrawGlyphRun(Brushes.Black, animated);
             }
 
             Assert.True(cache.Evictions == 0,
                 $"{cache.Evictions} masks evicted, {cache.Count} cached, {cache.TotalCost / 1024} KB");
 
-            // Only the frames before the guard engaged entered the caches, and every mask of an
-            // uncached frame was released after its draw.
+            // Only the frames before the guard engaged rasterized.
             var guardedMasks = cache.Count - uprightMasks;
 
             Assert.True(guardedMasks <= TransformChurnGuard.Threshold * Text.Length,
                 $"{guardedMasks} transformed glyph masks entered the cache during the animation");
-            Assert.Equal(TransformChurnGuard.Threshold, context.Created - context.Disposed - uprightRunMasks);
+            Assert.Equal(TransformChurnGuard.Threshold, animated.TransformedSprites.Count);
 
             // A fresh upright run of the same text composes from the surviving glyph masks.
             using var uprightAgain = WideRunMaskTests.CreateRun(typeface, Text, 16, new Point(8, 32));
             var before = cache.Count;
 
             context.Transform = Matrix.Identity;
-            Assert.True(MaskGlyphRunRenderer.TryDraw(context, uprightAgain, Brushes.Black, TextRenderingMode.Antialias));
+            context.DrawGlyphRun(Brushes.Black, uprightAgain);
             Assert.Equal(before, cache.Count);
 
-            // The last animation frame lands on a new angle and still draws uncached. Settle:
-            // the first draw that repeats the transform caches the run mask and its glyph
-            // masks, and the next draw reuses them.
+            // The animation stops on a new angle: that frame still counts as animating and
+            // draws stretched. The next one repeats the transform, rasterizes and caches, and
+            // the one after reuses what it cached.
             var settled = Matrix.CreateRotation(Math.PI * 60 / 180) * Matrix.CreateTranslation(300, 300);
 
             context.Transform = settled;
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, animated, Brushes.Black, TextRenderingMode.Antialias));
+            context.DrawGlyphRun(Brushes.Black, animated);
 
-            var created = context.Created;
-            var released = context.Disposed;
             var masks = cache.Count;
 
-            context.Transform = settled;
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, animated, Brushes.Black, TextRenderingMode.Antialias));
+            Assert.Equal(before, masks);
 
-            Assert.Equal(created + 1, context.Created);
-            Assert.Equal(released, context.Disposed);
+            context.Transform = settled;
+            context.DrawGlyphRun(Brushes.Black, animated);
+
             Assert.True(cache.Count > masks, "the settled draw did not cache its glyph masks");
 
-            context.Transform = settled;
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, animated, Brushes.Black, TextRenderingMode.Antialias));
+            masks = cache.Count;
 
-            Assert.Equal(created + 1, context.Created);
-            Assert.Equal(released, context.Disposed);
+            context.Transform = settled;
+            context.DrawGlyphRun(Brushes.Black, animated);
+
+            Assert.Equal(masks, cache.Count);
         }
 
         [Fact]
@@ -93,20 +94,26 @@ namespace Avalonia.Skia.UnitTests.Media
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, "HO", 1400, new Point(10, 1300));
 
-            var context = new TransformedRunMaskTests.DeviceMaskContext(2400, 1400, int.MaxValue);
-            var cache = typeface.MaskCache;
+            const int width = 2400;
+            const int height = 1400;
 
-            // Upright at 1400 px per em, each glyph mask is over a sixteenth of the budget.
-            Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black, TextRenderingMode.Antialias));
+            // Upright at 1400 px per em, each glyph mask is over a sixteenth of the budget: the
+            // run's sprites hold their own masks, and the cache keeps none of them.
+            var actual = TransformedCacheBlitTests.RenderOnSurface(width, height, SKColors.Transparent, context =>
+            {
+                Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black,
+                    TextRenderingMode.Antialias));
+            });
 
-            Assert.Equal(0, cache.Count);
-            Assert.True(context.Created > 0);
-            Assert.Equal(0, context.Disposed);
+            Assert.Equal(0, typeface.MaskCache.Count);
+            Assert.True(run.TransformedSprites.TryGet(TransformedAtlasTests.SpriteKey(run, Matrix.Identity), out var sprites));
+            Assert.NotNull(sprites.Masks);
 
-            var expected = TransformedRunMaskTests.ComposeExpected(typeface, run, Matrix.Identity, 2400, 1400, out var inked);
+            var expected = TransformedCacheBlitTests.ComposeRunMask(typeface, run, Matrix.Identity, Colors.Black,
+                new byte[width * height * 4], width, height);
 
-            Assert.True(inked > 100000);
-            TransformedRunMaskTests.AssertEqual(expected, context.Canvas, 2400, 1, "1400 px per em");
+            Assert.True(Array.FindAll(expected, b => b != 0).Length > 100000);
+            TransformedGlyphRunTests.AssertEqual(expected, actual, width, 4, "1400 px per em");
         }
     }
 }

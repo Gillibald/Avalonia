@@ -73,7 +73,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         Dpi = new Vector(96, 96),
                     });
 
-                    var plain = new TransformedRunMaskTests.DeviceMaskContext(900, 700, int.MaxValue, inner);
+                    var plain = new TransformedGlyphRunTests.DeviceMaskContext(900, 700, int.MaxValue, inner);
 
                     foreach (var run in runs)
                     {
@@ -215,7 +215,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var largest = 0;
 
-            foreach (var (mask, _, _) in TransformedRunMaskTests.GlyphMasksAtPens(typeface, run, s_rotation))
+            foreach (var (mask, _, _) in TransformedGlyphRunTests.GlyphMasksAtPens(typeface, run, s_rotation))
             {
                 largest = Math.Max(largest, mask.Width * mask.Height);
             }
