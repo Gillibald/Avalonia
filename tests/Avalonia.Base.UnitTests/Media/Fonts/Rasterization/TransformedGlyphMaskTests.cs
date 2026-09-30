@@ -230,6 +230,129 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             }
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Curves_At_2000_Px_Per_Em_Flatten_Within_The_Tolerance(bool cubic)
+        {
+            var typeface = cubic
+                ? SyntheticFont.FromAsset(SyntheticFont.Assets.AdobeVfPrototype).TryCreateGlyphTypeface()
+                : LoadInter();
+
+            Assert.NotNull(typeface);
+
+            var rotation = Matrix.CreateRotation(Math.PI * 23 / 180);
+            var curves = 0;
+            var worst = 0.0;
+
+            for (var glyph = 0; glyph < Math.Min((int)typeface!.GlyphCount, 200); glyph++)
+            {
+                var key = CreateKey((ushort)glyph, 2000f, rotation);
+                var path = new GlyphPathBuilder();
+
+                if (!typeface.TryBuildGlyphContours(key.Glyph, DesignToDevice(typeface, key), path))
+                {
+                    continue;
+                }
+
+                var verbs = path.Verbs;
+                var points = path.Points;
+                var p = 0;
+                float curX = 0, curY = 0;
+
+                for (var v = 0; v < verbs.Length; v++)
+                {
+                    switch ((GlyphPathVerb)verbs[v])
+                    {
+                        case GlyphPathVerb.MoveTo:
+                        case GlyphPathVerb.LineTo:
+                            curX = points[p++];
+                            curY = points[p++];
+                            break;
+
+                        case GlyphPathVerb.QuadTo:
+                        {
+                            var (cx, cy, x, y) = (points[p++], points[p++], points[p++], points[p++]);
+                            var n = GlyphRasterizer.QuadSegmentCount(curX, curY, cx, cy, x, y);
+                            var (x0, y0) = (curX, curY);
+
+                            worst = Math.Max(worst, MaxChordDeviation(n,
+                                t => (x0 * (1 - t) * (1 - t) + 2 * cx * (1 - t) * t + x * t * t,
+                                    y0 * (1 - t) * (1 - t) + 2 * cy * (1 - t) * t + y * t * t)));
+                            curves++;
+                            (curX, curY) = (x, y);
+                            break;
+                        }
+
+                        case GlyphPathVerb.CubicTo:
+                        {
+                            var (c1X, c1Y, c2X, c2Y) = (points[p++], points[p++], points[p++], points[p++]);
+                            var (x, y) = (points[p++], points[p++]);
+                            var n = GlyphRasterizer.CubicSegmentCount(curX, curY, c1X, c1Y, c2X, c2Y, x, y);
+                            var (x0, y0) = (curX, curY);
+
+                            worst = Math.Max(worst, MaxChordDeviation(n, t =>
+                            {
+                                var mt = 1 - t;
+
+                                return (x0 * mt * mt * mt + 3 * c1X * mt * mt * t + 3 * c2X * mt * t * t + x * t * t * t,
+                                    y0 * mt * mt * mt + 3 * c1Y * mt * mt * t + 3 * c2Y * mt * t * t + y * t * t * t);
+                            }));
+                            curves++;
+                            (curX, curY) = (x, y);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            Assert.True(curves > 20, $"only {curves} curves checked");
+
+            // The rasterizer's own bound: no point of a curve strays further than the tolerance
+            // from the chord that replaces it. A thousandth of slack absorbs float evaluation.
+            Assert.True(worst <= GlyphRasterizer.FlattenTolerance * 1.001,
+                FormattableString.Invariant($"worst chord deviation {worst:0.0000} px over {curves} curves"));
+
+            Xunit.TestContext.Current.TestOutputHelper?.WriteLine(FormattableString.Invariant($"worst chord deviation {worst:0.0000} px over {curves} curves"));
+        }
+
+        /// <summary>
+        /// The largest distance between a curve and the uniform n-piece polyline through it,
+        /// sampled densely inside every piece.
+        /// </summary>
+        private static double MaxChordDeviation(int n, Func<double, (double X, double Y)> curve)
+        {
+            const int Samples = 32;
+            var worst = 0.0;
+
+            for (var i = 0; i < n; i++)
+            {
+                var (ax, ay) = curve(i / (double)n);
+                var (bx, by) = curve((i + 1) / (double)n);
+
+                for (var s = 1; s < Samples; s++)
+                {
+                    var (px, py) = curve((i + s / (double)Samples) / n);
+
+                    worst = Math.Max(worst, DistanceToSegment(px, py, ax, ay, bx, by));
+                }
+            }
+
+            return worst;
+        }
+
+        private static double DistanceToSegment(double px, double py, double ax, double ay, double bx, double by)
+        {
+            var dx = bx - ax;
+            var dy = by - ay;
+            var lengthSquared = dx * dx + dy * dy;
+            var t = lengthSquared == 0 ? 0 : Math.Clamp(((px - ax) * dx + (py - ay) * dy) / lengthSquared, 0, 1);
+            var ex = px - (ax + t * dx);
+            var ey = py - (ay + t * dy);
+
+            return Math.Sqrt(ex * ex + ey * ey);
+        }
+
         internal static GlyphMaskKey CreateKey(ushort glyph, float pixelsPerEm, Matrix linear,
             byte phaseX = 0, byte phaseY = 0, bool simulations = false)
         {

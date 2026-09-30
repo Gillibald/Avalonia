@@ -23,9 +23,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Maximum curve-to-chord deviation after flattening, in device pixels.</summary>
         internal const float FlattenTolerance = 0.25f;
 
-        // Curves flatten into at most this many segments; combined with the tolerance formula this
-        // is only reachable for glyphs far larger than the mask path is used for (D4 sends very
-        // large sizes to the geometry fallback), so it is a defensive bound, not a quality knob.
+        // Curves flatten into at most this many segments. The tolerance formulas reach it only at a
+        // second difference of about 65000 px (quadratic) or 21700 px (cubic); a curve whose
+        // control points stay inside a glyph mask (at most MaxMaskSize px square) has a second
+        // difference of at most twice the mask diagonal, about 11600 px. So it is a defensive
+        // bound against hostile outlines, not a quality knob.
         private const int MaxCurveSegments = 256;
 
         /// <summary>
