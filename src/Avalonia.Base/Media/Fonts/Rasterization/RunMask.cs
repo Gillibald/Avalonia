@@ -194,9 +194,37 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// Watches one run's transformed draws for a transform that changes every frame, such as a
     /// rotation or zoom animation, whose masks are never drawn again.
     /// </summary>
+    /// <remarks>
+    /// Three consecutive changes mark the run as animating: a one-off relayout or zoom step,
+    /// and a run drawn under two alternating transforms (a reflection, a second view), keep
+    /// caching, while an animation is recognized by its third frame, so at most three frames
+    /// of its masks enter the caches. A cache hit or a repeated transform resets the count,
+    /// which makes the first draw after the transform holds still cache again.
+    /// </remarks>
     internal sealed class TransformChurnGuard
     {
         /// <summary>Consecutive transform changes after which the run counts as animating.</summary>
         public const int Threshold = 3;
+
+        private bool _hasLast;
+        private ushort _lastScaleQ;
+        private GlyphMaskTransform _lastTransform;
+        private int _changes;
+
+        /// <summary>
+        /// Records a transformed draw of the run and returns whether its masks should stay out
+        /// of the caches.
+        /// </summary>
+        public bool Record(ushort scaleQ, GlyphMaskTransform transform, bool cacheHit)
+        {
+            var changed = _hasLast && (scaleQ != _lastScaleQ || transform != _lastTransform);
+
+            _changes = changed && !cacheHit ? _changes + 1 : 0;
+            _hasLast = true;
+            _lastScaleQ = scaleQ;
+            _lastTransform = transform;
+
+            return _changes >= Threshold;
+        }
     }
 }

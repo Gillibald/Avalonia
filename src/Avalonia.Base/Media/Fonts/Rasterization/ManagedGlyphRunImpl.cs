@@ -28,6 +28,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly int _count;
         private RunMaskCache? _runMasks;
         private RunMaskCache? _transformedRunMasks;
+        private TransformChurnGuard? _transformChurn;
         private bool _disposed;
 
         public ManagedGlyphRunImpl(GlyphTypeface glyphTypeface, double fontRenderingEmSize,
@@ -135,6 +136,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <see cref="RunMasks"/> so transformed variants never evict the upright ones.
         /// </summary>
         internal RunMaskCache TransformedRunMasks => _transformedRunMasks ??= new RunMaskCache();
+
+        /// <summary>Recognizes an animated transform so its masks stay out of the caches.</summary>
+        internal TransformChurnGuard TransformChurn => _transformChurn ??= new TransformChurnGuard();
 
         [ThreadStatic]
         private static GlyphPathBuilder? t_intersectionScratch;

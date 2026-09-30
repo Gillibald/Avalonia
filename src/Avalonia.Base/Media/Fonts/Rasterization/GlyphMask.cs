@@ -33,6 +33,32 @@ namespace Avalonia.Media.Fonts.Rasterization
             Channels = channels;
         }
 
+        private GlyphMask(byte[] buffer, int width, int height, int left, int top)
+        {
+            Alpha = buffer;
+            Width = width;
+            Height = height;
+            Left = left;
+            Top = top;
+            Channels = 1;
+        }
+
+        /// <summary>
+        /// Wraps a single-channel mask over a buffer that may be longer than the mask, such as
+        /// one rented from a pool. Rows are read by <see cref="Width"/> stride, so the unused
+        /// tail is never touched. Such a mask is transient: it must not enter a cache, since the
+        /// buffer goes back to its owner once the mask has been composed.
+        /// </summary>
+        internal static GlyphMask CreateOverBuffer(byte[] buffer, int width, int height, int left, int top)
+        {
+            if (width <= 0 || height <= 0 || buffer.Length < width * height)
+            {
+                throw new ArgumentException("The buffer must hold width * height bytes.", nameof(buffer));
+            }
+
+            return new GlyphMask(buffer, width, height, left, top);
+        }
+
         public byte[] Alpha { get; }
 
         /// <summary>

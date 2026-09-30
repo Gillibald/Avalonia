@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -151,6 +152,36 @@ namespace Avalonia.Media.Fonts.Rasterization
             return RasterizeTransformed(typeface, scratch, key, left, top, width, height, alpha)
                 ? new GlyphMask(alpha, width, height, left, top)
                 : GlyphMask.Empty;
+        }
+
+        /// <summary>
+        /// Builds a transformed glyph mask into a buffer rented from the shared pool instead of
+        /// an exact-fit allocation, for masks that are composed once and not cached. The caller
+        /// returns <paramref name="rented"/> to <see cref="ArrayPool{T}.Shared"/> after use; it
+        /// is <c>null</c> when the mask is empty.
+        /// </summary>
+        internal static GlyphMask BuildTransient(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            out byte[]? rented)
+        {
+            rented = null;
+
+            if (!TryGetTransformedPlacement(typeface, key, out var left, out var top, out var width, out var height) ||
+                width > MaxMaskSize || height > MaxMaskSize)
+            {
+                return GlyphMask.Empty;
+            }
+
+            var buffer = ArrayPool<byte>.Shared.Rent(width * height);
+
+            if (!RasterizeTransformed(typeface, scratch, key, left, top, width, height, buffer))
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+                return GlyphMask.Empty;
+            }
+
+            rented = buffer;
+
+            return GlyphMask.CreateOverBuffer(buffer, width, height, left, top);
         }
 
         /// <summary>

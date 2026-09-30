@@ -87,14 +87,24 @@ namespace Avalonia.Media.Fonts.Rasterization
                 GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: originPhaseY);
 
             var cache = run.TransformedRunMasks;
+            var transient = false;
 
-            if (!cache.TryGet(key, out var runMask))
+            if (cache.TryGet(key, out var runMask))
             {
+                run.TransformChurn.Record(key.ScaleQ, linear, cacheHit: true);
+            }
+            else
+            {
+                // While the transform changes every frame, neither the run mask nor its glyph
+                // masks would be drawn again: compose from transient buffers and release the
+                // run mask after the draw, so an animation cannot evict static text's masks.
+                transient = run.TransformChurn.Record(key.ScaleQ, linear, cacheHit: false);
+
                 var maxSize = context is IAlphaGlyphMaskContext bounded
                     ? bounded.MaxRunMaskSize
                     : DefaultMaxRunMaskSize;
 
-                if (!TryComposeTransformed(run, key, transform, maxSize, alphaContext, out var composed))
+                if (!TryComposeTransformed(run, key, transform, maxSize, alphaContext, !transient, out var composed))
                 {
                     return false;
                 }
@@ -104,11 +114,27 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return true;   // no ink
                 }
 
-                cache.Add(key, composed);
+                if (!transient)
+                {
+                    cache.Add(key, composed);
+                }
+
                 runMask = composed;
             }
 
-            DrawTransformedRunMask(context, runMask, originX, originY, alphaContext, alpha, solid.Color);
+            try
+            {
+                DrawTransformedRunMask(context, runMask, originX, originY, alphaContext, alpha, solid.Color);
+            }
+            finally
+            {
+                if (transient)
+                {
+                    // The backends retain what a pending draw still needs (a Skia image is
+                    // reference counted), so the handles can go right after the draw call.
+                    runMask.Dispose();
+                }
+            }
 
             return true;
         }
@@ -165,7 +191,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// mask when the run has no ink.
         /// </summary>
         private static bool TryComposeTransformed(ManagedGlyphRunImpl run, in RunMaskKey key, in Matrix transform,
-            int maxSize, IAlphaGlyphMaskContext? alphaContext, out RunMask? runMask)
+            int maxSize, IAlphaGlyphMaskContext? alphaContext, bool cacheGlyphs, out RunMask? runMask)
         {
             runMask = null;
 
@@ -201,7 +227,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var parts = new RunMaskPart[columns * rows];
                 var created = 0;
                 var scratch = t_scratch ??= new GlyphPathBuilder();
-                var state = (typeface, scratch);
+                var state = (typeface, scratch, cacheGlyphs);
 
                 try
                 {
@@ -216,8 +242,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                             var w = Math.Min(tileWidth, maxX - tileX);
 
                             parts[created++] = alphaContext is null
-                                ? ComposeTransformedTintedTile(typeface, state, items, itemCount, tileX, tileY, w, h)
-                                : ComposeTransformedAlphaTile(typeface, state, alphaContext, items, itemCount,
+                                ? ComposeTransformedTintedTile(state, items, itemCount, tileX, tileY, w, h)
+                                : ComposeTransformedAlphaTile(state, alphaContext, items, itemCount,
                                     tileX, tileY, w, h);
                         }
                     }
@@ -373,11 +399,35 @@ namespace Avalonia.Media.Fonts.Rasterization
             => item.PenX + item.Left < tileX + width && item.PenX + item.Left + item.Width > tileX &&
                item.PenY + item.Top < tileY + height && item.PenY + item.Top + item.Height > tileY;
 
-        private static RunMaskPart ComposeTransformedAlphaTile(GlyphTypeface typeface,
-            (GlyphTypeface, GlyphPathBuilder) state, IAlphaGlyphMaskContext alphaContext,
-            TransformedGlyphItem[] items, int count, int tileX, int tileY, int width, int height)
+        /// <summary>
+        /// Fetches an item's glyph mask: from the cache when caching, otherwise a cached copy if
+        /// one exists or a transient mask over a rented buffer. Masks over the cache's entry
+        /// bound are always transient. <paramref name="rented"/> must go back to the pool
+        /// once the mask is composed.
+        /// </summary>
+        private static GlyphMask GetTransformedGlyphMask(
+            in (GlyphTypeface Typeface, GlyphPathBuilder Scratch, bool CacheGlyphs) state,
+            in TransformedGlyphItem item, out byte[]? rented)
         {
-            var maskCache = typeface.MaskCache;
+            rented = null;
+
+            var maskCache = state.Typeface.MaskCache;
+
+            if (state.CacheGlyphs && item.Width * item.Height <= maskCache.MaxEntryBytes)
+            {
+                return maskCache.GetOrBuild(item.Key, (state.Typeface, state.Scratch), s_buildMask);
+            }
+
+            return maskCache.TryGet(item.Key, out var cached)
+                ? cached
+                : GlyphMasks.BuildTransient(state.Typeface, state.Scratch, item.Key, out rented);
+        }
+
+        private static RunMaskPart ComposeTransformedAlphaTile(
+            in (GlyphTypeface Typeface, GlyphPathBuilder Scratch, bool CacheGlyphs) state,
+            IAlphaGlyphMaskContext alphaContext, TransformedGlyphItem[] items, int count,
+            int tileX, int tileY, int width, int height)
+        {
             var staging = ArrayPool<byte>.Shared.Rent(width * height);
 
             try
@@ -394,9 +444,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                         continue;
                     }
 
-                    var mask = maskCache.GetOrBuild(item.Key, state, s_buildMask);
+                    var mask = GetTransformedGlyphMask(state, item, out var rented);
 
                     RunMaskComposer.ComposeAlpha(mask, item.PenX - tileX, item.PenY - tileY, span, width, height);
+
+                    if (rented is not null)
+                    {
+                        ArrayPool<byte>.Shared.Return(rented);
+                    }
                 }
 
                 return new RunMaskPart(alphaContext.CreateAlphaMask(span, width, height), tileX, tileY, width, height);
@@ -407,12 +462,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private static unsafe RunMaskPart ComposeTransformedTintedTile(GlyphTypeface typeface,
-            (GlyphTypeface, GlyphPathBuilder) state, TransformedGlyphItem[] items, int count,
-            int tileX, int tileY, int width, int height)
+        private static unsafe RunMaskPart ComposeTransformedTintedTile(
+            in (GlyphTypeface Typeface, GlyphPathBuilder Scratch, bool CacheGlyphs) state,
+            TransformedGlyphItem[] items, int count, int tileX, int tileY, int width, int height)
         {
-            var maskCache = typeface.MaskCache;
-
             // Resolved per compose (a cache miss), not captured statically — the same
             // locator-scope reasoning as the outline build path.
             var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
@@ -437,11 +490,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                         continue;
                     }
 
-                    var mask = maskCache.GetOrBuild(item.Key, state, s_buildMask);
+                    var mask = GetTransformedGlyphMask(state, item, out var rented);
 
                     RunMaskComposer.ComposeTinted(mask, item.PenX - tileX, item.PenY - tileY, item.Tint,
                         span, width, height, framebuffer.RowBytes,
                         item.CorrectCoverage ? MaskGamma.GetTableForPremulBgra(item.Tint) : null);
+
+                    if (rented is not null)
+                    {
+                        ArrayPool<byte>.Shared.Return(rented);
+                    }
                 }
             }
             catch
