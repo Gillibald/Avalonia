@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -118,6 +119,57 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
             Assert.Equal("Sample", typeface.FamilyName);
         }
 
+        [Fact]
+        public void Mac_English_Name_Is_Registered_As_Invariant_Without_Windows_English()
+        {
+            var typeface = CreateTypeface(JapaneseWindowsWithMacEnglish());
+
+            Assert.Equal(
+                new[] { "invariant:Sample Sans", "ja-JP:" + JapaneseFamily },
+                Describe(typeface.FamilyNames));
+            Assert.Equal(
+                new[] { "invariant:Regular", "ja-JP:" + JapaneseSubfamily },
+                Describe(typeface.FaceNames));
+        }
+
+        [Fact]
+        public void Windows_English_UK_Name_Is_Not_Duplicated_As_Invariant()
+        {
+            var typeface = CreateTypeface(new NameTableWriter()
+                .MacRoman(FamilyNameId, "Mac Sample")
+                .Windows(0x0411, FamilyNameId, JapaneseFamily)
+                .Windows(0x0809, FamilyNameId, "Sample UK"));
+
+            Assert.Equal(
+                new[] { "en-GB:Sample UK", "ja-JP:" + JapaneseFamily },
+                Describe(typeface.FamilyNames));
+        }
+
+        [Fact]
+        public void Font_Collection_Finds_Japanese_Windows_Font_By_Its_Mac_English_Name()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
+            {
+                var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular)
+                    .Replace("name", JapaneseWindowsWithMacEnglish().ToArray())
+                    .CreateGlyphTypeface();
+
+                var collection = new TestFontCollection();
+
+                Assert.True(collection.TryAddGlyphTypeface(typeface));
+
+                Assert.True(collection.TryGetFamilyTypefaces("Sample Sans", out _));
+                Assert.True(collection.TryGetFamilyTypefaces(JapaneseFamily, out _));
+            }
+        }
+
+        private static NameTableWriter JapaneseWindowsWithMacEnglish()
+            => new NameTableWriter()
+                .MacRoman(FamilyNameId, "Sample Sans")
+                .MacRoman(SubfamilyNameId, "Regular")
+                .Windows(0x0411, FamilyNameId, JapaneseFamily)
+                .Windows(0x0411, SubfamilyNameId, JapaneseSubfamily);
+
         private static GlyphTypeface CreateTypeface(NameTableWriter names)
         {
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface))
@@ -133,6 +185,11 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
                 .Select(x => (x.Key.Equals(CultureInfo.InvariantCulture) ? "invariant" : x.Key.Name) + ":" + x.Value)
                 .OrderBy(x => x, System.StringComparer.Ordinal)
                 .ToArray();
+
+        private sealed class TestFontCollection : FontCollectionBase
+        {
+            public override System.Uri Key { get; } = new System.Uri("fonts:NameTableTests");
+        }
 
         /// <summary>
         /// Writes a format 0 'name' table with the records in the order they are added.
