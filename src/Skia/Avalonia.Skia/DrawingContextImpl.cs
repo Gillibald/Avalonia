@@ -1026,6 +1026,10 @@ namespace Avalonia.Skia
                 return;
             }
 
+            // The native blob applies the face's simulations to every glyph, colour glyphs
+            // included (Skia's skew slants them). Text layout splits colour glyphs out of the
+            // run before it gets here, so only a direct glyph run draw of an oblique colour
+            // face shows the slant; see ColorGlyphRunSplitter.
             using (var paintWrapper = CreatePaint(_fillPaint, foreground, glyphRun.Bounds))
             {
                 var glyphRunImpl = (GlyphRunImpl)glyphRun;
