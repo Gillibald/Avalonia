@@ -197,10 +197,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var rows = scratch.ImageRows;
+            var columns = scratch.ImageColumns;
 
             using (var image = context.CreateTransientImage(
-                       scratch.Page.AsSpan(0, rows * TransientGlyphScratch.PageWidth), TransientGlyphScratch.PageWidth,
-                       rows))
+                       scratch.Page.AsSpan(0, (rows - 1) * TransientGlyphScratch.PageWidth + columns), columns, rows,
+                       TransientGlyphScratch.PageWidth))
             {
                 var sprites = scratch.Sprites.AsSpan(0, scratch.SpriteCount);
                 var tints = scratch.Tints;
@@ -243,7 +244,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var sprite = new GlyphAtlasSprite(0, 0, item.Width, item.Height, item.PenX + item.Left,
                     item.PenY + item.Top);
 
-                using var image = context.CreateTransientImage(coverage, item.Width, item.Height);
+                using var image = context.CreateTransientImage(coverage, item.Width, item.Height, item.Width);
 
                 context.DrawTransientSprites(image, MemoryMarshal.CreateReadOnlySpan(ref sprite, 1), placement, tint);
             }
@@ -263,10 +264,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             public const int PageWidth = GlyphMaskAtlas.PageWidth;
 
-            // Images are handed out in whole multiples of this many rows, so a GPU texture made
-            // for one frame's image fits the next frame's image of a similar height and the
-            // backend can reuse it instead of allocating another.
-            private const int RowGranularity = 64;
+            // Images are handed out in whole multiples of this many rows and columns, so a GPU
+            // texture made for one frame's image fits the next frame's image of a similar size
+            // and the backend can reuse it instead of allocating another.
+            private const int SizeGranularity = 64;
 
             // An arena grown past this by a run of huge glyphs is dropped after the draw rather
             // than held by the thread.
@@ -277,6 +278,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             private int _shelfY;
             private int _shelfHeight;
             private int _usedHeight;
+            private int _usedWidth;
 
             public readonly Dictionary<GlyphMaskKey, int> ArenaSlots = new();
 
@@ -284,7 +286,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             public byte[] Arena { get; private set; } = Array.Empty<byte>();
 
-            public byte[] Page { get; private set; } = new byte[PageWidth * RowGranularity * 4];
+            public byte[] Page { get; private set; } = new byte[PageWidth * SizeGranularity * 4];
 
             public GlyphAtlasSprite[] Sprites { get; private set; } = new GlyphAtlasSprite[64];
 
@@ -292,9 +294,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             public int SpriteCount { get; private set; }
 
+            /// <summary>The columns of the page an image of its sprites needs.</summary>
+            public int ImageColumns
+                => Math.Min(PageWidth, (_usedWidth + SizeGranularity - 1) / SizeGranularity * SizeGranularity);
+
             /// <summary>The rows of the page an image of its sprites needs.</summary>
             public int ImageRows
-                => Math.Min(GlyphMaskAtlas.MaxPageHeight, (_usedHeight + RowGranularity - 1) / RowGranularity * RowGranularity);
+                => Math.Min(GlyphMaskAtlas.MaxPageHeight, (_usedHeight + SizeGranularity - 1) / SizeGranularity * SizeGranularity);
 
             public int AllocateArena(int size)
             {
@@ -338,9 +344,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 _shelfX += width + 1;
                 _shelfHeight = Math.Max(_shelfHeight, height);
                 _usedHeight = Math.Max(_usedHeight, y + height);
+                _usedWidth = Math.Max(_usedWidth, x + width);
 
                 var rows = Math.Min(GlyphMaskAtlas.MaxPageHeight,
-                    (_usedHeight + RowGranularity - 1) / RowGranularity * RowGranularity);
+                    (_usedHeight + SizeGranularity - 1) / SizeGranularity * SizeGranularity);
 
                 if (rows * PageWidth > Page.Length)
                 {
@@ -372,13 +379,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SpriteCount++;
             }
 
-            /// <summary>Empties the page: its written rows return to zero, its gutters stay zero.</summary>
+            /// <summary>Empties the page: its written cells return to zero, its gutters stay zero.</summary>
             public void ResetPage()
             {
-                Page.AsSpan(0, _usedHeight * PageWidth).Clear();
+                for (var row = 0; row < _usedHeight; row++)
+                {
+                    Page.AsSpan(row * PageWidth, _usedWidth).Clear();
+                }
+
                 PageSlots.Clear();
                 SpriteCount = 0;
-                _shelfX = _shelfY = _shelfHeight = _usedHeight = 0;
+                _shelfX = _shelfY = _shelfHeight = _usedHeight = _usedWidth = 0;
             }
 
             public void EndDraw()

@@ -102,13 +102,14 @@ namespace Avalonia.Skia
             SKPaintCache.Shared.ReturnReset(paint);
         }
 
-        IDisposable ITransformedGlyphContext.CreateTransientImage(ReadOnlySpan<byte> coverage, int width, int height)
+        IDisposable ITransformedGlyphContext.CreateTransientImage(ReadOnlySpan<byte> coverage, int width, int height,
+            int rowBytes)
         {
             // A copy: Skia uploads a raster image when the GPU work is flushed, after the
             // caller has reused its buffer for the next run.
             var info = new SKImageInfo(width, height, SKColorType.Alpha8, SKAlphaType.Premul);
 
-            return SKImage.FromPixelCopy(info, coverage, width) ??
+            return SKImage.FromPixelCopy(info, coverage, rowBytes) ??
                    throw new InvalidOperationException("Could not create a transient glyph image.");
         }
 
