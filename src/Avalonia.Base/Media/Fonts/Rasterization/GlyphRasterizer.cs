@@ -45,6 +45,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </remarks>
         public static void Rasterize(GlyphPathBuilder path, int width, int height,
             float offsetX, float offsetY, bool aliased, Span<byte> destination)
+            => Rasterize(path, width, height, offsetX, offsetY, aliased, destination, width);
+
+        /// <summary>
+        /// Rasterizes like <see cref="Rasterize(GlyphPathBuilder, int, int, float, float, bool, Span{byte})"/>
+        /// into rows <paramref name="destinationStride"/> bytes apart, such as a rectangle of a
+        /// larger image. Bytes between the rows are left untouched.
+        /// </summary>
+        public static void Rasterize(GlyphPathBuilder path, int width, int height,
+            float offsetX, float offsetY, bool aliased, Span<byte> destination, int destinationStride)
         {
             if (width <= 0)
             {
@@ -56,9 +65,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                 throw new ArgumentOutOfRangeException(nameof(height));
             }
 
-            if (destination.Length < width * height)
+            if (destinationStride < width)
             {
-                throw new ArgumentException("Destination must hold width * height bytes.", nameof(destination));
+                throw new ArgumentOutOfRangeException(nameof(destinationStride));
+            }
+
+            if (destination.Length < (long)destinationStride * (height - 1) + width)
+            {
+                throw new ArgumentException("Destination must hold height rows of width bytes at the stride.",
+                    nameof(destination));
             }
 
             var acc = ArrayPool<float>.Shared.Rent(width * height);
@@ -69,7 +84,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 cells.Clear();
 
                 AccumulatePath(path, cells, width, height, offsetX, offsetY);
-                Resolve(cells, destination, width, height, path.FillRule == Media.FillRule.EvenOdd, aliased);
+                Resolve(cells, destination, width, height, destinationStride, path.FillRule == Media.FillRule.EvenOdd,
+                    aliased);
             }
             finally
             {
@@ -413,7 +429,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private static void Resolve(Span<float> cells, Span<byte> destination, int width, int height,
+        private static void Resolve(Span<float> cells, Span<byte> destination, int width, int height, int stride,
             bool evenOdd, bool aliased)
         {
             var i = 0;
@@ -423,6 +439,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // Accumulate per row: each closed contour's crossings sum to zero across a row, so
                 // the integral returns to zero at the row's end and rows stay independent.
                 var sum = 0f;
+                var row = destination.Slice(y * stride, width);
 
                 for (var x = 0; x < width; x++, i++)
                 {
@@ -441,7 +458,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         coverage = MathF.Min(MathF.Abs(sum), 1f);
                     }
 
-                    destination[i] = aliased
+                    row[x] = aliased
                         ? coverage >= 0.5f ? (byte)255 : (byte)0
                         : (byte)(coverage * 255f + 0.5f);
                 }

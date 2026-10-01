@@ -70,5 +70,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// or rotating transform needs.
         /// </summary>
         void DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb, bool bilinear);
+
+        /// <summary>
+        /// Realizes an image of single-channel coverage for one frame's draws, rows
+        /// <paramref name="width"/> bytes apart. The image holds its own copy, so the caller
+        /// may overwrite <paramref name="coverage"/> as soon as this returns, and disposes the
+        /// image after its last <see cref="DrawTransientSprites"/>.
+        /// </summary>
+        IDisposable CreateTransientImage(ReadOnlySpan<byte> coverage, int width, int height);
+
+        /// <summary>
+        /// Draws sprites of a transient image in one call, each from its source rectangle at its
+        /// position mapped through <paramref name="transform"/>, sampled nearest and modulated
+        /// like <see cref="DrawAtlasBatch"/>. The sprites are read during the call only.
+        /// </summary>
+        void DrawTransientSprites(IDisposable image, ReadOnlySpan<GlyphAtlasSprite> sprites, in Matrix transform,
+            uint tintArgb);
     }
 }

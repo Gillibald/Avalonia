@@ -104,20 +104,30 @@ namespace Avalonia.Media.Fonts.Rasterization
             var transformedContext = context as ITransformedGlyphContext;
 
             // The transform changes every frame, so masks rasterized now would never be drawn
-            // again. The last settled batch is drawn under the change of transform since
-            // instead, softer but without rasterizing or caching anything; on a GPU that is one
-            // bilinear atlas draw, cheaper than evaluating the outlines per pixel. Rotation
-            // costs only the bilinear softening, so it stretches for as long as it lasts; a
-            // zoom magnifies or shrinks a raster made for another size, so once it leaves the
-            // stretch band one frame rasterizes at its transform and settles there. A frame
-            // whose sprites are cached draws them, and the first frame that repeats its
-            // transform rasterizes again, at the final transform.
+            // again. A CPU surface or a hardware GPU rasterizes the frame anyway, into transient
+            // buffers that no cache keeps: there that is as fast as drawing a cached batch under
+            // the change of transform, or faster, and stays sharp. A software GPU draws the last
+            // settled batch under the change of transform instead, one bilinear atlas draw that
+            // costs a fraction of rasterizing there. Rotation costs that draw only the bilinear
+            // softening, so it stretches for as long as it lasts; a zoom magnifies or shrinks a
+            // raster made for another size, so once it leaves the stretch band one frame
+            // rasterizes at its transform and settles there. A frame whose sprites are cached
+            // draws them, and the first frame that repeats its transform rasterizes and caches
+            // again, at the final transform.
             if (transformedContext is not null &&
-                run.TransformChurn.Record(key.ScaleQ, linear, hit, holdOnCacheHit: true) && !hit &&
-                IsWithinStretchBand(state, transform) &&
-                TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
+                run.TransformChurn.Record(key.ScaleQ, linear, hit, holdOnCacheHit: true) && !hit)
             {
-                return true;
+                if (transformedContext.RasterTarget != GlyphRasterTarget.SoftwareGpu)
+                {
+                    return TryDrawTransient(transformedContext, run, key, transform, originX, originY, alpha,
+                        solid.Color);
+                }
+
+                if (IsWithinStretchBand(state, transform) &&
+                    TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
+                {
+                    return true;
+                }
             }
 
             if (!hit)
@@ -536,11 +546,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                         try
                         {
-                            // A set drawn on a raster context already holds its masks.
-                            var mask = sprites.Masks?[i] ??
-                                (typeface.MaskCache.TryGet(key, out var cached)
-                                    ? cached
-                                    : GlyphMasks.BuildTransient(typeface, scratch, key, out rented));
+                            var mask = typeface.MaskCache.TryGet(key, out var cached)
+                                ? cached
+                                : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
 
                             if (mask.IsEmpty)
                             {

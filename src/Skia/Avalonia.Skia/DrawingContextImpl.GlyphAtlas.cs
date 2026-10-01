@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Avalonia.Media.Imaging;
@@ -99,6 +100,74 @@ namespace Avalonia.Skia
             Transform = oldTransform;
 
             SKPaintCache.Shared.ReturnReset(paint);
+        }
+
+        IDisposable ITransformedGlyphContext.CreateTransientImage(ReadOnlySpan<byte> coverage, int width, int height)
+        {
+            // A copy: Skia uploads a raster image when the GPU work is flushed, after the
+            // caller has reused its buffer for the next run.
+            var info = new SKImageInfo(width, height, SKColorType.Alpha8, SKAlphaType.Premul);
+
+            return SKImage.FromPixelCopy(info, coverage, width) ??
+                   throw new InvalidOperationException("Could not create a transient glyph image.");
+        }
+
+        void ITransformedGlyphContext.DrawTransientSprites(IDisposable image, ReadOnlySpan<GlyphAtlasSprite> sprites,
+            in Matrix transform, uint tintArgb)
+        {
+            CheckLease();
+
+            // DrawAtlas takes the sprite count from the array lengths, so the arrays are exact
+            // fits, kept per length: a steady animation draws the same sprite counts frame
+            // after frame and allocates none. Skia copies the geometry during the call.
+            var (sources, placements) = GetTransientSpriteArrays(sprites.Length);
+
+            for (var i = 0; i < sprites.Length; i++)
+            {
+                var sprite = sprites[i];
+
+                sources[i] = SKRect.Create(sprite.SourceX, sprite.SourceY, sprite.Width, sprite.Height);
+                placements[i] = SKRotationScaleMatrix.CreateTranslation(sprite.X, sprite.Y);
+            }
+
+            var paint = SKPaintCache.Shared.Get();
+
+            paint.Color = new SKColor((byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb,
+                (byte)((tintArgb >> 24) * _currentOpacity));
+
+            var oldTransform = Transform;
+
+            Transform = transform;
+            Canvas.DrawAtlas((SKImage)image, sources, placements, s_nearest, paint);
+            Transform = oldTransform;
+
+            SKPaintCache.Shared.ReturnReset(paint);
+        }
+
+        private const int MaxTransientSpriteArrayLengths = 64;
+
+        [ThreadStatic]
+        private static Dictionary<int, (SKRect[] Sources, SKRotationScaleMatrix[] Placements)>? t_transientSprites;
+
+        private static (SKRect[] Sources, SKRotationScaleMatrix[] Placements) GetTransientSpriteArrays(int length)
+        {
+            var arrays = t_transientSprites ??= new Dictionary<int, (SKRect[], SKRotationScaleMatrix[])>();
+
+            if (arrays.TryGetValue(length, out var pair))
+            {
+                return pair;
+            }
+
+            // Lengths that only appeared once, during a relayout say, do not pile up.
+            if (arrays.Count >= MaxTransientSpriteArrayLengths)
+            {
+                arrays.Clear();
+            }
+
+            pair = (new SKRect[length], new SKRotationScaleMatrix[length]);
+            arrays.Add(length, pair);
+
+            return pair;
         }
 
         /// <summary>

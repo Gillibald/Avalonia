@@ -65,7 +65,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static readonly byte[] s_identity = CreateIdentity();
 
         /// <summary>
-        /// Which instruction set <see cref="Blend"/> uses; tests lower it to cover every path.
+        /// Which instruction set the blends use; tests lower it to cover every path.
         /// </summary>
         internal static GlyphBlitPath Path { get; set; } = DetectPath();
 
@@ -79,7 +79,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="y">Device row of the mask's first row.</param>
         /// <param name="tintBgra">The premultiplied tint in B, G, R, A byte order.</param>
         /// <param name="table">The coverage correction, or <c>null</c> to blend raw coverage.</param>
-        public static unsafe void Blend(in GlyphBlitTarget target, GlyphMask mask, int x, int y, uint tintBgra,
+        public static void Blend(in GlyphBlitTarget target, GlyphMask mask, int x, int y, uint tintBgra,
             byte[]? table)
         {
             if (mask.IsEmpty)
@@ -87,11 +87,32 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
+            Blend(target, mask.Alpha, mask.Width, mask.Height, x, y, tintBgra, table);
+        }
+
+        /// <summary>
+        /// Blends single-channel coverage of <paramref name="width"/> x <paramref name="height"/>
+        /// pixels, rows <paramref name="width"/> bytes apart, like
+        /// <see cref="Blend(in GlyphBlitTarget, GlyphMask, int, int, uint, byte[])"/>.
+        /// </summary>
+        public static unsafe void Blend(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width, int height,
+            int x, int y, uint tintBgra, byte[]? table)
+        {
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            if (coverage.Length < width * height)
+            {
+                throw new ArgumentException("Coverage must hold width * height bytes.", nameof(coverage));
+            }
+
             var clip = target.Clip;
             var x0 = Math.Max(clip.X, x);
             var y0 = Math.Max(clip.Y, y);
-            var x1 = Math.Min(clip.Right, x + mask.Width);
-            var y1 = Math.Min(clip.Bottom, y + mask.Height);
+            var x1 = Math.Min(clip.Right, x + width);
+            var y1 = Math.Min(clip.Bottom, y + height);
 
             if (x0 >= x1 || y0 >= y1)
             {
@@ -105,12 +126,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var path = Path;
 
-            fixed (byte* alpha = mask.Alpha)
+            fixed (byte* alpha = coverage)
             fixed (byte* lookup = table ?? s_identity)
             {
                 for (var row = y0; row < y1; row++)
                 {
-                    var source = alpha + (row - y) * mask.Width + (x0 - x);
+                    var source = alpha + (row - y) * width + (x0 - x);
                     var destination = (uint*)((byte*)target.Pixels + (long)row * target.RowBytes) + x0;
                     var count = x1 - x0;
                     var done = 0;

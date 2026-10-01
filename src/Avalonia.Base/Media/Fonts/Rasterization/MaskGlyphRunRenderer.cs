@@ -175,11 +175,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             var hit = cache.TryGet(key, out var runMask);
 
             // An upright zoom gesture changes the scale every frame, so its masks would never be
-            // drawn twice. Where rasterizing each frame costs more than it gains (a CPU surface,
-            // a software GPU), the mask of the last static frame is drawn stretched to the new
-            // scale until the scale holds still; the first frame that repeats a scale
-            // rasterizes again. A hardware GPU keeps rasterizing, as that is cheap there.
-            if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.HardwareGpu } zoomContext &&
+            // drawn twice. A software GPU, where rasterizing each frame costs many times a
+            // bilinear draw, draws the mask of the last static frame stretched to the new scale
+            // until the scale holds still; the first frame that repeats a scale rasterizes
+            // again. A CPU surface and a hardware GPU keep rasterizing, which is as fast there
+            // and stays sharp.
+            if (context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.SoftwareGpu } zoomContext &&
                 run.UprightChurn.Record(key.ScaleQ, default, hit) &&
                 run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
                 cache.TryGet(settled.Key, out var settledMask) && settled.Transform.TryInvert(out var inverse))
@@ -327,22 +328,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 var stretched = destRect.TransformToAABB(delta);
 
+                // A GPU context realizes masks as alpha masks unless the typeface has colour of
+                // its own, which renders grayscale into a pre-tinted bitmap.
                 if (alphaContext is not null)
                 {
                     stretchContext.DrawMaskStretched(part.Handle, sourceRect, stretched, straightTint,
                         mode == GlyphMaskMode.Subpixel);
-                }
-                else if (mode == GlyphMaskMode.Subpixel)
-                {
-                    var pair = (LcdRunBitmaps)part.Handle;
-
-                    context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Multiply });
-                    context.DrawBitmap((IBitmapImpl)pair.Multiply, 1, sourceRect, stretched);
-                    context.PopRenderOptions();
-
-                    context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Plus });
-                    context.DrawBitmap((IBitmapImpl)pair.Plus, 1, sourceRect, stretched);
-                    context.PopRenderOptions();
                 }
                 else
                 {

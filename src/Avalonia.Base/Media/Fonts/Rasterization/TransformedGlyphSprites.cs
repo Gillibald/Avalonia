@@ -296,9 +296,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The sprite set the run's last static frame drew. While the run animates, this batch
-        /// drawn under the change from <see cref="SettledTransform"/> to the current transform
-        /// stands in for rasterizing every frame.
+        /// The sprite set the run's last static frame drew. While the run animates on a software
+        /// GPU, this batch drawn under the change from <see cref="SettledTransform"/> to the
+        /// current transform stands in for rasterizing every frame.
         /// </summary>
         public TransformedGlyphSprites? Settled { get; private set; }
 

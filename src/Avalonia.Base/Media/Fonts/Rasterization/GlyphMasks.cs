@@ -149,7 +149,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var alpha = new byte[width * height];
 
-            return RasterizeTransformed(typeface, scratch, key, left, top, width, height, alpha)
+            return RasterizeTransformed(typeface, scratch, key, left, top, width, height, alpha, width)
                 ? new GlyphMask(alpha, width, height, left, top)
                 : GlyphMask.Empty;
         }
@@ -173,7 +173,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var buffer = ArrayPool<byte>.Shared.Rent(width * height);
 
-            if (!RasterizeTransformed(typeface, scratch, key, left, top, width, height, buffer))
+            if (!RasterizeTransformed(typeface, scratch, key, left, top, width, height, buffer, width))
             {
                 ArrayPool<byte>.Shared.Return(buffer);
                 return GlyphMask.Empty;
@@ -249,8 +249,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             d = -scale * transform.Scale22;
         }
 
-        private static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
-            int left, int top, int width, int height, Span<byte> destination)
+        /// <summary>
+        /// Rasterizes a transformed glyph mask at the placement
+        /// <see cref="TryGetTransformedPlacement"/> reported into rows <paramref name="stride"/>
+        /// bytes apart, producing exactly the coverage <see cref="BuildTransformed"/> holds.
+        /// Returns <c>false</c>, leaving the destination untouched, when the glyph has no outline.
+        /// </summary>
+        internal static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            int left, int top, int width, int height, Span<byte> destination, int stride)
         {
             GetDesignToDevice(typeface, key, out var a, out var b, out var c, out var d);
 
@@ -267,7 +273,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             GlyphRasterizer.Rasterize(scratch, width, height, -left + key.PhaseOffset, -top + key.PhaseOffsetY,
-                key.Mode == GlyphMaskMode.Aliased, destination);
+                key.Mode == GlyphMaskMode.Aliased, destination, stride);
 
             return true;
         }
