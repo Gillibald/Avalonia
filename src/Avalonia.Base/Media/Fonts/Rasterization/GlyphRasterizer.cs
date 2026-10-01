@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -45,6 +46,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             GlyphRasterizerPath.Vector256 => Avx2.IsSupported,
             GlyphRasterizerPath.Vector128 => Sse41.IsSupported,
+#if NET9_0_OR_GREATER
+            GlyphRasterizerPath.Portable => Vector128.IsHardwareAccelerated,
+#else
+            GlyphRasterizerPath.Portable => false,
+#endif
             _ => true,
         };
 
@@ -115,6 +121,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     AccumulatePath(path, ref segments, cells, width, height, offsetX, offsetY);
                     Resolve(cells, destination, width, height, destinationStride, evenOdd, aliased);
+                }
+                else if (vectorPath == GlyphRasterizerPath.Portable)
+                {
+                    throw new NotImplementedException("The portable vector path is not implemented.");
                 }
                 else
                 {

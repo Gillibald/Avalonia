@@ -83,6 +83,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var count = x1 - x0;
                     var done = 0;
 
+                    if (path == GlyphBlitPath.Portable)
+                    {
+                        throw new NotImplementedException("The portable vector path is not implemented.");
+                    }
+
                     if (path == GlyphBlitPath.Avx2)
                     {
                         done = BlendRowAvx2(m + offset, p + offset, destination, count, swap);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
@@ -33,6 +34,11 @@ namespace Avalonia.Skia.UnitTests.Media
             if (Avx2.IsSupported)
             {
                 yield return new object[] { nameof(GlyphBlitPath.Avx2) };
+            }
+
+            if (Vector128.IsHardwareAccelerated)
+            {
+                yield return new object[] { nameof(GlyphBlitPath.Portable) };
             }
         }
 

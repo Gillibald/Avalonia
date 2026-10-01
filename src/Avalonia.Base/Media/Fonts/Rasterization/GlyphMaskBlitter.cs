@@ -241,6 +241,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     // Glyph rows are short, often under sixteen pixels: a row at least one step
                     // wide ends with an overlapping step, and only narrower rows reach the
                     // smaller steps or the scalar loop.
+                    if (path == GlyphBlitPath.Portable)
+                    {
+                        throw new NotImplementedException("The portable vector path is not implemented.");
+                    }
+
                     if (path == GlyphBlitPath.Avx2)
                     {
                         done = BlendRowAvx2<TOver>(source, destination, count, sourcePointer, fill, fillLanes);
@@ -602,5 +607,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         Scalar,
         Ssse3,
         Avx2,
+
+        /// <summary>
+        /// Four pixels per step through the cross-platform <see cref="Vector128{T}"/> operations,
+        /// which lower to NEON on ARM64 and to WebAssembly SIMD in the browser.
+        /// </summary>
+        Portable,
     }
 }

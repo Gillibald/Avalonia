@@ -167,12 +167,16 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData("Scalar", true)]
         [InlineData("Ssse3", true)]
         [InlineData("Avx2", true)]
+        [InlineData("Portable", false)]
+        [InlineData("Portable", true)]
         public unsafe void The_Single_Pass_Blends_Every_Channel_By_The_Two_Pass_Formula(string pathName, bool rgba)
         {
             var path = Enum.Parse<GlyphBlitPath>(pathName);
 
             Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
             Assert.SkipWhen(path == GlyphBlitPath.Ssse3 && !System.Runtime.Intrinsics.X86.Ssse3.IsSupported, "no SSSE3");
+            Assert.SkipWhen(path == GlyphBlitPath.Portable && !System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated,
+                "no hardware-accelerated Vector128");
 
             const int surfaceWidth = 71;
             const int surfaceHeight = 40;

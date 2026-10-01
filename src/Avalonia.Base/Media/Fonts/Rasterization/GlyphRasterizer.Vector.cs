@@ -16,6 +16,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Eight lanes, AVX2.</summary>
         Vector256,
+
+        /// <summary>
+        /// Four lanes through the cross-platform <see cref="Vector128{T}"/> operations, which
+        /// lower to NEON on ARM64 and to WebAssembly SIMD in the browser.
+        /// </summary>
+        Portable,
     }
 
     internal static partial class GlyphRasterizer

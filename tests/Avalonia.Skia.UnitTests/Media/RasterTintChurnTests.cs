@@ -276,6 +276,10 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(nameof(GlyphBlitPath.Scalar), false, false)]
         [InlineData(nameof(GlyphBlitPath.Avx2), false, false)]
         [InlineData(nameof(GlyphBlitPath.Avx2), true, true)]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, true)]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, false)]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, false)]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, true)]
         public unsafe void Run_Coverage_Blends_By_The_Compose_And_Blit_Arithmetic(string pathName, bool rgba,
             bool sprite)
         {
@@ -283,6 +287,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
             Assert.SkipWhen(path == GlyphBlitPath.Ssse3 && !System.Runtime.Intrinsics.X86.Ssse3.IsSupported, "no SSSE3");
+            Assert.SkipWhen(path == GlyphBlitPath.Portable && !System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated,
+                "no hardware-accelerated Vector128");
 
             const int surfaceWidth = 97;
             const int surfaceHeight = 41;

@@ -42,6 +42,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         {
             yield return new object[] { nameof(GlyphRasterizerPath.Vector128) };
             yield return new object[] { nameof(GlyphRasterizerPath.Vector256) };
+            yield return new object[] { nameof(GlyphRasterizerPath.Portable) };
         }
 
         [Theory]
