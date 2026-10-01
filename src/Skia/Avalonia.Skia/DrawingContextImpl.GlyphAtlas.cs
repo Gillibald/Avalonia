@@ -20,9 +20,20 @@ namespace Avalonia.Skia
         [ThreadStatic]
         private static SKPixmap? t_blitPixmap;
 
+        /// <summary>
+        /// Whether text may be blended straight into this context's raster surface. On by
+        /// default; tests turn it off to compare with drawing through the canvas.
+        /// </summary>
+        internal bool AllowsDirectSurfaceWrites { get; set; } = true;
+
         bool ITransformedGlyphContext.TryGetBlitTarget(out GlyphBlitTarget target)
         {
             target = default;
+
+            if (!AllowsDirectSurfaceWrites)
+            {
+                return false;
+            }
 
             // Writing the surface directly is only equivalent to drawing through the canvas
             // when the canvas would write the same pixels 1:1: no layer or opacity between the
