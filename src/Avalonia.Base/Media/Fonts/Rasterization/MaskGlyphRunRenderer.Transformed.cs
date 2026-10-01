@@ -104,11 +104,17 @@ namespace Avalonia.Media.Fonts.Rasterization
             var transformedContext = context as ITransformedGlyphContext;
 
             // The transform changes every frame, so masks rasterized now would never be drawn
-            // again. The last static frame's batch is drawn under the change of transform since
+            // again. The last settled batch is drawn under the change of transform since
             // instead, softer but without rasterizing or caching anything; on a GPU that is one
-            // bilinear atlas draw, cheaper than evaluating the outlines per pixel. The first
-            // frame that repeats its transform rasterizes again, at the final transform.
-            if (transformedContext is not null && run.TransformChurn.Record(key.ScaleQ, linear, hit) &&
+            // bilinear atlas draw, cheaper than evaluating the outlines per pixel. Rotation
+            // costs only the bilinear softening, so it stretches for as long as it lasts; a
+            // zoom magnifies or shrinks a raster made for another size, so once it leaves the
+            // stretch band one frame rasterizes at its transform and settles there. A frame
+            // whose sprites are cached draws them, and the first frame that repeats its
+            // transform rasterizes again, at the final transform.
+            if (transformedContext is not null &&
+                run.TransformChurn.Record(key.ScaleQ, linear, hit, holdOnCacheHit: true) && !hit &&
+                IsWithinStretchBand(state, transform) &&
                 TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
             {
                 return true;
@@ -152,6 +158,41 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static uint ToArgb(byte alpha, Color color)
             => ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
+
+        /// <summary>
+        /// The largest factor by which a stretched draw may scale the settled batch in any
+        /// direction, magnifying or shrinking. Past 1.2, a stretched zoom frame differs from a
+        /// fresh raster at its scale markedly more than a stretched rotation does (up to 4.8%
+        /// ink and a quarter more mean difference at 14 px, against under 1% ink for any
+        /// rotation); within it, 3.9% ink at most.
+        /// </summary>
+        internal const double MaxStretchScale = 1.2;
+
+        /// <summary>
+        /// Whether the change from the settled transform to <paramref name="transform"/> scales
+        /// by no more than <see cref="MaxStretchScale"/> in any direction: both singular values
+        /// of its linear part lie within the band. A pure rotation always does.
+        /// </summary>
+        private static bool IsWithinStretchBand(TransformedRunState state, in Matrix transform)
+        {
+            if (state.Settled is null || !state.SettledTransform.TryInvert(out var inverse))
+            {
+                return false;
+            }
+
+            var delta = inverse * transform;
+
+            // The squared singular values of [a b; c d] are the eigenvalues of its Gram matrix:
+            // (s +- sqrt(s^2 - 4 det^2)) / 2, with s the sum of the squared entries.
+            var sum = delta.M11 * delta.M11 + delta.M12 * delta.M12 + delta.M21 * delta.M21 + delta.M22 * delta.M22;
+            var determinant = delta.M11 * delta.M22 - delta.M12 * delta.M21;
+            var root = Math.Sqrt(Math.Max(0, sum * sum - 4 * determinant * determinant));
+            var largest = (sum + root) / 2;
+            var smallest = (sum - root) / 2;
+
+            return largest <= MaxStretchScale * MaxStretchScale &&
+                   smallest >= 1 / (MaxStretchScale * MaxStretchScale);
+        }
 
         /// <summary>
         /// Lays the run's glyph masks out relative to its snapped origin pixel under the key's

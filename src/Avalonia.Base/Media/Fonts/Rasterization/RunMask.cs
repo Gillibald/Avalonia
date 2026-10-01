@@ -224,8 +224,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// Three consecutive changes mark the run as animating: a one-off relayout or zoom step,
     /// and a run drawn under two alternating transforms (a reflection, a second view), keep
     /// rasterizing, while an animation is recognized by its third frame, so at most three
-    /// frames of its masks enter the caches. A cache hit or a repeated transform resets the
-    /// count, which makes the first draw after the transform holds still rasterize again.
+    /// frames of its masks enter the caches. A repeated transform resets the count, which makes
+    /// the first draw after the transform holds still rasterize again. A cache hit resets it
+    /// too, unless the caller holds the count on hits: then an animation passing through a
+    /// cached transform keeps counting as animating once it moves on, instead of rasterizing
+    /// its next frames while the count builds up again.
     /// </remarks>
     internal sealed class TransformChurnGuard
     {
@@ -239,13 +242,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Records a draw of the run and returns whether the run is animating, so its masks
-        /// should not be rasterized for this frame.
+        /// should not be rasterized for this frame. With <paramref name="holdOnCacheHit"/>, a
+        /// changed transform that hits the cache leaves the count as it is instead of
+        /// resetting it.
         /// </summary>
-        public bool Record(ushort scaleQ, GlyphMaskTransform transform, bool cacheHit)
+        public bool Record(ushort scaleQ, GlyphMaskTransform transform, bool cacheHit, bool holdOnCacheHit = false)
         {
             var changed = _hasLast && (scaleQ != _lastScaleQ || transform != _lastTransform);
 
-            _changes = changed && !cacheHit ? _changes + 1 : 0;
+            _changes = !changed ? 0 : !cacheHit ? _changes + 1 : holdOnCacheHit ? _changes : 0;
             _hasLast = true;
             _lastScaleQ = scaleQ;
             _lastTransform = transform;
