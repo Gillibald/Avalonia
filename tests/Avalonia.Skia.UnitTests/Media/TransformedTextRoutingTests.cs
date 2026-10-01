@@ -87,6 +87,71 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.NotNull(run.SlugRunArtifact);
         }
 
+        [Theory]
+        [InlineData(Backend.NativeGl, false)]
+        [InlineData(Backend.Angle, false)]
+        [InlineData(Backend.NativeGl, true)]
+        [InlineData(Backend.Angle, true)]
+        public void An_Animated_Rotation_On_A_Gpu_Takes_Slug_Only_Under_The_Switch(Backend backend, bool slug)
+        {
+            using var gpu = GpuContext.TryCreate(backend, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
+
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, "Rotating text", 24, new Point(8, 32));
+
+            var info = new SKImageInfo(320, 240, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu!.GrContext, true, info);
+
+            Assert.SkipWhen(surface is null, "GPU surface creation failed.");
+
+            var counting = TextTierDiagnostics.CountTiers;
+
+            TextTierDiagnostics.CountTiers = true;
+            TextTierDiagnostics.ResetCounters();
+
+            try
+            {
+                using (RouteTransformedText(slug ? TransformedTextRouting.Slug : TransformedTextRouting.Masks))
+                using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+                       {
+                           Surface = surface,
+                           GrContext = gpu.GrContext,
+                           Dpi = new Vector(96, 96),
+                       }))
+                {
+                    for (var frame = 0; frame < 12; frame++)
+                    {
+                        context.Transform = Matrix.CreateRotation(Math.PI * (10 + frame * 2.3) / 180) *
+                            Matrix.CreateTranslation(60, 40);
+                        context.DrawGlyphRun(Brushes.Black, run);
+                    }
+                }
+
+                gpu.GrContext.Flush();
+
+                if (slug)
+                {
+                    Assert.Equal(12, TextTierDiagnostics.SlugTierDraws);
+                    Assert.NotNull(run.SlugRunArtifact);
+                }
+                else
+                {
+                    // A hardware GPU stretches the settled batch like every other context.
+                    Assert.Equal(0, TextTierDiagnostics.SlugTierDraws);
+                    Assert.Equal(12, TextTierDiagnostics.TransformedMaskTierDraws);
+                    Assert.Null(run.SlugRunArtifact);
+                }
+            }
+            finally
+            {
+                TextTierDiagnostics.CountTiers = counting;
+                TextTierDiagnostics.ResetCounters();
+            }
+        }
+
         [Fact]
         public void Upright_Draws_Keep_The_Upright_Mask_Tier_Under_Either_Routing()
         {

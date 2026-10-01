@@ -43,13 +43,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void An_Animated_Rotation_Stretches_The_Settled_Batch_Or_Goes_To_Slug(Target target)
+        public void An_Animated_Rotation_Stretches_The_Settled_Batch(Target target)
         {
             using var output = TestTarget.Create(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 24, new Point(8, 32));
 
-            var hardware = target is Target.HardwareGl or Target.HardwareAngle;
             var context = output.Context;
             var glyphMasks = 0;
             var atlasEntries = 0;
@@ -70,7 +69,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     allocated += GC.GetAllocatedBytesForCurrentThread() - before;
                 }
 
-                Assert.Equal(hardware && frame >= TransformChurnGuard.Threshold, drawnBySlug);
+                Assert.False(drawnBySlug, $"frame {frame} went to the Slug tier");
 
                 if (frame == TransformChurnGuard.Threshold)
                 {
@@ -84,13 +83,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(TransformChurnGuard.Threshold, run.TransformedSprites.Count);
             Assert.Equal(glyphMasks, typeface.MaskCache.Count);
             Assert.Equal(atlasEntries, typeface.MaskAtlas.Count);
-            Assert.Equal(hardware, run.SlugRunArtifact is not null);
-
-            if (!hardware)
-            {
-                Assert.True(allocated == 0, $"stretched frames allocated {allocated} bytes");
-            }
-
+            Assert.Null(run.SlugRunArtifact);
+            Assert.True(allocated == 0, $"stretched frames allocated {allocated} bytes");
             Assert.True(output.HasInk(), "the last animation frame drew nothing");
         }
 
