@@ -292,7 +292,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return colr.ToArray();
         }
 
-        private static IDisposable CreateEnvironment(bool managed = true)
+        internal static IDisposable CreateEnvironment(bool managed = true)
         {
             var scope = AvaloniaLocator.EnterScope();
 
