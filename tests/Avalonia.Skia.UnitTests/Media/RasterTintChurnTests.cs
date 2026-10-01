@@ -10,11 +10,20 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// Upright grayscale text on a CPU surface draws its pre-tinted run mask with the backend's
-    /// bitmap blit, whose arithmetic is pinned here.
+    /// Upright grayscale text on a CPU surface whose foreground colour changes every frame must
+    /// not compose a pre-tinted run mask for every colour. The backend's bitmap blit, which
+    /// draws those masks, has its arithmetic pinned here.
     /// </summary>
     public class RasterTintChurnTests
     {
+        private const int Width = 300;
+        private const int Height = 90;
+
+        private static readonly Color[] s_animation =
+        {
+            Colors.DarkRed, Colors.DarkGreen, Colors.DarkBlue, Colors.DarkOrange, Colors.Purple,
+        };
+
         /// <summary>
         /// The 1:1 blit of a premultiplied BGRA bitmap, per channel with <c>s</c> the source
         /// channel, <c>sa</c> the source alpha and <c>d</c> the destination channel. Onto a
@@ -131,6 +140,41 @@ namespace Avalonia.Skia.UnitTests.Media
             static uint Destination(int row, int alpha)
                 => ((uint)alpha << 24) | ((uint)Math.Min(row, alpha) << 16) | ((uint)(Math.Min(row, alpha) / 2) << 8) |
                    (uint)(alpha - Math.Min(row, alpha));
+        }
+
+        [Fact]
+        public void A_Foreground_Colour_Animation_On_A_Raster_Surface_Allocates_Nothing_Per_Frame()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, "Wavy AVATAR, fjord; 0123", 15, new Point(9.37, 30.2));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(info);
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+            {
+                Surface = surface,
+                Dpi = new Vector(96, 96),
+            });
+
+            var brushes = Array.ConvertAll(s_animation, color => (IBrush)new ImmutableSolidColorBrush(color));
+
+            // Two cycles let the animation settle into whatever the steady state holds.
+            for (var frame = 0; frame < 2 * brushes.Length; frame++)
+            {
+                context.DrawGlyphRun(brushes[frame % brushes.Length], run);
+            }
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+
+            for (var frame = 0; frame < 4 * brushes.Length; frame++)
+            {
+                context.DrawGlyphRun(brushes[frame % brushes.Length], run);
+            }
+
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+            Assert.True(allocated == 0, $"{4 * brushes.Length} animated frames allocated {allocated} bytes");
         }
     }
 }
