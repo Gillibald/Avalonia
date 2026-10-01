@@ -36,8 +36,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         private const int MaxCurveSegments = 256;
 
         /// <summary>
-        /// Which instruction set accumulates and resolves coverage; tests set it to cover every
-        /// path. Every path produces the same bytes.
+        /// Which instruction set accumulates and resolves coverage, apart from the small masks
+        /// <see cref="EffectivePath"/> moves to the scalar path. Every path produces the same bytes.
         /// </summary>
         internal static GlyphRasterizerPath Path { get; set; } = DetectPath();
 
@@ -59,6 +59,24 @@ namespace Avalonia.Media.Fonts.Rasterization
                 : IsSupported(GlyphRasterizerPath.Vector128) ? GlyphRasterizerPath.Vector128
                 : IsSupported(GlyphRasterizerPath.Portable) ? GlyphRasterizerPath.Portable
                 : GlyphRasterizerPath.Scalar;
+
+        /// <summary>
+        /// Masks of fewer cells than this rasterize on the scalar path while
+        /// <see cref="Path"/> is <see cref="GlyphRasterizerPath.Portable"/>: there the portable
+        /// path's per-mask cost (crossing queue, vector resolve) exceeds what its four lanes save.
+        /// The value is the crossover under browser WebAssembly AOT, where the portable path is the
+        /// default. The SSE and AVX2 paths are unaffected.
+        /// </summary>
+        internal const int PortableMinimumCells = 96;
+
+        /// <summary>
+        /// The path that rasterizes a mask of <paramref name="width"/> by <paramref name="height"/>
+        /// cells while <paramref name="selected"/> is the selected path.
+        /// </summary>
+        internal static GlyphRasterizerPath EffectivePath(GlyphRasterizerPath selected, int width, int height)
+            => selected == GlyphRasterizerPath.Portable && (long)width * height < PortableMinimumCells
+                ? GlyphRasterizerPath.Scalar
+                : selected;
 
         /// <summary>
         /// Rasterizes <paramref name="path"/> into an alpha mask of <paramref name="width"/> ×
@@ -84,6 +102,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static void Rasterize(GlyphPathBuilder path, int width, int height,
             float offsetX, float offsetY, bool aliased, Span<byte> destination, int destinationStride)
+            => Rasterize(EffectivePath(Path, width, height), path, width, height, offsetX, offsetY, aliased,
+                destination, destinationStride);
+
+        /// <summary>
+        /// Rasterizes like <see cref="Rasterize(GlyphPathBuilder, int, int, float, float, bool, Span{byte}, int)"/>
+        /// on exactly <paramref name="vectorPath"/>, whatever the mask size; tests compare the paths
+        /// through it.
+        /// </summary>
+        internal static void Rasterize(GlyphRasterizerPath vectorPath, GlyphPathBuilder path, int width, int height,
+            float offsetX, float offsetY, bool aliased, Span<byte> destination, int destinationStride)
         {
             if (width <= 0)
             {
@@ -108,7 +136,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var acc = ArrayPool<float>.Shared.Rent(width * height + CrossingQueue.SinkCells);
             var evenOdd = path.FillRule == Media.FillRule.EvenOdd;
-            var vectorPath = Path;
 
             try
             {

@@ -139,6 +139,49 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             }
         }
 
+        [Theory]
+        [InlineData(1, 1)]
+        [InlineData(1, GlyphRasterizer.PortableMinimumCells - 1)]
+        [InlineData(GlyphRasterizer.PortableMinimumCells - 1, 1)]
+        [InlineData(8, 11)]
+        [InlineData(5, 19)]
+        public void Portable_Hands_Masks_Below_The_Minimum_To_The_Scalar_Path(int width, int height)
+        {
+            Assert.True(width * height < GlyphRasterizer.PortableMinimumCells);
+            Assert.Equal(GlyphRasterizerPath.Scalar,
+                GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width, height));
+        }
+
+        [Theory]
+        [InlineData(1, GlyphRasterizer.PortableMinimumCells)]
+        [InlineData(GlyphRasterizer.PortableMinimumCells, 1)]
+        [InlineData(8, 12)]
+        [InlineData(13, 18)]
+        [InlineData(4096, 4096)]
+        [InlineData(65536, 65536)]
+        public void Portable_Keeps_Masks_From_The_Minimum_Up(int width, int height)
+        {
+            Assert.True((long)width * height >= GlyphRasterizer.PortableMinimumCells);
+            Assert.Equal(GlyphRasterizerPath.Portable,
+                GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width, height));
+        }
+
+        [Theory]
+        [InlineData(nameof(GlyphRasterizerPath.Scalar))]
+        [InlineData(nameof(GlyphRasterizerPath.Vector128))]
+        [InlineData(nameof(GlyphRasterizerPath.Vector256))]
+        public void Other_Paths_Keep_Every_Mask_Size(string pathName)
+        {
+            var path = Enum.Parse<GlyphRasterizerPath>(pathName);
+
+            var sizes = new[] { (1, 1), (8, 11), (1, GlyphRasterizer.PortableMinimumCells), (200, 240) };
+
+            foreach (var (width, height) in sizes)
+            {
+                Assert.Equal(path, GlyphRasterizer.EffectivePath(path, width, height));
+            }
+        }
+
         /// <summary>
         /// Rasterizes the glyph into a mask fitted to its transformed outline and into one cut
         /// short on every side, antialiased with both fill rules and aliased, and compares each
@@ -224,20 +267,11 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             expected.AsSpan().Fill(0xA5);
             actual.AsSpan().Fill(0xA5);
 
-            var previous = GlyphRasterizer.Path;
-
-            try
-            {
-                GlyphRasterizer.Path = GlyphRasterizerPath.Scalar;
-                GlyphRasterizer.Rasterize(builder, width, height, offsetX, offsetY, aliased, expected, stride);
-
-                GlyphRasterizer.Path = path;
-                GlyphRasterizer.Rasterize(builder, width, height, offsetX, offsetY, aliased, actual, stride);
-            }
-            finally
-            {
-                GlyphRasterizer.Path = previous;
-            }
+            // The exact-path overload runs the vector code even for the small masks the selected
+            // path hands to the scalar one.
+            GlyphRasterizer.Rasterize(GlyphRasterizerPath.Scalar, builder, width, height, offsetX, offsetY, aliased,
+                expected, stride);
+            GlyphRasterizer.Rasterize(path, builder, width, height, offsetX, offsetY, aliased, actual, stride);
 
             for (var i = 0; i < expected.Length; i++)
             {
