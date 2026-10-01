@@ -10,11 +10,10 @@ using GpuContext = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.GpuContex
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// A transform that changes every frame. On a CPU surface or a software GPU the run draws
-    /// the batch of its last static frame under the change of transform, allocating and
-    /// rasterizing nothing; on a hardware GPU it goes to the Slug tier. Upright zoom gestures
-    /// stretch the last static run mask on the CPU and software GPUs. The first frame that
-    /// repeats its transform rasterizes again, at that transform.
+    /// A transform that changes every frame. On every context the run draws the batch of its
+    /// last static frame under the change of transform, allocating and rasterizing nothing.
+    /// Upright zoom gestures stretch the last static run mask on the CPU and software GPUs.
+    /// The first frame that repeats its transform rasterizes again, at that transform.
     /// </summary>
     public class TransformedAnimationTests
     {
@@ -62,14 +61,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 var before = GC.GetAllocatedBytesForCurrentThread();
 
                 Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black,
-                    TextRenderingMode.Antialias, out var drawnBySlug));
+                    TextRenderingMode.Antialias));
 
                 if (frame > TransformChurnGuard.Threshold)
                 {
                     allocated += GC.GetAllocatedBytesForCurrentThread() - before;
                 }
-
-                Assert.False(drawnBySlug, $"frame {frame} went to the Slug tier");
 
                 if (frame == TransformChurnGuard.Threshold)
                 {

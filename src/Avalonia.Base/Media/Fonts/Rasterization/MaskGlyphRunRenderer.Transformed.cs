@@ -40,19 +40,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
-            => TryDrawTransformed(context, run, foreground, textRenderingMode, out _);
-
-        /// <summary>
-        /// <see cref="TryDrawTransformed(IDrawingContextImpl, ManagedGlyphRunImpl, IBrush?, TextRenderingMode)"/>,
-        /// reporting whether the draw went to the Slug vector tier: a run whose transform
-        /// changes every frame on a hardware GPU draws its outlines there instead of
-        /// re-rasterizing masks per frame.
-        /// </summary>
-        public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
-            IBrush? foreground, TextRenderingMode textRenderingMode, out bool drawnBySlug)
         {
-            drawnBySlug = false;
-
             var transform = context.Transform;
             var determinant = transform.M11 * transform.M22 - transform.M12 * transform.M21;
 
@@ -115,26 +103,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             var hit = state.TryGet(key, out var sprites);
             var transformedContext = context as ITransformedGlyphContext;
 
-            if (transformedContext is not null && run.TransformChurn.Record(key.ScaleQ, linear, hit))
+            // The transform changes every frame, so masks rasterized now would never be drawn
+            // again. The last static frame's batch is drawn under the change of transform since
+            // instead, softer but without rasterizing or caching anything; on a GPU that is one
+            // bilinear atlas draw, cheaper than evaluating the outlines per pixel. The first
+            // frame that repeats its transform rasterizes again, at the final transform.
+            if (transformedContext is not null && run.TransformChurn.Record(key.ScaleQ, linear, hit) &&
+                TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
             {
-                // The transform changes every frame, so masks rasterized now would never be
-                // drawn again. A hardware GPU evaluates the outlines per pixel for little cost;
-                // everywhere else, and when the vector tier declines, the last static frame's
-                // batch is drawn under the change of transform since, softer but without
-                // rasterizing or caching anything. The first frame that repeats its transform
-                // rasterizes again, at the final transform.
-                if (transformedContext.RasterTarget == GlyphRasterTarget.HardwareGpu &&
-                    context is Slug.ISlugGlyphRunContext slugContext &&
-                    Slug.SlugGlyphRunRenderer.TryDraw(slugContext, transform, run, foreground))
-                {
-                    drawnBySlug = true;
-                    return true;
-                }
-
-                if (TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
-                {
-                    return true;
-                }
+                return true;
             }
 
             if (!hit)

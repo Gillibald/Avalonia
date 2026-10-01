@@ -1026,22 +1026,18 @@ namespace Avalonia.Skia
                 // only GPU contexts support. Declines of either fall through to the native blob.
                 if (MaskGlyphRunRenderer.TransformedTextRouting == TransformedTextRouting.Masks)
                 {
-                    // A run animating on a hardware GPU goes to the Slug tier from in there.
                     if (MaskGlyphRunRenderer.TryDrawTransformed(this, managedRun, foreground,
-                            effectiveTextOptions.TextRenderingMode, out var drawnBySlug))
+                            effectiveTextOptions.TextRenderingMode))
                     {
                         if (TextTierDiagnostics.CountTiers)
                         {
-                            System.Threading.Interlocked.Increment(ref drawnBySlug
-                                ? ref TextTierDiagnostics.SlugTierDraws
-                                : ref TextTierDiagnostics.TransformedMaskTierDraws);
+                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
                         }
 
                         if (TextTierDiagnostics.TintTiers)
                         {
-                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, drawnBySlug
-                                ? TextTierDiagnostics.SlugTierColor
-                                : TextTierDiagnostics.TransformedMaskTierColor);
+                            TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds,
+                                TextTierDiagnostics.TransformedMaskTierColor);
                         }
 
                         return;
