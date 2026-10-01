@@ -177,6 +177,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black,
                     TextRenderingMode.Antialias));
 
+                // A frame ends by drawing its pending sprites, so the atlas draw of a static
+                // frame is not counted against the animated frame after it.
+                if (context is DrawingContextImpl skia)
+                {
+                    skia.FlushGlyphBatch();
+                }
+
                 if (frame >= 40 + TransformChurnGuard.Threshold)
                 {
                     allocated += GC.GetAllocatedBytesForCurrentThread() - before;

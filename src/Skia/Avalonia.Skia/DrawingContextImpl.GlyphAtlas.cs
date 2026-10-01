@@ -113,7 +113,7 @@ namespace Avalonia.Skia
 
             FlushGlyphBatch();
 
-            var image = backend.Image ?? GetPageImage(batch.Page!);
+            var image = backend.Image ?? GetPageImage(batch.Page!).Image;
             var paint = SKPaintCache.Shared.Get();
 
             paint.Color = color;
@@ -204,16 +204,16 @@ namespace Avalonia.Skia
         /// pinned array without copying; a GPU context uploads it once per version and draws
         /// every batch on the page from that texture.
         /// </summary>
-        private static SKImage GetPageImage(GlyphAtlasPage page)
+        private static GlyphPageImage GetPageImage(GlyphAtlasPage page)
         {
-            if (page.Realized is SKImage current && page.RealizedVersion == page.Version)
+            if (page.Realized is GlyphPageImage current && page.RealizedVersion == page.Version)
             {
                 return current;
             }
 
             page.Realized?.Dispose();
 
-            var image = CreatePageImage(page);
+            var image = new GlyphPageImage(CreatePageImage(page));
 
             page.Realized = image;
             page.RealizedVersion = page.Version;
@@ -261,9 +261,44 @@ namespace Avalonia.Skia
             return SKImage.FromPixels(pixmap, s_releasePage, pixels);
         }
 
+        /// <summary>An atlas page's image at one version, and the shader that samples it texel for pixel.</summary>
+        private sealed class GlyphPageImage : IDisposable
+        {
+            private SKShader? _shader;
+
+            public GlyphPageImage(SKImage image) => Image = image;
+
+            public SKImage Image { get; }
+
+            /// <summary>Made on first use: only batches drawn from kept vertices sample the page through it.</summary>
+            public SKShader Shader =>
+                _shader ??= Image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, s_nearest);
+
+            public void Dispose()
+            {
+                _shader?.Dispose();
+                Image.Dispose();
+            }
+        }
+
         /// <summary>The exact-length sprite arrays of one batch, plus its own image for a standalone glyph.</summary>
         internal sealed class SkiaGlyphAtlasBatch : IDisposable
         {
+            // Four vertices per sprite, addressed by 16-bit indices.
+            private const int MaxSpritesPerVertices = (ushort.MaxValue + 1) / 4;
+
+            // Vertex positions are floats: offsets this far apart still add up exactly.
+            private const int MaxRelativeOffset = 1 << 22;
+
+            // The runs of the last merged batch that began with these sprites, placed relative to
+            // them, and the vertices built for that batch once it was seen again. A count of -1
+            // lets no batch repeat: none was recorded, or its runs lie too far apart to place
+            // exactly. The recorded length counts the entries in use, released on replacement.
+            private BatchedRun[]? _batchRuns;
+            private int _batchRunCount = -1;
+            private int _recordedLength;
+            private SKVertices[]? _batchVertices;
+
             public SkiaGlyphAtlasBatch(SKRect[] sources, SKRotationScaleMatrix[] placements, SKImage? image)
             {
                 Sources = sources;
@@ -277,7 +312,180 @@ namespace Avalonia.Skia
 
             public SKImage? Image { get; }
 
-            public void Dispose() => Image?.Dispose();
+            /// <summary>
+            /// Vertices for a pending batch that begins with these sprites, placed relative to
+            /// the first run, when the batch repeats the last one they began: the same runs, in
+            /// order, at the same offsets from the first. They are built the first time the batch
+            /// repeats (<paramref name="built"/>) and kept while it keeps repeating. Otherwise
+            /// records the batch for the next frame and returns <c>false</c>, and the caller draws
+            /// the sprites through an atlas draw.
+            /// </summary>
+            /// <remarks>
+            /// A run's sprite arrays never change, so the runs identify the batch's geometry; the
+            /// page they sample may grow or gain glyphs without moving theirs.
+            /// </remarks>
+            public bool TryGetBatchVertices(BatchedRun[] runs, int count, int spriteCount,
+                out SKVertices[] vertices, out bool built)
+            {
+                vertices = null!;
+                built = false;
+
+                if (!Repeats(runs, count))
+                {
+                    Record(runs, count);
+                    return false;
+                }
+
+                built = _batchVertices is null;
+                vertices = _batchVertices ??= BuildVertices(runs, count, spriteCount);
+
+                return true;
+            }
+
+            private bool Repeats(BatchedRun[] runs, int count)
+            {
+                if (_batchRunCount != count)
+                {
+                    return false;
+                }
+
+                var recorded = _batchRuns;
+                var first = runs[0];
+
+                for (var i = 1; i < count; i++)
+                {
+                    var run = runs[i];
+                    var expected = recorded![i];
+
+                    if (!ReferenceEquals(run.Backend, expected.Backend) || run.X - first.X != expected.X ||
+                        run.Y - first.Y != expected.Y)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+
+            private void Record(BatchedRun[] runs, int count)
+            {
+                ReleaseVertices();
+
+                var first = runs[0];
+                var recorded = _batchRuns;
+                var repeatable = true;
+
+                if (count > 1 && (recorded is null || recorded.Length < count))
+                {
+                    recorded = _batchRuns = new BatchedRun[Math.Max(count, (recorded?.Length ?? 4) * 2)];
+                }
+
+                for (var i = 1; i < count; i++)
+                {
+                    var run = runs[i];
+                    var x = run.X - first.X;
+                    var y = run.Y - first.Y;
+
+                    repeatable &= Math.Abs(x) <= MaxRelativeOffset && Math.Abs(y) <= MaxRelativeOffset;
+                    recorded![i] = new BatchedRun(run.Backend, x, y);
+                }
+
+                // Entries past the batch would keep runs that left it alive.
+                if (recorded is not null && _recordedLength > count)
+                {
+                    Array.Clear(recorded, count, _recordedLength - count);
+                }
+
+                _recordedLength = count;
+                _batchRunCount = repeatable ? count : -1;
+            }
+
+            private static SKVertices[] BuildVertices(BatchedRun[] runs, int count, int spriteCount)
+            {
+                var parts = new SKVertices[(spriteCount + MaxSpritesPerVertices - 1) / MaxSpritesPerVertices];
+                var first = runs[0];
+                var run = 0;
+                var sprite = 0;
+                var remaining = spriteCount;
+
+                for (var part = 0; part < parts.Length; part++)
+                {
+                    var sprites = Math.Min(remaining, MaxSpritesPerVertices);
+                    var positions = new SKPoint[sprites * 4];
+                    var coordinates = new SKPoint[sprites * 4];
+                    var indices = new ushort[sprites * 6];
+
+                    for (var i = 0; i < sprites; i++)
+                    {
+                        while (sprite == runs[run].Backend.Sources.Length)
+                        {
+                            run++;
+                            sprite = 0;
+                        }
+
+                        var backend = runs[run].Backend;
+                        var source = backend.Sources[sprite];
+                        var placement = backend.Placements[sprite];
+                        var x = placement.TX + (runs[run].X - first.X);
+                        var y = placement.TY + (runs[run].Y - first.Y);
+                        var v = i * 4;
+
+                        // The quad and texture coordinates an atlas draw makes for an unrotated,
+                        // unscaled sprite.
+                        positions[v] = new SKPoint(x, y);
+                        positions[v + 1] = new SKPoint(x + source.Width, y);
+                        positions[v + 2] = new SKPoint(x, y + source.Height);
+                        positions[v + 3] = new SKPoint(x + source.Width, y + source.Height);
+                        coordinates[v] = new SKPoint(source.Left, source.Top);
+                        coordinates[v + 1] = new SKPoint(source.Right, source.Top);
+                        coordinates[v + 2] = new SKPoint(source.Left, source.Bottom);
+                        coordinates[v + 3] = new SKPoint(source.Right, source.Bottom);
+
+                        var index = i * 6;
+
+                        indices[index] = (ushort)v;
+                        indices[index + 1] = (ushort)(v + 1);
+                        indices[index + 2] = (ushort)(v + 2);
+                        indices[index + 3] = (ushort)(v + 1);
+                        indices[index + 4] = (ushort)(v + 3);
+                        indices[index + 5] = (ushort)(v + 2);
+
+                        sprite++;
+                    }
+
+                    parts[part] = SKVertices.CreateCopy(SKVertexMode.Triangles, positions, coordinates, null, indices);
+                    remaining -= sprites;
+                }
+
+                return parts;
+            }
+
+            private void ReleaseVertices()
+            {
+                if (_batchVertices is { } parts)
+                {
+                    foreach (var part in parts)
+                    {
+                        part.Dispose();
+                    }
+
+                    _batchVertices = null;
+                }
+            }
+
+            public void Dispose()
+            {
+                ReleaseVertices();
+
+                if (_batchRuns is { } recorded)
+                {
+                    Array.Clear(recorded);
+                }
+
+                _batchRunCount = -1;
+                _recordedLength = 0;
+                Image?.Dispose();
+            }
         }
     }
 }

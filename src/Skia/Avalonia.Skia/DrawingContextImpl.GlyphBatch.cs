@@ -7,22 +7,17 @@ namespace Avalonia.Skia
 {
     internal partial class DrawingContextImpl
     {
-        // Contexts are made per frame, so the merged sprite arrays come from a per-thread pool
-        // instead of each context growing its own; a layer drawn while its parent holds a
-        // batch rents a second set.
+        // Contexts are made per frame, so the batch's run list comes from a per-thread pool
+        // instead of each context growing its own; a layer drawn while its parent holds a batch
+        // rents a second one.
         [ThreadStatic]
-        private static Stack<GlyphBatchArrays>? t_batchArrays;
+        private static Stack<BatchedRun[]>? t_batchRuns;
 
-        private GlyphBatchArrays? _batchArrays;
+        private BatchedRun[]? _batchRuns;
+        private int _batchRunCount;
         private int _batchCount;
         private GlyphAtlasPage? _batchPage;
         private SKColor _batchColor;
-
-        // While the batch holds a single run's sprites they stay in that run's own arrays, drawn
-        // under its placement exactly as an unbatched draw would; a second run copies them out.
-        private SkiaGlyphAtlasBatch? _batchSingle;
-        private int _batchSingleX;
-        private int _batchSingleY;
 
         /// <summary>
         /// Whether glyph atlas draws on this GPU context are collected across glyph runs and
@@ -57,66 +52,29 @@ namespace Avalonia.Skia
 
             FlushLcdBatch();
 
-            if (_batchCount > 0 && (page != _batchPage || color != _batchColor))
+            if (_batchRunCount > 0 && (page != _batchPage || color != _batchColor))
             {
                 FlushAtlasBatch();
             }
 
-            var x = (int)transform.M31;
-            var y = (int)transform.M32;
-            var count = backend.Sources.Length;
+            var runs = _batchRuns ??= t_batchRuns is { Count: > 0 } pool ? pool.Pop() : new BatchedRun[32];
 
-            if (_batchCount == 0)
+            if (_batchRunCount == runs.Length)
+            {
+                Array.Resize(ref _batchRuns, runs.Length * 2);
+                runs = _batchRuns;
+            }
+
+            if (_batchRunCount == 0)
             {
                 _batchPage = page;
                 _batchColor = color;
-                _batchSingle = backend;
-                _batchSingleX = x;
-                _batchSingleY = y;
-                _batchCount = count;
-
-                return true;
             }
 
-            if (_batchSingle is { } single)
-            {
-                _batchSingle = null;
-                _batchCount = 0;
-                CopyToGlyphBatch(single, _batchSingleX, _batchSingleY);
-            }
-
-            CopyToGlyphBatch(backend, x, y);
+            runs[_batchRunCount++] = new BatchedRun(backend, (int)transform.M31, (int)transform.M32);
+            _batchCount += backend.Sources.Length;
 
             return true;
-        }
-
-        private void CopyToGlyphBatch(SkiaGlyphAtlasBatch backend, int x, int y)
-        {
-            var arrays = _batchArrays ??= t_batchArrays is { Count: > 0 } pool ? pool.Pop() : new GlyphBatchArrays();
-            var count = backend.Sources.Length;
-            var required = _batchCount + count;
-
-            if (required > arrays.Sources.Length)
-            {
-                var capacity = Math.Max(required, arrays.Sources.Length * 2);
-
-                Array.Resize(ref arrays.Sources, capacity);
-                Array.Resize(ref arrays.Placements, capacity);
-            }
-
-            Array.Copy(backend.Sources, 0, arrays.Sources, _batchCount, count);
-
-            var placements = backend.Placements;
-            var target = arrays.Placements.AsSpan(_batchCount, count);
-
-            for (var i = 0; i < placements.Length; i++)
-            {
-                var placement = placements[i];
-
-                target[i] = SKRotationScaleMatrix.CreateTranslation(placement.TX + x, placement.TY + y);
-            }
-
-            _batchCount = required;
         }
 
         /// <summary>
@@ -133,60 +91,105 @@ namespace Avalonia.Skia
         }
 
         /// <summary>Draws the pending grayscale batch.</summary>
+        /// <remarks>
+        /// Skia turns an atlas draw's sprites into quads on the CPU every time it is called. A
+        /// batch that repeats the previous batch begun by the same run, the same runs at the
+        /// same places relative to the first, draws from vertices built once instead, translated
+        /// to where the first run is now: static and scrolled text submits no new geometry. The
+        /// vertices are made the first time a batch repeats, so text that changes every frame
+        /// never pays for building them. The vertices sample the page through its image shader
+        /// at the texel centres the atlas draw samples, and modulate the paint colour by the
+        /// coverage alike, so both draws produce the same pixels.
+        /// </remarks>
         private void FlushAtlasBatch()
         {
-            if (_batchCount == 0)
+            if (_batchRunCount == 0)
             {
                 return;
             }
 
             var page = _batchPage!;
+            var runs = _batchRuns!;
+            var count = _batchRunCount;
+            var first = runs[0];
 
             // A page dropped from the atlas after its sprites were appended still holds their
             // coverage; its image is made for this draw alone, since the page keeps none.
-            var transient = page.IsEvicted ? CreatePageImage(page) : null;
+            var transient = page.IsEvicted ? new GlyphPageImage(CreatePageImage(page)) : null;
             var image = transient ?? GetPageImage(page);
             var paint = SKPaintCache.Shared.Get();
             var oldTransform = Transform;
 
             paint.Color = _batchColor;
 
-            if (_batchSingle is { } single)
+            if (first.Backend.TryGetBatchVertices(runs, count, _batchCount, out var vertices, out var built))
             {
-                Transform = Matrix.CreateTranslation(_batchSingleX, _batchSingleY);
-                Canvas.DrawAtlas(image, single.Sources, single.Placements, s_nearest, paint);
+                paint.Shader = image.Shader;
+                Transform = Matrix.CreateTranslation(first.X, first.Y);
+
+                foreach (var part in vertices)
+                {
+                    Canvas.DrawVertices(part, SKBlendMode.Modulate, paint);
+                }
+
+                if (built)
+                {
+                    t_atlasGeometry += _batchCount;
+                }
+            }
+            else if (count == 1)
+            {
+                // A single run draws its own arrays under its placement, exactly as an unbatched
+                // draw would.
+                Transform = Matrix.CreateTranslation(first.X, first.Y);
+                Canvas.DrawAtlas(image.Image, first.Backend.Sources, first.Backend.Placements, s_nearest, paint);
+                t_atlasGeometry += _batchCount;
             }
             else
             {
                 // DrawAtlas takes the sprite count from the array lengths.
-                var arrays = _batchArrays!;
                 var (sources, placements) = GetTransientSpriteArrays(_batchCount);
+                var offset = 0;
 
-                Array.Copy(arrays.Sources, sources, _batchCount);
-                Array.Copy(arrays.Placements, placements, _batchCount);
+                for (var i = 0; i < count; i++)
+                {
+                    var run = runs[i];
+                    var runSources = run.Backend.Sources;
+                    var runPlacements = run.Backend.Placements;
+
+                    Array.Copy(runSources, 0, sources, offset, runSources.Length);
+
+                    for (var j = 0; j < runPlacements.Length; j++)
+                    {
+                        var placement = runPlacements[j];
+
+                        placements[offset + j] = SKRotationScaleMatrix.CreateTranslation(placement.TX + run.X,
+                            placement.TY + run.Y);
+                    }
+
+                    offset += runSources.Length;
+                }
 
                 Transform = Matrix.Identity;
-                Canvas.DrawAtlas(image, sources, placements, s_nearest, paint);
-
-                (t_batchArrays ??= new Stack<GlyphBatchArrays>()).Push(arrays);
-                _batchArrays = null;
+                Canvas.DrawAtlas(image.Image, sources, placements, s_nearest, paint);
+                t_atlasGeometry += _batchCount;
             }
 
             Transform = oldTransform;
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
             t_atlasDraws++;
-            t_atlasGeometry += _batchCount;
 
+            // The pooled list must not keep the runs' arrays alive.
+            Array.Clear(runs, 0, count);
+            (t_batchRuns ??= new Stack<BatchedRun[]>()).Push(runs);
+            _batchRuns = null;
+            _batchRunCount = 0;
             _batchCount = 0;
-            _batchSingle = null;
             _batchPage = null;
         }
 
-        private sealed class GlyphBatchArrays
-        {
-            public SKRect[] Sources = new SKRect[256];
-            public SKRotationScaleMatrix[] Placements = new SKRotationScaleMatrix[256];
-        }
+        /// <summary>A run's atlas sprites in a pending batch, placed at a device pixel offset.</summary>
+        internal readonly record struct BatchedRun(SkiaGlyphAtlasBatch Backend, int X, int Y);
     }
 }
