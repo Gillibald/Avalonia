@@ -12,8 +12,8 @@ namespace Avalonia.Skia.UnitTests.Media
     /// animated frame into transient buffers, drawing exactly what a static frame at that
     /// transform draws while caching nothing; software GPUs draw the batch of the last static
     /// frame under the change of transform. Upright zoom gestures stretch the last static run
-    /// mask on software GPUs only. The first frame that repeats its transform rasterizes and
-    /// caches again, at that transform.
+    /// mask on software GPUs, and on CPU surfaces within a 1.2x band around it. The first frame
+    /// that repeats its transform rasterizes and caches again, at that transform.
     /// </summary>
     public class TransformedAnimationTests
     {
@@ -632,7 +632,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Only_On_Software_Gpus(Target target)
+        public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Without_Bound_Only_On_Software_Gpus(Target target)
         {
             using var output = TestTarget.Create(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -669,7 +669,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             if (rasterizing)
             {
-                // A CPU surface and a hardware GPU keep rasterizing every scale.
+                // A hardware GPU keeps rasterizing every scale, a CPU surface every time the zoom
+                // leaves the stretch band.
                 Assert.True(typeface.MaskCache.Count > glyphMasks);
                 return;
             }

@@ -165,14 +165,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// of its linear part lie within the band. A pure rotation always does.
         /// </summary>
         private static bool IsWithinStretchBand(TransformedRunState state, in Matrix transform)
+            => state.Settled is not null && state.SettledTransform.TryInvert(out var inverse) &&
+               IsWithinStretchBand(inverse * transform);
+
+        /// <summary>
+        /// Whether <paramref name="delta"/>, a change of transform, scales by no more than
+        /// <see cref="MaxStretchScale"/> in any direction.
+        /// </summary>
+        private static bool IsWithinStretchBand(in Matrix delta)
         {
-            if (state.Settled is null || !state.SettledTransform.TryInvert(out var inverse))
-            {
-                return false;
-            }
-
-            var delta = inverse * transform;
-
             // The squared singular values of [a b; c d] are the eigenvalues of its Gram matrix:
             // (s +- sqrt(s^2 - 4 det^2)) / 2, with s the sum of the squared entries.
             var sum = delta.M11 * delta.M11 + delta.M12 * delta.M12 + delta.M21 * delta.M21 + delta.M22 * delta.M22;

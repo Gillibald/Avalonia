@@ -197,12 +197,17 @@ namespace Avalonia.Media.Fonts.Rasterization
             // drawn twice. A software GPU, where rasterizing each frame costs many times a
             // bilinear draw, draws the mask of the last static frame stretched to the new scale
             // until the scale holds still; the first frame that repeats a scale rasterizes
-            // again. A CPU surface and a hardware GPU keep rasterizing, which is as fast there
-            // and stays sharp.
-            if (context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.SoftwareGpu } zoomContext &&
+            // again. A CPU surface stretches the same way while the zoom stays within the band
+            // transformed text stretches in, and rasterizes once, settling there, on leaving it:
+            // there stretching costs a fraction of rasterizing, but further out it would soften
+            // the text noticeably. Its subpixel masks have no single bitmap to stretch. A
+            // hardware GPU keeps rasterizing, which is as fast there and stays sharp.
+            if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.HardwareGpu } zoomContext &&
+                (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
                 run.UprightChurn.Record(key.ScaleQ, default, hit) &&
                 run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
-                cache.TryGet(settled.Key, out var settledMask) && settled.Transform.TryInvert(out var inverse))
+                cache.TryGet(settled.Key, out var settledMask) && settled.Transform.TryInvert(out var inverse) &&
+                (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)))
             {
                 DrawStretchedRunMask(context, zoomContext, settledMask, settled, inverse * transform, mode,
                     alphaContext, alpha, solid.Color);
