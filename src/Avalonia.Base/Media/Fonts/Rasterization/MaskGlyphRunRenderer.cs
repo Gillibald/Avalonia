@@ -216,7 +216,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // the same pixels, so a mask composed for one context draws correctly on another.
                 var composed = mode == GlyphMaskMode.Subpixel
                     ? alphaContext is null
-                        ? ComposeLcdBitmaps(run, key, (float)scaleX, (float)scaleY, maxSize, lcdGeometry,
+                        ? ComposeLcdPayload(run, key, (float)scaleX, (float)scaleY, maxSize, lcdGeometry,
                             alpha, solid.Color.R, solid.Color.G, solid.Color.B)
                         : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize, lcdGeometry)
                     : alphaContext is null
@@ -264,28 +264,21 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
             else if (mode == GlyphMaskMode.Subpixel)
             {
-                // Per-channel blending through the portable interface: multiply the
-                // destination by the inverse corrected coverage, then add the pre-tinted
-                // corrected coverage — together exactly the per-channel lerp.
-                context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Multiply });
-
-                foreach (var part in parts)
+                if (context is ITransformedGlyphContext rasterContext && rasterContext.TryGetBlitTarget(out var target))
                 {
-                    GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
-                    context.DrawBitmap((IBitmapImpl)((LcdRunBitmaps)part.Handle).Multiply, 1, sourceRect, destRect);
+                    // One pass straight into the surface, with the bytes of the two blits below.
+                    foreach (var part in parts)
+                    {
+                        var payload = (LcdRunPayload)part.Handle;
+
+                        LcdMaskBlitter.Blend(target, payload.Multiply, payload.Plus, payload.Width, payload.Height,
+                            originX + part.OffsetX, originY + part.OffsetY);
+                    }
                 }
-
-                context.PopRenderOptions();
-
-                context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Plus });
-
-                foreach (var part in parts)
+                else
                 {
-                    GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
-                    context.DrawBitmap((IBitmapImpl)((LcdRunBitmaps)part.Handle).Plus, 1, sourceRect, destRect);
+                    DrawLcdTwoPass(context, parts, originX, originY);
                 }
-
-                context.PopRenderOptions();
             }
             else
             {
@@ -373,6 +366,40 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return new TransformedGlyphSprites(key, embolden, oblique, laidOut) { IsUpright = true };
+        }
+
+        /// <summary>
+        /// Per-channel blending through the portable interface: multiply the destination by
+        /// the inverse corrected coverage, then add the pre-tinted corrected coverage, together
+        /// the per-channel lerp.
+        /// </summary>
+        private static void DrawLcdTwoPass(IDrawingContextImpl context, ReadOnlySpan<RunMaskPart> parts, int originX,
+            int originY)
+        {
+            // Resolved per draw, not captured statically, like the outline build path.
+            var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
+
+            context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Multiply });
+
+            foreach (var part in parts)
+            {
+                GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
+                context.DrawBitmap((IBitmapImpl)((LcdRunPayload)part.Handle).GetBitmaps(renderInterface).Multiply, 1,
+                    sourceRect, destRect);
+            }
+
+            context.PopRenderOptions();
+
+            context.PushRenderOptions(new RenderOptions { BitmapBlendingMode = BitmapBlendingMode.Plus });
+
+            foreach (var part in parts)
+            {
+                GetPartRects(part, originX, originY, out var sourceRect, out var destRect);
+                context.DrawBitmap((IBitmapImpl)((LcdRunPayload)part.Handle).GetBitmaps(renderInterface).Plus, 1,
+                    sourceRect, destRect);
+            }
+
+            context.PopRenderOptions();
         }
 
         /// <summary>
@@ -545,7 +572,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// the Plus pass the premultiplied tinted coverage. Keyed by tint like the pre-tinted
         /// grayscale floor, so a foreground change recomposes.
         /// </summary>
-        private static unsafe RunMask? ComposeLcdBitmaps(ManagedGlyphRunImpl run, RunMaskKey key,
+        private static RunMask? ComposeLcdPayload(ManagedGlyphRunImpl run, RunMaskKey key,
             float scaleX, float scaleY, int maxSize, LcdMaskGeometry geometry, byte alpha, byte r, byte g, byte b)
         {
             var typeface = run.GlyphTypeface;
@@ -590,7 +617,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             try
             {
                 var table = MaskGamma.GetLcdTable(r, g, b);
-                var renderInterface = AvaloniaLocator.Current.GetRequiredService<Avalonia.Platform.IPlatformRenderInterface>();
 
                 // Straight tint premultiplied by the text alpha once; per pixel only the
                 // corrected coverage multiplies in.
@@ -618,64 +644,39 @@ namespace Avalonia.Media.Fonts.Rasterization
                             geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
                     }
 
-                    var multiply = renderInterface.CreateWriteableBitmap(
-                        new PixelSize(width, height), new Vector(96, 96),
-                        Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
-                    IWriteableBitmapImpl plus;
+                    var multiply = new uint[width * height];
+                    var plus = new uint[width * height];
 
-                    try
+                    for (var y = 0; y < height; y++)
                     {
-                        plus = renderInterface.CreateWriteableBitmap(
-                            new PixelSize(width, height), new Vector(96, 96),
-                            Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul);
-                    }
-                    catch
-                    {
-                        multiply.Dispose();
-                        throw;
-                    }
+                        var src = span.Slice(y * width * 4, width * 4);
+                        var mRow = multiply.AsSpan(y * width, width);
+                        var pRow = plus.AsSpan(y * width, width);
 
-                    parts[created++] = new RunMaskPart(new LcdRunBitmaps(multiply, plus), chunkX, minY, width, height);
-
-                    using (var multiplyBuffer = multiply.Lock())
-                    using (var plusBuffer = plus.Lock())
-                    {
-                        var mSpan = new Span<byte>((void*)multiplyBuffer.Address, multiplyBuffer.RowBytes * height);
-                        var pSpan = new Span<byte>((void*)plusBuffer.Address, plusBuffer.RowBytes * height);
-
-                        for (var y = 0; y < height; y++)
+                        for (var x = 0; x < width; x++)
                         {
-                            var src = span.Slice(y * width * 4, width * 4);
-                            var mRow = mSpan.Slice(y * multiplyBuffer.RowBytes, width * 4);
-                            var pRow = pSpan.Slice(y * plusBuffer.RowBytes, width * 4);
+                            var d = x * 4;
 
-                            for (var x = 0; x < width; x++)
+                            // Staging is RGBA semantic order; the payloads are BGRA bytes.
+                            var covR = table[src[d]];
+                            var covG = table[src[d + 1]];
+                            var covB = table[src[d + 2]];
+                            var covMax = covR > covG ? covR : covG;
+
+                            if (covB > covMax)
                             {
-                                var d = x * 4;
-
-                                // Staging is RGBA semantic order; the bitmaps are BGRA bytes.
-                                var covR = table[src[d]];
-                                var covG = table[src[d + 1]];
-                                var covB = table[src[d + 2]];
-                                var covMax = covR > covG ? covR : covG;
-
-                                if (covB > covMax)
-                                {
-                                    covMax = covB;
-                                }
-
-                                mRow[d] = (byte)(255 - covB);
-                                mRow[d + 1] = (byte)(255 - covG);
-                                mRow[d + 2] = (byte)(255 - covR);
-                                mRow[d + 3] = 255;
-
-                                pRow[d] = (byte)Div255(tintB * covB);
-                                pRow[d + 1] = (byte)Div255(tintG * covG);
-                                pRow[d + 2] = (byte)Div255(tintR * covR);
-                                pRow[d + 3] = (byte)Div255(alpha * covMax);
+                                covMax = covB;
                             }
+
+                            mRow[x] = (uint)(255 - covB) | ((uint)(255 - covG) << 8) | ((uint)(255 - covR) << 16) |
+                                      0xFF000000u;
+                            pRow[x] = (uint)Div255(tintB * covB) | ((uint)Div255(tintG * covG) << 8) |
+                                      ((uint)Div255(tintR * covR) << 16) | ((uint)Div255(alpha * covMax) << 24);
                         }
                     }
+
+                    parts[created++] = new RunMaskPart(new LcdRunPayload(multiply, plus, width, height), chunkX, minY,
+                        width, height);
                 }
 
                 return new RunMask(parts);

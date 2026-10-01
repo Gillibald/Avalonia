@@ -160,6 +160,160 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Theory]
+        [InlineData("Scalar", false)]
+        [InlineData("Ssse3", false)]
+        [InlineData("Avx2", false)]
+        [InlineData("Scalar", true)]
+        [InlineData("Ssse3", true)]
+        [InlineData("Avx2", true)]
+        public unsafe void The_Single_Pass_Blends_Every_Channel_By_The_Two_Pass_Formula(string pathName, bool rgba)
+        {
+            var path = Enum.Parse<GlyphBlitPath>(pathName);
+
+            Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
+            Assert.SkipWhen(path == GlyphBlitPath.Ssse3 && !System.Runtime.Intrinsics.X86.Ssse3.IsSupported, "no SSSE3");
+
+            const int surfaceWidth = 71;
+            const int surfaceHeight = 40;
+            const int width = 53;
+            const int height = 29;
+
+            var random = new Random(1234);
+            var multiply = new uint[width * height];
+            var plus = new uint[width * height];
+            var surface = new uint[surfaceWidth * surfaceHeight];
+
+            for (var i = 0; i < multiply.Length; i++)
+            {
+                multiply[i] = 0xFF000000u | (uint)random.Next(0x1000000);
+
+                // Every fourth pixel is uncovered, as most of a run mask is.
+                plus[i] = i % 4 == 0 ? 0 : (uint)random.Next() | ((uint)random.Next(2) << 31);
+            }
+
+            for (var i = 0; i < surface.Length; i++)
+            {
+                // Premultiplied: no channel above alpha.
+                var alpha = i % 3 == 0 ? 255 : random.Next(256);
+                var pixel = (uint)alpha << 24;
+
+                for (var shift = 0; shift < 24; shift += 8)
+                {
+                    pixel |= (uint)random.Next(alpha + 1) << shift;
+                }
+
+                surface[i] = pixel;
+            }
+
+            var expected = (uint[])surface.Clone();
+            var x = 11;
+            var y = -3;
+
+            // The clip cuts the payload on every side.
+            var clip = new PixelRect(13, 2, 50, 30);
+
+            for (var row = 0; row < height; row++)
+            {
+                for (var column = 0; column < width; column++)
+                {
+                    var sx = x + column;
+                    var sy = y + row;
+
+                    if (sx < clip.X || sx >= clip.Right || sy < clip.Y || sy >= clip.Bottom)
+                    {
+                        continue;
+                    }
+
+                    var m = multiply[row * width + column];
+                    var p = plus[row * width + column];
+
+                    if (rgba)
+                    {
+                        m = (m & 0xFF00FF00) | ((m >> 16) & 0xFF) | ((m & 0xFF) << 16);
+                        p = (p & 0xFF00FF00) | ((p >> 16) & 0xFF) | ((p & 0xFF) << 16);
+                    }
+
+                    ref var d = ref expected[sy * surfaceWidth + sx];
+                    var da = (byte)(d >> 24);
+                    var result = 0u;
+
+                    for (var shift = 0; shift < 32; shift += 8)
+                    {
+                        result |= (uint)TwoPass((byte)(m >> shift), (byte)(p >> shift), (byte)(d >> shift), da) << shift;
+                    }
+
+                    d = result;
+                }
+            }
+
+            var previous = GlyphMaskBlitter.Path;
+
+            try
+            {
+                GlyphMaskBlitter.Path = path;
+
+                fixed (uint* pixels = surface)
+                {
+                    var target = new GlyphBlitTarget((IntPtr)pixels, surfaceWidth * 4, surfaceWidth, surfaceHeight, clip,
+                        rgba);
+
+                    LcdMaskBlitter.Blend(target, multiply, plus, width, height, x, y);
+                }
+            }
+            finally
+            {
+                GlyphMaskBlitter.Path = previous;
+            }
+
+            for (var i = 0; i < surface.Length; i++)
+            {
+                Assert.True(expected[i] == surface[i],
+                    $"pixel ({i % surfaceWidth}, {i / surfaceWidth}): expected {expected[i]:X8}, actual {surface[i]:X8}");
+            }
+        }
+
+        [Fact]
+        public void Subpixel_Text_On_A_Raster_Surface_Makes_No_Bitmaps_Unless_It_Draws_Through_The_Canvas()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(6.37, 20.2));
+
+            Render(SKColorType.Bgra8888, SKPixelGeometry.RgbHorizontal, new[] { run }, new IBrush[] { Brushes.Black },
+                directSurfaceWrites: true);
+
+            Assert.True(run.RunMasks.TryGet(Assert.Single(KeysOf(run)), out var mask));
+            Assert.False(((LcdRunPayload)mask.Parts[0].Handle).HasBitmaps);
+
+            Render(SKColorType.Bgra8888, SKPixelGeometry.RgbHorizontal, new[] { run }, new IBrush[] { Brushes.Black },
+                directSurfaceWrites: false);
+
+            Assert.True(((LcdRunPayload)mask.Parts[0].Handle).HasBitmaps);
+        }
+
+        private static RunMaskKey[] KeysOf(ManagedGlyphRunImpl run)
+        {
+            // The run's one subpixel key at the origin phase the test run is drawn at.
+            GlyphMaskKey.SnapPen((float)run.BaselineOrigin.X, out _, out var phase);
+
+            var gasp = run.GlyphTypeface.Gasp;
+            var em = run.FontRenderingEmSize;
+            var gridFit = !gasp.IsBelowHintingFloor(em);
+            var penSnap = gridFit && (gasp.WantsFullGridFit(em) ||
+                                      (gasp.WantsBytecodeGridFit(em) && run.GlyphTypeface.HasTrueTypeHinting));
+
+            if (penSnap)
+            {
+                phase = 0;
+            }
+
+            return new[]
+            {
+                new RunMaskKey(GlyphMaskKey.QuantizeScale((float)em), phase, GlyphMaskMode.Subpixel,
+                    RunMaskComposer.MakeTint(255, 0, 0, 0), gridFit, penSnap),
+            };
+        }
+
         private static byte[] Render(SKColorType colorType, SKPixelGeometry geometry, ManagedGlyphRunImpl[] runs,
             IBrush[] brushes, bool directSurfaceWrites)
         {

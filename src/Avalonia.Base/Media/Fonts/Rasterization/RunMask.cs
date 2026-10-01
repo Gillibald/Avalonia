@@ -24,9 +24,86 @@ namespace Avalonia.Media.Fonts.Rasterization
 
     /// <summary>
     /// The portable subpixel draw payload: per-channel blending without backend support
-    /// decomposes into two standard blits — a Multiply pass carrying the inverse corrected
-    /// coverage and a Plus pass carrying the pre-tinted corrected coverage.
+    /// decomposes into two standard blits, a Multiply pass carrying the inverse corrected
+    /// coverage and a Plus pass carrying the pre-tinted corrected coverage. The payload pixels
+    /// stay in managed arrays, premultiplied BGRA, which a raster surface blends in one pass
+    /// with the bytes of the two blits (<see cref="LcdMaskBlitter"/>); the bitmaps for the
+    /// blits are made from them by the first draw that goes through the backend.
     /// </summary>
+    internal sealed class LcdRunPayload : IDisposable
+    {
+        private LcdRunBitmaps? _bitmaps;
+
+        public LcdRunPayload(uint[] multiply, uint[] plus, int width, int height)
+        {
+            Multiply = multiply;
+            Plus = plus;
+            Width = width;
+            Height = height;
+        }
+
+        /// <summary>The Multiply payload, <see cref="Width"/> pixels per row.</summary>
+        public uint[] Multiply { get; }
+
+        /// <summary>The Plus payload, <see cref="Width"/> pixels per row.</summary>
+        public uint[] Plus { get; }
+
+        public int Width { get; }
+
+        public int Height { get; }
+
+        /// <summary>Whether the backend bitmaps have been made; for tests.</summary>
+        internal bool HasBitmaps => _bitmaps is not null;
+
+        /// <summary>The two blit bitmaps, made on first use.</summary>
+        public unsafe LcdRunBitmaps GetBitmaps(IPlatformRenderInterface renderInterface)
+        {
+            if (_bitmaps is { } existing)
+            {
+                return existing;
+            }
+
+            var multiply = CreateBitmap(renderInterface, Multiply);
+
+            try
+            {
+                _bitmaps = new LcdRunBitmaps(multiply, CreateBitmap(renderInterface, Plus));
+            }
+            catch
+            {
+                multiply.Dispose();
+                throw;
+            }
+
+            return _bitmaps;
+        }
+
+        private unsafe IWriteableBitmapImpl CreateBitmap(IPlatformRenderInterface renderInterface, uint[] pixels)
+        {
+            var bitmap = renderInterface.CreateWriteableBitmap(new PixelSize(Width, Height), new Vector(96, 96),
+                PixelFormat.Bgra8888, AlphaFormat.Premul);
+
+            // Written once; the bitmap is never locked again, so its backend image stays stable.
+            using (var framebuffer = bitmap.Lock())
+            {
+                for (var row = 0; row < Height; row++)
+                {
+                    new ReadOnlySpan<uint>(pixels, row * Width, Width).CopyTo(
+                        new Span<uint>((byte*)framebuffer.Address + row * framebuffer.RowBytes, Width));
+                }
+            }
+
+            return bitmap;
+        }
+
+        public void Dispose()
+        {
+            _bitmaps?.Dispose();
+            _bitmaps = null;
+        }
+    }
+
+    /// <summary>The Multiply and Plus bitmaps of an <see cref="LcdRunPayload"/>.</summary>
     internal sealed class LcdRunBitmaps : IDisposable
     {
         public LcdRunBitmaps(IDisposable multiply, IDisposable plus)
@@ -63,7 +140,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// The realized drawable: a pre-tinted <see cref="IBitmapImpl"/> or an
-        /// <see cref="LcdRunBitmaps"/> pair on the portable floor, or a backend mask handle from
+        /// <see cref="LcdRunPayload"/> on the portable floor, or a backend mask handle from
         /// <see cref="IAlphaGlyphMaskContext"/>.
         /// </summary>
         public IDisposable Handle { get; }
