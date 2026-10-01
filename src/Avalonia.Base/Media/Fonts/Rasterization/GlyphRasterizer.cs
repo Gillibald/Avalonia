@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.X86;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -12,13 +13,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <see cref="GlyphPathBuilder.FillRule"/>.
     /// </summary>
     /// <remarks>
-    /// Stateless per call: the only transient (the coverage accumulation buffer) is pooled, so
-    /// repeated rasterization allocates nothing once the pool is warm, and identical inputs
-    /// produce bit-identical output (fixed operation order, no data-dependent reordering). Safe
-    /// to call from any thread; the render thread and a UI-thread
-    /// <c>RenderTargetBitmap.Render</c> can rasterize concurrently.
+    /// Stateless per call: the only transients (the coverage accumulation buffer, and the
+    /// crossing queue of the vector paths) are pooled, so repeated rasterization allocates
+    /// nothing once the pools are warm, and identical inputs produce bit-identical output (fixed
+    /// operation order, no data-dependent reordering). The vector paths perform the scalar
+    /// path's floating-point operations, in its order, for every cell, so every
+    /// <see cref="GlyphRasterizerPath"/> produces the same bytes. Safe to call from any thread;
+    /// the render thread and a UI-thread <c>RenderTargetBitmap.Render</c> can rasterize
+    /// concurrently.
     /// </remarks>
-    internal static class GlyphRasterizer
+    internal static partial class GlyphRasterizer
     {
         /// <summary>Maximum curve-to-chord deviation after flattening, in device pixels.</summary>
         internal const float FlattenTolerance = 0.25f;
@@ -34,10 +38,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Which instruction set accumulates and resolves coverage; tests set it to cover every
         /// path. Every path produces the same bytes.
         /// </summary>
-        internal static GlyphRasterizerPath Path { get; set; } = GlyphRasterizerPath.Scalar;
+        internal static GlyphRasterizerPath Path { get; set; } = DetectPath();
 
         /// <summary>Whether this machine can run <paramref name="path"/>.</summary>
-        internal static bool IsSupported(GlyphRasterizerPath path) => true;
+        internal static bool IsSupported(GlyphRasterizerPath path) => path switch
+        {
+            GlyphRasterizerPath.Vector256 => Avx2.IsSupported,
+            GlyphRasterizerPath.Vector128 => Sse41.IsSupported,
+            _ => true,
+        };
+
+        private static GlyphRasterizerPath DetectPath()
+            => IsSupported(GlyphRasterizerPath.Vector256) ? GlyphRasterizerPath.Vector256
+                : IsSupported(GlyphRasterizerPath.Vector128) ? GlyphRasterizerPath.Vector128
+                : GlyphRasterizerPath.Scalar;
 
         /// <summary>
         /// Rasterizes <paramref name="path"/> into an alpha mask of <paramref name="width"/> ×
@@ -85,21 +99,36 @@ namespace Avalonia.Media.Fonts.Rasterization
                     nameof(destination));
             }
 
-            if (Path != GlyphRasterizerPath.Scalar)
-            {
-                throw new NotSupportedException($"The {Path} rasterizer path is not implemented yet.");
-            }
-
-            var acc = ArrayPool<float>.Shared.Rent(width * height);
+            var acc = ArrayPool<float>.Shared.Rent(width * height + CrossingQueue.SinkCells);
+            var evenOdd = path.FillRule == Media.FillRule.EvenOdd;
+            var vectorPath = Path;
 
             try
             {
                 var cells = acc.AsSpan(0, width * height);
-                cells.Clear();
 
-                AccumulatePath(path, cells, width, height, offsetX, offsetY);
-                Resolve(cells, destination, width, height, destinationStride, path.FillRule == Media.FillRule.EvenOdd,
-                    aliased);
+                if (vectorPath == GlyphRasterizerPath.Scalar || !IsSupported(vectorPath))
+                {
+                    cells.Clear();
+
+                    var segments = new ScalarSegments();
+
+                    AccumulatePath(path, ref segments, cells, width, height, offsetX, offsetY);
+                    Resolve(cells, destination, width, height, destinationStride, evenOdd, aliased);
+                }
+                else
+                {
+                    // The queue's deposits that a crossing does not use land in cells past the
+                    // mask, which the resolve never reads.
+                    var buffer = acc.AsSpan(0, width * height + CrossingQueue.SinkCells);
+                    var wide = vectorPath == GlyphRasterizerPath.Vector256;
+                    var segments = new QueuedSegments(t_crossings ??= new CrossingQueue(), wide);
+
+                    buffer.Clear();
+                    AccumulatePath(path, ref segments, buffer, width, height, offsetX, offsetY);
+                    segments.Queue.Finish(buffer, width, height, wide);
+                    ResolveVectorized(cells, destination, width, height, destinationStride, evenOdd, aliased, wide);
+                }
             }
             finally
             {
@@ -107,8 +136,22 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private static void AccumulatePath(GlyphPathBuilder path, Span<float> cells, int width, int height,
-            float offsetX, float offsetY)
+        /// <summary>Receives the line segments a path flattens into.</summary>
+        private interface ISegmentSink
+        {
+            void Add(float x0, float y0, float x1, float y1, Span<float> cells, int width, int height);
+        }
+
+        /// <summary>Deposits every segment's coverage as it arrives.</summary>
+        private struct ScalarSegments : ISegmentSink
+        {
+            public void Add(float x0, float y0, float x1, float y1, Span<float> cells, int width, int height)
+                => AddSegment(x0, y0, x1, y1, cells, width, height);
+        }
+
+        private static void AccumulatePath<TSink>(GlyphPathBuilder path, ref TSink sink, Span<float> cells, int width,
+            int height, float offsetX, float offsetY)
+            where TSink : struct, ISegmentSink
         {
             var verbs = path.Verbs;
             var points = path.Points;
@@ -130,7 +173,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     {
                         var x = points[p++] + offsetX;
                         var y = points[p++] + offsetY;
-                        AddSegment(curX, curY, x, y, cells, width, height);
+                        sink.Add(curX, curY, x, y, cells, width, height);
                         curX = x;
                         curY = y;
                         break;
@@ -142,7 +185,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var cy = points[p++] + offsetY;
                         var x = points[p++] + offsetX;
                         var y = points[p++] + offsetY;
-                        FlattenQuad(curX, curY, cx, cy, x, y, cells, width, height);
+                        FlattenQuad(ref sink, curX, curY, cx, cy, x, y, cells, width, height);
                         curX = x;
                         curY = y;
                         break;
@@ -156,14 +199,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var c2Y = points[p++] + offsetY;
                         var x = points[p++] + offsetX;
                         var y = points[p++] + offsetY;
-                        FlattenCubic(curX, curY, c1X, c1Y, c2X, c2Y, x, y, cells, width, height);
+                        FlattenCubic(ref sink, curX, curY, c1X, c1Y, c2X, c2Y, x, y, cells, width, height);
                         curX = x;
                         curY = y;
                         break;
                     }
 
                     case GlyphPathVerb.Close:
-                        AddSegment(curX, curY, startX, startY, cells, width, height);
+                        sink.Add(curX, curY, startX, startY, cells, width, height);
                         curX = startX;
                         curY = startY;
                         break;
@@ -206,8 +249,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             return n > MaxCurveSegments ? MaxCurveSegments : n;
         }
 
-        private static void FlattenQuad(float x0, float y0, float cx, float cy, float x1, float y1,
-            Span<float> cells, int width, int height)
+        private static void FlattenQuad<TSink>(ref TSink sink, float x0, float y0, float cx, float cy, float x1,
+            float y1, Span<float> cells, int width, int height)
+            where TSink : struct, ISegmentSink
         {
             var n = QuadSegmentCount(x0, y0, cx, cy, x1, y1);
 
@@ -235,14 +279,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                     ny = a * y0 + b * cy + c * y1;
                 }
 
-                AddSegment(prevX, prevY, nx, ny, cells, width, height);
+                sink.Add(prevX, prevY, nx, ny, cells, width, height);
                 prevX = nx;
                 prevY = ny;
             }
         }
 
-        private static void FlattenCubic(float x0, float y0, float c1X, float c1Y, float c2X, float c2Y,
-            float x1, float y1, Span<float> cells, int width, int height)
+        private static void FlattenCubic<TSink>(ref TSink sink, float x0, float y0, float c1X, float c1Y, float c2X,
+            float c2Y, float x1, float y1, Span<float> cells, int width, int height)
+            where TSink : struct, ISegmentSink
         {
             var n = CubicSegmentCount(x0, y0, c1X, c1Y, c2X, c2Y, x1, y1);
 
@@ -269,7 +314,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     ny = a * y0 + b * c1Y + c * c2Y + d * y1;
                 }
 
-                AddSegment(prevX, prevY, nx, ny, cells, width, height);
+                sink.Add(prevX, prevY, nx, ny, cells, width, height);
                 prevX = nx;
                 prevY = ny;
             }
