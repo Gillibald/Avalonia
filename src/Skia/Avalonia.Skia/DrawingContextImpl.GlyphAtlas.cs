@@ -123,6 +123,7 @@ namespace Avalonia.Skia
             Transform = transform;
             Canvas.DrawAtlas(image, backend.Sources, backend.Placements, bilinear ? s_bilinear : s_nearest, paint);
             t_atlasDraws++;
+            t_atlasGeometry += backend.Sources.Length;
             Transform = oldTransform;
 
             SKPaintCache.Shared.ReturnReset(paint);
@@ -166,6 +167,7 @@ namespace Avalonia.Skia
 
             Transform = transform;
             Canvas.DrawAtlas((SKImage)image, sources, placements, s_nearest, paint);
+            t_atlasGeometry += sprites.Length;
             Transform = oldTransform;
 
             SKPaintCache.Shared.ReturnReset(paint);
@@ -233,6 +235,15 @@ namespace Avalonia.Skia
 
         /// <summary>The number of atlas draw calls issued on this thread; for tests.</summary>
         internal static int AtlasDrawsOnThread => t_atlasDraws;
+
+        [ThreadStatic]
+        private static int t_atlasGeometry;
+
+        /// <summary>
+        /// The number of glyph atlas sprites whose geometry was handed to Skia on this thread;
+        /// sprites drawn from geometry kept from an earlier frame do not count. For tests.
+        /// </summary>
+        internal static int AtlasGeometrySubmittedOnThread => t_atlasGeometry;
 
         private static unsafe SKImage CreatePageImage(GlyphAtlasPage page)
         {

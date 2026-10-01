@@ -176,6 +176,7 @@ namespace Avalonia.Skia
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
             t_atlasDraws++;
+            t_atlasGeometry += _batchCount;
 
             _batchCount = 0;
             _batchSingle = null;

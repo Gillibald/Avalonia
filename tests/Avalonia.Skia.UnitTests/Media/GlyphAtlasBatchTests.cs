@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
@@ -78,6 +79,136 @@ namespace Avalonia.Skia.UnitTests.Media
                 foreach (var run in runs)
                 {
                     Assert.Equal(0, run.RunMasks.Count);
+                }
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Warm_Unchanged_Frame_Submits_No_New_Atlas_Geometry(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 30, 13, new Point(6.3, 4));
+
+            try
+            {
+                var expected = Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: false, out _);
+
+                for (var frame = 0; frame < 3; frame++)
+                {
+                    Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out _);
+                }
+
+                var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var warm = Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out var draws);
+
+                Assert.Equal(1, draws);
+                Assert.Equal(0, DrawingContextImpl.AtlasGeometrySubmittedOnThread - before);
+                TransformedAtlasTests.AssertEqual(expected, warm, "warm frame");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Paragraph_Scrolled_By_Whole_Pixels_Reuses_Its_Atlas_Geometry(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 30, 13, new Point(6.3, 4));
+
+            void Draw(DrawingContextImpl context, int offset)
+            {
+                context.Transform = Matrix.CreateTranslation(3, -offset);
+                DrawAll(context, runs, Brushes.Black);
+            }
+
+            try
+            {
+                for (var frame = 0; frame < 3; frame++)
+                {
+                    Render(gpu, context => Draw(context, frame * 7), batched: true, out _);
+                }
+
+                var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var scrolled = Render(gpu, context => Draw(context, 40), batched: true, out _);
+                var submitted = DrawingContextImpl.AtlasGeometrySubmittedOnThread - before;
+                var expected = Render(gpu, context => Draw(context, 40), batched: false, out _);
+
+                Assert.Equal(0, submitted);
+                TransformedAtlasTests.AssertEqual(expected, scrolled, "scrolled frame");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Warm_Frames_Draw_The_Pixels_Of_Their_Runs_Drawn_One_By_One_As_The_Batch_Changes(GpuBackend backend,
+            bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 8, 13, new Point(6.3, 4));
+            using var moving = WideRunMaskTests.CreateRun(typeface, s_lines[3], 13, new Point(20, 200));
+
+            // New glyphs on the paragraph's page: a later version of the page, grown or not.
+            using var extra = WideRunMaskTests.CreateRun(typeface, "QXZ#@%&*+=<>~|{}[]$", 21, new Point(10, 300));
+
+            var frames = new (string Label, Action<DrawingContextImpl> Draw)[]
+            {
+                ("first", context => DrawAll(context, runs, Brushes.Black)),
+                ("second", context => DrawAll(context, runs, Brushes.Black)),
+                ("warm", context => DrawAll(context, runs, Brushes.Black)),
+                ("run added", context =>
+                {
+                    DrawAll(context, runs, Brushes.Black);
+                    context.DrawGlyphRun(Brushes.Black, moving);
+                }),
+                ("run added again", context =>
+                {
+                    DrawAll(context, runs, Brushes.Black);
+                    context.DrawGlyphRun(Brushes.Black, moving);
+                }),
+                ("run moved", context =>
+                {
+                    DrawAll(context, runs, Brushes.Black);
+                    context.Transform = Matrix.CreateTranslation(5, 9);
+                    context.DrawGlyphRun(Brushes.Black, moving);
+                }),
+                ("run removed", context => DrawAll(context, runs.AsSpan(1).ToArray(), Brushes.Black)),
+                ("run removed again", context => DrawAll(context, runs.AsSpan(1).ToArray(), Brushes.Black)),
+                ("page written", context =>
+                {
+                    DrawAll(context, runs.AsSpan(1).ToArray(), Brushes.Black);
+                    context.DrawGlyphRun(Brushes.Black, extra);
+                }),
+                ("recoloured", context => DrawAll(context, runs.AsSpan(1).ToArray(),
+                    new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x10, 0x10, 0x10)))),
+                ("recoloured again", context => DrawAll(context, runs.AsSpan(1).ToArray(),
+                    new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x10, 0x10, 0x10)))),
+                ("reordered", context => DrawAll(context, runs.AsEnumerable().Reverse().ToArray(), Brushes.Black)),
+                ("reordered again", context => DrawAll(context, runs.AsEnumerable().Reverse().ToArray(), Brushes.Black)),
+            };
+
+            try
+            {
+                foreach (var (label, draw) in frames)
+                {
+                    var batched = Render(gpu, draw, batched: true, out _);
+                    var unbatched = Render(gpu, draw, batched: false, out _);
+
+                    TransformedAtlasTests.AssertEqual(unbatched, batched, label);
                 }
             }
             finally
