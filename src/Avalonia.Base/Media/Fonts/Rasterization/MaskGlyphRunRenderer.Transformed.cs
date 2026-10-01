@@ -427,16 +427,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var atlas = typeface.MaskAtlas;
-            var bucket = GetBucket(foregroundArgb);
-
-            if (!settled.HasValidBatches(atlas, bucket))
-            {
-                BuildAtlasBatches(context, typeface, atlas, settled, bucket);
-            }
-
+            var batches = GetBatches(context, typeface, atlas, settled, GetBucket(foregroundArgb));
             var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
 
-            DrawBatches(context, atlas, settled, placement, foregroundArgb, bilinear: true);
+            DrawBatches(context, atlas, batches, placement, foregroundArgb, bilinear: true);
 
             return true;
         }
@@ -459,23 +453,31 @@ namespace Avalonia.Media.Fonts.Rasterization
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb)
         {
             var atlas = typeface.MaskAtlas;
-            var bucket = GetBucket(foregroundArgb);
+            var batches = GetBatches(context, typeface, atlas, sprites, GetBucket(foregroundArgb));
 
-            if (!sprites.HasValidBatches(atlas, bucket))
-            {
-                BuildAtlasBatches(context, typeface, atlas, sprites, bucket);
-            }
-
-            DrawBatches(context, atlas, sprites, Matrix.CreateTranslation(originX, originY), foregroundArgb,
+            DrawBatches(context, atlas, batches, Matrix.CreateTranslation(originX, originY), foregroundArgb,
                 bilinear: false);
         }
 
+        private static GlyphAtlasBatch[] GetBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
+            GlyphMaskAtlas atlas, TransformedGlyphSprites sprites, int bucket)
+        {
+            if (sprites.TryGetBatches(atlas, bucket, out var batches))
+            {
+                return batches;
+            }
+
+            BuildAtlasBatches(context, typeface, atlas, sprites, bucket);
+
+            return sprites.Batches!;
+        }
+
         private static void DrawBatches(ITransformedGlyphContext context, GlyphMaskAtlas atlas,
-            TransformedGlyphSprites sprites, in Matrix placement, uint foregroundArgb, bool bilinear)
+            GlyphAtlasBatch[] batches, in Matrix placement, uint foregroundArgb, bool bilinear)
         {
             var tick = atlas.Tick();
 
-            foreach (var batch in sprites.Batches!)
+            foreach (var batch in batches)
             {
                 if (batch.Page is { } page)
                 {
@@ -530,9 +532,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                         try
                         {
-                            var mask = typeface.MaskCache.TryGet(key, out var cached)
-                                ? cached
-                                : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
+                            // Upright masks are grid-fitted and live in the glyph mask cache;
+                            // transformed ones are rasterized for the atlas alone.
+                            var mask = sprites.IsUpright
+                                ? typeface.MaskCache.GetOrBuild(key, (typeface, scratch), s_buildMask)
+                                : typeface.MaskCache.TryGet(key, out var cached)
+                                    ? cached
+                                    : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
 
                             if (mask.IsEmpty)
                             {

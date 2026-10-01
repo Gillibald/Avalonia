@@ -76,14 +76,21 @@ namespace Avalonia.Media.Fonts.Rasterization
 
     /// <summary>
     /// A transformed run's glyph masks laid out relative to its snapped origin pixel, for one
-    /// quantized linear transform and origin phase. This replaces a run-sized bitmap: the
-    /// coverage stays in the shared glyph storage (the glyph mask cache on raster contexts,
-    /// the typeface's atlas on GPU contexts), and each draw places the glyph masks directly.
+    /// quantized linear transform and origin phase, or an upright run's on a hardware GPU. The
+    /// coverage stays in the shared glyph storage (the glyph mask cache on raster contexts, the
+    /// typeface's atlas on GPU contexts) and each draw places the glyph masks directly, so a
+    /// run holds no bitmap of its own.
     /// </summary>
     internal sealed class TransformedGlyphSprites : IDisposable
     {
+        // Text whose colour changes keeps the batches of its last few luminance buckets, since
+        // each bucket's coverage lives on pages of its own.
+        private const int BucketSlots = 4;
+
         private readonly TransformedSprite[] _sprites;
-        private GlyphAtlasBatch[]? _batches;
+        private BucketBatches[]? _bucketBatches;
+        private int _current;
+        private int _next;
         private bool _disposed;
 
         public TransformedGlyphSprites(in RunMaskKey key, ushort emboldenQ, bool oblique, TransformedSprite[] sprites)
@@ -96,6 +103,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public RunMaskKey Key { get; }
 
+        /// <summary>
+        /// Whether the sprites are an upright run's grid-fitted glyph masks, which live in the
+        /// glyph mask cache like every upright mask, rather than transformed ones.
+        /// </summary>
+        public bool IsUpright { get; init; }
+
         /// <summary>The bold simulation of the glyph masks, as <see cref="GlyphMaskKey.EmboldenQ"/>.</summary>
         public ushort EmboldenQ { get; }
 
@@ -106,14 +119,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public int Count => _sprites.Length;
 
-        /// <summary>The realized atlas batches, in draw order; <c>null</c> until first drawn on a GPU context.</summary>
-        public GlyphAtlasBatch[]? Batches => _batches;
-
-        /// <summary>The atlas the batches were built from.</summary>
-        public GlyphMaskAtlas? BatchAtlas { get; private set; }
-
-        /// <summary>The luminance bucket the foreground sprites of the batches are corrected for.</summary>
-        public int BatchBucket { get; private set; }
+        /// <summary>
+        /// The realized atlas batches last built or drawn, in draw order; <c>null</c> until first
+        /// drawn on a GPU context.
+        /// </summary>
+        public GlyphAtlasBatch[]? Batches => _bucketBatches?[_current].Batches;
 
         /// <summary>
         /// The glyph masks the raster blitter reads, one per sprite; <c>null</c> until first
@@ -140,13 +150,16 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 var cost = (long)_sprites.Length * System.Runtime.CompilerServices.Unsafe.SizeOf<TransformedSprite>();
 
-                if (_batches is { } batches)
+                if (_bucketBatches is { } slots)
                 {
                     // The backend holds a source rectangle and a placement per sprite, four
                     // floats each.
-                    foreach (var batch in batches)
+                    foreach (var slot in slots)
                     {
-                        cost += batch.Count * 32L;
+                        foreach (var batch in slot.Batches ?? Array.Empty<GlyphAtlasBatch>())
+                        {
+                            cost += batch.Count * 32L;
+                        }
                     }
                 }
 
@@ -160,7 +173,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The full glyph mask key of sprite <paramref name="index"/>. COLR layers are never
+        /// The full glyph mask key of sprite <paramref name="index"/>; transformed keys are
+        /// never grid-fitted, so their grid fit and pen snap are off. COLR layers are never
         /// simulated (see <see cref="GlyphTypeface.IsColorGlyph"/>), so only foreground glyph
         /// sprites carry the run's simulation.
         /// </summary>
@@ -169,41 +183,79 @@ namespace Avalonia.Media.Fonts.Rasterization
             ref readonly var sprite = ref _sprites[index];
             var simulated = sprite.Kind == TransformedSpriteKind.Foreground;
 
-            return new GlyphMaskKey(sprite.Glyph, Key.ScaleQ, sprite.PhaseX, Key.Mode, GridFit: false, StemSnap: false,
+            return new GlyphMaskKey(sprite.Glyph, Key.ScaleQ, sprite.PhaseX, Key.Mode, Key.GridFit, Key.PenSnap,
                 EmboldenQ: simulated ? EmboldenQ : (ushort)0, Oblique: simulated && Oblique, Transform: Key.Transform,
                 PhaseY: sprite.PhaseY);
         }
 
         /// <summary>
-        /// Whether the batches are drawable from <paramref name="atlas"/> in a foreground of
-        /// luminance <paramref name="bucket"/>: built from it for that bucket, and none of their
-        /// pages evicted.
+        /// The batches drawable from <paramref name="atlas"/> in a foreground of luminance
+        /// <paramref name="bucket"/>: built from it for that bucket, and none of their pages
+        /// evicted.
         /// </summary>
-        public bool HasValidBatches(GlyphMaskAtlas atlas, int bucket)
+        public bool TryGetBatches(GlyphMaskAtlas atlas, int bucket, out GlyphAtlasBatch[] batches)
         {
-            if (_batches is not { } batches || BatchAtlas != atlas || BatchBucket != bucket)
+            batches = null!;
+
+            if (_bucketBatches is not { } slots)
             {
                 return false;
             }
 
-            foreach (var batch in batches)
+            for (var i = 0; i < slots.Length; i++)
             {
-                if (batch.Page is { IsEvicted: true })
+                ref readonly var slot = ref slots[i];
+
+                if (slot.Batches is null || slot.Bucket != bucket || slot.Atlas != atlas)
                 {
-                    return false;
+                    continue;
+                }
+
+                foreach (var batch in slot.Batches)
+                {
+                    if (batch.Page is { IsEvicted: true })
+                    {
+                        return false;
+                    }
+                }
+
+                _current = i;
+                batches = slot.Batches;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Keeps the batches of <paramref name="bucket"/>, replacing those of the same bucket or
+        /// of the bucket stored longest ago.
+        /// </summary>
+        internal void SetBatches(GlyphMaskAtlas atlas, int bucket, GlyphAtlasBatch[] batches)
+        {
+            var slots = _bucketBatches ??= new BucketBatches[BucketSlots];
+            var index = -1;
+
+            for (var i = 0; i < slots.Length; i++)
+            {
+                if (slots[i].Batches is not null && slots[i].Bucket == bucket)
+                {
+                    index = i;
+                    break;
                 }
             }
 
-            return true;
-        }
+            if (index < 0)
+            {
+                index = _next;
+                _next = (_next + 1) % slots.Length;
+            }
 
-        internal void SetBatches(GlyphMaskAtlas atlas, int bucket, GlyphAtlasBatch[] batches)
-        {
-            DisposeBatches();
+            DisposeBatches(slots[index].Batches);
 
-            _batches = batches;
-            BatchAtlas = atlas;
-            BatchBucket = bucket;
+            slots[index] = new BucketBatches(bucket, atlas, batches);
+            _current = index;
         }
 
         internal void SetFallbackImages(IDisposable?[] images, uint tint)
@@ -243,18 +295,17 @@ namespace Avalonia.Media.Fonts.Rasterization
             FallbackImages = null;
         }
 
-        private void DisposeBatches()
+        private static void DisposeBatches(GlyphAtlasBatch[]? batches)
         {
-            if (_batches is { } batches)
+            if (batches is null)
             {
-                foreach (var batch in batches)
-                {
-                    batch.Dispose();
-                }
+                return;
             }
 
-            _batches = null;
-            BatchAtlas = null;
+            foreach (var batch in batches)
+            {
+                batch.Dispose();
+            }
         }
 
         public void Dispose()
@@ -265,9 +316,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             _disposed = true;
-            DisposeBatches();
+
+            if (_bucketBatches is { } slots)
+            {
+                for (var i = 0; i < slots.Length; i++)
+                {
+                    DisposeBatches(slots[i].Batches);
+                    slots[i] = default;
+                }
+            }
+
             DisposeFallbackImages();
         }
+
+        private readonly record struct BucketBatches(int Bucket, GlyphMaskAtlas? Atlas, GlyphAtlasBatch[]? Batches);
     }
 
     /// <summary>

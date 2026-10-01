@@ -85,13 +85,24 @@ namespace Avalonia.Skia
             CheckLease();
 
             var backend = (SkiaGlyphAtlasBatch)batch.Backend;
-            var image = backend.Image ?? GetPageImage(batch.Page!);
-            var paint = SKPaintCache.Shared.Get();
 
             // The A8 page holds coverage already corrected for this colour's luminance, and
             // drawing modulates it by the paint colour.
-            paint.Color = new SKColor((byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb,
+            var color = new SKColor((byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb,
                 (byte)((tintArgb >> 24) * _currentOpacity));
+
+            if (!bilinear && backend.Image is null && batch.Page is { } page &&
+                TryAppendToGlyphBatch(page, backend, transform, color))
+            {
+                return;
+            }
+
+            FlushGlyphBatch();
+
+            var image = backend.Image ?? GetPageImage(batch.Page!);
+            var paint = SKPaintCache.Shared.Get();
+
+            paint.Color = color;
 
             var oldTransform = Transform;
 
@@ -117,7 +128,7 @@ namespace Avalonia.Skia
         void ITransformedGlyphContext.DrawTransientSprites(IDisposable image, ReadOnlySpan<GlyphAtlasSprite> sprites,
             in Matrix transform, uint tintArgb)
         {
-            CheckLease();
+            PrepareCanvas();
 
             // DrawAtlas takes the sprite count from the array lengths, so the arrays are exact
             // fits, kept per length: a steady animation draws the same sprite counts frame
@@ -177,7 +188,7 @@ namespace Avalonia.Skia
         /// pinned array without copying; a GPU context uploads it once per version and draws
         /// every batch on the page from that texture.
         /// </summary>
-        private static unsafe SKImage GetPageImage(GlyphAtlasPage page)
+        private static SKImage GetPageImage(GlyphAtlasPage page)
         {
             if (page.Realized is SKImage current && page.RealizedVersion == page.Version)
             {
@@ -186,23 +197,43 @@ namespace Avalonia.Skia
 
             page.Realized?.Dispose();
 
+            var image = CreatePageImage(page);
+
+            page.Realized = image;
+            page.RealizedVersion = page.Version;
+
+            return image;
+        }
+
+        [ThreadStatic]
+        private static int t_pageImagesCreated;
+
+        [ThreadStatic]
+        private static int t_atlasDraws;
+
+        /// <summary>
+        /// The number of atlas page images made on this thread, each a texture upload on a GPU
+        /// context; for tests.
+        /// </summary>
+        internal static int PageImagesCreatedOnThread => t_pageImagesCreated;
+
+        /// <summary>The number of atlas draw calls issued on this thread; for tests.</summary>
+        internal static int AtlasDrawsOnThread => t_atlasDraws;
+
+        private static unsafe SKImage CreatePageImage(GlyphAtlasPage page)
+        {
             var pixels = page.Pixels;
             var info = new SKImageInfo(GlyphMaskAtlas.PageWidth, page.Height, SKColorType.Alpha8, SKAlphaType.Premul);
             var address = (IntPtr)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pixels));
 
             using var pixmap = new SKPixmap(info, address, GlyphMaskAtlas.PageWidth);
 
+            t_pageImagesCreated++;
+
             // Writes after this point only fill rows and columns no sprite of this version
             // samples, and growth moves the page to a new array, so the wrapped pixels stay
             // what this version's sprites expect for as long as Skia holds the image.
-            var image = SKImage.FromPixels(pixmap, s_releasePage, pixels);
-
-            t_pageImagesCreated++;
-
-            page.Realized = image;
-            page.RealizedVersion = page.Version;
-
-            return image;
+            return SKImage.FromPixels(pixmap, s_releasePage, pixels);
         }
 
         /// <summary>The exact-length sprite arrays of one batch, plus its own image for a standalone glyph.</summary>

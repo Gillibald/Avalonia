@@ -9,7 +9,7 @@ partial class DrawingContextImpl
 {
     public void PushLayer(LayerOptions options)
     {
-        CheckLease();
+        PrepareCanvas();
 
         var paint = SKPaintCache.Shared.Get();
         SKImageFilter? imageFilter = null;

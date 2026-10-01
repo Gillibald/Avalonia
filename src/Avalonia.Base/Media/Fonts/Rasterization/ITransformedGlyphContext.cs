@@ -62,12 +62,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         IDisposable CreateAtlasBatch(ReadOnlySpan<GlyphAtlasSprite> sprites, GlyphMask? standalone);
 
         /// <summary>
-        /// Draws a batch in one call, its sprites mapped through <paramref name="transform"/>
-        /// (batch space to device pixels), modulated by the straight ARGB
-        /// <paramref name="tintArgb"/> and the ambient opacity. The stored coverage is already
-        /// corrected for the tint, so the draw adds no correction of its own.
-        /// <paramref name="bilinear"/> samples bilinearly, which a batch drawn under a scaling
-        /// or rotating transform needs.
+        /// Draws a batch, its sprites mapped through <paramref name="transform"/> (batch space
+        /// to device pixels), modulated by the straight ARGB <paramref name="tintArgb"/> and the
+        /// ambient opacity. The stored coverage is already corrected for the tint, so the draw
+        /// adds no correction of its own. <paramref name="bilinear"/> samples bilinearly, which
+        /// a batch drawn under a scaling or rotating transform needs. A context may defer a
+        /// draw at a whole-pixel offset and merge it with the next ones on the same page into
+        /// one call, drawing them before any other operation, with the same pixels as drawing
+        /// each on its own.
         /// </summary>
         void DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb, bool bilinear);
 

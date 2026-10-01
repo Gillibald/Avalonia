@@ -115,7 +115,7 @@ namespace Avalonia.Skia
 
             public ISkiaSharpApiLease Lease()
             {
-                _context.CheckLease();
+                _context.PrepareCanvas();
                 return new ApiLease(_context);
             }
 
@@ -265,18 +265,29 @@ namespace Avalonia.Skia
             if (_leased)
                 throw new InvalidOperationException("The underlying graphics API is currently leased");
         }
+
+        /// <summary>
+        /// The lease check of every operation that draws to the canvas or changes its clip or
+        /// layer state. Pending glyph atlas sprites are drawn first, so they keep their place
+        /// in the draw order and the clip and layer they were recorded under.
+        /// </summary>
+        private void PrepareCanvas()
+        {
+            CheckLease();
+            FlushGlyphBatch();
+        }
         
         /// <inheritdoc />
         public void Clear(Color color)
         {
-            CheckLease();
+            PrepareCanvas();
             Canvas.Clear(color.ToSKColor());
         }
 
         /// <inheritdoc />
         public void DrawBitmap(IBitmapImpl source, double opacity, Rect sourceRect, Rect destRect)
         {
-            CheckLease();
+            PrepareCanvas();
             var drawableImage = (IDrawableBitmapImpl)source;
             var s = sourceRect.ToSKRect();
             var d = destRect.ToSKRect();
@@ -349,7 +360,7 @@ namespace Avalonia.Skia
         private void DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb,
             SKSamplingOptions sampling)
         {
-            CheckLease();
+            PrepareCanvas();
 
             var image = (SKImage)mask;
             var alpha = (byte)((tintArgb >> 24) * _currentOpacity);
@@ -388,7 +399,7 @@ namespace Avalonia.Skia
         private void DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb,
             SKSamplingOptions sampling)
         {
-            CheckLease();
+            PrepareCanvas();
 
             var image = (SKImage)mask;
             var paint = SKPaintCache.Shared.Get();
@@ -415,7 +426,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawBitmap(IBitmapImpl source, IBrush opacityMask, Rect opacityMaskRect, Rect destRect)
         {
-            CheckLease();
+            PrepareCanvas();
             PushOpacityMask(opacityMask, opacityMaskRect);
             DrawBitmap(source, 1, new Rect(0, 0, source.PixelSize.Width, source.PixelSize.Height), destRect);
             PopOpacityMask();
@@ -424,7 +435,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawLine(IPen? pen, Point p1, Point p2)
         {
-            CheckLease();
+            PrepareCanvas();
 
             if (pen is not null
                 && TryCreatePaint(_strokePaint, pen, new Rect(p1, p2).Normalize()) is { } stroke)
@@ -439,7 +450,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawGeometry(IBrush? brush, IPen? pen, IGeometryImpl geometry)
         {
-            CheckLease();
+            PrepareCanvas();
             var impl = (GeometryImpl) geometry;
             var rect = geometry.Bounds;
 
@@ -530,7 +541,7 @@ namespace Avalonia.Skia
         {
             if (rect.Rect.Height <= 0 || rect.Rect.Width <= 0)
                 return;
-            CheckLease();
+            PrepareCanvas();
             
             var rc = rect.Rect.ToSKRect();
             SKRoundRect? skRoundRect = null;
@@ -571,7 +582,7 @@ namespace Avalonia.Skia
         {
             if (rect.Rect.Height <= 0 || rect.Rect.Width <= 0)
                 return;
-            CheckLease();
+            PrepareCanvas();
             // Arbitrary chosen values
             // On OSX Skia breaks OpenGL context when asked to draw, e. g. (0, 0, 623, 6666600) rect
             if (rect.Rect.Height > 8192 || rect.Rect.Width > 8192)
@@ -698,7 +709,7 @@ namespace Avalonia.Skia
             var r = (SkiaRegionImpl)region;
             if(r.IsEmpty)
                 return;
-            CheckLease();
+            PrepareCanvas();
             
             if (brush != null)
             {
@@ -723,7 +734,7 @@ namespace Avalonia.Skia
         {
             if (rect.Height <= 0 || rect.Width <= 0)
                 return;
-            CheckLease();
+            PrepareCanvas();
             
             var rc = rect.ToSKRect();
 
@@ -798,6 +809,7 @@ namespace Avalonia.Skia
 
                     if (TextTierDiagnostics.TintTiers)
                     {
+                        FlushGlyphBatch();
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
                     }
 
@@ -817,12 +829,16 @@ namespace Avalonia.Skia
 
                     if (TextTierDiagnostics.TintTiers)
                     {
+                        FlushGlyphBatch();
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds,
                             TextTierDiagnostics.TransformedMaskTierColor);
                     }
 
                     return;
                 }
+
+                // The native fallbacks below draw straight to the canvas.
+                FlushGlyphBatch();
 
                 if (ManagedGlyphOutlines.AreRequired(managedRun.GlyphTypeface))
                 {
@@ -876,6 +892,8 @@ namespace Avalonia.Skia
                 return;
             }
 
+            FlushGlyphBatch();
+
             // The native blob applies the face's simulations to every glyph, colour glyphs
             // included (Skia's skew slants them). Text layout splits colour glyphs out of the
             // run before it gets here, so only a direct glyph run draw of an oblique colour
@@ -901,14 +919,14 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushClip(Rect clip)
         {
-            CheckLease();
+            PrepareCanvas();
             Canvas.Save();
             Canvas.ClipRect(clip.ToSKRect());
         }
 
         public void PushClip(RoundedRect clip)
         {
-            CheckLease();
+            PrepareCanvas();
             Canvas.Save();
 
             // Get the rounded rectangle
@@ -933,7 +951,7 @@ namespace Avalonia.Skia
         public void PushClip(IPlatformRenderInterfaceRegion region)
         {
             var r = ((SkiaRegionImpl)region).Region;
-            CheckLease();
+            PrepareCanvas();
             Canvas.Save();
             Canvas.ClipRegion(r);
         }
@@ -947,20 +965,20 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopClip()
         {
-            CheckLease();
+            PrepareCanvas();
             RestoreCanvas();
         }
 
         public void PushLayer(Rect bounds)
         {
-            CheckLease();
+            PrepareCanvas();
             _saveLayerDepth++;
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
         }
 
         public void PopLayer()
         {
-            CheckLease();
+            PrepareCanvas();
             _saveLayerDepth--;
             RestoreCanvas();
         }
@@ -968,7 +986,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushOpacity(double opacity, Rect? bounds)
         {
-            CheckLease();
+            PrepareCanvas();
 
             _opacityStack.Push(_currentOpacity);
 
@@ -1001,7 +1019,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopOpacity()
         {
-            CheckLease();
+            PrepareCanvas();
 
             var useOpacitySaveLayer = _useOpacitySaveLayer || RenderOptions.RequiresFullOpacityHandling == true;
 
@@ -1048,7 +1066,7 @@ namespace Avalonia.Skia
         {
             if(_disposed)
                 return;
-            CheckLease();
+            PrepareCanvas();
             try
             {
                 // Return leased paints.
@@ -1078,7 +1096,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushGeometryClip(IGeometryImpl clip)
         {
-            CheckLease();
+            PrepareCanvas();
             Canvas.Save();
             Canvas.ClipPath(((GeometryImpl)clip).FillPath, SKClipOperation.Intersect, true);
         }
@@ -1086,14 +1104,14 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopGeometryClip()
         {
-            CheckLease();
+            PrepareCanvas();
             RestoreCanvas();
         }
 
         /// <inheritdoc />
         public void PushOpacityMask(IBrush mask, Rect bounds)
         {
-            CheckLease();
+            PrepareCanvas();
 
             var paint = SKPaintCache.Shared.Get();
 
@@ -1105,7 +1123,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopOpacityMask()
         {
-            CheckLease();
+            PrepareCanvas();
 
             var paint = SKPaintCache.Shared.Get();
             paint.BlendMode = SKBlendMode.DstIn;

@@ -19,6 +19,7 @@ namespace Avalonia.Skia
         private readonly bool _disableLcdRendering;
         private readonly GRContext? _grContext;
         private readonly ISkiaGpu? _gpu;
+        private DrawingContextImpl? _drawingContext;
 
         private class SkiaSurfaceWrapper : ISkiaSurface
         {
@@ -116,7 +117,21 @@ namespace Avalonia.Skia
                 Gpu = _gpu,
             };
 
-            return new DrawingContextImpl(createInfo, Disposable.Create(() => Version++));
+            DrawingContextImpl? context = null;
+
+            context = new DrawingContextImpl(createInfo, Disposable.Create(() =>
+            {
+                Version++;
+
+                if (_drawingContext == context)
+                {
+                    _drawingContext = null;
+                }
+            }));
+
+            _drawingContext = context;
+
+            return context;
         }
 
         public bool IsCorrupted => _gpu?.IsLost == true;
@@ -138,6 +153,11 @@ namespace Avalonia.Skia
         public void Blit(IDrawingContextImpl contextImpl)
         {
             var context = (DrawingContextImpl)contextImpl;
+
+            // Both contexts may hold glyph sprites not yet drawn: this surface's own, which the
+            // blit reads, and the target's, which must land beneath it.
+            _drawingContext?.FlushGlyphBatch();
+            context.FlushGlyphBatch();
 
             if (_surface.CanBlit)
             {
@@ -168,6 +188,9 @@ namespace Avalonia.Skia
         /// <returns>Image snapshot.</returns>
         public SKImage SnapshotImage()
         {
+            // A context still drawing into this surface may hold glyph sprites not yet drawn.
+            _drawingContext?.FlushGlyphBatch();
+
             return _surface.Surface.Snapshot();
         }
 

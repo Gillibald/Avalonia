@@ -171,6 +171,25 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint, gridFit, penSnap);
 
+            // A hardware GPU draws grayscale glyph masks from the typeface's atlas, as it draws
+            // transformed text: no run-sized mask, coverage stored corrected for the colour's
+            // luminance, and the context can merge consecutive runs into one draw. Glyphs
+            // composite one over the other there, as the raster compose does, where a run mask
+            // sums overlapping coverage before correcting it. Software GPUs keep the run mask:
+            // they gain least from fewer draw calls, and llvmpipe shades the run mask's
+            // correction filter a level apart from the atlas modulation at some pixels. A zoom
+            // gesture, whose scale changes every frame, keeps run masks too: laid out as sprites,
+            // every frame's glyph masks would fill the atlas and push static text out of it.
+            if (alphaContext is not null && mode != GlyphMaskMode.Subpixel &&
+                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } atlasContext &&
+                !run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _)))
+            {
+                DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY, originX, originY,
+                    ToArgb(alpha, solid.Color));
+
+                return true;
+            }
+
             var cache = run.RunMasks;
             var hit = cache.TryGet(key, out var runMask);
 
@@ -280,6 +299,80 @@ namespace Avalonia.Media.Fonts.Rasterization
             context.Transform = oldTransform;
 
             return true;
+        }
+
+        /// <summary>
+        /// Draws an upright run from the typeface's atlas through its cached sprite set, laying
+        /// the set out on first use.
+        /// </summary>
+        private static void DrawUprightFromAtlas(ITransformedGlyphContext context, ManagedGlyphRunImpl run,
+            in RunMaskKey key, in Matrix transform, float scaleX, float scaleY, int originX, int originY,
+            uint foregroundArgb)
+        {
+            var state = run.TransformedSprites;
+
+            if (!state.TryGet(key, out var sprites))
+            {
+                sprites = BuildUprightSprites(run, key, scaleX, scaleY);
+                state.Add(sprites);
+            }
+
+            state.Settle(sprites, transform, originX, originY);
+            DrawFromAtlas(context, run.GlyphTypeface, sprites, originX, originY, foregroundArgb);
+        }
+
+        /// <summary>
+        /// Lays an upright run's grid-fitted glyph masks out relative to its snapped origin
+        /// pixel, with the pens and phases the run mask compose uses.
+        /// </summary>
+        private static TransformedGlyphSprites BuildUprightSprites(ManagedGlyphRunImpl run, in RunMaskKey key,
+            float scaleX, float scaleY)
+        {
+            var typeface = run.GlyphTypeface;
+            var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
+            var oblique = (typeface.FontSimulations & FontSimulations.Oblique) != 0;
+            var maskCache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var count = run.GlyphCount;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
+            var state = (typeface, scratch);
+            var laidOut = new TransformedSprite[count];
+            var placed = 0;
+
+            for (var i = 0; i < count; i++)
+            {
+                var relativeX = originFraction + positions[i * 2] * scaleX;
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode,
+                    key.GridFit, key.PenSnap, embolden, oblique), state, s_buildMask);
+
+                if (mask.IsEmpty)
+                {
+                    continue;
+                }
+
+                laidOut[placed++] = new TransformedSprite
+                {
+                    Glyph = indices[i],
+                    PhaseX = glyphPhase,
+                    Kind = TransformedSpriteKind.Foreground,
+                    X = penX + mask.Left,
+                    Y = penY + mask.Top,
+                    Width = mask.Width,
+                    Height = mask.Height,
+                };
+            }
+
+            if (placed != count)
+            {
+                Array.Resize(ref laidOut, placed);
+            }
+
+            return new TransformedGlyphSprites(key, embolden, oblique, laidOut) { IsUpright = true };
         }
 
         /// <summary>
