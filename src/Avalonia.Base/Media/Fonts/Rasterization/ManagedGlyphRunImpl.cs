@@ -84,25 +84,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (hasBounds)
                 {
-                    var box = bounds[i];
-
-                    // Color ink is not the base outline: swap in the clip-box / layer-union
-                    // extent so partial redraws never clip color glyphs.
-                    if (glyphTypeface.ColorTable is not null &&
-                        glyphTypeface.TryGetColorGlyphInkBounds(glyphInfo.GlyphIndex, out var colorBox))
-                    {
-                        box = colorBox;
-                    }
-
-                    // A simulated face reports the ink of its simulated outlines, emboldened with
-                    // the strongest stroke the renderer uses at any size, so the box already
-                    // contains the device-space simulation the masks apply after hinting. Colour
-                    // glyphs are never simulated and report the unsimulated face's box.
-                    runBounds = runBounds.Union(new Rect(
-                        x + box.XMin * scale,
-                        y - box.YMax * scale,
-                        (box.XMax - box.XMin) * scale,
-                        (box.YMax - box.YMin) * scale));
+                    runBounds = UnionGlyphInk(runBounds, glyphTypeface, glyphInfo.GlyphIndex, bounds[i], x, y, scale);
                 }
 
                 currentX += glyphInfo.GlyphAdvance;
@@ -116,6 +98,71 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             Bounds = runBounds.Translate(new Vector(baselineOrigin.X, baselineOrigin.Y));
+            BrushBounds = Bounds;
+        }
+
+        /// <summary>
+        /// A stretch of another run's glyphs, drawn on its own: the glyphs keep that run's
+        /// positions and baseline origin, so each lands on the pen and pixel phase the whole run
+        /// would give it, and a brush maps over <paramref name="brushBounds"/>, the whole run's
+        /// bounds, as it would for the whole run.
+        /// </summary>
+        internal ManagedGlyphRunImpl(GlyphTypeface glyphTypeface, double fontRenderingEmSize,
+            ReadOnlySpan<ushort> glyphIndices, ReadOnlySpan<float> glyphPositions, Point baselineOrigin,
+            Rect brushBounds)
+        {
+            _glyphTypeface = glyphTypeface ?? throw new ArgumentNullException(nameof(glyphTypeface));
+
+            FontRenderingEmSize = fontRenderingEmSize;
+            BaselineOrigin = baselineOrigin;
+            BrushBounds = brushBounds;
+
+            _count = glyphIndices.Length;
+            _indices = ArrayPool<ushort>.Shared.Rent(_count);
+            _positions = ArrayPool<float>.Shared.Rent(_count * 2);
+
+            glyphIndices.CopyTo(_indices);
+            glyphPositions.Slice(0, _count * 2).CopyTo(_positions);
+
+            var scale = (float)(fontRenderingEmSize / glyphTypeface.Metrics.DesignEmHeight);
+            var bounds = _count <= 256 ? stackalloc GlyphBounds[_count] : new GlyphBounds[_count];
+            var runBounds = new Rect();
+
+            if (!glyphTypeface.TryGetGlyphBounds(_indices.AsSpan(0, _count), bounds))
+            {
+                Bounds = brushBounds;
+                return;
+            }
+
+            for (var i = 0; i < _count; i++)
+            {
+                runBounds = UnionGlyphInk(runBounds, glyphTypeface, _indices[i], bounds[i],
+                    _positions[i * 2], _positions[i * 2 + 1], scale);
+            }
+
+            Bounds = runBounds.Translate(new Vector(baselineOrigin.X, baselineOrigin.Y));
+        }
+
+        private static Rect UnionGlyphInk(Rect runBounds, GlyphTypeface glyphTypeface, ushort glyph,
+            GlyphBounds box, double x, double y, float scale)
+        {
+            // Color ink is not the base outline: swap in the clip-box / layer-union
+            // extent so partial redraws never clip color glyphs.
+            if (glyphTypeface.ColorTable is not null &&
+                glyphTypeface.TryGetColorGlyphInkBounds(glyph, out var colorBox))
+            {
+                box = colorBox;
+            }
+
+            // A simulated face reports the ink of its simulated outlines, emboldened with
+            // the strongest stroke the renderer uses at any size, so the box already
+            // contains the device-space simulation the masks apply after hinting. Colour
+            // glyphs are never simulated and report the unsimulated face's box.
+            return runBounds.Union(new Rect(
+                x + box.XMin * scale,
+                y - box.YMax * scale,
+                (box.XMax - box.XMin) * scale,
+                (box.YMax - box.YMin) * scale));
         }
 
         public double FontRenderingEmSize { get; }
@@ -123,6 +170,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         public Point BaselineOrigin { get; }
 
         public Rect Bounds { get; }
+
+        /// <summary>
+        /// The area a non-solid foreground maps over: <see cref="Bounds"/>, except on a stretch
+        /// split out of a longer run, where it is the whole run's bounds.
+        /// </summary>
+        internal Rect BrushBounds { get; }
 
         internal GlyphTypeface GlyphTypeface => _glyphTypeface;
 
@@ -150,6 +203,28 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The run mask of the last static upright frame, which a zoom gesture stretches.</summary>
         internal SettledRunMask? SettledUpright;
+
+        private ColorGlyphSegments? _colorGlyphSegments;
+        private bool _colorGlyphSegmentsResolved;
+
+        /// <summary>
+        /// The run cut at its COLR v1-only glyphs, which no mask tier renders, or <c>null</c> when
+        /// the run holds none. Built on first use and kept with the run, so the stretches between
+        /// the colour glyphs keep their mask caches from frame to frame.
+        /// </summary>
+        internal ColorGlyphSegments? ColorGlyphSegments
+        {
+            get
+            {
+                if (!_colorGlyphSegmentsResolved && !_disposed)
+                {
+                    _colorGlyphSegments = Rasterization.ColorGlyphSegments.TryCreate(this);
+                    _colorGlyphSegmentsResolved = true;
+                }
+
+                return _colorGlyphSegments;
+            }
+        }
 
         [ThreadStatic]
         private static GlyphPathBuilder? t_intersectionScratch;
@@ -454,6 +529,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             NativeTextArtifact?.Dispose();
             NativeTextArtifact = null;
+
+            _colorGlyphSegments?.Dispose();
+            _colorGlyphSegments = null;
 
             ArrayPool<ushort>.Shared.Return(_indices);
             ArrayPool<float>.Shared.Return(_positions);

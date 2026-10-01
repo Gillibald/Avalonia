@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -9,8 +10,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// ordinary glyph-run node. Scope differs by mode only for v0: under managed rasterization
     /// v0 stays in the run because the mask renderer composes those layers server-side more
     /// cheaply; under backend rasterization the blob would rasterize COLR itself, so v0 splits
-    /// to drawings too. Direct <see cref="GlyphRun"/> draws that bypass this splitter still
-    /// render correctly via the renderer's or backend's native handling.
+    /// to drawings too. Direct <see cref="GlyphRun"/> draws bypass this splitter: under managed
+    /// rasterization the renderer cuts those runs at the same glyphs when it draws them (see
+    /// <see cref="ColorGlyphSegments"/>), and under backend rasterization the backend's native
+    /// text handling draws them.
     /// </summary>
     /// <remarks>
     /// The drawings are those of the unsimulated face, drawn without the oblique shear: font
@@ -58,7 +61,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                        (colr.HasColorLayers(glyph) ||
                         (colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _)))) ||
                       (bitmaps?.HasGlyphImage(glyph) ?? false)
-                    : colr!.TryGetBaseGlyphV1Record(glyph, out _) && !colr.TryGetBaseGlyphRecord(glyph, out _);
+                    : IsV1OnlyGlyph(typeface, colr!, glyph);
 
             var infos = glyphRun.GlyphInfos;
             var hasSplitGlyph = false;
@@ -121,6 +124,53 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Whether <paramref name="glyph"/> has only a COLR v1 paint graph, with no v0 layers to
+        /// compose, and a palette to resolve it with. No mask tier renders such a glyph: it draws
+        /// through its drawing. Without a CPAL table the glyph has no drawing and renders as its
+        /// outline, like a v0 glyph without one.
+        /// </summary>
+        internal static bool IsV1OnlyGlyph(GlyphTypeface typeface, Tables.Colr.ColrTable colr, ushort glyph)
+            => colr.HasV1Data && typeface.ColorPaletteTable is not null && glyph < typeface.GlyphCount &&
+               colr.TryGetBaseGlyphV1Record(glyph, out _) && !colr.TryGetBaseGlyphRecord(glyph, out _);
+
+        /// <summary>
+        /// Draws a run cut at its v1-only glyphs: the stretches between them as runs of their own
+        /// through <paramref name="context"/>'s glyph run path, and each v1 glyph through its
+        /// drawing at the run's pen, in run order.
+        /// </summary>
+        internal static void DrawSegments(IDrawingContextImpl context, ColorGlyphSegments segments,
+            IBrush foreground)
+        {
+            PlatformDrawingContext? colorContext = null;
+            GlyphDrawingOptions? drawingOptions = null;
+
+            try
+            {
+                foreach (var segment in segments.Items)
+                {
+                    if (segment.Run is { } run)
+                    {
+                        context.DrawGlyphRun(foreground, run);
+                        continue;
+                    }
+
+                    if (colorContext is null)
+                    {
+                        colorContext = new PlatformDrawingContext(context, ownsImpl: false);
+                        drawingOptions = CreateDrawingOptions(foreground);
+                    }
+
+                    DrawGlyph(colorContext, segments.Typeface, segment.Glyph, drawingOptions, segments.Scale,
+                        segment.Pen);
+                }
+            }
+            finally
+            {
+                colorContext?.Dispose();
+            }
         }
 
         /// <summary>

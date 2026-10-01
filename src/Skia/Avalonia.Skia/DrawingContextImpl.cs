@@ -836,6 +836,16 @@ namespace Avalonia.Skia
             // triage rejects this draw (transform class, size, foreground kind).
             if (glyphRun is ManagedGlyphRunImpl managedRun)
             {
+                // Masks carry no COLR v1 paint: those glyphs draw from their drawings, and the
+                // stretches between them come back through here as runs of their own, so they
+                // take the tiers below and the native fallbacks only for their own reasons.
+                if (managedRun.ColorGlyphSegments is { } colorSegments)
+                {
+                    ColorGlyphRunSplitter.DrawSegments(this, colorSegments, foreground);
+
+                    return;
+                }
+
                 if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
                         effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode))
                 {
@@ -879,7 +889,7 @@ namespace Avalonia.Skia
 
                 if (ManagedGlyphOutlines.AreRequired(managedRun.GlyphTypeface))
                 {
-                    using (var outlinePaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds))
+                    using (var outlinePaint = CreatePaint(_fillPaint, foreground, managedRun.BrushBounds))
                     {
                         Canvas.DrawPath(NativeTextBlob.GetOutlinePath(managedRun), outlinePaint.Paint);
                     }
@@ -903,7 +913,7 @@ namespace Avalonia.Skia
 
                 if (fallbackBlob is not null)
                 {
-                    using var fallbackPaint = CreatePaint(_fillPaint, foreground, glyphRun.Bounds);
+                    using var fallbackPaint = CreatePaint(_fillPaint, foreground, managedRun.BrushBounds);
 
                     Canvas.DrawText(fallbackBlob, (float)glyphRun.BaselineOrigin.X,
                         (float)glyphRun.BaselineOrigin.Y, fallbackPaint.Paint);
