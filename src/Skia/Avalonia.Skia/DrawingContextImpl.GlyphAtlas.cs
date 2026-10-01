@@ -79,25 +79,18 @@ namespace Avalonia.Skia
         }
 
         void ITransformedGlyphContext.DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb,
-            bool gamma, bool bilinear)
+            bool bilinear)
         {
             CheckLease();
 
             var backend = (SkiaGlyphAtlasBatch)batch.Backend;
             var image = backend.Image ?? GetPageImage(batch.Page!);
             var paint = SKPaintCache.Shared.Get();
-            var r = (byte)(tintArgb >> 16);
-            var g = (byte)(tintArgb >> 8);
-            var b = (byte)tintArgb;
 
-            paint.Color = new SKColor(r, g, b, (byte)((tintArgb >> 24) * _currentOpacity));
-
-            // Coverage lands in alpha (the A8 page modulated by the paint colour), so the
-            // coverage correction rides a colour filter on alpha, as for single alpha masks.
-            if (gamma)
-            {
-                paint.ColorFilter = MaskGammaFilters.Get(r, g, b);
-            }
+            // The A8 page holds coverage already corrected for this colour's luminance, and
+            // drawing modulates it by the paint colour.
+            paint.Color = new SKColor((byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb,
+                (byte)((tintArgb >> 24) * _currentOpacity));
 
             var oldTransform = Transform;
 
@@ -105,7 +98,6 @@ namespace Avalonia.Skia
             Canvas.DrawAtlas(image, backend.Sources, backend.Placements, bilinear ? s_bilinear : s_nearest, paint);
             Transform = oldTransform;
 
-            paint.ColorFilter = null;
             SKPaintCache.Shared.ReturnReset(paint);
         }
 

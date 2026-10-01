@@ -415,10 +415,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var atlas = typeface.MaskAtlas;
+            var bucket = GetBucket(foregroundArgb);
 
-            if (!settled.HasValidBatches(atlas))
+            if (!settled.HasValidBatches(atlas, bucket))
             {
-                BuildAtlasBatches(context, typeface, atlas, settled);
+                BuildAtlasBatches(context, typeface, atlas, settled, bucket);
             }
 
             var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
@@ -446,10 +447,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb)
         {
             var atlas = typeface.MaskAtlas;
+            var bucket = GetBucket(foregroundArgb);
 
-            if (!sprites.HasValidBatches(atlas))
+            if (!sprites.HasValidBatches(atlas, bucket))
             {
-                BuildAtlasBatches(context, typeface, atlas, sprites);
+                BuildAtlasBatches(context, typeface, atlas, sprites, bucket);
             }
 
             DrawBatches(context, atlas, sprites, Matrix.CreateTranslation(originX, originY), foregroundArgb,
@@ -470,19 +472,24 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 var tint = batch.Kind == TransformedSpriteKind.PaletteLayer ? batch.Color : foregroundArgb;
 
-                context.DrawAtlasBatch(batch, placement, tint, batch.Kind == TransformedSpriteKind.Foreground, bilinear);
+                context.DrawAtlasBatch(batch, placement, tint, bilinear);
             }
         }
 
+        /// <summary>The coverage correction bucket of a straight ARGB foreground.</summary>
+        private static int GetBucket(uint argb) => MaskGamma.GetBucket((byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
+
         /// <summary>
         /// Places every sprite's glyph mask in the atlas and groups consecutive sprites that
-        /// share a page and a colouring into batches, keeping the run's draw order. On a GPU
-        /// context the atlas is the masks' storage: a mask missing from it is rasterized into
-        /// a transient buffer and copied in, and never enters the glyph mask cache. A mask too
-        /// large for a page, or over the cache's entry bound, draws from its own image.
+        /// share a page and a colouring into batches, keeping the run's draw order. Foreground
+        /// glyphs are stored corrected for the foreground's luminance <paramref name="bucket"/>,
+        /// colour glyph layers uncorrected. On a GPU context the atlas is the masks' storage: a
+        /// mask missing from it is rasterized into a transient buffer and copied in, and never
+        /// enters the glyph mask cache. A mask too large for a page, or over the cache's entry
+        /// bound, draws from its own image.
         /// </summary>
         private static void BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
-            GlyphMaskAtlas atlas, TransformedGlyphSprites sprites)
+            GlyphMaskAtlas atlas, TransformedGlyphSprites sprites, int bucket)
         {
             var tick = atlas.Tick();
             var count = sprites.Count;
@@ -503,8 +510,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     var sprite = sprites.Sprites[i];
                     var key = sprites.GetGlyphKey(i);
+                    var spriteBucket = sprite.Kind == TransformedSpriteKind.Foreground ? bucket : GlyphMaskAtlas.Uncorrected;
 
-                    if (!atlas.TryGet(key, tick, out var slot))
+                    if (!atlas.TryGet(key, spriteBucket, tick, out var slot))
                     {
                         byte[]? rented = null;
 
@@ -521,13 +529,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                                 continue;
                             }
 
-                            if (mask.Width * mask.Height > maxEntryBytes || !atlas.TryAdd(key, mask, tick, out slot))
+                            if (mask.Width * mask.Height > maxEntryBytes ||
+                                !atlas.TryAdd(key, spriteBucket, mask, tick, out slot))
                             {
                                 Flush();
                                 batches.Add(new GlyphAtlasBatch(null, i, 1, sprite.Kind, sprite.Color,
                                     context.CreateAtlasBatch(
                                         new[] { new GlyphAtlasSprite(0, 0, mask.Width, mask.Height, sprite.X, sprite.Y) },
-                                        ToExactMask(mask))));
+                                        ToStandaloneMask(mask, spriteBucket))));
                                 continue;
                             }
                         }
@@ -564,7 +573,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 Flush();
 
-                sprites.SetBatches(atlas, batches.ToArray());
+                sprites.SetBatches(atlas, bucket, batches.ToArray());
             }
             catch
             {
@@ -593,12 +602,27 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        /// <summary>A mask whose buffer is exactly its pixels, so a backend may keep or copy it whole.</summary>
-        private static GlyphMask ToExactMask(GlyphMask mask)
-            => mask.Alpha.Length == mask.Width * mask.Height
-                ? mask
-                : new GlyphMask(mask.Alpha.AsSpan(0, mask.Width * mask.Height).ToArray(), mask.Width, mask.Height,
-                    mask.Left, mask.Top);
+        /// <summary>
+        /// A mask whose buffer is exactly its pixels, so a backend may keep or copy it whole,
+        /// with its coverage corrected for <paramref name="bucket"/> like an atlas entry's.
+        /// </summary>
+        private static GlyphMask ToStandaloneMask(GlyphMask mask, int bucket)
+        {
+            var length = mask.Width * mask.Height;
+
+            if (bucket == GlyphMaskAtlas.Uncorrected)
+            {
+                return mask.Alpha.Length == length
+                    ? mask
+                    : new GlyphMask(mask.Alpha.AsSpan(0, length).ToArray(), mask.Width, mask.Height, mask.Left, mask.Top);
+            }
+
+            var corrected = new byte[length];
+
+            GlyphMaskAtlas.Correct(mask.Alpha.AsSpan(0, length), corrected, bucket);
+
+            return new GlyphMask(corrected, mask.Width, mask.Height, mask.Left, mask.Top);
+        }
 
         /// <summary>
         /// One glyph mask of a transformed run: a glyph or a COLR v0 layer glyph at its snapped

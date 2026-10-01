@@ -93,6 +93,41 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Corrected_Entries_Hold_Their_Bucket_Table_Values_On_Pages_Of_Their_Bucket()
+        {
+            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var random = new Random(11);
+            var tick = atlas.Tick();
+            var mask = CreateMask(random, 20, 24);
+
+            Assert.True(atlas.TryAdd(Key(1), GlyphMaskAtlas.Uncorrected, mask, tick, out var raw));
+            Assert.True(atlas.TryAdd(Key(1), 0, mask, tick, out var dark));
+            Assert.True(atlas.TryAdd(Key(1), MaskGamma.BucketCount - 1, mask, tick, out var light));
+
+            // One glyph, three entries: the same key is stored once per correction.
+            Assert.Equal(3, atlas.Count);
+            Assert.Equal(3, atlas.GetPages().Length);
+
+            foreach (var (slot, bucket) in new[] { (raw, GlyphMaskAtlas.Uncorrected), (dark, 0), (light, MaskGamma.BucketCount - 1) })
+            {
+                Assert.Equal(bucket, slot.Page!.Bucket);
+                Assert.True(atlas.TryGet(Key(1), bucket, tick, out var found));
+                Assert.Same(slot.Page, found.Page);
+
+                for (var y = 0; y < mask.Height; y++)
+                {
+                    for (var x = 0; x < mask.Width; x++)
+                    {
+                        var value = mask.Alpha[y * mask.Width + x];
+
+                        Assert.Equal(bucket == GlyphMaskAtlas.Uncorrected ? value : MaskGamma.GetTable(bucket)[value],
+                            slot.Page.Pixels[(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
+                    }
+                }
+            }
+        }
+
+        [Fact]
         public void Masks_Too_Large_For_A_Page_Are_Refused()
         {
             var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);

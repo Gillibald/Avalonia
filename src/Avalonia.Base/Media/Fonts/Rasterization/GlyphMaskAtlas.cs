@@ -42,18 +42,26 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <summary>
     /// One A8 page of a <see cref="GlyphMaskAtlas"/>: <see cref="GlyphMaskAtlas.PageWidth"/>
     /// columns, rows grown on demand. The pixels live in a pinned array, so a backend can wrap
-    /// them as an image without a copy.
+    /// them as an image without a copy. Every entry on a page holds its coverage through the
+    /// same correction, <see cref="Bucket"/>.
     /// </summary>
     internal sealed class GlyphAtlasPage
     {
-        internal readonly List<GlyphMaskKey> Keys = new();
+        internal readonly List<(GlyphMaskKey Key, int Bucket)> Keys = new();
         internal readonly List<(int Y, int Height, int X)> Shelves = new();
 
-        internal GlyphAtlasPage(int height)
+        internal GlyphAtlasPage(int height, int bucket)
         {
             Pixels = GC.AllocateArray<byte>(GlyphMaskAtlas.PageWidth * height, pinned: true);
             Height = height;
+            Bucket = bucket;
         }
+
+        /// <summary>
+        /// The <see cref="MaskGamma"/> luminance bucket whose coverage correction the stored
+        /// coverage went through, or <see cref="GlyphMaskAtlas.Uncorrected"/>.
+        /// </summary>
+        public int Bucket { get; }
 
         /// <summary>Row-major coverage, <see cref="GlyphMaskAtlas.PageWidth"/> bytes per row.</summary>
         public byte[] Pixels { get; private set; }
@@ -99,11 +107,21 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// sampling under a scaling or rotating transform never reads a neighbour's coverage.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Coverage is stored already corrected by the <see cref="MaskGamma"/> table of a
+    /// luminance bucket, and pages are keyed by that bucket, so a draw needs no correction
+    /// stage and bilinear sampling interpolates corrected values. The correction is not linear:
+    /// applied after sampling, it would act on blended coverage, which for dark text thins
+    /// every edge a stretched draw softens. Text of one colour takes one bucket; colour glyph
+    /// layers, which must not be corrected, take <see cref="Uncorrected"/> pages.
+    /// </para>
+    /// <para>
     /// Entries cannot be freed one by one, so the budget is enforced a page at a time: when a
     /// new shelf would take the atlas over its budget, the page used longest ago is dropped
     /// whole. A page touched during the current draw (same tick) is never dropped, so building
     /// one run cannot evict the entries it placed a moment ago; if every page is in use the
     /// atlas grows past its budget instead.
+    /// </para>
     /// </remarks>
     internal sealed class GlyphMaskAtlas
     {
@@ -116,10 +134,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public const int MaxPageHeight = 2048;
 
+        /// <summary>The bucket of pages holding coverage as rasterized, without correction.</summary>
+        public const int Uncorrected = -1;
+
         private const int RowQuantum = 64;
 
         private readonly object _lock = new();
-        private readonly Dictionary<GlyphMaskKey, GlyphAtlasSlot> _slots = new();
+        private readonly Dictionary<(GlyphMaskKey Key, int Bucket), GlyphAtlasSlot> _slots = new();
         private readonly List<GlyphAtlasPage> _pages = new();
         private readonly int _budget;
         private long _allocated;
@@ -170,12 +191,19 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public long Tick() => Interlocked.Increment(ref _clock);
 
-        /// <summary>Looks up an entry and stamps its page with <paramref name="tick"/>.</summary>
+        /// <summary>Looks up an uncorrected entry and stamps its page with <paramref name="tick"/>.</summary>
         public bool TryGet(in GlyphMaskKey key, long tick, out GlyphAtlasSlot slot)
+            => TryGet(key, Uncorrected, tick, out slot);
+
+        /// <summary>
+        /// Looks up the entry holding the coverage of <paramref name="key"/> corrected for
+        /// <paramref name="bucket"/>, and stamps its page with <paramref name="tick"/>.
+        /// </summary>
+        public bool TryGet(in GlyphMaskKey key, int bucket, long tick, out GlyphAtlasSlot slot)
         {
             lock (_lock)
             {
-                if (!_slots.TryGetValue(key, out slot))
+                if (!_slots.TryGetValue((key, bucket), out slot))
                 {
                     return false;
                 }
@@ -190,10 +218,19 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Places <paramref name="mask"/> under <paramref name="key"/>, or returns the entry a
-        /// racing caller placed first. Returns <c>false</c> when the mask does not fit a page.
+        /// Places <paramref name="mask"/> uncorrected under <paramref name="key"/>, or returns the
+        /// entry a racing caller placed first. Returns <c>false</c> when the mask does not fit a page.
         /// </summary>
         public bool TryAdd(in GlyphMaskKey key, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
+            => TryAdd(key, Uncorrected, mask, tick, out slot);
+
+        /// <summary>
+        /// Places <paramref name="mask"/> under <paramref name="key"/> on a page of
+        /// <paramref name="bucket"/>, its coverage corrected by that bucket's table, or returns
+        /// the entry a racing caller placed first. Returns <c>false</c> when the mask does not
+        /// fit a page.
+        /// </summary>
+        public bool TryAdd(in GlyphMaskKey key, int bucket, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
         {
             if (!mask.IsEmpty && !Fits(mask.Width, mask.Height))
             {
@@ -203,7 +240,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             lock (_lock)
             {
-                if (_slots.TryGetValue(key, out slot))
+                if (_slots.TryGetValue((key, bucket), out slot))
                 {
                     if (slot.Page is { } existing)
                     {
@@ -216,28 +253,33 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (mask.IsEmpty)
                 {
                     slot = default;
-                    _slots.Add(key, slot);
+                    _slots.Add((key, bucket), slot);
                     return true;
                 }
 
-                var (page, x, y) = Place(mask.Width + 1, mask.Height + 1, tick);
+                var (page, x, y) = Place(mask.Width + 1, mask.Height + 1, bucket, tick);
 
                 Write(page, mask, x, y);
-                page.Keys.Add(key);
+                page.Keys.Add((key, bucket));
                 page.LastUse = tick;
 
                 slot = new GlyphAtlasSlot(page, x, y, mask.Width, mask.Height, mask.Left, mask.Top);
-                _slots.Add(key, slot);
+                _slots.Add((key, bucket), slot);
 
                 return true;
             }
         }
 
-        private (GlyphAtlasPage Page, int X, int Y) Place(int width, int height, long tick)
+        private (GlyphAtlasPage Page, int X, int Y) Place(int width, int height, int bucket, long tick)
         {
             // An open shelf of a similar height first, so short glyphs do not waste tall rows.
             foreach (var page in _pages)
             {
+                if (page.Bucket != bucket)
+                {
+                    continue;
+                }
+
                 var shelves = page.Shelves;
 
                 for (var s = 0; s < shelves.Count; s++)
@@ -255,7 +297,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             foreach (var page in _pages)
             {
-                if (page.UsedHeight + height <= MaxPageHeight)
+                if (page.Bucket == bucket && page.UsedHeight + height <= MaxPageHeight)
                 {
                     return (page, 0, OpenShelf(page, width, height, tick));
                 }
@@ -265,7 +307,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             MakeRoom((long)PageWidth * rows, tick);
 
-            var fresh = new GlyphAtlasPage(rows);
+            var fresh = new GlyphAtlasPage(rows, bucket);
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.Pixels.Length);
@@ -348,11 +390,31 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             for (var row = 0; row < mask.Height; row++)
             {
-                mask.Alpha.AsSpan(row * mask.Width, mask.Width)
-                    .CopyTo(pixels.AsSpan((y + row) * PageWidth + x, mask.Width));
+                var source = mask.Alpha.AsSpan(row * mask.Width, mask.Width);
+                var target = pixels.AsSpan((y + row) * PageWidth + x, mask.Width);
+
+                if (page.Bucket == Uncorrected)
+                {
+                    source.CopyTo(target);
+                }
+                else
+                {
+                    Correct(source, target, page.Bucket);
+                }
             }
 
             page.Version++;
+        }
+
+        /// <summary>Copies coverage through the <see cref="MaskGamma"/> table of <paramref name="bucket"/>.</summary>
+        public static void Correct(ReadOnlySpan<byte> source, Span<byte> target, int bucket)
+        {
+            var table = MaskGamma.GetTable(bucket);
+
+            for (var i = 0; i < source.Length; i++)
+            {
+                target[i] = table[source[i]];
+            }
         }
     }
 }

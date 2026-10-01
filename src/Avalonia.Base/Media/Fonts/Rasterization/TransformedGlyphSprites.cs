@@ -108,6 +108,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The atlas the batches were built from.</summary>
         public GlyphMaskAtlas? BatchAtlas { get; private set; }
 
+        /// <summary>The luminance bucket the foreground sprites of the batches are corrected for.</summary>
+        public int BatchBucket { get; private set; }
+
         /// <summary>
         /// The glyph masks the raster blitter reads, one per sprite; <c>null</c> until first
         /// drawn on a raster context. Holding the masks keeps them valid after the glyph mask
@@ -161,10 +164,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Transform: Key.Transform, PhaseY: sprite.PhaseY, ApplySimulations: Simulated);
         }
 
-        /// <summary>Whether the batches are drawable from <paramref name="atlas"/>: built from it and none of their pages evicted.</summary>
-        public bool HasValidBatches(GlyphMaskAtlas atlas)
+        /// <summary>
+        /// Whether the batches are drawable from <paramref name="atlas"/> in a foreground of
+        /// luminance <paramref name="bucket"/>: built from it for that bucket, and none of their
+        /// pages evicted.
+        /// </summary>
+        public bool HasValidBatches(GlyphMaskAtlas atlas, int bucket)
         {
-            if (_batches is not { } batches || BatchAtlas != atlas)
+            if (_batches is not { } batches || BatchAtlas != atlas || BatchBucket != bucket)
             {
                 return false;
             }
@@ -180,12 +187,13 @@ namespace Avalonia.Media.Fonts.Rasterization
             return true;
         }
 
-        internal void SetBatches(GlyphMaskAtlas atlas, GlyphAtlasBatch[] batches)
+        internal void SetBatches(GlyphMaskAtlas atlas, int bucket, GlyphAtlasBatch[] batches)
         {
             DisposeBatches();
 
             _batches = batches;
             BatchAtlas = atlas;
+            BatchBucket = bucket;
         }
 
         internal void SetFallbackImages(IDisposable?[] images, uint tint)

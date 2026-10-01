@@ -64,10 +64,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Draws a batch in one call, its sprites mapped through <paramref name="transform"/>
         /// (batch space to device pixels), modulated by the straight ARGB
-        /// <paramref name="tintArgb"/> and the ambient opacity. <paramref name="gamma"/> applies
-        /// the tint's coverage correction; <paramref name="bilinear"/> samples bilinearly,
-        /// which a batch drawn under a scaling or rotating transform needs.
+        /// <paramref name="tintArgb"/> and the ambient opacity. The stored coverage is already
+        /// corrected for the tint, so the draw adds no correction of its own.
+        /// <paramref name="bilinear"/> samples bilinearly, which a batch drawn under a scaling
+        /// or rotating transform needs.
         /// </summary>
-        void DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb, bool gamma, bool bilinear);
+        void DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb, bool bilinear);
     }
 }

@@ -109,15 +109,56 @@ namespace Avalonia.Skia.UnitTests.Media
             // Squeezed advances make neighbouring glyphs overlap.
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 22, new Point(8.37, 32.61), advanceScale: 0.8);
 
+            var masks = TransformedGlyphRunTests.GlyphMasksAtPens(typeface, run, s_rotation);
+
             foreach (var color in s_tints)
             {
                 var atlas = Render(gpu, context => context.DrawGlyphRun(new ImmutableSolidColorBrush(color), run));
+
+                // The atlas stores coverage corrected for the colour's luminance bucket: each
+                // glyph mask passed through the table and modulated by the plain colour.
+                var table = MaskGamma.GetTable(color.R, color.G, color.B);
+                var corrected = Render(gpu, context =>
+                {
+                    var canvas = context.Canvas;
+
+                    canvas.Save();
+                    canvas.ResetMatrix();
+
+                    using var paint = new SKPaint { Color = new SKColor(color.R, color.G, color.B) };
+
+                    foreach (var (mask, x, y) in masks)
+                    {
+                        if (mask.IsEmpty)
+                        {
+                            continue;
+                        }
+
+                        var alpha = new byte[mask.Width * mask.Height];
+
+                        for (var i = 0; i < alpha.Length; i++)
+                        {
+                            alpha[i] = table[mask.Alpha[i]];
+                        }
+
+                        using var image = CreateAlphaImage(alpha, mask.Width, mask.Height);
+
+                        canvas.DrawImage(image, x + mask.Left, y + mask.Top, new SKSamplingOptions(), paint);
+                    }
+
+                    canvas.Restore();
+                });
+
+                AssertEqual(corrected, atlas, $"{color} against corrected masks");
+
+                // For an opaque colour these are also the pixels of a single alpha mask, which
+                // corrects through a colour filter after modulation.
                 var blitted = Render(gpu, context =>
                 {
                     // Masks are in device pixels.
                     context.Transform = Matrix.Identity;
 
-                    foreach (var (mask, x, y) in TransformedGlyphRunTests.GlyphMasksAtPens(typeface, run, s_rotation))
+                    foreach (var (mask, x, y) in masks)
                     {
                         if (mask.IsEmpty)
                         {
@@ -133,7 +174,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 });
 
-                AssertEqual(blitted, atlas, $"{color}");
+                AssertEqual(blitted, atlas, $"{color} against filtered masks");
             }
         }
 
