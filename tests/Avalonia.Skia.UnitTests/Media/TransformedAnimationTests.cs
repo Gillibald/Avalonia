@@ -216,6 +216,85 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
+        public void A_Zoom_Past_The_Stretch_Band_Rasterizes_Once_Per_Crossing_Like_A_Fresh_Draw(Target target)
+        {
+            // The settled batch stretches while the zoom since it settled stays within a factor
+            // of 1.2 either way; past that, one frame rasterizes at its transform and settles.
+            const double band = 1.2;
+
+            using var output = TestTarget.Create(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
+
+            static Matrix ZoomRotation(double scale)
+                => Matrix.CreateScale(scale, scale) * Matrix.CreateRotation(Math.PI * 15 / 180) *
+                   Matrix.CreateTranslation(60.4, 40.7);
+
+            // A sawtooth: up to twice the size, then back to exactly the first frame's transform,
+            // whose sprite set is still cached, and up again.
+            var scales = new List<double>();
+
+            for (var k = 0; k <= 34; k++)
+            {
+                scales.Add(1 + 0.03 * k);
+            }
+
+            for (var k = 0; k <= 10; k++)
+            {
+                scales.Add(1 + 0.03 * k);
+            }
+
+            // The frames before the guard engages rasterize and settle; after that a frame
+            // settles only when its zoom leaves the band around the last settled zoom.
+            var expected = new List<int>();
+            var settledScale = scales[TransformChurnGuard.Threshold - 1];
+
+            for (var frame = TransformChurnGuard.Threshold; frame < scales.Count; frame++)
+            {
+                var delta = scales[frame] / settledScale;
+
+                if (delta > band || delta < 1 / band)
+                {
+                    expected.Add(frame);
+                    settledScale = scales[frame];
+                }
+            }
+
+            Assert.True(expected.Count >= 4, $"the sawtooth crosses the band only {expected.Count} times");
+
+            var context = output.Context;
+            var crossings = new List<int>();
+
+            for (var frame = 0; frame < scales.Count; frame++)
+            {
+                var previous = run.TransformedSprites.Settled;
+
+                context.Transform = ZoomRotation(scales[frame]);
+                context.DrawGlyphRun(Brushes.Black, run);
+
+                var drawn = output.ReadAndClear();
+
+                if (frame < TransformChurnGuard.Threshold || ReferenceEquals(previous, run.TransformedSprites.Settled))
+                {
+                    continue;
+                }
+
+                crossings.Add(frame);
+
+                // The frame that settles draws exactly what a run drawn once at its transform draws.
+                using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
+
+                context.Transform = ZoomRotation(scales[frame]);
+                context.DrawGlyphRun(Brushes.Black, fresh);
+
+                TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"{target} frame {frame}");
+            }
+
+            Assert.Equal(expected, crossings);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
         public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Except_On_Hardware_Gpus(Target target)
         {
             using var output = TestTarget.Create(target);
