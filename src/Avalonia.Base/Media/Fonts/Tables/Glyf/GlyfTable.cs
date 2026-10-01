@@ -714,6 +714,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             ReadOnlySpan<float> activeCoords,
             double emboldenStrength)
         {
+            var rented = false;
+
             try
             {
                 var components = compositeGlyph.Components;
@@ -734,13 +736,16 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 }
 
                 var hasGeometry = false;
+                var wrappedContext = RentTransformingContext();
+
+                rented = true;
 
                 foreach (var component in components)
                 {
                     var componentTransform = CreateComponentTransform(component);
                     var combinedTransform = componentTransform * transform;
 
-                    var wrappedContext = new TransformingGeometryContext(context, combinedTransform);
+                    wrappedContext.Reset(context, combinedTransform);
 
                     // Variation context propagates: each child glyph applies its own gvar
                     // entry independently. Composite-level gvar (which would deform the
@@ -762,7 +767,31 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             {
                 // Return rented buffer to pool
                 compositeGlyph.Dispose();
+
+                if (rented)
+                {
+                    t_transformingDepth--;
+                }
             }
+        }
+
+        // One transforming wrapper per composite nesting level, reused by every composite this
+        // thread builds: outlines are built once per rasterized glyph, and an animation
+        // rasterizes every frame.
+        [ThreadStatic]
+        private static TransformingGeometryContext?[]? t_transformingContexts;
+
+        [ThreadStatic]
+        private static int t_transformingDepth;
+
+        private static TransformingGeometryContext RentTransformingContext()
+        {
+            var contexts = t_transformingContexts ??= new TransformingGeometryContext?[GlyphDecycler.MaxTraversalDepth + 1];
+            var depth = t_transformingDepth++;
+
+            return depth < contexts.Length
+                ? contexts[depth] ??= new TransformingGeometryContext()
+                : new TransformingGeometryContext();
         }
 
         /// <summary>
@@ -1070,10 +1099,10 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// </summary>
         private sealed class TransformingGeometryContext : IGeometryContext
         {
-            private readonly IGeometryContext _inner;
-            private readonly Matrix _matrix;
+            private IGeometryContext _inner = null!;
+            private Matrix _matrix;
 
-            public TransformingGeometryContext(IGeometryContext inner, Matrix matrix)
+            public void Reset(IGeometryContext inner, Matrix matrix)
             {
                 _inner = inner;
                 _matrix = matrix;

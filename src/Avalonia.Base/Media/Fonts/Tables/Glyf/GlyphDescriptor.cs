@@ -9,7 +9,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
     /// <remarks>A glyph descriptor exposes contour and bounding box information for a glyph, as well as
     /// access to its simple or composite outline data. Use the properties to determine the glyph type and retrieve the
     /// corresponding outline representation.</remarks>
-    internal class GlyphDescriptor
+    internal readonly struct GlyphDescriptor
     {
         private readonly ReadOnlyMemory<byte> _glyphData;
 

@@ -15,6 +15,8 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
     /// that must be returned via Dispose.</remarks>
     internal readonly ref struct SimpleGlyph
     {
+        // Rented buffer for the contour endpoints
+        private readonly ushort[]? _rentedEndPts;
         // Rented buffers for flags
         private readonly GlyphFlag[]? _rentedFlags;
         // Rented buffers for  y-coordinates
@@ -64,6 +66,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// or off-curve.</param>
         /// <param name="xCoordinates">A read-only span containing the X coordinates for each glyph point, in font units.</param>
         /// <param name="yCoordinates">A read-only span containing the Y coordinates for each glyph point, in font units.</param>
+        /// <param name="rentedEndPts">The pooled array behind <paramref name="endPtsOfContours"/>, returned to the pool on dispose.</param>
         /// <param name="rentedFlags">An optional array of GlyphFlag values used for temporary storage. If provided, the array may be reused
         /// internally to reduce allocations.</param>
         /// <param name="rentedXCoords">An optional array of short values used for temporary storage of X coordinates. If provided, the array may be
@@ -76,11 +79,13 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             ReadOnlySpan<GlyphFlag> flags,
             ReadOnlySpan<short> xCoordinates,
             ReadOnlySpan<short> yCoordinates,
+            ushort[]? rentedEndPts,
             GlyphFlag[]? rentedFlags,
             short[]? rentedXCoords,
             short[]? rentedYCoords)
         {
             EndPtsOfContours = endPtsOfContours;
+            _rentedEndPts = rentedEndPts;
             Instructions = instructions;
             Flags = flags;
             XCoordinates = xCoordinates;
@@ -118,8 +123,9 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 return default;
             }
 
-            // Endpoints of contours
-            var endPtsOfContours = new ushort[numberOfContours];
+            // Endpoints of contours, in a pooled buffer: outlines are walked once per rasterized
+            // glyph, and an animation rasterizes every frame.
+            var endPtsOfContours = ArrayPool<ushort>.Shared.Rent(numberOfContours);
             var endPtsBytes = data.Slice(0, numberOfContours * 2);
 
             ushort previousEndPt = 0;
@@ -134,6 +140,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 // default value renders as an empty outline.
                 if (i > 0 && endPt <= previousEndPt)
                 {
+                    ArrayPool<ushort>.Shared.Return(endPtsOfContours);
                     return default;
                 }
 
@@ -150,6 +157,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
 
             if (flagsOffset > data.Length)
             {
+                ArrayPool<ushort>.Shared.Return(endPtsOfContours);
                 return default;
             }
 
@@ -173,7 +181,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 {
                     if (offset >= data.Length)
                     {
-                        return ReturnBuffersAndDefault(flagsBuffer, xCoordsBuffer, yCoordsBuffer);
+                        return ReturnBuffersAndDefault(endPtsOfContours, flagsBuffer, xCoordsBuffer, yCoordsBuffer);
                     }
 
                     var flag = (GlyphFlag)data[offset++];
@@ -184,7 +192,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     {
                         if (offset >= data.Length)
                         {
-                            return ReturnBuffersAndDefault(flagsBuffer, xCoordsBuffer, yCoordsBuffer);
+                            return ReturnBuffersAndDefault(endPtsOfContours, flagsBuffer, xCoordsBuffer, yCoordsBuffer);
                         }
 
                         // Read repeat count
@@ -210,7 +218,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     {
                         if (offset >= data.Length)
                         {
-                            return ReturnBuffersAndDefault(flagsBuffer, xCoordsBuffer, yCoordsBuffer);
+                            return ReturnBuffersAndDefault(endPtsOfContours, flagsBuffer, xCoordsBuffer, yCoordsBuffer);
                         }
 
                         byte dx = data[offset++];
@@ -231,7 +239,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                         {
                             if (offset + 2 > data.Length)
                             {
-                                return ReturnBuffersAndDefault(flagsBuffer, xCoordsBuffer, yCoordsBuffer);
+                                return ReturnBuffersAndDefault(endPtsOfContours, flagsBuffer, xCoordsBuffer, yCoordsBuffer);
                             }
 
                             short dx = BinaryPrimitives.ReadInt16BigEndian(data.Slice(offset, 2));
@@ -255,7 +263,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                     {
                         if (offset >= data.Length)
                         {
-                            return ReturnBuffersAndDefault(flagsBuffer, xCoordsBuffer, yCoordsBuffer);
+                            return ReturnBuffersAndDefault(endPtsOfContours, flagsBuffer, xCoordsBuffer, yCoordsBuffer);
                         }
 
                         byte dy = data[offset++];
@@ -275,7 +283,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                         {
                             if (offset + 2 > data.Length)
                             {
-                                return ReturnBuffersAndDefault(flagsBuffer, xCoordsBuffer, yCoordsBuffer);
+                                return ReturnBuffersAndDefault(endPtsOfContours, flagsBuffer, xCoordsBuffer, yCoordsBuffer);
                             }
 
                             short dy = BinaryPrimitives.ReadInt16BigEndian(data.Slice(offset, 2));
@@ -288,11 +296,12 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
                 }
 
                 return new SimpleGlyph(
-                    endPtsOfContours,
+                    endPtsOfContours.AsSpan(0, numberOfContours),
                     instructions,
                     flagsBuffer.AsSpan(0, numPoints),
                     xCoordsBuffer.AsSpan(0, numPoints),
                     yCoordsBuffer.AsSpan(0, numPoints),
+                    endPtsOfContours,
                     flagsBuffer,
                     xCoordsBuffer,
                     yCoordsBuffer
@@ -301,6 +310,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             catch
             {
                 // On exception, return buffers immediately
+                ArrayPool<ushort>.Shared.Return(endPtsOfContours);
                 ArrayPool<GlyphFlag>.Shared.Return(flagsBuffer);
                 ArrayPool<short>.Shared.Return(xCoordsBuffer);
                 ArrayPool<short>.Shared.Return(yCoordsBuffer);
@@ -308,8 +318,10 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
             }
         }
 
-        private static SimpleGlyph ReturnBuffersAndDefault(GlyphFlag[] flags, short[] xCoords, short[] yCoords)
+        private static SimpleGlyph ReturnBuffersAndDefault(ushort[] endPts, GlyphFlag[] flags, short[] xCoords,
+            short[] yCoords)
         {
+            ArrayPool<ushort>.Shared.Return(endPts);
             ArrayPool<GlyphFlag>.Shared.Return(flags);
             ArrayPool<short>.Shared.Return(xCoords);
             ArrayPool<short>.Shared.Return(yCoords);
@@ -324,6 +336,11 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// to ensure the rented buffers are returned to the pool.</remarks>
         public void Dispose()
         {
+            if (_rentedEndPts != null)
+            {
+                ArrayPool<ushort>.Shared.Return(_rentedEndPts);
+            }
+
             if (_rentedFlags != null)
             {
                 ArrayPool<GlyphFlag>.Shared.Return(_rentedFlags);
