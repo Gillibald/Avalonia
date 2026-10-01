@@ -87,8 +87,8 @@ namespace GlyphRasterDemo
             _hue = (_hue + 0.8) % 360;
             _hueBrush.Color = HsvColor.ToRgb(_hue, 0.85, 0.9);
 
-            // Continuous rotation — Slug redraws from the cached run artifact; the footprint
-            // bucket drifts slowly with the angle, everything else is reuse.
+            // Continuous rotation: the transform changes every frame, so the run re-rasterizes
+            // into transient masks (CPU, hardware GPU) or stretches its settled masks (software GL).
             _spin.Angle = (_spin.Angle + 0.7) % 360;
 
             // Zoom ping-pong, multiplicative so the sweep feels uniform across the ladder.

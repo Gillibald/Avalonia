@@ -14,8 +14,8 @@ namespace Avalonia.Skia.UnitTests.Media
     /// <summary>
     /// Real-GPU coverage for subpixel (LCD) text: the runtime blender against the CPU formula,
     /// fringe presence and polarity through the full managed dispatch, and grayscale purity
-    /// when the mode or the destination vetoes. The GPU bootstrap is a private copy of the
-    /// Slug suite's (unify once a third consumer appears).
+    /// when the mode or the destination vetoes. The GPU bootstrap is a private copy of
+    /// <see cref="GpuTestContext"/>'s.
     /// </summary>
     public class LcdGpuRenderingTests
     {

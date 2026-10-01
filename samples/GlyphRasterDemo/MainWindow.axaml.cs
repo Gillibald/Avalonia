@@ -77,8 +77,7 @@ namespace GlyphRasterDemo
             _modeText.Text = $"mode: {Options?.TextRasterizationMode}";
 
             // Fresh visuals build fresh glyph runs, and run creation reads the mode live —
-            // that is the whole validation mechanism: flip, rebuild, compare. (The Slug switch
-            // alone is read per draw and would not strictly need the rebuild.)
+            // that is the whole validation mechanism: flip, rebuild, compare.
             _host.Content = new DemoPage();
         }
     }

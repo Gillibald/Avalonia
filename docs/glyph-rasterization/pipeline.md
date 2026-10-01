@@ -8,7 +8,7 @@ This document follows one glyph run through the managed path: creation, dispatch
 
 - computes ink bounds from font data: outline tables for monochrome glyphs, `TryGetColorGlyphInkBounds` for color glyphs (COLR v1 clip boxes, drawing bounds or v0 layer unions), so invalidation rectangles cover color ink that exceeds the base outline box;
 - answers `GetIntersections` (text decoration ink skipping) analytically from the captured outlines, baseline-relative, matching the `SKTextBlob.GetIntercepts` contract;
-- carries a disposal-tied slot for the Slug tier's per-run artifact (see [slug.md](slug.md));
+- caches the transformed tier's glyph placements per quantized transform and tracks transform churn, so an animating transform stops filling caches;
 - carries a second slot for the backend's native fallback: on Skia, [NativeTextBlob](../../src/Skia/Avalonia.Skia/NativeTextBlob.cs) lazily builds and caches an `SKTextBlob` on the run when a draw actually falls through to the backend tier (synthetic typefaces without a Skia face have no native fallback and skip such draws).
 
 ## Draw dispatch
@@ -16,12 +16,12 @@ This document follows one glyph run through the managed path: creation, dispatch
 `DrawingContextImpl.DrawGlyphRun` tries the tiers in order:
 
 ```
-MaskGlyphRunRenderer.TryDraw(...)      axis-aligned, <= 160 px/em: composed run masks
-SlugGlyphRunRenderer.TryDraw(...)      GPU contexts: shader-evaluated outlines
-GetTextBlob(...)                       native backend blob, always succeeds
+MaskGlyphRunRenderer.TryDraw(...)             axis-aligned, <= 160 px/em: composed run masks
+MaskGlyphRunRenderer.TryDrawTransformed(...)  everything else: transformed glyph masks
+NativeTextBlob.TryGetTextBlob(...)            native backend blob
 ```
 
-Each `TryDraw` returns false to decline, and declining is cheap and memoised where it matters (per-glyph Slug declines are cached; mask triage is a handful of comparisons).
+Each `TryDraw` returns false to decline, and declining is cheap: triage is a handful of comparisons.
 
 ## Mask tier triage
 
@@ -30,7 +30,7 @@ Each `TryDraw` returns false to decline, and declining is cheap and memoised whe
 | Condition | Constant | Why |
 | --- | --- | --- |
 | transform has no rotation or skew (`M12 == 0 && M21 == 0`) | | masks are axis-aligned bitmaps; resampling them would blur |
-| effective pixels per em `<=` | `MaxPixelsPerEm = 160` | above this, mask memory beats its value; the vector tier or blob takes over |
+| effective pixels per em `<=` | `MaxPixelsPerEm = 160` | above this, a run mask costs more than it saves; the transformed tier takes over |
 | composed run width `<=` | `MaxRunMaskWidth = 2048` | run masks are single bitmaps; degenerate widths go to the blob |
 | foreground is a solid brush (or per-layer solid for COLR v0) | | gradient foregrounds would need an opacity-mask layer; the blob path handles them |
 
@@ -39,8 +39,8 @@ Uniform scale is folded into the mask scale; the quantized scale plus a quarter-
 ## What each tier renders
 
 - The mask tier renders monochrome glyphs, COLR v0 layer glyphs (as stacked tinted masks) and bitmap strikes (decoded and composed into the BGRA run mask). One run mask per (run, scale, phase, mode, tint-or-not) is cached on the run and redrawn as a plain bitmap blit until invalidated.
-- The Slug tier renders monochrome outlines under arbitrary affine transforms at effectively unbounded sizes. It requires a GPU-backed Skia context and the compiled runtime effect; CPU raster targets never use it (measured fragment cost makes masks the right choice there).
-- The blob tier renders everything else: gradient foregrounds, Slug-declined glyphs, and any surface the managed tiers do not support.
+- The transformed tier renders monochrome glyphs and COLR v0 layer glyphs under any invertible affine transform and above the upright size ceiling, on every context: glyph masks rasterized unhinted under the transform's quantized linear part and a quarter-pixel phase in both axes. A raster surface blends the cached masks directly, a GPU context draws them from the typeface's atlas in one batched call. While the transform changes every frame, CPU and hardware GPU contexts rasterize each frame into transient buffers no cache keeps; software GL draws the last settled batch under the change of transform instead.
+- The blob tier renders everything else: gradient foregrounds, bitmap strikes and COLR v1-only glyphs under a free transform, and any draw the managed tiers decline.
 
 ## Record-time split for COLR v1 and drawings
 
@@ -52,4 +52,4 @@ Uniform scale is folded into the mask scale; the quantized scale plus a quarter-
 
 ## Fallback guarantees
 
-The chain never renders wrong output to avoid a fallback: ambiguity in hinting degrades to identity warps, LCD eligibility failures degrade to grayscale, Slug capability failures degrade to the blob, and unsupported brushes skip the managed tiers entirely. A blank or corrupted glyph is always a bug, never a policy outcome.
+The chain never renders wrong output to avoid a fallback: ambiguity in hinting degrades to identity warps, LCD eligibility failures degrade to grayscale, transformed-tier declines degrade to the blob, and unsupported brushes skip the managed tiers entirely. A blank or corrupted glyph is always a bug, never a policy outcome.

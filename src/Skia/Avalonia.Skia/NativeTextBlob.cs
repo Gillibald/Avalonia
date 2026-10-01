@@ -8,8 +8,8 @@ namespace Avalonia.Skia
     /// <summary>
     /// The native-blob fallback for managed glyph runs: builds and caches an
     /// <see cref="SKTextBlob"/> on the run (disposal-tied via the run's artifact slot) for
-    /// exactly the draws the managed tiers decline — non-solid foregrounds and anything the
-    /// triage rejects on a context without the vector tier. Managed runs are created
+    /// exactly the draws the managed tiers decline: non-solid foregrounds and anything both
+    /// the upright and the transformed triage reject. Managed runs are created
     /// backend-neutrally in Avalonia.Base, so this is where the Skia dependency lives now;
     /// synthetic typefaces without a Skia platform face simply have no native fallback.
     /// </summary>

@@ -8,7 +8,6 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Fonts.Rasterization;
-using Avalonia.Media.Fonts.Rasterization.Slug;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using SkiaSharp;
@@ -20,7 +19,7 @@ namespace TextLab
     /// tier, color glyphs (COLR v0/v1, bitmap strikes) through their color drawings — with
     /// per-glyph capability badges (COLR color glyph, bitmap strike, missing outline) and
     /// filters over exactly those categories — the "show me every glyph that exercises
-    /// pipeline X" view. Selection shows identity, metrics and Slug payload status;
+    /// pipeline X" view. Selection shows identity, metrics and color capabilities;
     /// double-click drills into the Rasterization tab.
     /// </summary>
     public partial class GlyphExplorerView : UserControl
@@ -235,15 +234,13 @@ namespace TextLab
             }
 
             var cache = typeface.MaskCache;
-            var store = typeface.SlugStore;
 
             var maskDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.MaskTierDraws);
             var transformedDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.TransformedMaskTierDraws);
-            var slugDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.SlugTierDraws);
             var blobDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.BlobTierDraws);
 
             _hudText.Text = FormattableString.Invariant(
-                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB of {GlyphMaskCache.DefaultBudgetBytes / 1024} KB{Environment.NewLine}Slug store: v{store.Version}, {store.CurveRowCount} curve + {store.BandRowCount} band rows{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, Slug {slugDraws}, blob {blobDraws}");
+                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB of {GlyphMaskCache.DefaultBudgetBytes / 1024} KB{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, blob {blobDraws}");
         }
 
         private void RebuildList()
@@ -603,10 +600,6 @@ namespace TextLab
             {
                 lines.Add("bitmap strike: yes");
             }
-
-            lines.Add(typeface.SlugStore.TryRealize(typeface, glyph, out _)
-                ? "Slug payload: ok"
-                : "Slug payload: declined (caps exceeded or unwalkable)");
 
             _infoText.Text = string.Join(Environment.NewLine, lines);
         }

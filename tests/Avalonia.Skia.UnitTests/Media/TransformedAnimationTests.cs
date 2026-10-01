@@ -4,8 +4,6 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 using Xunit;
-using Backend = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.Backend;
-using GpuContext = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.GpuContext;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
@@ -198,7 +196,6 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(glyphMasks, typeface.MaskCache.Count);
             Assert.Equal(atlasEntries, typeface.MaskAtlas.Count);
             Assert.Equal(atlasBytes, typeface.MaskAtlas.AllocatedBytes);
-            Assert.Null(run.SlugRunArtifact);
             Assert.True(output.HasInk(), "the last animation frame drew nothing");
 
             // A CPU surface blends from pooled buffers. A GPU hands each run's coverage to the
@@ -346,7 +343,6 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(TransformChurnGuard.Threshold, run.TransformedSprites.Count);
             Assert.Equal(glyphMasks, typeface.MaskCache.Count);
             Assert.Equal(atlasEntries, typeface.MaskAtlas.Count);
-            Assert.Null(run.SlugRunArtifact);
             Assert.True(allocated == 0, $"stretched frames allocated {allocated} bytes");
             Assert.True(output.HasInk(), "the last animation frame drew nothing");
         }
@@ -696,10 +692,10 @@ namespace Avalonia.Skia.UnitTests.Media
         /// <summary>A drawing context on a CPU surface or one of the test GPU contexts.</summary>
         private sealed class TestTarget : IDisposable
         {
-            private readonly GpuContext? _gpu;
+            private readonly GpuTestContext? _gpu;
             private readonly SKSurface _surface;
 
-            private TestTarget(GpuContext? gpu, SKSurface surface)
+            private TestTarget(GpuTestContext? gpu, SKSurface surface)
             {
                 _gpu = gpu;
                 _surface = surface;
@@ -725,7 +721,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     return new TestTarget(null, raster);
                 }
 
-                var gpu = TransformedAtlasTests.CreateGpu(target == Target.HardwareAngle ? Backend.Angle : Backend.NativeGl,
+                var gpu = TransformedAtlasTests.CreateGpu(target == Target.HardwareAngle ? GpuBackend.Angle : GpuBackend.NativeGl,
                     software: target == Target.SoftwareGl);
                 var surface = SKSurface.Create(gpu.GrContext, true,
                     new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));

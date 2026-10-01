@@ -75,8 +75,6 @@ namespace Avalonia.Media
         private Fonts.Rasterization.StemWidthTable? _stemWidthTable;
         private Fonts.Tables.GaspTable? _gaspTable;
         private Fonts.Rasterization.TrueType.TrueTypeProgramTables? _programTables;
-        private Fonts.Rasterization.Slug.SlugGlyphCache? _slugGlyphCache;
-        private Fonts.Rasterization.Slug.SlugTexelStore? _slugTexelStore;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildGlyphGeometry;
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildColorDrawing;
 
@@ -2620,35 +2618,6 @@ namespace Avalonia.Media
             var created = new Fonts.Rasterization.GlyphMaskAtlas(MaskCache.BudgetBytes);
 
             return Interlocked.CompareExchange(ref _glyphMaskAtlas, created, null) ?? created;
-        }
-
-        /// <summary>
-        /// The per-instance Slug payload cache — CPU-side quadratic chains plus band lists,
-        /// built once per glyph ever. Created on first use; a variation clone caches payloads
-        /// at its own variation point like every other per-instance cache here.
-        /// </summary>
-        internal Fonts.Rasterization.Slug.SlugGlyphCache SlugCache =>
-            _slugGlyphCache ?? GetOrCreateSlugGlyphCache();
-
-        private Fonts.Rasterization.Slug.SlugGlyphCache GetOrCreateSlugGlyphCache()
-        {
-            var created = new Fonts.Rasterization.Slug.SlugGlyphCache();
-
-            return Interlocked.CompareExchange(ref _slugGlyphCache, created, null) ?? created;
-        }
-
-        /// <summary>
-        /// The per-instance Slug texture source consumed by the vector-tier renderer. Creation
-        /// is race-safe; use is render-thread-only per the store's contract.
-        /// </summary>
-        internal Fonts.Rasterization.Slug.SlugTexelStore SlugStore =>
-            _slugTexelStore ?? GetOrCreateSlugTexelStore();
-
-        private Fonts.Rasterization.Slug.SlugTexelStore GetOrCreateSlugTexelStore()
-        {
-            var created = new Fonts.Rasterization.Slug.SlugTexelStore();
-
-            return Interlocked.CompareExchange(ref _slugTexelStore, created, null) ?? created;
         }
 
         /// <summary>

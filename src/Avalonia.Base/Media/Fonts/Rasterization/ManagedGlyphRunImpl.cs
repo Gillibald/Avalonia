@@ -407,15 +407,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The backend-owned Slug run artifact (cached per-glyph shaders and draw rects),
-        /// stored here so it lives and dies with the run like the composed run masks. Base
-        /// only disposes it; the backend owns its type and rebuild policy.
-        /// </summary>
-        internal IDisposable? SlugRunArtifact;
-
-        /// <summary>
         /// Backend-owned native-fallback state (on Skia: the lazily built text blob cache for
-        /// triage-rejected draws), disposal-tied to the run like the Slug artifact.
+        /// triage-rejected draws), disposal-tied to the run like the composed run masks.
         /// </summary>
         internal IDisposable? NativeTextArtifact;
 
@@ -433,8 +426,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             _transformedSprites?.Dispose();
             _transformedSprites = null;
 
-            SlugRunArtifact?.Dispose();
-            SlugRunArtifact = null;
             NativeTextArtifact?.Dispose();
             NativeTextArtifact = null;
 

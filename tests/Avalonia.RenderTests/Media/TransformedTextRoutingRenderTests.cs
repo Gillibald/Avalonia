@@ -12,8 +12,7 @@ namespace Avalonia.Skia.RenderTests
     /// <summary>
     /// Transformed text reaches the transformed mask tier on every output this suite renders:
     /// the CPU raster outputs and the Mesa software GL (llvmpipe) and Vulkan (lavapipe)
-    /// outputs, which the Slug tier would otherwise take. No golden: the tier is observed on
-    /// the run itself.
+    /// outputs. No golden: the tier is observed on the run itself.
     /// </summary>
     public class TransformedTextRoutingRenderTests : TestBase
     {
@@ -37,34 +36,7 @@ namespace Avalonia.Skia.RenderTests
 
             Assert.Equal(1, impl.TransformedSprites.Count);
             Assert.Equal(gpu, impl.GlyphTypeface.MaskAtlas.Count > 0);
-            Assert.Null(impl.SlugRunArtifact);
             Assert.Null(impl.NativeTextArtifact);
-        }
-
-        [Fact]
-        public async Task The_Switch_Sends_Rotated_Text_To_Slug_On_The_Gpu_Outputs()
-        {
-            Assert.SkipUnless(MesaSoftwareRenderer.GlEnabled || MesaSoftwareRenderer.VulkanEnabled,
-                "No Mesa GPU output enabled.");
-
-            var run = CreateRotatedRun(out var target);
-            var previous = MaskGlyphRunRenderer.TransformedTextRouting;
-
-            MaskGlyphRunRenderer.TransformedTextRouting = TransformedTextRouting.Slug;
-
-            try
-            {
-                await RenderToFile(target);
-            }
-            finally
-            {
-                MaskGlyphRunRenderer.TransformedTextRouting = previous;
-            }
-
-            var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
-
-            Assert.Equal(0, impl.TransformedSprites.Count);
-            Assert.NotNull(impl.SlugRunArtifact);
         }
 
         private static GlyphRun CreateRotatedRun(out Control target)

@@ -4,7 +4,6 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 using Xunit;
-using Backend = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.Backend;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
@@ -225,10 +224,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private sealed class Output : IDisposable
         {
-            private readonly SlugGpuRenderingTests.GpuContext? _gpu;
+            private readonly GpuTestContext? _gpu;
             private readonly SKSurface _surface;
 
-            private Output(SlugGpuRenderingTests.GpuContext? gpu, SKSurface surface)
+            private Output(GpuTestContext? gpu, SKSurface surface)
             {
                 _gpu = gpu;
                 _surface = surface;
@@ -251,7 +250,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     return new Output(null, SKSurface.Create(info.WithColorType(SKColorType.Bgra8888)));
                 }
 
-                var gpu = TransformedAtlasTests.CreateGpu(Backend.NativeGl, target == Target.SoftwareGl);
+                var gpu = TransformedAtlasTests.CreateGpu(GpuBackend.NativeGl, target == Target.SoftwareGl);
                 var surface = SKSurface.Create(gpu.GrContext, true, info);
 
                 if (surface is null)

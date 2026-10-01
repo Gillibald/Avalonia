@@ -120,9 +120,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             float Contrast, float LumSrc, float LumDst, float LinSrc, float LinDst, bool NearEqual,
             float InverseGamma);
 
-        internal static GammaShaderParameters GetShaderParameters(byte r, byte g, byte b)
-            => GetShaderParameters(r, g, b, Contrast, Gamma);
-
         /// <summary>The LCD-strength parameters for the GPU blender.</summary>
         internal static GammaShaderParameters GetLcdShaderParameters(byte r, byte g, byte b)
             => GetShaderParameters(r, g, b, LcdContrast, LcdGamma);

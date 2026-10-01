@@ -5,8 +5,6 @@ using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
 using SkiaSharp;
 using Xunit;
-using Backend = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.Backend;
-using GpuContext = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.GpuContext;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
@@ -26,14 +24,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
         public static IEnumerable<object[]> Contexts()
         {
-            yield return new object[] { Backend.NativeGl, false };
-            yield return new object[] { Backend.Angle, false };
-            yield return new object[] { Backend.NativeGl, true };
+            yield return new object[] { GpuBackend.NativeGl, false };
+            yield return new object[] { GpuBackend.Angle, false };
+            yield return new object[] { GpuBackend.NativeGl, true };
         }
 
         [Theory]
         [MemberData(nameof(Contexts))]
-        public void Rotated_Draws_Take_The_Atlas_On_A_Gpu_Context(Backend backend, bool software)
+        public void Rotated_Draws_Take_The_Atlas_On_A_Gpu_Context(GpuBackend backend, bool software)
         {
             using var gpu = CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -70,7 +68,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Contexts))]
-        public void Warm_Atlas_Frames_Allocate_Nothing(Backend backend, bool software)
+        public void Warm_Atlas_Frames_Allocate_Nothing(GpuBackend backend, bool software)
         {
             using var gpu = CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -101,7 +99,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Contexts))]
-        public void The_Atlas_Draw_Equals_Its_Glyph_Masks_Blitted_One_By_One(Backend backend, bool software)
+        public void The_Atlas_Draw_Equals_Its_Glyph_Masks_Blitted_One_By_One(GpuBackend backend, bool software)
         {
             using var gpu = CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -180,7 +178,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Contexts))]
-        public void The_Atlas_Differs_From_The_Run_Mask_Compose_Only_Where_Glyphs_Overlap(Backend backend, bool software)
+        public void The_Atlas_Differs_From_The_Run_Mask_Compose_Only_Where_Glyphs_Overlap(GpuBackend backend, bool software)
         {
             using var gpu = CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -330,9 +328,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 GlyphMaskMode.Antialiased, 0u, GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: phaseY);
         }
 
-        internal static GpuContext CreateGpu(Backend backend, bool software)
+        internal static GpuTestContext CreateGpu(GpuBackend backend, bool software)
         {
-            var gpu = GpuContext.TryCreate(backend, out var reason);
+            var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
 
@@ -342,7 +340,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return gpu;
         }
 
-        internal static DrawingContextImpl CreateContext(GpuContext gpu, SKSurface? surface)
+        internal static DrawingContextImpl CreateContext(GpuTestContext gpu, SKSurface? surface)
         {
             Assert.SkipWhen(surface is null, "GPU surface creation failed.");
 
@@ -354,7 +352,7 @@ namespace Avalonia.Skia.UnitTests.Media
             });
         }
 
-        private static void Draw(GpuContext gpu, ManagedGlyphRunImpl run, Matrix transform, IBrush brush)
+        private static void Draw(GpuTestContext gpu, ManagedGlyphRunImpl run, Matrix transform, IBrush brush)
         {
             var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
 
@@ -370,7 +368,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>Renders on a transparent GPU surface under the test rotation and reads it back as RGBA.</summary>
-        internal static byte[] Render(GpuContext gpu, Action<DrawingContextImpl> draw)
+        internal static byte[] Render(GpuTestContext gpu, Action<DrawingContextImpl> draw)
         {
             var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
 

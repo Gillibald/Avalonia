@@ -1,7 +1,7 @@
 using System;
 using Avalonia;
 using Avalonia.Media;
-using Avalonia.Media.Fonts.Rasterization.Slug;
+using Avalonia.Platform;
 using Avalonia.UnitTests;
 using SkiaSharp;
 using Xunit;
@@ -47,29 +47,14 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.NotEqual(Contours(defaultInstance, glyph), matched);
         }
 
-        /// <summary>The walked outline of <paramref name="glyph"/>, one entry per curve point.</summary>
+        /// <summary>The walked outline of <paramref name="glyph"/>, one entry per contour command.</summary>
         private static string Contours(GlyphTypeface typeface, ushort glyph)
         {
-            var sink = new SlugContourSink();
+            var sink = new OutlineRecorder();
 
             Assert.True(typeface.TryBuildGlyphContours(glyph, Matrix.Identity, sink));
 
-            var builder = new System.Text.StringBuilder();
-
-            for (var contour = 0; contour < sink.ContourCount; contour++)
-            {
-                for (var i = 0; i < sink.GetCurveCount(contour); i++)
-                {
-                    var curve = sink.GetCurve(contour, i);
-
-                    builder.Append(FormattableString.Invariant(
-                        $"{curve.X1},{curve.Y1} {curve.X2},{curve.Y2} {curve.X3},{curve.Y3};"));
-                }
-
-                builder.Append('|');
-            }
-
-            return builder.ToString();
+            return sink.ToString();
         }
 
         [Fact]
@@ -101,5 +86,45 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable StartWithSystemFonts()
             => UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider()));
+
+        private sealed class OutlineRecorder : IGeometryContext
+        {
+            private readonly System.Text.StringBuilder _builder = new();
+
+            public void BeginFigure(Point startPoint, bool isFilled = true) => Append('M', startPoint);
+
+            public void LineTo(Point point, bool isStroked = true) => Append('L', point);
+
+            public void QuadraticBezierTo(Point controlPoint, Point endPoint, bool isStroked = true)
+            {
+                Append('Q', controlPoint);
+                Append(' ', endPoint);
+            }
+
+            public void CubicBezierTo(Point controlPoint1, Point controlPoint2, Point endPoint, bool isStroked = true)
+            {
+                Append('C', controlPoint1);
+                Append(' ', controlPoint2);
+                Append(' ', endPoint);
+            }
+
+            public void ArcTo(Point point, Size size, double rotationAngle, bool isLargeArc,
+                SweepDirection sweepDirection, bool isStroked = true) => Append('A', point);
+
+            public void EndFigure(bool isClosed) => _builder.Append('|');
+
+            public void SetFillRule(FillRule fillRule)
+            {
+            }
+
+            public void Dispose()
+            {
+            }
+
+            public override string ToString() => _builder.ToString();
+
+            private void Append(char verb, Point point)
+                => _builder.Append(FormattableString.Invariant($"{verb}{point.X},{point.Y};"));
+        }
     }
 }

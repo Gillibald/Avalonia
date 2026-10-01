@@ -2,8 +2,6 @@ using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Skia.Helpers;
 using SkiaSharp;
 using Xunit;
-using Backend = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.Backend;
-using GpuContext = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.GpuContext;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
@@ -70,11 +68,11 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [InlineData(Backend.NativeGl)]
-        [InlineData(Backend.Angle)]
-        public void A_Gpu_Context_Reports_What_Its_Grcontext_Was_Classified_As(Backend backend)
+        [InlineData(GpuBackend.NativeGl)]
+        [InlineData(GpuBackend.Angle)]
+        public void A_Gpu_Context_Reports_What_Its_Grcontext_Was_Classified_As(GpuBackend backend)
         {
-            using var gpu = GpuContext.TryCreate(backend, out var reason);
+            using var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
 
@@ -95,7 +93,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private static GlyphRasterTarget CreateTarget(GpuContext gpu)
+        private static GlyphRasterTarget CreateTarget(GpuTestContext gpu)
         {
             var info = new SKImageInfo(16, 16, SKColorType.Rgba8888, SKAlphaType.Premul);
 

@@ -4,15 +4,12 @@ using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Skia.Helpers;
 using SkiaSharp;
 using Xunit;
-using Backend = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.Backend;
-using GpuContext = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.GpuContext;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
     /// Where <see cref="DrawingContextImpl.DrawGlyphRun"/> sends the draws the upright mask
-    /// tier rejects: transformed masks on every context by default, the Slug tier (GPU) or
-    /// the native blob (raster) when the internal routing switch selects Slug.
+    /// tier rejects: transformed masks on every context.
     /// </summary>
     public class TransformedTextRoutingTests
     {
@@ -31,28 +28,12 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Null(run.NativeTextArtifact);
         }
 
-        [Fact]
-        public void The_Switch_Sends_Rotated_Raster_Draws_To_The_Native_Blob()
-        {
-            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-            using var run = WideRunMaskTests.CreateRun(typeface, "Rotated text", 24, new Point(8, 32));
-
-            using (RouteTransformedText(TransformedTextRouting.Slug))
-            {
-                DrawOnRaster(run, s_rotation);
-            }
-
-            // A raster context has no Slug tier, so the draw ends on the native blob.
-            Assert.Equal(0, run.TransformedSprites.Count);
-            Assert.NotNull(run.NativeTextArtifact);
-        }
-
         [Theory]
-        [InlineData(Backend.NativeGl)]
-        [InlineData(Backend.Angle)]
-        public void Rotated_Draws_Take_The_Transformed_Mask_Tier_On_A_Gpu_Context(Backend backend)
+        [InlineData(GpuBackend.NativeGl)]
+        [InlineData(GpuBackend.Angle)]
+        public void Rotated_Draws_Take_The_Transformed_Mask_Tier_On_A_Gpu_Context(GpuBackend backend)
         {
-            using var gpu = GpuContext.TryCreate(backend, out var reason);
+            using var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
 
@@ -62,39 +43,15 @@ namespace Avalonia.Skia.UnitTests.Media
             DrawOnGpu(gpu!, run, s_rotation);
 
             Assert.Equal(1, run.TransformedSprites.Count);
-            Assert.Null(run.SlugRunArtifact);
             Assert.Null(run.NativeTextArtifact);
         }
 
         [Theory]
-        [InlineData(Backend.NativeGl)]
-        [InlineData(Backend.Angle)]
-        public void The_Switch_Sends_Rotated_Gpu_Draws_To_Slug(Backend backend)
+        [InlineData(GpuBackend.NativeGl)]
+        [InlineData(GpuBackend.Angle)]
+        public void An_Animated_Rotation_On_A_Gpu_Takes_The_Transformed_Mask_Tier(GpuBackend backend)
         {
-            using var gpu = GpuContext.TryCreate(backend, out var reason);
-
-            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
-
-            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-            using var run = WideRunMaskTests.CreateRun(typeface, "Rotated text", 24, new Point(8, 32));
-
-            using (RouteTransformedText(TransformedTextRouting.Slug))
-            {
-                DrawOnGpu(gpu!, run, s_rotation);
-            }
-
-            Assert.Equal(0, run.TransformedSprites.Count);
-            Assert.NotNull(run.SlugRunArtifact);
-        }
-
-        [Theory]
-        [InlineData(Backend.NativeGl, false)]
-        [InlineData(Backend.Angle, false)]
-        [InlineData(Backend.NativeGl, true)]
-        [InlineData(Backend.Angle, true)]
-        public void An_Animated_Rotation_On_A_Gpu_Takes_Slug_Only_Under_The_Switch(Backend backend, bool slug)
-        {
-            using var gpu = GpuContext.TryCreate(backend, out var reason);
+            using var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
 
@@ -114,7 +71,6 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                using (RouteTransformedText(slug ? TransformedTextRouting.Slug : TransformedTextRouting.Masks))
                 using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
                        {
                            Surface = surface,
@@ -132,18 +88,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 gpu.GrContext.Flush();
 
-                if (slug)
-                {
-                    Assert.Equal(12, TextTierDiagnostics.SlugTierDraws);
-                    Assert.NotNull(run.SlugRunArtifact);
-                }
-                else
-                {
-                    // A hardware GPU rasterizes every animated frame into transient buffers.
-                    Assert.Equal(0, TextTierDiagnostics.SlugTierDraws);
-                    Assert.Equal(12, TextTierDiagnostics.TransformedMaskTierDraws);
-                    Assert.Null(run.SlugRunArtifact);
-                }
+                // A hardware GPU rasterizes every animated frame into transient buffers.
+                Assert.Equal(12, TextTierDiagnostics.TransformedMaskTierDraws);
             }
             finally
             {
@@ -153,17 +99,13 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Upright_Draws_Keep_The_Upright_Mask_Tier_Under_Either_Routing()
+        public void Upright_Draws_Keep_The_Upright_Mask_Tier()
         {
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, "Upright text", 24, new Point(8, 32));
 
             DrawOnRaster(run, Matrix.CreateTranslation(3, 4));
-
-            using (RouteTransformedText(TransformedTextRouting.Slug))
-            {
-                DrawOnRaster(run, Matrix.CreateTranslation(3.5, 4));
-            }
+            DrawOnRaster(run, Matrix.CreateTranslation(3.5, 4));
 
             Assert.Equal(2, run.RunMasks.Count);
             Assert.Equal(0, run.TransformedSprites.Count);
@@ -188,7 +130,6 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.Equal(1, TextTierDiagnostics.TransformedMaskTierDraws);
                 Assert.Equal(1, TextTierDiagnostics.MaskTierDraws);
-                Assert.Equal(0, TextTierDiagnostics.SlugTierDraws);
                 Assert.Equal(0, TextTierDiagnostics.BlobTierDraws);
             }
             finally
@@ -228,16 +169,6 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(allocated == 0, $"100 warm transformed draws allocated {allocated} bytes");
         }
 
-        /// <summary>Selects the transformed-text tier until disposed.</summary>
-        internal static IDisposable RouteTransformedText(TransformedTextRouting routing)
-        {
-            var previous = MaskGlyphRunRenderer.TransformedTextRouting;
-
-            MaskGlyphRunRenderer.TransformedTextRouting = routing;
-
-            return new Restore(previous);
-        }
-
         private static void DrawOnRaster(ManagedGlyphRunImpl run, Matrix transform)
         {
             var info = new SKImageInfo(320, 240, SKColorType.Bgra8888, SKAlphaType.Premul);
@@ -250,7 +181,7 @@ namespace Avalonia.Skia.UnitTests.Media
             context.DrawGlyphRun(Brushes.Black, run);
         }
 
-        private static void DrawOnGpu(GpuContext gpu, ManagedGlyphRunImpl run, Matrix transform)
+        private static void DrawOnGpu(GpuTestContext gpu, ManagedGlyphRunImpl run, Matrix transform)
         {
             var info = new SKImageInfo(320, 240, SKColorType.Bgra8888, SKAlphaType.Premul);
 
@@ -270,15 +201,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             gpu.GrContext.Flush();
-        }
-
-        private sealed class Restore : IDisposable
-        {
-            private readonly TransformedTextRouting _previous;
-
-            public Restore(TransformedTextRouting previous) => _previous = previous;
-
-            public void Dispose() => MaskGlyphRunRenderer.TransformedTextRouting = _previous;
         }
     }
 }

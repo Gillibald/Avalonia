@@ -76,9 +76,9 @@
 
       <Border Classes="section">
         <StackPanel>
-          <TextBlock Classes="h" Text="4 — Transformed text (Slug vector tier)" />
+          <TextBlock Classes="h" Text="4 — Transformed text (transformed masks)" />
           <TextBlock Classes="expect"
-                     Text="Rotation, skew, and sizes past the mask ceiling render analytically on the GPU from size-independent payloads (two-ray winding, zero misclassified pixels vs the area oracle). On the backend stack these fall to the native blob — compare edge quality under the toggle." />
+                     Text="Rotation, skew, and sizes past the upright mask ceiling render through glyph masks rasterized unhinted under the device transform, on CPU and GPU contexts alike. On the backend stack these fall to the native blob — compare edge quality under the toggle." />
           <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto">
             <Border Grid.Column="0" Height="190" ClipToBounds="True">
               <TextBlock FontSize="30" Text="Rotated 30°" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -102,7 +102,7 @@
                          Margin="70,10,0,0" RenderTransformOrigin="0%,0%" RenderTransform="rotate(90deg)" />
             </Border>
             <TextBlock Grid.Column="1" FontSize="220" Text="Ag@" VerticalAlignment="Center"
-                       ToolTip.Tip="220 px/em — past the 160 px mask ceiling, Slug takes it axis-aligned" />
+                       ToolTip.Tip="220 px/em — past the 160 px upright ceiling, transformed masks take it axis-aligned" />
           </Grid>
         </StackPanel>
       </Border>
@@ -111,7 +111,7 @@
         <StackPanel>
           <TextBlock Classes="h" Text="5 — Zoom" />
           <TextBlock Classes="expect"
-                     Text="The gesture case. Axis-aligned: masks re-raster per 1/8-px scale bucket up to 160 px/em, then Slug continues from the same payloads. Pre-rotated: Slug throughout — one payload per glyph serves the entire ladder, rebuilt shaders cost ~2-4 µs/glyph per bucket crossing." />
+                     Text="The gesture case. Axis-aligned: masks re-raster per 1/8-px scale bucket up to 160 px/em, then transformed masks continue. Pre-rotated: transformed masks throughout — a scale that changes every frame re-rasterizes into transient buffers on CPU and hardware GPU contexts, while software GL stretches settled masks within a scale band." />
           <StackPanel Orientation="Horizontal" Spacing="14">
             <CheckBox x:Name="AnimateZoom" IsChecked="True" Content="Animate" />
             <Slider x:Name="ZoomSlider" Width="360" Minimum="0.4" Maximum="8" Value="1" />
@@ -134,7 +134,7 @@
         <StackPanel>
           <TextBlock Classes="h" Text="6 — Color glyphs (COLR)" />
           <TextBlock Classes="expect"
-                     Text="COLR v1 paint graphs (gradients — flame, rainbow) split at record time into managed drawings; v0-only glyphs compose as tinted mask layers, palette foreground sentinel included. The rotated row intentionally keeps the native fallback — color glyphs stay off the Slug tier." />
+                     Text="COLR v1 paint graphs (gradients — flame, rainbow) split at record time into managed drawings; v0-only glyphs compose as tinted mask layers, palette foreground sentinel included. The rotated row checks color glyphs under a free transform." />
           <TextBlock FontFamily="Segoe UI Emoji" FontSize="24" Text="😀 🔥 ❤️ 🌈 🚀 🎨 🦊 🌍 ⭐ 👍 (24 px)" />
           <TextBlock FontFamily="Segoe UI Emoji" FontSize="48" Text="😀 🔥 ❤️ 🌈 🚀 🎨 (48 px)" />
           <TextBlock FontFamily="Segoe UI Emoji" FontSize="96" Text="🔥 🌈 🦊 (96 px)" />
@@ -149,7 +149,7 @@
         <StackPanel>
           <TextBlock Classes="h" Text="7 — Variable fonts" />
           <TextBlock Classes="expect"
-                     Text="Each weight and width is its own variation instance: the table walkers bake gvar deltas, so every row gets per-instance managed outlines, masks, and Slug payloads. The last line steps the weight axis continuously." />
+                     Text="Each weight and width is its own variation instance: the table walkers bake gvar deltas, so every row gets per-instance managed outlines and masks. The last line steps the weight axis continuously." />
           <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="Light"    Text="Bahnschrift wght 300 — Hamburgefonstiv" />
           <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="Normal"   Text="Bahnschrift wght 400 — Hamburgefonstiv" />
           <TextBlock FontFamily="Bahnschrift" FontSize="26" FontWeight="SemiBold" Text="Bahnschrift wght 600 — Hamburgefonstiv" />
@@ -163,7 +163,7 @@
       </Border>
 
       <TextBlock Opacity="0.55" FontSize="11" Margin="2,0,0,18"
-                 Text="Validation: toggle the mode (top right) and compare — geometry, spacing, and color must match; the managed stack is unhinted by design, so sub-pixel weight differences at small sizes are the documented trade-off. Transform and zoom sections require a GPU-backed window (the Slug tier declines CPU raster contexts and falls back to the blob)." />
+                 Text="Validation: toggle the mode (top right) and compare — geometry, spacing, and color must match; the managed stack is unhinted by design, so sub-pixel weight differences at small sizes are the documented trade-off." />
     </StackPanel>
   </ScrollViewer>
 </UserControl>

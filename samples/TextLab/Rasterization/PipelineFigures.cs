@@ -4,7 +4,6 @@ using System.IO;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
-using Avalonia.Media.Fonts.Rasterization.Slug;
 using Avalonia.Media.TextFormatting;
 using SkiaSharp;
 
@@ -12,8 +11,8 @@ namespace TextLab
 {
     /// <summary>
     /// The rendering core of the pipeline inspector: each method draws one stage of the
-    /// managed glyph pipeline (hinting warps, mask anatomy, the ClearType stages, the Slug
-    /// payload) into an <see cref="SKBitmap"/>. The interactive inspector page shows these
+    /// managed glyph pipeline (hinting warps, mask anatomy, the ClearType stages) into an
+    /// <see cref="SKBitmap"/>. The interactive inspector page shows these
     /// live; <see cref="ExportAll"/> writes the deterministic Inter figures embedded in
     /// docs/glyph-rasterization/.
     /// </summary>
@@ -743,131 +742,6 @@ namespace TextLab
         }
 
         /// <summary>
-        /// The Slug payload for one glyph: em-space quadratic chains with the horizontal and
-        /// vertical band partition the shader walks, plus the payload statistics.
-        /// </summary>
-        public static SKBitmap SlugBands(GlyphTypeface typeface, ushort glyph, string label,
-            out string info, bool embedCaption = true)
-        {
-            var t = Theme;
-            var sink = new SlugContourSink();
-
-            sink.Reset();
-
-            var scale = 1.0 / typeface.Metrics.DesignEmHeight;
-            var data = typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, scale, 0, 0), sink)
-                ? SlugBandEncoder.Encode(sink)
-                : null;
-
-            var figureHeight = embedCaption ? 520 : 452;
-            var bitmap = new SKBitmap(new SKImageInfo(560, figureHeight, SKColorType.Bgra8888, SKAlphaType.Premul));
-
-            using var canvas = new SKCanvas(bitmap);
-            using var font = new SKFont(SKTypeface.Default, 13);
-            using var text = new SKPaint { Color = t.Label };
-
-            canvas.Clear(t.Background);
-
-            if (data is null)
-            {
-                info = $"{label}: no Slug payload (no contours or caps exceeded — the tier declines)";
-                canvas.DrawText(info, 10, 30, SKTextAlign.Left, font, text);
-                return bitmap;
-            }
-
-            const float left = 46;
-            const float top = 32;
-            var extent = Math.Max(data.MaxX - data.MinX, data.MaxY - data.MinY);
-            var s = 370f / extent;
-
-            float MapX(float x) => left + (x - data.MinX) * s;
-            float MapY(float y) => top + (data.MaxY - y) * s;   // em space is y-up
-
-            using (var bandPaint = new SKPaint { Color = t.Zone.WithAlpha(0x60), IsStroke = true })
-            using (var bandText = new SKPaint { Color = t.Zone })
-            using (var small = new SKFont(SKTypeface.Default, 11))
-            {
-                for (var i = 0; i <= data.HorizontalBandCount; i++)
-                {
-                    var y = data.MinY + (data.MaxY - data.MinY) * i / data.HorizontalBandCount;
-
-                    canvas.DrawLine(MapX(data.MinX), MapY(y), MapX(data.MaxX), MapY(y), bandPaint);
-
-                    if (i < data.HorizontalBandCount)
-                    {
-                        var mid = data.MinY + (data.MaxY - data.MinY) * (i + 0.5f) / data.HorizontalBandCount;
-
-                        canvas.DrawText($"{data.GetHorizontalBand(i).Length}", MapX(data.MaxX) + 6, MapY(mid) + 4,
-                            SKTextAlign.Left, small, bandText);
-                    }
-                }
-
-                for (var i = 0; i <= data.VerticalBandCount; i++)
-                {
-                    var x = data.MinX + (data.MaxX - data.MinX) * i / data.VerticalBandCount;
-
-                    canvas.DrawLine(MapX(x), MapY(data.MinY), MapX(x), MapY(data.MaxY), bandPaint);
-
-                    if (i < data.VerticalBandCount)
-                    {
-                        var mid = data.MinX + (data.MaxX - data.MinX) * (i + 0.5f) / data.VerticalBandCount;
-
-                        canvas.DrawText($"{data.GetVerticalBand(i).Length}", MapX(mid) - 4, MapY(data.MinY) + 16,
-                            SKTextAlign.Left, small, bandText);
-                    }
-                }
-            }
-
-            using (var curvePaint = new SKPaint
-                   {
-                       Color = t.Ink, IsStroke = true, StrokeWidth = 2, IsAntialias = true,
-                   })
-            using (var path = new SKPath())
-            {
-                for (var i = 0; i < data.TotalCurveCount; i++)
-                {
-                    var curve = data.GetCurve(i);
-
-                    path.MoveTo(MapX(curve.X1), MapY(curve.Y1));
-                    path.QuadTo(MapX(curve.X2), MapY(curve.Y2), MapX(curve.X3), MapY(curve.Y3));
-                }
-
-                canvas.DrawPath(path, curvePaint);
-            }
-
-            var worstBand = 0;
-
-            for (var i = 0; i < data.HorizontalBandCount; i++)
-            {
-                worstBand = Math.Max(worstBand, data.GetHorizontalBand(i).Length);
-            }
-
-            for (var i = 0; i < data.VerticalBandCount; i++)
-            {
-                worstBand = Math.Max(worstBand, data.GetVerticalBand(i).Length);
-            }
-
-            info = $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
-                $"{data.HorizontalBandCount}x{data.VerticalBandCount} bands (worst list {worstBand} of {SlugTexelSerializer.MaxBandListLength}), " +
-                $"payload {data.RetainedBytes} B, {data.FillRule}" + Environment.NewLine +
-                "green counts = curves per band list; encoded once per glyph ever, in em space";
-
-            if (embedCaption)
-            {
-                canvas.DrawText(
-                    $"{label}: {data.ContourCount} contours, {data.TotalCurveCount} quadratic curves, " +
-                    $"{data.HorizontalBandCount}x{data.VerticalBandCount} bands (worst list {worstBand} of {SlugTexelSerializer.MaxBandListLength}), " +
-                    $"payload {data.RetainedBytes} B, {data.FillRule}",
-                    10, figureHeight - 40, SKTextAlign.Left, font, text);
-                canvas.DrawText(
-                    "green counts = curves per band list; encoded once per glyph ever, in em space",
-                    10, figureHeight - 20, SKTextAlign.Left, font, text);
-            }
-
-            return bitmap;
-        }
-
-        /// <summary>
         /// The repo's Inter asset as a managed typeface — the deterministic figure font,
         /// independent of what the font manager resolves on this machine.
         /// </summary>
@@ -1207,7 +1081,6 @@ namespace TextLab
                     Path.Combine(directory, "mask-anatomy.png"));
                 Save(ClearTypePipeline(typeface, typeface.CharacterToGlyphMap['e'], "'e'", 13, bgr: false, gamma: true,
                     TextHintingMode.Light, out _), Path.Combine(directory, "cleartype-pipeline.png"));
-                Save(SlugBands(typeface, typeface.CharacterToGlyphMap['g'], "'g'", out _), Path.Combine(directory, "slug-bands.png"));
             }
             finally
             {

@@ -14,9 +14,9 @@
         <CheckBox x:Name="BgrBox" Content="BGR"
                   ToolTip.Tip="Compose for blue-green-red subpixel stripe order instead of RGB." />
         <CheckBox x:Name="TintTiersBox" Content="Tint tiers"
-                  ToolTip.Tip="Badges every run in the window by the tier that drew it: green upright run masks, blue transformed run masks, magenta Slug, orange native blob." />
+                  ToolTip.Tip="Badges every run in the window by the tier that drew it: green upright run masks, blue transformed run masks, orange native blob." />
         <Button x:Name="CopyButton" Content="Copy details" FontSize="12"
-                ToolTip.Tip="Copy the glyph, engine, mask key and Slug payload details as text." />
+                ToolTip.Tip="Copy the glyph, engine and mask key details as text." />
       </StackPanel>
     </Border>
     <Grid RowDefinitions="*,*" ColumnDefinitions="*,*">
@@ -44,20 +44,12 @@
           <Image x:Name="MaskImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
         </ScrollViewer>
       </DockPanel>
-      <DockPanel Grid.Row="1" Grid.Column="0" Margin="8,4,4,8">
+      <DockPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="8,4,8,8">
         <TextBlock DockPanel.Dock="Top" Text="ClearType — 3x raster, stripe channels, composite" FontWeight="SemiBold" />
         <TextBlock DockPanel.Dock="Top" x:Name="LcdLegendText" FontSize="11" Opacity="0.7"
                    TextWrapping="Wrap" Margin="0,2,8,4" />
         <ScrollViewer HorizontalScrollBarVisibility="Auto">
           <Image x:Name="LcdImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
-        </ScrollViewer>
-      </DockPanel>
-      <DockPanel Grid.Row="1" Grid.Column="1" Margin="4,4,8,8">
-        <TextBlock DockPanel.Dock="Top" Text="Slug payload — em-space curves and bands" FontWeight="SemiBold" />
-        <TextBlock DockPanel.Dock="Top" x:Name="SlugInfoText" FontSize="11" Opacity="0.7"
-                   TextWrapping="Wrap" Margin="0,2,8,4" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="SlugImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
         </ScrollViewer>
       </DockPanel>
     </Grid>

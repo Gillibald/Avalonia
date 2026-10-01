@@ -131,11 +131,11 @@ namespace TextLab
 
             AddStage("5. Three tiers draw the run",
                 "Every glyph run dispatches through up to three tiers: pre-composed run masks for " +
-                "axis-aligned text, the Slug vector tier on the GPU for rotated and very large text - its " +
-                "band-partitioned quadratic payload is shown below - and the backend's native blob as the " +
-                "final fallback. A declined draw falls through to the next tier, so text never silently " +
-                "fails to render.",
-                PipelineFigures.SlugBands(typeface, g, "'g'", out var legend5, embedCaption: false), legend5);
+                "axis-aligned text, transformed glyph masks for rotated, skewed and very large text - " +
+                "rasterized under the device transform, and again every frame while that transform " +
+                "animates - and the backend's native blob as the final fallback. A declined draw falls " +
+                "through to the next tier, so text never silently fails to render.",
+                null, string.Empty);
 
             var inspectButton = new Button
             {
@@ -158,7 +158,7 @@ namespace TextLab
             _host.Children.Add(inspectButton);
         }
 
-        private void AddStage(string title, string prose, SKBitmap figure, string legend)
+        private void AddStage(string title, string prose, SKBitmap? figure, string legend)
         {
             _host.Children.Add(new TextBlock
             {
@@ -177,10 +177,13 @@ namespace TextLab
                 Margin = new Thickness(0, 2, 0, 4),
             });
 
-            var image = new Image { Stretch = Stretch.None, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
+            if (figure is not null)
+            {
+                var image = new Image { Stretch = Stretch.None, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
 
-            SetImage(image, figure);
-            _host.Children.Add(image);
+                SetImage(image, figure);
+                _host.Children.Add(image);
+            }
 
             if (legend.Length > 0)
             {
