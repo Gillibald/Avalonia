@@ -139,7 +139,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
                 else
                 {
-                    // A hardware GPU stretches the settled batch like every other context.
+                    // A hardware GPU rasterizes every animated frame into transient buffers.
                     Assert.Equal(0, TextTierDiagnostics.SlugTierDraws);
                     Assert.Equal(12, TextTierDiagnostics.TransformedMaskTierDraws);
                     Assert.Null(run.SlugRunArtifact);

@@ -64,8 +64,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(before, cache.Count);
 
             // The animation stops on a new angle: that frame still counts as animating and
-            // draws stretched. The next one repeats the transform, rasterizes and caches, and
-            // the one after reuses what it cached.
+            // rasterizes into transient buffers. The next one repeats the transform,
+            // rasterizes and caches, and the one after reuses what it cached.
             var settled = Matrix.CreateRotation(Math.PI * 60 / 180) * Matrix.CreateTranslation(300, 300);
 
             context.Transform = settled;

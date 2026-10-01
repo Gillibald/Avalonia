@@ -10,10 +10,12 @@ using GpuContext = Avalonia.Skia.UnitTests.Media.SlugGpuRenderingTests.GpuContex
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// A transform that changes every frame. On every context the run draws the batch of its
-    /// last static frame under the change of transform, allocating and rasterizing nothing.
-    /// Upright zoom gestures stretch the last static run mask on the CPU and software GPUs.
-    /// The first frame that repeats its transform rasterizes again, at that transform.
+    /// A transform that changes every frame. CPU surfaces and hardware GPUs rasterize every
+    /// animated frame into transient buffers, drawing exactly what a static frame at that
+    /// transform draws while caching nothing; software GPUs draw the batch of the last static
+    /// frame under the change of transform. Upright zoom gestures stretch the last static run
+    /// mask on software GPUs only. The first frame that repeats its transform rasterizes and
+    /// caches again, at that transform.
     /// </summary>
     public class TransformedAnimationTests
     {
@@ -37,11 +39,231 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        /// <summary>The contexts that rasterize animated frames: CPU surfaces and hardware GPUs.</summary>
+        public static IEnumerable<object[]> RasterizingTargets()
+        {
+            yield return new object[] { Target.Raster };
+            yield return new object[] { Target.HardwareGl };
+            yield return new object[] { Target.HardwareAngle };
+        }
+
+        /// <summary>The contexts that stretch the settled batch while animating: software GPUs.</summary>
+        public static IEnumerable<object[]> StretchingTargets()
+        {
+            yield return new object[] { Target.SoftwareGl };
+        }
+
+        public static IEnumerable<object[]> RasterizedAnimations()
+        {
+            foreach (var target in RasterizingTargets())
+            {
+                yield return new[] { target[0], false };
+                yield return new[] { target[0], true };
+            }
+        }
+
         private static Matrix Rotation(double degrees)
             => Matrix.CreateRotation(Math.PI * degrees / 180) * Matrix.CreateTranslation(160.4, 120.7);
 
+        private static Matrix ZoomRotation(double scale)
+            => Matrix.CreateScale(scale, scale) * Matrix.CreateRotation(Math.PI * 15 / 180) *
+               Matrix.CreateTranslation(60.4, 40.7);
+
         [Theory]
-        [MemberData(nameof(Targets))]
+        [MemberData(nameof(RasterizedAnimations))]
+        public void An_Animated_Frame_Draws_What_A_Run_Drawn_Once_At_Its_Transform_Draws(Target target, bool zoom)
+        {
+            using var output = TestTarget.Create(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var animated = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+            var context = output.Context;
+
+            Matrix At(int frame) => zoom ? ZoomRotation(1 + frame * 0.07) : Rotation(5 + frame * 1.7);
+
+            for (var frame = 0; frame < 10; frame++)
+            {
+                context.Transform = At(frame);
+                context.DrawGlyphRun(Brushes.Black, animated);
+
+                var drawn = output.ReadAndClear();
+
+                if (frame < TransformChurnGuard.Threshold)
+                {
+                    continue;
+                }
+
+                // A run drawn once rasterizes at its transform and caches the result.
+                using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+                context.Transform = At(frame);
+                context.DrawGlyphRun(Brushes.Black, fresh);
+
+                var expected = output.ReadAndClear();
+
+                Assert.True(Array.Exists(expected, b => b != 0));
+                TransformedAtlasTests.AssertEqual(expected, drawn, $"{target} frame {frame}");
+            }
+
+            Assert.Equal(TransformChurnGuard.Threshold, animated.TransformedSprites.Count);
+        }
+
+        [Theory]
+        [MemberData(nameof(RasterizingTargets))]
+        public void An_Animated_Rotation_Rasterizes_Without_Caching_Or_Allocating(Target target)
+        {
+            using var output = TestTarget.Create(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 24, new Point(8, 32));
+
+            var context = output.Context;
+            var glyphMasks = 0;
+            var atlasEntries = 0;
+            var atlasBytes = 0L;
+            var frames = 0;
+            long allocated = 0;
+
+            // Two passes over the same angles: the scratch buffers grow to the largest frame
+            // during the first, and the second is measured. Only the first pass's opening frames
+            // are cached, so every later frame rasterizes.
+            for (var frame = 0; frame < 80; frame++)
+            {
+                context.Transform = Rotation(5 + frame % 40 * 1.7);
+
+                var before = GC.GetAllocatedBytesForCurrentThread();
+
+                Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black,
+                    TextRenderingMode.Antialias));
+
+                if (frame >= 40 + TransformChurnGuard.Threshold)
+                {
+                    allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+                    frames++;
+                }
+
+                if (frame == TransformChurnGuard.Threshold)
+                {
+                    glyphMasks = typeface.MaskCache.Count;
+                    atlasEntries = typeface.MaskAtlas.Count;
+                    atlasBytes = typeface.MaskAtlas.AllocatedBytes;
+                }
+            }
+
+            // Only the frames before the guard engaged built sprite sets and stored glyph masks.
+            Assert.Equal(TransformChurnGuard.Threshold, run.TransformedSprites.Count);
+            Assert.Equal(glyphMasks, typeface.MaskCache.Count);
+            Assert.Equal(atlasEntries, typeface.MaskAtlas.Count);
+            Assert.Equal(atlasBytes, typeface.MaskAtlas.AllocatedBytes);
+            Assert.Null(run.SlugRunArtifact);
+            Assert.True(output.HasInk(), "the last animation frame drew nothing");
+
+            // A CPU surface blends from pooled buffers. A GPU hands each run's coverage to the
+            // backend as one transient image, whose wrapper is the only allocation left.
+            var perFrame = allocated / frames;
+
+            TestContext.Current.TestOutputHelper?.WriteLine($"{target}: {perFrame} bytes per animated frame");
+
+            Assert.True(target == Target.Raster ? perFrame == 0 : perFrame <= MaxTransientImageBytes,
+                $"animated frames allocated {perFrame} bytes each");
+        }
+
+        public static IEnumerable<object[]> Obstacles()
+        {
+            yield return new object[] { "opacity" };
+            yield return new object[] { "layer" };
+            yield return new object[] { "rounded clip" };
+        }
+
+        [Theory]
+        [MemberData(nameof(Obstacles))]
+        public void An_Animated_Frame_The_Surface_Cannot_Take_Directly_Rasterizes_Through_The_Backend(string obstacle)
+        {
+            using var output = TestTarget.Create(Target.Raster);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var animated = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+            var context = output.Context;
+            var glyphMasks = 0;
+            var maxDifference = 0;
+
+            void Draw(ManagedGlyphRunImpl run, Matrix transform)
+            {
+                switch (obstacle)
+                {
+                    case "opacity":
+                        context.PushOpacity(0.5, null);
+                        break;
+                    case "layer":
+                        context.PushLayer(new Rect(0, 0, Width, Height));
+                        break;
+                    default:
+                        context.PushClip(new RoundedRect(new Rect(0, 0, Width, Height), 4));
+                        break;
+                }
+
+                context.Transform = transform;
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.Transform = Matrix.Identity;
+
+                switch (obstacle)
+                {
+                    case "opacity":
+                        context.PopOpacity();
+                        break;
+                    case "layer":
+                        context.PopLayer();
+                        break;
+                    default:
+                        context.PopClip();
+                        break;
+                }
+            }
+
+            for (var frame = 0; frame < 10; frame++)
+            {
+                Draw(animated, Rotation(5 + frame * 1.7));
+
+                var drawn = output.ReadAndClear();
+
+                if (frame < TransformChurnGuard.Threshold)
+                {
+                    glyphMasks = typeface.MaskCache.Count;
+                    continue;
+                }
+
+                Assert.Equal(glyphMasks, typeface.MaskCache.Count);
+
+                // The static frame draws per-glyph pre-tinted bitmaps, the animated one a
+                // transient coverage image tinted by the backend. Both blend the same corrected
+                // coverage; only an opacity, which the backend folds into its tint, rounds
+                // differently, by up to a level.
+                using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+                Draw(fresh, Rotation(5 + frame * 1.7));
+
+                var expected = output.ReadAndClear();
+
+                Assert.True(Array.Exists(expected, b => b != 0));
+
+                for (var i = 0; i < expected.Length; i++)
+                {
+                    maxDifference = Math.Max(maxDifference, Math.Abs(expected[i] - drawn[i]));
+                }
+
+                glyphMasks = typeface.MaskCache.Count;
+            }
+
+            TestContext.Current.TestOutputHelper?.WriteLine($"{obstacle}: largest difference {maxDifference} levels");
+
+            Assert.Equal(TransformChurnGuard.Threshold, animated.TransformedSprites.Count);
+            Assert.True(maxDifference <= 1, $"{obstacle}: animated frames differ from static ones by {maxDifference} levels");
+        }
+
+        /// <summary>The managed allocation of one transient image on a GPU context.</summary>
+        private const long MaxTransientImageBytes = 256;
+
+        [Theory]
+        [MemberData(nameof(StretchingTargets))]
         public void An_Animated_Rotation_Stretches_The_Settled_Batch(Target target)
         {
             using var output = TestTarget.Create(target);
@@ -86,7 +308,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [MemberData(nameof(Targets))]
+        [MemberData(nameof(StretchingTargets))]
         public void A_Stretched_Frame_At_The_Settled_Transform_Equals_The_Settled_Frame(Target target)
         {
             using var output = TestTarget.Create(target);
@@ -114,11 +336,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
         public static IEnumerable<object[]> StretchedRotations()
         {
-            foreach (var target in Enum.GetValues<Target>())
+            foreach (var target in StretchingTargets())
             {
                 foreach (var delta in new[] { 3.0, 17.0, 30.0 })
                 {
-                    yield return new object[] { target, delta };
+                    yield return new object[] { target[0], delta };
                 }
             }
         }
@@ -194,8 +416,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.DrawGlyphRun(Brushes.Black, animated);
             }
 
-            // The transform stops at its final value: the last animation frame stretches, the
-            // next one repeats the transform and rasterizes.
+            // The transform stops at its final value: the last animation frame still counts as
+            // animating, the next one repeats the transform and rasterizes into the caches.
             context.Transform = final;
             context.DrawGlyphRun(Brushes.Black, animated);
             output.ReadAndClear();
@@ -215,7 +437,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [MemberData(nameof(Targets))]
+        [MemberData(nameof(StretchingTargets))]
         public void A_Zoom_Past_The_Stretch_Band_Rasterizes_Once_Per_Crossing_Like_A_Fresh_Draw(Target target)
         {
             // The settled batch stretches while the zoom since it settled stays within a factor
@@ -225,10 +447,6 @@ namespace Avalonia.Skia.UnitTests.Media
             using var output = TestTarget.Create(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
-
-            static Matrix ZoomRotation(double scale)
-                => Matrix.CreateScale(scale, scale) * Matrix.CreateRotation(Math.PI * 15 / 180) *
-                   Matrix.CreateTranslation(60.4, 40.7);
 
             // A sawtooth: up to twice the size, then back to exactly the first frame's transform,
             // whose sprite set is still cached, and up again.
@@ -295,13 +513,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Except_On_Hardware_Gpus(Target target)
+        public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Only_On_Software_Gpus(Target target)
         {
             using var output = TestTarget.Create(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8, 32));
 
-            var hardware = target is Target.HardwareGl or Target.HardwareAngle;
+            var rasterizing = target != Target.SoftwareGl;
             var context = output.Context;
             var glyphMasks = 0;
             var runMasks = 0;
@@ -330,9 +548,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(output.HasInk(), "the last zoom frame drew nothing");
 
-            if (hardware)
+            if (rasterizing)
             {
-                // A hardware GPU keeps rasterizing every scale.
+                // A CPU surface and a hardware GPU keep rasterizing every scale.
                 Assert.True(typeface.MaskCache.Count > glyphMasks);
                 return;
             }
