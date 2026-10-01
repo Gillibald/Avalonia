@@ -63,7 +63,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// scaled by the source's inverse alpha, is computed per pixel.
     /// </para>
     /// <para>
-    /// The vector paths process eight (AVX2) or four (SSSE3) pixels per step in 16-bit lanes;
+    /// The vector paths process eight (AVX2) or four (SSSE3, portable) pixels per step in 16-bit lanes;
     /// both round <c>a * b / 255</c> as <c>(v + (v &gt;&gt; 8)) &gt;&gt; 8</c> with
     /// <c>v = a * b + 128</c>, which equals the scalar <c>(a * b + 127) / 255</c> for every
     /// pair of bytes.
@@ -243,7 +243,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                     // smaller steps or the scalar loop.
                     if (path == GlyphBlitPath.Portable)
                     {
-                        throw new NotImplementedException("The portable vector path is not implemented.");
+                        done = BlendRowPortable<TOver>(source, destination, count, sourcePointer, fill,
+                            fillLanes.GetLower());
                     }
 
                     if (path == GlyphBlitPath.Avx2)
@@ -251,7 +252,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         done = BlendRowAvx2<TOver>(source, destination, count, sourcePointer, fill, fillLanes);
                     }
 
-                    if (path != GlyphBlitPath.Scalar)
+                    if (path is GlyphBlitPath.Ssse3 or GlyphBlitPath.Avx2)
                     {
                         done += BlendRowSsse3<TOver>(source + done, destination + done, count - done, sourcePointer,
                             fill, fillLanes.GetLower());
@@ -263,7 +264,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private static GlyphBlitPath DetectPath()
-            => Avx2.IsSupported ? GlyphBlitPath.Avx2 : Ssse3.IsSupported ? GlyphBlitPath.Ssse3 : GlyphBlitPath.Scalar;
+            => Avx2.IsSupported ? GlyphBlitPath.Avx2
+                : Ssse3.IsSupported ? GlyphBlitPath.Ssse3
+                : Vector128.IsHardwareAccelerated ? GlyphBlitPath.Portable
+                : GlyphBlitPath.Scalar;
 
         private static byte[] CreateIdentity()
         {
@@ -408,6 +412,75 @@ namespace Avalonia.Media.Fonts.Rasterization
             var resultHigh = sourceHigh + TOver.Scale(currentHigh, alphaHigh);
 
             Sse2.Store((byte*)pixels, Sse2.PackUnsignedSaturate(resultLow.AsInt16(), resultHigh.AsInt16()));
+        }
+
+        // Inlined into the row loop: a call per glyph row costs as much as blending it.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe int BlendRowPortable<TOver>(byte* source, uint* destination, int count, uint* sources,
+            bool fill, Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
+        {
+            var i = 0;
+
+            for (; i + 4 <= count; i += 4)
+            {
+                BlendFourPortable<TOver>(Unsafe.ReadUnaligned<uint>(source + i), destination + i, sources, fill,
+                    fillLanes);
+            }
+
+            // The last pixels of a row at least four wide blend as the last four with the
+            // coverage of those already blended masked to zero, which leaves them as they are.
+            var rest = count - i;
+
+            if (rest > 0 && count >= 4)
+            {
+                BlendFourPortable<TOver>(
+                    Unsafe.ReadUnaligned<uint>(source + count - 4) & (uint.MaxValue << (8 * (4 - rest))),
+                    destination + count - 4, sources, fill, fillLanes);
+                i = count;
+            }
+
+            return i;
+        }
+
+        /// <summary>
+        /// The <see cref="BlendFourSsse3{TOver}"/> of the portable path: the same 16-bit lane
+        /// arithmetic, widening instead of unpacking, and the sums saturated by a minimum before
+        /// the narrowing.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe void BlendFourPortable<TOver>(uint raw, uint* pixels, uint* sources, bool fill,
+            Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
+        {
+            if (raw == 0)
+            {
+                return;
+            }
+
+            if (raw == 0xFFFFFFFF && fill)
+            {
+                fillLanes.Store(pixels);
+                return;
+            }
+
+            var source = Vector128.Create(sources[(byte)raw], sources[(byte)(raw >> 8)], sources[(byte)(raw >> 16)],
+                sources[raw >> 24]).AsByte();
+
+            var current = Vector128.Load((byte*)pixels);
+            var currentLow = Vector128.WidenLower(current);
+            var currentHigh = Vector128.WidenUpper(current);
+            var sourceLow = Vector128.WidenLower(source);
+            var sourceHigh = Vector128.WidenUpper(source);
+
+            var alphaLow = Vector128.Shuffle(sourceLow, Vector128.Create((ushort)3, 3, 3, 3, 7, 7, 7, 7));
+            var alphaHigh = Vector128.Shuffle(sourceHigh, Vector128.Create((ushort)3, 3, 3, 3, 7, 7, 7, 7));
+
+            var saturated = Vector128.Create((ushort)255);
+            var resultLow = Vector128.Min(sourceLow + TOver.Scale(currentLow, alphaLow), saturated);
+            var resultHigh = Vector128.Min(sourceHigh + TOver.Scale(currentHigh, alphaHigh), saturated);
+
+            Vector128.Narrow(resultLow, resultHigh).Store((byte*)pixels);
         }
 
         // Inlined into the row loop: a call per glyph row costs as much as blending it.

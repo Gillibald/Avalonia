@@ -240,9 +240,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 endY.StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_endY));
                 slope.StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_slope));
                 direction.StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_direction));
-                Sse2.ConvertToVector128Int32WithTruncation(startY)
-                    .StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_firstRow));
-                Sse41.Min(Sse2.ConvertToVector128Int32WithTruncation(Sse41.Ceiling(endY)), Vector128.Create(height))
+                Truncate(startY).StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_firstRow));
+                Vector128.Min(Truncate(Vector128.Ceiling(endY)), Vector128.Create(height))
                     .StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_endRow));
 
                 return swept.ExtractMostSignificantBits();
@@ -339,15 +338,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 var index = Vector128.Create(0, 1, 2, 3);
                 var current = Vector128.Create(row) + index;
-                var top = Sse2.ConvertToVector128Single(current);
-                var bottom = Sse2.ConvertToVector128Single(current + Vector128.Create(1));
+                var top = Vector128.ConvertToSingle(current);
+                var bottom = Vector128.ConvertToSingle(current + Vector128.Create(1));
                 var start = Vector128.Create(y0);
                 var end = Vector128.Create(y1);
 
                 var ya = Vector128.ConditionalSelect(Vector128.GreaterThan(start, top), start, top);
                 var yb = Vector128.ConditionalSelect(Vector128.LessThan(end, bottom), end, bottom);
                 var dy = yb - ya;
-                var used = Sse2.CompareGreaterThan(Vector128.Create(rows), index);
+                var used = Vector128.GreaterThan(Vector128.Create(rows), index);
 
                 if ((Vector128.AndNot(used, Vector128.GreaterThan(dy, Vector128<float>.Zero).AsInt32())
                         .ExtractMostSignificantBits()) != 0)
@@ -361,7 +360,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 (x + slope * (ya - start)).StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_xa), (nuint)_count);
                 (x + slope * (yb - start)).StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_xb), (nuint)_count);
                 (Vector128.Create(dir) * dy).StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_area), (nuint)_count);
-                Sse41.MultiplyLow(current, Vector128.Create(width))
+                (current * Vector128.Create(width))
                     .StoreUnsafe(ref MemoryMarshal.GetArrayDataReference(_rowBase), (nuint)_count);
 
                 _count += rows;
@@ -714,22 +713,22 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var general = Vector128.AndNot(inside, vertical);
 
                 var x = half * (from + to);
-                var column = Sse41.Min(Sse2.ConvertToVector128Int32WithTruncation(x), lastColumn);
-                var fraction = x - Sse2.ConvertToVector128Single(column);
+                var column = Vector128.Min(Truncate(x), lastColumn);
+                var fraction = x - Vector128.ConvertToSingle(column);
                 var columnNext = column + oneColumn;
-                var verticalNext = Sse2.CompareGreaterThan(columns, columnNext).AsSingle();
+                var verticalNext = Vector128.GreaterThan(columns, columnNext).AsSingle();
 
                 var invRun = one / run;
-                var column0 = Sse2.ConvertToVector128Int32WithTruncation(from);
-                var column1 = Sse41.Min(Sse2.ConvertToVector128Int32WithTruncation(to), lastColumn);
+                var column0 = Truncate(from);
+                var column1 = Vector128.Min(Truncate(to), lastColumn);
                 var column0Next = column0 + oneColumn;
                 var column0After = column0Next + oneColumn;
-                var spansTwo = Sse2.CompareGreaterThan(column1, column0).AsSingle();
-                var spansMore = Sse2.CompareGreaterThan(column1, column0Next).AsSingle();
+                var spansTwo = Vector128.GreaterThan(column1, column0).AsSingle();
+                var spansMore = Vector128.GreaterThan(column1, column0Next).AsSingle();
 
-                var left0 = Sse2.ConvertToVector128Single(column0);
-                var left1 = Sse2.ConvertToVector128Single(column0Next);
-                var left2 = Sse2.ConvertToVector128Single(column0After);
+                var left0 = Vector128.ConvertToSingle(column0);
+                var left1 = Vector128.ConvertToSingle(column0Next);
+                var left2 = Vector128.ConvertToSingle(column0After);
 
                 Column128(from, to, shared, invRun, left0, left1, half, one, out var a0, out var b0, out var covered0);
                 Column128(from, to, shared, invRun, left1, left2, half, one, out var a1, out var b1, out var covered1);
@@ -741,9 +740,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var firstSlot = Vector128.AndNot(leftOfMask | clipLeft, fallback);
                 var slot1 = Vector128.AndNot(vertical | (two & covered0), fallback);
                 var slot2 = Vector128.AndNot((vertical & verticalNext) |
-                    (two & covered0 & Sse2.CompareGreaterThan(columns, column0Next).AsSingle()), fallback);
+                    (two & covered0 & Vector128.GreaterThan(columns, column0Next).AsSingle()), fallback);
                 var slot3 = Vector128.AndNot(two & spansTwo & covered1, fallback);
-                var slot4 = slot3 & Sse2.CompareGreaterThan(columns, column0After).AsSingle();
+                var slot4 = slot3 & Vector128.GreaterThan(columns, column0After).AsSingle();
 
                 var rowBase = Vector128.LoadUnsafe(ref MemoryMarshal.GetArrayDataReference(_rowBase), (nuint)start);
                 var unused = Vector128.Create(sink) + Vector128.Create(0, 1, 2, 3);
@@ -954,18 +953,26 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// and the coverage bytes back into rows on the way out.
         /// </summary>
         private static unsafe void ResolveVectorized(Span<float> cells, Span<byte> destination, int width, int height,
-            int stride, bool evenOdd, bool aliased, bool wide)
+            int stride, bool evenOdd, bool aliased, GlyphRasterizerPath path)
         {
             fixed (float* cellsPointer = cells)
             fixed (byte* destinationPointer = destination)
             {
                 var y = 0;
 
-                if (wide)
+                if (path == GlyphRasterizerPath.Vector256)
                 {
                     for (; y + 8 <= height; y += 8)
                     {
                         ResolveRows8(cellsPointer, destinationPointer, width, y, stride, evenOdd, aliased);
+                    }
+                }
+
+                if (path == GlyphRasterizerPath.Portable)
+                {
+                    for (; y + 4 <= height; y += 4)
+                    {
+                        ResolveRows4Portable(cellsPointer, destinationPointer, width, y, stride, evenOdd, aliased);
                     }
                 }
 
@@ -1128,6 +1135,55 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// The <see cref="ResolveRows4"/> of the portable path. Without a two-vector shuffle in
+        /// the cross-platform operations, each column of a block is gathered from the four rows
+        /// directly instead of transposing whole rows.
+        /// </summary>
+        private static unsafe void ResolveRows4Portable(float* cells, byte* destination, int width, int y, int stride,
+            bool evenOdd, bool aliased)
+        {
+            var sum = Vector128<float>.Zero;
+            var x = 0;
+
+            for (; x + 4 <= width; x += 4)
+            {
+                var r0 = cells + y * width + x;
+                var r1 = r0 + width;
+                var r2 = r1 + width;
+                var r3 = r2 + width;
+
+                sum += Vector128.Create(r0[0], r1[0], r2[0], r3[0]);
+                var o0 = Coverage128(sum, evenOdd, aliased);
+                sum += Vector128.Create(r0[1], r1[1], r2[1], r3[1]);
+                var o1 = Coverage128(sum, evenOdd, aliased);
+                sum += Vector128.Create(r0[2], r1[2], r2[2], r3[2]);
+                var o2 = Coverage128(sum, evenOdd, aliased);
+                sum += Vector128.Create(r0[3], r1[3], r2[3], r3[3]);
+                var o3 = Coverage128(sum, evenOdd, aliased);
+
+                // Coverage is 0 to 255, so the narrowing truncation keeps every value.
+                var columns = Vector128.Narrow(Vector128.Narrow(o0, o1), Vector128.Narrow(o2, o3)).AsByte();
+                var bytes = Vector128.Shuffle(columns,
+                    Vector128.Create((byte)0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15)).AsUInt32();
+                var target = destination + y * stride + x;
+
+                Unsafe.WriteUnaligned(target, bytes.GetElement(0));
+                Unsafe.WriteUnaligned(target + stride, bytes.GetElement(1));
+                Unsafe.WriteUnaligned(target + 2 * stride, bytes.GetElement(2));
+                Unsafe.WriteUnaligned(target + 3 * stride, bytes.GetElement(3));
+            }
+
+            if (x < width)
+            {
+                for (var r = 0; r < 4; r++)
+                {
+                    ResolveTail(cells + (y + r) * width, destination + (y + r) * stride, x, width, sum.GetElement(r),
+                        evenOdd, aliased);
+                }
+            }
+        }
+
         /// <summary>The scalar <see cref="Resolve"/> of one row from column <paramref name="x"/>, continuing <paramref name="sum"/>.</summary>
         private static unsafe void ResolveTail(float* row, byte* destination, int x, int width, float sum,
             bool evenOdd, bool aliased)
@@ -1172,12 +1228,49 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static Vector128<int> Coverage128(Vector128<float> sum, bool evenOdd, bool aliased)
         {
             var coverage = evenOdd
-                ? Vector128.Abs(sum - Vector128.Create(2f) * Sse41.RoundToNearestInteger(sum * Vector128.Create(0.5f)))
-                : Sse.Min(Vector128.Abs(sum), Vector128.Create(1f));
+                ? Vector128.Abs(sum - Vector128.Create(2f) * RoundToEven(sum * Vector128.Create(0.5f)))
+                : MinNative(Vector128.Abs(sum), Vector128.Create(1f));
 
             return aliased
                 ? Vector128.GreaterThanOrEqual(coverage, Vector128.Create(0.5f)).AsInt32() & Vector128.Create(255)
-                : Sse2.ConvertToVector128Int32WithTruncation(coverage * Vector128.Create(255f) + Vector128.Create(0.5f));
+                : Truncate(coverage * Vector128.Create(255f) + Vector128.Create(0.5f));
         }
+
+        // The four-lane paths share these. The portable path needs .NET 9's native conversions
+        // and rounding; before that only the SSE4.1 path reaches them.
+
+        /// <summary>
+        /// Truncates to integers with the platform's conversion. The lanes whose results are
+        /// used hold finite values within the integer range, where every platform agrees with
+        /// the scalar cast; the others differ only in what out-of-range lanes produce.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<int> Truncate(Vector128<float> value)
+#if NET9_0_OR_GREATER
+            => Vector128.ConvertToInt32Native(value);
+#else
+            => Sse2.ConvertToVector128Int32WithTruncation(value);
+#endif
+
+        /// <summary>Rounds to the nearest integer, ties to even, as <see cref="MathF.Round(float)"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<float> RoundToEven(Vector128<float> value)
+#if NET9_0_OR_GREATER
+            => Vector128.Round(value);
+#else
+            => Sse41.RoundToNearestInteger(value);
+#endif
+
+        /// <summary>
+        /// The platform's minimum, which equals <see cref="MathF.Min(float, float)"/> for the
+        /// finite, non-negative inputs it gets here.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<float> MinNative(Vector128<float> left, Vector128<float> right)
+#if NET9_0_OR_GREATER
+            => Vector128.MinNative(left, right);
+#else
+            => Sse.Min(left, right);
+#endif
     }
 }

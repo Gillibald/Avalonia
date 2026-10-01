@@ -57,6 +57,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static GlyphRasterizerPath DetectPath()
             => IsSupported(GlyphRasterizerPath.Vector256) ? GlyphRasterizerPath.Vector256
                 : IsSupported(GlyphRasterizerPath.Vector128) ? GlyphRasterizerPath.Vector128
+                : IsSupported(GlyphRasterizerPath.Portable) ? GlyphRasterizerPath.Portable
                 : GlyphRasterizerPath.Scalar;
 
         /// <summary>
@@ -122,10 +123,6 @@ namespace Avalonia.Media.Fonts.Rasterization
                     AccumulatePath(path, ref segments, cells, width, height, offsetX, offsetY);
                     Resolve(cells, destination, width, height, destinationStride, evenOdd, aliased);
                 }
-                else if (vectorPath == GlyphRasterizerPath.Portable)
-                {
-                    throw new NotImplementedException("The portable vector path is not implemented.");
-                }
                 else
                 {
                     // The queue's deposits that a crossing does not use land in cells past the
@@ -137,7 +134,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                     buffer.Clear();
                     AccumulatePath(path, ref segments, buffer, width, height, offsetX, offsetY);
                     segments.Queue.Finish(buffer, width, height, wide);
-                    ResolveVectorized(cells, destination, width, height, destinationStride, evenOdd, aliased, wide);
+                    ResolveVectorized(cells, destination, width, height, destinationStride, evenOdd, aliased,
+                        vectorPath);
                 }
             }
             finally

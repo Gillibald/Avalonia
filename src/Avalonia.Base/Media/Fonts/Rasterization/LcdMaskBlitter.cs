@@ -85,7 +85,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     if (path == GlyphBlitPath.Portable)
                     {
-                        throw new NotImplementedException("The portable vector path is not implemented.");
+                        done = BlendRowPortable(m + offset, p + offset, destination, count, swap);
                     }
 
                     if (path == GlyphBlitPath.Avx2)
@@ -93,7 +93,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         done = BlendRowAvx2(m + offset, p + offset, destination, count, swap);
                     }
 
-                    if (path != GlyphBlitPath.Scalar)
+                    if (path is GlyphBlitPath.Ssse3 or GlyphBlitPath.Avx2)
                     {
                         done += BlendRowSsse3(m + offset + done, p + offset + done, destination + done, count - done,
                             swap);
@@ -168,6 +168,46 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var multiplied = Sse2.PackUnsignedSaturate(multipliedLow.AsInt16(), multipliedHigh.AsInt16());
 
                 Sse2.Store((byte*)(destination + i), Sse2.AddSaturate(multiplied, p));
+            }
+
+            return i;
+        }
+
+        /// <summary>
+        /// The <see cref="BlendRowSsse3"/> of the portable path: widening instead of unpacking,
+        /// and the saturating byte addition as <c>m + min(p, 255 - m)</c>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe int BlendRowPortable(uint* multiply, uint* plus, uint* destination, int count, bool swap)
+        {
+            var i = 0;
+
+            for (; i + 4 <= count; i += 4)
+            {
+                var m = Vector128.Load((byte*)(multiply + i));
+                var p = Vector128.Load((byte*)(plus + i));
+
+                if (swap)
+                {
+                    m = Vector128.Shuffle(m, Vector128.Create((byte)2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15));
+                    p = Vector128.Shuffle(p, Vector128.Create((byte)2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15));
+                }
+
+                var current = Vector128.Load((byte*)(destination + i));
+                var currentLow = Vector128.WidenLower(current);
+                var currentHigh = Vector128.WidenUpper(current);
+                var alpha = Vector128.Create((ushort)3, 3, 3, 3, 7, 7, 7, 7);
+
+                var factorLow = Vector128.Create((ushort)255) - Vector128.Shuffle(currentLow, alpha) + currentLow;
+                var factorHigh = Vector128.Create((ushort)255) - Vector128.Shuffle(currentHigh, alpha) + currentHigh;
+
+                var multipliedLow = (Vector128.WidenLower(m) * factorLow + Vector128.Create((ushort)255)) >>> 8;
+                var multipliedHigh = (Vector128.WidenUpper(m) * factorHigh + Vector128.Create((ushort)255)) >>> 8;
+
+                // Both halves stay at or below 255, so the narrowing truncation keeps every value.
+                var multiplied = Vector128.Narrow(multipliedLow, multipliedHigh);
+
+                (multiplied + Vector128.Min(p, ~multiplied)).Store((byte*)(destination + i));
             }
 
             return i;
