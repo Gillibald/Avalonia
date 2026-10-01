@@ -10,9 +10,10 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// Upright grayscale text on a CPU surface whose foreground colour changes every frame must
-    /// not compose a pre-tinted run mask for every colour. The backend's bitmap blit, which
-    /// draws those masks, has its arithmetic pinned here.
+    /// Upright grayscale text on a CPU surface that grants direct access blends the run's
+    /// untinted coverage straight into the surface, in whatever colour the frame draws it. The
+    /// pixels must be those of composing the pre-tinted run mask in that colour and drawing it
+    /// with the backend's bitmap blit, whose arithmetic is pinned here.
     /// </summary>
     public class RasterTintChurnTests
     {
@@ -175,6 +176,311 @@ namespace Avalonia.Skia.UnitTests.Media
             var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
             Assert.True(allocated == 0, $"{4 * brushes.Length} animated frames allocated {allocated} bytes");
+        }
+
+        [Theory]
+        [InlineData(SKColorType.Bgra8888)]
+        [InlineData(SKColorType.Rgba8888)]
+        public void Text_Blended_From_Coverage_Draws_The_Pixels_Of_Its_Pre_Tinted_Mask(SKColorType colorType)
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            // Opaque and translucent tints across the luminance buckets, including mid-grey,
+            // whose correction keeps only the contrast shape.
+            var tints = new[]
+            {
+                Colors.Black, Colors.White, Color.FromRgb(0x80, 0x80, 0x80), Color.FromRgb(0xCC, 0x20, 0x10),
+                Color.FromRgb(0x10, 0xE0, 0x40), Color.FromArgb(0x80, 0x10, 0x60, 0xE0),
+                Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF), Color.FromArgb(0xFE, 0x20, 0x20, 0x20),
+            };
+
+            var backgrounds = new Func<int, int, uint>[]
+            {
+                static (_, _) => 0,
+                static (_, _) => 0xFFFFFFFF,
+                static (x, y) => 0xFF000000 | (uint)((x * 7) & 0xFF) << 16 | (uint)((y * 5) & 0xFF) << 8 | (uint)((x ^ y) & 0xFF),
+                static (x, y) =>
+                {
+                    var alpha = (x * 3 + y * 11) & 0xFF;
+
+                    return (uint)alpha << 24 | (uint)(alpha * ((x >> 2) & 0xFF) / 255) << 16 |
+                           (uint)(alpha * (y & 0xFF) / 255) << 8 | (uint)(alpha / 2);
+                },
+            };
+
+            var texts = new (string Text, double Em, Point Origin, double Advance)[]
+            {
+                // Squeezed advances make neighbouring glyphs overlap.
+                ("Wavy AVATAR, fjord; 0123", 15, new Point(9.37, 30.2), 0.8),
+                ("The quick brown fox jumps", 11, new Point(3.71, 52.6), 1),
+                ("Hamburgefonstiv", 23, new Point(150.12, 80.3), 0.9),
+            };
+
+            for (var t = 0; t < tints.Length; t++)
+            {
+                for (var b = 0; b < backgrounds.Length; b++)
+                {
+                    var brush = new ImmutableSolidColorBrush(tints[t]);
+                    var clipped = (t + b) % 2 == 1;
+
+                    foreach (var (text, em, origin, advance) in texts)
+                    {
+                        using var blended = WideRunMaskTests.CreateRun(typeface, text, em, origin, advance);
+                        using var composed = WideRunMaskTests.CreateRun(typeface, text, em, origin, advance);
+
+                        var expected = Render(colorType, backgrounds[b], clipped, composed, brush, direct: false);
+                        var actual = Render(colorType, backgrounds[b], clipped, blended, brush, direct: true);
+
+                        Assert.IsType<RunCoverage>(CachedHandle(blended, RunMaskKey.CoverageTint));
+                        Assert.Null(CachedHandle(composed, RunMaskKey.CoverageTint));
+
+                        TransformedAtlasTests.AssertEqual(expected, actual,
+                            $"{text} in {tints[t]} on background {b}{(clipped ? ", clipped" : "")}");
+                    }
+                }
+            }
+        }
+
+        [Fact]
+        public void A_Run_Drawn_In_Many_Colours_On_A_Raster_Surface_Keeps_One_Coverage_And_No_Tinted_Mask()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, "Wavy AVATAR, fjord; 0123", 15, new Point(9.37, 30.2));
+
+            foreach (var color in s_animation)
+            {
+                Render(SKColorType.Bgra8888, static (_, _) => 0xFFFFFFFF, false, run,
+                    new ImmutableSolidColorBrush(color), direct: true);
+            }
+
+            Assert.Equal(1, run.RunMasks.Count);
+            Assert.IsType<RunCoverage>(CachedHandle(run, RunMaskKey.CoverageTint));
+
+            // A surface that grants no direct access still draws the pre-tinted mask.
+            Render(SKColorType.Bgra8888, static (_, _) => 0xFFFFFFFF, false, run,
+                new ImmutableSolidColorBrush(s_animation[0]), direct: false);
+
+            var tint = RunMaskComposer.MakeTint(255, s_animation[0].R, s_animation[0].G, s_animation[0].B);
+
+            Assert.Equal(2, run.RunMasks.Count);
+            Assert.IsAssignableFrom<IBitmapImpl>(CachedHandle(run, tint));
+        }
+
+        [Theory]
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, true)]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), false, true)]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, true)]
+        [InlineData(nameof(GlyphBlitPath.Scalar), true, false)]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), true, false)]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, false)]
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, false)]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, false)]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, true)]
+        public unsafe void Run_Coverage_Blends_By_The_Compose_And_Blit_Arithmetic(string pathName, bool rgba,
+            bool sprite)
+        {
+            var path = Enum.Parse<GlyphBlitPath>(pathName);
+
+            Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
+            Assert.SkipWhen(path == GlyphBlitPath.Ssse3 && !System.Runtime.Intrinsics.X86.Ssse3.IsSupported, "no SSSE3");
+
+            const int surfaceWidth = 97;
+            const int surfaceHeight = 41;
+
+            var random = new Random(4321);
+
+            // Glyph masks of random coverage, with empty and solid stretches, placed so that
+            // neighbours overlap, a few of them three deep.
+            var masks = new GlyphMask[9];
+            var penX = new int[masks.Length];
+            var penY = new int[masks.Length];
+
+            for (var i = 0; i < masks.Length; i++)
+            {
+                var width = 5 + random.Next(30);
+                var height = 4 + random.Next(20);
+                var alpha = new byte[width * height];
+
+                for (var p = 0; p < alpha.Length; p++)
+                {
+                    alpha[p] = (p / 7 % 3) switch { 0 => 0, 1 => 255, _ => (byte)random.Next(256) };
+                }
+
+                masks[i] = new GlyphMask(alpha, width, height, -random.Next(3), -height + random.Next(4));
+                penX[i] = i * 9 + random.Next(4);
+                penY[i] = 24 + random.Next(5);
+            }
+
+            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale(15), 0, GlyphMaskMode.Antialiased, 0);
+
+            Assert.True(RunCoverage.TryBuild(key, masks, penX, penY, out var coverage));
+            Assert.NotNull(coverage);
+            Assert.True(coverage!.OverlapPixels.Length > 0, "the masks do not overlap");
+
+            foreach (var tint in new[] { 0xFF000000u, 0xFF2010CCu, 0x80701008u, 0x10101010u, 0xFFFFFFFFu })
+            {
+                var table = MaskGamma.GetTableForPremulBgra(tint);
+
+                // The pre-tinted run mask, composed by the compose itself.
+                var mask = new byte[coverage.Width * coverage.Height * 4];
+
+                for (var i = 0; i < masks.Length; i++)
+                {
+                    RunMaskComposer.ComposeTinted(masks[i], penX[i] - coverage.OffsetX, penY[i] - coverage.OffsetY, tint,
+                        mask, coverage.Width, coverage.Height, 0, table);
+                }
+
+                var surface = new uint[surfaceWidth * surfaceHeight];
+
+                for (var i = 0; i < surface.Length; i++)
+                {
+                    var alpha = i % 3 == 0 ? 255 : random.Next(256);
+                    var pixel = (uint)alpha << 24;
+
+                    for (var shift = 0; shift < 24; shift += 8)
+                    {
+                        pixel |= (uint)random.Next(alpha + 1) << shift;
+                    }
+
+                    surface[i] = pixel;
+                }
+
+                var expected = (uint[])surface.Clone();
+                var x = -2 + coverage.OffsetX;
+                var y = -9 + coverage.OffsetY;
+
+                // The clip cuts the coverage on every side.
+                var clip = new PixelRect(3, 1, 80, 30);
+
+                for (var row = 0; row < coverage.Height; row++)
+                {
+                    for (var column = 0; column < coverage.Width; column++)
+                    {
+                        var sx = x + column;
+                        var sy = y + row;
+
+                        if (sx < clip.X || sx >= clip.Right || sy < clip.Y || sy >= clip.Bottom)
+                        {
+                            continue;
+                        }
+
+                        var source = BitConverter.ToUInt32(mask, (row * coverage.Width + column) * 4);
+
+                        if (rgba)
+                        {
+                            source = (source & 0xFF00FF00) | ((source >> 16) & 0xFF) | ((source & 0xFF) << 16);
+                        }
+
+                        ref var d = ref expected[sy * surfaceWidth + sx];
+                        var result = 0u;
+
+                        for (var shift = 0; shift < 32; shift += 8)
+                        {
+                            result |= (uint)Blit((byte)(source >> shift), (byte)(source >> 24), (byte)(d >> shift),
+                                sprite) << shift;
+                        }
+
+                        d = result;
+                    }
+                }
+
+                var previous = GlyphMaskBlitter.Path;
+
+                try
+                {
+                    GlyphMaskBlitter.Path = path;
+
+                    fixed (uint* pixels = surface)
+                    {
+                        var target = new GlyphBlitTarget((IntPtr)pixels, surfaceWidth * 4, surfaceWidth, surfaceHeight,
+                            clip, rgba, sprite);
+
+                        GlyphMaskBlitter.BlendRunCoverage(target, coverage, x, y, tint, table);
+                    }
+                }
+                finally
+                {
+                    GlyphMaskBlitter.Path = previous;
+                }
+
+                for (var i = 0; i < surface.Length; i++)
+                {
+                    Assert.True(expected[i] == surface[i],
+                        $"tint {tint:X8}, pixel ({i % surfaceWidth}, {i / surfaceWidth}): expected {expected[i]:X8}, " +
+                        $"actual {surface[i]:X8}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// The handle of the run's cached mask in <paramref name="tint"/> at the scale, phase and
+        /// hinting the test runs are drawn with, or <c>null</c>.
+        /// </summary>
+        private static IDisposable? CachedHandle(ManagedGlyphRunImpl run, uint tint)
+        {
+            GlyphMaskKey.SnapPen((float)run.BaselineOrigin.X, out _, out var phase);
+
+            var gasp = run.GlyphTypeface.Gasp;
+            var em = run.FontRenderingEmSize;
+            var gridFit = !gasp.IsBelowHintingFloor(em);
+            var penSnap = gridFit && (gasp.WantsFullGridFit(em) ||
+                                      (gasp.WantsBytecodeGridFit(em) && run.GlyphTypeface.HasTrueTypeHinting));
+
+            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)em), penSnap ? (byte)0 : phase,
+                GlyphMaskMode.Antialiased, tint, gridFit, penSnap);
+
+            return run.RunMasks.TryGet(key, out var mask) ? mask.Parts[0].Handle : null;
+        }
+
+        private static unsafe byte[] Render(SKColorType colorType, Func<int, int, uint> background, bool clipped,
+            ManagedGlyphRunImpl run, IBrush brush, bool direct)
+        {
+            var info = new SKImageInfo(Width, Height, colorType, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(info);
+
+            using (var pixmap = surface.PeekPixels())
+            {
+                for (var row = 0; row < Height; row++)
+                {
+                    var pixels = (uint*)((byte*)pixmap.GetPixels() + row * pixmap.RowBytes);
+
+                    for (var column = 0; column < Width; column++)
+                    {
+                        pixels[column] = background(column, row);
+                    }
+                }
+            }
+
+            using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                context.AllowsDirectSurfaceWrites = direct;
+
+                if (clipped)
+                {
+                    context.PushClip(new Rect(17, 21, 190, 50));
+                }
+
+                context.DrawGlyphRun(brush, run);
+
+                if (clipped)
+                {
+                    context.PopClip();
+                }
+            }
+
+            var result = new byte[info.BytesSize];
+
+            fixed (byte* p = result)
+            {
+                Assert.True(surface.ReadPixels(info, (IntPtr)p, info.RowBytes, 0, 0));
+            }
+
+            return result;
         }
     }
 }

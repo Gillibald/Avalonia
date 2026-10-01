@@ -12,7 +12,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     internal readonly struct GlyphBlitTarget
     {
-        public GlyphBlitTarget(IntPtr pixels, int rowBytes, int width, int height, PixelRect clip, bool isRgba)
+        public GlyphBlitTarget(IntPtr pixels, int rowBytes, int width, int height, PixelRect clip, bool isRgba,
+            bool blitsBgraAsSprite = false)
         {
             Pixels = pixels;
             RowBytes = rowBytes;
@@ -20,6 +21,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             Height = height;
             Clip = clip.Intersect(new PixelRect(0, 0, width, height));
             IsRgba = isRgba;
+            BlitsBgraAsSprite = blitsBgraAsSprite;
         }
 
         public IntPtr Pixels { get; }
@@ -35,6 +37,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Whether the bytes of a pixel are R, G, B, A rather than B, G, R, A.</summary>
         public bool IsRgba { get; }
+
+        /// <summary>
+        /// Whether the backend draws a premultiplied BGRA bitmap 1:1 onto this surface with its
+        /// sprite blitter rather than through its raster pipeline; the two round a source-over
+        /// blend differently.
+        /// </summary>
+        public bool BlitsBgraAsSprite { get; }
     }
 
     /// <summary>
@@ -42,7 +51,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <see cref="RunMaskComposer.ComposeTinted"/>: the coverage table first, then a
     /// premultiplied tint scaled by coverage, source-over, every product rounded to nearest.
     /// Blending a run's masks in run order into a transparent surface therefore leaves exactly
-    /// the pixels of the pre-tinted run mask they would have composed.
+    /// the pixels of the pre-tinted run mask they would have composed. A run's
+    /// <see cref="RunCoverage"/> blends with the arithmetic of drawing that mask with the
+    /// backend's bitmap blit instead.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -101,12 +112,88 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// pixels, rows <paramref name="width"/> bytes apart, like
         /// <see cref="Blend(in GlyphBlitTarget, GlyphMask, int, int, uint, byte[])"/>.
         /// </summary>
+        public static void Blend(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width, int height,
+            int x, int y, uint tintBgra, byte[]? table)
+            => BlendCore<RoundedOver>(target, coverage, width, height, x, y, tintBgra, table);
+
+        /// <summary>
+        /// Blends a run's coverage in the tint <paramref name="tintBgra"/> with its top-left at
+        /// (<paramref name="x"/>, <paramref name="y"/>) in device pixels, clipped to the target's
+        /// clip: byte for byte what composing the run's pre-tinted mask through
+        /// <paramref name="table"/> and drawing it 1:1 with the raster backend's bitmap blit
+        /// would leave there.
+        /// </summary>
+        /// <remarks>
+        /// The pre-tinted mask holds, at a pixel one glyph inks, the source-table entry of that
+        /// glyph's coverage, and at a pixel several glyphs ink, their tinted coverages composed
+        /// in run order with <see cref="RunMaskComposer.ComposeTinted"/>'s arithmetic. The blit
+        /// draws that pixel over the destination with <see cref="SpriteBlitOver"/> or
+        /// <see cref="PipelineBlitOver"/>, as <see cref="GlyphBlitTarget.BlitsBgraAsSprite"/> says.
+        /// </remarks>
+        public static void BlendRunCoverage(in GlyphBlitTarget target, RunCoverage coverage, int x, int y,
+            uint tintBgra, byte[] table)
+        {
+            if (target.BlitsBgraAsSprite)
+            {
+                BlendRunCoverage<SpriteBlitOver>(target, coverage, x, y, tintBgra, table);
+            }
+            else
+            {
+                BlendRunCoverage<PipelineBlitOver>(target, coverage, x, y, tintBgra, table);
+            }
+        }
+
+        private static unsafe void BlendRunCoverage<TBlit>(in GlyphBlitTarget target, RunCoverage coverage, int x,
+            int y, uint tintBgra, byte[] table)
+            where TBlit : struct, ISourceOver
+        {
+            BlendCore<TBlit>(target, coverage.Coverage, coverage.Width, coverage.Height, x, y, tintBgra, table);
+
+            var overlaps = coverage.OverlapPixels;
+
+            if (overlaps.Length == 0)
+            {
+                return;
+            }
+
+            var tint = target.IsRgba ? SwapRedBlue(tintBgra) : tintBgra;
+            var sources = GetSourceTable(tint, table);
+            var starts = coverage.OverlapStarts;
+            var stacked = coverage.OverlapCoverage;
+            var clip = target.Clip;
+
+            for (var i = 0; i < overlaps.Length; i++)
+            {
+                var column = x + overlaps[i] % coverage.Width;
+                var row = y + overlaps[i] / coverage.Width;
+
+                if (column < clip.X || column >= clip.Right || row < clip.Y || row >= clip.Bottom)
+                {
+                    continue;
+                }
+
+                // The glyphs over one another first, from transparent, as the pre-tinted compose
+                // does; then the composite over the destination, as the blit does.
+                var composite = 0u;
+
+                for (var k = starts[i]; k < starts[i + 1]; k++)
+                {
+                    composite = Over<RoundedOver>(sources[stacked[k]], composite);
+                }
+
+                var pixel = (uint*)((byte*)target.Pixels + (long)row * target.RowBytes) + column;
+
+                *pixel = Over<TBlit>(composite, *pixel);
+            }
+        }
+
         // Compiled optimized at once rather than tiered: a profile gathered from the first masks
         // drawn (mostly empty and solid spans, or mostly mixed ones) lays the loop out for those,
         // and costs later masks of the other kind up to a third of their time.
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        public static unsafe void Blend(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width, int height,
-            int x, int y, uint tintBgra, byte[]? table)
+        private static unsafe void BlendCore<TOver>(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width,
+            int height, int x, int y, uint tintBgra, byte[]? table)
+            where TOver : struct, ISourceOver
         {
             if (width <= 0 || height <= 0)
             {
@@ -130,9 +217,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             // The blend is per channel, so an RGBA surface only needs the tint's R and B swapped.
-            var tint = target.IsRgba
-                ? (tintBgra & 0xFF00FF00) | ((tintBgra >> 16) & 0xFF) | ((tintBgra & 0xFF) << 16)
-                : tintBgra;
+            var tint = target.IsRgba ? SwapRedBlue(tintBgra) : tintBgra;
 
             var path = Path;
             var sources = GetSourceTable(tint, table ?? s_identity);
@@ -158,16 +243,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                     // smaller steps or the scalar loop.
                     if (path == GlyphBlitPath.Avx2)
                     {
-                        done = BlendRowAvx2(source, destination, count, sourcePointer, fill, fillLanes);
+                        done = BlendRowAvx2<TOver>(source, destination, count, sourcePointer, fill, fillLanes);
                     }
 
                     if (path != GlyphBlitPath.Scalar)
                     {
-                        done += BlendRowSsse3(source + done, destination + done, count - done, sourcePointer, fill,
-                            fillLanes.GetLower());
+                        done += BlendRowSsse3<TOver>(source + done, destination + done, count - done, sourcePointer,
+                            fill, fillLanes.GetLower());
                     }
 
-                    BlendRowScalar(source + done, destination + done, count - done, sourcePointer);
+                    BlendRowScalar<TOver>(source + done, destination + done, count - done, sourcePointer);
                 }
             }
         }
@@ -225,7 +310,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         // Inlined into the row loop: a call per glyph row costs as much as blending it.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void BlendRowScalar(byte* source, uint* destination, int count, uint* sources)
+        private static unsafe void BlendRowScalar<TOver>(byte* source, uint* destination, int count, uint* sources)
+            where TOver : struct, ISourceOver
         {
             for (var i = 0; i < count; i++)
             {
@@ -236,28 +322,39 @@ namespace Avalonia.Media.Fonts.Rasterization
                     continue;
                 }
 
-                var current = destination[i];
-                var inverse = 255 - (int)(pixel >> 24);
-
-                var c0 = (int)(pixel & 0xFF) + Multiply((int)(current & 0xFF), inverse);
-                var c1 = (int)((pixel >> 8) & 0xFF) + Multiply((int)((current >> 8) & 0xFF), inverse);
-                var c2 = (int)((pixel >> 16) & 0xFF) + Multiply((int)((current >> 16) & 0xFF), inverse);
-                var c3 = (int)(pixel >> 24) + Multiply((int)(current >> 24), inverse);
-
-                destination[i] = (uint)c0 | ((uint)c1 << 8) | ((uint)c2 << 16) | ((uint)c3 << 24);
+                destination[i] = Over<TOver>(pixel, destination[i]);
             }
         }
 
+        /// <summary>A premultiplied pixel over another, each channel saturated at 255.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static uint Over<TOver>(uint source, uint destination) where TOver : struct, ISourceOver
+        {
+            var alpha = (int)(source >> 24);
+
+            var c0 = (int)(source & 0xFF) + TOver.Scale((int)(destination & 0xFF), alpha);
+            var c1 = (int)((source >> 8) & 0xFF) + TOver.Scale((int)((destination >> 8) & 0xFF), alpha);
+            var c2 = (int)((source >> 16) & 0xFF) + TOver.Scale((int)((destination >> 16) & 0xFF), alpha);
+            var c3 = alpha + TOver.Scale((int)(destination >> 24), alpha);
+
+            return (uint)Math.Min(c0, 255) | ((uint)Math.Min(c1, 255) << 8) | ((uint)Math.Min(c2, 255) << 16) |
+                   ((uint)Math.Min(c3, 255) << 24);
+        }
+
+        private static uint SwapRedBlue(uint pixel)
+            => (pixel & 0xFF00FF00) | ((pixel >> 16) & 0xFF) | ((pixel & 0xFF) << 16);
+
         // Inlined into the row loop: a call per glyph row costs as much as blending it.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int BlendRowSsse3(byte* source, uint* destination, int count, uint* sources, bool fill,
-            Vector128<uint> fillLanes)
+        private static unsafe int BlendRowSsse3<TOver>(byte* source, uint* destination, int count, uint* sources,
+            bool fill, Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
         {
             var i = 0;
 
             for (; i + 4 <= count; i += 4)
             {
-                BlendFourSsse3(*(uint*)(source + i), destination + i, sources, fill, fillLanes);
+                BlendFourSsse3<TOver>(*(uint*)(source + i), destination + i, sources, fill, fillLanes);
             }
 
             // The last pixels of a row at least four wide blend as the last four with the
@@ -266,7 +363,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (rest > 0 && count >= 4)
             {
-                BlendFourSsse3(*(uint*)(source + count - 4) & (uint.MaxValue << (8 * (4 - rest))),
+                BlendFourSsse3<TOver>(*(uint*)(source + count - 4) & (uint.MaxValue << (8 * (4 - rest))),
                     destination + count - 4, sources, fill, fillLanes);
                 i = count;
             }
@@ -275,8 +372,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void BlendFourSsse3(uint raw, uint* pixels, uint* sources, bool fill,
+        private static unsafe void BlendFourSsse3<TOver>(uint raw, uint* pixels, uint* sources, bool fill,
             Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
         {
             if (raw == 0)
             {
@@ -298,19 +396,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             var sourceLow = Sse2.UnpackLow(source, Vector128<byte>.Zero).AsUInt16();
             var sourceHigh = Sse2.UnpackHigh(source, Vector128<byte>.Zero).AsUInt16();
 
-            var inverseLow = Vector128.Create((ushort)255) - Ssse3.Shuffle(sourceLow.AsByte(), s_alphaBroadcast).AsUInt16();
-            var inverseHigh = Vector128.Create((ushort)255) - Ssse3.Shuffle(sourceHigh.AsByte(), s_alphaBroadcast).AsUInt16();
+            var alphaLow = Ssse3.Shuffle(sourceLow.AsByte(), s_alphaBroadcast).AsUInt16();
+            var alphaHigh = Ssse3.Shuffle(sourceHigh.AsByte(), s_alphaBroadcast).AsUInt16();
 
-            var resultLow = sourceLow + Multiply(currentLow, inverseLow);
-            var resultHigh = sourceHigh + Multiply(currentHigh, inverseHigh);
+            var resultLow = sourceLow + TOver.Scale(currentLow, alphaLow);
+            var resultHigh = sourceHigh + TOver.Scale(currentHigh, alphaHigh);
 
             Sse2.Store((byte*)pixels, Sse2.PackUnsignedSaturate(resultLow.AsInt16(), resultHigh.AsInt16()));
         }
 
         // Inlined into the row loop: a call per glyph row costs as much as blending it.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int BlendRowAvx2(byte* source, uint* destination, int count, uint* sources, bool fill,
-            Vector256<uint> fillLanes)
+        private static unsafe int BlendRowAvx2<TOver>(byte* source, uint* destination, int count, uint* sources,
+            bool fill, Vector256<uint> fillLanes)
+            where TOver : struct, ISourceOver
         {
             var alphaMask = Vector256.Create(s_alphaBroadcast, s_alphaBroadcast);
             var i = 0;
@@ -339,13 +438,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 for (var j = i; j < i + 32; j += 8)
                 {
-                    BlendEightAvx2(*(ulong*)(source + j), destination + j, sources, fill, fillLanes, alphaMask);
+                    BlendEightAvx2<TOver>(*(ulong*)(source + j), destination + j, sources, fill, fillLanes, alphaMask);
                 }
             }
 
             for (; i + 8 <= count; i += 8)
             {
-                BlendEightAvx2(*(ulong*)(source + i), destination + i, sources, fill, fillLanes, alphaMask);
+                BlendEightAvx2<TOver>(*(ulong*)(source + i), destination + i, sources, fill, fillLanes, alphaMask);
             }
 
             // The last pixels of a row at least eight wide blend as the last eight with the
@@ -354,7 +453,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (rest > 0 && count >= 8)
             {
-                BlendEightAvx2(*(ulong*)(source + count - 8) & (ulong.MaxValue << (8 * (8 - rest))),
+                BlendEightAvx2<TOver>(*(ulong*)(source + count - 8) & (ulong.MaxValue << (8 * (8 - rest))),
                     destination + count - 8, sources, fill, fillLanes, alphaMask);
                 i = count;
             }
@@ -363,8 +462,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void BlendEightAvx2(ulong raw, uint* pixels, uint* sources, bool fill,
+        private static unsafe void BlendEightAvx2<TOver>(ulong raw, uint* pixels, uint* sources, bool fill,
             Vector256<uint> fillLanes, Vector256<byte> alphaMask)
+            where TOver : struct, ISourceOver
         {
             if (raw == 0)
             {
@@ -388,11 +488,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             var sourceLow = Avx2.UnpackLow(source, Vector256<byte>.Zero).AsUInt16();
             var sourceHigh = Avx2.UnpackHigh(source, Vector256<byte>.Zero).AsUInt16();
 
-            var inverseLow = Vector256.Create((ushort)255) - Avx2.Shuffle(sourceLow.AsByte(), alphaMask).AsUInt16();
-            var inverseHigh = Vector256.Create((ushort)255) - Avx2.Shuffle(sourceHigh.AsByte(), alphaMask).AsUInt16();
+            var alphaLow = Avx2.Shuffle(sourceLow.AsByte(), alphaMask).AsUInt16();
+            var alphaHigh = Avx2.Shuffle(sourceHigh.AsByte(), alphaMask).AsUInt16();
 
-            var resultLow = sourceLow + Multiply(currentLow, inverseLow);
-            var resultHigh = sourceHigh + Multiply(currentHigh, inverseHigh);
+            var resultLow = sourceLow + TOver.Scale(currentLow, alphaLow);
+            var resultHigh = sourceHigh + TOver.Scale(currentHigh, alphaHigh);
 
             Avx.Store((byte*)pixels, Avx2.PackUnsignedSaturate(resultLow.AsInt16(), resultHigh.AsInt16()));
         }
@@ -423,6 +523,67 @@ namespace Avalonia.Media.Fonts.Rasterization
             var product = a * b + 128;
 
             return (product + (product >> 8)) >> 8;
+        }
+
+        /// <summary>
+        /// The destination's share of a source-over blend: a destination channel scaled by the
+        /// complement of the source alpha, in one rounding.
+        /// </summary>
+        private interface ISourceOver
+        {
+            static abstract int Scale(int destination, int sourceAlpha);
+
+            static abstract Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha);
+
+            static abstract Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha);
+        }
+
+        /// <summary>
+        /// <c>d * (255 - sa) / 255</c> rounded to nearest: the arithmetic of
+        /// <see cref="RunMaskComposer.ComposeTinted"/>.
+        /// </summary>
+        private readonly struct RoundedOver : ISourceOver
+        {
+            public static int Scale(int destination, int sourceAlpha) => Multiply(destination, 255 - sourceAlpha);
+
+            public static Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha)
+                => Multiply(destination, Vector128.Create((ushort)255) - sourceAlpha);
+
+            public static Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha)
+                => Multiply(destination, Vector256.Create((ushort)255) - sourceAlpha);
+        }
+
+        /// <summary>
+        /// <c>(d * (256 - sa)) &gt;&gt; 8</c>: the arithmetic of the raster backend's sprite blit of
+        /// a premultiplied bitmap drawn 1:1 onto a surface of its own byte order, which
+        /// approximates the division by 255 with a shift. The product stays below 65536, so the
+        /// vector paths compute it in 16-bit lanes.
+        /// </summary>
+        private readonly struct SpriteBlitOver : ISourceOver
+        {
+            public static int Scale(int destination, int sourceAlpha) => (destination * (256 - sourceAlpha)) >> 8;
+
+            public static Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha)
+                => (destination * (Vector128.Create((ushort)256) - sourceAlpha)) >>> 8;
+
+            public static Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha)
+                => (destination * (Vector256.Create((ushort)256) - sourceAlpha)) >>> 8;
+        }
+
+        /// <summary>
+        /// <c>(d * (255 - sa) + 255) &gt;&gt; 8</c>: the arithmetic of the raster backend's 8-bit
+        /// pipeline, which draws a premultiplied bitmap onto a surface of another byte order.
+        /// The sum stays below 65536, so the vector paths compute it in 16-bit lanes.
+        /// </summary>
+        private readonly struct PipelineBlitOver : ISourceOver
+        {
+            public static int Scale(int destination, int sourceAlpha) => (destination * (255 - sourceAlpha) + 255) >> 8;
+
+            public static Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha)
+                => (destination * (Vector128.Create((ushort)255) - sourceAlpha) + Vector128.Create((ushort)255)) >>> 8;
+
+            public static Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha)
+                => (destination * (Vector256.Create((ushort)255) - sourceAlpha) + Vector256.Create((ushort)255)) >>> 8;
         }
 
         /// <summary>The per-thread source tables of the most recent tints and coverage tables.</summary>

@@ -7,14 +7,22 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// Cache identity of a composed run mask. Everything positional is relative to the run's
     /// snapped origin pixel, so scrolling by whole pixels reuses the same mask; fractional
     /// horizontal motion cycles the four origin phases. <see cref="Tint"/> is the premultiplied
-    /// BGRA of a solid foreground, or zero for the untinted alpha variant (zero is not a
-    /// drawable premultiplied tint, so the sentinel cannot collide). Opacity is deliberately
+    /// BGRA of a solid foreground, zero for the untinted alpha variant, or
+    /// <see cref="CoverageTint"/> for the untinted coverage a raster surface blends (neither is
+    /// a drawable premultiplied tint, so the sentinels cannot collide). Opacity is deliberately
     /// absent — it rides the draw call, so fades reuse the cached mask (D7). A transformed run
     /// also carries its quantized linear part and a vertical origin phase; upright runs leave
     /// both at their defaults.
     /// </summary>
     internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true, bool PenSnap = false,
-        GlyphMaskTransform Transform = default, byte OriginPhaseY = 0);
+        GlyphMaskTransform Transform = default, byte OriginPhaseY = 0)
+    {
+        /// <summary>
+        /// The <see cref="Tint"/> of a run's <see cref="RunCoverage"/>: colour channels above a
+        /// zero alpha, which no premultiplied tint has.
+        /// </summary>
+        public const uint CoverageTint = 0x00FFFFFF;
+    }
 
     /// <summary>
     /// Which run mask an upright run's last static frame drew, and where: the key, the device

@@ -191,7 +191,19 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var cache = run.RunMasks;
-            var hit = cache.TryGet(key, out var runMask);
+
+            // A raster surface that grants direct access draws outline text from the run's
+            // untinted coverage, blended straight into the surface with the bytes the blit of
+            // the pre-tinted mask would leave there. The colour leaves the cache identity, so a
+            // foreground colour animation composes nothing per colour, and the blend skips the
+            // empty spans that make up most of a run's area, which the blit copies pixel by pixel.
+            var blitTarget = default(GlyphBlitTarget);
+            var coverageKey = key with { Tint = RunMaskKey.CoverageTint };
+            var blendsCoverage = alphaContext is null && mode != GlyphMaskMode.Subpixel &&
+                run.GlyphTypeface.ColorTable is null && run.GlyphTypeface.BitmapSource is null &&
+                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.Raster } coverageContext &&
+                coverageContext.TryGetBlitTarget(out blitTarget);
+            var hit = cache.TryGet(blendsCoverage ? coverageKey : key, out var runMask);
 
             // An upright zoom gesture changes the scale every frame, so its masks would never be
             // drawn twice. A software GPU, where rasterizing each frame costs many times a
@@ -200,19 +212,46 @@ namespace Avalonia.Media.Fonts.Rasterization
             // again. A CPU surface stretches the same way while the zoom stays within the band
             // transformed text stretches in, and rasterizes once, settling there, on leaving it:
             // there stretching costs a fraction of rasterizing, but further out it would soften
-            // the text noticeably. Its subpixel masks have no single bitmap to stretch. A
-            // hardware GPU keeps rasterizing, which is as fast there and stays sharp.
+            // the text noticeably. Its subpixel masks have no single bitmap to stretch, and a
+            // static frame drawn from coverage composes its pre-tinted mask when the gesture
+            // starts. A hardware GPU keeps rasterizing, which is as fast there and stays sharp.
             if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.HardwareGpu } zoomContext &&
                 (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
                 run.UprightChurn.Record(key.ScaleQ, default, hit) &&
                 run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
-                cache.TryGet(settled.Key, out var settledMask) && settled.Transform.TryInvert(out var inverse) &&
-                (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)))
+                settled.Transform.TryInvert(out var inverse) &&
+                (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
+                (cache.TryGet(settled.Key, out var settledMask) ||
+                 blendsCoverage && TryComposeSettled(run, settled, maxSize, out settledMask)))
             {
                 DrawStretchedRunMask(context, zoomContext, settledMask, settled, inverse * transform, mode,
                     alphaContext, alpha, solid.Color);
 
                 return true;
+            }
+
+            if (!hit && blendsCoverage)
+            {
+                if (!TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, out var coverage))
+                {
+                    // More glyphs ink one pixel than the coverage records: the pre-tinted mask.
+                    blendsCoverage = false;
+                    hit = cache.TryGet(key, out runMask);
+                }
+                else if (coverage is null)
+                {
+                    return true;   // whitespace-only run
+                }
+                else
+                {
+                    runMask = new RunMask(new[]
+                    {
+                        new RunMaskPart(coverage, coverage.OffsetX, coverage.OffsetY, coverage.Width, coverage.Height),
+                    });
+
+                    cache.Add(coverageKey, runMask);
+                    hit = true;
+                }
             }
 
             if (!hit)
@@ -238,6 +277,16 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
+
+            if (blendsCoverage)
+            {
+                var coverage = (RunCoverage)runMask.Parts[0].Handle;
+
+                GlyphMaskBlitter.BlendRunCoverage(blitTarget, coverage, originX + coverage.OffsetX,
+                    originY + coverage.OffsetY, key.Tint, MaskGamma.GetTableForPremulBgra(key.Tint));
+
+                return true;
+            }
 
             // The mask is already in device pixels; draw it under an identity transform so the
             // canvas transform is not applied twice.
@@ -297,6 +346,81 @@ namespace Avalonia.Media.Fonts.Rasterization
             context.Transform = oldTransform;
 
             return true;
+        }
+
+        /// <summary>
+        /// Composes and caches the pre-tinted mask of a static frame that was drawn from the
+        /// run's coverage, for a zoom gesture to stretch. Returns <c>false</c> for a run without
+        /// ink.
+        /// </summary>
+        private static bool TryComposeSettled(ManagedGlyphRunImpl run, in SettledRunMask settled, int maxSize,
+            out RunMask settledMask)
+        {
+            settledMask = null!;
+
+            var composed = Compose(run, settled.Key, (float)settled.Transform.M11, (float)settled.Transform.M22,
+                maxSize);
+
+            if (composed is null)
+            {
+                return false;
+            }
+
+            run.RunMasks.Add(settled.Key, composed);
+            settledMask = composed;
+
+            return true;
+        }
+
+        /// <summary>
+        /// The coverage of a run of outline glyphs with the glyph masks, pens and phases
+        /// <see cref="Compose"/> uses for them. Returns <c>false</c> when the coverage cannot
+        /// represent the run.
+        /// </summary>
+        private static bool TryBuildCoverage(ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY,
+            out RunCoverage? coverage)
+        {
+            var typeface = run.GlyphTypeface;
+            var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
+            var oblique = (typeface.FontSimulations & FontSimulations.Oblique) != 0;
+            var simulated = embolden != 0 || oblique;
+            var maskCache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var count = run.GlyphCount;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
+            var state = (typeface, scratch);
+            var masks = ArrayPool<GlyphMask>.Shared.Rent(Math.Max(1, count));
+            var pens = ArrayPool<int>.Shared.Rent(Math.Max(2, count * 2));
+
+            try
+            {
+                for (var i = 0; i < count; i++)
+                {
+                    var relativeX = originFraction + positions[i * 2] * scaleX;
+                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+
+                    pens[i] = penX;
+                    pens[count + i] = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                    var simulate = simulated && !typeface.IsColorGlyph(indices[i]);
+
+                    masks[i] = maskCache.GetOrBuild(simulate
+                        ? new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap, embolden, oblique)
+                        : new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
+                        state, s_buildMask);
+                }
+
+                return RunCoverage.TryBuild(key, masks.AsSpan(0, count), pens.AsSpan(0, count),
+                    pens.AsSpan(count, count), out coverage);
+            }
+            finally
+            {
+                masks.AsSpan(0, count).Clear();
+                ArrayPool<GlyphMask>.Shared.Return(masks);
+                ArrayPool<int>.Shared.Return(pens);
+            }
         }
 
         /// <summary>

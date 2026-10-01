@@ -57,9 +57,12 @@ namespace Avalonia.Skia
 
             var clip = Canvas.DeviceClipBounds;
 
+            // Skia's sprite blitter takes a BGRA bitmap drawn 1:1 when the surface holds the
+            // platform's native BGRA order; onto any other surface its raster pipeline converts.
             target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, pixmap.Width, pixmap.Height,
                 new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
-                pixmap.ColorType == SKColorType.Rgba8888);
+                pixmap.ColorType == SKColorType.Rgba8888,
+                pixmap.ColorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888);
 
             return true;
         }
