@@ -551,6 +551,85 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(expected, crossings);
         }
 
+        [Fact]
+        public void An_Upright_Zoom_On_A_Cpu_Surface_Rasterizes_Once_Per_Crossing_Of_The_Stretch_Band()
+        {
+            // The settled run mask stretches while the zoom since it settled stays within the
+            // band either way; past it, one frame rasterizes at its scale and settles.
+            const double band = MaskGlyphRunRenderer.MaxStretchScale;
+
+            using var output = TestTarget.Create(Target.Raster);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
+
+            static Matrix Zoom(double scale) => Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5);
+
+            var scales = new List<double>();
+
+            for (var k = 0; k <= 40; k++)
+            {
+                scales.Add(1 + 0.03 * k);
+            }
+
+            // The frames before the guard engages rasterize and settle; after that a frame
+            // settles only when its zoom leaves the band around the last settled zoom.
+            var expected = new List<int>();
+            var settledScale = scales[TransformChurnGuard.Threshold - 1];
+
+            for (var frame = TransformChurnGuard.Threshold; frame < scales.Count; frame++)
+            {
+                var delta = scales[frame] / settledScale;
+
+                if (delta > band || delta < 1 / band)
+                {
+                    expected.Add(frame);
+                    settledScale = scales[frame];
+                }
+            }
+
+            Assert.True(expected.Count >= 3, $"the zoom crosses the band only {expected.Count} times");
+
+            var context = output.Context;
+            var crossings = new List<int>();
+
+            for (var frame = 0; frame < scales.Count; frame++)
+            {
+                var previous = run.SettledUpright;
+                var glyphMasks = typeface.MaskCache.Count;
+
+                context.Transform = Zoom(scales[frame]);
+                context.DrawGlyphRun(Brushes.Black, run);
+
+                var drawn = output.ReadAndClear();
+
+                Assert.True(Array.Exists(drawn, b => b != 0), $"frame {frame} drew nothing");
+
+                if (frame < TransformChurnGuard.Threshold)
+                {
+                    continue;
+                }
+
+                if (Equals(previous, run.SettledUpright))
+                {
+                    // A stretched frame rasterizes nothing.
+                    Assert.Equal(glyphMasks, typeface.MaskCache.Count);
+                    continue;
+                }
+
+                crossings.Add(frame);
+
+                // The frame that settles draws exactly what a run drawn once at its scale draws.
+                using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
+
+                context.Transform = Zoom(scales[frame]);
+                context.DrawGlyphRun(Brushes.Black, fresh);
+
+                TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"frame {frame}");
+            }
+
+            Assert.Equal(expected, crossings);
+        }
+
         [Theory]
         [MemberData(nameof(Targets))]
         public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Only_On_Software_Gpus(Target target)
