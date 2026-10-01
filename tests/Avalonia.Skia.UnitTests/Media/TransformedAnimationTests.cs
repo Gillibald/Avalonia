@@ -750,6 +750,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             private unsafe byte[] Read()
             {
+                // The surface is read while the context is still drawing.
+                Context.FlushGlyphBatch();
                 _gpu?.GrContext.Flush();
 
                 var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);

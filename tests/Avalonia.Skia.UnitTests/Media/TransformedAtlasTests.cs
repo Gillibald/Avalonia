@@ -80,14 +80,20 @@ namespace Avalonia.Skia.UnitTests.Media
             using var context = CreateContext(gpu, surface);
 
             context.Transform = s_rotation;
-            context.DrawGlyphRun(Brushes.Black, run);
-            context.DrawGlyphRun(Brushes.Black, run);
+
+            // Each draw is a frame, which ends with drawing the frame's pending sprites.
+            for (var i = 0; i < 2; i++)
+            {
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.FlushGlyphBatch();
+            }
 
             var before = GC.GetAllocatedBytesForCurrentThread();
 
             for (var i = 0; i < 100; i++)
             {
                 context.DrawGlyphRun(Brushes.Black, run);
+                context.FlushGlyphBatch();
             }
 
             var allocated = GC.GetAllocatedBytesForCurrentThread() - before;

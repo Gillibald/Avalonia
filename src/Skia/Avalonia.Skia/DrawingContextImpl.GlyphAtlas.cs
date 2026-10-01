@@ -97,6 +97,7 @@ namespace Avalonia.Skia
 
             Transform = transform;
             Canvas.DrawAtlas(image, backend.Sources, backend.Placements, bilinear ? s_bilinear : s_nearest, paint);
+            t_atlasDraws++;
             Transform = oldTransform;
 
             SKPaintCache.Shared.ReturnReset(paint);
@@ -195,6 +196,8 @@ namespace Avalonia.Skia
             // samples, and growth moves the page to a new array, so the wrapped pixels stay
             // what this version's sprites expect for as long as Skia holds the image.
             var image = SKImage.FromPixels(pixmap, s_releasePage, pixels);
+
+            t_pageImagesCreated++;
 
             page.Realized = image;
             page.RealizedVersion = page.Version;
