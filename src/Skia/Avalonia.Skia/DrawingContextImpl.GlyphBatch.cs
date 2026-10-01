@@ -55,9 +55,11 @@ namespace Avalonia.Skia
                 return false;
             }
 
+            FlushLcdBatch();
+
             if (_batchCount > 0 && (page != _batchPage || color != _batchColor))
             {
-                FlushGlyphBatch();
+                FlushAtlasBatch();
             }
 
             var x = (int)transform.M31;
@@ -118,12 +120,20 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// Draws the pending glyph batch. Every canvas operation calls this first, as does the end
-        /// of the drawing session, so pending sprites never change their place in the draw order
-        /// or the clip and layer they were collected under. A caller reading the surface back
-        /// while this context is still drawing calls it too.
+        /// Draws the pending glyph batch, grayscale or subpixel; at most one is pending. Every
+        /// canvas operation calls this first, as does the end of the drawing session, so pending
+        /// sprites never change their place in the draw order or the clip and layer they were
+        /// collected under. A caller reading the surface back while this context is still drawing
+        /// calls it too.
         /// </summary>
         internal void FlushGlyphBatch()
+        {
+            FlushAtlasBatch();
+            FlushLcdBatch();
+        }
+
+        /// <summary>Draws the pending grayscale batch.</summary>
+        private void FlushAtlasBatch()
         {
             if (_batchCount == 0)
             {

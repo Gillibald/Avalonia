@@ -190,6 +190,26 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The realized parts, left to right, then top to bottom.</summary>
         public ReadOnlySpan<RunMaskPart> Parts => _parts;
 
+        /// <summary>
+        /// Whether an atlas dropped the storage of a part, so the mask no longer holds the
+        /// run's coverage and must be composed again.
+        /// </summary>
+        public bool IsEvicted
+        {
+            get
+            {
+                foreach (var part in _parts)
+                {
+                    if (part.Handle is LcdAtlasEntry { IsEvicted: true })
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -266,6 +286,30 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             mask = null!;
             return false;
+        }
+
+        /// <summary>Drops and disposes the mask cached under <paramref name="key"/>, if any.</summary>
+        public void Remove(in RunMaskKey key)
+        {
+            if (_primary is { } primary && _primaryKey == key)
+            {
+                primary.Dispose();
+                _primary = null;
+                return;
+            }
+
+            if (_secondary is { } secondary)
+            {
+                for (var i = 0; i < secondary.Length; i++)
+                {
+                    if (secondary[i].Mask is { } mask && secondary[i].Key == key)
+                    {
+                        mask.Dispose();
+                        secondary[i] = default;
+                        return;
+                    }
+                }
+            }
         }
 
         public void Add(in RunMaskKey key, RunMask mask)

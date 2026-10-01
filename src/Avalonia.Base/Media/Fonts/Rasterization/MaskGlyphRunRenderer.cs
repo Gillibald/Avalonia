@@ -205,6 +205,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 coverageContext.TryGetBlitTarget(out blitTarget);
             var hit = cache.TryGet(blendsCoverage ? coverageKey : key, out var runMask);
 
+            // A subpixel mask in a GPU context's shared atlas loses its coverage when the atlas
+            // drops its page to stay within budget; the run composes it again.
+            if (hit && runMask.IsEvicted)
+            {
+                cache.Remove(key);
+                hit = false;
+            }
+
             // An upright zoom gesture changes the scale every frame, so its masks would never be
             // drawn twice. A software GPU, where rasterizing each frame costs many times a
             // bilinear draw, draws the mask of the last static frame stretched to the new scale

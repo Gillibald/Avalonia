@@ -331,6 +331,11 @@ namespace Avalonia.Skia
 
         IDisposable IAlphaGlyphMaskContext.CreateLcdMask(ReadOnlySpan<byte> rgba, int width, int height)
         {
+            if (TryPlaceLcdMask(rgba, width, height) is { } entry)
+            {
+                return entry;
+            }
+
             // Alpha carries the channel maximum but stays below every channel only when all
             // channels are equal — declare premul so Skia leaves the payload untouched (each
             // channel is at most the max, which is a valid premultiplied relationship).
@@ -340,7 +345,16 @@ namespace Avalonia.Skia
         }
 
         void IAlphaGlyphMaskContext.DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb)
-            => DrawLcdMask(mask, sourceRect, destRect, tintArgb, new SKSamplingOptions());
+        {
+            if (mask is LcdAtlasEntry entry && sourceRect == new Rect(0, 0, entry.Width, entry.Height) &&
+                destRect.Size == sourceRect.Size)
+            {
+                DrawLcdAtlasEntry(entry, destRect, tintArgb);
+                return;
+            }
+
+            DrawLcdMask(mask, sourceRect, destRect, tintArgb, new SKSamplingOptions());
+        }
 
         void ITransformedGlyphContext.DrawMaskStretched(IDisposable mask, Rect sourceRect, Rect destRect,
             uint tintArgb, bool lcd)
@@ -362,7 +376,23 @@ namespace Avalonia.Skia
         {
             PrepareCanvas();
 
-            var image = (SKImage)mask;
+            var source = sourceRect.ToSKRect();
+            SKImage image;
+            SKImage? transient = null;
+
+            if (mask is LcdAtlasEntry entry)
+            {
+                // An entry draws from its page, offset to its place there; a page the atlas has
+                // dropped still holds the entry's coverage, but no image of its own.
+                transient = entry.IsEvicted ? CreateLcdPageImage(entry.Page) : null;
+                image = transient ?? GetLcdPageImage(entry.Page);
+                source.Offset(entry.X, entry.Y);
+            }
+            else
+            {
+                image = (SKImage)mask;
+            }
+
             var alpha = (byte)((tintArgb >> 24) * _currentOpacity);
             var blender = LcdTextBlender.Get(((uint)alpha << 24) | (tintArgb & 0x00FFFFFF));
 
@@ -370,18 +400,21 @@ namespace Avalonia.Skia
             {
                 // Unreachable by policy — eligibility requires the compiled blender — but a
                 // driver losing the effect must not erase text silently.
-                DrawAlphaMask(mask, sourceRect, destRect, tintArgb, sampling);
-                return;
+                DrawAlphaMask(image, source, destRect, tintArgb, sampling);
+            }
+            else
+            {
+                var paint = SKPaintCache.Shared.Get();
+
+                paint.Blender = blender;
+
+                // Masks are drawn 1:1 at device pixels, where nearest sampling keeps coverage
+                // exact; only a stretched mask samples bilinearly.
+                Canvas.DrawImage(image, source, destRect.ToSKRect(), sampling, paint);
+                SKPaintCache.Shared.ReturnReset(paint);
             }
 
-            var paint = SKPaintCache.Shared.Get();
-
-            paint.Blender = blender;
-
-            // Masks are drawn 1:1 at device pixels, where nearest sampling keeps coverage exact;
-            // only a stretched mask samples bilinearly.
-            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), sampling, paint);
-            SKPaintCache.Shared.ReturnReset(paint);
+            transient?.Dispose();
         }
 
         IDisposable IAlphaGlyphMaskContext.CreateAlphaMask(ReadOnlySpan<byte> alpha, int width, int height)
@@ -400,8 +433,12 @@ namespace Avalonia.Skia
             SKSamplingOptions sampling)
         {
             PrepareCanvas();
+            DrawAlphaMask((SKImage)mask, sourceRect.ToSKRect(), destRect, tintArgb, sampling);
+        }
 
-            var image = (SKImage)mask;
+        private void DrawAlphaMask(SKImage image, SKRect sourceRect, Rect destRect, uint tintArgb,
+            SKSamplingOptions sampling)
+        {
             var paint = SKPaintCache.Shared.Get();
 
             paint.Color = new SKColor(
@@ -419,7 +456,7 @@ namespace Avalonia.Skia
 
             // Masks are drawn 1:1 at device pixels, where nearest sampling keeps coverage exact;
             // only a stretched mask samples bilinearly.
-            Canvas.DrawImage(image, sourceRect.ToSKRect(), destRect.ToSKRect(), sampling, paint);
+            Canvas.DrawImage(image, sourceRect, destRect.ToSKRect(), sampling, paint);
             SKPaintCache.Shared.ReturnReset(paint);
         }
 

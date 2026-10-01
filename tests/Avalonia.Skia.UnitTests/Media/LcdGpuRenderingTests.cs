@@ -71,6 +71,10 @@ namespace Avalonia.Skia.UnitTests.Media
             using var mask = alphaContext.CreateLcdMask(coverage, 4, 1);
 
             alphaContext.DrawLcdMask(mask, new Rect(0, 0, 4, 1), new Rect(0, 0, 4, 1), tint);
+
+            // A hardware GPU context holds the draw in its pending batch until its next canvas
+            // operation; reading the surface back while the context lives needs it drawn.
+            context.FlushGlyphBatch();
             gpu.GrContext.Flush();
 
             using var snapshot = surface.Snapshot();
