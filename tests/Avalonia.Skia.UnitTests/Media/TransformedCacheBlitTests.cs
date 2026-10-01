@@ -107,6 +107,79 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Paths))]
+        public void Masks_With_Solid_And_Empty_Spans_Blend_As_The_Compose_At_Every_Width_And_Alignment(string path)
+        {
+            using var restore = UsePath(path);
+
+            // Rows of every width up to 100 pixels mixing spans of no coverage, full coverage
+            // and partial coverage at every alignment, the shape of large glyph masks.
+            const int maxWidth = 100;
+            var random = new Random(4321);
+            var masks = new List<GlyphMask>();
+
+            for (var width = 1; width <= maxWidth; width++)
+            {
+                const int rows = 3;
+                var alpha = new byte[width * rows];
+
+                for (var i = 0; i < alpha.Length;)
+                {
+                    var span = random.Next(1, 40);
+                    var kind = random.Next(4);
+
+                    for (var j = 0; j < span && i < alpha.Length; j++, i++)
+                    {
+                        alpha[i] = kind switch
+                        {
+                            0 => 0,
+                            1 => 255,
+                            2 => (byte)random.Next(256),
+                            _ => (byte)(random.Next(2) == 0 ? 255 : random.Next(1, 255)),
+                        };
+                    }
+                }
+
+                masks.Add(new GlyphMask(alpha, width, rows, 0, 0));
+            }
+
+            const int surfaceWidth = maxWidth + 20;
+            const int surfaceHeight = 4;
+            var start = new byte[surfaceWidth * surfaceHeight * 4];
+
+            for (var i = 0; i < start.Length; i += 4)
+            {
+                var value = (byte)random.Next(256);
+
+                start[i] = start[i + 1] = start[i + 2] = (byte)random.Next(value + 1);
+                start[i + 3] = value;
+            }
+
+            foreach (var color in s_tints)
+            {
+                var tint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
+
+                foreach (var table in new[] { null, MaskGamma.GetTableForPremulBgra(tint) })
+                {
+                    foreach (var mask in masks)
+                    {
+                        var x = mask.Width % 11;
+                        var expected = (byte[])start.Clone();
+
+                        RunMaskComposer.ComposeTinted(mask, x, 1, tint, expected, surfaceWidth, surfaceHeight,
+                            coverageTable: table);
+
+                        var actual = Blit(start, surfaceWidth, surfaceHeight, mask, x, 1, tint, table,
+                            new PixelRect(0, 0, surfaceWidth, surfaceHeight));
+
+                        AssertEqual(expected, actual, surfaceWidth,
+                            $"{path} {color} table {table is not null} width {mask.Width}");
+                    }
+                }
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Paths))]
         public void The_Blend_Clips_To_The_Clip_Rectangle_And_The_Surface(string path)
         {
             using var restore = UsePath(path);
