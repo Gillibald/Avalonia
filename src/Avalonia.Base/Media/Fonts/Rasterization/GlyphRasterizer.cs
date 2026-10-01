@@ -31,6 +31,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         private const int MaxCurveSegments = 256;
 
         /// <summary>
+        /// Which instruction set accumulates and resolves coverage; tests set it to cover every
+        /// path. Every path produces the same bytes.
+        /// </summary>
+        internal static GlyphRasterizerPath Path { get; set; } = GlyphRasterizerPath.Scalar;
+
+        /// <summary>Whether this machine can run <paramref name="path"/>.</summary>
+        internal static bool IsSupported(GlyphRasterizerPath path) => true;
+
+        /// <summary>
         /// Rasterizes <paramref name="path"/> into an alpha mask of <paramref name="width"/> ×
         /// <paramref name="height"/> cells. <paramref name="offsetX"/>/<paramref name="offsetY"/>
         /// translate the captured points into mask-local space (mask placement plus any subpixel
@@ -74,6 +83,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 throw new ArgumentException("Destination must hold height rows of width bytes at the stride.",
                     nameof(destination));
+            }
+
+            if (Path != GlyphRasterizerPath.Scalar)
+            {
+                throw new NotSupportedException($"The {Path} rasterizer path is not implemented yet.");
             }
 
             var acc = ArrayPool<float>.Shared.Rent(width * height);
