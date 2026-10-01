@@ -15,7 +15,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// the masks a static frame at the same transform draws, so the frame is as sharp as a
         /// static one and the first static frame after the animation matches it. The masks live
         /// in pooled per-thread buffers and nothing enters the glyph mask cache, the atlas or
-        /// the run's sprite sets, so an animation cannot evict the masks of static text. A
+        /// the run's sprite sets, so an animation cannot evict the masks of static text. The
+        /// runs of a frame share its transform, so a mask rasterized for one run serves the
+        /// others until a draw arrives under another transform or typeface. A
         /// raster context blends them straight into its surface; a GPU context, or a raster
         /// draw the surface cannot take directly, packs them into one transient image per run
         /// and draws it in one call. Returns <c>false</c> when a glyph mask would exceed
@@ -38,6 +40,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var path = t_scratch ??= new GlyphPathBuilder();
                 var glyphs = items.AsSpan(0, count);
 
+                scratch.BeginDraw(run.GlyphTypeface, key);
+
                 if (context.RasterTarget == GlyphRasterTarget.Raster && context.TryGetBlitTarget(out var target))
                 {
                     BlendTransient(target, run.GlyphTypeface, path, scratch, glyphs, originX, originY,
@@ -59,8 +63,34 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Rasterizes each distinct glyph mask of the run once into the scratch arena and blends
-        /// it into the surface with the arithmetic of the static raster path.
+        /// The arena offset of a glyph mask's raw coverage, rasterized into the arena unless an
+        /// earlier run of the frame already did. Returns <c>false</c> for a glyph without an
+        /// outline.
+        /// </summary>
+        private static bool TryGetCoverage(GlyphTypeface typeface, GlyphPathBuilder path, TransientGlyphScratch scratch,
+            in TransformedGlyphItem item, out int offset)
+        {
+            if (!scratch.ArenaSlots.TryGetValue(item.Key, out offset))
+            {
+                var size = item.Width * item.Height;
+
+                offset = scratch.AllocateArena(size);
+
+                if (!GlyphMasks.RasterizeTransformed(typeface, path, item.Key, item.Left, item.Top, item.Width,
+                        item.Height, scratch.Arena.AsSpan(offset, size), item.Width))
+                {
+                    offset = -1;
+                }
+
+                scratch.ArenaSlots.Add(item.Key, offset);
+            }
+
+            return offset >= 0;
+        }
+
+        /// <summary>
+        /// Blends each glyph mask of the run from the scratch arena into the surface with the
+        /// arithmetic of the static raster path.
         /// </summary>
         private static void BlendTransient(in GlyphBlitTarget target, GlyphTypeface typeface, GlyphPathBuilder path,
             TransientGlyphScratch scratch, ReadOnlySpan<TransformedGlyphItem> glyphs, int originX, int originY,
@@ -71,27 +101,13 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var i = 0; i < glyphs.Length; i++)
             {
                 ref readonly var item = ref glyphs[i];
-                var size = item.Width * item.Height;
 
-                if (!scratch.ArenaSlots.TryGetValue(item.Key, out var offset))
-                {
-                    offset = scratch.AllocateArena(size);
-
-                    if (!GlyphMasks.RasterizeTransformed(typeface, path, item.Key, item.Left, item.Top, item.Width,
-                            item.Height, scratch.Arena.AsSpan(offset, size), item.Width))
-                    {
-                        offset = -1;
-                    }
-
-                    scratch.ArenaSlots.Add(item.Key, offset);
-                }
-
-                if (offset < 0)
+                if (!TryGetCoverage(typeface, path, scratch, item, out var offset))
                 {
                     continue;
                 }
 
-                var coverage = scratch.Arena.AsSpan(offset, size);
+                var coverage = scratch.Arena.AsSpan(offset, item.Width * item.Height);
                 var x = originX + item.PenX + item.Left;
                 var y = originY + item.PenY + item.Top;
 
@@ -112,7 +128,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Packs each distinct glyph mask of the run once into the scratch page, corrected like
+        /// Packs each distinct glyph mask of the run once from the arena into the scratch page, corrected like
         /// an atlas entry (foreground glyphs for the foreground's luminance bucket, colour layers
         /// not at all), and draws the page's sprites from one transient image in run order,
         /// one call per run of sprites sharing a tint. A page that fills up is drawn and reused;
@@ -149,20 +165,21 @@ namespace Avalonia.Media.Fonts.Rasterization
                         scratch.TryPlace(item.Width, item.Height, out slotX, out slotY);
                     }
 
-                    var start = slotY * TransientGlyphScratch.PageWidth + slotX;
-                    var region = scratch.Page.AsSpan(start,
-                        (item.Height - 1) * TransientGlyphScratch.PageWidth + item.Width);
-
-                    if (GlyphMasks.RasterizeTransformed(typeface, path, item.Key, item.Left, item.Top, item.Width,
-                            item.Height, region, TransientGlyphScratch.PageWidth))
+                    if (TryGetCoverage(typeface, path, scratch, item, out var offset))
                     {
-                        if (corrected)
+                        for (var row = 0; row < item.Height; row++)
                         {
-                            for (var row = 0; row < item.Height; row++)
-                            {
-                                var span = region.Slice(row * TransientGlyphScratch.PageWidth, item.Width);
+                            var source = scratch.Arena.AsSpan(offset + row * item.Width, item.Width);
+                            var target = scratch.Page.AsSpan((slotY + row) * TransientGlyphScratch.PageWidth + slotX,
+                                item.Width);
 
-                                GlyphMaskAtlas.Correct(span, span, bucket);
+                            if (corrected)
+                            {
+                                GlyphMaskAtlas.Correct(source, target, bucket);
+                            }
+                            else
+                            {
+                                source.CopyTo(target);
                             }
                         }
 
@@ -255,10 +272,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The per-thread buffers of transient frames: an arena of one run's raw glyph masks for
-        /// the raster blend, and a page of one run's corrected glyph masks with their sprites for
-        /// transient images. Both are reused frame to frame, so a steady animation allocates
-        /// nothing once they have grown to its runs.
+        /// The per-thread buffers of transient frames: an arena of the raw glyph masks of the
+        /// runs drawn under one transform, and a page of one run's corrected glyph masks with
+        /// their sprites for transient images. Both are reused frame to frame, so a steady
+        /// animation allocates nothing once they have grown to its frames.
         /// </summary>
         private sealed class TransientGlyphScratch
         {
@@ -269,10 +286,13 @@ namespace Avalonia.Media.Fonts.Rasterization
             // and the backend can reuse it instead of allocating another.
             private const int SizeGranularity = 64;
 
-            // An arena grown past this by a run of huge glyphs is dropped after the draw rather
-            // than held by the thread.
+            // An arena filled past this by huge glyphs, or by a long frame, is dropped after the
+            // draw rather than held by the thread.
             private const int MaxRetainedArenaBytes = 4 * 1024 * 1024;
 
+            private readonly WeakReference<GlyphTypeface?> _typeface = new(null);
+            private ushort _scaleQ;
+            private GlyphMaskTransform _transform;
             private int _arenaUsed;
             private int _shelfX;
             private int _shelfY;
@@ -392,16 +412,40 @@ namespace Avalonia.Media.Fonts.Rasterization
                 _shelfX = _shelfY = _shelfHeight = _usedHeight = _usedWidth = 0;
             }
 
+            /// <summary>
+            /// Keeps the arena's masks for a draw of the same typeface under the same scale and
+            /// transform as the previous one, the next run of the same frame, and empties it
+            /// otherwise. The arena's keys hold everything else that tells masks apart.
+            /// </summary>
+            public void BeginDraw(GlyphTypeface typeface, in RunMaskKey key)
+            {
+                if (_typeface.TryGetTarget(out var previous) && ReferenceEquals(previous, typeface) &&
+                    _scaleQ == key.ScaleQ && _transform == key.Transform)
+                {
+                    return;
+                }
+
+                _typeface.SetTarget(typeface);
+                _scaleQ = key.ScaleQ;
+                _transform = key.Transform;
+                ClearArena();
+            }
+
             public void EndDraw()
             {
                 ResetPage();
-                ArenaSlots.Clear();
-                _arenaUsed = 0;
 
-                if (Arena.Length > MaxRetainedArenaBytes)
+                if (_arenaUsed > MaxRetainedArenaBytes)
                 {
+                    ClearArena();
                     Arena = Array.Empty<byte>();
                 }
+            }
+
+            private void ClearArena()
+            {
+                ArenaSlots.Clear();
+                _arenaUsed = 0;
             }
         }
     }

@@ -110,6 +110,50 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(RasterizingTargets))]
+        public void Runs_Animated_Together_Draw_What_Runs_Drawn_Once_Draw(Target target)
+        {
+            // The runs of a frame share its transform and many of their glyph masks; each must
+            // still draw exactly its own glyphs, here two lines of different text and size.
+            using var output = TestTarget.Create(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var first = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+            using var second = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv 9876543210", 18,
+                new Point(8.37, 60.2));
+            using var third = WideRunMaskTests.CreateRun(typeface, "fonts and hamburgers", 21, new Point(30.1, 90.9));
+
+            var context = output.Context;
+
+            for (var frame = 0; frame < 8; frame++)
+            {
+                context.Transform = Rotation(5 + frame * 1.7);
+                context.DrawGlyphRun(Brushes.Black, first);
+                context.DrawGlyphRun(Brushes.Black, second);
+                context.DrawGlyphRun(Brushes.Black, third);
+
+                var drawn = output.ReadAndClear();
+
+                if (frame < TransformChurnGuard.Threshold)
+                {
+                    continue;
+                }
+
+                using var freshFirst = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+                using var freshSecond = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv 9876543210", 18,
+                    new Point(8.37, 60.2));
+                using var freshThird = WideRunMaskTests.CreateRun(typeface, "fonts and hamburgers", 21,
+                    new Point(30.1, 90.9));
+
+                context.Transform = Rotation(5 + frame * 1.7);
+                context.DrawGlyphRun(Brushes.Black, freshFirst);
+                context.DrawGlyphRun(Brushes.Black, freshSecond);
+                context.DrawGlyphRun(Brushes.Black, freshThird);
+
+                TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"{target} frame {frame}");
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(RasterizingTargets))]
         public void An_Animated_Rotation_Rasterizes_Without_Caching_Or_Allocating(Target target)
         {
             using var output = TestTarget.Create(target);
