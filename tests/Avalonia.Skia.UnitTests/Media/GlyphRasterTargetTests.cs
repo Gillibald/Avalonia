@@ -36,6 +36,24 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [InlineData("WebKit WebGL",
+            "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)", true)]
+        [InlineData("WebKit WebGL",
+            "ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)", true)]
+        [InlineData("WebKit WebGL", "llvmpipe, or similar", true)]
+        [InlineData("WebKit WebGL",
+            "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 (0x00002882) Direct3D11 vs_5_0 ps_5_0, D3D11)", false)]
+        [InlineData("WebKit WebGL", "Apple GPU", false)]
+        [InlineData("WebKit WebGL", null, false)]
+        [InlineData("llvmpipe (LLVM 22.1.8, 256 bits)", null, true)]
+        [InlineData("NVIDIA GeForce RTX 4060/PCIe/SSE2", null, false)]
+        public void Masked_Gl_Renderers_Are_Classified_By_The_Platform_Renderer(string renderer,
+            string? platformRenderer, bool software)
+        {
+            Assert.Equal(software, SkiaGpuRasterizer.IsSoftwareGlRenderer(renderer, platformRenderer));
+        }
+
+        [Theory]
         [InlineData(SkiaGpuRasterizer.VulkanCpuDeviceType, "llvmpipe (LLVM 22.1.8, 256 bits)", true)]
         [InlineData(SkiaGpuRasterizer.VulkanCpuDeviceType, "Unnamed CPU device", true)]
         [InlineData(1, "SwiftShader Device (Subzero)", true)]

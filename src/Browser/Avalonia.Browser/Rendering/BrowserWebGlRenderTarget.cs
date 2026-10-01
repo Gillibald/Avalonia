@@ -29,7 +29,7 @@ partial class BrowserWebGlRenderTarget : BrowserRenderTarget, IGlPlatformSurface
         var contextId = js.GetPropertyAsInt32("contextHandle");
         var version = js.GetPropertyAsJSObject("attrs")!.GetPropertyAsInt32("majorVersion");
         GlContext = new WebGlContext(contextId, new GlVersion(GlProfileType.OpenGLES, version > 1 ? 3 : 2, 0),
-            _glInfo.Samples, _glInfo.Stencils);
+            _glInfo.Samples, _glInfo.Stencils, js.GetPropertyAsString("renderer"));
     }
     
     class GlSession : IGlPlatformSurfaceRenderingSession
@@ -90,7 +90,7 @@ partial class BrowserWebGlRenderTarget : BrowserRenderTarget, IGlPlatformSurface
     }
 }
 
-partial class WebGlContext : IGlContext, Avalonia.Skia.IGlSkiaSpecificOptionsFeature
+partial class WebGlContext : IGlContext, Avalonia.Skia.IGlSkiaSpecificOptionsFeature, IGlContextRendererInfoFeature
 {
     [JSImport("WebGlRenderTarget.getCurrentContext", AvaloniaModule.MainModuleName)]
     private static partial int GetCurrentContext();
@@ -104,9 +104,10 @@ partial class WebGlContext : IGlContext, Avalonia.Skia.IGlSkiaSpecificOptionsFea
     private int _contextId;
     private readonly Thread _thread;
 
-    public WebGlContext(int contextId, GlVersion version, int sampleCount, int stencilSize)
+    public WebGlContext(int contextId, GlVersion version, int sampleCount, int stencilSize, string? rendererName)
     {
         Version = version;
+        RendererName = rendererName;
         SampleCount = sampleCount;
         StencilSize = stencilSize;
         _contextId = contextId;
@@ -161,7 +162,11 @@ partial class WebGlContext : IGlContext, Avalonia.Skia.IGlSkiaSpecificOptionsFea
         // No-op, destroyed with the render target
     }
 
-    public object? TryGetFeature(Type featureType) => null;
+    public object? TryGetFeature(Type featureType) =>
+        featureType == typeof(IGlContextRendererInfoFeature) ? this : null;
+
+    /// <summary>The WebGL renderer's name, unmasked where GL_RENDERER only says "WebKit WebGL".</summary>
+    public string? RendererName { get; }
 
     // TODO: Implement
     public bool IsLost => false;

@@ -23,6 +23,7 @@ export class WebGlRenderTarget extends WebRenderTarget {
     public stencil?: number;
     public sample?: number;
     public depth?: number;
+    public renderer?: string;
     private static _gl: EmscriptenGL | null = null;
 
     constructor(public canvas: HTMLCanvasElement | OffscreenCanvas, mode: BrowserRenderingMode) {
@@ -65,7 +66,28 @@ export class WebGlRenderTarget extends WebRenderTarget {
         this.stencil = context.getParameter(context.STENCIL_BITS);
         this.sample = context.getParameter(context.SAMPLES);
         this.depth = context.getParameter(context.DEPTH_BITS);
+        this.renderer = WebGlRenderTarget.getRendererName(context);
         this.attrs = attrs;
+    }
+
+    // Chromium and WebKit report "WebKit WebGL" as RENDERER, which is all GL_RENDERER shows Skia; the unmasked name
+    // tells a software implementation such as SwiftShader from a GPU. Firefox reports the real (sanitized) renderer as
+    // RENDERER and flags the debug extension as deprecated, so the extension is only asked where RENDERER is masked.
+    private static getRendererName(context: WebGLRenderingContext): string | undefined {
+        try {
+            const renderer = context.getParameter(context.RENDERER);
+
+            if (typeof renderer === "string" && renderer !== "WebKit WebGL") {
+                return renderer;
+            }
+
+            const info = context.getExtension("WEBGL_debug_renderer_info");
+            const unmasked = info ? context.getParameter(info.UNMASKED_RENDERER_WEBGL) : null;
+
+            return typeof unmasked === "string" ? unmasked : (renderer ?? undefined);
+        } catch {
+            return undefined;
+        }
     }
 
     public static getCurrentContext(): number {

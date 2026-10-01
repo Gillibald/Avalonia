@@ -49,7 +49,8 @@ namespace Avalonia.Skia
                 }
 
                 SkiaGpuRasterizer.Register(_grContext,
-                    SkiaGpuRasterizer.IsSoftwareGlRenderer(context.GlInterface.Renderer));
+                    SkiaGpuRasterizer.IsSoftwareGlRenderer(context.GlInterface.Renderer,
+                        context.TryGetFeature<IGlContextRendererInfoFeature>()?.RendererName));
 
                 context.TryGetFeature<IGlContextExternalObjectsFeature>(out var externalObjects);
                 _externalObjectsFeature = new GlSkiaExternalObjectsFeature(this, externalObjects);

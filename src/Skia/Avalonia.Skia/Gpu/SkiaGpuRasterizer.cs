@@ -45,6 +45,13 @@ namespace Avalonia.Skia
         /// <summary>Whether a <c>GL_RENDERER</c> string names a software rasterizer.</summary>
         public static bool IsSoftwareGlRenderer(string? renderer) => ContainsSoftwareName(renderer);
 
+        /// <summary>
+        /// Whether a GL context runs on a software rasterizer, by its <c>GL_RENDERER</c> string
+        /// or by the name its platform reports where that string is masked.
+        /// </summary>
+        public static bool IsSoftwareGlRenderer(string? renderer, string? platformRenderer) =>
+            ContainsSoftwareName(renderer) || ContainsSoftwareName(platformRenderer);
+
         /// <summary>Whether a Vulkan physical device is implemented on the CPU.</summary>
         public static bool IsSoftwareVulkanDevice(int deviceType, string? deviceName)
             => deviceType == VulkanCpuDeviceType || ContainsSoftwareName(deviceName);
