@@ -172,18 +172,28 @@ namespace Avalonia.Media.Fonts
                 try
                 {
                     match = CreateFontFace(matched);
-
-                    if (match is not null && !IsDrawable(match))
-                    {
-                        match = null;
-                    }
-
-                    return match != null;
                 }
                 finally
                 {
                     CTNative.CFRelease(matched);
                 }
+
+                // A name users can see may match a hidden family that shares it: CoreText answers
+                // the Korean name of Apple SD Gothic Neo with the interface family
+                // .Apple SD Gothic NeoI. The family the name gives in the family list is wanted.
+                if (match is not null && IsHidden(match.FamilyName) && !IsHidden(familyName) &&
+                    FindPublicFamily(descriptor) is { } publicFamily &&
+                    TryMatchFamily(publicFamily, style, weight, stretch, out var publicMatch))
+                {
+                    match = publicMatch;
+                }
+
+                if (match is not null && !IsDrawable(match))
+                {
+                    match = null;
+                }
+
+                return match != null;
             }
             finally
             {
@@ -384,6 +394,12 @@ namespace Avalonia.Media.Fonts
                 if (result is null)
                 {
                     return false;
+                }
+
+                // A visible name that also matches a hidden family lists the visible family's faces.
+                if (!IsHidden(familyName) && result.Exists(face => !IsHidden(face.FamilyName)))
+                {
+                    result.RemoveAll(face => IsHidden(face.FamilyName));
                 }
 
                 faces = result;
@@ -617,6 +633,56 @@ namespace Avalonia.Media.Fonts
             CTNative.CFRelease(attributes);
 
             return descriptor;
+        }
+
+        private static bool IsHidden(string familyName) => familyName.Length > 0 && familyName[0] == '.';
+
+        /// <summary>
+        /// The first family not hidden among every face <paramref name="descriptor"/>'s family name
+        /// matches, or <see langword="null"/> when it matches hidden families only.
+        /// </summary>
+        private static string? FindPublicFamily(IntPtr descriptor)
+        {
+            var mandatory = CreateFamilyMandatorySet();
+            var array = CTNative.CTFontDescriptorCreateMatchingFontDescriptors(descriptor, mandatory);
+
+            CTNative.CFRelease(mandatory);
+
+            if (array == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                var count = (int)CTNative.CFArrayGetCount(array);
+
+                for (var i = 0; i < count; i++)
+                {
+                    var cfFamilyName = CTNative.CTFontDescriptorCopyAttribute(CTNative.CFArrayGetValueAtIndex(array, i),
+                        CTNative.FontFamilyNameAttribute);
+
+                    if (cfFamilyName == IntPtr.Zero)
+                    {
+                        continue;
+                    }
+
+                    var name = CTNative.GetString(cfFamilyName);
+
+                    CTNative.CFRelease(cfFamilyName);
+
+                    if (!string.IsNullOrEmpty(name) && !IsHidden(name))
+                    {
+                        return name;
+                    }
+                }
+
+                return null;
+            }
+            finally
+            {
+                CTNative.CFRelease(array);
+            }
         }
 
         private static IntPtr CreateMatchingDescriptor(IntPtr descriptor)
