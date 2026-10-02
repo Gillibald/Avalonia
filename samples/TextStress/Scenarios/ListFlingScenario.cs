@@ -17,8 +17,9 @@ namespace TextStress.Scenarios
     /// one colour instead of four, and <c>--motion static</c> keeps the list at its top and
     /// alternates the list background between two near-whites every frame, so every row is drawn
     /// again without new rows, glyphs or atlas writes. <c>--clip off</c> turns off
-    /// <see cref="Visual.ClipToBounds"/> on every row text, which no row text needs here, so no
-    /// clip is pushed around the texts.
+    /// <see cref="Visual.ClipToBounds"/> on every row text and on the item containers, which
+    /// clip like every templated control; nothing in a row draws outside it here, so no clip is
+    /// pushed around the rows or their texts.
     /// </remarks>
     internal sealed class ListFlingScenario : Scenario
     {
@@ -145,6 +146,11 @@ namespace TextStress.Scenarios
                 ItemTemplate = new RowTemplate(_singleFace ? families[0] : null, _singleColor, _clipTexts),
                 Background = s_background
             };
+
+            if (!_clipTexts)
+            {
+                _list.ContainerPrepared += (_, e) => e.Container.ClipToBounds = false;
+            }
 
             _lastFrame = -1;
 
