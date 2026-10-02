@@ -23,9 +23,10 @@ namespace TextLab
         {
             return AppBuilder.Configure<App>()
                 .UsePlatformDetect()
-                // Registered so rasterization tooling (the A/B view) can flip the mode per
-                // render; the mode itself stays at the framework default (Managed).
-                .With(new FontManagerOptions())
+                // The lab inspects the managed rasterization pipeline, so it starts on Managed on
+                // every platform rather than the platform default; the raster selector and the A/B
+                // view flip this registered instance at runtime.
+                .With(new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Managed })
 #if DEBUG
                 .WithDeveloperTools()
 #endif
