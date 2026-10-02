@@ -65,9 +65,11 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Whether unspecified text renders subpixel on <paramref name="platform"/> where the
-        /// surface allows it.
+        /// surface allows it. Apple platforms draw text grayscale (macOS since 10.14), and the
+        /// backend's CoreText scaler draws no subpixel text there either.
         /// </summary>
-        public static bool RendersSubpixelByDefault(TextRasterizationPlatform platform) => true;
+        public static bool RendersSubpixelByDefault(TextRasterizationPlatform platform)
+            => platform is not (TextRasterizationPlatform.MacOS or TextRasterizationPlatform.IOS);
 
         private static TextRasterizationPlatform CurrentPlatform()
         {
