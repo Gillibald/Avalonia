@@ -180,20 +180,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             // correction filter a level apart from the atlas modulation at some pixels. A zoom
             // gesture, whose scale changes every frame, keeps run masks too: laid out as sprites,
             // every frame's glyph masks would fill the atlas and push static text out of it.
-            var hardwareZoom = false;
-
             if (alphaContext is not null && mode != GlyphMaskMode.Subpixel &&
-                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } atlasContext)
+                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } atlasContext &&
+                !run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _)))
             {
-                if (!run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _)))
-                {
-                    DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY, originX,
-                        originY, ToArgb(alpha, solid.Color));
+                DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY, originX, originY,
+                    ToArgb(alpha, solid.Color));
 
-                    return true;
-                }
-
-                hardwareZoom = true;
+                return true;
             }
 
             var cache = run.RunMasks;
@@ -279,8 +273,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize, lcdGeometry)
                     : alphaContext is null
                         ? Compose(run, key, (float)scaleX, (float)scaleY, maxSize)
-                        : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize,
-                            pooledGlyphs: hardwareZoom);
+                        : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize);
 
                 if (composed is null)
                 {
@@ -935,7 +928,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// backend mask. Only reachable for COLR-free typefaces, so no layer expansion here.
         /// </summary>
         private static RunMask? ComposeAlphaMask(ManagedGlyphRunImpl run, RunMaskKey key,
-            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, int maxSize, bool pooledGlyphs)
+            IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, int maxSize)
         {
             var typeface = run.GlyphTypeface;
             var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
@@ -948,50 +941,36 @@ namespace Avalonia.Media.Fonts.Rasterization
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
             var state = (typeface, scratch);
 
-            // Every glyph's mask once, for the bounds and for each chunk. A zoom gesture's masks
-            // are drawn this once at their scale, so they are built into this thread's zoom
-            // buffers, one per glyph of the run, instead of the typeface's cache, where they would
-            // push out the masks of static text; the buffers stop growing once they fit.
-            var masks = ArrayPool<GlyphMask>.Shared.Rent(Math.Max(1, count));
-            var buffers = pooledGlyphs ? GetZoomMaskBuffers(count) : null;
-
             var minX = int.MaxValue;
             var minY = int.MaxValue;
             var maxX = int.MinValue;
             var maxY = int.MinValue;
-            var parts = Array.Empty<RunMaskPart>();
+
+            for (var i = 0; i < count; i++)
+            {
+                var relativeX = originFraction + positions[i * 2] * scaleX;
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
+
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap, embolden, oblique),
+                    state, s_buildMask);
+
+                UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+            }
+
+            if (minX >= maxX || minY >= maxY)
+            {
+                return null;
+            }
+
+            var height = maxY - minY;
+            var chunkCount = GetChunkCount(maxX - minX, maxSize, out var chunkWidth);
+            var parts = new RunMaskPart[chunkCount];
             var created = 0;
-            byte[]? staging = null;
+            var staging = ArrayPool<byte>.Shared.Rent(chunkWidth * height);
 
             try
             {
-                for (var i = 0; i < count; i++)
-                {
-                    var relativeX = originFraction + positions[i * 2] * scaleX;
-                    SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
-                    var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
-                    var glyphKey = new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit,
-                        key.PenSnap, embolden, oblique);
-
-                    var mask = buffers is not null
-                        ? GlyphMasks.BuildInto(typeface, scratch, glyphKey, ref buffers[i])
-                        : maskCache.GetOrBuild(glyphKey, state, s_buildMask);
-
-                    masks[i] = mask;
-                    UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
-                }
-
-                if (minX >= maxX || minY >= maxY)
-                {
-                    return null;
-                }
-
-                var height = maxY - minY;
-                var chunkCount = GetChunkCount(maxX - minX, maxSize, out var chunkWidth);
-
-                parts = new RunMaskPart[chunkCount];
-                staging = ArrayPool<byte>.Shared.Rent(chunkWidth * height);
-
                 for (var chunk = 0; chunk < chunkCount; chunk++)
                 {
                     var chunkX = minX + chunk * chunkWidth;
@@ -1002,10 +981,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                     for (var i = 0; i < count; i++)
                     {
                         var relativeX = originFraction + positions[i * 2] * scaleX;
-                        SnapGlyphPen(in key, relativeX, out var penX, out _);
+                        SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                        RunMaskComposer.ComposeAlpha(masks[i], penX - chunkX, penY - minY, span, width, height);
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap, embolden, oblique),
+                            state, s_buildMask);
+
+                        RunMaskComposer.ComposeAlpha(mask, penX - chunkX, penY - minY, span, width, height);
                     }
 
                     parts[created++] = new RunMaskPart(alphaContext.CreateAlphaMask(span, width, height),
@@ -1021,49 +1003,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
             finally
             {
-                if (staging is not null)
-                {
-                    ArrayPool<byte>.Shared.Return(staging);
-                }
-
-                if (buffers is not null)
-                {
-                    ReleaseLargeZoomMaskBuffers(buffers, count);
-                }
-
-                ArrayPool<GlyphMask>.Shared.Return(masks, clearArray: true);
-            }
-        }
-
-        // A buffer per glyph of the run being zoomed; masks larger than this are not kept.
-        private const int MaxKeptZoomMaskBytes = 256 * 1024;
-
-        [ThreadStatic]
-        private static byte[]?[]? t_zoomMaskBuffers;
-
-        private static byte[]?[] GetZoomMaskBuffers(int count)
-        {
-            var buffers = t_zoomMaskBuffers;
-
-            if (buffers is null || buffers.Length < count)
-            {
-                var grown = new byte[]?[Math.Max(count, (buffers?.Length ?? 16) * 2)];
-
-                buffers?.CopyTo(grown, 0);
-                t_zoomMaskBuffers = buffers = grown;
-            }
-
-            return buffers;
-        }
-
-        private static void ReleaseLargeZoomMaskBuffers(byte[]?[] buffers, int count)
-        {
-            for (var i = 0; i < count; i++)
-            {
-                if (buffers[i] is { Length: > MaxKeptZoomMaskBytes })
-                {
-                    buffers[i] = null;
-                }
+                ArrayPool<byte>.Shared.Return(staging);
             }
         }
 
