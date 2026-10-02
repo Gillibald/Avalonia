@@ -229,8 +229,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         // Compiled optimized at once rather than tiered: a profile gathered from the first masks
         // drawn (mostly empty and solid spans, or mostly mixed ones) lays the loop out for those,
-        // and costs later masks of the other kind up to a third of their time.
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        // and costs later masks of the other kind up to a third of their time. Never inlined, for
+        // the same reason: inlined into a caller that tiers up with a profile, the loop takes the
+        // caller's layout and runs several times slower than compiled on its own.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.NoInlining)]
         private static unsafe void BlendCore<TOver>(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width,
             int height, int stride, int x, int y, uint tintBgra, byte[]? table)
             where TOver : struct, ISourceOver
