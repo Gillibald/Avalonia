@@ -1,5 +1,8 @@
 using System;
 using System.Buffers;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -135,33 +138,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     for (var row = 0; row < mask.Height; row++)
                     {
-                        var source = mask.Alpha.AsSpan(row * mask.Width, mask.Width);
-                        var start = (top + row) * width + left;
-
-                        for (var column = 0; column < source.Length; column++)
+                        if (!AccumulateRow(mask.Alpha, row * mask.Width, mask.Width, single, counts,
+                                (top + row) * width + left, ref overlaps))
                         {
-                            var value = source[column];
-
-                            if (value == 0)
-                            {
-                                continue;
-                            }
-
-                            var index = start + column;
-                            var count = counts[index];
-
-                            if (count == 1)
-                            {
-                                overlaps++;
-                            }
-
-                            if (count == byte.MaxValue)
-                            {
-                                return false;
-                            }
-
-                            counts[index] = (byte)(count + 1);
-                            single[index] = value;
+                            return false;
                         }
                     }
                 }
@@ -180,6 +160,90 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private static readonly int[] s_noStarts = { 0 };
+
+        /// <summary>
+        /// Adds one mask row of <paramref name="length"/> coverage bytes at
+        /// <paramref name="sourceOffset"/> to the run's coverage at <paramref name="start"/>:
+        /// every inked pixel counts one more glyph and keeps the row's coverage byte, and
+        /// <paramref name="overlaps"/> counts the pixels that reach two glyphs. Returns
+        /// <c>false</c> when a pixel would count more glyphs than a byte holds.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool AccumulateRow(byte[] alpha, int sourceOffset, int length, byte[] single, byte[] counts,
+            int start, ref int overlaps)
+        {
+            var column = 0;
+
+            if (Vector128.IsHardwareAccelerated)
+            {
+                // Sixteen pixels per step. Lanes past the row are masked off, so a step may read
+                // and write back past the row's end as long as it stays inside all three arrays
+                // (counts is at least as long as single); those lanes are stored unchanged.
+                var lanes = Vector128.Create((byte)0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+
+                while (column < length && sourceOffset + column + 16 <= alpha.Length &&
+                       start + column + 16 <= single.Length)
+                {
+                    var values = Vector128.LoadUnsafe(ref alpha[sourceOffset + column]);
+                    var inked = ~Vector128.Equals(values, Vector128<byte>.Zero);
+
+                    if (length - column < 16)
+                    {
+                        inked &= Vector128.LessThan(lanes, Vector128.Create((byte)(length - column)));
+                    }
+
+                    if (inked != Vector128<byte>.Zero)
+                    {
+                        ref var countsAt = ref counts[start + column];
+                        ref var singleAt = ref single[start + column];
+                        var count = Vector128.LoadUnsafe(ref countsAt);
+
+                        if ((Vector128.Equals(count, Vector128<byte>.AllBitsSet) & inked) != Vector128<byte>.Zero)
+                        {
+                            return false;
+                        }
+
+                        overlaps += BitOperations.PopCount(
+                            (Vector128.Equals(count, Vector128<byte>.One) & inked).ExtractMostSignificantBits());
+
+                        // An inked lane is all ones, minus one: subtracting it counts one more glyph.
+                        (count - inked).StoreUnsafe(ref countsAt);
+                        Vector128.ConditionalSelect(inked, values, Vector128.LoadUnsafe(ref singleAt))
+                            .StoreUnsafe(ref singleAt);
+                    }
+
+                    column += 16;
+                }
+            }
+
+            for (; column < length; column++)
+            {
+                var value = alpha[sourceOffset + column];
+
+                if (value == 0)
+                {
+                    continue;
+                }
+
+                var index = start + column;
+                var count = counts[index];
+
+                if (count == 1)
+                {
+                    overlaps++;
+                }
+
+                if (count == byte.MaxValue)
+                {
+                    return false;
+                }
+
+                counts[index] = (byte)(count + 1);
+                single[index] = value;
+            }
+
+            return true;
+        }
 
         private static RunCoverage BuildOverlaps(in RunMaskKey key, ReadOnlySpan<GlyphMask> masks, ReadOnlySpan<int> penX,
             ReadOnlySpan<int> penY, int minX, int minY, int width, int height, byte[] coverage, byte[] counts,
