@@ -27,6 +27,10 @@ namespace Avalonia.Skia.UnitTests.Media
         // writes out of bounds. A draw stays at the 65536 vertices one 16-bit indexed part holds.
         private const int MaxSpritesPerAtlasDraw = 16384;
 
+        // The most runs of other batches a run joining a pending batch is tested against for
+        // overlap before every pending batch is drawn.
+        private const int MaxPendingRuns = 128;
+
         private static readonly string[] s_lines =
         {
             "Typography is the craft of endowing human language",
@@ -132,6 +136,82 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 TransformedAtlasTests.AssertEqual(expected, batched, "alternating lines");
                 Assert.Equal(4, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Thousands_Of_Runs_Of_One_Typeface_And_Colour_Are_One_Atlas_Draw(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateCellRuns(typeface, 2000);
+
+            try
+            {
+                var expected = Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: false, out _);
+
+                Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out _);
+
+                var batched = Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true,
+                    out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, batched, "runs of one colour");
+                Assert.Equal(1, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Batches_Of_Other_Colours_Are_Drawn_Before_Their_Runs_Outnumber_The_Pending_Run_Limit(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateCellRuns(typeface, 2000);
+            var brushes = new IBrush[] { Brushes.Black, new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90)) };
+
+            // Every run joins the batch of its colour while the other colour's batch is pending,
+            // so each run is tested against the runs of the other batch.
+            void Draw(DrawingContextImpl context)
+            {
+                for (var i = 0; i < runs.Length; i++)
+                {
+                    context.DrawGlyphRun(brushes[i % 2], runs[i]);
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var drawnWhileAppending = 0;
+                var batched = Render(gpu, context =>
+                {
+                    var before = DrawingContextImpl.AtlasDrawsOnThread;
+
+                    Draw(context);
+                    drawnWhileAppending = DrawingContextImpl.AtlasDrawsOnThread - before;
+                }, batched: true, out var draws);
+
+                // A run may join its batch only while fewer than the limit of other runs are
+                // pending, so the two batches are drawn at least once per twice the limit of runs.
+                var flushes = (runs.Length + 2 * MaxPendingRuns - 1) / (2 * MaxPendingRuns);
+
+                TransformedAtlasTests.AssertEqual(expected, batched, "runs alternating colours");
+                Assert.True(drawnWhileAppending >= 2 * (flushes - 1),
+                    $"{runs.Length} runs took {drawnWhileAppending} atlas draws before the session ended");
+                Assert.True(draws >= 2 * flushes, $"{runs.Length} runs took {draws} atlas draws");
             }
             finally
             {
@@ -860,6 +940,27 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 runs[i] = WideRunMaskTests.CreateRun(typeface, s_lines[i % s_lines.Length], em,
                     new Point(origin.X, origin.Y + em + i * Math.Round(em * 1.35)));
+            }
+
+            return runs;
+        }
+
+        /// <summary>
+        /// <paramref name="count"/> runs of one small glyph each, one per cell of a grid over the
+        /// surface, far enough apart that no two of them overlap.
+        /// </summary>
+        private static ManagedGlyphRunImpl[] CreateCellRuns(GlyphTypeface typeface, int count)
+        {
+            const int columns = 52;
+
+            var runs = new ManagedGlyphRunImpl[count];
+
+            Assert.True(8 + (count - 1) / columns * 9 < Height, $"{count} cells do not fit the surface");
+
+            for (var i = 0; i < count; i++)
+            {
+                runs[i] = WideRunMaskTests.CreateRun(typeface, "o", 7,
+                    new Point(2.3 + i % columns * 10, 8 + i / columns * 9));
             }
 
             return runs;
