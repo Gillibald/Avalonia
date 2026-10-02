@@ -115,6 +115,46 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var mode = ResolveMaskMode(textRenderingMode, context, run.GlyphTypeface, out var lcdGeometry);
 
+            // A run drawn from the atlas again under the inputs of its last atlas draw, at an origin
+            // of the same pen phase, resolves to the same key and sprite set, however far it moved.
+            if (alphaContext is not null && run.UprightDecision is { } decision &&
+                decision.Matches(scaleX, scaleY, mode, textHintingMode, alphaContext.MaxRunMaskSize,
+                    run.TransformedSprites.Version) &&
+                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } repeatContext)
+            {
+                int snappedX;
+                byte snappedPhase;
+
+                if (decision.Key.PenSnap)
+                {
+                    snappedX = (int)MathF.Round(deviceX);
+                    snappedPhase = 0;
+                }
+                else
+                {
+                    GlyphMaskKey.SnapPen(deviceX, out snappedX, out snappedPhase);
+                }
+
+                if (snappedPhase == decision.Key.OriginPhase &&
+                    !run.UprightChurn.Record(decision.Key.ScaleQ, default, true))
+                {
+                    var snappedY = (int)Math.Round(deviceY);
+                    var argb = ToArgb(alpha, solid.Color);
+
+                    if (argb != decision.ForegroundArgb)
+                    {
+                        decision.ForegroundArgb = argb;
+                        decision.Bucket = GetBucket(argb);
+                    }
+
+                    run.TransformedSprites.Settle(decision.Sprites, transform, snappedX, snappedY);
+                    DrawFromAtlas(repeatContext, run.GlyphTypeface, decision.Sprites, snappedX, snappedY, argb,
+                        decision.Bucket);
+
+                    return true;
+                }
+            }
+
             if (!FitsRunMaskBounds(context, run.Bounds, scaleX, scaleY, BytesPerPixel(mode, alphaContext),
                     out var maxSize))
             {
@@ -184,8 +224,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } atlasContext &&
                 !run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _)))
             {
-                DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY, originX, originY,
-                    ToArgb(alpha, solid.Color));
+                var argb = ToArgb(alpha, solid.Color);
+                var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
+                    originX, originY, argb);
+
+                (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
+                    alphaContext.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
 
                 return true;
             }
@@ -544,9 +588,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Draws an upright run from the typeface's atlas through its cached sprite set, laying
-        /// the set out on first use.
+        /// the set out on first use, and returns the set.
         /// </summary>
-        private static void DrawUprightFromAtlas(ITransformedGlyphContext context, ManagedGlyphRunImpl run,
+        private static TransformedGlyphSprites DrawUprightFromAtlas(ITransformedGlyphContext context,
+            ManagedGlyphRunImpl run,
             in RunMaskKey key, in Matrix transform, float scaleX, float scaleY, int originX, int originY,
             uint foregroundArgb)
         {
@@ -563,6 +608,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             state.Settle(sprites, transform, originX, originY);
             DrawFromAtlas(context, run.GlyphTypeface, sprites, originX, originY, foregroundArgb);
+
+            return sprites;
         }
 
         /// <summary>

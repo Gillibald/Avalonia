@@ -411,6 +411,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// Changes whenever a sprite set enters the state or the state is disposed, so a set
+        /// taken from it at one version is still held, and not disposed, while the version stays.
+        /// </summary>
+        public int Version { get; private set; }
+
         public bool TryGet(in RunMaskKey key, out TransformedGlyphSprites sprites)
         {
             if (_primary is { } primary && primary.Key == key)
@@ -437,6 +443,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public void Add(TransformedGlyphSprites sprites)
         {
+            Version++;
+
             if (_primary is null)
             {
                 _primary = sprites;
@@ -453,6 +461,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public void Dispose()
         {
+            Version++;
             Settled = null;
             _primary?.Dispose();
             _primary = null;

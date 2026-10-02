@@ -452,9 +452,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb)
+            => DrawFromAtlas(context, typeface, sprites, originX, originY, foregroundArgb, GetBucket(foregroundArgb));
+
+        /// <summary>
+        /// Draws a sprite set from the typeface's atlas in a foreground whose coverage correction
+        /// <paramref name="bucket"/> the caller already knows.
+        /// </summary>
+        private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
+            TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb, int bucket)
         {
             var atlas = typeface.MaskAtlas;
-            var batches = GetBatches(context, typeface, atlas, sprites, GetBucket(foregroundArgb));
+            var batches = GetBatches(context, typeface, atlas, sprites, bucket);
 
             DrawBatches(context, atlas, batches, Matrix.CreateTranslation(originX, originY), foregroundArgb,
                 bilinear: false);
