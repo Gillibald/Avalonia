@@ -145,6 +145,47 @@ namespace Avalonia.CoreText.UnitTests
             // Helvetica ships a designed bold face; family faces never carry simulations.
             Assert.Contains(faces, static f => f.Weight == FontWeight.Bold && f.Style == FontStyle.Normal);
         }
+
+        [MacOSFact]
+        public void Condensed_Faces_Should_Report_The_Width_Class_Of_Their_File()
+        {
+            using var provider = new CoreTextFontProvider();
+
+            Assert.SkipUnless(provider.TryGetFamilyFaces("Avenir Next Condensed", out var faces),
+                "Avenir Next Condensed is not installed.");
+
+            foreach (var face in faces!)
+            {
+                Assert.True(face.TryOpenFontMemory(out var fontMemory));
+
+                var glyphTypeface = new GlyphTypeface(fontMemory);
+
+                Assert.Equal(FontStretch.Condensed, glyphTypeface.Stretch);
+                Assert.Equal(glyphTypeface.Stretch, face.Stretch);
+
+                glyphTypeface.Dispose();
+            }
+        }
+    }
+
+    public class CTMappingTests
+    {
+        [Fact]
+        public void Width_Traits_Should_Map_To_The_Width_Classes_CoreText_Derives_Them_From()
+        {
+            // CoreText reports a tenth of the distance from the normal width class: the condensed
+            // faces shipped with macOS (usWidthClass 3) all carry -0.2.
+            Assert.Equal(FontStretch.Condensed, CTMapping.WidthToFontStretch(-0.2));
+            Assert.Equal(FontStretch.Normal, CTMapping.WidthToFontStretch(0));
+            Assert.Equal(FontStretch.Expanded, CTMapping.WidthToFontStretch(0.2));
+
+            foreach (var stretch in Enum.GetValues<FontStretch>())
+            {
+                Assert.Equal(stretch, CTMapping.WidthToFontStretch(CTMapping.WidthFromFontStretch(stretch)));
+            }
+
+            Assert.Equal(-0.2, CTMapping.WidthFromFontStretch(FontStretch.Condensed), 6);
+        }
     }
 
     /// <summary>
