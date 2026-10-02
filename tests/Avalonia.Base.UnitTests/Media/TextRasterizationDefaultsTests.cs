@@ -21,10 +21,16 @@ namespace Avalonia.Base.UnitTests.Media
                 TextRasterizationDefaults.Resolve(null, TextRasterizationPlatform.Windows, Architecture.Arm64));
         }
 
+        [Fact]
+        public void MacOS_Arm64_Defaults_To_Managed()
+        {
+            Assert.Equal(TextRasterizationMode.Managed,
+                TextRasterizationDefaults.Resolve(null, TextRasterizationPlatform.MacOS, Architecture.Arm64));
+        }
+
         [Theory]
         [InlineData(nameof(TextRasterizationPlatform.Linux), Architecture.X64)]
         [InlineData(nameof(TextRasterizationPlatform.Linux), Architecture.Arm64)]
-        [InlineData(nameof(TextRasterizationPlatform.MacOS), Architecture.Arm64)]
         [InlineData(nameof(TextRasterizationPlatform.MacOS), Architecture.X64)]
         [InlineData(nameof(TextRasterizationPlatform.Android), Architecture.Arm64)]
         [InlineData(nameof(TextRasterizationPlatform.IOS), Architecture.Arm64)]
