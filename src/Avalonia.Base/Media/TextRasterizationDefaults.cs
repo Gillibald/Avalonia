@@ -56,6 +56,19 @@ namespace Avalonia.Media
                 _ => TextRasterizationMode.Backend,
             };
 
+        /// <summary>
+        /// Gets or sets whether text whose rendering mode is unspecified renders subpixel (LCD)
+        /// where the surface allows it, rather than grayscale. Initialized from the running
+        /// platform; test assemblies whose expectations were recorded with one choice pin it.
+        /// </summary>
+        public static bool UnspecifiedRendersSubpixel { get; set; } = RendersSubpixelByDefault(CurrentPlatform());
+
+        /// <summary>
+        /// Whether unspecified text renders subpixel on <paramref name="platform"/> where the
+        /// surface allows it.
+        /// </summary>
+        public static bool RendersSubpixelByDefault(TextRasterizationPlatform platform) => true;
+
         private static TextRasterizationPlatform CurrentPlatform()
         {
             if (OperatingSystem.IsBrowser())
