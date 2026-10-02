@@ -498,6 +498,7 @@ namespace Avalonia.Skia
         private sealed class GlyphPageImage : IDisposable
         {
             private SKShader? _shader;
+            private SKPaint? _paint;
 
             public GlyphPageImage(SKImage image) => Image = image;
 
@@ -516,8 +517,15 @@ namespace Avalonia.Skia
                 return _shader;
             }
 
+            /// <summary>
+            /// The paint batches drawn from kept vertices sample the page with, made on first use
+            /// and kept with the image; each draw sets its colour.
+            /// </summary>
+            public SKPaint Paint => _paint ??= new SKPaint { Shader = Shader };
+
             public void Dispose()
             {
+                _paint?.Dispose();
                 _shader?.Dispose();
                 Image.Dispose();
             }

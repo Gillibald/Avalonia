@@ -210,10 +210,16 @@ namespace Avalonia.Skia
         /// <summary>Draws every pending grayscale batch, in the order they were begun.</summary>
         private void FlushAtlasBatch(GlyphBatchFlushReason reason)
         {
-            if (_pendingBatchCount > 0)
+            if (_pendingBatchCount == 0)
             {
-                CountFlush(reason);
+                return;
             }
+
+            CountFlush(reason);
+
+            // Every batch sets the matrix it draws under, so the context's transform is restored
+            // once after the last instead of after each.
+            var transform = Transform;
 
             for (var i = 0; i < _pendingBatchCount; i++)
             {
@@ -221,6 +227,7 @@ namespace Avalonia.Skia
                 _pendingBatches[i] = null!;
             }
 
+            Transform = transform;
             _pendingBatchCount = 0;
             _pendingRunCount = 0;
         }
@@ -231,15 +238,21 @@ namespace Avalonia.Skia
             var pending = _pendingBatches!;
             var index = Array.IndexOf(pending, batch, 0, _pendingBatchCount);
 
+            var transform = Transform;
+
             _pendingRunCount -= batch.RunCount;
             CountFlush(reason);
             DrawPendingBatch(batch, reason);
+            Transform = transform;
 
             Array.Copy(pending, index + 1, pending, index, _pendingBatchCount - index - 1);
             pending[--_pendingBatchCount] = null!;
         }
 
-        /// <summary>Draws a pending grayscale batch and returns it to the pool.</summary>
+        /// <summary>
+        /// Draws a pending grayscale batch and returns it to the pool. It leaves the matrix it
+        /// drew under set; the caller restores the context's transform.
+        /// </summary>
         /// <remarks>
         /// Skia turns an atlas draw's sprites into quads on the CPU every time it is called. A
         /// batch that repeats the previous batch begun by the same run, the same runs at the
@@ -248,7 +261,8 @@ namespace Avalonia.Skia
         /// vertices are made the first time a batch repeats, so text that changes every frame
         /// never pays for building them. The vertices sample the page through its image shader
         /// at the texel centres the atlas draw samples, and modulate the paint colour by the
-        /// coverage alike, so both draws produce the same pixels.
+        /// coverage alike, so both draws produce the same pixels. They draw with the page
+        /// image's own paint, which keeps its shader across draws.
         /// <para>
         /// A batch of several opaque colours draws with a white paint and modulates each sprite,
         /// or each vertex, by its run's colour instead. For opaque colours Skia produces the
@@ -284,8 +298,7 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchVertices, verticesTimer);
 
             var setupTimer = GlyphPhaseTimers.Start();
-            var paint = SKPaintCache.Shared.Get();
-            var oldTransform = Transform;
+            var paint = repeats ? image.Paint : SKPaintCache.Shared.Get();
             var draws = 1;
             SKRect[]? mergedSources = null;
             SKRotationScaleMatrix[]? mergedPlacements = null;
@@ -295,7 +308,6 @@ namespace Avalonia.Skia
 
             if (repeats)
             {
-                paint.Shader = image.Shader;
                 Transform = Matrix.CreateTranslation(first.X, first.Y);
             }
             else if (count == 1)
@@ -384,8 +396,11 @@ namespace Avalonia.Skia
 
             var teardownTimer = GlyphPhaseTimers.Start();
 
-            Transform = oldTransform;
-            SKPaintCache.Shared.ReturnReset(paint);
+            if (!repeats)
+            {
+                SKPaintCache.Shared.ReturnReset(paint);
+            }
+
             transient?.Dispose();
             GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawTeardown, teardownTimer);
             t_atlasDraws += draws;
