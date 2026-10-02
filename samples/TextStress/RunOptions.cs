@@ -24,6 +24,9 @@ namespace TextStress
 
         public int Warmup { get; private set; } = 60;
 
+        /// <summary>Wall time of discarded frames before the first measurement, so the JIT has promoted hot code.</summary>
+        public int PrewarmMs { get; private set; } = 2000;
+
         public int Seed { get; private set; } = 1;
 
         public int Pass { get; private set; } = 1;
@@ -83,6 +86,7 @@ namespace TextStress
                     case "render": options.Render = value.ToLowerInvariant(); break;
                     case "frames": options.Frames = ParseInt(key, value); break;
                     case "warmup": options.Warmup = ParseInt(key, value); break;
+                    case "prewarm-ms": options.PrewarmMs = ParseInt(key, value); break;
                     case "seed": options.Seed = ParseInt(key, value); break;
                     case "pass": options.Pass = ParseInt(key, value); break;
                     case "out": options.Out = value; break;
@@ -132,6 +136,7 @@ namespace TextStress
             "  --render default|angle|wgl|software|vulkan   Win32 rendering mode (default: platform list)\n" +
             "  --frames N   measured frames per sweep value, 0 = interactive until closed (default 600)\n" +
             "  --warmup N   unmeasured frames before each measurement (default 60)\n" +
+            "  --prewarm-ms N   discarded frames before the first measurement, in ms (default 2000)\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +

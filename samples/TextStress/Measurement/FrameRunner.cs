@@ -61,6 +61,11 @@ namespace TextStress.Measurement
             var scaling = _window.RenderScaling;
             var environmentWritten = false;
 
+            if (_options.Frames > 0 && _options.PrewarmMs > 0)
+            {
+                await PrewarmAsync(_options.N[0], scaling);
+            }
+
             foreach (var n in _options.N)
             {
                 _window.Content = _scenario.CreateView(n, scaling);
@@ -129,6 +134,25 @@ namespace TextStress.Measurement
             }
 
             _compositor.AfterCommit -= OnAfterCommit;
+        }
+
+        /// <summary>
+        /// Runs the first sweep value's warmup frames over and over for a fixed wall time and
+        /// discards them. Tiered compilation promotes hot methods only after they have run a
+        /// while, so without this the first measured value of a process runs partly on
+        /// unoptimized code and reads slower than the values after it.
+        /// </summary>
+        private async Task PrewarmAsync(int n, double scaling)
+        {
+            _window.Content = _scenario.CreateView(n, scaling);
+
+            var watch = Stopwatch.StartNew();
+            var period = Math.Max(1, _options.Warmup);
+
+            for (var frame = 0; watch.ElapsedMilliseconds < _options.PrewarmMs; frame++)
+            {
+                await RunFrameAsync(frame % period, apply: true);
+            }
         }
 
         private async Task<FrameSample> RunFrameAsync(int frame, bool apply)
@@ -319,6 +343,7 @@ namespace TextStress.Measurement
             yield return ("seed", _options.Seed.ToString(CultureInfo.InvariantCulture));
             yield return ("frames", _options.Frames.ToString(CultureInfo.InvariantCulture));
             yield return ("warmup", _options.Warmup.ToString(CultureInfo.InvariantCulture));
+            yield return ("prewarm_ms", _options.PrewarmMs.ToString(CultureInfo.InvariantCulture));
         }
     }
 }
