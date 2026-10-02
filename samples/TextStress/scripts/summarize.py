@@ -328,7 +328,7 @@ def write_counters(w, keys, groups):
       "faces after the last frame (most on one face).")
     w("")
     w("| scenario | render | mode | frames | draws/f | batches/f | runs/b | max | flushed by (/f) | slot ev/f | "
-      "img new/repl /f | upload KB/f | upload MB/pass | raster/f | raster/pass | mask h/m /f | sets/f | bb/f | "
+      "img new/repl/upd /f | upload KB/f | upload MB/pass | raster/f | raster/pass | mask h/m /f | sets/f | bb/f | "
       "atlas h/m/p /f | pages |")
     w("|" + "---|" * 20)
     for key in keys:
@@ -348,7 +348,7 @@ def write_counters(w, keys, groups):
           f"{fmt(mean(rows, 'atlas_draws'), 1)} | {fmt(batches, 1)} | "
           f"{fmt(runs / batches if batches else float('nan'))} | {fmt(mean(rows, 'max_runs_per_batch'), 1)} | "
           f"{', '.join(reasons) or '-'} | {fmt(mean(rows, 'fb_slot_pressure'))} | "
-          f"{fmt(uploads - replaced)}/{fmt(replaced)} | {fmt(mean(rows, 'page_upload_bytes') / 1024, 1)} | "
+          f"{fmt(uploads - replaced)}/{fmt(replaced)}/{fmt(mean(rows, 'page_texture_updates'))} | {fmt(mean(rows, 'page_upload_bytes') / 1024, 1)} | "
           f"{fmt(per_pass_total(rows, 'page_upload_bytes') / 1048576, 1)} | "
           f"{fmt(mean(rows, 'glyph_rasterizations'))} | {fmt(per_pass_total(rows, 'glyph_rasterizations'), 0)} | "
           f"{fmt(mean(rows, 'mask_hits'), 1)}/{fmt(mean(rows, 'mask_misses'))} | "

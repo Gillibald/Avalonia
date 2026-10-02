@@ -25,13 +25,22 @@ namespace Avalonia.Skia.UnitTests.Media
     {
         private readonly Action _cleanup;
 
-        private GpuTestContext(GRContext grContext, Action cleanup)
+        private GpuTestContext(GRContext grContext, Action cleanup, Func<string, IntPtr>? getGlProcAddress = null,
+            int glMajorVersion = 0)
         {
             GrContext = grContext;
             _cleanup = cleanup;
+            GetGlProcAddress = getGlProcAddress;
+            GlMajorVersion = glMajorVersion;
         }
 
         public GRContext GrContext { get; }
+
+        /// <summary>Resolves GL entry points of a GL context; <c>null</c> for other backends.</summary>
+        public Func<string, IntPtr>? GetGlProcAddress { get; }
+
+        /// <summary>The major version of the GL or GLES context, 0 for other backends.</summary>
+        public int GlMajorVersion { get; }
 
         public static GpuTestContext? TryCreate(GpuBackend backend, out string reason)
         {
@@ -162,13 +171,36 @@ namespace Avalonia.Skia.UnitTests.Media
                 return null;
             }
 
+            // wglGetProcAddress resolves extension and post-1.1 entry points only; the 1.1 ones are
+            // exports of opengl32.dll.
+            var opengl32 = NativeLibrary.Load("opengl32.dll");
+            Func<string, IntPtr> getProcAddress = name =>
+            {
+                var address = wglGetProcAddress(name);
+
+                return address is 0 or 1 or 2 or 3 or -1
+                    ? NativeLibrary.TryGetExport(opengl32, name, out var export) ? export : IntPtr.Zero
+                    : address;
+            };
+
             return new GpuTestContext(grContext, () =>
             {
                 wglMakeCurrent(IntPtr.Zero, IntPtr.Zero);
                 wglDeleteContext(glContext);
                 ReleaseDC(window, dc);
                 DestroyWindow(window);
-            });
+            }, getProcAddress, ReadGlMajorVersion(getProcAddress));
+        }
+
+        private static unsafe int ReadGlMajorVersion(Func<string, IntPtr> getProcAddress)
+        {
+            const int glVersion = 0x1F02;
+
+            var getString = (delegate* unmanaged[Stdcall]<int, byte*>)getProcAddress("glGetString");
+            var version = Marshal.PtrToStringAnsi((IntPtr)getString(glVersion)) ?? string.Empty;
+            var digits = version.SkipWhile(c => !char.IsDigit(c)).TakeWhile(char.IsDigit).ToArray();
+
+            return digits.Length > 0 ? int.Parse(new string(digits)) : 0;
         }
 
         private static GpuTestContext? TryCreateAngle(out string reason)
@@ -256,10 +288,12 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             var context = eglCreateContext(display, configs[0], IntPtr.Zero, new[] { 0x3098, 3, 0x3038 });
+            var major = 3;
 
             if (context == IntPtr.Zero)
             {
                 context = eglCreateContext(display, configs[0], IntPtr.Zero, new[] { 0x3098, 2, 0x3038 });
+                major = 2;
             }
 
             if (context == IntPtr.Zero || !eglMakeCurrent(display, surface, surface, context))
@@ -281,7 +315,8 @@ namespace Avalonia.Skia.UnitTests.Media
             // The display stays initialized (ANGLE shares it process-wide); only the
             // binding is released so the next backend can go current on this thread.
             return new GpuTestContext(grContext,
-                () => eglMakeCurrent(display, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero));
+                () => eglMakeCurrent(display, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero),
+                name => eglGetProcAddress(name), major);
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -365,5 +400,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [DllImport("opengl32.dll")]
         private static extern bool wglMakeCurrent(IntPtr dc, IntPtr context);
+
+        [DllImport("opengl32.dll", CharSet = CharSet.Ansi)]
+        private static extern IntPtr wglGetProcAddress(string name);
     }
 }

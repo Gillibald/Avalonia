@@ -87,6 +87,50 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The <see cref="Version"/> <see cref="Realized"/> was made from.</summary>
         public int RealizedVersion { get; set; }
 
+        private readonly object _writtenLock = new();
+        private int _writtenLeft = int.MaxValue;
+        private int _writtenTop = int.MaxValue;
+        private int _writtenRight;
+        private int _writtenBottom;
+
+        /// <summary>
+        /// Takes the bounds of every write since the last call, so a backend that keeps a copy
+        /// of the page can update only that part. Returns <c>false</c> when nothing was written.
+        /// </summary>
+        /// <remarks>
+        /// A write is recorded before <see cref="Version"/> moves past it: a backend that reads
+        /// the version first and takes the bounds second never misses a write of that version.
+        /// </remarks>
+        public bool TakeWritten(out PixelRect bounds)
+        {
+            lock (_writtenLock)
+            {
+                if (_writtenRight <= _writtenLeft || _writtenBottom <= _writtenTop)
+                {
+                    bounds = default;
+                    return false;
+                }
+
+                bounds = new PixelRect(_writtenLeft, _writtenTop, _writtenRight - _writtenLeft,
+                    _writtenBottom - _writtenTop);
+                _writtenLeft = _writtenTop = int.MaxValue;
+                _writtenRight = _writtenBottom = 0;
+
+                return true;
+            }
+        }
+
+        internal void MarkWritten(int x, int y, int width, int height)
+        {
+            lock (_writtenLock)
+            {
+                _writtenLeft = Math.Min(_writtenLeft, x);
+                _writtenTop = Math.Min(_writtenTop, y);
+                _writtenRight = Math.Max(_writtenRight, x + width);
+                _writtenBottom = Math.Max(_writtenBottom, y + height);
+            }
+        }
+
         internal void Grow(int height)
         {
             var grown = GC.AllocateArray<byte>(GlyphMaskAtlas.PageWidth * height, pinned: true);
@@ -408,6 +452,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
+            page.MarkWritten(x, y, mask.Width, mask.Height);
             page.Version++;
             GlyphRasterDiagnostics.CountAtlasPlacement();
         }

@@ -360,13 +360,35 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// The image of an atlas page at its current version. The image wraps the page's
-        /// pinned array without copying; a GPU context uploads it once per version and draws
-        /// every batch on the page from that texture.
+        /// The image of an atlas page at its current version.
         /// </summary>
-        private static GlyphPageImage GetPageImage(GlyphAtlasPage page)
+        /// <remarks>
+        /// A GL context keeps the page in a texture of its own, uploaded whole once and then
+        /// updated with only the rectangle the atlas wrote since, so a new glyph moves its own
+        /// pixels to the GPU instead of the page. Elsewhere the image wraps the page's pinned
+        /// array without copying, once per version, and a GPU context uploads that image whole,
+        /// up to 2 MB, the first time it draws it.
+        /// </remarks>
+        private GlyphPageImage GetPageImage(GlyphAtlasPage page)
         {
-            if (page.Realized is GlyphPageImage current && page.RealizedVersion == page.Version)
+            var grContext = _grContext;
+
+            if (page.Realized is GlyphPageTexture texture && texture.CanDraw(page, grContext))
+            {
+                if (texture.Version != page.Version)
+                {
+                    var updateTimer = GlyphPhaseTimers.Start();
+
+                    texture.Update(page);
+                    GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, updateTimer);
+                }
+
+                return texture.Image;
+            }
+
+            var gl = grContext is null ? null : GlPageTextureApi.Get(grContext);
+
+            if (gl is null && page.Realized is GlyphPageImage current && page.RealizedVersion == page.Version)
             {
                 return current;
             }
@@ -379,11 +401,22 @@ namespace Avalonia.Skia
             }
 
             page.Realized?.Dispose();
+            page.Realized = null;
 
-            var image = new GlyphPageImage(CreatePageImage(page));
+            GlyphPageImage image;
 
-            page.Realized = image;
-            page.RealizedVersion = page.Version;
+            if (gl is not null && GlyphPageTexture.TryCreate(grContext!, gl, page) is { } created)
+            {
+                page.Realized = created;
+                image = created.Image;
+            }
+            else
+            {
+                image = new GlyphPageImage(CreatePageImage(page));
+                page.Realized = image;
+                page.RealizedVersion = page.Version;
+            }
+
             GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
 
             return image;
@@ -402,26 +435,35 @@ namespace Avalonia.Skia
         private static long t_pageImageBytes;
 
         [ThreadStatic]
+        private static int t_pageTextureUpdates;
+
+        [ThreadStatic]
         private static int t_atlasDraws;
 
         /// <summary>
-        /// The number of atlas page images made on this thread, each a texture upload on a GPU
-        /// context; for tests.
+        /// The number of atlas page images made on this thread, each holding the whole page: a
+        /// page texture, or an image wrapping the page's array, which a GPU context uploads
+        /// whole; for tests.
         /// </summary>
         internal static int PageImagesCreatedOnThread => t_pageImagesCreated;
 
         /// <summary>
-        /// The atlas page images made on this thread that replaced the image of an older version
-        /// of their page; for profiling tools.
+        /// The atlas page images made on this thread that replaced the image or texture of their
+        /// page; for profiling tools.
         /// </summary>
         internal static int PageImagesReplacedOnThread => t_pageImagesReplaced;
 
         /// <summary>
-        /// The bytes of the atlas page images made on this thread. A page image wraps the page's
-        /// whole array, and a GPU context uploads a raster image as a whole texture the first
-        /// time it draws it, so this is the texture upload volume; for profiling tools.
+        /// The atlas page bytes handed to the GPU on this thread: whole pages for new page
+        /// images, written rectangles for page texture updates; for profiling tools.
         /// </summary>
         internal static long PageImageBytesOnThread => t_pageImageBytes;
+
+        /// <summary>
+        /// The page texture updates on this thread, each uploading what the atlas wrote to the
+        /// page since the last; for profiling tools.
+        /// </summary>
+        internal static int PageTextureUpdatesOnThread => t_pageTextureUpdates;
 
         /// <summary>The number of atlas draw calls issued on this thread; for tests.</summary>
         internal static int AtlasDrawsOnThread => t_atlasDraws;
@@ -478,6 +520,163 @@ namespace Avalonia.Skia
             {
                 _shader?.Dispose();
                 Image.Dispose();
+            }
+        }
+
+        /// <summary>An atlas page held in a GL texture of one GPU context, updated in place as the atlas writes.</summary>
+        /// <remarks>
+        /// <para>
+        /// The texture is an R8 GL texture this code owns, made with the whole page and wrapped
+        /// for Skia once. An update hands the rectangle the atlas wrote since to glTexSubImage2D
+        /// straight from the page's array, so the page's image, shader and paint stay the same
+        /// across versions. SkiaSharp offers no partial upload of its own: drawing the rectangle
+        /// into a page surface instead makes Skia create and fill a texture for every rectangle,
+        /// 40-60 us of render-thread time each. The array stays the source of truth: a texture
+        /// that no longer fits its page (the page grew, another context draws it, the context was
+        /// lost) is dropped and the page uploaded whole again.
+        /// </para>
+        /// <para>
+        /// The upload runs at once, while Skia runs the draws recorded earlier in the frame at
+        /// its next flush, so those draws see the new pixels too. They only sample entries the
+        /// atlas wrote before them, and the atlas never writes over an entry, only into rows and
+        /// columns no entry uses yet. Skia's cached GL state is reset after every upload.
+        /// </para>
+        /// <para>
+        /// GPU resources are released on the thread that drives their context. Disposing a page
+        /// texture, which eviction may do on any thread, only marks it; the thread that made it
+        /// frees it when it next makes a texture for that context, together with the textures
+        /// of collected pages and of lost contexts. Skia deletes the GL texture through its
+        /// release callback once no recorded draw uses it any more.
+        /// </para>
+        /// </remarks>
+        private sealed class GlyphPageTexture : IDisposable
+        {
+            [ThreadStatic]
+            private static List<GlyphPageTexture>? t_textures;
+
+            private static readonly SKImageTextureReleaseDelegate s_release = static state =>
+                ((GlPageTextureApi.Texture)state).Delete();
+
+            private readonly GRContext _context;
+            private readonly GlPageTextureApi _gl;
+            private readonly uint _id;
+            private readonly WeakReference<GlyphAtlasPage> _page;
+            private volatile bool _released;
+
+            private GlyphPageTexture(GRContext context, GlPageTextureApi gl, uint id, GlyphAtlasPage page,
+                SKImage image)
+            {
+                _context = context;
+                _gl = gl;
+                _id = id;
+                _page = new WeakReference<GlyphAtlasPage>(page);
+                Height = page.Height;
+                Image = new GlyphPageImage(image);
+            }
+
+            /// <summary>The page rows the texture holds.</summary>
+            public int Height { get; }
+
+            /// <summary>The page version the texture holds.</summary>
+            public int Version { get; private set; }
+
+            /// <summary>The texture wrapped for Skia; the same image at every version.</summary>
+            public GlyphPageImage Image { get; }
+
+            /// <summary>Whether this texture can stand for <paramref name="page"/> on <paramref name="context"/>.</summary>
+            public bool CanDraw(GlyphAtlasPage page, GRContext? context) =>
+                !_released && ReferenceEquals(context, _context) && !GlPageTextureApi.IsLost(_context) &&
+                Height == page.Height;
+
+            /// <summary>Makes a texture of the whole page, or returns <c>null</c> when GL or Skia refuse it.</summary>
+            public static GlyphPageTexture? TryCreate(GRContext context, GlPageTextureApi gl, GlyphAtlasPage page)
+            {
+                Collect(context);
+
+                // The whole page goes up, so earlier writes need no upload of their own.
+                var version = page.Version;
+
+                page.TakeWritten(out _);
+
+                var id = gl.Create(page.Pixels, GlyphMaskAtlas.PageWidth, page.Height);
+
+                context.ResetContext(GRGlBackendState.All);
+
+                if (id == 0)
+                {
+                    return null;
+                }
+
+                var texture = new GlPageTextureApi.Texture(gl, id, context);
+                SKImage? image;
+
+                using (var backend = new GRBackendTexture(GlyphMaskAtlas.PageWidth, page.Height, false,
+                           new GRGlTextureInfo(GlPageTextureApi.Texture2D, id, GlPageTextureApi.R8)))
+                {
+                    image = SKImage.FromTexture(context, backend, GRSurfaceOrigin.TopLeft, SKColorType.Alpha8,
+                        SKAlphaType.Premul, null, s_release, texture);
+                }
+
+                if (image is null)
+                {
+                    texture.Delete();
+                    return null;
+                }
+
+                var created = new GlyphPageTexture(context, gl, id, page, image) { Version = version };
+
+                (t_textures ??= new List<GlyphPageTexture>()).Add(created);
+                t_pageImagesCreated++;
+                t_pageImageBytes += (long)GlyphMaskAtlas.PageWidth * page.Height;
+
+                return created;
+            }
+
+            /// <summary>Uploads what the atlas wrote to the page since the texture's version.</summary>
+            public void Update(GlyphAtlasPage page)
+            {
+                var version = page.Version;
+
+                if (page.TakeWritten(out var written))
+                {
+                    _gl.Upload(_id, page.Pixels, GlyphMaskAtlas.PageWidth, written.X, written.Y, written.Width,
+                        written.Height);
+                    _context.ResetContext(GRGlBackendState.All);
+                    t_pageTextureUpdates++;
+                    t_pageImageBytes += (long)written.Width * written.Height;
+                }
+
+                Version = version;
+            }
+
+            /// <summary>Marks the texture released; the thread that made it frees it.</summary>
+            public void Dispose() => _released = true;
+
+            /// <summary>
+            /// Frees this thread's released textures of <paramref name="context"/>, those whose
+            /// page was collected, and those of lost contexts, which release nothing on the GPU.
+            /// </summary>
+            private static void Collect(GRContext context)
+            {
+                if (t_textures is not { } textures)
+                {
+                    return;
+                }
+
+                for (var i = textures.Count - 1; i >= 0; i--)
+                {
+                    var texture = textures[i];
+
+                    if (!GlPageTextureApi.IsLost(texture._context) &&
+                        (!ReferenceEquals(texture._context, context) ||
+                         !texture._released && texture._page.TryGetTarget(out _)))
+                    {
+                        continue;
+                    }
+
+                    texture.Image.Dispose();
+                    textures.RemoveAt(i);
+                }
             }
         }
 

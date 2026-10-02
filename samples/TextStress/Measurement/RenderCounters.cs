@@ -38,7 +38,7 @@ namespace TextStress.Measurement
 
             columns.AddRange(new[]
             {
-                "batched_runs", "batches_drawn", "page_images_replaced", "page_upload_bytes",
+                "batched_runs", "batches_drawn", "page_images_replaced", "page_upload_bytes", "page_texture_updates",
                 "glyph_rasterizations", "mask_hits", "mask_misses", "sprite_set_builds", "atlas_batch_builds",
                 "atlas_hits", "atlas_misses", "atlas_placements"
             });
@@ -73,6 +73,7 @@ namespace TextStress.Measurement
             values[i++] = DrawingContextImpl.BatchesDrawnOnThread;
             values[i++] = DrawingContextImpl.PageImagesReplacedOnThread;
             values[i++] = DrawingContextImpl.PageImageBytesOnThread;
+            values[i++] = DrawingContextImpl.PageTextureUpdatesOnThread;
             values[i++] = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
             values[i++] = GlyphRasterDiagnostics.MaskCacheHitsOnThread;
             values[i++] = GlyphRasterDiagnostics.MaskCacheMissesOnThread;

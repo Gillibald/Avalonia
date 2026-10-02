@@ -344,6 +344,12 @@ namespace Avalonia.Skia.UnitTests.Media
             // A hardware context registered as software exercises the software GPU route.
             SkiaGpuRasterizer.Register(gpu!.GrContext, software);
 
+            // As the GL backend does, so glyph atlas pages live in GL textures.
+            if (gpu.GetGlProcAddress is { } getProcAddress)
+            {
+                GlPageTextureApi.Register(gpu.GrContext, getProcAddress, gpu.GlMajorVersion);
+            }
+
             return gpu;
         }
 

@@ -598,10 +598,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var warm = Read();
 
-                // Two typefaces, a page each, every page image wrapping whole rows of the page.
+                // Two typefaces, a page each, every page uploaded whole at least once.
                 Assert.True(warm.PageBytes - cold.PageBytes >= 2L * GlyphMaskAtlas.PageWidth,
                     $"the cold frame uploaded {warm.PageBytes - cold.PageBytes} page bytes");
-                Assert.Equal(0, (warm.PageBytes - cold.PageBytes) % GlyphMaskAtlas.PageWidth);
 
                 DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
                 Render(gpu, Draw, batched: true, out _);
