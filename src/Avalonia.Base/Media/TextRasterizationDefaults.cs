@@ -41,11 +41,20 @@ namespace Avalonia.Media
             => explicitMode ?? ForPlatform(platform, architecture);
 
         /// <summary>
-        /// Returns the default mode for <paramref name="platform"/> and <paramref name="architecture"/>.
+        /// Managed rasterization is the default only where it was measured against the backend
+        /// and its vector paths tuned for the hardware; everywhere else the backend's text stack
+        /// stays the default.
         /// </summary>
         public static TextRasterizationMode ForPlatform(TextRasterizationPlatform platform,
             Architecture architecture)
-            => TextRasterizationMode.Managed;
+            => (platform, architecture) switch
+            {
+                (TextRasterizationPlatform.Windows, Architecture.X64) => TextRasterizationMode.Managed,
+                // Browser apps always run WebAssembly. Measured under AOT, which Avalonia browser
+                // apps publish with; interpreter builds are slower than the backend but keep it.
+                (TextRasterizationPlatform.Browser, _) => TextRasterizationMode.Managed,
+                _ => TextRasterizationMode.Backend,
+            };
 
         private static TextRasterizationPlatform CurrentPlatform()
         {

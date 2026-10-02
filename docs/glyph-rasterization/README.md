@@ -1,22 +1,22 @@
 # Managed glyph rasterization
 
-Avalonia can rasterize glyphs itself instead of delegating text rendering to the render backend's font machinery. The managed path parses font tables, extracts and rasterizes outlines, hints them - instructed fonts through their own TrueType bytecode, everything else through a geometric auto-hinter - applies gamma correction and subpixel (ClearType style) rendering, renders COLR v0/v1 color glyphs and CBDT/sbix bitmap glyphs through Avalonia's own drawing model, and renders rotated, skewed and very large text through transformed glyph masks. On the Skia backend the native `SKTextBlob` path remains available as the final fallback and as the default mode.
+Avalonia can rasterize glyphs itself instead of delegating text rendering to the render backend's font machinery. The managed path parses font tables, extracts and rasterizes outlines, hints them - instructed fonts through their own TrueType bytecode, everything else through a geometric auto-hinter - applies gamma correction and subpixel (ClearType style) rendering, renders COLR v0/v1 color glyphs and CBDT/sbix bitmap glyphs through Avalonia's own drawing model, and renders rotated, skewed and very large text through transformed glyph masks. On the Skia backend the native `SKTextBlob` path remains available as the final fallback, and as the default mode on platforms where the managed path has not been measured yet.
 
 The motivation is backend portability and control: text output becomes identical across platforms and backends (the rasterizer is bit-deterministic), quality policies (hinting, gamma, subpixel) live in Avalonia instead of behind backend defaults, and a future non-Skia backend only needs bitmap blits plus a few optional capability interfaces to get full text rendering.
 
 ## Switching it on
 
-Managed rasterization is the default. `TextRasterizationMode.Backend` remains selectable as the escape hatch:
+The default depends on the platform. Managed rasterization is the default on Windows x64 and in the browser (WebAssembly), where it was measured and tuned against the backend; every other platform and architecture (Windows on ARM64, Linux, macOS, iOS, Android) defaults to `TextRasterizationMode.Backend` until it passes the same measurement. An explicitly set mode always wins, on any platform:
 
 ```csharp
 AppBuilder.Configure<App>()
     .With(new FontManagerOptions
     {
-        TextRasterizationMode = TextRasterizationMode.Backend,   // default: Managed
+        TextRasterizationMode = TextRasterizationMode.Managed,   // default: per platform
     })
 ```
 
-`TextRasterizationMode` ([TextRasterizationMode.cs](../../src/Avalonia.Base/Media/TextRasterizationMode.cs)) lives on [FontManagerOptions](../../src/Avalonia.Base/Media/FontManagerOptions.cs) and is read live at glyph run creation, so tests and demos can flip it at runtime and rebuild their visual tree.
+`TextRasterizationMode` ([TextRasterizationMode.cs](../../src/Avalonia.Base/Media/TextRasterizationMode.cs)) lives on [FontManagerOptions](../../src/Avalonia.Base/Media/FontManagerOptions.cs) and is read live at glyph run creation, so tests and demos can flip it at runtime and rebuild their visual tree. The per-platform table lives in [TextRasterizationDefaults.cs](../../src/Avalonia.Base/Media/TextRasterizationDefaults.cs).
 
 Per-visual quality settings travel through the inherited `TextOptions` attached properties ([TextOptions.cs](../../src/Avalonia.Base/Media/TextOptions.cs)): `TextRenderingMode` (alias/antialias/subpixel), `TextHintingMode` (none/light/strong) and `BaselinePixelAlignment`. `RenderOptions.TextRenderingMode` is obsolete on this branch; use `TextOptions.TextRenderingMode` in XAML.
 
@@ -82,4 +82,4 @@ samples/TextLab/Rasterization/             pipeline inspector, glyph explorer, d
 
 ## Status
 
-The managed path is the default (`TextRasterizationMode.Managed`); `Backend` remains selectable as the escape hatch for at least one release.
+The managed path is the default on Windows x64 and in the browser; other platforms join the table as they are measured. `Backend` remains selectable everywhere for at least one release.
