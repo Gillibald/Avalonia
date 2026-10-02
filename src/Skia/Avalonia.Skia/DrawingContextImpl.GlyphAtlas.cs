@@ -389,6 +389,9 @@ namespace Avalonia.Skia
             return image;
         }
 
+        /// <summary>The image this context draws <paramref name="page"/> from at its current version; for tests.</summary>
+        internal SKImage GetAtlasPageImage(GlyphAtlasPage page) => GetPageImage(page).Image;
+
         [ThreadStatic]
         private static int t_pageImagesCreated;
 
