@@ -145,7 +145,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 var cacheBefore = typeface.MaskCache.TotalCost;
                 var atlasBefore = typeface.MaskAtlas.AllocatedBytes;
                 var entriesBefore = typeface.MaskCache.Count + typeface.MaskAtlas.Count;
-                var retainedBefore = GC.GetTotalMemory(forceFullCollection: true);
+                var retainedBefore = LiveHeapBytes();
 
                 foreach (var run in runs)
                 {
@@ -155,7 +155,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 output.Flush();
 
-                var retained = GC.GetTotalMemory(forceFullCollection: true) - retainedBefore;
+                var retained = LiveHeapBytes() - retainedBefore;
                 long sprites = 0;
                 long bounds = 0;
 
@@ -196,6 +196,23 @@ namespace Avalonia.Skia.UnitTests.Media
                     run.Dispose();
                 }
             }
+        }
+
+        /// <summary>
+        /// The bytes of live objects on the managed heap: its size after a compacting full
+        /// collection, less the free gaps the collection left. <see cref="GC.GetTotalMemory"/>
+        /// counts more than the survivors on some hosts (on macOS ARM64 it reports about twice
+        /// the heap's growth), which would charge the draws for memory they do not keep.
+        /// </summary>
+        private static long LiveHeapBytes()
+        {
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
+
+            var info = GC.GetGCMemoryInfo(GCKind.FullBlocking);
+
+            return info.HeapSizeBytes - info.FragmentedBytes;
         }
 
         private static ManagedGlyphRunImpl[] CreateParagraph(GlyphTypeface typeface)
