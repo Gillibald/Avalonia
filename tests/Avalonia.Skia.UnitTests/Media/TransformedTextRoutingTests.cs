@@ -31,6 +31,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Theory]
         [InlineData(GpuBackend.NativeGl)]
         [InlineData(GpuBackend.Angle)]
+        [InlineData(GpuBackend.Metal)]
         public void Rotated_Draws_Take_The_Transformed_Mask_Tier_On_A_Gpu_Context(GpuBackend backend)
         {
             using var gpu = GpuTestContext.TryCreate(backend, out var reason);
@@ -49,6 +50,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Theory]
         [InlineData(GpuBackend.NativeGl)]
         [InlineData(GpuBackend.Angle)]
+        [InlineData(GpuBackend.Metal)]
         public void An_Animated_Rotation_On_A_Gpu_Takes_The_Transformed_Mask_Tier(GpuBackend backend)
         {
             using var gpu = GpuTestContext.TryCreate(backend, out var reason);

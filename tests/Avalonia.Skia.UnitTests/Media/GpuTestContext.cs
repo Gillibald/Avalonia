@@ -10,13 +10,16 @@ namespace Avalonia.Skia.UnitTests.Media
     {
         NativeGl,
         Angle,
+        Metal,
     }
 
     /// <summary>
     /// A Skia GPU context on one of the Windows backends: a hidden-window WGL context (native
     /// desktop GL) or an ANGLE D3D11 pbuffer context created from the same av_libglesv2 binary
-    /// the real application uses, so GPU tests run against what actually ships. Creation
-    /// returns <c>null</c> with a reason where a backend is unavailable, for the caller to skip.
+    /// the real application uses, so GPU tests run against what actually ships; on macOS, a
+    /// Metal context on the system default device, the backend Avalonia.Native renders with.
+    /// Creation returns <c>null</c> with a reason where a backend is unavailable, for the caller
+    /// to skip.
     /// </summary>
     internal sealed class GpuTestContext : IDisposable
     {
@@ -32,6 +35,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
         public static GpuTestContext? TryCreate(GpuBackend backend, out string reason)
         {
+            if (backend == GpuBackend.Metal)
+            {
+                reason = "not macOS";
+
+                return OperatingSystem.IsMacOS() ? TryCreateMetal(out reason) : null;
+            }
+
             reason = "not Windows";
 
             if (!OperatingSystem.IsWindows())
@@ -55,6 +65,46 @@ namespace Avalonia.Skia.UnitTests.Media
             GrContext.Dispose();
             _cleanup();
         }
+
+        private static GpuTestContext? TryCreateMetal(out string reason)
+        {
+            reason = "no Metal device";
+
+            var device = MTLCreateSystemDefaultDevice();
+
+            if (device == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            var queue = objc_msgSend(device, sel_registerName("newCommandQueue"));
+
+            reason = "Metal context creation failed";
+
+            var grContext = GRContext.CreateMetal(new GRMtlBackendContext { DeviceHandle = device, QueueHandle = queue });
+
+            if (grContext is null)
+            {
+                objc_msgSend(queue, sel_registerName("release"));
+                objc_msgSend(device, sel_registerName("release"));
+                return null;
+            }
+
+            return new GpuTestContext(grContext, () =>
+            {
+                objc_msgSend(queue, sel_registerName("release"));
+                objc_msgSend(device, sel_registerName("release"));
+            });
+        }
+
+        [DllImport("/System/Library/Frameworks/Metal.framework/Metal")]
+        private static extern IntPtr MTLCreateSystemDefaultDevice();
+
+        [DllImport("/usr/lib/libobjc.A.dylib")]
+        private static extern IntPtr sel_registerName(string name);
+
+        [DllImport("/usr/lib/libobjc.A.dylib")]
+        private static extern IntPtr objc_msgSend(IntPtr receiver, IntPtr selector);
 
         private static GpuTestContext? TryCreateWgl(out string reason)
         {
