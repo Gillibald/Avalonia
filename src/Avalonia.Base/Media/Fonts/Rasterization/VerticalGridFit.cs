@@ -96,7 +96,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly float _descender;
         private readonly float _roundOvershoot;
         private readonly float _ascenderOvershoot;
-        private const int MaxCachedWarps = 64;
+        private const int MaxCachedWarps = 512;
 
         private readonly ConcurrentDictionary<ushort, AxisWarp> _warps = new();
 
