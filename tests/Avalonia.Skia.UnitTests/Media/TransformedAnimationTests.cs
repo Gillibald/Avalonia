@@ -637,6 +637,113 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(expected, crossings);
         }
 
+        [Fact]
+        public void An_Upright_Zoom_Of_A_Latin_Paragraph_On_A_Cpu_Surface_Draws_Every_Frame_Sharp()
+        {
+            // Latin glyph masks are cheap to rasterize, so a zoom over a paragraph rasterizes
+            // every frame rather than stretching: each frame draws what runs drawn once at its
+            // scale draw, without caching a run mask per scale, and a pass over scales whose
+            // glyph masks are cached allocates nothing.
+            using var output = TestTarget.Create(Target.Raster);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            // The reference frames come from a typeface of their own, so drawing them leaves
+            // the zoomed typeface's glyph mask cache alone.
+            using var referenceScope = WideRunMaskTests.CreateEnvironment(out var referenceTypeface);
+
+            const int lines = 12;
+            const string line = Text + " " + Text;
+
+            static Matrix Zoom(double scale) => Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(4.25, 3.5);
+
+            static ManagedGlyphRunImpl[] CreateRuns(GlyphTypeface face)
+            {
+                var created = new ManagedGlyphRunImpl[lines];
+
+                for (var i = 0; i < lines; i++)
+                {
+                    created[i] = WideRunMaskTests.CreateRun(face, line, 12, new Point(2.37, 14.61 + 17 * i));
+                }
+
+                return created;
+            }
+
+            var runs = CreateRuns(typeface);
+
+            try
+            {
+                var context = output.Context;
+
+                // The second pass leaves out the scales the first drew before the gesture was
+                // recognized: those frames cached their run masks, and a frame that finds its run
+                // mask cached ends the gesture.
+                for (var pass = 0; pass < 2; pass++)
+                {
+                    for (var frame = pass == 0 ? 0 : TransformChurnGuard.Threshold; frame <= 24; frame++)
+                    {
+                        var scale = 1 + 0.02 * frame;
+                        var runMasks = Array.ConvertAll(runs, r => r.RunMasks.Count);
+
+                        context.Transform = Zoom(scale);
+
+                        foreach (var run in runs)
+                        {
+                            context.DrawGlyphRun(Brushes.Black, run);
+                        }
+
+                        var drawn = output.ReadAndClear();
+
+                        if (pass == 0 && frame < TransformChurnGuard.Threshold)
+                        {
+                            continue;
+                        }
+
+                        for (var i = 0; i < lines; i++)
+                        {
+                            Assert.True(runMasks[i] == runs[i].RunMasks.Count,
+                                $"pass {pass} frame {frame}: run {i} cached a run mask");
+                        }
+
+                        var reference = CreateRuns(referenceTypeface);
+
+                        context.Transform = Zoom(scale);
+
+                        foreach (var run in reference)
+                        {
+                            context.DrawGlyphRun(Brushes.Black, run);
+                            run.Dispose();
+                        }
+
+                        TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"pass {pass} frame {frame}");
+                    }
+                }
+
+                // A third pass without reading the surface back, which allocates and collects.
+                var before = GC.GetAllocatedBytesForCurrentThread();
+
+                for (var frame = TransformChurnGuard.Threshold; frame <= 24; frame++)
+                {
+                    context.Transform = Zoom(1 + 0.02 * frame);
+
+                    foreach (var run in runs)
+                    {
+                        context.DrawGlyphRun(Brushes.Black, run);
+                    }
+                }
+
+                var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+                Assert.True(allocated == 0, $"zoom frames over cached glyph masks allocated {allocated} bytes");
+            }
+            finally
+            {
+                foreach (var run in runs)
+                {
+                    run.Dispose();
+                }
+            }
+        }
+
         [Theory]
         [MemberData(nameof(Targets))]
         public void An_Upright_Zoom_Stretches_The_Settled_Run_Mask_Without_Bound_Only_On_Software_Gpus(Target target)
