@@ -176,6 +176,52 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void List_Rows_In_Opaque_Colours_Of_One_Luminance_Bucket_Draw_One_Atlas_Call_Per_Typeface(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out _);
+
+            var typefaces = Enumerable.Range(0, 6).Select(i => LoadAsset(s_listFonts[i % s_listFonts.Length])).ToArray();
+            var runs = CreateListRuns(typefaces, 48);
+
+            // Four colours of the darkest luminance bucket, so each typeface's runs sample one
+            // page whatever their colour; each typeface draws in every colour.
+            var brushes = new IBrush[]
+            {
+                Brushes.Black,
+                new ImmutableSolidColorBrush(Color.FromRgb(0x00, 0x00, 0xC0)),
+                new ImmutableSolidColorBrush(Color.FromRgb(0x1F, 0x1F, 0x1F)),
+                new ImmutableSolidColorBrush(Color.FromRgb(0x40, 0x00, 0x10)),
+            };
+
+            void Draw(DrawingContextImpl context)
+            {
+                for (var i = 0; i < runs.Length; i++)
+                {
+                    context.DrawGlyphRun(brushes[i / typefaces.Length % brushes.Length], runs[i]);
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+                var cold = Render(gpu, Draw, batched: true, out _);
+                var warm = Render(gpu, Draw, batched: true, out var draws);
+
+                Assert.Single(typefaces[0].MaskAtlas.GetPages());
+                TransformedAtlasTests.AssertEqual(expected, cold, "list rows in four colours");
+                TransformedAtlasTests.AssertEqual(expected, warm, "warm list rows in four colours");
+                Assert.Equal(typefaces.Length, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Thousands_Of_Runs_Of_One_Typeface_And_Colour_Are_One_Atlas_Draw(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
@@ -287,6 +333,52 @@ namespace Avalonia.Skia.UnitTests.Media
                 first.Dispose();
                 second.Dispose();
                 third.Dispose();
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Overlapping_Runs_In_Colours_Of_One_Page_Keep_Their_Order(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
+
+            // One luminance bucket, so one page: two opaque colours and a translucent one.
+            var blue = new ImmutableSolidColorBrush(Color.FromRgb(0x00, 0x00, 0xC0));
+            var translucent = new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x10, 0x10, 0x10));
+
+            // Each run covers the one before it: none of them may be drawn out of order.
+            var first = WideRunMaskTests.CreateRun(inter, "Overlapping words", 30, new Point(10, 60));
+            var second = WideRunMaskTests.CreateRun(inter, "Overlapping words", 30, new Point(14, 66));
+            var third = WideRunMaskTests.CreateRun(inter, "Overlapping words", 30, new Point(18, 72));
+            var fourth = WideRunMaskTests.CreateRun(inter, "Overlapping words", 30, new Point(22, 78));
+
+            void Draw(DrawingContextImpl context)
+            {
+                context.DrawGlyphRun(Brushes.Black, first);
+                context.DrawGlyphRun(blue, second);
+                context.DrawGlyphRun(translucent, third);
+                context.DrawGlyphRun(Brushes.Black, fourth);
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                TransformedAtlasTests.AssertEqual(expected, Render(gpu, Draw, batched: true, out _),
+                    "overlapping runs");
+                TransformedAtlasTests.AssertEqual(expected, Render(gpu, Draw, batched: true, out var draws),
+                    "warm overlapping runs");
+
+                // The two opaque runs before the translucent one draw in one call.
+                Assert.Equal(3, draws);
+            }
+            finally
+            {
+                first.Dispose();
+                second.Dispose();
+                third.Dispose();
+                fourth.Dispose();
             }
         }
 
