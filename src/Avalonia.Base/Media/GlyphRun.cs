@@ -896,8 +896,9 @@ namespace Avalonia.Media
             // (no outlines, no strikes) keep the backend implementation. Varied clones take
             // the managed run in every mode: a backend face cannot be varied, so the backend
             // implementation would draw the default instance.
+            // A typeface the render backend cannot load takes the managed run too.
             if ((Fonts.Rasterization.ColorGlyphRunSplitter.IsManagedTextRasterization() ||
-                 !GlyphTypeface.VariationPosition.IsDefault) &&
+                 !GlyphTypeface.VariationPosition.IsDefault || !GlyphTypeface.TryGetPlatformTypeface(out _)) &&
                 (GlyphTypeface.OutlineType != GlyphOutlineType.None || GlyphTypeface.BitmapSource is not null))
             {
                 _platformImpl = RefCountable.Create<IGlyphRunImpl>(

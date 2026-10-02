@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
@@ -39,6 +40,10 @@ namespace Avalonia.Media
         private readonly IFontMemory _fontMemory;
         private IPlatformTypeface? _platformTypeface;
         private readonly object _platformTypefaceLock = new();
+
+        // Why the render backend could not create a render typeface from this typeface's font
+        // data; set once, under _platformTypefaceLock, so the backend is asked only once.
+        private ExceptionDispatchInfo? _platformTypefaceFailure;
 
         private readonly NameTable? _nameTable;
         private readonly OS2Table _os2Table;
@@ -1670,28 +1675,45 @@ namespace Avalonia.Media
                     return platformTypeface;
                 }
 
-                return CreatePlatformTypeface();
+                if (TryCreatePlatformTypeface(out var created))
+                {
+                    return created;
+                }
+
+                _platformTypefaceFailure!.Throw();
+
+                return null!;
             }
         }
 
         /// <summary>
         /// Gets the render typeface, or <see langword="false"/> when the render backend cannot
-        /// create one from this typeface's font data.
+        /// create one from this typeface's font data. The backend is asked once; a refusal is
+        /// remembered for the typeface's lifetime.
         /// </summary>
         internal bool TryGetPlatformTypeface([NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
         {
-            platformTypeface = PlatformTypeface;
+            platformTypeface = _platformTypeface;
 
-            return true;
+            return platformTypeface is not null || TryCreatePlatformTypeface(out platformTypeface);
         }
 
-        private IPlatformTypeface CreatePlatformTypeface()
+        private bool TryCreatePlatformTypeface([NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
         {
             lock (_platformTypefaceLock)
             {
                 if (_platformTypeface is { } existing)
                 {
-                    return existing;
+                    platformTypeface = existing;
+
+                    return true;
+                }
+
+                platformTypeface = null;
+
+                if (_platformTypefaceFailure is not null)
+                {
+                    return false;
                 }
 
                 if (_isDisposed)
@@ -1702,12 +1724,17 @@ namespace Avalonia.Media
                 // A simulated variant draws its source's render typeface with its own simulations.
                 if (_simulationSource is { } simulationSource)
                 {
-                    var sharedPlatformTypeface = simulationSource.PlatformTypeface;
+                    if (!simulationSource.TryGetPlatformTypeface(out var sharedPlatformTypeface))
+                    {
+                        _platformTypefaceFailure = simulationSource._platformTypefaceFailure;
+
+                        return false;
+                    }
 
                     _ownsPlatformTypeface = false;
-                    _platformTypeface = sharedPlatformTypeface;
+                    _platformTypeface = platformTypeface = sharedPlatformTypeface;
 
-                    return sharedPlatformTypeface;
+                    return true;
                 }
 
                 // A variation clone of a typeface built over a caller-supplied platform typeface
@@ -1715,27 +1742,42 @@ namespace Avalonia.Media
                 // source's handle and leaves its release to the source.
                 if (_sourceTypeface is { } source && _fontMemory is IPlatformTypeface)
                 {
-                    var sourcePlatformTypeface = source.PlatformTypeface;
+                    if (!source.TryGetPlatformTypeface(out var sourcePlatformTypeface))
+                    {
+                        _platformTypefaceFailure = source._platformTypefaceFailure;
+
+                        return false;
+                    }
 
                     _ownsPlatformTypeface = false;
-                    _platformTypeface = sourcePlatformTypeface;
+                    _platformTypeface = platformTypeface = sourcePlatformTypeface;
 
-                    return sourcePlatformTypeface;
+                    return true;
                 }
 
                 // The render backend derives its typeface from the glyph typeface's font data,
                 // mirroring the text shaper's typeface factory. A variation clone derives its own
-                // from the shared font data and owns it.
+                // from the shared font data and owns it. A backend that cannot load the data
+                // throws, and that is remembered: the managed rasterizer draws such a typeface.
                 var renderInterface = AvaloniaLocator.Current.GetService<IPlatformRenderInterface>()
                     ?? throw new InvalidOperationException(
                         "No render interface is available to create a platform typeface.");
 
-                var renderTypeface = renderInterface.CreateTypeface(this);
+                try
+                {
+                    platformTypeface = renderInterface.CreateTypeface(this);
+                }
+                catch (InvalidOperationException e)
+                {
+                    _platformTypefaceFailure = ExceptionDispatchInfo.Capture(e);
+
+                    return false;
+                }
 
                 _ownsPlatformTypeface = true;
-                _platformTypeface = renderTypeface;
+                _platformTypeface = platformTypeface;
 
-                return renderTypeface;
+                return true;
             }
         }
 

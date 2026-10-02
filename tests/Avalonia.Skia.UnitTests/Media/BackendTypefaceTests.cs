@@ -12,16 +12,11 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// Faces Skia cannot load from their font file as given draw all the same in Backend mode:
-    /// a collection face past the first through a standalone copy of its tables, and a face Skia
-    /// refuses outright through the managed rasterizer.
+    /// Collection faces past the first draw in Backend mode with Skia's own typeface, made from a
+    /// standalone copy of the face's tables where Skia loads only first faces.
     /// </summary>
     public class BackendTypefaceTests
     {
-        // The only PingFang file on macOS 26, a collection of variable fonts Skia refuses.
-        private const string PingFangUi =
-            "/System/Library/PrivateFrameworks/FontServices.framework/Versions/A/Resources/Reserved/PingFangUI.ttc";
-
         [Fact]
         public void A_Collection_Face_Past_The_First_Draws_With_The_Backend_Typeface()
         {
@@ -45,23 +40,54 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void A_Face_The_Backend_Refuses_Draws_With_The_Managed_Rasterizer()
+        public void A_System_Collection_Face_Past_The_First_Draws_With_The_Backend_Typeface()
         {
-            Assert.SkipUnless(File.Exists(PingFangUi), "PingFang UI is not installed.");
+            // macOS keeps PingFang (CFF outlines, one face per script and weight) in its font
+            // asset store; Skia's CoreText port creates no typeface from a face past the first.
+            var path = FindPingFang();
+
+            Assert.SkipWhen(path is null, "PingFang is not installed.");
 
             using var scope = CreateEnvironment();
 
-            Assert.True(SfntFace.TryLoad(PingFangUi, 1, out var face));
+            var faceIndex = 0;
+
+            for (; faceIndex < 64; faceIndex++)
+            {
+                Assert.True(SfntFace.TryLoad(path!, faceIndex, out var probe));
+
+                var name = new GlyphTypeface(probe).FamilyName;
+
+                if (faceIndex > 0 && name == "PingFang SC")
+                {
+                    break;
+                }
+            }
+
+            Assert.True(SfntFace.TryLoad(path!, faceIndex, out var face));
 
             var glyphTypeface = new GlyphTypeface(face);
 
             using (var glyphRun = CreateRun(glyphTypeface, "中文字体"))
             {
-                Assert.IsType<ManagedGlyphRunImpl>(glyphRun.PlatformImpl.Item);
+                Assert.IsType<GlyphRunImpl>(glyphRun.PlatformImpl.Item);
                 Assert.True(CountInk(glyphRun) > 0);
             }
 
             glyphTypeface.Dispose();
+        }
+
+        private static string? FindPingFang()
+        {
+            const string assets = "/System/Library/AssetsV2";
+
+            if (!Directory.Exists(assets))
+            {
+                return null;
+            }
+
+            return Directory.EnumerateFiles(assets, "PingFang.ttc",
+                new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }).FirstOrDefault();
         }
 
         private static IDisposable CreateEnvironment()
