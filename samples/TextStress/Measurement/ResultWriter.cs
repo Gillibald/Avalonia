@@ -15,7 +15,8 @@ namespace TextStress.Measurement
         public const string Columns =
             "scenario\tn\tmode\trender\tpass\tframe\tinterval_ms\trender_ms\trender_cpu_ms\tui_ms\tui_cpu_ms\t" +
             "latency_ms\tui_alloc\trender_alloc\tgc0\tgc1\tgc2\tgc_pause_ms\theap_bytes\tprivate_bytes\t" +
-            "mask_cache_bytes\tatlas_bytes\tmask_evictions\tatlas_evictions\ttier_mask\ttier_transformed\ttier_blob";
+            "mask_cache_bytes\tatlas_bytes\tmask_evictions\tatlas_evictions\ttier_mask\ttier_transformed\ttier_blob\t" +
+            "atlas_draws\tpage_uploads\tatlas_geometry";
 
         private readonly StreamWriter _writer;
         private readonly RunOptions _options;
@@ -64,7 +65,10 @@ namespace TextStress.Measurement
                 .Append(s.Gc0).Append(s.Gc1).Append(s.Gc2).Append(s.GcPauseMs)
                 .Append(s.HeapBytes).Append(s.PrivateBytes).Append(s.MaskCacheBytes).Append(s.AtlasBytes)
                 .Append(s.MaskEvictions).Append(s.AtlasEvictions)
-                .Append(s.TierMask).Append(s.TierTransformed).Append(s.TierBlob);
+                .Append(s.TierMask).Append(s.TierTransformed).Append(s.TierBlob)
+                .Append(sameRenderThread ? s.AtlasDrawsEnd - s.AtlasDrawsStart : -1)
+                .Append(sameRenderThread ? s.PageUploadsEnd - s.PageUploadsStart : -1)
+                .Append(sameRenderThread ? s.AtlasGeometryEnd - s.AtlasGeometryStart : -1);
 
             _line.Length--;
             _writer.WriteLine(_line);

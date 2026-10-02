@@ -155,6 +155,9 @@ namespace TextStress.Measurement
                 sample.RenderStartThread = Environment.CurrentManagedThreadId;
                 sample.RenderCpuStart = ThreadClock.NowMs();
                 sample.RenderAllocStart = GC.GetAllocatedBytesForCurrentThread();
+                sample.AtlasDrawsStart = DrawingContextImpl.AtlasDrawsOnThread;
+                sample.PageUploadsStart = DrawingContextImpl.PageImagesCreatedOnThread;
+                sample.AtlasGeometryStart = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
                 sample.RenderStart = Stopwatch.GetTimestamp();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
@@ -164,6 +167,9 @@ namespace TextStress.Measurement
                 sample.RenderEndThread = Environment.CurrentManagedThreadId;
                 sample.RenderCpuEnd = ThreadClock.NowMs();
                 sample.RenderAllocEnd = GC.GetAllocatedBytesForCurrentThread();
+                sample.AtlasDrawsEnd = DrawingContextImpl.AtlasDrawsOnThread;
+                sample.PageUploadsEnd = DrawingContextImpl.PageImagesCreatedOnThread;
+                sample.AtlasGeometryEnd = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
                 rendered.TrySetResult();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 

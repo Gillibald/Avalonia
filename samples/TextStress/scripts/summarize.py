@@ -20,7 +20,7 @@ from collections import defaultdict, OrderedDict
 NUMERIC = ["interval_ms", "render_ms", "render_cpu_ms", "ui_ms", "ui_cpu_ms", "latency_ms", "ui_alloc",
            "render_alloc", "gc0", "gc1", "gc2", "gc_pause_ms", "heap_bytes", "private_bytes",
            "mask_cache_bytes", "atlas_bytes", "mask_evictions", "atlas_evictions", "tier_mask",
-           "tier_transformed", "tier_blob"]
+           "tier_transformed", "tier_blob", "atlas_draws", "page_uploads", "atlas_geometry"]
 
 
 def load(path):
@@ -103,7 +103,9 @@ def main():
     w("Columns: `int` frame interval (render end to render end); `render` render-thread wall time from "
       "batch applied to render pass end; `rcpu`/`ucpu` thread CPU of the render and UI phases; "
       "`>16.6`/`>8.3` share of frames whose interval exceeds the budget, `busy>` share whose UI plus "
-      "render wall time exceeds it; allocations are per frame (KB, median); `gc0/kf` gen0 collections "
+      "render wall time exceeds it; `tiers m/t/b` median runs per frame on the upright mask, transformed "
+      "mask and native blob tiers; `atlas d/u/g` median atlas draw calls, atlas page uploads and sprites "
+      "whose geometry was submitted per frame (GPU paths); allocations are per frame (KB, median); `gc0/kf` gen0 collections "
       "per thousand frames; memory columns are the last frame's values (MB). Percentiles pool all passes; "
       "`spread` is the max-min range of the per-pass render p50 over the pooled p50.")
     w("")
@@ -114,8 +116,8 @@ def main():
         w("")
         w("| scenario | render | mode | frames | int p50 | int p95 | int p99 | render p50 | p95 | p99 | rcpu p50 | "
           "ucpu p50 | ucpu p95 | >16.6 % | >8.3 % | busy>16.6 % | busy>8.3 % | ui KB | render KB | gc0/kf | "
-          "pause ms | heap MB | private MB | mask MB | atlas MB | evict/f | tiers m/t/b | spread % |")
-        w("|" + "---|" * 28)
+          "pause ms | heap MB | private MB | mask MB | atlas MB | evict/f | tiers m/t/b | atlas d/u/g | spread % |")
+        w("|" + "---|" * 29)
         for key in sorted(fixed, key=lambda k: (k[0], k[4], k[3])):
             w(scenario_row(key, groups[key]))
         w("")
@@ -150,8 +152,8 @@ def main():
             w(f"`{params}`")
             w("")
             w("| N | frames | cost | render p50 | render p95 | rcpu p50 | ucpu p50 | int p50 | busy>8.3 % | "
-              "mask MB | atlas MB | evict/f | tiers m/t/b | slope | marg us | knee |")
-            w("|" + "---|" * 16)
+              "mask MB | atlas MB | evict/f | tiers m/t/b | atlas d/u/g | slope | marg us | knee |")
+            w("|" + "---|" * 17)
             prev = None
             prev_marg = None
             for key in keys:
@@ -177,7 +179,7 @@ def main():
                   f"{fmt(share(busy(rows), 8.3), 1)} | {fmt(last['mask_cache_bytes'] / 1048576)} | "
                   f"{fmt(last['atlas_bytes'] / 1048576)} | "
                   f"{fmt(statistics.mean(r['mask_evictions'] + r['atlas_evictions'] for r in rows), 1)} | "
-                  f"{tiers(rows)} | {slope} | {fmt(marg, 3) if marg is not None else '-'} | {knee} |")
+                  f"{tiers(rows)} | {atlas(rows)} | {slope} | {fmt(marg, 3) if marg is not None else '-'} | {knee} |")
         w("")
 
     with open(out, "w", encoding="utf-8", newline="\n") as f:
@@ -196,6 +198,12 @@ def busy(rows):
 def tiers(rows):
     return "/".join(str(int(statistics.median(r[c] for r in rows)))
                     for c in ("tier_mask", "tier_transformed", "tier_blob"))
+
+
+def atlas(rows):
+    """Median atlas draw calls / page uploads / sprites whose geometry was submitted, per frame."""
+    return "/".join(str(int(pct(col(rows, c), 50))) if not math.isnan(pct(col(rows, c), 50)) else "-"
+                    for c in ("atlas_draws", "page_uploads", "atlas_geometry"))
 
 
 def ratio(m, b, name):
@@ -225,7 +233,8 @@ def scenario_row(key, rows):
             f"{fmt(pct(col(rows, 'ui_alloc'), 50) / 1024, 1)} | {fmt(pct(col(rows, 'render_alloc'), 50) / 1024, 1)} | "
             f"{fmt(gc0, 1)} | {fmt(pause, 1)} | {fmt(last['heap_bytes'] / 1048576, 1)} | "
             f"{fmt(last['private_bytes'] / 1048576, 0)} | {fmt(last['mask_cache_bytes'] / 1048576)} | "
-            f"{fmt(last['atlas_bytes'] / 1048576)} | {fmt(evict, 1)} | {tiers(rows)} | {fmt(spread, 1)} |")
+            f"{fmt(last['atlas_bytes'] / 1048576)} | {fmt(evict, 1)} | {tiers(rows)} | {atlas(rows)} | "
+            f"{fmt(spread, 1)} |")
 
 
 if __name__ == "__main__":

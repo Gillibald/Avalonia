@@ -26,6 +26,14 @@ namespace TextStress.Measurement
         public long RenderAllocStart;
         public long RenderAllocEnd;
 
+        // Render-thread counters of the GPU glyph atlas path, read at both ends of the pass.
+        public int AtlasDrawsStart;
+        public int AtlasDrawsEnd;
+        public int PageUploadsStart;
+        public int PageUploadsEnd;
+        public int AtlasGeometryStart;
+        public int AtlasGeometryEnd;
+
         // Process state after the frame, as deltas from the previous frame where cumulative.
         public int Gc0;
         public int Gc1;
