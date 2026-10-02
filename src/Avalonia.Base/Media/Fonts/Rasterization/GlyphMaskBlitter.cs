@@ -13,7 +13,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal readonly struct GlyphBlitTarget
     {
         public GlyphBlitTarget(IntPtr pixels, int rowBytes, int width, int height, PixelRect clip, bool isRgba,
-            bool blitsBgraAsSprite = false)
+            GlyphBlitArithmetic arithmetic = GlyphBlitArithmetic.Pipeline)
         {
             Pixels = pixels;
             RowBytes = rowBytes;
@@ -21,7 +21,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             Height = height;
             Clip = clip.Intersect(new PixelRect(0, 0, width, height));
             IsRgba = isRgba;
-            BlitsBgraAsSprite = blitsBgraAsSprite;
+            Arithmetic = arithmetic;
         }
 
         public IntPtr Pixels { get; }
@@ -39,11 +39,36 @@ namespace Avalonia.Media.Fonts.Rasterization
         public bool IsRgba { get; }
 
         /// <summary>
-        /// Whether the backend draws a premultiplied BGRA bitmap 1:1 onto this surface with its
-        /// sprite blitter rather than through its raster pipeline; the two round a source-over
-        /// blend differently.
+        /// How the backend rounds when it draws a premultiplied BGRA bitmap 1:1 onto this
+        /// surface, source-over or multiplied; direct writes reproduce it.
         /// </summary>
-        public bool BlitsBgraAsSprite { get; }
+        public GlyphBlitArithmetic Arithmetic { get; }
+    }
+
+    /// <summary>
+    /// The rounding of a backend's 1:1 bitmap draw onto a raster surface, which direct writes
+    /// to that surface reproduce byte for byte.
+    /// </summary>
+    internal enum GlyphBlitArithmetic : byte
+    {
+        /// <summary>
+        /// An 8-bit raster pipeline that divides by 255 as <c>(v + 255) &gt;&gt; 8</c>, for the
+        /// source-over share <c>d * (255 - sa)</c> and the multiply blend alike.
+        /// </summary>
+        Pipeline,
+
+        /// <summary>
+        /// A sprite blitter that scales the destination by <c>256 - sa</c> and shifts it down by 8;
+        /// it draws a BGRA bitmap onto a surface of the bitmap's own byte order. Its multiply blend
+        /// goes through the pipeline.
+        /// </summary>
+        Sprite,
+
+        /// <summary>
+        /// Every division by 255 rounded to nearest, <c>(v + 127) / 255</c>, for the source-over
+        /// share <c>d * (255 - sa)</c> and the multiply blend alike.
+        /// </summary>
+        Rounded,
     }
 
     /// <summary>
@@ -128,12 +153,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// glyph's coverage, and at a pixel several glyphs ink, their tinted coverages composed
         /// in run order with <see cref="RunMaskComposer.ComposeTinted"/>'s arithmetic. The blit
         /// draws that pixel over the destination with <see cref="SpriteBlitOver"/> or
-        /// <see cref="PipelineBlitOver"/>, as <see cref="GlyphBlitTarget.BlitsBgraAsSprite"/> says.
+        /// <see cref="PipelineBlitOver"/>, as <see cref="GlyphBlitTarget.Arithmetic"/> says.
         /// </remarks>
         public static void BlendRunCoverage(in GlyphBlitTarget target, RunCoverage coverage, int x, int y,
             uint tintBgra, byte[] table)
         {
-            if (target.BlitsBgraAsSprite)
+            if (target.Arithmetic == GlyphBlitArithmetic.Sprite)
             {
                 BlendRunCoverage<SpriteBlitOver>(target, coverage, x, y, tintBgra, table);
             }

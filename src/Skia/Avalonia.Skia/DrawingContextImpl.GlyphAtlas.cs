@@ -62,7 +62,9 @@ namespace Avalonia.Skia
             target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, pixmap.Width, pixmap.Height,
                 new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
                 pixmap.ColorType == SKColorType.Rgba8888,
-                pixmap.ColorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888);
+                pixmap.ColorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888
+                    ? GlyphBlitArithmetic.Sprite
+                    : GlyphBlitArithmetic.Pipeline);
 
             return true;
         }
