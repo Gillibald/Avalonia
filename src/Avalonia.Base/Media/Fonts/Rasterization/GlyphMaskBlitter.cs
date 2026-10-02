@@ -88,7 +88,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Blends <paramref name="mask"/> with its top-left at (<paramref name="x"/>,
-        /// <paramref name="y"/>) in device pixels, clipped to the target's clip.
+        /// <paramref name="y"/>) in device pixels, clipped to the target's clip. Only the mask's
+        /// inked rectangle is blended: a pixel without coverage leaves the surface as it is.
         /// </summary>
         /// <param name="target">The surface to write.</param>
         /// <param name="mask">A single-channel coverage mask.</param>
@@ -104,7 +105,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            Blend(target, mask.Alpha, mask.Width, mask.Height, x, y, tintBgra, table);
+            mask.GetInkBounds(out var inkX, out var inkY, out var inkWidth, out var inkHeight);
+
+            if (inkWidth == 0)
+            {
+                return;
+            }
+
+            BlendCore<RoundedOver>(target, mask.Alpha.AsSpan(inkY * mask.Width + inkX), inkWidth, inkHeight,
+                mask.Width, x + inkX, y + inkY, tintBgra, table);
         }
 
         /// <summary>
@@ -114,7 +123,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static void Blend(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width, int height,
             int x, int y, uint tintBgra, byte[]? table)
-            => BlendCore<RoundedOver>(target, coverage, width, height, x, y, tintBgra, table);
+            => BlendCore<RoundedOver>(target, coverage, width, height, width, x, y, tintBgra, table);
 
         /// <summary>
         /// Blends a run's coverage in the tint <paramref name="tintBgra"/> with its top-left at
@@ -147,7 +156,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             int y, uint tintBgra, byte[] table)
             where TBlit : struct, ISourceOver
         {
-            BlendCore<TBlit>(target, coverage.Coverage, coverage.Width, coverage.Height, x, y, tintBgra, table);
+            BlendCore<TBlit>(target, coverage.Coverage, coverage.Width, coverage.Height, coverage.Width, x, y, tintBgra,
+                table);
 
             var overlaps = coverage.OverlapPixels;
 
@@ -192,7 +202,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         // and costs later masks of the other kind up to a third of their time.
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static unsafe void BlendCore<TOver>(in GlyphBlitTarget target, ReadOnlySpan<byte> coverage, int width,
-            int height, int x, int y, uint tintBgra, byte[]? table)
+            int height, int stride, int x, int y, uint tintBgra, byte[]? table)
             where TOver : struct, ISourceOver
         {
             if (width <= 0 || height <= 0)
@@ -200,9 +210,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            if (coverage.Length < width * height)
+            if (stride < width || coverage.Length < (height - 1) * stride + width)
             {
-                throw new ArgumentException("Coverage must hold width * height bytes.", nameof(coverage));
+                throw new ArgumentException("Coverage must hold height rows of width bytes, stride bytes apart.",
+                    nameof(coverage));
             }
 
             var clip = target.Clip;
@@ -233,7 +244,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 for (var row = y0; row < y1; row++)
                 {
-                    var source = alpha + (row - y) * width + (x0 - x);
+                    var source = alpha + (row - y) * stride + (x0 - x);
                     var destination = (uint*)((byte*)target.Pixels + (long)row * target.RowBytes) + x0;
                     var count = x1 - x0;
                     var done = 0;

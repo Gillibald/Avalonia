@@ -227,6 +227,57 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Paths))]
+        public void A_Mask_With_Uncovered_Margins_Blends_As_The_Compose_Of_The_Whole_Mask(string path)
+        {
+            using var restore = UsePath(path);
+
+            // Transformed glyph masks bound the transformed corners of the ink box, so under
+            // rotation their margins hold no coverage; the blend skips them, which must leave
+            // the bytes of blending every pixel, whatever the clip cuts off.
+            var random = new Random(91);
+            const int width = 70;
+            const int height = 50;
+
+            for (var trial = 0; trial < 200; trial++)
+            {
+                var inner = RandomMask(random, random.Next(1, 30), random.Next(1, 30));
+                var left = random.Next(0, 9);
+                var top = random.Next(0, 9);
+                var maskWidth = left + inner.Width + random.Next(0, 9);
+                var maskHeight = top + inner.Height + random.Next(0, 9);
+                var alpha = new byte[maskWidth * maskHeight];
+
+                for (var row = 0; row < inner.Height; row++)
+                {
+                    Array.Copy(inner.Alpha, row * inner.Width, alpha, (top + row) * maskWidth + left, inner.Width);
+                }
+
+                var mask = new GlyphMask(alpha, maskWidth, maskHeight, 0, 0);
+                var start = new byte[width * height * 4];
+
+                random.NextBytes(start);
+                Premultiply(start);
+
+                var x = random.Next(-20, width - 5);
+                var y = random.Next(-20, height - 5);
+                var clip = new PixelRect(random.Next(-5, 20), random.Next(-5, 20), random.Next(10, width + 10),
+                    random.Next(10, height + 10));
+                var color = s_tints[trial % s_tints.Length];
+                var tint = RunMaskComposer.MakeTint(color.A, color.R, color.G, color.B);
+                var table = trial % 2 == 0 ? MaskGamma.GetTableForPremulBgra(tint) : null;
+                var expected = (byte[])start.Clone();
+
+                RunMaskComposer.ComposeTinted(mask, x, y, tint, expected, width, height, coverageTable: table);
+                RestoreOutside(expected, start, width, height, clip);
+
+                var actual = Blit(start, width, height, mask, x, y, tint, table, clip);
+
+                AssertEqual(expected, actual, width, $"{path} trial {trial}");
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Paths))]
         public void An_Rgba_Surface_Gets_The_Same_Blend_With_Red_And_Blue_Swapped(string path)
         {
             using var restore = UsePath(path);

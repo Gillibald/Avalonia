@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -17,6 +18,13 @@ namespace Avalonia.Media.Fonts.Rasterization
     {
         /// <summary>The shared no-ink mask (whitespace, malformed, or degenerate glyphs).</summary>
         public static readonly GlyphMask Empty = new(Array.Empty<byte>(), 0, 0, 0, 0);
+
+        private const ulong InkMeasured = 1UL << 63;
+
+        // The rectangle of rows and columns with any coverage, packed 16 bits per value under
+        // InkMeasured; zero until first asked for. Every thread that measures gets the same value,
+        // so a race only measures twice.
+        private long _ink;
 
         public GlyphMask(byte[] alpha, int width, int height, int left, int top, int channels = 1)
         {
@@ -80,5 +88,80 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Eviction weight: the pixel bytes plus a small fixed object overhead.</summary>
         public int ByteCost => Alpha.Length + 48;
+
+        /// <summary>
+        /// The smallest rectangle of the mask holding all its coverage, in mask pixels; zero
+        /// width and height when no pixel is covered. The placement of a transformed glyph mask
+        /// bounds the transformed corners of the glyph's ink box, which leaves a third or more
+        /// of the mask uncovered under rotation, so a blend that skips pixels without coverage
+        /// saves that much by blending this rectangle alone. Measured on first use and kept.
+        /// A multi-channel mask reports its full extent.
+        /// </summary>
+        public void GetInkBounds(out int x, out int y, out int width, out int height)
+        {
+            var ink = (ulong)Volatile.Read(ref _ink);
+
+            if (ink == 0)
+            {
+                ink = MeasureInk();
+                Volatile.Write(ref _ink, (long)ink);
+            }
+
+            x = (int)(ink & 0xFFFF);
+            y = (int)((ink >> 16) & 0xFFFF);
+            width = (int)((ink >> 32) & 0xFFFF);
+            height = (int)((ink >> 48) & 0x7FFF);
+        }
+
+        private ulong MeasureInk()
+        {
+            if (Channels != 1 || Width > 0x7FFF || Height > 0x7FFF)
+            {
+                return Pack(0, 0, Width, Height);
+            }
+
+            var alpha = Alpha.AsSpan(0, Width * Height);
+            var top = 0;
+
+            while (top < Height && !alpha.Slice(top * Width, Width).ContainsAnyExcept((byte)0))
+            {
+                top++;
+            }
+
+            if (top == Height)
+            {
+                return Pack(0, 0, 0, 0);
+            }
+
+            var bottom = Height - 1;
+
+            while (!alpha.Slice(bottom * Width, Width).ContainsAnyExcept((byte)0))
+            {
+                bottom--;
+            }
+
+            var left = Width;
+            var right = -1;
+
+            for (var row = top; row <= bottom; row++)
+            {
+                var line = alpha.Slice(row * Width, Width);
+                var first = line.IndexOfAnyExcept((byte)0);
+
+                if (first < 0)
+                {
+                    continue;
+                }
+
+                left = Math.Min(left, first);
+                right = Math.Max(right, line.LastIndexOfAnyExcept((byte)0));
+            }
+
+            return Pack(left, top, right - left + 1, bottom - top + 1);
+
+            static ulong Pack(int x, int y, int width, int height)
+                => InkMeasured | (uint)x | ((ulong)(uint)y << 16) | ((ulong)(uint)width << 32) |
+                   ((ulong)(uint)height << 48);
+        }
     }
 }
