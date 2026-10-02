@@ -90,6 +90,12 @@ namespace Avalonia.Skia
             var bounds = backend.Bounds;
 
             bounds.Offset(x, y);
+            CountClippedRun(bounds);
+
+            if (!TryTrimToClips(ref backend, x, y, ref bounds))
+            {
+                return true;
+            }
 
             var target = FindPendingBatch(page, color);
 
@@ -132,7 +138,6 @@ namespace Avalonia.Skia
 
             target.Add(new BatchedRun(backend, x, y), bounds);
             _pendingRunCount++;
-            CountClippedRun(bounds);
 
             return true;
         }
@@ -172,9 +177,10 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// Draws the pending glyph batches, grayscale or subpixel. Every canvas operation calls
-        /// this first, as does the end of the drawing session, so pending sprites never change
-        /// their place in the draw order or the clip and layer they were collected under. A
+        /// Draws the pending glyph batches, grayscale or subpixel, and applies the deferred clips
+        /// to the canvas. Every canvas operation calls this first, as does the end of the drawing
+        /// session, so pending sprites never change their place in the draw order or the clip and
+        /// layer they were collected under, and the operation draws under every clip pushed. A
         /// caller reading the surface back while this context is still drawing calls it too. It
         /// also drops the kept direct-write target, since the operation that follows may change
         /// the clip or move the surface's pixels.
@@ -188,6 +194,7 @@ namespace Avalonia.Skia
             ForgetBlitTarget();
             FlushAtlasBatch(reason);
             FlushLcdBatch(reason);
+            ApplyDeferredClips();
         }
 
         /// <summary>Draws every pending grayscale batch, in the order they were begun.</summary>
@@ -398,6 +405,9 @@ namespace Avalonia.Skia
 
             private SKRect[] _bounds = new SKRect[32];
             private SKRect _union = SKRect.Empty;
+
+            /// <summary>The device rectangle the runs cover.</summary>
+            public SKRect Bounds => _union;
 
             public void Add(in BatchedRun run, SKRect bounds)
             {

@@ -970,6 +970,11 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushClip(Rect clip)
         {
+            if (TryDeferRectClip(clip))
+            {
+                return;
+            }
+
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipRect(clip.ToSKRect());
@@ -1017,12 +1022,7 @@ namespace Avalonia.Skia
         }
         
         /// <inheritdoc />
-        public void PopClip()
-        {
-            PrepareCanvas(GlyphBatchFlushReason.Clip);
-            RestoreCanvas();
-            UntrackClipLevel();
-        }
+        public void PopClip() => PopClipLevel();
 
         public void PushLayer(Rect bounds)
         {
@@ -1158,12 +1158,7 @@ namespace Avalonia.Skia
         }
 
         /// <inheritdoc />
-        public void PopGeometryClip()
-        {
-            PrepareCanvas(GlyphBatchFlushReason.Clip);
-            RestoreCanvas();
-            UntrackClipLevel();
-        }
+        public void PopGeometryClip() => PopClipLevel();
 
         /// <inheritdoc />
         public void PushOpacityMask(IBrush mask, Rect bounds)

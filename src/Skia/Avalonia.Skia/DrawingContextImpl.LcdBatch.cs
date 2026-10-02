@@ -93,6 +93,18 @@ namespace Avalonia.Skia
 
             FlushAtlasBatch(GlyphBatchFlushReason.OtherTextPath);
 
+            var source = SKRect.Create(entry.X, entry.Y, entry.Width, entry.Height);
+            var dest = SKRect.Create(x, y, entry.Width, entry.Height);
+
+            CountClippedRun(dest);
+
+            if (!TryTrimToClips(ref source, ref dest))
+            {
+                return true;
+            }
+
+            var bounds = SKRectI.Truncate(dest);
+
             if (_lcdBatchCount > 0)
             {
                 if (entry.Page != _lcdBatchPage)
@@ -107,19 +119,22 @@ namespace Avalonia.Skia
                 {
                     FlushLcdBatch(GlyphBatchFlushReason.SpriteCap);
                 }
-                else if (OverlapsLcdBatch(x, y, entry))
+                else if (OverlapsLcdBatch(bounds))
                 {
                     FlushLcdBatch(GlyphBatchFlushReason.Overlap);
                 }
             }
 
-            AppendToLcdBatch(entry, x, y, tint);
-            CountClippedRun(SKRect.Create(x, y, entry.Width, entry.Height));
+            AppendToLcdBatch(entry.Page, source, bounds, tint);
 
             return true;
         }
 
-        private void AppendToLcdBatch(LcdAtlasEntry entry, int x, int y, uint tint)
+        /// <summary>
+        /// Appends the part of an atlas entry at <paramref name="source"/> on its page, drawn 1:1
+        /// to <paramref name="bounds"/>.
+        /// </summary>
+        private void AppendToLcdBatch(LcdAtlasPage page, SKRect source, SKRectI bounds, uint tint)
         {
             var arrays = _lcdBatch ??= t_lcdBatchArrays is { Count: > 0 } pool ? pool.Pop() : new LcdBatchArrays();
 
@@ -132,18 +147,17 @@ namespace Avalonia.Skia
                 Array.Resize(ref arrays.Bounds, capacity);
             }
 
-            arrays.Sources[_lcdBatchCount] = SKRect.Create(entry.X, entry.Y, entry.Width, entry.Height);
-            arrays.Placements[_lcdBatchCount] = SKRotationScaleMatrix.CreateTranslation(x, y);
-            arrays.Bounds[_lcdBatchCount] = SKRectI.Create(x, y, entry.Width, entry.Height);
+            arrays.Sources[_lcdBatchCount] = source;
+            arrays.Placements[_lcdBatchCount] = SKRotationScaleMatrix.CreateTranslation(bounds.Left, bounds.Top);
+            arrays.Bounds[_lcdBatchCount] = bounds;
 
             _lcdBatchCount++;
-            _lcdBatchPage = entry.Page;
+            _lcdBatchPage = page;
             _lcdBatchTint = tint;
         }
 
-        private bool OverlapsLcdBatch(int x, int y, LcdAtlasEntry entry)
+        private bool OverlapsLcdBatch(SKRectI bounds)
         {
-            var bounds = SKRectI.Create(x, y, entry.Width, entry.Height);
             var pending = _lcdBatch!.Bounds;
 
             for (var i = 0; i < _lcdBatchCount; i++)

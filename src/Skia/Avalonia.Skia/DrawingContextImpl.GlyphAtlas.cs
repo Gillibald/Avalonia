@@ -443,7 +443,7 @@ namespace Avalonia.Skia
         }
 
         /// <summary>The exact-length sprite arrays of one batch, plus its own image for a standalone glyph.</summary>
-        internal sealed class SkiaGlyphAtlasBatch : IDisposable
+        internal sealed partial class SkiaGlyphAtlasBatch : IDisposable
         {
             // Four vertices per sprite, addressed by 16-bit indices.
             private const int MaxSpritesPerVertices = (ushort.MaxValue + 1) / 4;
@@ -669,6 +669,7 @@ namespace Avalonia.Skia
             public void Dispose()
             {
                 ReleaseVertices();
+                DisposeTrimmed();
 
                 if (_batchRuns is { } recorded)
                 {
