@@ -270,6 +270,19 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
+        /// Writes this face as a standalone font file: its own table directory followed by its
+        /// tables, for consumers that load only the first face of a collection.
+        /// </summary>
+        /// <param name="data">The font file bytes, if the operation succeeds.</param>
+        /// <returns><see langword="true"/> if the face could be written; otherwise, <see langword="false"/>.</returns>
+        internal bool TryCreateStandaloneFontData([NotNullWhen(true)] out byte[]? data)
+        {
+            data = null;
+
+            return false;
+        }
+
+        /// <summary>
         /// Creates another view of the same face sharing the same underlying file bytes. Used to
         /// give a synthetic glyph typeface its own font memory without copying or re-resolving
         /// the face.
