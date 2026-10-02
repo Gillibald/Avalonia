@@ -623,6 +623,16 @@ namespace Avalonia.Skia
         {
             if (rect.Rect.Height <= 0 || rect.Rect.Width <= 0)
                 return;
+
+            // A transparent background, which every templated item container fills by default,
+            // changes no pixel under source-over blending, so it leaves the pending glyph batches
+            // and the deferred clips alone.
+            if (pen is null && boxShadows.Count == 0 && IsInvisibleFill(brush))
+            {
+                CheckLease();
+                return;
+            }
+
             PrepareCanvas();
             // Arbitrary chosen values
             // On OSX Skia breaks OpenGL context when asked to draw, e. g. (0, 0, 623, 6666600) rect
@@ -743,6 +753,9 @@ namespace Avalonia.Skia
             if (skRoundRect is not null)
                 SKRoundRectCache.Shared.Return(skRoundRect);
         }
+
+        private static bool IsInvisibleFill(IBrush? brush) =>
+            brush is null or ISolidColorBrush { Color.A: 0 } or ISolidColorBrush { Opacity: 0 };
 
         /// <inheritdoc />
         public void DrawRegion(IBrush? brush, IPen? pen, IPlatformRenderInterfaceRegion region)
