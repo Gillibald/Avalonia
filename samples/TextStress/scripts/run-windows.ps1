@@ -13,8 +13,15 @@ Render paths are Win32PlatformOptions.RenderingMode values: angle (AngleEgl, the
 default, D3D11 through ANGLE with WinUI composition), wgl (desktop OpenGL on a redirection
 surface), software (Skia raster into a framebuffer), vulkan.
 
+Variants run every job again with extra arguments, each named variant in its own processes and
+files (<job>-<variant>-<mode>-p<pass>.tsv); the variant order is kept within each pass.
+
 .EXAMPLE
 pwsh samples/TextStress/scripts/run-windows.ps1 -OutDir C:\results\text-stress\windows\2026-10-02
+
+.EXAMPLE
+pwsh samples/TextStress/scripts/run-windows.ps1 -OutDir C:\results\list-fling -Jobs list-fling -Renders angle,wgl `
+    -Variants ([ordered]@{ default = ''; static = '--motion static'; single = '--faces 1 --colors 1' })
 #>
 param(
     [Parameter(Mandatory = $true)] [string] $OutDir,
@@ -25,6 +32,7 @@ param(
     [int] $Warmup = 60,
     [int] $SweepFrames = 180,
     [int] $SweepWarmup = 30,
+    [System.Collections.IDictionary] $Variants = $null,
     [switch] $NoBuild
 )
 
@@ -48,6 +56,8 @@ $tag = (git -C $repo rev-parse --short HEAD).Trim()
 $status = git -C $repo status --porcelain -- src samples/TextStress
 if ($status) { $tag = "$tag+dirty" }
 
+$variantNames = if ($Variants) { @($Variants.Keys) } else { @('') }
+
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $log = Join-Path $OutDir 'run.log'
 $started = Get-Date
@@ -60,27 +70,34 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
         New-Item -ItemType Directory -Force $renderDir | Out-Null
 
         foreach ($job in $Jobs) {
-            foreach ($mode in $modes) {
-                $out = Join-Path $renderDir "$job-$mode-p$pass.tsv"
-                $arguments = @('--scenario', $job, '--mode', $mode, '--render', $render, '--pass', $pass,
-                    '--tag', $tag, '--out', $out)
+            foreach ($variant in $variantNames) {
+                foreach ($mode in $modes) {
+                    $name = if ($variant) { "$job-$variant" } else { $job }
+                    $out = Join-Path $renderDir "$name-$mode-p$pass.tsv"
+                    $arguments = @('--scenario', $job, '--mode', $mode, '--render', $render, '--pass', $pass,
+                        '--tag', $tag, '--out', $out)
 
-                if ($sweepValues.ContainsKey($job)) {
-                    $arguments += @('--n', $sweepValues[$job], '--frames', $SweepFrames, '--warmup', $SweepWarmup)
-                }
-                else {
-                    $arguments += @('--frames', $Frames, '--warmup', $Warmup)
-                }
+                    if ($variant -and $Variants[$variant]) {
+                        $arguments += -split $Variants[$variant]
+                    }
 
-                $line = "{0:HH:mm:ss} pass {1} {2} {3} {4}" -f (Get-Date), $pass, $render, $job, $mode
-                Write-Host $line
-                Add-Content $log $line
+                    if ($sweepValues.ContainsKey($job)) {
+                        $arguments += @('--n', $sweepValues[$job], '--frames', $SweepFrames, '--warmup', $SweepWarmup)
+                    }
+                    else {
+                        $arguments += @('--frames', $Frames, '--warmup', $Warmup)
+                    }
 
-                & $exe @arguments 2>&1 | Tee-Object -FilePath $log -Append | Out-Null
-                if ($LASTEXITCODE -ne 0) {
-                    $failure = "  FAILED with exit code $LASTEXITCODE"
-                    Write-Warning $failure
-                    Add-Content $log $failure
+                    $line = "{0:HH:mm:ss} pass {1} {2} {3} {4}" -f (Get-Date), $pass, $render, $name, $mode
+                    Write-Host $line
+                    Add-Content $log $line
+
+                    & $exe @arguments 2>&1 | Tee-Object -FilePath $log -Append | Out-Null
+                    if ($LASTEXITCODE -ne 0) {
+                        $failure = "  FAILED with exit code $LASTEXITCODE"
+                        Write-Warning $failure
+                        Add-Content $log $failure
+                    }
                 }
             }
         }

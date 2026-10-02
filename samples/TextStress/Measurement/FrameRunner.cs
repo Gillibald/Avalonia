@@ -76,6 +76,14 @@ namespace TextStress.Measurement
                     await RunFrameAsync(-1, apply: false);
                 }
 
+                if (_options.PrewarmPass && n == _options.N[0])
+                {
+                    for (var frame = 0; frame < _options.Warmup + _options.Frames; frame++)
+                    {
+                        await RunFrameAsync(frame, apply: true);
+                    }
+                }
+
                 if (_writer is not null && !environmentWritten)
                 {
                     _writer.WriteEnvironment(DescribeEnvironment(scaling));
@@ -182,6 +190,8 @@ namespace TextStress.Measurement
                 sample.AtlasDrawsStart = DrawingContextImpl.AtlasDrawsOnThread;
                 sample.PageUploadsStart = DrawingContextImpl.PageImagesCreatedOnThread;
                 sample.AtlasGeometryStart = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                RenderCounters.Read(sample.CountersStart);
+                DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
                 sample.RenderStart = Stopwatch.GetTimestamp();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
@@ -194,6 +204,8 @@ namespace TextStress.Measurement
                 sample.AtlasDrawsEnd = DrawingContextImpl.AtlasDrawsOnThread;
                 sample.PageUploadsEnd = DrawingContextImpl.PageImagesCreatedOnThread;
                 sample.AtlasGeometryEnd = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                RenderCounters.Read(sample.CountersEnd);
+                sample.MaxRunsPerBatch = DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
                 rendered.TrySetResult();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
@@ -248,8 +260,13 @@ namespace TextStress.Measurement
 
                 if (seen.Add(atlas))
                 {
+                    var pages = atlas.GetPages().Length;
+
                     target.AtlasBytes += atlas.AllocatedBytes;
                     target.AtlasEvictions += atlas.Evictions;
+                    target.AtlasPages += pages;
+                    target.AtlasPagesMaxFace = Math.Max(target.AtlasPagesMaxFace, pages);
+                    target.AtlasFaces += pages > 0 ? 1 : 0;
                 }
             }
 
@@ -270,6 +287,9 @@ namespace TextStress.Measurement
             sample.AtlasBytes = after.AtlasBytes;
             sample.MaskEvictions = after.MaskEvictions - before.MaskEvictions;
             sample.AtlasEvictions = after.AtlasEvictions - before.AtlasEvictions;
+            sample.AtlasPages = after.AtlasPages;
+            sample.AtlasPagesMaxFace = after.AtlasPagesMaxFace;
+            sample.AtlasFaces = after.AtlasFaces;
             sample.TierMask = after.TierMask - before.TierMask;
             sample.TierTransformed = after.TierTransformed - before.TierTransformed;
             sample.TierBlob = after.TierBlob - before.TierBlob;
@@ -335,7 +355,14 @@ namespace TextStress.Measurement
             yield return ("ui_thread", Environment.CurrentManagedThreadId.ToString(CultureInfo.InvariantCulture));
             yield return ("scenario", _scenario.Name);
             yield return ("sweep", _scenario.SweepDimension ?? "-");
-            yield return ("params", _scenario.Describe());
+            yield return ("params", _scenario.Describe() +
+                             (_options.PrewarmPass ? ";prewarm-pass" : "") +
+                             (_options.PendingBatches > 0
+                                 ? FormattableString.Invariant($";pending-batches={_options.PendingBatches}")
+                                 : ""));
+            yield return ("pending_batches",
+                DrawingContextImpl.MaxPendingBatches.ToString(CultureInfo.InvariantCulture));
+            yield return ("prewarm_pass", _options.PrewarmPass.ToString());
             yield return ("fonts", string.Join(", ", fonts));
             yield return ("mode", _options.Mode);
             yield return ("render", _options.Render);

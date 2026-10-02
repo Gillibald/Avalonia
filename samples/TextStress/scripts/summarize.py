@@ -7,7 +7,10 @@ frames of all passes per (scenario, params, n, mode, render) and writes:
 - per scenario: frame interval and render time percentiles, CPU per thread, frames over the
   16.6 ms and 8.3 ms budgets (by interval and by busy time), allocations, GC, memory, caches;
 - per sweep: cost against N with the local log-log slope and a knee flag where the marginal
-  cost per unit of N jumps (more than doubles over the previous segment).
+  cost per unit of N jumps (more than doubles over the previous segment);
+- per scenario and variant: the render thread's text counters (why glyph batches were drawn,
+  runs per batch, atlas page uploads, rasterizations, cache lookups) as per-frame means and as
+  totals per pass.
 Only the standard library is used.
 """
 import glob
@@ -21,6 +24,16 @@ NUMERIC = ["interval_ms", "render_ms", "render_cpu_ms", "ui_ms", "ui_cpu_ms", "l
            "render_alloc", "gc0", "gc1", "gc2", "gc_pause_ms", "heap_bytes", "private_bytes",
            "mask_cache_bytes", "atlas_bytes", "mask_evictions", "atlas_evictions", "tier_mask",
            "tier_transformed", "tier_blob", "atlas_draws", "page_uploads", "atlas_geometry"]
+
+# Columns that hold text; every other column is numeric, so counter columns added later load too.
+TEXT = {"scenario", "mode", "render"}
+
+# Scenario parameters whose non-default values name a variant in the tables.
+VARIANT_DEFAULTS = {"fonts": "7", "colors": "4", "motion": "fling"}
+VARIANT_FLAGS = ("prewarm-pass", "pending-batches")
+
+FLUSH_REASONS = ["page_change", "color_change", "slot_pressure", "run_limit", "sprite_cap", "overlap",
+                 "canvas_operation", "clip", "layer", "end_of_session", "other_text_path", "other"]
 
 
 def load(path):
@@ -39,7 +52,9 @@ def load(path):
                 columns = cells
                 continue
             row = dict(zip(columns, cells))
-            for c in NUMERIC:
+            for c in set(NUMERIC) | set(columns):
+                if c in TEXT:
+                    continue
                 v = row.get(c, "nan")
                 row[c] = float("nan") if v == "nan" else float(v)
             row["n"] = int(row["n"])
@@ -118,7 +133,7 @@ def main():
           "ucpu p50 | ucpu p95 | >16.6 % | >8.3 % | busy>16.6 % | busy>8.3 % | ui KB | render KB | gc0/kf | "
           "pause ms | heap MB | private MB | mask MB | atlas MB | evict/f | tiers m/t/b | atlas d/u/g | spread % |")
         w("|" + "---|" * 29)
-        for key in sorted(fixed, key=lambda k: (k[0], k[4], k[3])):
+        for key in sorted(fixed, key=lambda k: (k[0], k[1], k[4], k[3])):
             w(scenario_row(key, groups[key]))
         w("")
         w("Managed over Backend (render p50 and UI CPU p50 ratios, below 1 means Managed is faster):")
@@ -130,9 +145,14 @@ def main():
             b = groups.get((scenario, params, n, "backend", render))
             if not m or not b:
                 continue
-            w(f"| {scenario} | {render} | {ratio(m, b, 'render_ms')} | {ratio(m, b, 'render_cpu_ms')} | "
+            w(f"| {label(scenario, params)} | {render} | {ratio(m, b, 'render_ms')} | {ratio(m, b, 'render_cpu_ms')} | "
               f"{ratio(m, b, 'ui_cpu_ms')} | {fmt(pct(busy(m), 95))} | {fmt(pct(busy(b), 95))} |")
         w("")
+
+    counted = sorted((k for k in groups if any("fb_clip" in r for r in groups[k][:1])),
+                     key=lambda k: (k[0], k[1], k[2], k[4], k[3]))
+    if counted:
+        write_counters(w, counted, groups)
 
     sweeps = defaultdict(list)
     for key in groups:
@@ -223,7 +243,7 @@ def scenario_row(key, rows):
     gc0 = 1000.0 * sum(r["gc0"] for r in rows) / len(rows)
     pause = sum(r["gc_pause_ms"] for r in rows)
     evict = statistics.mean(r["mask_evictions"] + r["atlas_evictions"] for r in rows)
-    return (f"| {scenario} | {render} | {mode} | {len(rows)} | {fmt(pct(col(rows, 'interval_ms'), 50))} | "
+    return (f"| {label(scenario, params)} | {render} | {mode} | {len(rows)} | {fmt(pct(col(rows, 'interval_ms'), 50))} | "
             f"{fmt(pct(col(rows, 'interval_ms'), 95))} | {fmt(pct(col(rows, 'interval_ms'), 99))} | "
             f"{fmt(pct(col(rows, 'render_ms'), 50))} | {fmt(pct(col(rows, 'render_ms'), 95))} | "
             f"{fmt(pct(col(rows, 'render_ms'), 99))} | {fmt(pct(col(rows, 'render_cpu_ms'), 50))} | "
@@ -235,6 +255,74 @@ def scenario_row(key, rows):
             f"{fmt(last['private_bytes'] / 1048576, 0)} | {fmt(last['mask_cache_bytes'] / 1048576)} | "
             f"{fmt(last['atlas_bytes'] / 1048576)} | {fmt(evict, 1)} | {tiers(rows)} | {atlas(rows)} | "
             f"{fmt(spread, 1)} |")
+
+
+def label(scenario, params):
+    """The scenario name, plus the variant parameters that differ from their defaults."""
+    parts = [p for p in params.split(";") if p]
+    values = dict(p.split("=", 1) if "=" in p else (p, "") for p in parts)
+    changed = [f"{k}={v}" for k, v in values.items() if k in VARIANT_DEFAULTS and v != VARIANT_DEFAULTS[k]]
+    changed += [k if not v else f"{k}={v}" for k, v in values.items() if k in VARIANT_FLAGS]
+    return scenario + (" (" + ", ".join(changed) + ")" if changed else "")
+
+
+def mean(rows, name):
+    xs = [r[name] for r in rows if name in r and not math.isnan(r[name]) and r[name] >= 0]
+    return statistics.mean(xs) if xs else float("nan")
+
+
+def per_pass_total(rows, name):
+    """The column's sum over the measured frames of one pass, averaged over the passes."""
+    sums = defaultdict(float)
+    for r in rows:
+        if name in r and not math.isnan(r[name]) and r[name] >= 0:
+            sums[r["pass"]] += r[name]
+    return statistics.mean(sums.values()) if sums else float("nan")
+
+
+def write_counters(w, keys, groups):
+    w("## Render-thread text counters")
+    w("")
+    w("Per-frame means over all passes (`/f`), and totals over one pass's measured frames (`/pass`, mean "
+      "of the passes). `draws` atlas draw calls; `batches` pending glyph batches drawn (each one draw "
+      "unless it exceeds a draw's sprite limit); `runs/b` runs per batch and `max` the largest batch of a "
+      "frame (frame maximum, mean over frames); `flushed by` the batches drawn per reason (per-frame mean, "
+      "reasons with none left out); `slot ev` batches drawn because every pending slot was taken; "
+      "`img new/repl` atlas page images made for a page without one / replacing an older version's; "
+      "`upload` bytes of those images, which a GPU context uploads whole; `raster` glyph rasterizations; "
+      "`mask h/m` glyph mask cache hits / misses; `sets` sprite sets laid out; `bb` atlas batch builds; "
+      "`atlas h/m/p` atlas lookups that hit / missed and masks placed; `pages` atlas pages of the tracked "
+      "faces after the last frame (most on one face).")
+    w("")
+    w("| scenario | render | mode | frames | draws/f | batches/f | runs/b | max | flushed by (/f) | slot ev/f | "
+      "img new/repl /f | upload KB/f | upload MB/pass | raster/f | raster/pass | mask h/m /f | sets/f | bb/f | "
+      "atlas h/m/p /f | pages |")
+    w("|" + "---|" * 20)
+    for key in keys:
+        scenario, params, n, mode, render = key
+        rows = groups[key]
+        batches = mean(rows, "batches_drawn")
+        runs = mean(rows, "batched_runs")
+        reasons = []
+        for reason in FLUSH_REASONS:
+            v = mean(rows, "fb_" + reason)
+            if v and not math.isnan(v) and v >= 0.005:
+                reasons.append(f"{reason} {v:.2f}")
+        replaced = mean(rows, "page_images_replaced")
+        uploads = mean(rows, "page_uploads")
+        last = rows[-1]
+        w(f"| {label(scenario, params)}{'' if n == 0 else f' n={n}'} | {render} | {mode} | {len(rows)} | "
+          f"{fmt(mean(rows, 'atlas_draws'), 1)} | {fmt(batches, 1)} | "
+          f"{fmt(runs / batches if batches else float('nan'))} | {fmt(mean(rows, 'max_runs_per_batch'), 1)} | "
+          f"{', '.join(reasons) or '-'} | {fmt(mean(rows, 'fb_slot_pressure'))} | "
+          f"{fmt(uploads - replaced)}/{fmt(replaced)} | {fmt(mean(rows, 'page_upload_bytes') / 1024, 1)} | "
+          f"{fmt(per_pass_total(rows, 'page_upload_bytes') / 1048576, 1)} | "
+          f"{fmt(mean(rows, 'glyph_rasterizations'))} | {fmt(per_pass_total(rows, 'glyph_rasterizations'), 0)} | "
+          f"{fmt(mean(rows, 'mask_hits'), 1)}/{fmt(mean(rows, 'mask_misses'))} | "
+          f"{fmt(mean(rows, 'sprite_set_builds'))} | {fmt(mean(rows, 'atlas_batch_builds'))} | "
+          f"{fmt(mean(rows, 'atlas_hits'), 1)}/{fmt(mean(rows, 'atlas_misses'))}/{fmt(mean(rows, 'atlas_placements'))} | "
+          f"{int(last.get('atlas_pages', 0))} ({int(last.get('atlas_pages_max_face', 0))}) |")
+    w("")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,15 @@ namespace TextStress
         /// <summary>Wall time of discarded frames before the first measurement, so the JIT has promoted hot code.</summary>
         public int PrewarmMs { get; private set; } = 2000;
 
+        /// <summary>
+        /// Whether every measured frame of the first sweep value runs once, discarded, before the
+        /// measurement, so the glyph caches and atlases already hold everything it draws.
+        /// </summary>
+        public bool PrewarmPass { get; private set; }
+
+        /// <summary>The GPU glyph batcher's pending batch limit; 0 keeps the built-in value.</summary>
+        public int PendingBatches { get; private set; }
+
         public int Seed { get; private set; } = 1;
 
         public int Pass { get; private set; } = 1;
@@ -87,6 +96,8 @@ namespace TextStress
                     case "frames": options.Frames = ParseInt(key, value); break;
                     case "warmup": options.Warmup = ParseInt(key, value); break;
                     case "prewarm-ms": options.PrewarmMs = ParseInt(key, value); break;
+                    case "prewarm-pass": options.PrewarmPass = value is "1" or "true" or "on" or "yes"; break;
+                    case "pending-batches": options.PendingBatches = ParseInt(key, value); break;
                     case "seed": options.Seed = ParseInt(key, value); break;
                     case "pass": options.Pass = ParseInt(key, value); break;
                     case "out": options.Out = value; break;
@@ -137,11 +148,14 @@ namespace TextStress
             "  --frames N   measured frames per sweep value, 0 = interactive until closed (default 600)\n" +
             "  --warmup N   unmeasured frames before each measurement (default 60)\n" +
             "  --prewarm-ms N   discarded frames before the first measurement, in ms (default 2000)\n" +
+            "  --prewarm-pass   run every measured frame once, discarded, before measuring (warm caches)\n" +
+            "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 8)\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +
             "  scenario parameters: code-scroll --size --colors --speed --fractional;\n" +
-            "    list-fling --rows --speed; mixed-ui --cards --decor --changes;\n" +
+            "    list-fling --rows --speed --faces all|1 --colors 4|1 --motion fling|static;\n" +
+            "    mixed-ui --cards --decor --changes;\n" +
             "    sweep-states --runs --kind mixed|rect|clip|opacity|color\n";
     }
 }

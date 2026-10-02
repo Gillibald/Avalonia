@@ -12,11 +12,12 @@ namespace TextStress.Measurement
     /// </summary>
     internal sealed class ResultWriter : IDisposable
     {
-        public const string Columns =
+        public static readonly string Columns =
             "scenario\tn\tmode\trender\tpass\tframe\tinterval_ms\trender_ms\trender_cpu_ms\tui_ms\tui_cpu_ms\t" +
             "latency_ms\tui_alloc\trender_alloc\tgc0\tgc1\tgc2\tgc_pause_ms\theap_bytes\tprivate_bytes\t" +
             "mask_cache_bytes\tatlas_bytes\tmask_evictions\tatlas_evictions\ttier_mask\ttier_transformed\ttier_blob\t" +
-            "atlas_draws\tpage_uploads\tatlas_geometry";
+            "atlas_draws\tpage_uploads\tatlas_geometry\tmax_runs_per_batch\tatlas_pages\tatlas_pages_max_face\t" +
+            "atlas_faces\t" + string.Join("\t", RenderCounters.Columns);
 
         private readonly StreamWriter _writer;
         private readonly RunOptions _options;
@@ -68,7 +69,14 @@ namespace TextStress.Measurement
                 .Append(s.TierMask).Append(s.TierTransformed).Append(s.TierBlob)
                 .Append(sameRenderThread ? s.AtlasDrawsEnd - s.AtlasDrawsStart : -1)
                 .Append(sameRenderThread ? s.PageUploadsEnd - s.PageUploadsStart : -1)
-                .Append(sameRenderThread ? s.AtlasGeometryEnd - s.AtlasGeometryStart : -1);
+                .Append(sameRenderThread ? s.AtlasGeometryEnd - s.AtlasGeometryStart : -1)
+                .Append(sameRenderThread ? s.MaxRunsPerBatch : -1)
+                .Append(s.AtlasPages).Append(s.AtlasPagesMaxFace).Append(s.AtlasFaces);
+
+            for (var i = 0; i < RenderCounters.Count; i++)
+            {
+                Append(sameRenderThread ? s.CountersEnd[i] - s.CountersStart[i] : -1);
+            }
 
             _line.Length--;
             _writer.WriteLine(_line);

@@ -34,6 +34,12 @@ namespace TextStress.Measurement
         public int AtlasGeometryStart;
         public int AtlasGeometryEnd;
 
+        // The render thread's text counters (RenderCounters), read at both ends of the pass, and
+        // the most runs one glyph batch of the pass held.
+        public readonly long[] CountersStart = new long[RenderCounters.Count];
+        public readonly long[] CountersEnd = new long[RenderCounters.Count];
+        public int MaxRunsPerBatch;
+
         // Process state after the frame, as deltas from the previous frame where cumulative.
         public int Gc0;
         public int Gc1;
@@ -45,6 +51,9 @@ namespace TextStress.Measurement
         public long AtlasBytes;
         public long MaskEvictions;
         public long AtlasEvictions;
+        public int AtlasPages;
+        public int AtlasPagesMaxFace;
+        public int AtlasFaces;
         public long TierMask;
         public long TierTransformed;
         public long TierBlob;

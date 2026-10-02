@@ -32,6 +32,11 @@ namespace TextStress
 
             ThreadClock.Calibrate();
 
+            if (Options.PendingBatches > 0)
+            {
+                Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = Options.PendingBatches;
+            }
+
             return BuildAvaloniaApp(Options).StartWithClassicDesktopLifetime(Array.Empty<string>());
         }
 
