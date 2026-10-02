@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -11,7 +12,8 @@ namespace Avalonia.Media.Fonts
     /// matched through font descriptors and returned as file-backed descriptors; the font system
     /// loads the files through the managed loader and applies its own simulation policy. Faces
     /// inside TrueType collections resolve their index by PostScript name, because CoreText
-    /// identifies faces by name and URL only.
+    /// identifies faces by name and URL only. Faces the font system cannot draw are never
+    /// returned.
     /// </summary>
     public sealed unsafe class CoreTextFontProvider : ISystemFontProvider
     {
@@ -26,6 +28,14 @@ namespace Avalonia.Media.Fonts
         private static bool s_hasCreateForStringWithLanguage = true;
 
         private const string LastResortPostScriptName = "LastResort";
+
+        private static readonly OpenTypeTag[] s_drawableTables =
+        {
+            new('g', 'l', 'y', 'f'), new('C', 'F', 'F', ' '), new('C', 'F', 'F', '2'), new('s', 'b', 'i', 'x'),
+            new('C', 'B', 'D', 'T'),
+        };
+
+        private static readonly ConcurrentDictionary<(string Path, int FaceIndex), bool> s_drawable = new();
 
         /// <summary>
         /// Initializes CoreText lazily on first use: constructing (and registering) the provider
@@ -160,6 +170,11 @@ namespace Avalonia.Media.Fonts
                 {
                     match = CreateFontFace(matched);
 
+                    if (match is not null && !IsDrawable(match))
+                    {
+                        match = null;
+                    }
+
                     return match != null;
                 }
                 finally
@@ -212,13 +227,97 @@ namespace Avalonia.Media.Fonts
             try
             {
                 match = CreateFontFace(matchedDescriptor);
-
-                return match != null;
             }
             finally
             {
                 CTNative.CFRelease(matchedDescriptor);
             }
+
+            if (match is not null && !IsDrawable(match))
+            {
+                match = FindDrawableSibling(match, codepoint, style, weight, stretch);
+            }
+
+            return match != null;
+        }
+
+        /// <summary>
+        /// The public family behind a hidden system family whose faces the font system cannot
+        /// draw, when one covers <paramref name="codepoint"/>. macOS 26 answers Chinese text with
+        /// .PingFang UI faces, whose glyphs exist only in Apple's hvgl table; the PingFang family
+        /// of the same script carries CFF outlines.
+        /// </summary>
+        private SystemFontFace? FindDrawableSibling(SystemFontFace face, int codepoint, FontStyle style,
+            FontWeight weight, FontStretch stretch)
+        {
+            var familyName = face.FamilyName;
+
+            if (familyName.Length < 2 || familyName[0] != '.')
+            {
+                return null;
+            }
+
+            var publicName = familyName.Substring(1).Replace(" UI ", " ");
+
+            if (!TryMatchFamily(publicName, style, weight, stretch, out var sibling) || !Covers(sibling, codepoint))
+            {
+                return null;
+            }
+
+            return sibling;
+        }
+
+        private static bool Covers(SystemFontFace face, int codepoint)
+        {
+            if (!face.TryOpenFontMemory(out var fontMemory))
+            {
+                return false;
+            }
+
+            var glyphTypeface = new GlyphTypeface(fontMemory);
+
+            try
+            {
+                return glyphTypeface.CharacterToGlyphMap[codepoint] != 0;
+            }
+            finally
+            {
+                glyphTypeface.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Whether the font system can draw the face: it carries TrueType, CFF or CFF2 outlines or
+        /// sbix or CBDT bitmaps. Answers are kept per file and face, which never change while the
+        /// process runs.
+        /// </summary>
+        private static bool IsDrawable(SystemFontFace face)
+        {
+            var key = (face.FilePath ?? string.Empty, face.FaceIndex);
+
+            if (s_drawable.TryGetValue(key, out var drawable))
+            {
+                return drawable;
+            }
+
+            drawable = false;
+
+            if (face.TryOpenFontMemory(out var fontMemory))
+            {
+                using (fontMemory)
+                {
+                    foreach (var tag in s_drawableTables)
+                    {
+                        if (fontMemory.TryGetTable(tag, out _))
+                        {
+                            drawable = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return s_drawable.GetOrAdd(key, drawable);
         }
 
         public bool TryGetFamilyFaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
@@ -273,7 +372,7 @@ namespace Avalonia.Media.Fonts
 
                 for (var i = 0; i < count; i++)
                 {
-                    if (CreateFontFace(CTNative.CFArrayGetValueAtIndex(array, i)) is { } face)
+                    if (CreateFontFace(CTNative.CFArrayGetValueAtIndex(array, i)) is { } face && IsDrawable(face))
                     {
                         (result ??= new List<SystemFontFace>(count)).Add(face);
                     }
