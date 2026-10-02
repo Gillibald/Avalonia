@@ -149,6 +149,57 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(0, atlas.AllocatedBytes);
         }
 
+        [Theory]
+        [MemberData(nameof(Backends))]
+        public void An_Lcd_Batch_Is_Drawn_Before_It_Outgrows_One_Atlas_Draw(GpuBackend backend)
+        {
+            // The grayscale batch's bound: Skia's GPU atlas op sizes its vertex data in a 32-bit int
+            // at 64 bytes per sprite, so one draw of 2^25 sprites overflows it.
+            const int maxSpritesPerAtlasDraw = 16384;
+            const int columns = 26;
+
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            // One small glyph per run, spaced so no two masks overlap: nothing but the batch's size
+            // makes it draw before the session ends.
+            var runs = new ManagedGlyphRunImpl[maxSpritesPerAtlasDraw * 3 / 2];
+
+            for (var i = 0; i < runs.Length; i++)
+            {
+                runs[i] = WideRunMaskTests.CreateRun(typeface, "il.:|!"[i % 6].ToString(), 9,
+                    new Point(4.25 + i % columns * 20, 12 + i / columns * 20));
+            }
+
+            try
+            {
+                var atlas = new LcdRunAtlas(256L * 1024 * 1024);
+                var expected = Render(gpu, context => DrawAll(context, runs, Brushes.Black), Mode.AtlasOneByOne,
+                    out _, atlas);
+                var drawnWhileAppending = 0;
+
+                var actual = Render(gpu, context =>
+                {
+                    var before = DrawingContextImpl.AtlasDrawsOnThread;
+
+                    DrawAll(context, runs, Brushes.Black);
+                    drawnWhileAppending = DrawingContextImpl.AtlasDrawsOnThread - before;
+                }, Mode.Batched, out var draws, atlas);
+
+                // Entries on another page would draw the batch before it grows this far.
+                Assert.Single(atlas.GetPages());
+                Assert.True(drawnWhileAppending >= runs.Length / maxSpritesPerAtlasDraw,
+                    $"{runs.Length} subpixel runs took {drawnWhileAppending} atlas draws before the session ended");
+                Assert.True(draws >= (runs.Length + maxSpritesPerAtlasDraw - 1) / maxSpritesPerAtlasDraw,
+                    $"{runs.Length} subpixel runs took {draws} atlas draws");
+                TransformedAtlasTests.AssertEqual(expected, actual, "batched subpixel runs");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
         private enum Mode
         {
             OwnImages,

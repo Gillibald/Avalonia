@@ -4,6 +4,7 @@ using System.Linq;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
+using Avalonia.Media.TextFormatting;
 using SkiaSharp;
 using Xunit;
 
@@ -19,6 +20,11 @@ namespace Avalonia.Skia.UnitTests.Media
     {
         private const int Width = 520;
         private const int Height = 360;
+
+        // The most sprites one atlas draw may hand to Skia. Skia's GPU atlas op sizes its vertex
+        // data in a 32-bit int at 64 bytes per sprite, so one draw of 2^25 sprites overflows it and
+        // writes out of bounds. A draw stays at the 65536 vertices one 16-bit indexed part holds.
+        private const int MaxSpritesPerAtlasDraw = 16384;
 
         private static readonly string[] s_lines =
         {
@@ -513,6 +519,93 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Context_Kept_Across_Frames_Draws_Its_Glyph_Batch_Before_It_Outgrows_One_Atlas_Draw(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 5, 13, new Point(6.3, 4));
+            var brush = new ImmutableSolidColorBrush(Color.FromArgb(0x10, 0x10, 0x20, 0x40));
+
+            // Whole-pixel steps keep every run in the pending batch, and nothing between the frames
+            // draws it: a context kept across frames whose surface is flushed by its owner.
+            void DrawFrames(DrawingContextImpl context)
+            {
+                for (var frame = 0; frame < 300; frame++)
+                {
+                    context.Transform = Matrix.CreateTranslation(frame * 7 % 300, frame * 3 % 200);
+                    DrawAll(context, runs, brush);
+                }
+            }
+
+            try
+            {
+                var geometry = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var expected = Render(gpu, DrawFrames, batched: false, out _);
+                var sprites = DrawingContextImpl.AtlasGeometrySubmittedOnThread - geometry;
+                var drawnWhileAppending = 0;
+
+                var actual = Render(gpu, context =>
+                {
+                    var before = DrawingContextImpl.AtlasDrawsOnThread;
+
+                    DrawFrames(context);
+                    drawnWhileAppending = DrawingContextImpl.AtlasDrawsOnThread - before;
+                }, batched: true, out var draws);
+
+                Assert.True(sprites > 3 * MaxSpritesPerAtlasDraw, $"the frames drew only {sprites} sprites");
+
+                // No batch holds more than one draw's sprites, so all but the last are drawn while
+                // the runs are still being appended.
+                Assert.True(drawnWhileAppending >= sprites / MaxSpritesPerAtlasDraw,
+                    $"{sprites} sprites took {drawnWhileAppending} atlas draws before the session ended");
+                Assert.True(draws >= (sprites + MaxSpritesPerAtlasDraw - 1) / MaxSpritesPerAtlasDraw,
+                    $"{sprites} sprites took {draws} atlas draws");
+                TransformedAtlasTests.AssertEqual(expected, actual, "frames batched in one session");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Run_Of_More_Sprites_Than_One_Atlas_Draw_Draws_The_Pixels_Of_Its_Stretches_Drawn_One_By_One(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = CreateGridRun(typeface, MaxSpritesPerAtlasDraw * 3 / 2, 12, new Point(4.3, 2));
+            var stretches = CreateStretches(typeface, run, MaxSpritesPerAtlasDraw / 4);
+            var brush = new ImmutableSolidColorBrush(Color.FromArgb(0x30, 0x10, 0x20, 0x40));
+
+            try
+            {
+                var geometry = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var batched = Render(gpu, context => context.DrawGlyphRun(brush, run), batched: true,
+                    out var batchedDraws);
+                var sprites = DrawingContextImpl.AtlasGeometrySubmittedOnThread - geometry;
+                var unbatched = Render(gpu, context => context.DrawGlyphRun(brush, run), batched: false,
+                    out var unbatchedDraws);
+                var expected = Render(gpu, context => DrawAll(context, stretches, brush), batched: false, out _);
+                var minimum = (sprites + MaxSpritesPerAtlasDraw - 1) / MaxSpritesPerAtlasDraw;
+
+                Assert.True(sprites > MaxSpritesPerAtlasDraw, $"the run drew only {sprites} sprites");
+                Assert.True(batchedDraws >= minimum, $"{sprites} batched sprites took {batchedDraws} atlas draws");
+                Assert.True(unbatchedDraws >= minimum,
+                    $"{sprites} unbatched sprites took {unbatchedDraws} atlas draws");
+                TransformedAtlasTests.AssertEqual(expected, batched, "batched run");
+                TransformedAtlasTests.AssertEqual(expected, unbatched, "unbatched run");
+            }
+            finally
+            {
+                DisposeAll(stretches);
+            }
+        }
+
         [Fact]
         public void Upright_Text_On_A_Software_Gpu_Keeps_Its_Run_Mask()
         {
@@ -667,6 +760,47 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             return runs;
+        }
+
+        /// <summary>
+        /// One run of <paramref name="count"/> glyphs laid out in a grid over the surface by their
+        /// offsets alone, wrapping back to the top left so later glyphs draw over earlier ones.
+        /// </summary>
+        private static ManagedGlyphRunImpl CreateGridRun(GlyphTypeface typeface, int count, double em, Point origin)
+        {
+            const string characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            const int columns = 56;
+            const int rows = 30;
+
+            var infos = new List<GlyphInfo>(count);
+
+            for (var i = 0; i < count; i++)
+            {
+                var glyph = typeface.CharacterToGlyphMap[characters[i % characters.Length]];
+                var cell = i % (columns * rows);
+
+                infos.Add(new GlyphInfo(glyph, i, 0, new Vector(cell % columns * 9, em + cell / columns * 11)));
+            }
+
+            return new ManagedGlyphRunImpl(typeface, em, infos, origin);
+        }
+
+        /// <summary>The run's glyphs as consecutive runs of at most <paramref name="length"/> glyphs each.</summary>
+        private static ManagedGlyphRunImpl[] CreateStretches(GlyphTypeface typeface, ManagedGlyphRunImpl run, int length)
+        {
+            var stretches = new ManagedGlyphRunImpl[(run.GlyphCount + length - 1) / length];
+
+            for (var i = 0; i < stretches.Length; i++)
+            {
+                var start = i * length;
+                var count = Math.Min(length, run.GlyphCount - start);
+
+                stretches[i] = new ManagedGlyphRunImpl(typeface, run.FontRenderingEmSize,
+                    run.GlyphIndices.Slice(start, count), run.GlyphPositions.Slice(start * 2, count * 2),
+                    run.BaselineOrigin, run.BrushBounds);
+            }
+
+            return stretches;
         }
 
         private static void DrawAll(DrawingContextImpl context, ManagedGlyphRunImpl[] runs, IBrush brush)
