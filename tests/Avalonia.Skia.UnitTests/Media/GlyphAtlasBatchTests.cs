@@ -145,6 +145,37 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_List_Of_Rows_In_Sixteen_Typefaces_Draws_One_Atlas_Call_Per_Typeface(GpuBackend backend,
+            bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out _);
+
+            // Every typeface has an atlas of its own, so each one is a page and a pending batch.
+            var typefaces = Enumerable.Range(0, 16).Select(i => LoadAsset(s_listFonts[i % s_listFonts.Length])).ToArray();
+            var runs = CreateListRuns(typefaces, 48);
+
+            void Draw(DrawingContextImpl context) => DrawAll(context, runs, Brushes.Black);
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var batched = Render(gpu, Draw, batched: true, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, batched, "list rows");
+                Assert.Equal(typefaces.Length, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Thousands_Of_Runs_Of_One_Typeface_And_Colour_Are_One_Atlas_Draw(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
@@ -1027,6 +1058,32 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 runs[i] = WideRunMaskTests.CreateRun(typeface, s_lines[i % s_lines.Length], em,
                     new Point(origin.X, origin.Y + em + i * Math.Round(em * 1.35)));
+            }
+
+            return runs;
+        }
+
+        private static readonly string[] s_listFonts =
+        {
+            "Inter-Regular.ttf", "NotoSans-Italic.ttf", "Manrope-Light.ttf", "Inter-Bold.ttf",
+        };
+
+        /// <summary>
+        /// <paramref name="count"/> short runs laid out as the rows of a two-column list, none
+        /// touching another, the typeface changing from each run to the next.
+        /// </summary>
+        private static ManagedGlyphRunImpl[] CreateListRuns(GlyphTypeface[] typefaces, int count)
+        {
+            var runs = new ManagedGlyphRunImpl[count];
+
+            Assert.True(12 + (count - 1) / 2 * 14 < Height, $"{count} rows do not fit the surface");
+
+            for (var i = 0; i < count; i++)
+            {
+                var line = s_lines[i % s_lines.Length];
+
+                runs[i] = WideRunMaskTests.CreateRun(typefaces[i % typefaces.Length], line.Substring(0, 28), 9,
+                    new Point(6.3 + i % 2 * 250, 12 + i / 2 * 14));
             }
 
             return runs;
