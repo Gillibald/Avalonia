@@ -1,6 +1,7 @@
 using System;
 using Avalonia.OpenGL;
 using Avalonia.OpenGL.Surfaces;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Platform;
 using SkiaSharp;
 using static Avalonia.OpenGL.GlConsts;
@@ -43,11 +44,18 @@ namespace Avalonia.Skia
             }
             public void Dispose()
             {
+                var flushTimer = GlyphPhaseTimers.Start();
+
                 _surface.Canvas.Flush();
                 _surface.Dispose();
                 _backendRenderTarget.Dispose();
                 GrContext.Flush();
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.SurfaceFlush, flushTimer);
+
+                var presentTimer = GlyphPhaseTimers.Start();
+
                 _glSession.Dispose();
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.Present, presentTimer);
             }
             
             public GRSurfaceOrigin SurfaceOrigin { get; }

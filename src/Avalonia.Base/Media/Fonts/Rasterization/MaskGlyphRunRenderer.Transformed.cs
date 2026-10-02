@@ -468,7 +468,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return batches;
             }
 
+            var timer = GlyphPhaseTimers.Start();
+
             BuildAtlasBatches(context, typeface, atlas, sprites, bucket);
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasBatchBuild, timer);
 
             return sprites.Batches!;
         }
@@ -487,7 +490,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 var tint = batch.Kind == TransformedSpriteKind.PaletteLayer ? batch.Color : foregroundArgb;
 
+                var timer = GlyphPhaseTimers.Start();
+
                 context.DrawAtlasBatch(batch, placement, tint, bilinear);
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasAppend, timer);
             }
         }
 

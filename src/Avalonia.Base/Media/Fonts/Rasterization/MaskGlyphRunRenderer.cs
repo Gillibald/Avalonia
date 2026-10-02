@@ -554,8 +554,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!state.TryGet(key, out var sprites))
             {
+                var timer = GlyphPhaseTimers.Start();
+
                 sprites = BuildUprightSprites(run, key, scaleX, scaleY);
                 state.Add(sprites);
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
             }
 
             state.Settle(sprites, transform, originX, originY);

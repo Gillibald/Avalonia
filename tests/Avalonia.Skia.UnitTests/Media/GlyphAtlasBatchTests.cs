@@ -643,6 +643,70 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void Phase_Timers_Split_Cold_From_Warm_Draws_And_Record_Nothing_While_Disabled(GpuBackend backend,
+            bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 4, 13, new Point(6.3, 4));
+            var phases = Enum.GetValues<GlyphTimerPhase>();
+
+            long[] Counts() => phases.Select(GlyphPhaseTimers.GetCountOnThread).ToArray();
+
+            long Delta(long[] before, long[] after, GlyphTimerPhase phase) =>
+                after[(int)phase] - before[(int)phase];
+
+            void Draw(DrawingContextImpl context) => DrawAll(context, runs, Brushes.Black);
+
+            var wasEnabled = GlyphPhaseTimers.Enabled;
+
+            try
+            {
+                GlyphPhaseTimers.Enabled = true;
+
+                var batches = DrawingContextImpl.BatchesDrawnOnThread;
+                var cold = Counts();
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var warm = Counts();
+
+                Assert.Equal(runs.Length, Delta(cold, warm, GlyphTimerPhase.GlyphRun));
+                Assert.Equal(runs.Length, Delta(cold, warm, GlyphTimerPhase.MaskRunDraw));
+                Assert.Equal(runs.Length, Delta(cold, warm, GlyphTimerPhase.SpriteSetBuild));
+                Assert.True(Delta(cold, warm, GlyphTimerPhase.Rasterize) > 0);
+                Assert.True(Delta(cold, warm, GlyphTimerPhase.AtlasWrite) > 0);
+                Assert.Equal(1, Delta(cold, warm, GlyphTimerPhase.PageRewrap));
+                Assert.Equal(DrawingContextImpl.BatchesDrawnOnThread - batches,
+                    Delta(cold, warm, GlyphTimerPhase.BatchDraw));
+                Assert.Equal(1, Delta(cold, warm, GlyphTimerPhase.NativeDrawFresh));
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var after = Counts();
+
+                Assert.Equal(runs.Length, Delta(warm, after, GlyphTimerPhase.GlyphRun));
+                Assert.Equal(0, Delta(warm, after, GlyphTimerPhase.SpriteSetBuild));
+                Assert.Equal(0, Delta(warm, after, GlyphTimerPhase.Rasterize));
+                Assert.Equal(0, Delta(warm, after, GlyphTimerPhase.PageRewrap));
+                Assert.Equal(0, Delta(warm, after, GlyphTimerPhase.NativeDrawFresh));
+                Assert.Equal(Delta(warm, after, GlyphTimerPhase.BatchDraw), Delta(warm, after, GlyphTimerPhase.NativeDraw));
+                Assert.Equal(0, Delta(warm, after, GlyphTimerPhase.BackendDrawText));
+
+                GlyphPhaseTimers.Enabled = false;
+                Render(gpu, Draw, batched: true, out _);
+
+                Assert.Equal(after, Counts());
+            }
+            finally
+            {
+                GlyphPhaseTimers.Enabled = wasEnabled;
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Upright_Atlas_Text_Equals_Its_Corrected_Glyph_Masks_Drawn_One_By_One(GpuBackend backend,
             bool software)
         {

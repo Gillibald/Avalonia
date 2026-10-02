@@ -813,6 +813,14 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawGlyphRun(IBrush? foreground, IGlyphRunImpl glyphRun)
         {
+            var timer = GlyphPhaseTimers.Start();
+
+            DrawGlyphRunCore(foreground, glyphRun);
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.GlyphRun, timer);
+        }
+
+        private void DrawGlyphRunCore(IBrush? foreground, IGlyphRunImpl glyphRun)
+        {
             CheckLease();
 
             if (foreground is null)
@@ -863,8 +871,13 @@ namespace Avalonia.Skia
                     return;
                 }
 
-                if (MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
-                        effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode))
+                var maskTimer = GlyphPhaseTimers.Start();
+                var drawn = MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
+                    effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode);
+
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.MaskRunDraw, maskTimer);
+
+                if (drawn)
                 {
                     if (TextTierDiagnostics.CountTiers)
                     {
@@ -962,14 +975,21 @@ namespace Avalonia.Skia
             // included (Skia's skew slants them). Text layout splits colour glyphs out of the
             // run before it gets here, so only a direct glyph run draw of an oblique colour
             // face shows the slant; see ColorGlyphRunSplitter.
+            var setupTimer = GlyphPhaseTimers.Start();
+
             using (var paintWrapper = CreatePaint(_fillPaint, foreground, glyphRun.Bounds))
             {
                 var glyphRunImpl = (GlyphRunImpl)glyphRun;
 
                 var textBlob = glyphRunImpl.GetTextBlob(effectiveTextOptions, RenderOptions);
 
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.BackendTextSetup, setupTimer);
+
+                var drawTimer = GlyphPhaseTimers.Start();
+
                 Canvas.DrawText(textBlob, (float)glyphRun.BaselineOrigin.X,
                     (float)glyphRun.BaselineOrigin.Y, paintWrapper.Paint);
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.BackendDrawText, drawTimer);
             }
         }
 

@@ -127,7 +127,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             GlyphRasterDiagnostics.CountMaskCacheMiss();
 
+            var timer = GlyphPhaseTimers.Start();
             var built = build(key, state) ?? GlyphMask.Empty;
+
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.Rasterize, timer);
 
             lock (_lock)
             {

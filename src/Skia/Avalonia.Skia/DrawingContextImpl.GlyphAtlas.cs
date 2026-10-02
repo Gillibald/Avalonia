@@ -371,6 +371,8 @@ namespace Avalonia.Skia
                 return current;
             }
 
+            var timer = GlyphPhaseTimers.Start();
+
             if (page.Realized is not null)
             {
                 t_pageImagesReplaced++;
@@ -382,6 +384,7 @@ namespace Avalonia.Skia
 
             page.Realized = image;
             page.RealizedVersion = page.Version;
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
 
             return image;
         }
@@ -456,8 +459,17 @@ namespace Avalonia.Skia
             public SKImage Image { get; }
 
             /// <summary>Made on first use: only batches drawn from kept vertices sample the page through it.</summary>
-            public SKShader Shader =>
-                _shader ??= Image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, s_nearest);
+            public SKShader Shader => _shader ?? CreateShader();
+
+            private SKShader CreateShader()
+            {
+                var timer = GlyphPhaseTimers.Start();
+
+                _shader = Image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, s_nearest);
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.PageShader, timer);
+
+                return _shader;
+            }
 
             public void Dispose()
             {

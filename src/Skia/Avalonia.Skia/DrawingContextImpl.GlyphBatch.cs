@@ -259,6 +259,8 @@ namespace Avalonia.Skia
         /// </remarks>
         private void DrawPendingBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
+            var batchTimer = GlyphPhaseTimers.Start();
+
             CountBatchDrawn(reason, batch.RunCount);
 
             var page = batch.Page!;
@@ -266,23 +268,84 @@ namespace Avalonia.Skia
             var count = batch.RunCount;
             var spriteCount = batch.SpriteCount;
             var first = runs[0];
+            var imagesCreated = t_pageImagesCreated;
 
             // A page dropped from the atlas after its sprites were appended still holds their
             // coverage; its image is made for this draw alone, since the page keeps none.
             var transient = page.IsEvicted ? new GlyphPageImage(CreatePageImage(page)) : null;
             var image = transient ?? GetPageImage(page);
+            var freshImage = t_pageImagesCreated != imagesCreated;
+
+            var colored = batch.HasMixedColors;
+            var verticesTimer = GlyphPhaseTimers.Start();
+            var repeats = first.Backend.TryGetBatchVertices(runs, count, spriteCount, colored, out var vertices,
+                out var built);
+
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchVertices, verticesTimer);
+
+            var setupTimer = GlyphPhaseTimers.Start();
             var paint = SKPaintCache.Shared.Get();
             var oldTransform = Transform;
             var draws = 1;
-            var colored = batch.HasMixedColors;
+            SKRect[]? mergedSources = null;
+            SKRotationScaleMatrix[]? mergedPlacements = null;
+            SKColor[]? mergedColors = null;
 
             paint.Color = colored ? SKColors.White : batch.Color;
 
-            if (first.Backend.TryGetBatchVertices(runs, count, spriteCount, colored, out var vertices, out var built))
+            if (repeats)
             {
                 paint.Shader = image.Shader;
                 Transform = Matrix.CreateTranslation(first.X, first.Y);
+            }
+            else if (count == 1)
+            {
+                // A single run draws its own arrays under its placement, exactly as an unbatched
+                // draw would.
+                Transform = Matrix.CreateTranslation(first.X, first.Y);
+            }
+            else
+            {
+                // DrawAtlas takes the sprite count from the array lengths. Several runs are only
+                // batched together within one draw's sprites.
+                (mergedSources, mergedPlacements) = GetTransientSpriteArrays(spriteCount);
+                mergedColors = colored ? GetTransientSpriteColors(spriteCount) : null;
 
+                var offset = 0;
+
+                for (var i = 0; i < count; i++)
+                {
+                    var run = runs[i];
+                    var runSources = run.Backend.Sources;
+                    var runPlacements = run.Backend.Placements;
+
+                    Array.Copy(runSources, 0, mergedSources, offset, runSources.Length);
+
+                    if (mergedColors is not null)
+                    {
+                        mergedColors.AsSpan(offset, runSources.Length).Fill(run.Color);
+                    }
+
+                    for (var j = 0; j < runPlacements.Length; j++)
+                    {
+                        var placement = runPlacements[j];
+
+                        mergedPlacements[offset + j] = SKRotationScaleMatrix.CreateTranslation(placement.TX + run.X,
+                            placement.TY + run.Y);
+                    }
+
+                    offset += runSources.Length;
+                }
+
+                Transform = Matrix.Identity;
+            }
+
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawSetup, setupTimer);
+
+            var drawTimer = GlyphPhaseTimers.Start();
+
+            if (repeats)
+            {
                 foreach (var part in vertices)
                 {
                     Canvas.DrawVertices(part, SKBlendMode.Modulate, paint);
@@ -297,66 +360,39 @@ namespace Avalonia.Skia
             }
             else if (count == 1)
             {
-                // A single run draws its own arrays under its placement, exactly as an unbatched
-                // draw would.
-                Transform = Matrix.CreateTranslation(first.X, first.Y);
                 draws = DrawAtlasSprites(image.Image, first.Backend.Sources, first.Backend.Placements, s_nearest,
                     paint);
                 t_atlasGeometry += spriteCount;
             }
             else
             {
-                // DrawAtlas takes the sprite count from the array lengths. Several runs are only
-                // batched together within one draw's sprites.
-                var (sources, placements) = GetTransientSpriteArrays(spriteCount);
-                var colors = colored ? GetTransientSpriteColors(spriteCount) : null;
-                var offset = 0;
-
-                for (var i = 0; i < count; i++)
+                if (mergedColors is not null)
                 {
-                    var run = runs[i];
-                    var runSources = run.Backend.Sources;
-                    var runPlacements = run.Backend.Placements;
-
-                    Array.Copy(runSources, 0, sources, offset, runSources.Length);
-
-                    if (colors is not null)
-                    {
-                        colors.AsSpan(offset, runSources.Length).Fill(run.Color);
-                    }
-
-                    for (var j = 0; j < runPlacements.Length; j++)
-                    {
-                        var placement = runPlacements[j];
-
-                        placements[offset + j] = SKRotationScaleMatrix.CreateTranslation(placement.TX + run.X,
-                            placement.TY + run.Y);
-                    }
-
-                    offset += runSources.Length;
-                }
-
-                Transform = Matrix.Identity;
-
-                if (colors is not null)
-                {
-                    Canvas.DrawAtlas(image.Image, sources, placements, colors, SKBlendMode.Modulate, s_nearest, paint);
+                    Canvas.DrawAtlas(image.Image, mergedSources!, mergedPlacements!, mergedColors,
+                        SKBlendMode.Modulate, s_nearest, paint);
                 }
                 else
                 {
-                    Canvas.DrawAtlas(image.Image, sources, placements, s_nearest, paint);
+                    Canvas.DrawAtlas(image.Image, mergedSources!, mergedPlacements!, s_nearest, paint);
                 }
 
                 t_atlasGeometry += spriteCount;
             }
 
+            GlyphPhaseTimers.Stop(freshImage ? GlyphTimerPhase.NativeDrawFresh : GlyphTimerPhase.NativeDraw,
+                drawTimer);
+
+            var teardownTimer = GlyphPhaseTimers.Start();
+
             Transform = oldTransform;
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawTeardown, teardownTimer);
             t_atlasDraws += draws;
 
             batch.Clear();
             (t_pendingBatches ??= new Stack<PendingGlyphBatch>()).Push(batch);
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
         }
 
         private static readonly int s_flushReasonCount = Enum.GetValues<GlyphBatchFlushReason>().Length;

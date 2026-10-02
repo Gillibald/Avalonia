@@ -260,9 +260,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return true;
                 }
 
+                var timer = GlyphPhaseTimers.Start();
                 var (page, x, y) = Place(mask.Width + 1, mask.Height + 1, bucket, tick);
 
                 Write(page, mask, x, y);
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasWrite, timer);
                 page.Keys.Add((key, bucket));
                 page.LastUse = tick;
 
