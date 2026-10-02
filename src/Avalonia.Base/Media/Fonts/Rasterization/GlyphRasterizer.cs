@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 
@@ -37,7 +38,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Which instruction set accumulates and resolves coverage, apart from the small masks
-        /// <see cref="EffectivePath"/> moves to the scalar path. Every path produces the same bytes.
+        /// <see cref="EffectivePath(GlyphRasterizerPath, int, int)"/> moves to the scalar path. Every path
+        /// produces the same bytes.
         /// </summary>
         internal static GlyphRasterizerPath Path { get; set; } = DetectPath();
 
@@ -70,11 +72,33 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal const int PortableMinimumCells = 96;
 
         /// <summary>
+        /// The <see cref="PortableMinimumCells"/> of ARM64, where the scalar path is as fast as the
+        /// portable one's NEON crossing queue below this many cells and the portable path is
+        /// faster only above it.
+        /// </summary>
+        internal const int PortableMinimumCellsArm64 = 512;
+
+        private static readonly int s_portableMinimumCells =
+            GetPortableMinimumCells(RuntimeInformation.ProcessArchitecture);
+
+        /// <summary>The fewest cells the portable path rasterizes on <paramref name="architecture"/>.</summary>
+        internal static int GetPortableMinimumCells(Architecture architecture)
+            => architecture == Architecture.Arm64 ? PortableMinimumCellsArm64 : PortableMinimumCells;
+
+        /// <summary>
         /// The path that rasterizes a mask of <paramref name="width"/> by <paramref name="height"/>
         /// cells while <paramref name="selected"/> is the selected path.
         /// </summary>
         internal static GlyphRasterizerPath EffectivePath(GlyphRasterizerPath selected, int width, int height)
-            => selected == GlyphRasterizerPath.Portable && (long)width * height < PortableMinimumCells
+            => EffectivePath(selected, width, height, s_portableMinimumCells);
+
+        /// <summary>
+        /// <see cref="EffectivePath(GlyphRasterizerPath, int, int)"/> with the portable path's
+        /// minimum given, so each architecture's choice can be checked on any host.
+        /// </summary>
+        internal static GlyphRasterizerPath EffectivePath(GlyphRasterizerPath selected, int width, int height,
+            int portableMinimumCells)
+            => selected == GlyphRasterizerPath.Portable && (long)width * height < portableMinimumCells
                 ? GlyphRasterizerPath.Scalar
                 : selected;
 

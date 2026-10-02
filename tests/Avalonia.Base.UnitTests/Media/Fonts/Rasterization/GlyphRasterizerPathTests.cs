@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.IO;
 using Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType;
@@ -148,8 +149,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void Portable_Hands_Masks_Below_The_Minimum_To_The_Scalar_Path(int width, int height)
         {
             Assert.True(width * height < GlyphRasterizer.PortableMinimumCells);
-            Assert.Equal(GlyphRasterizerPath.Scalar,
-                GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width, height));
+            Assert.Equal(GlyphRasterizerPath.Scalar, GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width,
+                height, GlyphRasterizer.PortableMinimumCells));
         }
 
         [Theory]
@@ -162,8 +163,33 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void Portable_Keeps_Masks_From_The_Minimum_Up(int width, int height)
         {
             Assert.True((long)width * height >= GlyphRasterizer.PortableMinimumCells);
-            Assert.Equal(GlyphRasterizerPath.Portable,
-                GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width, height));
+            Assert.Equal(GlyphRasterizerPath.Portable, GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width,
+                height, GlyphRasterizer.PortableMinimumCells));
+        }
+
+        [Theory]
+        [InlineData(1, GlyphRasterizer.PortableMinimumCellsArm64 - 1, false)]
+        [InlineData(22, 23, false)]
+        [InlineData(16, 31, false)]
+        [InlineData(1, GlyphRasterizer.PortableMinimumCellsArm64, true)]
+        [InlineData(16, 32, true)]
+        [InlineData(23, 23, true)]
+        public void Portable_On_Arm64_Keeps_Masks_From_The_Arm64_Minimum_Up(int width, int height, bool portable)
+        {
+            var minimum = GlyphRasterizer.GetPortableMinimumCells(Architecture.Arm64);
+
+            Assert.Equal(GlyphRasterizer.PortableMinimumCellsArm64, minimum);
+            Assert.Equal(portable ? GlyphRasterizerPath.Portable : GlyphRasterizerPath.Scalar,
+                GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width, height, minimum));
+        }
+
+        [Theory]
+        [InlineData(Architecture.Wasm)]
+        [InlineData(Architecture.X64)]
+        [InlineData(Architecture.X86)]
+        public void Other_Architectures_Keep_The_WebAssembly_Minimum(Architecture architecture)
+        {
+            Assert.Equal(GlyphRasterizer.PortableMinimumCells, GlyphRasterizer.GetPortableMinimumCells(architecture));
         }
 
         [Theory]
