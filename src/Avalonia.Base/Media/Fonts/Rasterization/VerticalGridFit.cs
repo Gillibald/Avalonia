@@ -158,6 +158,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 xHeight, capHeight, ascender, descender, overshoot, ascenderOvershoot);
         }
 
+        /// <summary>The number of zone warps kept, one per quantized mask scale asked for.</summary>
+        internal int CachedWarpCount => _warps.Count;
+
         /// <summary>The zone warp for a quantized mask scale; identity when no zones measured.</summary>
         public AxisWarp GetWarp(ushort scaleQ)
             => _warps.GetOrAdd(scaleQ, static (key, self) => self.BuildWarp(key), this);

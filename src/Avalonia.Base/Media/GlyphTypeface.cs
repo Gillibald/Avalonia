@@ -2644,6 +2644,25 @@ namespace Avalonia.Media
         /// to the fitted outline, and the side bearings the hinter reads for its phantom
         /// points must be those of the real glyph, not of the emboldened or slanted box.
         /// </remarks>
+        /// <summary>The number of bytecode hinters kept, one per quantized size and mask mode.</summary>
+        internal int TrueTypeHinterCount
+        {
+            get
+            {
+                var hinters = _trueTypeHinters;
+
+                if (hinters is null)
+                {
+                    return 0;
+                }
+
+                lock (hinters)
+                {
+                    return hinters.Count;
+                }
+            }
+        }
+
         internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? GetTrueTypeHinter(
             ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
         {
