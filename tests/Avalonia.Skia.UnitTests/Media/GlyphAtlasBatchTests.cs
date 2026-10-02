@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting;
@@ -93,6 +94,106 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 DisposeAll(runs);
             }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Lines_Alternating_Typefaces_And_Colours_Draw_One_Atlas_Call_Per_Page_And_Colour(GpuBackend backend,
+            bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
+
+            var noto = LoadAsset("NotoSans-Italic.ttf");
+            var brushes = new IBrush[] { Brushes.Black, new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90)) };
+
+            // Thirty lines of a paragraph that never touch one another, the typeface changing
+            // every line and the colour every other line: two pages, two colours.
+            var runs = Enumerable.Range(0, 30)
+                .Select(i => WideRunMaskTests.CreateRun(i % 2 == 0 ? inter : noto, s_lines[i % s_lines.Length], 9,
+                    new Point(6.3, 12 + i * 11.6)))
+                .ToArray();
+
+            void Draw(DrawingContextImpl context)
+            {
+                for (var i = 0; i < runs.Length; i++)
+                {
+                    context.DrawGlyphRun(brushes[i / 2 % 2], runs[i]);
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var batched = Render(gpu, Draw, batched: true, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, batched, "alternating lines");
+                Assert.Equal(4, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Overlapping_Runs_Of_Other_Pages_And_Colours_Keep_Their_Order(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
+
+            var noto = LoadAsset("NotoSans-Italic.ttf");
+            var red = new ImmutableSolidColorBrush(Color.FromArgb(0xC0, 0xD0, 0x20, 0x10));
+
+            // Each run covers the one before it: none of them may be drawn out of order.
+            var first = WideRunMaskTests.CreateRun(inter, "Overlapping words", 30, new Point(10, 60));
+            var second = WideRunMaskTests.CreateRun(noto, "Overlapping words", 30, new Point(14, 66));
+            var third = WideRunMaskTests.CreateRun(inter, "Overlapping words", 30, new Point(18, 72));
+
+            void Draw(DrawingContextImpl context)
+            {
+                context.DrawGlyphRun(Brushes.Black, first);
+                context.DrawGlyphRun(red, second);
+                context.DrawGlyphRun(Brushes.Black, third);
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Render(gpu, Draw, batched: true, out _);
+
+                TransformedAtlasTests.AssertEqual(expected, Render(gpu, Draw, batched: true, out var draws),
+                    "overlapping runs");
+                Assert.Equal(3, draws);
+            }
+            finally
+            {
+                first.Dispose();
+                second.Dispose();
+                third.Dispose();
+            }
+        }
+
+        private static GlyphTypeface LoadAsset(string name)
+        {
+            var directory = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
+
+            while (directory is not null && directory.Name != "tests")
+            {
+                directory = directory.Parent;
+            }
+
+            var bytes = System.IO.File.ReadAllBytes(System.IO.Path.Combine(directory!.FullName, "Avalonia.RenderTests",
+                "Assets", name));
+
+            Assert.True(SfntFace.TryLoad(new System.IO.MemoryStream(bytes), out var face));
+
+            return new GlyphTypeface(face);
         }
 
         [Theory]
