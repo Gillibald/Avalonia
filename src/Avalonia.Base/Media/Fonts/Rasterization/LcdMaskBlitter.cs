@@ -104,7 +104,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var count = x1 - x0;
                     var done = 0;
 
-                    if (path == GlyphBlitPath.Portable)
+                    // The ARM64 path's sixteen-pixel planes gain nothing over the portable steps
+                    // here, whose widening and narrowing already lower to single NEON instructions.
+                    if (path is GlyphBlitPath.Portable or GlyphBlitPath.AdvSimd)
                     {
                         done = BlendRowPortable<TDivide>(m + offset, p + offset, destination, count, swap);
                     }

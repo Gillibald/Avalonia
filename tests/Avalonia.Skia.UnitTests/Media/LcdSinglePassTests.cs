@@ -182,16 +182,17 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(nameof(GlyphBlitPath.Portable), false, nameof(GlyphBlitArithmetic.Rounded))]
         [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Pipeline))]
         [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.AdvSimd), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.AdvSimd), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.AdvSimd), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.AdvSimd), true, nameof(GlyphBlitArithmetic.Rounded))]
         public unsafe void The_Single_Pass_Blends_Every_Channel_By_The_Two_Pass_Formula(string pathName, bool rgba,
             string arithmeticName)
         {
             var arithmetic = Enum.Parse<GlyphBlitArithmetic>(arithmeticName);
             var path = Enum.Parse<GlyphBlitPath>(pathName);
 
-            Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
-            Assert.SkipWhen(path == GlyphBlitPath.Ssse3 && !System.Runtime.Intrinsics.X86.Ssse3.IsSupported, "no SSSE3");
-            Assert.SkipWhen(path == GlyphBlitPath.Portable && !System.Runtime.Intrinsics.Vector128.IsHardwareAccelerated,
-                "no hardware-accelerated Vector128");
+            Assert.SkipUnless(GlyphMaskBlitter.IsSupported(path), $"{path} is not supported on this machine.");
 
             const int surfaceWidth = 71;
             const int surfaceHeight = 40;

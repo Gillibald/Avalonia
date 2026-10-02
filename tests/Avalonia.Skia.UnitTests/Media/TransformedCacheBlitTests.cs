@@ -40,6 +40,11 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 yield return new object[] { nameof(GlyphBlitPath.Portable) };
             }
+
+            if (GlyphMaskBlitter.IsSupported(GlyphBlitPath.AdvSimd))
+            {
+                yield return new object[] { nameof(GlyphBlitPath.AdvSimd) };
+            }
         }
 
         public static IEnumerable<object[]> Scenes()

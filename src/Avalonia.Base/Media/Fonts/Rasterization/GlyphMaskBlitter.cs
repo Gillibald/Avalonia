@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -84,14 +85,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <para>
     /// The tint scaled by the corrected coverage depends on the coverage byte alone, so a blend
     /// looks it up in a 256-entry table of premultiplied source pixels made once per tint and
-    /// coverage table: the AVX2 path gathers eight at a time. Only the destination's share,
-    /// scaled by the source's inverse alpha, is computed per pixel.
+    /// coverage table: the AVX2 path gathers eight at a time. ARM64 has no gather, so its path
+    /// looks the coverage up in the coverage table instead and scales the tint by it per channel
+    /// with the table's own rounding. Only the destination's share, scaled by the source's
+    /// inverse alpha, is computed per pixel.
     /// </para>
     /// <para>
-    /// The vector paths process eight (AVX2) or four (SSSE3, portable) pixels per step in 16-bit lanes;
-    /// both round <c>a * b / 255</c> as <c>(v + (v &gt;&gt; 8)) &gt;&gt; 8</c> with
-    /// <c>v = a * b + 128</c>, which equals the scalar <c>(a * b + 127) / 255</c> for every
-    /// pair of bytes.
+    /// The vector paths process sixteen or eight (ARM64), eight (AVX2) or four (SSSE3, portable)
+    /// pixels per step in 16-bit lanes; all round <c>a * b / 255</c> as
+    /// <c>(v + (v &gt;&gt; 8)) &gt;&gt; 8</c> with <c>v = a * b + 128</c>, which equals the scalar
+    /// <c>(a * b + 127) / 255</c> for every pair of bytes.
     /// </para>
     /// </remarks>
     internal static class GlyphMaskBlitter
@@ -260,6 +263,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             fixed (byte* alpha = coverage)
             fixed (uint* sourcePointer = sources)
+            fixed (byte* correction = table ?? s_identity)
             {
                 var fillLanes = Vector256.Create(tint);
 
@@ -273,10 +277,18 @@ namespace Avalonia.Media.Fonts.Rasterization
                     // Glyph rows are short, often under sixteen pixels: a row at least one step
                     // wide ends with an overlapping step, and only narrower rows reach the
                     // smaller steps or the scalar loop.
-                    if (path == GlyphBlitPath.Portable)
+#if NET9_0_OR_GREATER
+                    if (path == GlyphBlitPath.AdvSimd)
                     {
-                        done = BlendRowPortable<TOver>(source, destination, count, sourcePointer, fill,
+                        done = BlendRowAdvSimd<TOver>(source, destination, count, correction, tint, fill,
                             fillLanes.GetLower());
+                    }
+#endif
+
+                    if (path is GlyphBlitPath.Portable or GlyphBlitPath.AdvSimd)
+                    {
+                        done += BlendRowPortable<TOver>(source + done, destination + done, count - done,
+                            sourcePointer, fill, fillLanes.GetLower());
                     }
 
                     if (path == GlyphBlitPath.Avx2)
@@ -298,8 +310,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static GlyphBlitPath DetectPath()
             => Avx2.IsSupported ? GlyphBlitPath.Avx2
                 : Ssse3.IsSupported ? GlyphBlitPath.Ssse3
+                : IsSupported(GlyphBlitPath.AdvSimd) ? GlyphBlitPath.AdvSimd
                 : Vector128.IsHardwareAccelerated ? GlyphBlitPath.Portable
                 : GlyphBlitPath.Scalar;
+
+        /// <summary>Whether this machine and runtime can run <paramref name="path"/>.</summary>
+        internal static bool IsSupported(GlyphBlitPath path) => path switch
+        {
+            GlyphBlitPath.Avx2 => Avx2.IsSupported,
+            GlyphBlitPath.Ssse3 => Ssse3.IsSupported,
+#if NET9_0_OR_GREATER
+            GlyphBlitPath.AdvSimd => AdvSimd.Arm64.IsSupported,
+#else
+            GlyphBlitPath.AdvSimd => false,
+#endif
+            GlyphBlitPath.Portable => Vector128.IsHardwareAccelerated,
+            _ => true,
+        };
 
         private static byte[] CreateIdentity()
         {
@@ -515,6 +542,217 @@ namespace Avalonia.Media.Fonts.Rasterization
             Vector128.Narrow(resultLow, resultHigh).Store((byte*)pixels);
         }
 
+#if NET9_0_OR_GREATER
+        /// <summary>
+        /// The entry of a 256-byte table for every byte of <paramref name="indices"/>, by four
+        /// lookups of 64 bytes: the first yields zero for indices past its quarter, the others
+        /// keep what is there. The quarters load from the table at each call, which keeps each
+        /// lookup's four registers consecutive.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe Vector128<byte> Lookup256(byte* table, Vector128<byte> indices)
+        {
+            var quarter = Vector128.Create((byte)64);
+            var result = AdvSimd.Arm64.VectorTableLookup((Vector128.Load(table), Vector128.Load(table + 16),
+                Vector128.Load(table + 32), Vector128.Load(table + 48)), indices);
+
+            indices -= quarter;
+            result = AdvSimd.Arm64.VectorTableLookupExtension(result, (Vector128.Load(table + 64),
+                Vector128.Load(table + 80), Vector128.Load(table + 96), Vector128.Load(table + 112)), indices);
+            indices -= quarter;
+            result = AdvSimd.Arm64.VectorTableLookupExtension(result, (Vector128.Load(table + 128),
+                Vector128.Load(table + 144), Vector128.Load(table + 160), Vector128.Load(table + 176)), indices);
+            indices -= quarter;
+
+            return AdvSimd.Arm64.VectorTableLookupExtension(result, (Vector128.Load(table + 192),
+                Vector128.Load(table + 208), Vector128.Load(table + 224), Vector128.Load(table + 240)), indices);
+        }
+
+        /// <summary>
+        /// Sixteen pixels per step on ARM64 instead of four source-table loads per four pixels:
+        /// the coverage is corrected by table lookups, the tint scaled by it per channel with the
+        /// rounding <see cref="GetSourceTable"/> uses (so every source byte equals the table's),
+        /// and the destination blended as four byte planes, loaded and stored interleaved.
+        /// Returns the pixels blended; rows narrower than a step return zero.
+        /// </summary>
+        // Inlined into the row loop: a call per glyph row costs as much as blending it.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe int BlendRowAdvSimd<TOver>(byte* source, uint* destination, int count,
+            byte* correction, uint tint, bool fill, Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
+        {
+            if (count < 16)
+            {
+                return count < 8 ? 0 : BlendRowEightAdvSimd<TOver>(source, destination, count, correction, tint, fill,
+                    fillLanes);
+            }
+
+            var i = 0;
+
+            for (; i + 16 <= count; i += 16)
+            {
+                BlendSixteenAdvSimd<TOver>(Vector128.Load(source + i), destination + i, correction, tint, fill,
+                    fillLanes);
+            }
+
+            // The last pixels blend as the last sixteen with the coverage of those already
+            // blended masked to zero, which leaves them as they are.
+            var rest = count - i;
+
+            if (rest > 0)
+            {
+                var skipped = Vector128.GreaterThanOrEqual(Vector128.Create((byte)0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+                    12, 13, 14, 15), Vector128.Create((byte)(16 - rest)));
+
+                BlendSixteenAdvSimd<TOver>(Vector128.Load(source + count - 16) & skipped, destination + count - 16,
+                    correction, tint, fill, fillLanes);
+            }
+
+            return count;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe void BlendSixteenAdvSimd<TOver>(Vector128<byte> coverage, uint* pixels,
+            byte* correction, uint tint, bool fill, Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
+        {
+            if (AdvSimd.Arm64.MaxAcross(coverage).ToScalar() == 0)
+            {
+                return;
+            }
+
+            if (fill && AdvSimd.Arm64.MinAcross(coverage).ToScalar() == 255)
+            {
+                fillLanes.Store(pixels);
+                fillLanes.Store(pixels + 4);
+                fillLanes.Store(pixels + 8);
+                fillLanes.Store(pixels + 12);
+                return;
+            }
+
+            var corrected = Lookup256(correction, coverage);
+            var (d0, d1, d2, d3) = AdvSimd.Arm64.Load4xVector128AndUnzip((byte*)pixels);
+
+            var sourceAlpha = ScaleByCoverage((byte)(tint >> 24), corrected);
+
+            var r0 = AdvSimd.AddSaturate(ScaleByCoverage((byte)tint, corrected),
+                ScaleDestination<TOver>(d0, sourceAlpha));
+            var r1 = AdvSimd.AddSaturate(ScaleByCoverage((byte)(tint >> 8), corrected),
+                ScaleDestination<TOver>(d1, sourceAlpha));
+            var r2 = AdvSimd.AddSaturate(ScaleByCoverage((byte)(tint >> 16), corrected),
+                ScaleDestination<TOver>(d2, sourceAlpha));
+            var r3 = AdvSimd.AddSaturate(sourceAlpha, ScaleDestination<TOver>(d3, sourceAlpha));
+
+            AdvSimd.Arm64.StoreVectorAndZip((byte*)pixels, (r0, r1, r2, r3));
+        }
+
+        /// <summary>
+        /// <see cref="BlendRowAdvSimd{TOver}"/> for rows of eight to fifteen pixels, eight per step
+        /// and the last eight overlapping with the blended pixels' coverage masked to zero.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe int BlendRowEightAdvSimd<TOver>(byte* source, uint* destination, int count,
+            byte* correction, uint tint, bool fill, Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
+        {
+            BlendEightAdvSimd<TOver>(Vector64.Load(source), destination, correction, tint, fill, fillLanes);
+
+            var rest = count - 8;
+
+            if (rest > 0)
+            {
+                var skipped = Vector64.GreaterThanOrEqual(Vector64.Create((byte)0, 1, 2, 3, 4, 5, 6, 7),
+                    Vector64.Create((byte)(8 - rest)));
+
+                BlendEightAdvSimd<TOver>(Vector64.Load(source + count - 8) & skipped, destination + count - 8,
+                    correction, tint, fill, fillLanes);
+            }
+
+            return count;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe void BlendEightAdvSimd<TOver>(Vector64<byte> coverage, uint* pixels, byte* correction,
+            uint tint, bool fill, Vector128<uint> fillLanes)
+            where TOver : struct, ISourceOver
+        {
+            var bits = coverage.AsUInt64().ToScalar();
+
+            if (bits == 0)
+            {
+                return;
+            }
+
+            if (fill && bits == ulong.MaxValue)
+            {
+                fillLanes.Store(pixels);
+                fillLanes.Store(pixels + 4);
+                return;
+            }
+
+            var corrected = Lookup256(correction, coverage.ToVector128Unsafe()).GetLower();
+            var (d0, d1, d2, d3) = AdvSimd.Load4xVector64AndUnzip((byte*)pixels);
+
+            var sourceAlpha = ScaleByCoverage((byte)(tint >> 24), corrected);
+
+            AdvSimd.StoreVectorAndZip((byte*)pixels, (
+                AdvSimd.AddSaturate(ScaleByCoverage((byte)tint, corrected), ScaleDestination<TOver>(d0, sourceAlpha)),
+                AdvSimd.AddSaturate(ScaleByCoverage((byte)(tint >> 8), corrected),
+                    ScaleDestination<TOver>(d1, sourceAlpha)),
+                AdvSimd.AddSaturate(ScaleByCoverage((byte)(tint >> 16), corrected),
+                    ScaleDestination<TOver>(d2, sourceAlpha)),
+                AdvSimd.AddSaturate(sourceAlpha, ScaleDestination<TOver>(d3, sourceAlpha))));
+        }
+
+        /// <summary>The eight-byte <see cref="ScaleByCoverage(byte, Vector128{byte})"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector64<byte> ScaleByCoverage(byte channel, Vector64<byte> coverage)
+        {
+            var product = AdvSimd.MultiplyWideningLower(coverage, Vector64.Create(channel));
+
+            return AdvSimd.ShiftRightLogicalRoundedNarrowingLower(
+                AdvSimd.ShiftRightLogicalRoundedAdd(product, product, 8), 8);
+        }
+
+        /// <summary>The eight-byte <see cref="ScaleDestination{TOver}(Vector128{byte}, Vector128{byte})"/>.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector64<byte> ScaleDestination<TOver>(Vector64<byte> destination, Vector64<byte> sourceAlpha)
+            where TOver : struct, ISourceOver
+            => AdvSimd.ExtractNarrowingLower(TOver.Scale(AdvSimd.ZeroExtendWideningLower(destination),
+                AdvSimd.ZeroExtendWideningLower(sourceAlpha)));
+
+        /// <summary>
+        /// <see cref="Multiply(int, int)"/> of one tint channel by every corrected coverage byte:
+        /// a widening multiply, then <c>(v + ((v + 128) &gt;&gt; 8) + 128) &gt;&gt; 8</c> by a rounding
+        /// shift-accumulate and a rounding narrowing shift.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<byte> ScaleByCoverage(byte channel, Vector128<byte> coverage)
+        {
+            var factor = Vector64.Create(channel);
+            var low = AdvSimd.MultiplyWideningLower(coverage.GetLower(), factor);
+            var high = AdvSimd.MultiplyWideningUpper(coverage, Vector128.Create(channel));
+
+            low = AdvSimd.ShiftRightLogicalRoundedAdd(low, low, 8);
+            high = AdvSimd.ShiftRightLogicalRoundedAdd(high, high, 8);
+
+            return AdvSimd.ShiftRightLogicalRoundedNarrowingUpper(
+                AdvSimd.ShiftRightLogicalRoundedNarrowingLower(low, 8), high, 8);
+        }
+
+        /// <summary>
+        /// The destination's share of the blend for sixteen bytes of one channel, which never
+        /// exceeds 255, in 16-bit lanes.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector128<byte> ScaleDestination<TOver>(Vector128<byte> destination,
+            Vector128<byte> sourceAlpha)
+            where TOver : struct, ISourceOver
+            => Vector128.Narrow(
+                TOver.Scale(Vector128.WidenLower(destination), Vector128.WidenLower(sourceAlpha)),
+                TOver.Scale(Vector128.WidenUpper(destination), Vector128.WidenUpper(sourceAlpha)));
+#endif
+
         // Inlined into the row loop: a call per glyph row costs as much as blending it.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe int BlendRowAvx2<TOver>(byte* source, uint* destination, int count, uint* sources,
@@ -718,5 +956,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// which lower to NEON on ARM64 and to WebAssembly SIMD in the browser.
         /// </summary>
         Portable,
+
+        /// <summary>
+        /// Sixteen pixels per step with ARM64 table lookups and interleaved loads and stores,
+        /// the portable steps and the scalar loop finishing what is left.
+        /// </summary>
+        AdvSimd,
     }
 }
