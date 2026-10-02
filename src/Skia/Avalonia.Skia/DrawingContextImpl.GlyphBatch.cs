@@ -11,8 +11,9 @@ namespace Avalonia.Skia
         // or colours fills a few; more than this is flushed rather than searched.
         private const int MaxPendingBatches = 8;
 
-        // Runs pending across all batches before they are drawn: a run joining a batch is
-        // checked against every run of the others, so this bounds that work per run.
+        // Runs pending in the other batches before a run joins one: the run is checked against
+        // every run of the others, so this bounds that work per run. A batch's own runs are not
+        // tested against it, so text of one page and colour stays one batch however many runs.
         private const int MaxPendingRuns = 128;
 
         // Contexts are made per frame, so pending batches and their run lists come from a
@@ -86,7 +87,7 @@ namespace Avalonia.Skia
                 target = null;
             }
 
-            if (_pendingRunCount >= MaxPendingRuns || OverlapsOtherPendingBatch(bounds, target))
+            if (_pendingRunCount - (target?.RunCount ?? 0) >= MaxPendingRuns || OverlapsOtherPendingBatch(bounds, target))
             {
                 FlushAtlasBatch();
                 target = null;
