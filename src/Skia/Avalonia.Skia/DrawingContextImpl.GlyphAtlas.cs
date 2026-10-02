@@ -111,14 +111,9 @@ namespace Avalonia.Skia
 
             var clip = Canvas.DeviceClipBounds;
 
-            // Skia's sprite blitter takes a BGRA bitmap drawn 1:1 when the surface holds the
-            // platform's native BGRA order; onto any other surface its raster pipeline converts.
             target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, format.Width, format.Height,
                 new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
-                format.Kind == BlitSurfaceKind.Rgba,
-                format.Kind == BlitSurfaceKind.Bgra && SKImageInfo.PlatformColorType == SKColorType.Bgra8888
-                    ? GlyphBlitArithmetic.Sprite
-                    : GlyphBlitArithmetic.Pipeline);
+                format.Kind == BlitSurfaceKind.Rgba, GetBlitArithmetic(format.Kind));
 
             return true;
         }
@@ -139,6 +134,25 @@ namespace Avalonia.Skia
         }
 
         private readonly record struct BlitSurfaceFormat(BlitSurfaceKind Kind, int Width, int Height);
+
+        /// <summary>
+        /// How Skia rounds a premultiplied BGRA bitmap drawn 1:1 onto a surface of
+        /// <paramref name="kind"/>. Its ARM64 code divides by 255 with rounding in the sprite
+        /// blitter and in the 8-bit raster pipeline alike. Elsewhere the sprite blitter takes the
+        /// bitmap when the surface holds the platform's native BGRA order, and the raster
+        /// pipeline converts onto any other surface.
+        /// </summary>
+        private static GlyphBlitArithmetic GetBlitArithmetic(BlitSurfaceKind kind)
+        {
+            if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+            {
+                return GlyphBlitArithmetic.Rounded;
+            }
+
+            return kind == BlitSurfaceKind.Bgra && SKImageInfo.PlatformColorType == SKColorType.Bgra8888
+                ? GlyphBlitArithmetic.Sprite
+                : GlyphBlitArithmetic.Pipeline;
+        }
 
         IDisposable ITransformedGlyphContext.CreateAtlasBatch(ReadOnlySpan<GlyphAtlasSprite> sprites,
             GlyphMask? standalone)
