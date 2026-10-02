@@ -195,6 +195,9 @@ namespace Avalonia.Media.Fonts
         public static partial IntPtr CTFontCopyFontDescriptor(IntPtr font);
 
         [LibraryImport(CoreTextLibrary)]
+        public static partial IntPtr CTFontCopyPostScriptName(IntPtr font);
+
+        [LibraryImport(CoreTextLibrary)]
         [return: MarshalAs(UnmanagedType.U1)]
         public static partial bool CTFontGetGlyphsForCharacters(IntPtr font, char* characters, ushort* glyphs, nint count);
 

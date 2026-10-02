@@ -25,6 +25,8 @@ namespace Avalonia.Media.Fonts
         // entry point does not throw on every match.
         private static bool s_hasCreateForStringWithLanguage = true;
 
+        private const string LastResortPostScriptName = "LastResort";
+
         /// <summary>
         /// Initializes CoreText lazily on first use: constructing (and registering) the provider
         /// does no native work, and a missing framework turns every query into a miss instead of
@@ -364,11 +366,13 @@ namespace Avalonia.Media.Fonts
                     try
                     {
                         // CTFontCreateForString answers with the base font when nothing covers the
-                        // codepoint; only a font with real coverage counts as a match.
+                        // codepoint, or with the system's last-resort font, which maps every
+                        // codepoint to a placeholder glyph naming its block; only a font with real
+                        // coverage counts as a match.
                         var glyphs = stackalloc ushort[2];
 
                         if (!CTNative.CTFontGetGlyphsForCharacters(matchedFont, characters, glyphs, length) ||
-                            glyphs[0] == 0)
+                            glyphs[0] == 0 || IsLastResort(matchedFont))
                         {
                             return IntPtr.Zero;
                         }
@@ -388,6 +392,25 @@ namespace Avalonia.Media.Fonts
             finally
             {
                 CTNative.CFRelease(baseFont);
+            }
+        }
+
+        private static bool IsLastResort(IntPtr font)
+        {
+            var cfName = CTNative.CTFontCopyPostScriptName(font);
+
+            if (cfName == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                return string.Equals(CTNative.GetString(cfName), LastResortPostScriptName, StringComparison.Ordinal);
+            }
+            finally
+            {
+                CTNative.CFRelease(cfName);
             }
         }
 
