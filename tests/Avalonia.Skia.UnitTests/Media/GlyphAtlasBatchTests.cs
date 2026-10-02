@@ -512,6 +512,59 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_Run_Drawn_Again_And_Again_As_Its_Inputs_Change_Draws_The_Pixels_Of_A_Fresh_Run(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, s_lines[1], 13, new Point(6.3, 30));
+
+            var blue = new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90));
+            var shifted = Matrix.CreateTranslation(10, 20);
+            var steps = new (Matrix Transform, TextRenderingMode Rendering, TextHintingMode Hinting, IBrush Brush)[]
+            {
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (Matrix.CreateTranslation(10, 27), TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (Matrix.CreateTranslation(13, -4), TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (Matrix.CreateTranslation(13, -4), TextRenderingMode.Antialias, TextHintingMode.Strong, Brushes.Black),
+                (Matrix.CreateTranslation(15.3, -4), TextRenderingMode.Antialias, TextHintingMode.Strong, Brushes.Black),
+                (Matrix.CreateTranslation(10.4, 20), TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (Matrix.CreateTranslation(10.4, 20), TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.None, Brushes.Black),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.None, Brushes.Black),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.Strong, Brushes.Black),
+                (shifted, TextRenderingMode.Alias, TextHintingMode.Unspecified, Brushes.Black),
+                (shifted, TextRenderingMode.Alias, TextHintingMode.Unspecified, Brushes.Black),
+                (Matrix.CreateScale(1.25, 1.25) * shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (Matrix.CreateScale(1.25, 1.25) * shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, blue),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, blue),
+                (shifted, TextRenderingMode.Antialias, TextHintingMode.Unspecified, Brushes.Black),
+            };
+
+            for (var i = 0; i < steps.Length; i++)
+            {
+                var step = steps[i];
+
+                void Draw(DrawingContextImpl context, ManagedGlyphRunImpl drawn)
+                {
+                    context.Transform = step.Transform;
+                    Assert.True(MaskGlyphRunRenderer.TryDraw(context, drawn, step.Brush, step.Rendering, step.Hinting));
+                }
+
+                var again = Render(gpu, context => Draw(context, run), batched: true, out _);
+
+                using var fresh = WideRunMaskTests.CreateRun(typeface, s_lines[1], 13, new Point(6.3, 30));
+
+                var expected = Render(gpu, context => Draw(context, fresh), batched: true, out _);
+
+                TransformedAtlasTests.AssertEqual(expected, again, $"step {i}");
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Warm_Frames_Draw_The_Pixels_Of_Their_Runs_Drawn_One_By_One_As_The_Batch_Changes(GpuBackend backend,
             bool software)
         {
