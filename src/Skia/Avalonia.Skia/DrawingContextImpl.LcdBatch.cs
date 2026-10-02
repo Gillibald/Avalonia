@@ -114,6 +114,7 @@ namespace Avalonia.Skia
             }
 
             AppendToLcdBatch(entry, x, y, tint);
+            CountClippedRun(SKRect.Create(x, y, entry.Width, entry.Height));
 
             return true;
         }

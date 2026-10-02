@@ -973,6 +973,7 @@ namespace Avalonia.Skia
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipRect(clip.ToSKRect());
+            TrackRectClip(clip);
         }
 
         public void PushClip(RoundedRect clip)
@@ -994,6 +995,7 @@ namespace Avalonia.Skia
                 });
 
             Canvas.ClipRoundRect(roundRect, antialias:true);
+            TrackShapeClip(clip.Rect);
 
             // Should not need to reset as SetRectRadii overrides the values.
             SKRoundRectCache.Shared.Return(roundRect);
@@ -1005,6 +1007,7 @@ namespace Avalonia.Skia
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipRegion(r);
+            TrackRegionClip(r);
         }
 
         private void RestoreCanvas()
@@ -1018,6 +1021,7 @@ namespace Avalonia.Skia
         {
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             RestoreCanvas();
+            UntrackClipLevel();
         }
 
         public void PushLayer(Rect bounds)
@@ -1150,6 +1154,7 @@ namespace Avalonia.Skia
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipPath(((GeometryImpl)clip).FillPath, SKClipOperation.Intersect, true);
+            TrackShapeClip(clip.Bounds);
         }
 
         /// <inheritdoc />
@@ -1157,6 +1162,7 @@ namespace Avalonia.Skia
         {
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             RestoreCanvas();
+            UntrackClipLevel();
         }
 
         /// <inheritdoc />

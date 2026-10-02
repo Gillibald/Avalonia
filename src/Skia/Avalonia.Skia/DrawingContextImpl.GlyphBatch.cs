@@ -132,6 +132,7 @@ namespace Avalonia.Skia
 
             target.Add(new BatchedRun(backend, x, y), bounds);
             _pendingRunCount++;
+            CountClippedRun(bounds);
 
             return true;
         }

@@ -16,7 +16,9 @@ namespace TextStress.Scenarios
     /// Inter Regular instead of the family and weight mix, <c>--colors 1</c> draws every text in
     /// one colour instead of four, and <c>--motion static</c> keeps the list at its top and
     /// alternates the list background between two near-whites every frame, so every row is drawn
-    /// again without new rows, glyphs or atlas writes.
+    /// again without new rows, glyphs or atlas writes. <c>--clip off</c> turns off
+    /// <see cref="Visual.ClipToBounds"/> on every row text, which no row text needs here, so no
+    /// clip is pushed around the texts.
     /// </remarks>
     internal sealed class ListFlingScenario : Scenario
     {
@@ -48,6 +50,7 @@ namespace TextStress.Scenarios
         private readonly bool _singleFace;
         private readonly bool _singleColor;
         private readonly bool _static;
+        private readonly bool _clipTexts;
         private ListBox? _list;
         private int _lastFrame = -1;
         private double _offset;
@@ -78,6 +81,12 @@ namespace TextStress.Scenarios
                 "static" => true,
                 var other => throw new ArgumentException($"--motion must be fling or static, not '{other}'.")
             };
+            _clipTexts = options.GetString("clip", "on") switch
+            {
+                "on" => true,
+                "off" => false,
+                var other => throw new ArgumentException($"--clip must be on or off, not '{other}'.")
+            };
         }
 
         public override string Name => "list-fling";
@@ -85,7 +94,7 @@ namespace TextStress.Scenarios
         public override string Describe() =>
             FormattableString.Invariant($"rows={_rowCount};speed={_speed};decay={_decay};") +
             FormattableString.Invariant($"fonts={(_singleFace ? 1 : s_families.Length)};colors={(_singleColor ? 1 : 4)};") +
-            (_static ? "motion=static" : "motion=fling");
+            (_static ? "motion=static" : "motion=fling") + (_clipTexts ? ";clip=on" : ";clip=off");
 
         public override Control CreateView(int n, double scaling)
         {
@@ -133,7 +142,7 @@ namespace TextStress.Scenarios
             _list = new ListBox
             {
                 ItemsSource = rows,
-                ItemTemplate = new RowTemplate(_singleFace ? families[0] : null, _singleColor),
+                ItemTemplate = new RowTemplate(_singleFace ? families[0] : null, _singleColor, _clipTexts),
                 Background = s_background
             };
 
@@ -219,14 +228,16 @@ namespace TextStress.Scenarios
         {
             private readonly FontFamily? _family;
             private readonly bool _singleColor;
+            private readonly bool _clipTexts;
 
-            public RowTemplate(FontFamily? family, bool singleColor)
+            public RowTemplate(FontFamily? family, bool singleColor, bool clipTexts)
             {
                 _family = family;
                 _singleColor = singleColor;
+                _clipTexts = clipTexts;
             }
 
-            public Control Build(object? param) => new RowView(_family, _singleColor);
+            public Control Build(object? param) => new RowView(_family, _singleColor, _clipTexts);
 
             public bool Match(object? data) => data is Row;
         }
@@ -261,8 +272,14 @@ namespace TextStress.Scenarios
 
             /// <param name="family">The family of every text, or null for the mixed defaults.</param>
             /// <param name="singleColor">Whether every text is drawn in one colour.</param>
-            public RowView(FontFamily? family, bool singleColor)
+            /// <param name="clipTexts">Whether the texts clip to their bounds, as they do by default.</param>
+            public RowView(FontFamily? family, bool singleColor, bool clipTexts)
             {
+                _index.ClipToBounds = clipTexts;
+                _title.ClipToBounds = clipTexts;
+                _detail.ClipToBounds = clipTexts;
+                _meta.ClipToBounds = clipTexts;
+
                 if (family is not null)
                 {
                     _index.FontFamily = family;

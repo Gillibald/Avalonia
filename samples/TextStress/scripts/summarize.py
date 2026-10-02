@@ -29,11 +29,14 @@ NUMERIC = ["interval_ms", "render_ms", "render_cpu_ms", "ui_ms", "ui_cpu_ms", "l
 TEXT = {"scenario", "mode", "render"}
 
 # Scenario parameters whose non-default values name a variant in the tables.
-VARIANT_DEFAULTS = {"fonts": "7", "colors": "4", "motion": "fling"}
+VARIANT_DEFAULTS = {"fonts": "7", "colors": "4", "motion": "fling", "clip": "on"}
 VARIANT_FLAGS = ("prewarm-pass", "pending-batches")
 
 FLUSH_REASONS = ["page_change", "color_change", "slot_pressure", "run_limit", "sprite_cap", "overlap",
                  "canvas_operation", "clip", "layer", "end_of_session", "other_text_path", "other"]
+
+CLIP_KINDS = [("none", "none"), ("pixel_aligned_rect", "pixel rect"), ("fractional_rect", "fractional rect"),
+              ("region", "region"), ("rounded_rect_or_geometry", "rounded/geometry"), ("transformed", "transformed")]
 
 
 def load(path):
@@ -153,6 +156,9 @@ def main():
                      key=lambda k: (k[0], k[1], k[2], k[4], k[3]))
     if counted:
         write_counters(w, counted, groups)
+        clipped = [k for k in counted if any("clip_all_in" in r for r in groups[k][:1])]
+        if clipped:
+            write_clips(w, clipped, groups)
 
     sweeps = defaultdict(list)
     for key in groups:
@@ -322,6 +328,31 @@ def write_counters(w, keys, groups):
           f"{fmt(mean(rows, 'sprite_set_builds'))} | {fmt(mean(rows, 'atlas_batch_builds'))} | "
           f"{fmt(mean(rows, 'atlas_hits'), 1)}/{fmt(mean(rows, 'atlas_misses'))}/{fmt(mean(rows, 'atlas_placements'))} | "
           f"{int(last.get('atlas_pages', 0))} ({int(last.get('atlas_pages_max_face', 0))}) |")
+    w("")
+
+
+def write_clips(w, keys, groups):
+    w("## Clips of batched runs")
+    w("")
+    w("Batched glyph runs per frame by the kind of their innermost clip, as `inside / crossing` its edge "
+      "(device bounds of the run against the clip; for rounded, geometry and transformed clips against the "
+      "clip's device bounds). `inside all` runs inside every clip pushed (or under none), and its share of "
+      "all batched runs.")
+    w("")
+    w("| scenario | render | mode | runs/f | " + " | ".join(name for _, name in CLIP_KINDS) + " | inside all |")
+    w("|" + "---|" * (5 + len(CLIP_KINDS)))
+    for key in keys:
+        scenario, params, n, mode, render = key
+        rows = groups[key]
+        total = sum(mean(rows, f"clip_{k}_in") + mean(rows, f"clip_{k}_cross") for k, _ in CLIP_KINDS)
+        cells = []
+        for kind, _ in CLIP_KINDS:
+            inside, cross = mean(rows, f"clip_{kind}_in"), mean(rows, f"clip_{kind}_cross")
+            cells.append("-" if inside + cross < 0.005 else f"{fmt(inside)} / {fmt(cross)}")
+        everywhere = mean(rows, "clip_all_in")
+        share = everywhere / total * 100 if total else float("nan")
+        w(f"| {label(scenario, params)}{'' if n == 0 else f' n={n}'} | {render} | {mode} | {fmt(total, 1)} | "
+          f"{' | '.join(cells)} | {fmt(everywhere, 1)} ({fmt(share, 0)} %) |")
     w("")
 
 

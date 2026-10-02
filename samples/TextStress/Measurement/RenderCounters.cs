@@ -8,12 +8,14 @@ namespace TextStress.Measurement
 {
     /// <summary>
     /// The render thread's cumulative text counters: why glyph batches were drawn, how many runs
-    /// they held, atlas page images and their bytes, glyph rasterizations and cache lookups.
+    /// they held, atlas page images and their bytes, glyph rasterizations and cache lookups, and
+    /// the clips batched runs were drawn under.
     /// The runner reads them at both ends of a render pass and writes the differences.
     /// </summary>
     internal static class RenderCounters
     {
         private static readonly GlyphBatchFlushReason[] s_reasons = Enum.GetValues<GlyphBatchFlushReason>();
+        private static readonly GlyphRunClipKind[] s_clipKinds = Enum.GetValues<GlyphRunClipKind>();
 
         /// <summary>Column names, in the order <see cref="Read"/> fills its array.</summary>
         public static readonly string[] Columns = BuildColumns();
@@ -40,6 +42,14 @@ namespace TextStress.Measurement
                 "glyph_rasterizations", "mask_hits", "mask_misses", "sprite_set_builds", "atlas_batch_builds",
                 "atlas_hits", "atlas_misses", "atlas_placements"
             });
+
+            foreach (var kind in s_clipKinds)
+            {
+                columns.Add("clip_" + Snake(kind.ToString()) + "_in");
+                columns.Add("clip_" + Snake(kind.ToString()) + "_cross");
+            }
+
+            columns.Add("clip_all_in");
 
             return columns.ToArray();
         }
@@ -70,7 +80,15 @@ namespace TextStress.Measurement
             values[i++] = GlyphRasterDiagnostics.AtlasBatchBuildsOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasHitsOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasMissesOnThread;
-            values[i] = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
+            values[i++] = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
+
+            foreach (var kind in s_clipKinds)
+            {
+                values[i++] = DrawingContextImpl.GetClippedRunsOnThread(kind, inside: true);
+                values[i++] = DrawingContextImpl.GetClippedRunsOnThread(kind, inside: false);
+            }
+
+            values[i] = DrawingContextImpl.RunsInsideEveryClipOnThread;
         }
 
         private static string Snake(string name)
