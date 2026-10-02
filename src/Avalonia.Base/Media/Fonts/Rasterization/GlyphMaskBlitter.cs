@@ -65,8 +65,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <para>
     /// The vector paths process eight (AVX2) or four (SSSE3, portable) pixels per step in 16-bit lanes;
     /// both round <c>a * b / 255</c> as <c>(v + (v &gt;&gt; 8)) &gt;&gt; 8</c> with
-    /// <c>v = a * b + 128</c>, which equals the scalar <c>(a * b + 127) / 255</c> for every
-    /// pair of bytes.
+    /// <c>v = a * b + 128</c> (AVX2 as <c>(v * 257) &gt;&gt; 16</c>, the same value), which
+    /// equals the scalar <c>(a * b + 127) / 255</c> for every pair of bytes.
     /// </para>
     /// </remarks>
     internal static class GlyphMaskBlitter
@@ -238,9 +238,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var count = x1 - x0;
                     var done = 0;
 
-                    // Glyph rows are short, often under sixteen pixels: a row at least one step
-                    // wide ends with an overlapping step, and only narrower rows reach the
-                    // smaller steps or the scalar loop.
+                    // Glyph rows are short, often under sixteen pixels. On the four-pixel paths a
+                    // row at least one step wide ends with an overlapping step, and only narrower
+                    // rows reach the scalar loop; the AVX2 path blends any row whole.
                     if (path == GlyphBlitPath.Portable)
                     {
                         done = BlendRowPortable<TOver>(source, destination, count, sourcePointer, fill,
@@ -249,10 +249,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     if (path == GlyphBlitPath.Avx2)
                     {
-                        done = BlendRowAvx2<TOver>(source, destination, count, sourcePointer, fill, fillLanes);
+                        BlendRowAvx2<TOver>(source, destination, count, sourcePointer, fill, fillLanes);
+                        continue;
                     }
 
-                    if (path is GlyphBlitPath.Ssse3 or GlyphBlitPath.Avx2)
+                    if (path == GlyphBlitPath.Ssse3)
                     {
                         done += BlendRowSsse3<TOver>(source + done, destination + done, count - done, sourcePointer,
                             fill, fillLanes.GetLower());
@@ -485,11 +486,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         // Inlined into the row loop: a call per glyph row costs as much as blending it.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int BlendRowAvx2<TOver>(byte* source, uint* destination, int count, uint* sources,
+        private static unsafe void BlendRowAvx2<TOver>(byte* source, uint* destination, int count, uint* sources,
             bool fill, Vector256<uint> fillLanes)
             where TOver : struct, ISourceOver
         {
-            var alphaMask = Vector256.Create(s_alphaBroadcast, s_alphaBroadcast);
             var i = 0;
 
             // Large masks are mostly empty or solid: test 32 pixels of coverage at a time, and
@@ -516,32 +516,62 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 for (var j = i; j < i + 32; j += 8)
                 {
-                    BlendEightAvx2<TOver>(*(ulong*)(source + j), destination + j, sources, fill, fillLanes, alphaMask);
+                    BlendEightAvx2<TOver>(*(ulong*)(source + j), destination + j, sources, fill, fillLanes);
                 }
             }
 
             for (; i + 8 <= count; i += 8)
             {
-                BlendEightAvx2<TOver>(*(ulong*)(source + i), destination + i, sources, fill, fillLanes, alphaMask);
+                BlendEightAvx2<TOver>(*(ulong*)(source + i), destination + i, sources, fill, fillLanes);
             }
 
-            // The last pixels of a row at least eight wide blend as the last eight with the
-            // coverage of those already blended masked to zero, which leaves them as they are.
+            // The rest of the row, under eight pixels, blends as one step whose lanes past the
+            // row neither read nor write the surface. A step overlapping the one before would
+            // load pixels just stored at another alignment, which waits until the store completes.
             var rest = count - i;
 
-            if (rest > 0 && count >= 8)
+            if (rest > 0)
             {
-                BlendEightAvx2<TOver>(*(ulong*)(source + count - 8) & (ulong.MaxValue << (8 * (8 - rest))),
-                    destination + count - 8, sources, fill, fillLanes, alphaMask);
-                i = count;
+                BlendRestAvx2<TOver>(ReadRest(source, count, rest), destination + i, rest, sources);
+            }
+        }
+
+        /// <summary>
+        /// The last <paramref name="rest"/> coverage bytes of a row of <paramref name="count"/>,
+        /// in the low bytes of the result, read without touching bytes outside the row.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe ulong ReadRest(byte* source, int count, int rest)
+        {
+            if (count >= 8)
+            {
+                return *(ulong*)(source + count - 8) >> (8 * (8 - rest));
             }
 
-            return i;
+            if (count >= 4)
+            {
+                // Two reads that overlap in the middle, where both hold the same bytes.
+                return *(uint*)source | ((ulong)*(uint*)(source + count - 4) << (8 * (count - 4)));
+            }
+
+            ulong raw = source[0];
+
+            if (count > 1)
+            {
+                raw |= (ulong)source[1] << 8;
+            }
+
+            if (count > 2)
+            {
+                raw |= (ulong)source[2] << 16;
+            }
+
+            return raw;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static unsafe void BlendEightAvx2<TOver>(ulong raw, uint* pixels, uint* sources, bool fill,
-            Vector256<uint> fillLanes, Vector256<byte> alphaMask)
+            Vector256<uint> fillLanes)
             where TOver : struct, ISourceOver
         {
             if (raw == 0)
@@ -556,23 +586,57 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var indices = Avx2.ConvertToVector256Int32(Vector128.CreateScalar(raw).AsByte());
-            var source = Avx2.GatherVector256((int*)sources, indices, 4).AsByte();
+            var source = Avx2.GatherVector256((int*)sources, indices, 4).AsUInt32();
 
-            // Each 128-bit half holds four pixels, and the unpacks and shuffles below work per
-            // half: the low unpack takes pixels 0-1 (and 4-5), the high one 2-3 (and 6-7).
-            var current = Avx.LoadVector256((byte*)pixels);
-            var currentLow = Avx2.UnpackLow(current, Vector256<byte>.Zero).AsUInt16();
-            var currentHigh = Avx2.UnpackHigh(current, Vector256<byte>.Zero).AsUInt16();
-            var sourceLow = Avx2.UnpackLow(source, Vector256<byte>.Zero).AsUInt16();
-            var sourceHigh = Avx2.UnpackHigh(source, Vector256<byte>.Zero).AsUInt16();
+            Avx.Store(pixels, Over<TOver>(source, Avx.LoadVector256(pixels)));
+        }
 
-            var alphaLow = Avx2.Shuffle(sourceLow.AsByte(), alphaMask).AsUInt16();
-            var alphaHigh = Avx2.Shuffle(sourceHigh.AsByte(), alphaMask).AsUInt16();
+        /// <summary>
+        /// Blends the first <paramref name="count"/> (1 to 7) pixels of a step; the other lanes
+        /// are masked off the load and the store.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe void BlendRestAvx2<TOver>(ulong raw, uint* pixels, int count, uint* sources)
+            where TOver : struct, ISourceOver
+        {
+            if (raw == 0)
+            {
+                return;
+            }
 
-            var resultLow = sourceLow + TOver.Scale(currentLow, alphaLow);
-            var resultHigh = sourceHigh + TOver.Scale(currentHigh, alphaHigh);
+            var lanes = Avx2.CompareGreaterThan(Vector256.Create(count), Vector256.Create(0, 1, 2, 3, 4, 5, 6, 7))
+                .AsUInt32();
+            var indices = Avx2.ConvertToVector256Int32(Vector128.CreateScalar(raw).AsByte());
+            var source = Avx2.GatherVector256((int*)sources, indices, 4).AsUInt32();
 
-            Avx.Store((byte*)pixels, Avx2.PackUnsignedSaturate(resultLow.AsInt16(), resultHigh.AsInt16()));
+            Avx2.MaskStore(pixels, lanes, Over<TOver>(source, Avx2.MaskLoad(pixels, lanes)));
+        }
+
+        /// <summary>
+        /// Eight premultiplied pixels over eight others. The channels are split into the even
+        /// (blue, red) and odd (green, alpha) bytes of each pixel, one channel per 16-bit lane,
+        /// by a mask and a shift rather than by unpacking: unpacks and shuffles share one
+        /// execution port, and a blend built from them waits on it.
+        /// </summary>
+        /// <remarks>
+        /// No sum needs saturating: a source channel is at most the source alpha, since the
+        /// tint is premultiplied and scaling by coverage keeps that order, and every
+        /// <see cref="ISourceOver"/> scales any destination byte to at most <c>255 - sa</c>.
+        /// </remarks>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static Vector256<uint> Over<TOver>(Vector256<uint> source, Vector256<uint> destination)
+            where TOver : struct, ISourceOver
+        {
+            var low = Vector256.Create(0x00FF00FFu).AsUInt16();
+            var inverse = ~source >>> 24;
+            var inverseLanes = (inverse | (inverse << 16)).AsUInt16();
+            var sourceLanes = source.AsUInt16();
+            var destinationLanes = destination.AsUInt16();
+
+            var even = (sourceLanes & low) + TOver.ScaleByInverse(destinationLanes & low, inverseLanes);
+            var odd = (sourceLanes >>> 8) + TOver.ScaleByInverse(destinationLanes >>> 8, inverseLanes);
+
+            return (even | (odd << 8)).AsUInt32();
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -588,7 +652,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var product = a * b + Vector256.Create((ushort)128);
 
-            return (product + (product >>> 8)) >>> 8;
+            // (v + (v >> 8)) >> 8 equals (v * 257) >> 16 for every 16-bit v: one multiply in
+            // place of two shifts and an add.
+            return Avx2.MultiplyHigh(product, Vector256.Create((ushort)257));
         }
 
         /// <summary>
@@ -613,7 +679,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             static abstract Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha);
 
-            static abstract Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha);
+            /// <summary>The share scaled by <c>255 - sa</c> given directly, in 16-bit lanes.</summary>
+            static abstract Vector256<ushort> ScaleByInverse(Vector256<ushort> destination,
+                Vector256<ushort> inverseAlpha);
         }
 
         /// <summary>
@@ -627,8 +695,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             public static Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha)
                 => Multiply(destination, Vector128.Create((ushort)255) - sourceAlpha);
 
-            public static Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha)
-                => Multiply(destination, Vector256.Create((ushort)255) - sourceAlpha);
+            public static Vector256<ushort> ScaleByInverse(Vector256<ushort> destination,
+                Vector256<ushort> inverseAlpha)
+                => Multiply(destination, inverseAlpha);
         }
 
         /// <summary>
@@ -644,8 +713,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             public static Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha)
                 => (destination * (Vector128.Create((ushort)256) - sourceAlpha)) >>> 8;
 
-            public static Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha)
-                => (destination * (Vector256.Create((ushort)256) - sourceAlpha)) >>> 8;
+            public static Vector256<ushort> ScaleByInverse(Vector256<ushort> destination,
+                Vector256<ushort> inverseAlpha)
+                => (destination * (inverseAlpha + Vector256.Create((ushort)1))) >>> 8;
         }
 
         /// <summary>
@@ -660,8 +730,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             public static Vector128<ushort> Scale(Vector128<ushort> destination, Vector128<ushort> sourceAlpha)
                 => (destination * (Vector128.Create((ushort)255) - sourceAlpha) + Vector128.Create((ushort)255)) >>> 8;
 
-            public static Vector256<ushort> Scale(Vector256<ushort> destination, Vector256<ushort> sourceAlpha)
-                => (destination * (Vector256.Create((ushort)255) - sourceAlpha) + Vector256.Create((ushort)255)) >>> 8;
+            public static Vector256<ushort> ScaleByInverse(Vector256<ushort> destination,
+                Vector256<ushort> inverseAlpha)
+                => (destination * inverseAlpha + Vector256.Create((ushort)255)) >>> 8;
         }
 
         /// <summary>The per-thread source tables of the most recent tints and coverage tables.</summary>
