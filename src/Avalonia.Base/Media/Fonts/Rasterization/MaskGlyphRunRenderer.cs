@@ -679,8 +679,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Resolves the requested rendering mode onto a mask mode. Alias and Antialias map
         /// directly; Unspecified and SubpixelAntialias both mean LCD when the whole chain
         /// allows it — the same default the native blob applies — and degrade to grayscale
-        /// otherwise. Color art never renders subpixel: stripes only make sense for a solid
-        /// foreground modulating pure coverage.
+        /// otherwise. Unspecified means grayscale on the platforms that draw text so
+        /// (<see cref="TextRasterizationDefaults.UnspecifiedRendersSubpixel"/>). Color art never
+        /// renders subpixel: stripes only make sense for a solid foreground modulating pure
+        /// coverage.
         /// </summary>
         internal static GlyphMaskMode ResolveMaskMode(TextRenderingMode textRenderingMode,
             IDrawingContextImpl context, GlyphTypeface typeface, out LcdMaskGeometry geometry)
@@ -692,6 +694,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 case TextRenderingMode.Alias:
                     return GlyphMaskMode.Aliased;
                 case TextRenderingMode.Antialias:
+                    return GlyphMaskMode.Antialiased;
+                case TextRenderingMode.Unspecified when !TextRasterizationDefaults.UnspecifiedRendersSubpixel:
                     return GlyphMaskMode.Antialiased;
             }
 

@@ -95,6 +95,10 @@ internal class SkiaMetalGpu : ISkiaGpu
             _target = null;
         }
 
+        // The window's stripes, as the other window targets declare them: text asked for
+        // subpixel rendering gets it; unspecified text follows the platform's choice.
+        private static readonly SKSurfaceProperties s_surfaceProperties = new(SKPixelGeometry.RgbHorizontal);
+
         public ISkiaGpuRenderSession BeginRenderingSession(IRenderTarget.RenderTargetSceneInfo sceneInfo)
         {
             // TODO: use expectedPixelSize
@@ -110,7 +114,7 @@ internal class SkiaMetalGpu : ISkiaGpu
 
                 surface = SKSurface.Create(_gpu._context!, backendTarget,
                     session.IsYFlipped ? GRSurfaceOrigin.BottomLeft : GRSurfaceOrigin.TopLeft,
-                    SKColorType.Bgra8888);
+                    SKColorType.Bgra8888, s_surfaceProperties);
 
                 var result = new SkiaMetalRenderSession(_gpu, surface, session, backendTarget);
                 success = true;
