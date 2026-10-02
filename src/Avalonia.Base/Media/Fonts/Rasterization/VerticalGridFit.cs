@@ -96,6 +96,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly float _descender;
         private readonly float _roundOvershoot;
         private readonly float _ascenderOvershoot;
+        private const int MaxCachedWarps = 64;
+
         private readonly ConcurrentDictionary<ushort, AxisWarp> _warps = new();
 
         private VerticalGridFit(float designEmHeight, float xHeight, float capHeight,
@@ -162,8 +164,25 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal int CachedWarpCount => _warps.Count;
 
         /// <summary>The zone warp for a quantized mask scale; identity when no zones measured.</summary>
+        /// <remarks>
+        /// A zoom animation asks for a new scale nearly every frame, so the warps are dropped
+        /// together once <see cref="MaxCachedWarps"/> are kept; a warp is cheap to rebuild, and
+        /// the scales in use come back at once.
+        /// </remarks>
         public AxisWarp GetWarp(ushort scaleQ)
-            => _warps.GetOrAdd(scaleQ, static (key, self) => self.BuildWarp(key), this);
+        {
+            if (_warps.TryGetValue(scaleQ, out var warp))
+            {
+                return warp;
+            }
+
+            if (_warps.Count >= MaxCachedWarps)
+            {
+                _warps.Clear();
+            }
+
+            return _warps.GetOrAdd(scaleQ, static (key, self) => self.BuildWarp(key), this);
+        }
 
         /// <summary>
         /// The per-glyph warp: the cached zone knots refined with this glyph's own horizontal

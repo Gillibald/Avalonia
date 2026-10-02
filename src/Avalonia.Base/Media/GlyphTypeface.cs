@@ -2644,6 +2644,8 @@ namespace Avalonia.Media
         /// to the fitted outline, and the side bearings the hinter reads for its phantom
         /// points must be those of the real glyph, not of the emboldened or slanted box.
         /// </remarks>
+        private const int MaxTrueTypeHinters = 16;
+
         /// <summary>The number of bytecode hinters kept, one per quantized size and mask mode.</summary>
         internal int TrueTypeHinterCount
         {
@@ -2678,19 +2680,35 @@ namespace Avalonia.Media
 
             var hinters = _trueTypeHinters ??= new();
 
+            // Most recently used first. A zoom animation asks for a new size nearly every frame,
+            // so only the last MaxTrueTypeHinters sizes keep their hinter; text at rest keeps
+            // its sizes at the front.
             lock (hinters)
             {
-                foreach (var entry in hinters)
+                for (var i = 0; i < hinters.Count; i++)
                 {
+                    var entry = hinters[i];
+
                     if (entry.ScaleQ == scaleQ && entry.Mode == mode)
                     {
+                        if (i > 0)
+                        {
+                            hinters.RemoveAt(i);
+                            hinters.Insert(0, entry);
+                        }
+
                         return entry.Hinter;
                     }
                 }
 
                 var hinter = CreateTrueTypeHinter(scaleQ, mode);
 
-                hinters.Add((scaleQ, mode, hinter));
+                if (hinters.Count == MaxTrueTypeHinters)
+                {
+                    hinters.RemoveAt(hinters.Count - 1);
+                }
+
+                hinters.Insert(0, (scaleQ, mode, hinter));
                 return hinter;
             }
         }
