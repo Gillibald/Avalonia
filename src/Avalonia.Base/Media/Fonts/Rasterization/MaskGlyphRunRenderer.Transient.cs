@@ -374,7 +374,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var grown = new byte[Math.Min(GlyphMaskAtlas.MaxPageHeight, Math.Max(rows, Page.Length / PageWidth * 2)) *
                                          PageWidth];
 
-                    Page.AsSpan(0, _usedHeight * PageWidth).CopyTo(grown);
+                    // The masks placed so far, all within the old page; the used height already
+                    // counts the mask being placed, which the old page does not reach.
+                    Page.CopyTo(grown, 0);
                     Page = grown;
                 }
 
