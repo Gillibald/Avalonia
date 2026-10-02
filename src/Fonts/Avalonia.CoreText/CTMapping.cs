@@ -76,18 +76,19 @@ namespace Avalonia.Media.Fonts
             return anchors[^1].Trait;
         }
 
-        // The width trait is documented only as 0.0 for normal within [-1, 1]; mapping the nine
-        // OpenType width classes linearly around normal matches what Skia's CoreText port does.
+        // The width trait is documented only as 0.0 for normal within [-1, 1]. CoreText reports a
+        // tenth of the distance from the normal width class: condensed faces (usWidthClass 3)
+        // carry -0.2 and expanded ones 0.2.
         public static FontStretch WidthToFontStretch(double trait)
         {
-            var widthClass = (int)Math.Round(5 + trait * 4);
+            var widthClass = (int)Math.Round(5 + trait * 10);
 
             return (FontStretch)Math.Clamp(widthClass, 1, 9);
         }
 
         public static double WidthFromFontStretch(FontStretch stretch)
         {
-            return ((int)stretch - 5) / 4.0;
+            return ((int)stretch - 5) / 10.0;
         }
 
         /// <summary>
