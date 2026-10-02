@@ -446,15 +446,15 @@ namespace Avalonia.Media
 
             Weight = (fontSimulations & FontSimulations.Bold) != 0 ? FontWeight.Bold : fontWeight;
 
-            var style = GetFontStyle(_hasOs2Table ? _os2Table : null, headTable, postTable);
+            _nameTable = NameTable.Load(this);
+
+            var style = GetFontStyle(_hasOs2Table ? _os2Table : null, headTable, postTable, _nameTable);
 
             Style = (fontSimulations & FontSimulations.Oblique) != 0 ? FontStyle.Italic : style;
 
             var stretch = GetFontStretch(_hasOs2Table ? _os2Table : null);
 
             Stretch = stretch;
-
-            _nameTable = NameTable.Load(this);
 
             FamilyName = _nameTable?.FontFamilyName((ushort)CultureInfo.InvariantCulture.LCID) ?? "unknown";
 
@@ -3792,7 +3792,8 @@ namespace Avalonia.Media
             return supportedFeatures;
         }
 
-        private static FontStyle GetFontStyle(OS2Table? oS2Table, HeadTable? headTable, PostTable postTable)
+        private static FontStyle GetFontStyle(OS2Table? oS2Table, HeadTable? headTable, PostTable postTable,
+            NameTable? nameTable)
         {
             bool isItalic = false;
             bool isOblique = false;
@@ -3825,7 +3826,40 @@ namespace Avalonia.Media
                 return FontStyle.Italic;
             }
 
-            return FontStyle.Normal;
+            // Some shipped faces mark no slant in their tables at all and say it only in their
+            // subfamily name (macOS's HelveticaNeue-MediumItalic sets just fsSelection's REGULAR
+            // bit), which is what CoreText goes by for them.
+            return GetFontStyleFromSubfamilyName(nameTable);
+        }
+
+        private static FontStyle GetFontStyleFromSubfamilyName(NameTable? nameTable)
+        {
+            if (nameTable is null)
+            {
+                return FontStyle.Normal;
+            }
+
+            var culture = (ushort)CultureInfo.InvariantCulture.LCID;
+            var subfamily = nameTable.GetNameById(culture, KnownNameIds.TypographicSubfamilyName);
+
+            if (string.IsNullOrEmpty(subfamily))
+            {
+                subfamily = nameTable.GetNameById(culture, KnownNameIds.FontSubfamilyName);
+            }
+
+            if (string.IsNullOrEmpty(subfamily))
+            {
+                return FontStyle.Normal;
+            }
+
+            if (subfamily.IndexOf("Italic", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return FontStyle.Italic;
+            }
+
+            return subfamily.IndexOf("Oblique", StringComparison.OrdinalIgnoreCase) >= 0
+                ? FontStyle.Oblique
+                : FontStyle.Normal;
         }
 
         private static FontWeight GetFontWeight(OS2Table? os2Table, HeadTable? headTable)
