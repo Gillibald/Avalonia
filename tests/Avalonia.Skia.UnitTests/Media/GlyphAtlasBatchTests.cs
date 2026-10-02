@@ -452,7 +452,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.DrawRectangle(Brushes.Orange, null, new RoundedRect(new Rect(300, 10, 40, 40)));
                 context.DrawGlyphRun(Brushes.Black, first);
                 context.DrawGlyphRun(Brushes.Black, second);
-                context.PushClip(new Rect(0, 200, 400, 60));
+                // A clip with fractional edges draws the batches pending around it.
+                context.PushClip(new Rect(0, 200.5, 400, 60));
                 context.DrawGlyphRun(Brushes.Black, clipped);
                 context.PopClip();
                 context.DrawGlyphRun(Brushes.Black, last);
