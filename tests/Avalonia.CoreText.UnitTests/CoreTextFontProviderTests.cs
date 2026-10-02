@@ -169,6 +169,27 @@ namespace Avalonia.CoreText.UnitTests
         }
 
         [MacOSFact]
+        public void Condensed_Faces_Should_Report_The_Width_Class_Of_Their_File()
+        {
+            using var provider = new CoreTextFontProvider();
+
+            Assert.SkipUnless(provider.TryGetFamilyFaces("Avenir Next Condensed", out var faces),
+                "Avenir Next Condensed is not installed.");
+
+            foreach (var face in faces!)
+            {
+                Assert.True(face.TryOpenFontMemory(out var fontMemory));
+
+                var glyphTypeface = new GlyphTypeface(fontMemory);
+
+                Assert.Equal(FontStretch.Condensed, glyphTypeface.Stretch);
+                Assert.Equal(glyphTypeface.Stretch, face.Stretch);
+
+                glyphTypeface.Dispose();
+            }
+        }
+
+        [MacOSFact]
         public void Variable_Font_Instance_Should_Report_Its_Position()
         {
             using var provider = new CoreTextFontProvider();
@@ -210,6 +231,23 @@ namespace Avalonia.CoreText.UnitTests
             Assert.Equal(700f, axisValues[OpenTypeTag.Parse("wght")]);
             Assert.Equal(17.5f, axisValues[OpenTypeTag.Parse("opsz")]);
             Assert.Equal(88f, axisValues[OpenTypeTag.Parse("XOPQ")]);
+        }
+
+        [Fact]
+        public void Width_Traits_Should_Map_To_The_Width_Classes_CoreText_Derives_Them_From()
+        {
+            // CoreText reports a tenth of the distance from the normal width class: the condensed
+            // faces shipped with macOS (usWidthClass 3) all carry -0.2.
+            Assert.Equal(FontStretch.Condensed, CTMapping.WidthToFontStretch(-0.2));
+            Assert.Equal(FontStretch.Normal, CTMapping.WidthToFontStretch(0));
+            Assert.Equal(FontStretch.Expanded, CTMapping.WidthToFontStretch(0.2));
+
+            foreach (var stretch in Enum.GetValues<FontStretch>())
+            {
+                Assert.Equal(stretch, CTMapping.WidthToFontStretch(CTMapping.WidthFromFontStretch(stretch)));
+            }
+
+            Assert.Equal(-0.2, CTMapping.WidthFromFontStretch(FontStretch.Condensed), 6);
         }
 
         [Fact]
