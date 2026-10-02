@@ -9,7 +9,7 @@ partial class DrawingContextImpl
     
     public void PushEffect(Rect? effectClipRect, IEffect effect)
     {
-        PrepareCanvas();
+        PrepareCanvas(GlyphBatchFlushReason.Layer);
         using var filter = CreateEffect(effect);
         var paint = SKPaintCache.Shared.Get();
         paint.ImageFilter = filter;
@@ -23,7 +23,7 @@ partial class DrawingContextImpl
 
     public void PopEffect()
     {
-        PrepareCanvas();
+        PrepareCanvas(GlyphBatchFlushReason.Layer);
         _saveLayerDepth--;
         RestoreCanvas();
     }

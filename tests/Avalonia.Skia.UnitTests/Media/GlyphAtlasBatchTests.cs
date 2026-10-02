@@ -433,6 +433,92 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void Pending_Batches_Are_Counted_By_The_Reason_They_Were_Drawn(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
+
+            var noto = LoadAsset("NotoSans-Italic.ttf");
+            var paragraph = CreateParagraph(inter, 3, 13, new Point(6.3, 4));
+            var first = WideRunMaskTests.CreateRun(inter, "Overlapping words", 20, new Point(10, 160));
+            var second = WideRunMaskTests.CreateRun(noto, "Overlapping words", 20, new Point(14, 166));
+            var clipped = WideRunMaskTests.CreateRun(inter, s_lines[2], 14, new Point(20, 230));
+            var last = WideRunMaskTests.CreateRun(inter, s_lines[3], 14, new Point(20, 300));
+
+            // Each step leaves one batch pending for the next to draw.
+            void Draw(DrawingContextImpl context)
+            {
+                DrawAll(context, paragraph, Brushes.Black);
+                context.DrawRectangle(Brushes.Orange, null, new RoundedRect(new Rect(300, 10, 40, 40)));
+                context.DrawGlyphRun(Brushes.Black, first);
+                context.DrawGlyphRun(Brushes.Black, second);
+                context.PushClip(new Rect(0, 200, 400, 60));
+                context.DrawGlyphRun(Brushes.Black, clipped);
+                context.PopClip();
+                context.DrawGlyphRun(Brushes.Black, last);
+            }
+
+            var reasons = Enum.GetValues<GlyphBatchFlushReason>();
+
+            (long[] Batches, long[] Flushes, long Runs, long Drawn, long PageBytes) Read() => (
+                reasons.Select(DrawingContextImpl.GetBatchesFlushedOnThread).ToArray(),
+                reasons.Select(DrawingContextImpl.GetFlushesOnThread).ToArray(),
+                DrawingContextImpl.BatchedRunsOnThread, DrawingContextImpl.BatchesDrawnOnThread,
+                DrawingContextImpl.PageImageBytesOnThread);
+
+            try
+            {
+                var cold = Read();
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var warm = Read();
+
+                // Two typefaces, a page each, every page image wrapping whole rows of the page.
+                Assert.True(warm.PageBytes - cold.PageBytes >= 2L * GlyphMaskAtlas.PageWidth,
+                    $"the cold frame uploaded {warm.PageBytes - cold.PageBytes} page bytes");
+                Assert.Equal(0, (warm.PageBytes - cold.PageBytes) % GlyphMaskAtlas.PageWidth);
+
+                DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
+                Render(gpu, Draw, batched: true, out _);
+
+                var after = Read();
+                var batches = new Dictionary<GlyphBatchFlushReason, long>();
+
+                for (var i = 0; i < reasons.Length; i++)
+                {
+                    Assert.Equal(after.Batches[i] - warm.Batches[i], after.Flushes[i] - warm.Flushes[i]);
+
+                    if (after.Batches[i] != warm.Batches[i])
+                    {
+                        batches[reasons[i]] = after.Batches[i] - warm.Batches[i];
+                    }
+                }
+
+                Assert.Equal(new Dictionary<GlyphBatchFlushReason, long>
+                {
+                    [GlyphBatchFlushReason.CanvasOperation] = 1,
+                    [GlyphBatchFlushReason.PageChange] = 1,
+                    [GlyphBatchFlushReason.Clip] = 2,
+                    [GlyphBatchFlushReason.EndOfSession] = 1,
+                }, batches);
+                Assert.Equal(5, after.Drawn - warm.Drawn);
+                Assert.Equal(7, after.Runs - warm.Runs);
+                Assert.Equal(3, DrawingContextImpl.TakeMaxRunsPerBatchOnThread());
+                Assert.Equal(0, after.PageBytes - warm.PageBytes);
+            }
+            finally
+            {
+                DisposeAll(paragraph);
+                first.Dispose();
+                second.Dispose();
+                clipped.Dispose();
+                last.Dispose();
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Upright_Atlas_Text_Equals_Its_Corrected_Glyph_Masks_Drawn_One_By_One(GpuBackend backend,
             bool software)
         {

@@ -9,7 +9,7 @@ partial class DrawingContextImpl
 {
     public void PushLayer(LayerOptions options)
     {
-        PrepareCanvas();
+        PrepareCanvas(GlyphBatchFlushReason.Layer);
 
         var paint = SKPaintCache.Shared.Get();
         SKImageFilter? imageFilter = null;

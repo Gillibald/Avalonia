@@ -121,8 +121,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
                 Volatile.Write(ref entry.Referenced, 1);
+                GlyphRasterDiagnostics.CountMaskCacheHit();
                 return hit;
             }
+
+            GlyphRasterDiagnostics.CountMaskCacheMiss();
 
             var built = build(key, state) ?? GlyphMask.Empty;
 

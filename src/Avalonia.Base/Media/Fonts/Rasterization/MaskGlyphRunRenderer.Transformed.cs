@@ -506,6 +506,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static void BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
             GlyphMaskAtlas atlas, TransformedGlyphSprites sprites, int bucket)
         {
+            GlyphRasterDiagnostics.CountAtlasBatchBuild();
+
             var tick = atlas.Tick();
             var count = sprites.Count;
             var geometry = ArrayPool<GlyphAtlasSprite>.Shared.Rent(Math.Max(1, count));

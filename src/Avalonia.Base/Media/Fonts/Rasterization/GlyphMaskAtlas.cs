@@ -205,8 +205,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 if (!_slots.TryGetValue((key, bucket), out slot))
                 {
+                    GlyphRasterDiagnostics.CountAtlasLookup(hit: false);
                     return false;
                 }
+
+                GlyphRasterDiagnostics.CountAtlasLookup(hit: true);
 
                 if (slot.Page is { } page)
                 {
@@ -404,6 +407,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             page.Version++;
+            GlyphRasterDiagnostics.CountAtlasPlacement();
         }
 
         /// <summary>Copies coverage through the <see cref="MaskGamma"/> table of <paramref name="bucket"/>.</summary>

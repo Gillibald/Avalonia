@@ -7,9 +7,23 @@ namespace Avalonia.Skia
 {
     internal partial class DrawingContextImpl
     {
-        // Pending batches at once, each of one page and colour. Text alternating a few typefaces
-        // or colours fills a few; more than this is flushed rather than searched.
-        private const int MaxPendingBatches = 8;
+        private const int DefaultMaxPendingBatches = 8;
+
+        private static int s_maxPendingBatches = DefaultMaxPendingBatches;
+
+        /// <summary>
+        /// Pending batches at once, each of one page and colour. Text alternating a few typefaces
+        /// or colours fills a few; more than this is flushed rather than searched. Profiling tools
+        /// change it to measure how the draw count depends on it; a context takes the value when
+        /// it begins its first batch.
+        /// </summary>
+        internal static int MaxPendingBatches
+        {
+            get => s_maxPendingBatches;
+            set => s_maxPendingBatches = value >= 1
+                ? value
+                : throw new ArgumentOutOfRangeException(nameof(value), value, "At least one batch must be pending.");
+        }
 
         // Runs pending in the other batches before a run joins one: the run is checked against
         // every run of the others, so this bounds that work per run. A batch's own runs are not
@@ -69,7 +83,7 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            FlushLcdBatch();
+            FlushLcdBatch(GlyphBatchFlushReason.OtherTextPath);
 
             var x = (int)transform.M31;
             var y = (int)transform.M32;
@@ -83,21 +97,28 @@ namespace Avalonia.Skia
             // ahead of them keeps every pixel's order.
             if (target is not null && target.SpriteCount + backend.Sources.Length > MaxSpritesPerAtlasDraw)
             {
-                FlushPendingBatch(target);
+                FlushPendingBatch(target, GlyphBatchFlushReason.SpriteCap);
                 target = null;
             }
 
-            if (_pendingRunCount - (target?.RunCount ?? 0) >= MaxPendingRuns || OverlapsOtherPendingBatch(bounds, target))
+            if (_pendingRunCount - (target?.RunCount ?? 0) >= MaxPendingRuns)
             {
-                FlushAtlasBatch();
+                FlushAtlasBatch(GlyphBatchFlushReason.RunLimit);
+                target = null;
+            }
+            else if (FindOverlappingPendingBatch(bounds, target) is { } overlapped)
+            {
+                FlushAtlasBatch(overlapped.Page == page
+                    ? GlyphBatchFlushReason.ColorChange
+                    : GlyphBatchFlushReason.PageChange);
                 target = null;
             }
 
             if (target is null)
             {
-                if (_pendingBatchCount == MaxPendingBatches)
+                if (_pendingBatches is { } slots && _pendingBatchCount == slots.Length)
                 {
-                    FlushAtlasBatch();
+                    FlushAtlasBatch(GlyphBatchFlushReason.SlotPressure);
                 }
 
                 target = (t_pendingBatches is { Count: > 0 } pool ? pool.Pop() : new PendingGlyphBatch());
@@ -130,7 +151,11 @@ namespace Avalonia.Skia
             return null;
         }
 
-        private bool OverlapsOtherPendingBatch(SKRect bounds, PendingGlyphBatch? target)
+        /// <summary>
+        /// The first pending batch other than <paramref name="target"/> that a run covering
+        /// <paramref name="bounds"/> overlaps.
+        /// </summary>
+        private PendingGlyphBatch? FindOverlappingPendingBatch(SKRect bounds, PendingGlyphBatch? target)
         {
             for (var i = 0; i < _pendingBatchCount; i++)
             {
@@ -138,11 +163,11 @@ namespace Avalonia.Skia
 
                 if (batch != target && batch.Overlaps(bounds))
                 {
-                    return true;
+                    return batch;
                 }
             }
 
-            return false;
+            return null;
         }
 
         /// <summary>
@@ -153,19 +178,28 @@ namespace Avalonia.Skia
         /// also drops the kept direct-write target, since the operation that follows may change
         /// the clip or move the surface's pixels.
         /// </summary>
-        internal void FlushGlyphBatch()
+        internal void FlushGlyphBatch() => FlushGlyphBatch(GlyphBatchFlushReason.Other);
+
+        /// <inheritdoc cref="FlushGlyphBatch()"/>
+        /// <param name="reason">Why the batches are drawn now, for the flush counters.</param>
+        internal void FlushGlyphBatch(GlyphBatchFlushReason reason)
         {
             ForgetBlitTarget();
-            FlushAtlasBatch();
-            FlushLcdBatch();
+            FlushAtlasBatch(reason);
+            FlushLcdBatch(reason);
         }
 
         /// <summary>Draws every pending grayscale batch, in the order they were begun.</summary>
-        private void FlushAtlasBatch()
+        private void FlushAtlasBatch(GlyphBatchFlushReason reason)
         {
+            if (_pendingBatchCount > 0)
+            {
+                CountFlush(reason);
+            }
+
             for (var i = 0; i < _pendingBatchCount; i++)
             {
-                DrawPendingBatch(_pendingBatches![i]);
+                DrawPendingBatch(_pendingBatches![i], reason);
                 _pendingBatches[i] = null!;
             }
 
@@ -174,13 +208,14 @@ namespace Avalonia.Skia
         }
 
         /// <summary>Draws one pending batch ahead of the others and takes it off the pending list.</summary>
-        private void FlushPendingBatch(PendingGlyphBatch batch)
+        private void FlushPendingBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
             var pending = _pendingBatches!;
             var index = Array.IndexOf(pending, batch, 0, _pendingBatchCount);
 
             _pendingRunCount -= batch.RunCount;
-            DrawPendingBatch(batch);
+            CountFlush(reason);
+            DrawPendingBatch(batch, reason);
 
             Array.Copy(pending, index + 1, pending, index, _pendingBatchCount - index - 1);
             pending[--_pendingBatchCount] = null!;
@@ -197,8 +232,10 @@ namespace Avalonia.Skia
         /// at the texel centres the atlas draw samples, and modulate the paint colour by the
         /// coverage alike, so both draws produce the same pixels.
         /// </remarks>
-        private void DrawPendingBatch(PendingGlyphBatch batch)
+        private void DrawPendingBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
+            CountBatchDrawn(reason, batch.RunCount);
+
             var page = batch.Page!;
             var runs = batch.Runs;
             var count = batch.RunCount;
@@ -279,6 +316,71 @@ namespace Avalonia.Skia
 
             batch.Clear();
             (t_pendingBatches ??= new Stack<PendingGlyphBatch>()).Push(batch);
+        }
+
+        private static readonly int s_flushReasonCount = Enum.GetValues<GlyphBatchFlushReason>().Length;
+
+        // Per flush reason: the batches drawn, and the flushes that drew at least one.
+        [ThreadStatic]
+        private static long[]? t_batchesFlushed;
+
+        [ThreadStatic]
+        private static long[]? t_flushes;
+
+        [ThreadStatic]
+        private static long t_batchedRuns;
+
+        [ThreadStatic]
+        private static long t_batchesDrawn;
+
+        [ThreadStatic]
+        private static int t_maxRunsPerBatch;
+
+        /// <summary>
+        /// The pending glyph batches, grayscale or subpixel, drawn on this thread because of
+        /// <paramref name="reason"/>; for profiling tools and tests.
+        /// </summary>
+        internal static long GetBatchesFlushedOnThread(GlyphBatchFlushReason reason) =>
+            t_batchesFlushed?[(int)reason] ?? 0;
+
+        /// <summary>
+        /// The flushes on this thread that drew at least one pending glyph batch because of
+        /// <paramref name="reason"/>; for profiling tools and tests.
+        /// </summary>
+        internal static long GetFlushesOnThread(GlyphBatchFlushReason reason) => t_flushes?[(int)reason] ?? 0;
+
+        /// <summary>The runs, or subpixel entries, in the pending glyph batches drawn on this thread.</summary>
+        internal static long BatchedRunsOnThread => t_batchedRuns;
+
+        /// <summary>The pending glyph batches drawn on this thread, each one atlas draw or more.</summary>
+        internal static long BatchesDrawnOnThread => t_batchesDrawn;
+
+        /// <summary>
+        /// The most runs one pending glyph batch drawn on this thread held since the last call,
+        /// starting the next span at zero.
+        /// </summary>
+        internal static int TakeMaxRunsPerBatchOnThread()
+        {
+            var max = t_maxRunsPerBatch;
+
+            t_maxRunsPerBatch = 0;
+
+            return max;
+        }
+
+        private static void CountFlush(GlyphBatchFlushReason reason) =>
+            (t_flushes ??= new long[s_flushReasonCount])[(int)reason]++;
+
+        private static void CountBatchDrawn(GlyphBatchFlushReason reason, int runs)
+        {
+            (t_batchesFlushed ??= new long[s_flushReasonCount])[(int)reason]++;
+            t_batchedRuns += runs;
+            t_batchesDrawn++;
+
+            if (runs > t_maxRunsPerBatch)
+            {
+                t_maxRunsPerBatch = runs;
+            }
         }
 
         /// <summary>

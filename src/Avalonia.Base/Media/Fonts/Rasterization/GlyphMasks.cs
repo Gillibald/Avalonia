@@ -53,6 +53,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return GlyphMask.Empty;
             }
 
+            GlyphRasterDiagnostics.CountGlyphRasterization();
+
             // Stem snapping can move the right edge outward by up to a pixel, so it shares
             // the wider apron.
             var apron = key.Mode == GlyphMaskMode.Subpixel || key.StemSnap ? SubpixelApron : Apron;
@@ -284,6 +286,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
             int left, int top, int width, int height, Span<byte> destination, int stride)
         {
+            GlyphRasterDiagnostics.CountGlyphRasterization();
             scratch.Reset();
 
             var simulations = key.Simulations;

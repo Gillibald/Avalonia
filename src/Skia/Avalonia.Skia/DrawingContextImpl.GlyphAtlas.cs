@@ -198,7 +198,7 @@ namespace Avalonia.Skia
                 return;
             }
 
-            FlushGlyphBatch();
+            FlushGlyphBatch(GlyphBatchFlushReason.OtherTextPath);
 
             var image = backend.Image ?? GetPageImage(batch.Page!).Image;
             var paint = SKPaintCache.Shared.Get();
@@ -230,7 +230,7 @@ namespace Avalonia.Skia
         void ITransformedGlyphContext.DrawTransientSprites(IDisposable image, ReadOnlySpan<GlyphAtlasSprite> sprites,
             in Matrix transform, uint tintArgb)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.OtherTextPath);
 
             var paint = SKPaintCache.Shared.Get();
 
@@ -347,6 +347,11 @@ namespace Avalonia.Skia
                 return current;
             }
 
+            if (page.Realized is not null)
+            {
+                t_pageImagesReplaced++;
+            }
+
             page.Realized?.Dispose();
 
             var image = new GlyphPageImage(CreatePageImage(page));
@@ -361,6 +366,12 @@ namespace Avalonia.Skia
         private static int t_pageImagesCreated;
 
         [ThreadStatic]
+        private static int t_pageImagesReplaced;
+
+        [ThreadStatic]
+        private static long t_pageImageBytes;
+
+        [ThreadStatic]
         private static int t_atlasDraws;
 
         /// <summary>
@@ -368,6 +379,19 @@ namespace Avalonia.Skia
         /// context; for tests.
         /// </summary>
         internal static int PageImagesCreatedOnThread => t_pageImagesCreated;
+
+        /// <summary>
+        /// The atlas page images made on this thread that replaced the image of an older version
+        /// of their page; for profiling tools.
+        /// </summary>
+        internal static int PageImagesReplacedOnThread => t_pageImagesReplaced;
+
+        /// <summary>
+        /// The bytes of the atlas page images made on this thread. A page image wraps the page's
+        /// whole array, and a GPU context uploads a raster image as a whole texture the first
+        /// time it draws it, so this is the texture upload volume; for profiling tools.
+        /// </summary>
+        internal static long PageImageBytesOnThread => t_pageImageBytes;
 
         /// <summary>The number of atlas draw calls issued on this thread; for tests.</summary>
         internal static int AtlasDrawsOnThread => t_atlasDraws;
@@ -390,6 +414,7 @@ namespace Avalonia.Skia
             using var pixmap = new SKPixmap(info, address, GlyphMaskAtlas.PageWidth);
 
             t_pageImagesCreated++;
+            t_pageImageBytes += info.BytesSize64;
 
             // Writes after this point only fill rows and columns no sprite of this version
             // samples, and growth moves the page to a new array, so the wrapped pixels stay

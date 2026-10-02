@@ -99,6 +99,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             EmboldenQ = emboldenQ;
             Oblique = oblique;
             _sprites = sprites;
+            GlyphRasterDiagnostics.CountSpriteSetBuild();
         }
 
         public RunMaskKey Key { get; }

@@ -91,13 +91,26 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            FlushAtlasBatch();
+            FlushAtlasBatch(GlyphBatchFlushReason.OtherTextPath);
 
-            if (_lcdBatchCount > 0 &&
-                (entry.Page != _lcdBatchPage || tint != _lcdBatchTint || _lcdBatchCount == MaxSpritesPerAtlasDraw ||
-                 OverlapsLcdBatch(x, y, entry)))
+            if (_lcdBatchCount > 0)
             {
-                FlushLcdBatch();
+                if (entry.Page != _lcdBatchPage)
+                {
+                    FlushLcdBatch(GlyphBatchFlushReason.PageChange);
+                }
+                else if (tint != _lcdBatchTint)
+                {
+                    FlushLcdBatch(GlyphBatchFlushReason.ColorChange);
+                }
+                else if (_lcdBatchCount == MaxSpritesPerAtlasDraw)
+                {
+                    FlushLcdBatch(GlyphBatchFlushReason.SpriteCap);
+                }
+                else if (OverlapsLcdBatch(x, y, entry))
+                {
+                    FlushLcdBatch(GlyphBatchFlushReason.Overlap);
+                }
             }
 
             AppendToLcdBatch(entry, x, y, tint);
@@ -144,12 +157,15 @@ namespace Avalonia.Skia
         }
 
         /// <summary>Draws the pending subpixel batch with one call through the colour's blender.</summary>
-        private void FlushLcdBatch()
+        private void FlushLcdBatch(GlyphBatchFlushReason reason)
         {
             if (_lcdBatchCount == 0)
             {
                 return;
             }
+
+            CountFlush(reason);
+            CountBatchDrawn(reason, _lcdBatchCount);
 
             var page = _lcdBatchPage!;
             var arrays = _lcdBatch!;
@@ -207,6 +223,11 @@ namespace Avalonia.Skia
                 return current;
             }
 
+            if (page.Realized is not null)
+            {
+                t_pageImagesReplaced++;
+            }
+
             page.Realized?.Dispose();
 
             var image = CreateLcdPageImage(page);
@@ -229,6 +250,7 @@ namespace Avalonia.Skia
             using var pixmap = new SKPixmap(info, address, LcdRunAtlas.PageWidth * 4);
 
             t_pageImagesCreated++;
+            t_pageImageBytes += info.BytesSize64;
 
             // Placements after this point only fill rows and columns no entry of this version
             // samples, and growth moves the page to a new array, so the wrapped pixels stay what

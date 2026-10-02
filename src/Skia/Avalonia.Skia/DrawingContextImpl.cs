@@ -115,7 +115,7 @@ namespace Avalonia.Skia
 
             public ISkiaSharpApiLease Lease()
             {
-                _context.PrepareCanvas();
+                _context.PrepareCanvas(GlyphBatchFlushReason.Other);
                 return new ApiLease(_context);
             }
 
@@ -271,10 +271,14 @@ namespace Avalonia.Skia
         /// layer state. Pending glyph atlas sprites are drawn first, so they keep their place
         /// in the draw order and the clip and layer they were recorded under.
         /// </summary>
-        private void PrepareCanvas()
+        private void PrepareCanvas() => PrepareCanvas(GlyphBatchFlushReason.CanvasOperation);
+
+        /// <inheritdoc cref="PrepareCanvas()"/>
+        /// <param name="reason">Why pending glyph batches are drawn now, for the flush counters.</param>
+        private void PrepareCanvas(GlyphBatchFlushReason reason)
         {
             CheckLease();
-            FlushGlyphBatch();
+            FlushGlyphBatch(reason);
         }
         
         /// <inheritdoc />
@@ -374,7 +378,7 @@ namespace Avalonia.Skia
         private void DrawLcdMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb,
             SKSamplingOptions sampling)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.OtherTextPath);
 
             var source = sourceRect.ToSKRect();
             SKImage image;
@@ -432,7 +436,7 @@ namespace Avalonia.Skia
         private void DrawAlphaMask(IDisposable mask, Rect sourceRect, Rect destRect, uint tintArgb,
             SKSamplingOptions sampling)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.OtherTextPath);
             DrawAlphaMask((SKImage)mask, sourceRect.ToSKRect(), destRect, tintArgb, sampling);
         }
 
@@ -856,7 +860,7 @@ namespace Avalonia.Skia
 
                     if (TextTierDiagnostics.TintTiers)
                     {
-                        FlushGlyphBatch();
+                        FlushGlyphBatch(GlyphBatchFlushReason.Other);
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
                     }
 
@@ -876,7 +880,7 @@ namespace Avalonia.Skia
 
                     if (TextTierDiagnostics.TintTiers)
                     {
-                        FlushGlyphBatch();
+                        FlushGlyphBatch(GlyphBatchFlushReason.Other);
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds,
                             TextTierDiagnostics.TransformedMaskTierColor);
                     }
@@ -885,7 +889,7 @@ namespace Avalonia.Skia
                 }
 
                 // The native fallbacks below draw straight to the canvas.
-                FlushGlyphBatch();
+                FlushGlyphBatch(GlyphBatchFlushReason.OtherTextPath);
 
                 if (ManagedGlyphOutlines.AreRequired(managedRun.GlyphTypeface))
                 {
@@ -939,7 +943,7 @@ namespace Avalonia.Skia
                 return;
             }
 
-            FlushGlyphBatch();
+            FlushGlyphBatch(GlyphBatchFlushReason.OtherTextPath);
 
             // The native blob applies the face's simulations to every glyph, colour glyphs
             // included (Skia's skew slants them). Text layout splits colour glyphs out of the
@@ -966,14 +970,14 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushClip(Rect clip)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipRect(clip.ToSKRect());
         }
 
         public void PushClip(RoundedRect clip)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
 
             // Get the rounded rectangle
@@ -998,7 +1002,7 @@ namespace Avalonia.Skia
         public void PushClip(IPlatformRenderInterfaceRegion region)
         {
             var r = ((SkiaRegionImpl)region).Region;
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipRegion(r);
         }
@@ -1012,20 +1016,20 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopClip()
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Clip);
             RestoreCanvas();
         }
 
         public void PushLayer(Rect bounds)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Layer);
             _saveLayerDepth++;
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
         }
 
         public void PopLayer()
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Layer);
             _saveLayerDepth--;
             RestoreCanvas();
         }
@@ -1033,7 +1037,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushOpacity(double opacity, Rect? bounds)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Layer);
 
             _opacityStack.Push(_currentOpacity);
 
@@ -1066,7 +1070,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopOpacity()
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Layer);
 
             var useOpacitySaveLayer = _useOpacitySaveLayer || RenderOptions.RequiresFullOpacityHandling == true;
 
@@ -1113,7 +1117,7 @@ namespace Avalonia.Skia
         {
             if(_disposed)
                 return;
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.EndOfSession);
             try
             {
                 // Return leased paints.
@@ -1143,7 +1147,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushGeometryClip(IGeometryImpl clip)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
             Canvas.ClipPath(((GeometryImpl)clip).FillPath, SKClipOperation.Intersect, true);
         }
@@ -1151,14 +1155,14 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopGeometryClip()
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Clip);
             RestoreCanvas();
         }
 
         /// <inheritdoc />
         public void PushOpacityMask(IBrush mask, Rect bounds)
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Layer);
 
             var paint = SKPaintCache.Shared.Get();
 
@@ -1170,7 +1174,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopOpacityMask()
         {
-            PrepareCanvas();
+            PrepareCanvas(GlyphBatchFlushReason.Layer);
 
             var paint = SKPaintCache.Shared.Get();
             paint.BlendMode = SKBlendMode.DstIn;
