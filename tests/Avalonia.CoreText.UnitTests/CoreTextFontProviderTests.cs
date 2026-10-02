@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Avalonia.Base.UnitTests.Media.Fonts;
 using Avalonia.Media;
@@ -179,6 +181,52 @@ namespace Avalonia.CoreText.UnitTests
 
             // Helvetica ships a designed bold face; family faces never carry simulations.
             Assert.Contains(faces, static f => f.Weight == FontWeight.Bold && f.Style == FontStyle.Normal);
+        }
+
+        [MacOSFact]
+        public void Faces_Should_Report_The_Designed_Properties_Of_Their_Files()
+        {
+            using var provider = new CoreTextFontProvider();
+
+            // The font system keys and simulates faces by what their files say (OS/2, head,
+            // post, name); CoreText's traits disagree for many system faces (Hiragino Sans W3 is
+            // weight 300 in its file and 400 by trait, Arial Narrow condensed in its file and
+            // normal by trait), so the provider must report the file's values.
+            var mismatches = new List<string>();
+            var faceCount = 0;
+
+            foreach (var familyName in provider.GetFontFamilyNames())
+            {
+                if (!provider.TryGetFamilyFaces(familyName, out var faces))
+                {
+                    continue;
+                }
+
+                foreach (var face in faces)
+                {
+                    if (!face.TryOpenFontMemory(out var fontMemory))
+                    {
+                        continue;
+                    }
+
+                    var glyphTypeface = new GlyphTypeface(fontMemory);
+
+                    faceCount++;
+
+                    if (face.Weight != glyphTypeface.Weight || face.Stretch != glyphTypeface.Stretch ||
+                        face.Style != glyphTypeface.Style)
+                    {
+                        mismatches.Add($"{face.PostScriptName}: provider {(int)face.Weight} {face.Stretch} {face.Style}, " +
+                                       $"file {(int)glyphTypeface.Weight} {glyphTypeface.Stretch} {glyphTypeface.Style}");
+                    }
+
+                    glyphTypeface.Dispose();
+                }
+            }
+
+            Assert.True(faceCount > 100, $"only {faceCount} faces checked");
+            Assert.True(mismatches.Count == 0,
+                $"{mismatches.Count} of {faceCount} faces differ:\n" + string.Join("\n", mismatches.Take(40)));
         }
 
         [MacOSFact]
