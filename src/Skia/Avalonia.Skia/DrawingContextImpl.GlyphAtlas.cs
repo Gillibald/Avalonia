@@ -364,6 +364,9 @@ namespace Avalonia.Skia
             private int _recordedLength;
             private SKVertices[]? _batchVertices;
 
+            // The sprites' device rectangle at the origin, made on first use.
+            private SKRect? _bounds;
+
             public SkiaGlyphAtlasBatch(SKRect[] sources, SKRotationScaleMatrix[] placements, SKImage? image)
             {
                 Sources = sources;
@@ -376,6 +379,35 @@ namespace Avalonia.Skia
             public SKRotationScaleMatrix[] Placements { get; }
 
             public SKImage? Image { get; }
+
+            /// <summary>
+            /// The device rectangle the sprites cover when the batch is drawn at the origin, made
+            /// on first use; an empty batch covers nothing.
+            /// </summary>
+            public SKRect Bounds
+            {
+                get
+                {
+                    if (_bounds is { } bounds)
+                    {
+                        return bounds;
+                    }
+
+                    var result = SKRect.Empty;
+
+                    for (var i = 0; i < Sources.Length; i++)
+                    {
+                        var placement = Placements[i];
+                        var sprite = SKRect.Create(placement.TX, placement.TY, Sources[i].Width, Sources[i].Height);
+
+                        result = i == 0 ? sprite : SKRect.Union(result, sprite);
+                    }
+
+                    _bounds = result;
+
+                    return result;
+                }
+            }
 
             /// <summary>
             /// Vertices for a pending batch that begins with these sprites, placed relative to
