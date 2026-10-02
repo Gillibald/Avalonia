@@ -61,6 +61,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        // Compiled optimized at once rather than tiered: unoptimized vector code blends a run
+        // several times slower, and a frame of text calls this once per run, so the first
+        // hundreds of frames would otherwise draw on it. Never inlined, so a caller tiering up
+        // with a profile cannot lay the loop out again.
+        [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.NoInlining)]
         private static unsafe void Blend<TDivide>(in GlyphBlitTarget target, ReadOnlySpan<uint> multiply,
             ReadOnlySpan<uint> plus, int width, int height, int x, int y)
             where TDivide : struct, IDivide255
