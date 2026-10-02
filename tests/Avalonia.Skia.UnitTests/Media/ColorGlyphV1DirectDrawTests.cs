@@ -60,6 +60,12 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(GpuBackend.Angle, "H", true)]
         [InlineData(GpuBackend.Angle, "AHB", true)]
         [InlineData(GpuBackend.Angle, "HAH", true)]
+        [InlineData(GpuBackend.Metal, "H", false)]
+        [InlineData(GpuBackend.Metal, "AHB", false)]
+        [InlineData(GpuBackend.Metal, "HAH", false)]
+        [InlineData(GpuBackend.Metal, "H", true)]
+        [InlineData(GpuBackend.Metal, "AHB", true)]
+        [InlineData(GpuBackend.Metal, "HAH", true)]
         public void A_Direct_Draw_Renders_V1_Glyphs_Through_Their_Drawings_On_A_Gpu_Context(
             GpuBackend backend, string pattern, bool rotated)
         {

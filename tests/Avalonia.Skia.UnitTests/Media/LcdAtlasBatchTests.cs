@@ -32,6 +32,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             yield return new object[] { GpuBackend.NativeGl };
             yield return new object[] { GpuBackend.Angle };
+            yield return new object[] { GpuBackend.Metal };
         }
 
         [Theory]

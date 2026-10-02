@@ -88,6 +88,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Theory]
         [InlineData(GpuBackend.NativeGl)]
         [InlineData(GpuBackend.Angle)]
+        [InlineData(GpuBackend.Metal)]
         public void A_Gpu_Context_Reports_What_Its_Grcontext_Was_Classified_As(GpuBackend backend)
         {
             using var gpu = GpuTestContext.TryCreate(backend, out var reason);
