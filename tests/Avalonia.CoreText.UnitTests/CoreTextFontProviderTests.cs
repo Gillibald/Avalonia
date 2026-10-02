@@ -152,6 +152,30 @@ namespace Avalonia.CoreText.UnitTests
         }
 
         [MacOSFact]
+        public void Han_Fallback_Should_Return_Faces_With_Outlines_The_Font_System_Draws()
+        {
+            using var provider = new CoreTextFontProvider();
+
+            // macOS 26 answers Chinese text with PingFang UI, whose glyphs exist only in Apple's
+            // hvgl table, which neither rasterizer reads; the match must be a face the text can
+            // be drawn with.
+            foreach (var culture in new[] { "zh-Hans", "zh-Hant", "zh-HK", "ja-JP", "ko-KR", "en-US" })
+            {
+                Assert.True(provider.TryMatchCharacter(0x4E2D, FontStyle.Normal, FontWeight.Normal,
+                    FontStretch.Normal, null, CultureInfo.GetCultureInfo(culture), out var match), culture);
+                Assert.True(match.TryOpenFontMemory(out var fontMemory), culture);
+
+                var glyphTypeface = new GlyphTypeface(fontMemory);
+
+                Assert.True(glyphTypeface.OutlineType != GlyphOutlineType.None || glyphTypeface.BitmapSource is not null,
+                    $"{culture}: {match.FamilyName} has no outlines the font system draws");
+                Assert.NotEqual(0, glyphTypeface.CharacterToGlyphMap[0x4E2D]);
+
+                glyphTypeface.Dispose();
+            }
+        }
+
+        [MacOSFact]
         public void Should_Get_Family_Faces_With_Designed_Properties()
         {
             using var provider = new CoreTextFontProvider();
