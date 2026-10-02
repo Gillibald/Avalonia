@@ -130,6 +130,28 @@ namespace Avalonia.CoreText.UnitTests
         }
 
         [MacOSFact]
+        public void Han_Fallback_Should_Load_The_Face_CoreText_Matched()
+        {
+            using var provider = new CoreTextFontProvider();
+
+            // The cascade answers each Chinese locale with its own face of a collection of
+            // variable fonts (PingFang UI on current macOS); the descriptor must load that face,
+            // not the collection's first.
+            foreach (var culture in new[] { "zh-Hans", "zh-Hant", "zh-HK", "ja-JP" })
+            {
+                Assert.True(provider.TryMatchCharacter(0x4E2D, FontStyle.Normal, FontWeight.Normal,
+                    FontStretch.Normal, null, CultureInfo.GetCultureInfo(culture), out var match));
+                Assert.True(match.TryOpenFontMemory(out var fontMemory));
+
+                var glyphTypeface = new GlyphTypeface(fontMemory);
+
+                Assert.Equal(match.FamilyName, glyphTypeface.FamilyName);
+
+                glyphTypeface.Dispose();
+            }
+        }
+
+        [MacOSFact]
         public void Should_Get_Family_Faces_With_Designed_Properties()
         {
             using var provider = new CoreTextFontProvider();
@@ -240,6 +262,33 @@ namespace Avalonia.CoreText.UnitTests
                 Assert.Equal(1, notoIndex);
 
                 Assert.False(SfntNameReader.TryResolveFaceIndex(path, "NoSuchPostScriptName", out _));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        [Fact]
+        public void Should_Resolve_Face_Index_By_Named_Instance_PostScript_Name()
+        {
+            // CoreText names a face of a variable font by the PostScript name of the named
+            // instance it describes, which the fvar table carries, while the face's own name
+            // (id 6) is the default instance's: AdobeVFPrototype-Default here.
+            var path = BuildTtcFile("Inter-Regular.ttf", "AdobeVFPrototype-Subset.otf");
+
+            try
+            {
+                Assert.True(SfntNameReader.TryResolveFaceIndex(path, "AdobeVFPrototype-Default", out var defaultIndex));
+                Assert.Equal(1, defaultIndex);
+
+                Assert.True(SfntNameReader.TryResolveFaceIndex(path, "AdobeVFPrototype-Regular", out var regularIndex));
+                Assert.Equal(1, regularIndex);
+
+                Assert.True(SfntNameReader.TryResolveFaceIndex(path, "AdobeVFPrototype-Light", out var lightIndex));
+                Assert.Equal(1, lightIndex);
+
+                Assert.False(SfntNameReader.TryResolveFaceIndex(path, "AdobeVFPrototype-NoSuchInstance", out _));
             }
             finally
             {
