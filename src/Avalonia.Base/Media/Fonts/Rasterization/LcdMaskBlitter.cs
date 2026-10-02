@@ -26,7 +26,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// The multiply blend is <c>s * (1 - da) + d * (1 - sa) + s * d</c> with an opaque source, and
     /// the pipeline divides by 255 as <c>(v + 255) &gt;&gt; 8</c>, which lands within one level of
     /// the rounded quotient <c>(v + 127) / 255</c>, in either direction, for every product of two
-    /// bytes. The plus blend saturates. Alpha always comes out opaque.
+    /// bytes. A target whose <see cref="GlyphBlitTarget.Arithmetic"/> is
+    /// <see cref="GlyphBlitArithmetic.Rounded"/> divides to nearest instead, as Skia's ARM64 code
+    /// does. The plus blend saturates. Alpha always comes out opaque.
     /// </para>
     /// <para>
     /// Since <c>d &lt;= da</c> in premultiplied pixels, <c>m * (255 - da + d) + 255</c> stays below
@@ -46,8 +48,22 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// rows <paramref name="width"/> apart, with their top-left at (<paramref name="x"/>,
         /// <paramref name="y"/>) in device pixels, clipped to the target's clip.
         /// </summary>
-        public static unsafe void Blend(in GlyphBlitTarget target, ReadOnlySpan<uint> multiply,
+        public static void Blend(in GlyphBlitTarget target, ReadOnlySpan<uint> multiply,
             ReadOnlySpan<uint> plus, int width, int height, int x, int y)
+        {
+            if (target.Arithmetic == GlyphBlitArithmetic.Rounded)
+            {
+                Blend<RoundedDivide>(target, multiply, plus, width, height, x, y);
+            }
+            else
+            {
+                Blend<PipelineDivide>(target, multiply, plus, width, height, x, y);
+            }
+        }
+
+        private static unsafe void Blend<TDivide>(in GlyphBlitTarget target, ReadOnlySpan<uint> multiply,
+            ReadOnlySpan<uint> plus, int width, int height, int x, int y)
+            where TDivide : struct, IDivide255
         {
             if (width <= 0 || height <= 0)
             {
@@ -85,21 +101,22 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     if (path == GlyphBlitPath.Portable)
                     {
-                        done = BlendRowPortable(m + offset, p + offset, destination, count, swap);
+                        done = BlendRowPortable<TDivide>(m + offset, p + offset, destination, count, swap);
                     }
 
                     if (path == GlyphBlitPath.Avx2)
                     {
-                        done = BlendRowAvx2(m + offset, p + offset, destination, count, swap);
+                        done = BlendRowAvx2<TDivide>(m + offset, p + offset, destination, count, swap);
                     }
 
                     if (path is GlyphBlitPath.Ssse3 or GlyphBlitPath.Avx2)
                     {
-                        done += BlendRowSsse3(m + offset + done, p + offset + done, destination + done, count - done,
-                            swap);
+                        done += BlendRowSsse3<TDivide>(m + offset + done, p + offset + done, destination + done,
+                            count - done, swap);
                     }
 
-                    BlendRowScalar(m + offset + done, p + offset + done, destination + done, count - done, swap);
+                    BlendRowScalar<TDivide>(m + offset + done, p + offset + done, destination + done,
+                        count - done, swap);
                 }
             }
         }
@@ -108,7 +125,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static uint SwapRedBlue(uint bgra) => (bgra & 0xFF00FF00) | ((bgra >> 16) & 0xFF) | ((bgra & 0xFF) << 16);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe void BlendRowScalar(uint* multiply, uint* plus, uint* destination, int count, bool swap)
+        private static unsafe void BlendRowScalar<TDivide>(uint* multiply, uint* plus, uint* destination, int count,
+            bool swap)
+            where TDivide : struct, IDivide255
         {
             for (var i = 0; i < count; i++)
             {
@@ -129,7 +148,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     var mc = (int)((m >> shift) & 0xFF);
                     var dc = (int)((pixel >> shift) & 0xFF);
-                    var multiplied = (mc * (inverseAlpha + dc) + 255) >> 8;
+                    var multiplied = TDivide.Divide(mc * (inverseAlpha + dc));
                     var sum = multiplied + (int)((p >> shift) & 0xFF);
 
                     result |= (uint)Math.Min(255, sum) << shift;
@@ -140,7 +159,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int BlendRowSsse3(uint* multiply, uint* plus, uint* destination, int count, bool swap)
+        private static unsafe int BlendRowSsse3<TDivide>(uint* multiply, uint* plus, uint* destination, int count,
+            bool swap)
+            where TDivide : struct, IDivide255
         {
             var i = 0;
 
@@ -162,8 +183,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var factorLow = Vector128.Create((ushort)255) - Ssse3.Shuffle(currentLow.AsByte(), s_alphaBroadcast).AsUInt16() + currentLow;
                 var factorHigh = Vector128.Create((ushort)255) - Ssse3.Shuffle(currentHigh.AsByte(), s_alphaBroadcast).AsUInt16() + currentHigh;
 
-                var multipliedLow = (Sse2.UnpackLow(m, Vector128<byte>.Zero).AsUInt16() * factorLow + Vector128.Create((ushort)255)) >>> 8;
-                var multipliedHigh = (Sse2.UnpackHigh(m, Vector128<byte>.Zero).AsUInt16() * factorHigh + Vector128.Create((ushort)255)) >>> 8;
+                var multipliedLow = TDivide.Divide(Sse2.UnpackLow(m, Vector128<byte>.Zero).AsUInt16() * factorLow);
+                var multipliedHigh = TDivide.Divide(Sse2.UnpackHigh(m, Vector128<byte>.Zero).AsUInt16() * factorHigh);
 
                 var multiplied = Sse2.PackUnsignedSaturate(multipliedLow.AsInt16(), multipliedHigh.AsInt16());
 
@@ -178,7 +199,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// and the saturating byte addition as <c>m + min(p, 255 - m)</c>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int BlendRowPortable(uint* multiply, uint* plus, uint* destination, int count, bool swap)
+        private static unsafe int BlendRowPortable<TDivide>(uint* multiply, uint* plus, uint* destination, int count,
+            bool swap)
+            where TDivide : struct, IDivide255
         {
             var i = 0;
 
@@ -201,8 +224,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var factorLow = Vector128.Create((ushort)255) - Vector128.Shuffle(currentLow, alpha) + currentLow;
                 var factorHigh = Vector128.Create((ushort)255) - Vector128.Shuffle(currentHigh, alpha) + currentHigh;
 
-                var multipliedLow = (Vector128.WidenLower(m) * factorLow + Vector128.Create((ushort)255)) >>> 8;
-                var multipliedHigh = (Vector128.WidenUpper(m) * factorHigh + Vector128.Create((ushort)255)) >>> 8;
+                var multipliedLow = TDivide.Divide(Vector128.WidenLower(m) * factorLow);
+                var multipliedHigh = TDivide.Divide(Vector128.WidenUpper(m) * factorHigh);
 
                 // Both halves stay at or below 255, so the narrowing truncation keeps every value.
                 var multiplied = Vector128.Narrow(multipliedLow, multipliedHigh);
@@ -214,7 +237,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe int BlendRowAvx2(uint* multiply, uint* plus, uint* destination, int count, bool swap)
+        private static unsafe int BlendRowAvx2<TDivide>(uint* multiply, uint* plus, uint* destination, int count,
+            bool swap)
+            where TDivide : struct, IDivide255
         {
             var alphaMask = Vector256.Create(s_alphaBroadcast, s_alphaBroadcast);
             var swapMask = Vector256.Create(s_swapRedBlue, s_swapRedBlue);
@@ -240,8 +265,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var factorLow = Vector256.Create((ushort)255) - Avx2.Shuffle(currentLow.AsByte(), alphaMask).AsUInt16() + currentLow;
                 var factorHigh = Vector256.Create((ushort)255) - Avx2.Shuffle(currentHigh.AsByte(), alphaMask).AsUInt16() + currentHigh;
 
-                var multipliedLow = (Avx2.UnpackLow(m, Vector256<byte>.Zero).AsUInt16() * factorLow + Vector256.Create((ushort)255)) >>> 8;
-                var multipliedHigh = (Avx2.UnpackHigh(m, Vector256<byte>.Zero).AsUInt16() * factorHigh + Vector256.Create((ushort)255)) >>> 8;
+                var multipliedLow = TDivide.Divide(Avx2.UnpackLow(m, Vector256<byte>.Zero).AsUInt16() * factorLow);
+                var multipliedHigh = TDivide.Divide(Avx2.UnpackHigh(m, Vector256<byte>.Zero).AsUInt16() * factorHigh);
 
                 var multiplied = Avx2.PackUnsignedSaturate(multipliedLow.AsInt16(), multipliedHigh.AsInt16());
 
@@ -249,6 +274,59 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return i;
+        }
+    
+        /// <summary>
+        /// The division by 255 of the multiply blend's product, a product of two bytes; every
+        /// form stays below 65536, so the vector paths compute it in 16-bit lanes.
+        /// </summary>
+        private interface IDivide255
+        {
+            static abstract int Divide(int product);
+
+            static abstract Vector128<ushort> Divide(Vector128<ushort> product);
+
+            static abstract Vector256<ushort> Divide(Vector256<ushort> product);
+        }
+
+        /// <summary><c>(v + 255) &gt;&gt; 8</c>: the 8-bit raster pipeline's division.</summary>
+        private readonly struct PipelineDivide : IDivide255
+        {
+            public static int Divide(int product) => (product + 255) >> 8;
+
+            public static Vector128<ushort> Divide(Vector128<ushort> product)
+                => (product + Vector128.Create((ushort)255)) >>> 8;
+
+            public static Vector256<ushort> Divide(Vector256<ushort> product)
+                => (product + Vector256.Create((ushort)255)) >>> 8;
+        }
+
+        /// <summary>
+        /// <c>(v + 127) / 255</c> by shifts, as <c>(p + (p &gt;&gt; 8)) &gt;&gt; 8</c> with
+        /// <c>p = v + 128</c>: the division of Skia's ARM64 raster pipeline.
+        /// </summary>
+        private readonly struct RoundedDivide : IDivide255
+        {
+            public static int Divide(int product)
+            {
+                var rounded = product + 128;
+
+                return (rounded + (rounded >> 8)) >> 8;
+            }
+
+            public static Vector128<ushort> Divide(Vector128<ushort> product)
+            {
+                var rounded = product + Vector128.Create((ushort)128);
+
+                return (rounded + (rounded >>> 8)) >>> 8;
+            }
+
+            public static Vector256<ushort> Divide(Vector256<ushort> product)
+            {
+                var rounded = product + Vector256.Create((ushort)128);
+
+                return (rounded + (rounded >>> 8)) >>> 8;
+            }
         }
     }
 }

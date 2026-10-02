@@ -57,16 +57,30 @@ namespace Avalonia.Skia
 
             var clip = Canvas.DeviceClipBounds;
 
-            // Skia's sprite blitter takes a BGRA bitmap drawn 1:1 when the surface holds the
-            // platform's native BGRA order; onto any other surface its raster pipeline converts.
             target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, pixmap.Width, pixmap.Height,
                 new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
-                pixmap.ColorType == SKColorType.Rgba8888,
-                pixmap.ColorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888
-                    ? GlyphBlitArithmetic.Sprite
-                    : GlyphBlitArithmetic.Pipeline);
+                pixmap.ColorType == SKColorType.Rgba8888, GetBlitArithmetic(pixmap.ColorType));
 
             return true;
+        }
+
+        /// <summary>
+        /// How Skia rounds a premultiplied BGRA bitmap drawn 1:1 onto a surface of
+        /// <paramref name="colorType"/>. Its ARM64 code divides by 255 with rounding in the sprite
+        /// blitter and in the 8-bit raster pipeline alike. Elsewhere the sprite blitter takes the
+        /// bitmap when the surface holds the platform's native BGRA order, and the raster
+        /// pipeline converts onto any other surface.
+        /// </summary>
+        private static GlyphBlitArithmetic GetBlitArithmetic(SKColorType colorType)
+        {
+            if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
+            {
+                return GlyphBlitArithmetic.Rounded;
+            }
+
+            return colorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888
+                ? GlyphBlitArithmetic.Sprite
+                : GlyphBlitArithmetic.Pipeline;
         }
 
         IDisposable ITransformedGlyphContext.CreateAtlasBatch(ReadOnlySpan<GlyphAtlasSprite> sprites,

@@ -152,19 +152,24 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// The pre-tinted mask holds, at a pixel one glyph inks, the source-table entry of that
         /// glyph's coverage, and at a pixel several glyphs ink, their tinted coverages composed
         /// in run order with <see cref="RunMaskComposer.ComposeTinted"/>'s arithmetic. The blit
-        /// draws that pixel over the destination with <see cref="SpriteBlitOver"/> or
-        /// <see cref="PipelineBlitOver"/>, as <see cref="GlyphBlitTarget.Arithmetic"/> says.
+        /// draws that pixel over the destination with <see cref="SpriteBlitOver"/>,
+        /// <see cref="PipelineBlitOver"/> or <see cref="RoundedOver"/>, as
+        /// <see cref="GlyphBlitTarget.Arithmetic"/> says.
         /// </remarks>
         public static void BlendRunCoverage(in GlyphBlitTarget target, RunCoverage coverage, int x, int y,
             uint tintBgra, byte[] table)
         {
-            if (target.Arithmetic == GlyphBlitArithmetic.Sprite)
+            switch (target.Arithmetic)
             {
-                BlendRunCoverage<SpriteBlitOver>(target, coverage, x, y, tintBgra, table);
-            }
-            else
-            {
-                BlendRunCoverage<PipelineBlitOver>(target, coverage, x, y, tintBgra, table);
+                case GlyphBlitArithmetic.Sprite:
+                    BlendRunCoverage<SpriteBlitOver>(target, coverage, x, y, tintBgra, table);
+                    break;
+                case GlyphBlitArithmetic.Rounded:
+                    BlendRunCoverage<RoundedOver>(target, coverage, x, y, tintBgra, table);
+                    break;
+                default:
+                    BlendRunCoverage<PipelineBlitOver>(target, coverage, x, y, tintBgra, table);
+                    break;
             }
         }
 
