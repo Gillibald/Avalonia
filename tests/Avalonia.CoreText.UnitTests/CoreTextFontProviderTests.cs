@@ -230,6 +230,30 @@ namespace Avalonia.CoreText.UnitTests
         }
 
         [MacOSFact]
+        public void The_System_Font_Should_Serve_Every_Weight_Of_Its_Hidden_Family()
+        {
+            using var provider = new CoreTextFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            // The default family is a hidden, dot-prefixed one CoreText matching does not serve by
+            // name; text in a bold system font must still reach a face, with the weight the face
+            // lacks simulated.
+            Assert.True(collection.TryGetDefaultFontFamily(out var family));
+
+            foreach (var weight in new[] { FontWeight.Light, FontWeight.Normal, FontWeight.SemiBold, FontWeight.Bold })
+            {
+                Assert.True(collection.TryGetGlyphTypeface(family.Name, FontStyle.Normal, weight, FontStretch.Normal,
+                    out var glyphTypeface), $"{weight}");
+
+                if (weight >= FontWeight.SemiBold)
+                {
+                    Assert.True(glyphTypeface.Weight >= weight || glyphTypeface.FontSimulations.HasFlag(FontSimulations.Bold),
+                        $"{weight}: {glyphTypeface.Weight}, {glyphTypeface.FontSimulations}");
+                }
+            }
+        }
+
+        [MacOSFact]
         public void Condensed_Faces_Should_Report_The_Width_Class_Of_Their_File()
         {
             using var provider = new CoreTextFontProvider();
