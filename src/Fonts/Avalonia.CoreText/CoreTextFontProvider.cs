@@ -37,6 +37,9 @@ namespace Avalonia.Media.Fonts
 
         private static readonly ConcurrentDictionary<(string Path, int FaceIndex), bool> s_drawable = new();
 
+        private static readonly ConcurrentDictionary<(string Path, int FaceIndex),
+            (FontWeight Weight, FontStyle Style, FontStretch Stretch)?> s_staticFaceProperties = new();
+
         /// <summary>
         /// Initializes CoreText lazily on first use: constructing (and registering) the provider
         /// does no native work, and a missing framework turns every query into a miss instead of
@@ -746,8 +749,50 @@ namespace Avalonia.Media.Fonts
                 SfntNameReader.TryResolveFaceIndex(filePath!, postScriptName, out faceIndex);
             }
 
+            // A static face reports what its file says, which the font system keys, matches and
+            // simulates by; CoreText's traits disagree for many system faces. A face of a variable
+            // font keeps the traits of the instance CoreText describes.
+            if (TryGetStaticFaceProperties(filePath!, faceIndex, out var designed))
+            {
+                (weight, style, stretch) = designed;
+            }
+
             return new SystemFontFace(familyName!, style, weight, stretch, filePath!, faceIndex, postScriptName,
                 GetAxisValues(descriptor));
+        }
+
+        /// <summary>
+        /// The weight, style and stretch the font system reads from a static face's file, as its
+        /// glyph typeface reports them. Kept per file and face, which never change while the
+        /// process runs; <see langword="false"/> for faces of variable fonts and unreadable files.
+        /// </summary>
+        private static bool TryGetStaticFaceProperties(string filePath, int faceIndex,
+            out (FontWeight Weight, FontStyle Style, FontStretch Stretch) properties)
+        {
+            var key = (filePath, faceIndex);
+
+            if (!s_staticFaceProperties.TryGetValue(key, out var cached))
+            {
+                cached = null;
+
+                if (SfntFace.TryLoad(filePath, faceIndex, out var face))
+                {
+                    var glyphTypeface = new GlyphTypeface(face);
+
+                    if (glyphTypeface.VariationAxes.Count == 0)
+                    {
+                        cached = (glyphTypeface.Weight, glyphTypeface.Style, glyphTypeface.Stretch);
+                    }
+
+                    glyphTypeface.Dispose();
+                }
+
+                cached = s_staticFaceProperties.GetOrAdd(key, cached);
+            }
+
+            properties = cached.GetValueOrDefault();
+
+            return cached.HasValue;
         }
 
         /// <summary>
