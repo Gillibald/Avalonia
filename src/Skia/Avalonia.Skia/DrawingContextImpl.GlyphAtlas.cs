@@ -121,8 +121,8 @@ namespace Avalonia.Skia
             var oldTransform = Transform;
 
             Transform = transform;
-            Canvas.DrawAtlas(image, backend.Sources, backend.Placements, bilinear ? s_bilinear : s_nearest, paint);
-            t_atlasDraws++;
+            t_atlasDraws += DrawAtlasSprites(image, backend.Sources, backend.Placements,
+                bilinear ? s_bilinear : s_nearest, paint);
             t_atlasGeometry += backend.Sources.Length;
             Transform = oldTransform;
 
@@ -145,19 +145,6 @@ namespace Avalonia.Skia
         {
             PrepareCanvas();
 
-            // DrawAtlas takes the sprite count from the array lengths, so the arrays are exact
-            // fits, kept per length: a steady animation draws the same sprite counts frame
-            // after frame and allocates none. Skia copies the geometry during the call.
-            var (sources, placements) = GetTransientSpriteArrays(sprites.Length);
-
-            for (var i = 0; i < sprites.Length; i++)
-            {
-                var sprite = sprites[i];
-
-                sources[i] = SKRect.Create(sprite.SourceX, sprite.SourceY, sprite.Width, sprite.Height);
-                placements[i] = SKRotationScaleMatrix.CreateTranslation(sprite.X, sprite.Y);
-            }
-
             var paint = SKPaintCache.Shared.Get();
 
             paint.Color = new SKColor((byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb,
@@ -166,11 +153,73 @@ namespace Avalonia.Skia
             var oldTransform = Transform;
 
             Transform = transform;
-            Canvas.DrawAtlas((SKImage)image, sources, placements, s_nearest, paint);
+
+            for (var start = 0; start < sprites.Length; start += MaxSpritesPerAtlasDraw)
+            {
+                var slice = sprites.Slice(start, Math.Min(MaxSpritesPerAtlasDraw, sprites.Length - start));
+
+                // DrawAtlas takes the sprite count from the array lengths, so the arrays are exact
+                // fits, kept per length: a steady animation draws the same sprite counts frame
+                // after frame and allocates none. Skia copies the geometry during the call.
+                var (sources, placements) = GetTransientSpriteArrays(slice.Length);
+
+                for (var i = 0; i < slice.Length; i++)
+                {
+                    var sprite = slice[i];
+
+                    sources[i] = SKRect.Create(sprite.SourceX, sprite.SourceY, sprite.Width, sprite.Height);
+                    placements[i] = SKRotationScaleMatrix.CreateTranslation(sprite.X, sprite.Y);
+                }
+
+                Canvas.DrawAtlas((SKImage)image, sources, placements, s_nearest, paint);
+            }
+
             t_atlasGeometry += sprites.Length;
             Transform = oldTransform;
 
             SKPaintCache.Shared.ReturnReset(paint);
+        }
+
+        /// <summary>
+        /// The most sprites one atlas draw hands to Skia. Skia's GPU atlas op sizes its vertex data
+        /// in a 32-bit int at 64 bytes per sprite, so a draw of 2^25 sprites overflows it and writes
+        /// out of bounds. A draw stays at the 65536 vertices one kept-vertices part addresses with
+        /// 16-bit indices; a frame of ordinary text fits in one.
+        /// </summary>
+        /// <remarks>
+        /// Skia also merges consecutive atlas draws of one image and colour into one op until the
+        /// surface is flushed, and that op overflows the same way past 2^25 sprites. Surfaces are
+        /// flushed every frame, far below that.
+        /// </remarks>
+        internal const int MaxSpritesPerAtlasDraw = 16384;
+
+        /// <summary>
+        /// Draws the sprites in order, in calls of at most <see cref="MaxSpritesPerAtlasDraw"/>
+        /// sprites, and returns the number of calls.
+        /// </summary>
+        private int DrawAtlasSprites(SKImage image, SKRect[] sources, SKRotationScaleMatrix[] placements,
+            SKSamplingOptions sampling, SKPaint paint)
+        {
+            if (sources.Length <= MaxSpritesPerAtlasDraw)
+            {
+                Canvas.DrawAtlas(image, sources, placements, sampling, paint);
+                return 1;
+            }
+
+            var draws = 0;
+
+            for (var start = 0; start < sources.Length; start += MaxSpritesPerAtlasDraw)
+            {
+                var length = Math.Min(MaxSpritesPerAtlasDraw, sources.Length - start);
+                var (sliceSources, slicePlacements) = GetTransientSpriteArrays(length);
+
+                Array.Copy(sources, start, sliceSources, 0, length);
+                Array.Copy(placements, start, slicePlacements, 0, length);
+                Canvas.DrawAtlas(image, sliceSources, slicePlacements, sampling, paint);
+                draws++;
+            }
+
+            return draws;
         }
 
         private const int MaxTransientSpriteArrayLengths = 64;

@@ -71,7 +71,8 @@ namespace Avalonia.Skia
         /// <summary>
         /// Appends an atlas entry drawn 1:1 at (<paramref name="x"/>, <paramref name="y"/>) to
         /// the pending subpixel batch, flushing first when the batch samples another page,
-        /// blends another colour, or holds an entry the new one would overlap. Returns
+        /// blends another colour, holds an entry the new one would overlap, or holds as many
+        /// entries as one atlas draw takes (<see cref="MaxSpritesPerAtlasDraw"/>). Returns
         /// <c>false</c> when the draw cannot be batched.
         /// </summary>
         /// <remarks>
@@ -93,7 +94,8 @@ namespace Avalonia.Skia
             FlushAtlasBatch();
 
             if (_lcdBatchCount > 0 &&
-                (entry.Page != _lcdBatchPage || tint != _lcdBatchTint || OverlapsLcdBatch(x, y, entry)))
+                (entry.Page != _lcdBatchPage || tint != _lcdBatchTint || _lcdBatchCount == MaxSpritesPerAtlasDraw ||
+                 OverlapsLcdBatch(x, y, entry)))
             {
                 FlushLcdBatch();
             }

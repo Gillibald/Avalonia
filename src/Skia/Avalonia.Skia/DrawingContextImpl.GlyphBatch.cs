@@ -28,14 +28,20 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// Appends a run's atlas batch drawn 1:1 at a whole-pixel offset to the pending glyph
-        /// batch, flushing first when the batch samples another page or draws another colour.
-        /// Returns <c>false</c> when the draw cannot be batched.
+        /// batch, flushing first when the batch samples another page, draws another colour, or
+        /// would outgrow one atlas draw. Returns <c>false</c> when the draw cannot be batched.
         /// </summary>
         /// <remarks>
         /// The page image is made when the batch is drawn, not here: runs appended later may
         /// still add glyphs to the page, and the image of its latest version shows every
         /// sprite appended before. That also uploads a page once per batch instead of once
         /// per run that wrote to it.
+        /// <para>
+        /// A batch of several runs holds at most <see cref="MaxSpritesPerAtlasDraw"/> sprites, so
+        /// a context that is never flushed, kept across frames say, draws its batch as it goes
+        /// instead of piling up runs without bound. A single run of more sprites is a batch of
+        /// its own and draws in several calls.
+        /// </para>
         /// </remarks>
         private bool TryAppendToGlyphBatch(GlyphAtlasPage page, SkiaGlyphAtlasBatch backend, in Matrix transform,
             SKColor color)
@@ -52,7 +58,8 @@ namespace Avalonia.Skia
 
             FlushLcdBatch();
 
-            if (_batchRunCount > 0 && (page != _batchPage || color != _batchColor))
+            if (_batchRunCount > 0 && (page != _batchPage || color != _batchColor ||
+                                       _batchCount + backend.Sources.Length > MaxSpritesPerAtlasDraw))
             {
                 FlushAtlasBatch();
             }
@@ -119,6 +126,7 @@ namespace Avalonia.Skia
             var image = transient ?? GetPageImage(page);
             var paint = SKPaintCache.Shared.Get();
             var oldTransform = Transform;
+            var draws = 1;
 
             paint.Color = _batchColor;
 
@@ -132,6 +140,8 @@ namespace Avalonia.Skia
                     Canvas.DrawVertices(part, SKBlendMode.Modulate, paint);
                 }
 
+                draws = vertices.Length;
+
                 if (built)
                 {
                     t_atlasGeometry += _batchCount;
@@ -142,12 +152,14 @@ namespace Avalonia.Skia
                 // A single run draws its own arrays under its placement, exactly as an unbatched
                 // draw would.
                 Transform = Matrix.CreateTranslation(first.X, first.Y);
-                Canvas.DrawAtlas(image.Image, first.Backend.Sources, first.Backend.Placements, s_nearest, paint);
+                draws = DrawAtlasSprites(image.Image, first.Backend.Sources, first.Backend.Placements, s_nearest,
+                    paint);
                 t_atlasGeometry += _batchCount;
             }
             else
             {
-                // DrawAtlas takes the sprite count from the array lengths.
+                // DrawAtlas takes the sprite count from the array lengths. Several runs are only
+                // batched together within one draw's sprites.
                 var (sources, placements) = GetTransientSpriteArrays(_batchCount);
                 var offset = 0;
 
@@ -178,7 +190,7 @@ namespace Avalonia.Skia
             Transform = oldTransform;
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
-            t_atlasDraws++;
+            t_atlasDraws += draws;
 
             // The pooled list must not keep the runs' arrays alive.
             Array.Clear(runs, 0, count);
