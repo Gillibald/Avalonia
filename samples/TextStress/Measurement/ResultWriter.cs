@@ -17,7 +17,7 @@ namespace TextStress.Measurement
             "latency_ms\tui_alloc\trender_alloc\tgc0\tgc1\tgc2\tgc_pause_ms\theap_bytes\tprivate_bytes\t" +
             "mask_cache_bytes\tatlas_bytes\tmask_evictions\tatlas_evictions\ttier_mask\ttier_transformed\ttier_blob\t" +
             "atlas_draws\tpage_uploads\tatlas_geometry\tmax_runs_per_batch\tatlas_pages\tatlas_pages_max_face\t" +
-            "atlas_faces\t" + string.Join("\t", RenderCounters.Columns);
+            "atlas_faces\t" + string.Join("\t", RenderCounters.Columns) + "\t" + string.Join("\t", PhaseTimes.Columns);
 
         private readonly StreamWriter _writer;
         private readonly RunOptions _options;
@@ -76,6 +76,18 @@ namespace TextStress.Measurement
             for (var i = 0; i < RenderCounters.Count; i++)
             {
                 Append(sameRenderThread ? s.CountersEnd[i] - s.CountersStart[i] : -1);
+            }
+
+            for (var i = 0; i < PhaseTimes.Count; i++)
+            {
+                Append(sameRenderThread
+                    ? PhaseTimes.TicksToMicroseconds(s.PhaseTicksEnd[i] - s.PhaseTicksStart[i])
+                    : double.NaN);
+            }
+
+            for (var i = 0; i < PhaseTimes.Count; i++)
+            {
+                Append(sameRenderThread ? s.PhaseCountsEnd[i] - s.PhaseCountsStart[i] : -1);
             }
 
             _line.Length--;

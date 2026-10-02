@@ -33,6 +33,9 @@ namespace TextStress
         /// </summary>
         public bool PrewarmPass { get; private set; }
 
+        /// <summary>Whether the render thread's glyph phase timers record (they cost a little time per probe).</summary>
+        public bool PhaseTimers { get; private set; }
+
         /// <summary>The GPU glyph batcher's pending batch limit; 0 keeps the built-in value.</summary>
         public int PendingBatches { get; private set; }
 
@@ -97,6 +100,7 @@ namespace TextStress
                     case "warmup": options.Warmup = ParseInt(key, value); break;
                     case "prewarm-ms": options.PrewarmMs = ParseInt(key, value); break;
                     case "prewarm-pass": options.PrewarmPass = value is "1" or "true" or "on" or "yes"; break;
+                    case "phase-timers": options.PhaseTimers = value is "1" or "true" or "on" or "yes"; break;
                     case "pending-batches": options.PendingBatches = ParseInt(key, value); break;
                     case "seed": options.Seed = ParseInt(key, value); break;
                     case "pass": options.Pass = ParseInt(key, value); break;
@@ -150,6 +154,7 @@ namespace TextStress
             "  --prewarm-ms N   discarded frames before the first measurement, in ms (default 2000)\n" +
             "  --prewarm-pass   run every measured frame once, discarded, before measuring (warm caches)\n" +
             "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 8)\n" +
+            "  --phase-timers   record the render thread's glyph phase timers (us_/n_ columns)\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +

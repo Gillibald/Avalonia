@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.OpenGL;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition;
@@ -191,6 +192,7 @@ namespace TextStress.Measurement
                 sample.PageUploadsStart = DrawingContextImpl.PageImagesCreatedOnThread;
                 sample.AtlasGeometryStart = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
                 RenderCounters.Read(sample.CountersStart);
+                PhaseTimes.Read(sample.PhaseTicksStart, sample.PhaseCountsStart);
                 DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
                 sample.RenderStart = Stopwatch.GetTimestamp();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -205,6 +207,7 @@ namespace TextStress.Measurement
                 sample.PageUploadsEnd = DrawingContextImpl.PageImagesCreatedOnThread;
                 sample.AtlasGeometryEnd = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
                 RenderCounters.Read(sample.CountersEnd);
+                PhaseTimes.Read(sample.PhaseTicksEnd, sample.PhaseCountsEnd);
                 sample.MaxRunsPerBatch = DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
                 rendered.TrySetResult();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -352,11 +355,16 @@ namespace TextStress.Measurement
             yield return ("thread_clock", ThreadClock.IsThreadCpu
                 ? FormattableString.Invariant($"QueryThreadCycleTime at {ThreadClock.CyclesPerMs:F0} cycles/ms")
                 : "wall");
+            yield return ("phase_timers", GlyphPhaseTimers.Enabled
+                ? FormattableString.Invariant(
+                    $"on, stopwatch at {GlyphPhaseTimers.Frequency} Hz, probe pair {PhaseTimes.TicksToMicroseconds(1) * GlyphPhaseTimers.ProbeTicks * 1000:F1} ns")
+                : "off");
             yield return ("ui_thread", Environment.CurrentManagedThreadId.ToString(CultureInfo.InvariantCulture));
             yield return ("scenario", _scenario.Name);
             yield return ("sweep", _scenario.SweepDimension ?? "-");
             yield return ("params", _scenario.Describe() +
                              (_options.PrewarmPass ? ";prewarm-pass" : "") +
+                             (_options.PhaseTimers ? ";phase-timers" : "") +
                              (_options.PendingBatches > 0
                                  ? FormattableString.Invariant($";pending-batches={_options.PendingBatches}")
                                  : ""));

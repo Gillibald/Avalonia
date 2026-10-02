@@ -10,7 +10,10 @@ frames of all passes per (scenario, params, n, mode, render) and writes:
   cost per unit of N jumps (more than doubles over the previous segment);
 - per scenario and variant: the render thread's text counters (why glyph batches were drawn,
   runs per batch, atlas page uploads, rasterizations, cache lookups) as per-frame means and as
-  totals per pass.
+  totals per pass;
+- per scenario and variant run with --phase-timers: the render thread's glyph phase times per
+  frame and per span, on all frames and split into cold frames (a glyph rasterized or a page
+  image made) and warm ones.
 Only the standard library is used.
 """
 import glob
@@ -30,7 +33,25 @@ TEXT = {"scenario", "mode", "render"}
 
 # Scenario parameters whose non-default values name a variant in the tables.
 VARIANT_DEFAULTS = {"fonts": "7", "colors": "4", "motion": "fling", "clip": "on"}
-VARIANT_FLAGS = ("prewarm-pass", "pending-batches")
+VARIANT_FLAGS = ("prewarm-pass", "pending-batches", "phase-timers")
+
+# Glyph phase timers in their enum order, with the phases each one includes.
+PHASES = ["glyph_run", "backend_text_setup", "backend_draw_text", "mask_run_draw", "sprite_set_build", "rasterize",
+          "atlas_batch_build", "atlas_write", "atlas_append", "batch_draw", "page_rewrap", "page_shader",
+          "batch_vertices", "draw_setup", "native_draw", "native_draw_fresh", "draw_teardown", "surface_flush",
+          "present"]
+
+# Time of a phase outside the phases it includes, as (name, outer, inner phases).
+EXCLUSIVE_PHASES = [
+    ("glyph_run excl. mask_run_draw", "glyph_run", ["mask_run_draw"]),
+    ("mask_run_draw excl. sets, batch builds, append", "mask_run_draw",
+     ["sprite_set_build", "atlas_batch_build", "atlas_append"]),
+    ("glyph_run excl. backend setup, draw text", "glyph_run", ["backend_text_setup", "backend_draw_text"]),
+    ("sprite_set_build excl. rasterize", "sprite_set_build", ["rasterize"]),
+    ("atlas_batch_build excl. atlas_write", "atlas_batch_build", ["atlas_write"]),
+    ("batch_draw excl. its phases", "batch_draw",
+     ["page_rewrap", "batch_vertices", "draw_setup", "native_draw", "native_draw_fresh", "draw_teardown"]),
+]
 
 FLUSH_REASONS = ["page_change", "color_change", "slot_pressure", "run_limit", "sprite_cap", "overlap",
                  "canvas_operation", "clip", "layer", "end_of_session", "other_text_path", "other"]
@@ -159,6 +180,12 @@ def main():
         clipped = [k for k in counted if any("clip_all_in" in r for r in groups[k][:1])]
         if clipped:
             write_clips(w, clipped, groups)
+
+    timed = sorted((k for k in groups if any(r.get("n_batch_draw", 0) > 0 or r.get("n_glyph_run", 0) > 0
+                                             for r in groups[k])),
+                   key=lambda k: (k[0], k[1], k[2], k[4], k[3]))
+    if timed:
+        write_phase_timers(w, timed, groups)
 
     sweeps = defaultdict(list)
     for key in groups:
@@ -354,6 +381,58 @@ def write_clips(w, keys, groups):
         w(f"| {label(scenario, params)}{'' if n == 0 else f' n={n}'} | {render} | {mode} | {fmt(total, 1)} | "
           f"{' | '.join(cells)} | {fmt(everywhere, 1)} ({fmt(share, 0)} %) |")
     w("")
+
+
+def is_cold(r):
+    return r.get("n_rasterize", 0) > 0 or r.get("n_page_rewrap", 0) > 0
+
+
+def write_phase_timers(w, keys, groups):
+    w("## Render-thread glyph phase timers")
+    w("")
+    w("Wall time of each glyph phase on the render thread (`--phase-timers`). `us/f` mean microseconds per "
+      "frame, `n/f` mean spans per frame, `us/n` microseconds per span (total time over total spans). "
+      "Cold frames rasterized a glyph or made a page image; warm frames did neither. Phases include the "
+      "phases that run inside them (glyph_run: every run-level phase; mask_run_draw: sprite_set_build, "
+      "atlas_batch_build, atlas_append; "
+      "sprite_set_build: rasterize; atlas_batch_build: atlas_write; batch_draw: page_rewrap to draw_teardown; "
+      "draw_setup: page_shader); the `excl.` rows subtract them. Every probe pair adds about 15 ns to its "
+      "phase and to each phase around it. Stopwatch ticks are 100 ns; means over many spans are unbiased.")
+    for key in keys:
+        scenario, params, n, mode, render = key
+        rows = groups[key]
+        cold = [r for r in rows if is_cold(r)]
+        warm = [r for r in rows if not is_cold(r)]
+        w("")
+        w(f"### {label(scenario, params)}{'' if n == 0 else f' n={n}'}, {render}, {mode}")
+        w("")
+        w(f"{len(rows)} frames, {len(cold)} cold; render p50 {fmt(pct(col(rows, 'render_ms'), 50))} ms all, "
+          f"{fmt(pct(col(cold, 'render_ms'), 50))} cold, {fmt(pct(col(warm, 'render_ms'), 50))} warm.")
+        w("")
+        w("| phase | us/f | n/f | us/n | cold us/f | cold n/f | cold us/n | warm us/f | warm n/f | warm us/n |")
+        w("|---|---|---|---|---|---|---|---|---|---|")
+        for phase in PHASES:
+            if not any(r.get("n_" + phase, 0) > 0 for r in rows):
+                continue
+            w(f"| {phase} | " + " | ".join(phase_cells(subset, ["us_" + phase], [], "n_" + phase)
+                                          for subset in (rows, cold, warm)) + " |")
+        for name, outer, inner in EXCLUSIVE_PHASES:
+            if not any(r.get("n_" + outer, 0) > 0 for r in rows) or \
+                    not any(r.get("n_" + p, 0) > 0 for r in rows for p in inner):
+                continue
+            w(f"| {name} | " + " | ".join(phase_cells(subset, ["us_" + outer], ["us_" + p for p in inner],
+                                                       "n_" + outer)
+                                          for subset in (rows, cold, warm)) + " |")
+    w("")
+
+
+def phase_cells(rows, plus, minus, count):
+    """Mean per-frame time of the plus columns less the minus columns, spans per frame, time per span."""
+    if not rows:
+        return "- | - | -"
+    total = sum(sum(r.get(c, 0) for c in plus) - sum(r.get(c, 0) for c in minus) for r in rows)
+    spans = sum(r.get(count, 0) for r in rows)
+    return f"{fmt(total / len(rows), 1)} | {fmt(spans / len(rows), 2)} | {fmt(total / spans if spans else float('nan'), 3)}"
 
 
 if __name__ == "__main__":

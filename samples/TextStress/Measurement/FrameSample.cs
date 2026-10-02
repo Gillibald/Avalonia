@@ -40,6 +40,13 @@ namespace TextStress.Measurement
         public readonly long[] CountersEnd = new long[RenderCounters.Count];
         public int MaxRunsPerBatch;
 
+        // The render thread's glyph phase timers (PhaseTimes), ticks and span counts per phase,
+        // read at both ends of the pass.
+        public readonly long[] PhaseTicksStart = new long[PhaseTimes.Count];
+        public readonly long[] PhaseTicksEnd = new long[PhaseTimes.Count];
+        public readonly long[] PhaseCountsStart = new long[PhaseTimes.Count];
+        public readonly long[] PhaseCountsEnd = new long[PhaseTimes.Count];
+
         // Process state after the frame, as deltas from the previous frame where cumulative.
         public int Gc0;
         public int Gc1;

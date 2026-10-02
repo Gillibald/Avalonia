@@ -32,6 +32,12 @@ namespace TextStress
 
             ThreadClock.Calibrate();
 
+            if (Options.PhaseTimers)
+            {
+                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Calibrate();
+                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Enabled = true;
+            }
+
             if (Options.PendingBatches > 0)
             {
                 Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = Options.PendingBatches;
