@@ -77,5 +77,28 @@ namespace Avalonia.Base.UnitTests.Media
 
             Assert.Equal(mode, options.TextRasterizationMode);
         }
+
+        [Theory]
+        [InlineData(nameof(TextRasterizationPlatform.MacOS))]
+        [InlineData(nameof(TextRasterizationPlatform.IOS))]
+        public void Apple_Platforms_Render_Unspecified_Text_Grayscale(string platform)
+        {
+            // macOS has drawn text grayscale since 10.14, and the backend's CoreText scaler draws
+            // no subpixel text there either.
+            Assert.False(TextRasterizationDefaults.RendersSubpixelByDefault(
+                Enum.Parse<TextRasterizationPlatform>(platform)));
+        }
+
+        [Theory]
+        [InlineData(nameof(TextRasterizationPlatform.Windows))]
+        [InlineData(nameof(TextRasterizationPlatform.Linux))]
+        [InlineData(nameof(TextRasterizationPlatform.Android))]
+        [InlineData(nameof(TextRasterizationPlatform.Browser))]
+        [InlineData(nameof(TextRasterizationPlatform.Other))]
+        public void Other_Platforms_Render_Unspecified_Text_Subpixel(string platform)
+        {
+            Assert.True(TextRasterizationDefaults.RendersSubpixelByDefault(
+                Enum.Parse<TextRasterizationPlatform>(platform)));
+        }
     }
 }

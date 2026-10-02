@@ -11,6 +11,12 @@ namespace Avalonia.Skia.UnitTests
         // macOS and ARM64 hosts. Tests that exercise the backend set it explicitly.
         [ModuleInitializer]
         internal static void PinManagedTextRasterization()
-            => TextRasterizationDefaults.PlatformDefault = TextRasterizationMode.Managed;
+        {
+            TextRasterizationDefaults.PlatformDefault = TextRasterizationMode.Managed;
+
+            // Unspecified text renders subpixel on display surfaces in the recorded expectations;
+            // macOS and iOS hosts would otherwise render it grayscale.
+            TextRasterizationDefaults.UnspecifiedRendersSubpixel = true;
+        }
     }
 }
