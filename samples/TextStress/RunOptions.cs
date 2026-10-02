@@ -153,7 +153,7 @@ namespace TextStress
             "  --warmup N   unmeasured frames before each measurement (default 60)\n" +
             "  --prewarm-ms N   discarded frames before the first measurement, in ms (default 2000)\n" +
             "  --prewarm-pass   run every measured frame once, discarded, before measuring (warm caches)\n" +
-            "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 8)\n" +
+            "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 32)\n" +
             "  --phase-timers   record the render thread's glyph phase timers (us_/n_ columns)\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
