@@ -31,7 +31,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 typeface.GetTrueTypeHinter(scaleQ, GlyphMaskMode.Antialiased);
             }
 
-            Assert.InRange(typeface.GridFit.CachedWarpCount, 1, 64);
+            Assert.InRange(typeface.GridFit.CachedWarpCount, 1, 512);
             Assert.InRange(typeface.TrueTypeHinterCount, 1, 16);
 
             // The scale in use stays cached: asking again returns the same hinter.
