@@ -335,6 +335,30 @@ namespace Avalonia.Skia
             return pair;
         }
 
+        [ThreadStatic]
+        private static Dictionary<int, SKColor[]>? t_transientSpriteColors;
+
+        /// <summary>An exact-length per-sprite colour array, kept per length like the sprite arrays.</summary>
+        private static SKColor[] GetTransientSpriteColors(int length)
+        {
+            var arrays = t_transientSpriteColors ??= new Dictionary<int, SKColor[]>();
+
+            if (arrays.TryGetValue(length, out var colors))
+            {
+                return colors;
+            }
+
+            if (arrays.Count >= MaxTransientSpriteArrayLengths)
+            {
+                arrays.Clear();
+            }
+
+            colors = new SKColor[length];
+            arrays.Add(length, colors);
+
+            return colors;
+        }
+
         /// <summary>
         /// The image of an atlas page at its current version. The image wraps the page's
         /// pinned array without copying; a GPU context uploads it once per version and draws
@@ -455,9 +479,12 @@ namespace Avalonia.Skia
             // them, and the vertices built for that batch once it was seen again. A count of -1
             // lets no batch repeat: none was recorded, or its runs lie too far apart to place
             // exactly. The recorded length counts the entries in use, released on replacement.
+            // The run colours only belong to the batch when it has several: vertices of one
+            // colour take it from the paint, so a recoloured batch still repeats.
             private BatchedRun[]? _batchRuns;
             private int _batchRunCount = -1;
             private int _recordedLength;
+            private bool _batchColored;
             private SKVertices[]? _batchVertices;
 
             // The sprites' device rectangle at the origin, made on first use.
@@ -508,7 +535,8 @@ namespace Avalonia.Skia
             /// <summary>
             /// Vertices for a pending batch that begins with these sprites, placed relative to
             /// the first run, when the batch repeats the last one they began: the same runs, in
-            /// order, at the same offsets from the first. They are built the first time the batch
+            /// order, at the same offsets from the first, and in the same colours when the vertices
+            /// carry them (<paramref name="colored"/>). They are built the first time the batch
             /// repeats (<paramref name="built"/>) and kept while it keeps repeating. Otherwise
             /// records the batch for the next frame and returns <c>false</c>, and the caller draws
             /// the sprites through an atlas draw.
@@ -517,27 +545,27 @@ namespace Avalonia.Skia
             /// A run's sprite arrays never change, so the runs identify the batch's geometry; the
             /// page they sample may grow or gain glyphs without moving theirs.
             /// </remarks>
-            public bool TryGetBatchVertices(BatchedRun[] runs, int count, int spriteCount,
+            public bool TryGetBatchVertices(BatchedRun[] runs, int count, int spriteCount, bool colored,
                 out SKVertices[] vertices, out bool built)
             {
                 vertices = null!;
                 built = false;
 
-                if (!Repeats(runs, count))
+                if (!Repeats(runs, count, colored))
                 {
-                    Record(runs, count);
+                    Record(runs, count, colored);
                     return false;
                 }
 
                 built = _batchVertices is null;
-                vertices = _batchVertices ??= BuildVertices(runs, count, spriteCount);
+                vertices = _batchVertices ??= BuildVertices(runs, count, spriteCount, colored);
 
                 return true;
             }
 
-            private bool Repeats(BatchedRun[] runs, int count)
+            private bool Repeats(BatchedRun[] runs, int count, bool colored)
             {
-                if (_batchRunCount != count)
+                if (_batchRunCount != count || _batchColored != colored)
                 {
                     return false;
                 }
@@ -545,13 +573,18 @@ namespace Avalonia.Skia
                 var recorded = _batchRuns;
                 var first = runs[0];
 
+                if (colored && recorded![0].Color != first.Color)
+                {
+                    return false;
+                }
+
                 for (var i = 1; i < count; i++)
                 {
                     var run = runs[i];
                     var expected = recorded![i];
 
                     if (!ReferenceEquals(run.Backend, expected.Backend) || run.X - first.X != expected.X ||
-                        run.Y - first.Y != expected.Y)
+                        run.Y - first.Y != expected.Y || (colored && run.Color != expected.Color))
                     {
                         return false;
                     }
@@ -560,7 +593,7 @@ namespace Avalonia.Skia
                 return true;
             }
 
-            private void Record(BatchedRun[] runs, int count)
+            private void Record(BatchedRun[] runs, int count, bool colored)
             {
                 ReleaseVertices();
 
@@ -573,6 +606,12 @@ namespace Avalonia.Skia
                     recorded = _batchRuns = new BatchedRun[Math.Max(count, (recorded?.Length ?? 4) * 2)];
                 }
 
+                if (count > 1)
+                {
+                    // The first run is these sprites; only its colour is recorded.
+                    recorded![0] = new BatchedRun(null!, 0, 0, first.Color);
+                }
+
                 for (var i = 1; i < count; i++)
                 {
                     var run = runs[i];
@@ -580,7 +619,7 @@ namespace Avalonia.Skia
                     var y = run.Y - first.Y;
 
                     repeatable &= Math.Abs(x) <= MaxRelativeOffset && Math.Abs(y) <= MaxRelativeOffset;
-                    recorded![i] = new BatchedRun(run.Backend, x, y);
+                    recorded![i] = new BatchedRun(run.Backend, x, y, run.Color);
                 }
 
                 // Entries past the batch would keep runs that left it alive.
@@ -591,9 +630,10 @@ namespace Avalonia.Skia
 
                 _recordedLength = count;
                 _batchRunCount = repeatable ? count : -1;
+                _batchColored = colored;
             }
 
-            private static SKVertices[] BuildVertices(BatchedRun[] runs, int count, int spriteCount)
+            private static SKVertices[] BuildVertices(BatchedRun[] runs, int count, int spriteCount, bool colored)
             {
                 var parts = new SKVertices[(spriteCount + MaxSpritesPerVertices - 1) / MaxSpritesPerVertices];
                 var first = runs[0];
@@ -607,6 +647,7 @@ namespace Avalonia.Skia
                     var positions = new SKPoint[sprites * 4];
                     var coordinates = new SKPoint[sprites * 4];
                     var indices = new ushort[sprites * 6];
+                    var colors = colored ? new SKColor[sprites * 4] : null;
 
                     for (var i = 0; i < sprites; i++)
                     {
@@ -634,6 +675,11 @@ namespace Avalonia.Skia
                         coordinates[v + 2] = new SKPoint(source.Left, source.Bottom);
                         coordinates[v + 3] = new SKPoint(source.Right, source.Bottom);
 
+                        if (colors is not null)
+                        {
+                            colors.AsSpan(v, 4).Fill(runs[run].Color);
+                        }
+
                         var index = i * 6;
 
                         indices[index] = (ushort)v;
@@ -646,7 +692,7 @@ namespace Avalonia.Skia
                         sprite++;
                     }
 
-                    parts[part] = SKVertices.CreateCopy(SKVertexMode.Triangles, positions, coordinates, null, indices);
+                    parts[part] = SKVertices.CreateCopy(SKVertexMode.Triangles, positions, coordinates, colors, indices);
                     remaining -= sprites;
                 }
 
