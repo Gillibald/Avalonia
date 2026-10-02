@@ -45,12 +45,81 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return BuildTransformed(typeface, scratch, key);
             }
 
+            if (!TryPrepareUpright(typeface, scratch, key, out var left, out var top, out var width, out var height))
+            {
+                return GlyphMask.Empty;
+            }
+
+            if (key.Mode == GlyphMaskMode.Subpixel)
+            {
+                // Three coverage samples per final pixel, one per stripe: rasterize at 3x
+                // horizontal (the analytic rasterizer takes the anisotropic transform as-is),
+                // then downfilter each stripe channel.
+                var subWidth = width * 3;
+                var samples = new byte[subWidth * height];
+
+                GlyphRasterizer.Rasterize(scratch, subWidth, height,
+                    (-left + key.PhaseOffset) * 3, -top, aliased: false, samples);
+
+                return new GlyphMask(FilterStripes(samples, width, height), width, height, left, top, channels: 3);
+            }
+
+            var alpha = new byte[width * height];
+
+            GlyphRasterizer.Rasterize(scratch, width, height,
+                -left + key.PhaseOffset, -top, key.Mode == GlyphMaskMode.Aliased, alpha);
+
+            return new GlyphMask(alpha, width, height, left, top);
+        }
+
+        /// <summary>
+        /// Builds the single-channel upright mask <paramref name="key"/> describes, exactly as
+        /// <see cref="Build"/> does, into <paramref name="buffer"/>, for masks that are composed
+        /// once and not cached. A buffer too small for the mask is replaced by a larger one, so a
+        /// caller that keeps its buffers stops allocating once they fit.
+        /// </summary>
+        internal static GlyphMask BuildInto(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            ref byte[]? buffer)
+        {
+            if (key.IsTransformed || key.Mode == GlyphMaskMode.Subpixel)
+            {
+                throw new ArgumentException("Masks built into a buffer are upright and single-channel.", nameof(key));
+            }
+
+            if (!TryPrepareUpright(typeface, scratch, key, out var left, out var top, out var width, out var height))
+            {
+                return GlyphMask.Empty;
+            }
+
+            var length = width * height;
+
+            if (buffer is null || buffer.Length < length)
+            {
+                buffer = new byte[Math.Max(length, (buffer?.Length ?? 0) * 2)];
+            }
+
+            GlyphRasterizer.Rasterize(scratch, width, height,
+                -left + key.PhaseOffset, -top, key.Mode == GlyphMaskMode.Aliased, buffer);
+
+            return GlyphMask.CreateOverBuffer(buffer, width, height, left, top);
+        }
+
+        /// <summary>
+        /// Lays the upright outline <paramref name="key"/> describes into <paramref name="scratch"/>
+        /// (hinted or grid-fitted, with the key's simulation) and finds its mask box. Returns
+        /// <c>false</c> for a glyph without ink or a mask past <see cref="MaxMaskSize"/>.
+        /// </summary>
+        private static bool TryPrepareUpright(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            out int left, out int top, out int width, out int height)
+        {
+            left = top = width = height = 0;
+
             var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
 
             if (!typeface.TryGetUnsimulatedGlyphInkBounds(key.Glyph, out var box) ||
                 box.XMax <= box.XMin || box.YMax <= box.YMin)
             {
-                return GlyphMask.Empty;
+                return false;
             }
 
             // Stem snapping can move the right edge outward by up to a pixel, so it shares
@@ -60,7 +129,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             scratch.Reset();
 
-            int left = 0, top = 0, width = 0, height = 0;
             var applyAutoWarps = true;
             var hinted = false;
 
@@ -92,7 +160,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (!typeface.TryBuildGlyphContours(key.Glyph,
                         new Matrix(scale * subpixelFactor, 0, 0, -scale, 0, 0), scratch))
                 {
-                    return GlyphMask.Empty;
+                    return false;
                 }
 
                 // Vertical grid fit: zone knots plus this glyph's own stroke pairs, so
@@ -122,7 +190,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (!scratch.TryGetPointBounds(out var minX, out var minY, out var maxX, out var maxY))
                 {
-                    return GlyphMask.Empty;
+                    return false;
                 }
 
                 left = (int)MathF.Floor(minX / subpixelFactor) - apron;
@@ -133,29 +201,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (width <= 0 || height <= 0 || width > MaxMaskSize || height > MaxMaskSize)
             {
-                return GlyphMask.Empty;
+                return false;
             }
 
-            if (key.Mode == GlyphMaskMode.Subpixel)
-            {
-                // Three coverage samples per final pixel, one per stripe: rasterize at 3x
-                // horizontal (the analytic rasterizer takes the anisotropic transform as-is),
-                // then downfilter each stripe channel.
-                var subWidth = width * 3;
-                var samples = new byte[subWidth * height];
-
-                GlyphRasterizer.Rasterize(scratch, subWidth, height,
-                    (-left + key.PhaseOffset) * 3, -top, aliased: false, samples);
-
-                return new GlyphMask(FilterStripes(samples, width, height), width, height, left, top, channels: 3);
-            }
-
-            var alpha = new byte[width * height];
-
-            GlyphRasterizer.Rasterize(scratch, width, height,
-                -left + key.PhaseOffset, -top, key.Mode == GlyphMaskMode.Aliased, alpha);
-
-            return new GlyphMask(alpha, width, height, left, top);
+            return true;
         }
 
         /// <summary>

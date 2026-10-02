@@ -84,8 +84,8 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
-        /// Zooms a run until the gesture rasterizes every frame, then returns what a frame
-        /// allocates and how many glyph masks the typeface's cache gained meanwhile.
+        /// Zooms a run until the gesture rasterizes every frame, then returns what the median
+        /// frame allocates and how many glyph masks the typeface's cache gained meanwhile.
         /// </summary>
         private static long Zoom(GpuTestContext gpu, Avalonia.Media.GlyphTypeface typeface, double emSize,
             out int masksAdded)
@@ -111,16 +111,24 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             var masksBefore = typeface.MaskCache.Count;
-            var before = GC.GetAllocatedBytesForCurrentThread();
+            var perFrame = new long[30];
 
             for (var frame = 10; frame < 40; frame++)
             {
+                var before = GC.GetAllocatedBytesForCurrentThread();
+
                 Frame(frame);
+
+                perFrame[frame - 10] = GC.GetAllocatedBytesForCurrentThread() - before;
             }
 
             masksAdded = typeface.MaskCache.Count - masksBefore;
 
-            return (GC.GetAllocatedBytesForCurrentThread() - before) / 30;
+            // The median frame: now and then the shared array pool trims its large buffers after
+            // a collection and a frame rents one anew, which says nothing about a frame's own cost.
+            Array.Sort(perFrame);
+
+            return perFrame[perFrame.Length / 2];
         }
     }
 }
