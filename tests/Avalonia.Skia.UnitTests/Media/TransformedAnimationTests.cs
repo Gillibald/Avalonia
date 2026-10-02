@@ -12,8 +12,10 @@ namespace Avalonia.Skia.UnitTests.Media
     /// animated frame into transient buffers, drawing exactly what a static frame at that
     /// transform draws while caching nothing; software GPUs draw the batch of the last static
     /// frame under the change of transform. Upright zoom gestures stretch the last static run
-    /// mask on software GPUs, and on CPU surfaces within a 1.2x band around it. The first frame
-    /// that repeats its transform rasterizes and caches again, at that transform.
+    /// mask on software GPUs; on CPU surfaces they rasterize every frame from coverage no cache
+    /// keeps when that costs no more than stretching, and stretch within a 1.2x band around the
+    /// last rasterized frame otherwise. The first frame that repeats its transform rasterizes
+    /// and caches again, at that transform.
     /// </summary>
     public class TransformedAnimationTests
     {
@@ -559,12 +561,29 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void An_Upright_Zoom_On_A_Cpu_Surface_Rasterizes_Once_Per_Crossing_Of_The_Stretch_Band()
+        public void An_Upright_Zoom_On_A_Cpu_Surface_Costly_To_Rasterize_Stretches_Within_The_Band()
         {
-            // The settled run mask stretches while the zoom since it settled stays within the
-            // band either way; past it, one frame rasterizes at its scale and settles.
+            // Where rasterizing a frame's missing glyph masks costs more than stretching, the
+            // settled run mask stretches while the zoom since it settled stays within the band
+            // either way; past it, one frame rasterizes at its scale and settles.
             const double band = MaskGlyphRunRenderer.MaxStretchScale;
 
+            var rasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+
+            MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6;
+
+            try
+            {
+                StretchesWithinTheBand(band);
+            }
+            finally
+            {
+                MaskGlyphRunRenderer.ZoomRasterPixelCost = rasterPixelCost;
+            }
+        }
+
+        private static void StretchesWithinTheBand(double band)
+        {
             using var output = TestTarget.Create(Target.Raster);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));

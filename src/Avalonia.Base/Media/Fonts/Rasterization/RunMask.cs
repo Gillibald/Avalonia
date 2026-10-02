@@ -31,6 +31,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal readonly record struct SettledRunMask(RunMaskKey Key, Matrix Transform, int OriginX, int OriginY);
 
     /// <summary>
+    /// The glyph mask pixels an upright frame used, and the pixels of the coverage it built.
+    /// </summary>
+    internal readonly record struct UprightRasterCost(long MaskPixels, long CoveragePixels);
+
+    /// <summary>
     /// The portable subpixel draw payload: per-channel blending without backend support
     /// decomposes into two standard blits, a Multiply pass carrying the inverse corrected
     /// coverage and a Plus pass carrying the pre-tinted corrected coverage. The payload pixels

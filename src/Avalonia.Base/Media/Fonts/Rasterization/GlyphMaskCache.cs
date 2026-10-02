@@ -63,6 +63,31 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Masks evicted to stay within the budget since construction; for diagnostics and tests.</summary>
         public long Evictions => Volatile.Read(ref _evictions);
 
+        // Recent mask use of upright run builds, each total decayed by a sixteenth per build so
+        // that about the last frame's runs count.
+        private double _recentUsedPixels;
+        private double _recentMissedPixels;
+
+        /// <summary>
+        /// The share of mask pixels that recent upright run builds had to rasterize rather than
+        /// find here: near 0 while text draws at scales it has drawn before, near the share of
+        /// distinct masks in a run while every frame meets a new scale.
+        /// </summary>
+        public double RecentMissShare => _recentUsedPixels > 0 ? _recentMissedPixels / _recentUsedPixels : 1;
+
+        /// <summary>
+        /// Records that a run build used <paramref name="usedPixels"/> mask pixels, of which it
+        /// rasterized <paramref name="missedPixels"/>. A heuristic: concurrent builds may lose
+        /// an update.
+        /// </summary>
+        public void RecordUse(long usedPixels, long missedPixels)
+        {
+            const double keep = 15.0 / 16;
+
+            _recentUsedPixels = _recentUsedPixels * keep + usedPixels;
+            _recentMissedPixels = _recentMissedPixels * keep + missedPixels;
+        }
+
         /// <summary>Peeks a cached mask without building. Lock-free; for diagnostics and tests.</summary>
         public bool TryGet(in GlyphMaskKey key, out GlyphMask mask)
         {

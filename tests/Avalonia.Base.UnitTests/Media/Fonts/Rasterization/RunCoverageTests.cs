@@ -64,8 +64,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 
             // An all-zero mask still spans the union, without any inked pixel.
             Assert.NotNull(coverage);
-            Assert.All(coverage!.Coverage, value => Assert.Equal(0, value));
-            Assert.Empty(coverage.OverlapPixels);
+            Assert.All(coverage!.Coverage.ToArray(), value => Assert.Equal(0, value));
+            Assert.Equal(0, coverage.OverlapPixels.Length);
         }
 
         private static void AssertSameAsReference(GlyphMask[] masks, int[] penX, int[] penY, string label)
@@ -80,9 +80,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             Assert.Equal(expected.Width, coverage.Width);
             Assert.Equal(expected.Height, coverage.Height);
             Assert.True(expected.Single.AsSpan().SequenceEqual(coverage.Coverage), label + ": coverage");
-            Assert.Equal(expected.Pixels, coverage.OverlapPixels);
-            Assert.Equal(expected.Starts, coverage.OverlapStarts);
-            Assert.Equal(expected.Stacked, coverage.OverlapCoverage);
+            Assert.Equal(expected.Pixels, coverage.OverlapPixels.ToArray());
+            Assert.Equal(expected.Starts, coverage.OverlapStarts.ToArray());
+            Assert.Equal(expected.Stacked, coverage.OverlapCoverage.ToArray());
         }
 
         private static GlyphMask RandomMask(Random random, int width, int height)

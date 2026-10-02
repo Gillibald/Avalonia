@@ -204,6 +204,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The run mask of the last static upright frame, which a zoom gesture stretches.</summary>
         internal SettledRunMask? SettledUpright;
 
+        /// <summary>
+        /// The size of the run's last upright coverage build: the glyph mask pixels it used and
+        /// the pixels of its coverage. A zoom gesture weighs rasterizing its next frame against
+        /// stretching by them.
+        /// </summary>
+        internal UprightRasterCost LastUprightRaster;
+
         private ColorGlyphSegments? _colorGlyphSegments;
         private bool _colorGlyphSegmentsResolved;
 

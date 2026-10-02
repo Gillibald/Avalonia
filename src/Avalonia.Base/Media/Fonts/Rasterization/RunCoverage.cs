@@ -28,49 +28,45 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </remarks>
     internal sealed class RunCoverage : IDisposable
     {
-        private RunCoverage(in RunMaskKey key, int offsetX, int offsetY, int width, int height, byte[] coverage,
-            int[] overlapPixels, int[] overlapStarts, byte[] overlapCoverage)
-        {
-            Key = key;
-            OffsetX = offsetX;
-            OffsetY = offsetY;
-            Width = width;
-            Height = height;
-            Coverage = coverage;
-            OverlapPixels = overlapPixels;
-            OverlapStarts = overlapStarts;
-            OverlapCoverage = overlapCoverage;
-        }
+        [ThreadStatic]
+        private static TransientBuffers? t_transient;
+
+        private byte[] _coverage = Array.Empty<byte>();
+        private int[] _overlapPixels = Array.Empty<int>();
+        private int[] _overlapStarts = s_noStarts;
+        private byte[] _overlapCoverage = Array.Empty<byte>();
+        private int _overlapCount;
+        private int _stackedCount;
 
         /// <summary>The run mask key this coverage serves, with <see cref="RunMaskKey.CoverageTint"/>.</summary>
-        public RunMaskKey Key { get; }
+        public RunMaskKey Key { get; private set; }
 
         /// <summary>Top-left relative to the run's snapped origin pixel, device px.</summary>
-        public int OffsetX { get; }
+        public int OffsetX { get; private set; }
 
-        public int OffsetY { get; }
+        public int OffsetY { get; private set; }
 
-        public int Width { get; }
+        public int Width { get; private set; }
 
-        public int Height { get; }
+        public int Height { get; private set; }
 
         /// <summary>
         /// Row-major coverage, <see cref="Width"/> bytes per row: the coverage of the single
         /// glyph inking a pixel, zero where no glyph or several glyphs ink it.
         /// </summary>
-        public byte[] Coverage { get; }
+        public ReadOnlySpan<byte> Coverage => _coverage.AsSpan(0, Width * Height);
 
         /// <summary>Indices into <see cref="Coverage"/> of the pixels several glyphs ink, ascending.</summary>
-        public int[] OverlapPixels { get; }
+        public ReadOnlySpan<int> OverlapPixels => _overlapPixels.AsSpan(0, _overlapCount);
 
         /// <summary>
         /// Where the coverages of each overlap pixel start in <see cref="OverlapCoverage"/>; one
         /// more entry than <see cref="OverlapPixels"/>, the last marking the end.
         /// </summary>
-        public int[] OverlapStarts { get; }
+        public ReadOnlySpan<int> OverlapStarts => _overlapStarts.AsSpan(0, _overlapCount + 1);
 
         /// <summary>The nonzero coverages of every overlap pixel, in run order.</summary>
-        public byte[] OverlapCoverage { get; }
+        public ReadOnlySpan<byte> OverlapCoverage => _overlapCoverage.AsSpan(0, _stackedCount);
 
         /// <summary>Nothing to release: the coverage lives in managed arrays.</summary>
         public void Dispose()
@@ -85,6 +81,19 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static bool TryBuild(in RunMaskKey key, ReadOnlySpan<GlyphMask> masks, ReadOnlySpan<int> penX,
             ReadOnlySpan<int> penY, out RunCoverage? coverage)
+            => TryBuild(key, masks, penX, penY, null, out coverage);
+
+        /// <summary>
+        /// Builds coverage like <see cref="TryBuild(in RunMaskKey, ReadOnlySpan{GlyphMask}, ReadOnlySpan{int}, ReadOnlySpan{int}, out RunCoverage?)"/>
+        /// into buffers this thread reuses, for a frame drawn once: the result holds until the
+        /// next transient build on this thread, and must never be cached.
+        /// </summary>
+        public static bool TryBuildTransient(in RunMaskKey key, ReadOnlySpan<GlyphMask> masks, ReadOnlySpan<int> penX,
+            ReadOnlySpan<int> penY, out RunCoverage? coverage)
+            => TryBuild(key, masks, penX, penY, t_transient ??= new TransientBuffers(), out coverage);
+
+        private static bool TryBuild(in RunMaskKey key, ReadOnlySpan<GlyphMask> masks, ReadOnlySpan<int> penX,
+            ReadOnlySpan<int> penY, TransientBuffers? buffers, out RunCoverage? coverage)
         {
             coverage = null;
 
@@ -115,12 +124,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var width = maxX - minX;
             var height = maxY - minY;
-            var single = new byte[width * height];
+            var length = width * height;
+            var single = buffers is null ? new byte[length] : TransientBuffers.Grow(ref buffers.Single, length, clear: true);
             var counts = ArrayPool<byte>.Shared.Rent(single.Length);
 
             try
             {
-                counts.AsSpan(0, single.Length).Clear();
+                counts.AsSpan(0, length).Clear();
 
                 var overlaps = 0;
 
@@ -146,10 +156,26 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
                 }
 
-                coverage = overlaps == 0
-                    ? new RunCoverage(key, minX, minY, width, height, single, Array.Empty<int>(), s_noStarts,
-                        Array.Empty<byte>())
-                    : BuildOverlaps(key, masks, penX, penY, minX, minY, width, height, single, counts, overlaps);
+                coverage = buffers is null ? new RunCoverage() : buffers.Coverage;
+                coverage.Key = key;
+                coverage.OffsetX = minX;
+                coverage.OffsetY = minY;
+                coverage.Width = width;
+                coverage.Height = height;
+                coverage._coverage = single;
+
+                if (overlaps == 0)
+                {
+                    coverage._overlapPixels = Array.Empty<int>();
+                    coverage._overlapStarts = s_noStarts;
+                    coverage._overlapCoverage = Array.Empty<byte>();
+                    coverage._overlapCount = 0;
+                    coverage._stackedCount = 0;
+                }
+                else
+                {
+                    BuildOverlaps(coverage, masks, penX, penY, counts, overlaps, buffers);
+                }
 
                 return true;
             }
@@ -245,22 +271,24 @@ namespace Avalonia.Media.Fonts.Rasterization
             return true;
         }
 
-        private static RunCoverage BuildOverlaps(in RunMaskKey key, ReadOnlySpan<GlyphMask> masks, ReadOnlySpan<int> penX,
-            ReadOnlySpan<int> penY, int minX, int minY, int width, int height, byte[] coverage, byte[] counts,
-            int overlaps)
+        private static void BuildOverlaps(RunCoverage coverage, ReadOnlySpan<GlyphMask> masks, ReadOnlySpan<int> penX,
+            ReadOnlySpan<int> penY, byte[] counts, int overlaps, TransientBuffers? buffers)
         {
-            var pixels = new int[overlaps];
-            var starts = new int[overlaps + 1];
+            var width = coverage.Width;
+            var length = width * coverage.Height;
+            var single = coverage._coverage;
+            var pixels = buffers is null ? new int[overlaps] : TransientBuffers.Grow(ref buffers.Pixels, overlaps);
+            var starts = buffers is null ? new int[overlaps + 1] : TransientBuffers.Grow(ref buffers.Starts, overlaps + 1);
 
             // Ordinal of each overlap pixel, so the second walk finds its slot without a search.
-            var ordinals = ArrayPool<int>.Shared.Rent(coverage.Length);
+            var ordinals = ArrayPool<int>.Shared.Rent(length);
 
             try
             {
                 var next = 0;
                 var total = 0;
 
-                for (var index = 0; index < coverage.Length; index++)
+                for (var index = 0; index < length; index++)
                 {
                     if (counts[index] < 2)
                     {
@@ -271,14 +299,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                     starts[next] = total;
                     ordinals[index] = next;
                     total += counts[index];
-                    coverage[index] = 0;
+                    single[index] = 0;
                     next++;
                 }
 
                 starts[overlaps] = total;
 
-                var stacked = new byte[total];
-                var filled = new int[overlaps];
+                var stacked = buffers is null ? new byte[total] : TransientBuffers.Grow(ref buffers.Stacked, total);
+                var filled = buffers is null ? new int[overlaps] : TransientBuffers.Grow(ref buffers.Filled, overlaps, clear: true);
 
                 for (var i = 0; i < masks.Length; i++)
                 {
@@ -289,8 +317,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                         continue;
                     }
 
-                    var left = penX[i] + mask.Left - minX;
-                    var top = penY[i] + mask.Top - minY;
+                    var left = penX[i] + mask.Left - coverage.OffsetX;
+                    var top = penY[i] + mask.Top - coverage.OffsetY;
 
                     for (var row = 0; row < mask.Height; row++)
                     {
@@ -314,11 +342,48 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
                 }
 
-                return new RunCoverage(key, minX, minY, width, height, coverage, pixels, starts, stacked);
+                coverage._overlapPixels = pixels;
+                coverage._overlapStarts = starts;
+                coverage._overlapCoverage = stacked;
+                coverage._overlapCount = overlaps;
+                coverage._stackedCount = total;
             }
             finally
             {
                 ArrayPool<int>.Shared.Return(ordinals);
+            }
+        }
+
+        /// <summary>
+        /// The buffers and the coverage object of transient builds on one thread, grown to the
+        /// largest run seen and reused by every later transient build.
+        /// </summary>
+        private sealed class TransientBuffers
+        {
+            public readonly RunCoverage Coverage = new();
+            public byte[] Single = Array.Empty<byte>();
+            public int[] Pixels = Array.Empty<int>();
+            public int[] Starts = Array.Empty<int>();
+            public byte[] Stacked = Array.Empty<byte>();
+            public int[] Filled = Array.Empty<int>();
+
+            /// <summary>
+            /// <paramref name="buffer"/>, replaced by a larger one when it holds fewer than
+            /// <paramref name="length"/> items, with its first <paramref name="length"/> items
+            /// cleared when asked.
+            /// </summary>
+            public static T[] Grow<T>(ref T[] buffer, int length, bool clear = false)
+            {
+                if (buffer.Length < length)
+                {
+                    buffer = new T[Math.Max(length, buffer.Length * 2)];
+                }
+                else if (clear)
+                {
+                    buffer.AsSpan(0, length).Clear();
+                }
+
+                return buffer;
             }
         }
     }

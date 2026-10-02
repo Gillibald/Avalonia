@@ -217,18 +217,39 @@ namespace Avalonia.Media.Fonts.Rasterization
             // drawn twice. A software GPU, where rasterizing each frame costs many times a
             // bilinear draw, draws the mask of the last static frame stretched to the new scale
             // until the scale holds still; the first frame that repeats a scale rasterizes
-            // again. A CPU surface stretches the same way while the zoom stays within the band
-            // transformed text stretches in, and rasterizes once, settling there, on leaving it:
-            // there stretching costs a fraction of rasterizing, but further out it would soften
-            // the text noticeably. Its subpixel masks have no single bitmap to stretch, and a
-            // static frame drawn from coverage composes its pre-tinted mask when the gesture
-            // starts. A hardware GPU keeps rasterizing, which is as fast there and stays sharp.
-            if (context is ITransformedGlyphContext { RasterTarget: not GlyphRasterTarget.HardwareGpu } zoomContext &&
+            // again. A CPU surface rasterizes the frame from coverage that no cache keeps when
+            // that costs no more than stretching (see PrefersRasterizingZoom), and stays sharp;
+            // otherwise it stretches while the zoom stays within the band transformed text
+            // stretches in, and rasterizes once, settling there, on leaving it: further out a
+            // stretch would soften the text noticeably. Its subpixel masks have no single bitmap
+            // to stretch, and a static frame drawn from coverage composes its pre-tinted mask
+            // when the gesture starts stretching. A hardware GPU keeps rasterizing, which is as
+            // fast there and stays sharp.
+            var zoomContext = context as ITransformedGlyphContext;
+            var zooming = zoomContext is { RasterTarget: not GlyphRasterTarget.HardwareGpu } &&
                 (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
-                run.UprightChurn.Record(key.ScaleQ, default, hit) &&
+                run.UprightChurn.Record(key.ScaleQ, default, hit);
+
+            if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform) &&
+                TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
+            {
+                if (frameCoverage is null)
+                {
+                    return true;   // whitespace-only run
+                }
+
+                run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
+
+                GlyphMaskBlitter.BlendRunCoverage(blitTarget, frameCoverage, originX + frameCoverage.OffsetX,
+                    originY + frameCoverage.OffsetY, key.Tint, MaskGamma.GetTableForPremulBgra(key.Tint));
+
+                return true;
+            }
+
+            if (zooming &&
                 run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
                 settled.Transform.TryInvert(out var inverse) &&
-                (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
+                (zoomContext!.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
                 (cache.TryGet(settled.Key, out var settledMask) ||
                  blendsCoverage && TryComposeSettled(run, settled, maxSize, out settledMask)))
             {
@@ -240,7 +261,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!hit && blendsCoverage)
             {
-                if (!TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, out var coverage))
+                if (!TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: false, out var coverage))
                 {
                     // More glyphs ink one pixel than the coverage records: the pre-tinted mask.
                     blendsCoverage = false;
@@ -381,12 +402,89 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// The cost a glyph mask pixel that misses the cache adds to rasterizing a zoom frame,
+        /// in pixels of a bilinear stretch of the settled run mask through the raster backend:
+        /// on x64 at 14-30 px about 11 ns per rasterized mask pixel (outline, grid fit, cache
+        /// insert) against 2.2 ns per stretched pixel. Tests raise it to make rasterizing costly.
+        /// </summary>
+        internal static double ZoomRasterPixelCost { get; set; } = 5;
+
+        /// <summary>
+        /// The cost of building and blending one pixel of a zoom frame's run coverage, in pixels
+        /// of a bilinear stretch (about 0.5 ns).
+        /// </summary>
+        private const double ZoomCoveragePixelCost = 0.22;
+
+        /// <summary>
+        /// The cost of fetching one glyph's mask from the cache for a zoom frame, in pixels of a
+        /// bilinear stretch (about 30 ns).
+        /// </summary>
+        private const double ZoomGlyphCost = 14;
+
+        /// <summary>
+        /// Rasterizing also fills the glyph mask cache for the scales a zoom passes through, so
+        /// that a zoom back over them only builds and blends coverage, and keeps the frame sharp:
+        /// it is preferred up to this factor of the stretch's cost.
+        /// </summary>
+        private const double ZoomRasterPreference = 1.2;
+
+        /// <summary>
+        /// Whether an upright zoom frame on a raster surface should rasterize rather than stretch
+        /// the settled run mask. The run's last coverage build tells how many glyph mask pixels
+        /// it used and how large its coverage was, and the typeface's mask cache what share of
+        /// recently used mask pixels had to be rasterized; the pixel counts scale with the zoom
+        /// since then, as does the area a stretch draws. Rasterizing costs the share of mask
+        /// pixels that miss the cache, the coverage and a cache lookup per glyph; stretching
+        /// costs the backend's bilinear draw, which on a raster surface runs per destination
+        /// pixel through its raster pipeline. The miss share belongs to the typeface rather
+        /// than the run, since the runs of a frame share glyph masks and the first run to need
+        /// one rasterizes it for all. Text whose glyph masks are cached, or cheap to rasterize,
+        /// rasterizes; dense, complex glyphs that miss the cache (CJK at many scales) stretch.
+        /// </summary>
+        private static bool PrefersRasterizingZoom(ManagedGlyphRunImpl run, in Matrix transform)
+        {
+            var last = run.LastUprightRaster;
+
+            if (last.CoveragePixels == 0 || run.SettledUpright is not { } settled ||
+                !settled.Transform.TryInvert(out var inverse))
+            {
+                return true;
+            }
+
+            var delta = inverse * transform;
+            var growth = Math.Abs(delta.M11 * delta.M22 - delta.M12 * delta.M21);
+            var stretching = last.CoveragePixels * growth;
+            var missing = run.GlyphTypeface.MaskCache.RecentMissShare * last.MaskPixels;
+            var rasterizing = (ZoomRasterPixelCost * missing + ZoomCoveragePixelCost * last.CoveragePixels) * growth +
+                              ZoomGlyphCost * run.GlyphCount;
+
+            return rasterizing <= ZoomRasterPreference * stretching;
+        }
+
+        [ThreadStatic]
+        private static long t_rasterizedPixels;
+
+        private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder), GlyphMask> s_buildCountedMask =
+            static (key, state) =>
+            {
+                var mask = GlyphMasks.Build(state.Item1, state.Item2, key);
+
+                t_rasterizedPixels += mask.Width * mask.Height;
+
+                return mask;
+            };
+
+        /// <summary>
         /// The coverage of a run of outline glyphs with the glyph masks, pens and phases
         /// <see cref="Compose"/> uses for them. Returns <c>false</c> when the coverage cannot
-        /// represent the run.
+        /// represent the run. A <paramref name="transient"/> coverage lives in buffers the
+        /// thread reuses: it is drawn once and never cached. Records in
+        /// <see cref="ManagedGlyphRunImpl.LastUprightRaster"/> how many mask pixels the build
+        /// used and how large the coverage is, and in the typeface's mask cache how many of
+        /// those pixels it had to rasterize.
         /// </summary>
         private static bool TryBuildCoverage(ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY,
-            out RunCoverage? coverage)
+            bool transient, out RunCoverage? coverage)
         {
             var typeface = run.GlyphTypeface;
             var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
@@ -401,6 +499,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             var state = (typeface, scratch);
             var masks = ArrayPool<GlyphMask>.Shared.Rent(Math.Max(1, count));
             var pens = ArrayPool<int>.Shared.Rent(Math.Max(2, count * 2));
+            long used = 0;
+
+            t_rasterizedPixels = 0;
 
             try
             {
@@ -413,15 +514,25 @@ namespace Avalonia.Media.Fonts.Rasterization
                     pens[count + i] = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                     var simulate = simulated && !typeface.IsColorGlyph(indices[i]);
-
-                    masks[i] = maskCache.GetOrBuild(simulate
+                    var glyphKey = simulate
                         ? new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap, embolden, oblique)
-                        : new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap),
-                        state, s_buildMask);
+                        : new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.PenSnap);
+
+                    masks[i] = maskCache.GetOrBuild(glyphKey, state, s_buildCountedMask);
+                    used += masks[i].Width * masks[i].Height;
                 }
 
-                return RunCoverage.TryBuild(key, masks.AsSpan(0, count), pens.AsSpan(0, count),
-                    pens.AsSpan(count, count), out coverage);
+                var built = transient
+                    ? RunCoverage.TryBuildTransient(key, masks.AsSpan(0, count), pens.AsSpan(0, count),
+                        pens.AsSpan(count, count), out coverage)
+                    : RunCoverage.TryBuild(key, masks.AsSpan(0, count), pens.AsSpan(0, count),
+                        pens.AsSpan(count, count), out coverage);
+
+                maskCache.RecordUse(used, t_rasterizedPixels);
+                run.LastUprightRaster = new UprightRasterCost(used,
+                    coverage is null ? 0 : (long)coverage.Width * coverage.Height);
+
+                return built;
             }
             finally
             {
