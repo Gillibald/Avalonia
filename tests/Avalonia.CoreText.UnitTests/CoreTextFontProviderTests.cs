@@ -249,6 +249,26 @@ namespace Avalonia.CoreText.UnitTests
         }
 
         [MacOSFact]
+        public void The_System_Font_Should_Reach_Its_Weights_Along_Its_Axes()
+        {
+            using var provider = new CoreTextFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            // The system font is a variable font (SFNS) behind a hidden family name; its bold is an
+            // instance of the same file, not a synthetic emboldening of the regular.
+            Assert.True(collection.TryGetDefaultFontFamily(out var family));
+
+            foreach (var weight in new[] { FontWeight.Light, FontWeight.Normal, FontWeight.SemiBold, FontWeight.Bold })
+            {
+                Assert.True(collection.TryGetGlyphTypeface(family.Name, FontStyle.Normal, weight, FontStretch.Normal,
+                    out var glyphTypeface), $"{weight}");
+
+                Assert.Equal(FontSimulations.None, glyphTypeface.FontSimulations);
+                Assert.Equal(weight, glyphTypeface.Weight);
+            }
+        }
+
+        [MacOSFact]
         public void Condensed_Faces_Should_Report_The_Width_Class_Of_Their_File()
         {
             using var provider = new CoreTextFontProvider();
