@@ -89,10 +89,12 @@ namespace Avalonia.Skia
         /// canvas operation calls this first, as does the end of the drawing session, so pending
         /// sprites never change their place in the draw order or the clip and layer they were
         /// collected under. A caller reading the surface back while this context is still drawing
-        /// calls it too.
+        /// calls it too. It also drops the kept direct-write target, since the operation that
+        /// follows may change the clip or move the surface's pixels.
         /// </summary>
         internal void FlushGlyphBatch()
         {
+            ForgetBlitTarget();
             FlushAtlasBatch();
             FlushLcdBatch();
         }

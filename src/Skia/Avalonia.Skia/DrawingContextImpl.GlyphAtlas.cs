@@ -20,6 +20,19 @@ namespace Avalonia.Skia
         [ThreadStatic]
         private static SKPixmap? t_blitPixmap;
 
+        // The surface's pixel format, read once: reading a pixmap's image info marshals and
+        // looks up its colour space on every call. The format of a surface never changes.
+        private BlitSurfaceFormat _blitSurfaceFormat;
+
+        // The direct-write target as the canvas and the surface last reported it, kept until
+        // the next canvas operation: asking Skia for the clip and the pixels costs about as
+        // much as blending a small label, once per run. Only a canvas operation changes the
+        // clip, and only drawing through the canvas can move the surface's pixels (copy on
+        // write after a snapshot), and every canvas operation of this context flushes the
+        // glyph batch first, which drops the kept target.
+        private GlyphBlitTarget _blitTarget;
+        private BlitTargetState _blitTargetState;
+
         /// <summary>
         /// Whether text may be blended straight into this context's raster surface. On by
         /// default; tests turn it off to compare with drawing through the canvas.
@@ -40,17 +53,58 @@ namespace Avalonia.Skia
             // draw and the surface, source-over blending, device coordinates equal to canvas
             // coordinates, and a clip that is exactly its bounds.
             if (_grContext is not null || Surface is null || _saveLayerDepth != 0 || _currentOpacity != 1 ||
-                _postTransform.HasValue || !Canvas.IsClipRect ||
+                _postTransform.HasValue ||
                 RenderOptions.BitmapBlendingMode is not (BitmapBlendingMode.Unspecified or BitmapBlendingMode.SourceOver))
+            {
+                return false;
+            }
+
+            if (_blitTargetState == BlitTargetState.Unread)
+            {
+                _blitTargetState = ReadBlitTarget(Surface, out _blitTarget)
+                    ? BlitTargetState.Available
+                    : BlitTargetState.Unavailable;
+            }
+
+            target = _blitTarget;
+
+            return _blitTargetState == BlitTargetState.Available;
+        }
+
+        /// <summary>Drops the kept direct-write target; the next request asks Skia again.</summary>
+        private void ForgetBlitTarget() => _blitTargetState = BlitTargetState.Unread;
+
+        private bool ReadBlitTarget(SKSurface surface, out GlyphBlitTarget target)
+        {
+            target = default;
+
+            if (!Canvas.IsClipRect)
             {
                 return false;
             }
 
             var pixmap = t_blitPixmap ??= new SKPixmap();
 
-            if (!Surface.PeekPixels(pixmap) ||
-                pixmap.ColorType is not (SKColorType.Bgra8888 or SKColorType.Rgba8888) ||
-                pixmap.AlphaType is not (SKAlphaType.Premul or SKAlphaType.Opaque))
+            if (!surface.PeekPixels(pixmap))
+            {
+                return false;
+            }
+
+            if (_blitSurfaceFormat.Kind == BlitSurfaceKind.Unknown)
+            {
+                var info = pixmap.Info;
+
+                _blitSurfaceFormat = new BlitSurfaceFormat(
+                    info.AlphaType is not (SKAlphaType.Premul or SKAlphaType.Opaque) ? BlitSurfaceKind.Unsupported
+                    : info.ColorType == SKColorType.Bgra8888 ? BlitSurfaceKind.Bgra
+                    : info.ColorType == SKColorType.Rgba8888 ? BlitSurfaceKind.Rgba
+                    : BlitSurfaceKind.Unsupported,
+                    info.Width, info.Height);
+            }
+
+            var format = _blitSurfaceFormat;
+
+            if (format.Kind == BlitSurfaceKind.Unsupported)
             {
                 return false;
             }
@@ -59,13 +113,30 @@ namespace Avalonia.Skia
 
             // Skia's sprite blitter takes a BGRA bitmap drawn 1:1 when the surface holds the
             // platform's native BGRA order; onto any other surface its raster pipeline converts.
-            target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, pixmap.Width, pixmap.Height,
+            target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, format.Width, format.Height,
                 new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
-                pixmap.ColorType == SKColorType.Rgba8888,
-                pixmap.ColorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888);
+                format.Kind == BlitSurfaceKind.Rgba,
+                format.Kind == BlitSurfaceKind.Bgra && SKImageInfo.PlatformColorType == SKColorType.Bgra8888);
 
             return true;
         }
+
+        private enum BlitTargetState : byte
+        {
+            Unread,
+            Available,
+            Unavailable,
+        }
+
+        private enum BlitSurfaceKind : byte
+        {
+            Unknown,
+            Unsupported,
+            Bgra,
+            Rgba,
+        }
+
+        private readonly record struct BlitSurfaceFormat(BlitSurfaceKind Kind, int Width, int Height);
 
         IDisposable ITransformedGlyphContext.CreateAtlasBatch(ReadOnlySpan<GlyphAtlasSprite> sprites,
             GlyphMask? standalone)

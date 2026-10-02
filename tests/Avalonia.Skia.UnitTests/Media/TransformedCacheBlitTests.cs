@@ -501,6 +501,112 @@ namespace Avalonia.Skia.UnitTests.Media
             AssertEqual(expected, actual, width, obstacle);
         }
 
+        [Fact]
+        public void A_Clip_Pushed_Between_Two_Runs_Clips_The_Second()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+            const int width = 480;
+            const int height = 240;
+            var second = s_rotation * Matrix.CreateTranslation(0, 90);
+            var clip = new PixelRect(60, 0, 150, height);
+
+            var actual = RenderOnSurface(width, height, SKColors.Transparent, context =>
+            {
+                context.Transform = s_rotation;
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.Transform = Matrix.Identity;
+                context.PushClip(new Rect(clip.X, clip.Y, clip.Width, clip.Height));
+                context.Transform = second;
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.Transform = Matrix.Identity;
+                context.PopClip();
+            });
+
+            var expected = ComposeRunMask(typeface, run, s_rotation, Colors.Black, new byte[width * height * 4],
+                width, height);
+            var clipped = ComposeRunMask(typeface, run, second, Colors.Black, (byte[])expected.Clone(), width, height);
+
+            RestoreOutside(clipped, expected, width, height, clip);
+
+            AssertEqual(clipped, actual, width, "second run");
+        }
+
+        [Fact]
+        public void A_Run_Drawn_After_A_Snapshot_And_A_Canvas_Draw_Lands_On_The_Surface()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+            const int width = 480;
+            const int height = 240;
+            var info = new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(info);
+
+            surface.Canvas.Clear(SKColors.Transparent);
+
+            SKImage snapshot;
+            var second = s_rotation * Matrix.CreateTranslation(0, 90);
+
+            using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       Dpi = new Vector(96, 96),
+                   }))
+            {
+                context.Transform = s_rotation;
+                context.DrawGlyphRun(Brushes.Black, run);
+
+                // The snapshot shares the surface's pixels until the next draw through the
+                // canvas, which copies them: a run drawn after it must write the new copy.
+                snapshot = surface.Snapshot();
+
+                context.Transform = Matrix.Identity;
+                context.DrawRectangle(Brushes.Red, null, new RoundedRect(new Rect(470, 230, 5, 5)));
+                context.Transform = second;
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+
+            using (snapshot)
+            {
+                var first = ComposeRunMask(typeface, run, s_rotation, Colors.Black, new byte[width * height * 4],
+                    width, height);
+                var withRectangle = (byte[])first.Clone();
+
+                for (var y = 230; y < 235; y++)
+                {
+                    for (var x = 470; x < 475; x++)
+                    {
+                        var i = (y * width + x) * 4;
+
+                        withRectangle[i] = 0;
+                        withRectangle[i + 1] = 0;
+                        withRectangle[i + 2] = 255;
+                        withRectangle[i + 3] = 255;
+                    }
+                }
+
+                var both = ComposeRunMask(typeface, run, second, Colors.Black, withRectangle, width, height);
+                var surfacePixels = new byte[info.BytesSize];
+                var snapshotPixels = new byte[info.BytesSize];
+
+                using (var pixmap = surface.PeekPixels())
+                {
+                    pixmap.GetPixelSpan().CopyTo(surfacePixels);
+                }
+
+                using (var pixmap = snapshot.PeekPixels())
+                {
+                    pixmap.GetPixelSpan().CopyTo(snapshotPixels);
+                }
+
+                AssertEqual(first, snapshotPixels, width, "snapshot");
+                AssertEqual(both, surfacePixels, width, "surface");
+            }
+        }
+
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
