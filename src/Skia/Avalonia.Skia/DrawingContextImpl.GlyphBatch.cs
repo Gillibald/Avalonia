@@ -7,15 +7,18 @@ namespace Avalonia.Skia
 {
     internal partial class DrawingContextImpl
     {
-        private const int DefaultMaxPendingBatches = 8;
+        private const int DefaultMaxPendingBatches = 32;
 
         private static int s_maxPendingBatches = DefaultMaxPendingBatches;
 
         /// <summary>
-        /// Pending batches at once, each of one page and colour. Text alternating a few typefaces
-        /// or colours fills a few; more than this is flushed rather than searched. Profiling tools
-        /// change it to measure how the draw count depends on it; a context takes the value when
-        /// it begins its first batch.
+        /// Pending batches at once, each of one page and colour. Every typeface has its own atlas,
+        /// so a list whose rows mix a dozen or two typefaces in a few colours keeps that many
+        /// batches pending; past this many, all of them are drawn rather than searched. A run
+        /// joining a batch compares its key with every pending batch and its bounds with each
+        /// one's union, so this bounds that work per run alongside <see cref="MaxPendingRuns"/>.
+        /// Profiling tools change it to measure how the draw count depends on it; a context takes
+        /// the value when it begins its first batch.
         /// </summary>
         internal static int MaxPendingBatches
         {
