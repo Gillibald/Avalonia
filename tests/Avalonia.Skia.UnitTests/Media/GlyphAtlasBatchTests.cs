@@ -466,6 +466,52 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void Text_That_Stops_And_Starts_Scrolling_Draws_The_Pixels_Of_Its_Runs_Drawn_One_By_One(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 12, 13, new Point(6.3, 4));
+
+            // Two opaque colours of one luminance bucket share a batch, coloured per vertex.
+            IBrush[] brushes =
+            {
+                new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x20, 0x20)),
+                new ImmutableSolidColorBrush(Color.FromRgb(0x00, 0x40, 0xA0)),
+            };
+
+            void Draw(DrawingContextImpl context, int offset, bool mixed)
+            {
+                context.Transform = Matrix.CreateTranslation(3, -offset);
+
+                for (var i = 0; i < runs.Length; i++)
+                {
+                    context.DrawGlyphRun(mixed ? brushes[i % 2] : Brushes.Black, runs[i]);
+                }
+            }
+
+            try
+            {
+                foreach (var mixed in new[] { false, true })
+                {
+                    foreach (var offset in new[] { 0, 0, 0, 7, 14, 14, 14, 21, 0, 0 })
+                    {
+                        var batched = Render(gpu, context => Draw(context, offset, mixed), batched: true, out _);
+                        var expected = Render(gpu, context => Draw(context, offset, mixed), batched: false, out _);
+
+                        TransformedAtlasTests.AssertEqual(expected, batched,
+                            $"{(mixed ? "two colours" : "one colour")}, offset {offset}");
+                    }
+                }
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Warm_Frames_Draw_The_Pixels_Of_Their_Runs_Drawn_One_By_One_As_The_Batch_Changes(GpuBackend backend,
             bool software)
         {
