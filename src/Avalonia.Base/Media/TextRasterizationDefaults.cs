@@ -53,6 +53,7 @@ namespace Avalonia.Media
                 // Browser apps always run WebAssembly. Measured under AOT, which Avalonia browser
                 // apps publish with; interpreter builds are slower than the backend but keep it.
                 (TextRasterizationPlatform.Browser, _) => TextRasterizationMode.Managed,
+                (TextRasterizationPlatform.MacOS, Architecture.Arm64) => TextRasterizationMode.Managed,
                 _ => TextRasterizationMode.Backend,
             };
 

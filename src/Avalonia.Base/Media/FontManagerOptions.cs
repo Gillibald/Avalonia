@@ -28,9 +28,10 @@ namespace Avalonia.Media
         /// <summary>
         /// Gets or sets which engine rasterizes glyphs. An explicitly set value always wins. When
         /// it is not set, the default depends on the platform: <see cref="TextRasterizationMode.Managed"/>
-        /// on Windows x64 and in the browser (WebAssembly), where the managed rasterizer was measured
-        /// and tuned against the backend, and <see cref="TextRasterizationMode.Backend"/> on every
-        /// other platform and architecture (Windows on ARM64, Linux, macOS, iOS, Android).
+        /// on Windows x64, macOS on Apple silicon (ARM64) and in the browser (WebAssembly), where the
+        /// managed rasterizer was measured and tuned against the backend, and
+        /// <see cref="TextRasterizationMode.Backend"/> on every other platform and architecture
+        /// (Windows on ARM64, Linux, macOS on Intel, iOS, Android).
         /// </summary>
         /// <remarks>
         /// Application-global and read when glyph runs are created: set it at startup (alongside
