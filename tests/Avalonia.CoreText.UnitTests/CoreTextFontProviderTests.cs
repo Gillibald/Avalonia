@@ -269,6 +269,27 @@ namespace Avalonia.CoreText.UnitTests
         }
 
         [MacOSFact]
+        public void Localized_Family_Names_Should_Resolve_To_Their_Public_Family()
+        {
+            using var provider = new CoreTextFontProvider();
+
+            // CoreText matches the Korean name of Apple SD Gothic Neo to the hidden interface
+            // variant .Apple SD Gothic NeoI; a name the user can see must give a family the
+            // family list shows.
+            foreach (var (localized, expected) in new[]
+                     {
+                         ("Apple SD 산돌고딕 Neo", "Apple SD Gothic Neo"), ("ヒラギノ角ゴシック", "Hiragino Sans"),
+                         ("苹方-简", "PingFang SC"),
+                     })
+            {
+                Assert.SkipUnless(provider.GetFontFamilyNames().Contains(expected), $"{expected} is not installed.");
+                Assert.True(provider.TryMatchFamily(localized, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,
+                    out var match), localized);
+                Assert.Equal(expected, match.FamilyName);
+            }
+        }
+
+        [MacOSFact]
         public void Condensed_Faces_Should_Report_The_Width_Class_Of_Their_File()
         {
             using var provider = new CoreTextFontProvider();
