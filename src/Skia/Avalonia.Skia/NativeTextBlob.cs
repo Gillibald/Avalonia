@@ -33,7 +33,8 @@ namespace Avalonia.Skia
         public static SKTextBlob? TryGetTextBlob(ManagedGlyphRunImpl run,
             TextOptions textOptions, RenderOptions renderOptions)
         {
-            if (run.GlyphTypeface.PlatformTypeface is not SkiaTypeface)
+            if (!run.GlyphTypeface.TryGetPlatformTypeface(out var platformTypeface) ||
+                platformTypeface is not SkiaTypeface)
             {
                 return null;
             }

@@ -118,13 +118,26 @@ namespace Avalonia.Skia
                 // varied runs and their geometry off it.
                 using (skData)
                 {
-                    if (SKTypeface.FromData(skData, faceIndex) is not { } skTypeface)
+                    if (SKTypeface.FromData(skData, faceIndex) is { } skTypeface)
                     {
-                        throw new InvalidOperationException("Skia could not create a typeface from the font data.");
+                        return new SkiaTypeface(skTypeface);
                     }
-
-                    return new SkiaTypeface(skTypeface);
                 }
+
+                // Some of Skia's ports load only the first face of a collection (the macOS one
+                // creates nothing for a later index): a standalone copy of the face's tables is
+                // a first face everywhere.
+                if (face.TryCreateStandaloneFontData(out var standalone))
+                {
+                    using var standaloneData = SKData.CreateCopy(standalone);
+
+                    if (SKTypeface.FromData(standaloneData, 0) is { } standaloneTypeface)
+                    {
+                        return new SkiaTypeface(standaloneTypeface);
+                    }
+                }
+
+                throw new InvalidOperationException("Skia could not create a typeface from the font data.");
             }
 
             throw new InvalidOperationException(
@@ -133,12 +146,13 @@ namespace Avalonia.Skia
 
         public IGeometryImpl BuildGlyphRunGeometry(GlyphRun glyphRun)
         {
-            if (ManagedGlyphOutlines.AreRequired(glyphRun.GlyphTypeface))
+            if (ManagedGlyphOutlines.AreRequired(glyphRun.GlyphTypeface) ||
+                !glyphRun.GlyphTypeface.TryGetPlatformTypeface(out var platformTypeface))
             {
                 return BuildManagedGlyphRunGeometry(glyphRun);
             }
 
-            if (glyphRun.GlyphTypeface.PlatformTypeface is not SkiaTypeface skiaTypeface)
+            if (platformTypeface is not SkiaTypeface skiaTypeface)
             {
                 throw new InvalidOperationException("PlatformImpl can't be null.");
             }

@@ -16,6 +16,7 @@ namespace Avalonia.Media.Fonts
     internal sealed class SfntFace : IFontMemory
     {
         private const uint TtcfTag = 0x74746366; // 'ttcf'
+        private const uint HeadTag = 0x68656164; // 'head'
         private const int TableDirectoryHeaderSize = 12;
         private const int TableRecordSize = 16;
 
@@ -279,7 +280,109 @@ namespace Avalonia.Media.Fonts
         {
             data = null;
 
-            return false;
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return false;
+            }
+
+            var span = _data.Memory.Span;
+            var numTables = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(_directoryOffset + 4, 2));
+            var recordsStart = _directoryOffset + TableDirectoryHeaderSize;
+            var directorySize = TableDirectoryHeaderSize + numTables * TableRecordSize;
+            var size = (long)directorySize;
+
+            for (var i = 0; i < numTables; i++)
+            {
+                var record = span.Slice(recordsStart + i * TableRecordSize, TableRecordSize);
+                var offset = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(8, 4));
+                var length = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(12, 4));
+
+                if ((ulong)offset + length > (ulong)span.Length)
+                {
+                    return false;
+                }
+
+                size += (length + 3) & ~3L;
+            }
+
+            if (size > int.MaxValue)
+            {
+                return false;
+            }
+
+            var result = new byte[size];
+
+            // The directory header: the face's sfnt version and the binary search fields for its
+            // table count.
+            var entrySelector = 0;
+
+            while (2 << entrySelector <= numTables)
+            {
+                entrySelector++;
+            }
+
+            var searchRange = (1 << entrySelector) * TableRecordSize;
+
+            BinaryPrimitives.WriteUInt32BigEndian(result,
+                BinaryPrimitives.ReadUInt32BigEndian(span.Slice(_directoryOffset, 4)));
+            BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(4), numTables);
+            BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(6), (ushort)searchRange);
+            BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(8), (ushort)entrySelector);
+            BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(10), (ushort)(numTables * TableRecordSize - searchRange));
+
+            // The tables in directory order, each at a four-byte boundary and zero-padded, with
+            // its checksum; the head table's counts its checkSumAdjustment as zero.
+            var position = directorySize;
+            var headPosition = -1;
+
+            for (var i = 0; i < numTables; i++)
+            {
+                var record = span.Slice(recordsStart + i * TableRecordSize, TableRecordSize);
+                var tag = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(0, 4));
+                var offset = (int)BinaryPrimitives.ReadUInt32BigEndian(record.Slice(8, 4));
+                var length = (int)BinaryPrimitives.ReadUInt32BigEndian(record.Slice(12, 4));
+                var table = result.AsSpan(position, length);
+
+                span.Slice(offset, length).CopyTo(table);
+
+                if (tag == HeadTag && length >= 12)
+                {
+                    table.Slice(8, 4).Clear();
+                    headPosition = position;
+                }
+
+                var target = result.AsSpan(TableDirectoryHeaderSize + i * TableRecordSize, TableRecordSize);
+
+                BinaryPrimitives.WriteUInt32BigEndian(target, tag);
+                BinaryPrimitives.WriteUInt32BigEndian(target.Slice(4), Checksum(result.AsSpan(position, (length + 3) & ~3)));
+                BinaryPrimitives.WriteUInt32BigEndian(target.Slice(8), (uint)position);
+                BinaryPrimitives.WriteUInt32BigEndian(target.Slice(12), (uint)length);
+
+                position += (length + 3) & ~3;
+            }
+
+            // checkSumAdjustment makes the whole file sum to 0xB1B0AFBA.
+            if (headPosition >= 0)
+            {
+                BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(headPosition + 8), 0xB1B0AFBA - Checksum(result));
+            }
+
+            data = result;
+
+            return true;
+        }
+
+        /// <summary>The sum of four-byte aligned data as big-endian 32-bit words.</summary>
+        private static uint Checksum(ReadOnlySpan<byte> data)
+        {
+            var sum = 0u;
+
+            for (var i = 0; i + 4 <= data.Length; i += 4)
+            {
+                sum += BinaryPrimitives.ReadUInt32BigEndian(data.Slice(i, 4));
+            }
+
+            return sum;
         }
 
         /// <summary>

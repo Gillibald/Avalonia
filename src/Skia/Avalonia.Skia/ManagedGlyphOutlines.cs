@@ -13,10 +13,11 @@ namespace Avalonia.Skia
         /// Whether Skia must not rasterize <paramref name="typeface"/> from its own face. SkiaSharp
         /// cannot create a typeface at variation coordinates, so the Skia face of a varied clone
         /// is the default instance; the managed outlines carry the clone's variation and
-        /// simulations.
+        /// simulations. A typeface Skia cannot load at all has no face of its own to draw from.
         /// </summary>
         public static bool AreRequired(GlyphTypeface typeface)
-            => !typeface.VariationPosition.IsDefault && typeface.OutlineType != GlyphOutlineType.None;
+            => typeface.OutlineType != GlyphOutlineType.None &&
+               (!typeface.VariationPosition.IsDefault || !typeface.TryGetPlatformTypeface(out _));
 
         /// <summary>
         /// Creates an empty path with the fill rule glyph outlines are designed for: contours of
