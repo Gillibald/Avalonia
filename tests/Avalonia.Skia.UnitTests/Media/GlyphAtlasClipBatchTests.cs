@@ -304,6 +304,100 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [MemberData(nameof(HardwareTargets))]
+        public void Transparent_Item_Backgrounds_Between_Clipped_Rows_Leave_The_Pending_Runs_Alone(GpuBackend backend,
+            bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 12);
+            var clear = new ImmutableSolidColorBrush(Colors.Transparent);
+
+            // List items: each clips to its bounds and fills a transparent background before the
+            // clipped text in it, as a templated item container does.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+                context.PushClip(new Rect(0, 0, Width, Height));
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    context.PushClip(RowRect(i));
+                    context.DrawRectangle(i % 2 == 0 ? clear : Brushes.Transparent, null,
+                        new RoundedRect(RowRect(i), i % 3 == 0 ? 4 : 0));
+                    context.PushClip(RowRect(i).Deflate(new Thickness(4, 1)));
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                    context.PopClip();
+                }
+
+                context.PopClip();
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "batched rows");
+                Assert.Equal(1, draws);
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareTargets))]
+        public void Only_Fills_That_Draw_Nothing_Leave_The_Pending_Runs_Alone(GpuBackend backend, bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 4);
+            var faint = new ImmutableSolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+            var hidden = new ImmutableSolidColorBrush(Colors.Black, 0);
+
+            // A transparent fill with a stroke, an almost transparent fill and a fill of a brush
+            // at zero opacity over each row: only the last one draws nothing.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+                context.DrawGlyphRun(Brushes.Black, rows[0]);
+                context.DrawRectangle(Brushes.Transparent, new ImmutablePen(Brushes.Red, 2),
+                    new RoundedRect(RowRect(0).Deflate(4)));
+                context.DrawGlyphRun(Brushes.Black, rows[1]);
+                context.DrawRectangle(faint, null, new RoundedRect(RowRect(1)));
+                context.DrawGlyphRun(Brushes.Black, rows[2]);
+                context.DrawRectangle(hidden, null, new RoundedRect(RowRect(2)));
+                context.DrawGlyphRun(Brushes.Black, rows[3]);
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
+                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) -
+                              before;
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "batched frame");
+                Assert.Equal(2, flushed);
+                Assert.Equal(3, draws);
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
         [MemberData(nameof(HardwareContexts))]
         public void Batched_Runs_Are_Counted_By_The_Kind_Of_Their_Innermost_Clip(GpuBackend backend)
         {
