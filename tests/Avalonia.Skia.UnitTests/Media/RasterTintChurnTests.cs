@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
@@ -27,24 +28,44 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>
         /// The 1:1 blit of a premultiplied BGRA bitmap, per channel with <c>s</c> the source
-        /// channel, <c>sa</c> the source alpha and <c>d</c> the destination channel. Onto a
-        /// surface of the bitmap's own byte order the backend copies rows with its sprite
-        /// blitter, which scales the destination by <c>256 - sa</c> and shifts it down by 8;
-        /// onto any other it converts through its 8-bit raster pipeline, which scales by
-        /// <c>255 - sa</c> and divides by 255 as <c>(v + 255) &gt;&gt; 8</c>. Either sum saturates.
+        /// channel, <c>sa</c> the source alpha and <c>d</c> the destination channel, in the
+        /// rounding <paramref name="arithmetic"/> names: the sprite blitter scales the destination
+        /// by <c>256 - sa</c> and shifts it down by 8, the 8-bit raster pipeline scales by
+        /// <c>255 - sa</c> and divides by 255 as <c>(v + 255) &gt;&gt; 8</c>, and the rounded form
+        /// scales by <c>255 - sa</c> and rounds the division to nearest. Every sum saturates.
         /// </summary>
-        internal static byte Blit(byte source, byte sourceAlpha, byte destination, bool sprite)
-            => (byte)Math.Min(255, source + (sprite
-                ? (destination * (256 - sourceAlpha)) >> 8
-                : (destination * (255 - sourceAlpha) + 255) >> 8));
+        internal static byte Blit(byte source, byte sourceAlpha, byte destination, GlyphBlitArithmetic arithmetic)
+            => (byte)Math.Min(255, source + arithmetic switch
+            {
+                GlyphBlitArithmetic.Sprite => (destination * (256 - sourceAlpha)) >> 8,
+                GlyphBlitArithmetic.Rounded => (destination * (255 - sourceAlpha) + 127) / 255,
+                _ => (destination * (255 - sourceAlpha) + 255) >> 8,
+            });
+
+        /// <summary>
+        /// The rounding the backend's blit uses onto a surface of <paramref name="colorType"/> on
+        /// this machine. Skia's ARM64 code divides by 255 with rounding in both its sprite blitter
+        /// and its 8-bit raster pipeline (NEON's <c>vrshrq(vrsraq(v, v, 8), 8)</c>, which equals
+        /// <c>(v + 127) / 255</c> for every product of two bytes); elsewhere a BGRA bitmap onto a
+        /// surface of the platform's BGRA order takes the sprite blitter and anything else the
+        /// pipeline.
+        /// </summary>
+        internal static GlyphBlitArithmetic BackendArithmetic(SKColorType colorType)
+            => RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+                ? GlyphBlitArithmetic.Rounded
+                : colorType == SKColorType.Bgra8888 && SKImageInfo.PlatformColorType == SKColorType.Bgra8888
+                    ? GlyphBlitArithmetic.Sprite
+                    : GlyphBlitArithmetic.Pipeline;
 
         [Theory]
-        [InlineData(SKColorType.Bgra8888, SKAlphaType.Premul, true)]
-        [InlineData(SKColorType.Bgra8888, SKAlphaType.Opaque, true)]
-        [InlineData(SKColorType.Rgba8888, SKAlphaType.Premul, false)]
+        [InlineData(SKColorType.Bgra8888, SKAlphaType.Premul)]
+        [InlineData(SKColorType.Bgra8888, SKAlphaType.Opaque)]
+        [InlineData(SKColorType.Rgba8888, SKAlphaType.Premul)]
         public unsafe void A_Bitmap_Blit_Blends_Every_Channel_By_The_Formula_Of_Its_Blitter(SKColorType colorType,
-            SKAlphaType alphaType, bool sprite)
+            SKAlphaType alphaType)
         {
+            var arithmetic = BackendArithmetic(colorType);
+
             using var scope = WideRunMaskTests.CreateEnvironment(out _);
 
             // Every source alpha (column) against every destination byte (row); the source
@@ -124,7 +145,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         for (var shift = 0; shift < 32; shift += 8)
                         {
                             var expected = Blit((byte)(source >> shift), (byte)alpha, (byte)(destination >> shift),
-                                sprite);
+                                arithmetic);
 
                             Assert.True(expected == (byte)(value >> shift),
                                 $"alpha {alpha}, destination {destination:X8}, byte {shift / 8}: expected {expected}, " +
@@ -267,22 +288,34 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [InlineData(nameof(GlyphBlitPath.Scalar), false, true)]
-        [InlineData(nameof(GlyphBlitPath.Ssse3), false, true)]
-        [InlineData(nameof(GlyphBlitPath.Avx2), false, true)]
-        [InlineData(nameof(GlyphBlitPath.Scalar), true, false)]
-        [InlineData(nameof(GlyphBlitPath.Ssse3), true, false)]
-        [InlineData(nameof(GlyphBlitPath.Avx2), true, false)]
-        [InlineData(nameof(GlyphBlitPath.Scalar), false, false)]
-        [InlineData(nameof(GlyphBlitPath.Avx2), false, false)]
-        [InlineData(nameof(GlyphBlitPath.Avx2), true, true)]
-        [InlineData(nameof(GlyphBlitPath.Portable), false, true)]
-        [InlineData(nameof(GlyphBlitPath.Portable), true, false)]
-        [InlineData(nameof(GlyphBlitPath.Portable), false, false)]
-        [InlineData(nameof(GlyphBlitPath.Portable), true, true)]
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), true, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), false, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), true, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Sprite))]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Rounded))]
         public unsafe void Run_Coverage_Blends_By_The_Compose_And_Blit_Arithmetic(string pathName, bool rgba,
-            bool sprite)
+            string arithmeticName)
         {
+            var arithmetic = Enum.Parse<GlyphBlitArithmetic>(arithmeticName);
             var path = Enum.Parse<GlyphBlitPath>(pathName);
 
             Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
@@ -383,7 +416,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         for (var shift = 0; shift < 32; shift += 8)
                         {
                             result |= (uint)Blit((byte)(source >> shift), (byte)(source >> 24), (byte)(d >> shift),
-                                sprite) << shift;
+                                arithmetic) << shift;
                         }
 
                         d = result;
@@ -399,7 +432,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     fixed (uint* pixels = surface)
                     {
                         var target = new GlyphBlitTarget((IntPtr)pixels, surfaceWidth * 4, surfaceWidth, surfaceHeight,
-                            clip, rgba, sprite);
+                            clip, rgba, arithmetic);
 
                         GlyphMaskBlitter.BlendRunCoverage(target, coverage, x, y, tint, table);
                     }

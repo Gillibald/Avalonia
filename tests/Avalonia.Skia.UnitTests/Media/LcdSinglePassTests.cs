@@ -12,18 +12,21 @@ namespace Avalonia.Skia.UnitTests.Media
     /// <summary>
     /// Subpixel text on a CPU display surface: its pixels are those of the portable pair of
     /// payloads drawn with the multiply blend mode and then the plus blend mode, whose 8-bit
-    /// arithmetic on Skia's raster pipeline is pinned here per channel.
+    /// arithmetic on Skia's raster pipeline is pinned here per channel, for the rounding of the
+    /// architecture the tests run on.
     /// </summary>
     public class LcdSinglePassTests
     {
         /// <summary>
         /// The two-pass blend of one channel: the multiply blend with an opaque source,
-        /// <c>s * (1 - da) + s * d</c>, divided by 255 as <c>(v + 255) &gt;&gt; 8</c>, then the
-        /// saturating plus blend.
+        /// <c>s * (1 - da) + s * d</c>, divided by 255 as <c>(v + 255) &gt;&gt; 8</c> or, in the
+        /// rounded arithmetic, to nearest; then the saturating plus blend.
         /// </summary>
-        internal static byte TwoPass(byte multiply, byte plus, byte destination, byte destinationAlpha)
+        internal static byte TwoPass(byte multiply, byte plus, byte destination, byte destinationAlpha,
+            GlyphBlitArithmetic arithmetic)
         {
-            var multiplied = (multiply * (255 - destinationAlpha) + multiply * destination + 255) >> 8;
+            var product = multiply * (255 - destinationAlpha) + multiply * destination;
+            var multiplied = arithmetic == GlyphBlitArithmetic.Rounded ? (product + 127) / 255 : (product + 255) >> 8;
 
             return (byte)Math.Min(255, multiplied + plus);
         }
@@ -31,6 +34,8 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void The_Two_Pass_Draw_Blends_Every_Channel_By_The_Pipeline_Formula()
         {
+            var arithmetic = RasterTintChurnTests.BackendArithmetic(SKColorType.Bgra8888);
+
             using var scope = WideRunMaskTests.CreateEnvironment(out _);
 
             const int width = 256;
@@ -82,7 +87,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 for (var shift = 0; shift < 32; shift += 8)
                 {
                     var m = shift == 24 ? (byte)255 : (byte)(multiply[i] >> shift);
-                    var expected = TwoPass(m, (byte)(plus[i] >> shift), (byte)(d >> shift), da);
+                    var expected = TwoPass(m, (byte)(plus[i] >> shift), (byte)(d >> shift), da, arithmetic);
                     var value = (byte)(actual[i] >> shift);
 
                     Assert.True(expected == value,
@@ -161,16 +166,26 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [InlineData("Scalar", false)]
-        [InlineData("Ssse3", false)]
-        [InlineData("Avx2", false)]
-        [InlineData("Scalar", true)]
-        [InlineData("Ssse3", true)]
-        [InlineData("Avx2", true)]
-        [InlineData("Portable", false)]
-        [InlineData("Portable", true)]
-        public unsafe void The_Single_Pass_Blends_Every_Channel_By_The_Two_Pass_Formula(string pathName, bool rgba)
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Scalar), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Ssse3), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Avx2), true, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Portable), false, nameof(GlyphBlitArithmetic.Rounded))]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Pipeline))]
+        [InlineData(nameof(GlyphBlitPath.Portable), true, nameof(GlyphBlitArithmetic.Rounded))]
+        public unsafe void The_Single_Pass_Blends_Every_Channel_By_The_Two_Pass_Formula(string pathName, bool rgba,
+            string arithmeticName)
         {
+            var arithmetic = Enum.Parse<GlyphBlitArithmetic>(arithmeticName);
             var path = Enum.Parse<GlyphBlitPath>(pathName);
 
             Assert.SkipWhen(path == GlyphBlitPath.Avx2 && !System.Runtime.Intrinsics.X86.Avx2.IsSupported, "no AVX2");
@@ -244,7 +259,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     for (var shift = 0; shift < 32; shift += 8)
                     {
-                        result |= (uint)TwoPass((byte)(m >> shift), (byte)(p >> shift), (byte)(d >> shift), da) << shift;
+                        result |= (uint)TwoPass((byte)(m >> shift), (byte)(p >> shift), (byte)(d >> shift), da,
+                            arithmetic) << shift;
                     }
 
                     d = result;
@@ -260,7 +276,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 fixed (uint* pixels = surface)
                 {
                     var target = new GlyphBlitTarget((IntPtr)pixels, surfaceWidth * 4, surfaceWidth, surfaceHeight, clip,
-                        rgba);
+                        rgba, arithmetic);
 
                     LcdMaskBlitter.Blend(target, multiply, plus, width, height, x, y);
                 }
