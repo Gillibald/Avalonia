@@ -1674,6 +1674,17 @@ namespace Avalonia.Media
             }
         }
 
+        /// <summary>
+        /// Gets the render typeface, or <see langword="false"/> when the render backend cannot
+        /// create one from this typeface's font data.
+        /// </summary>
+        internal bool TryGetPlatformTypeface([NotNullWhen(true)] out IPlatformTypeface? platformTypeface)
+        {
+            platformTypeface = PlatformTypeface;
+
+            return true;
+        }
+
         private IPlatformTypeface CreatePlatformTypeface()
         {
             lock (_platformTypefaceLock)

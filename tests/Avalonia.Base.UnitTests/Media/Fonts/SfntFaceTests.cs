@@ -1,10 +1,14 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
+using Moq;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts
@@ -194,6 +198,85 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             return ms.ToArray();
         }
 
+        [Fact]
+        public void Should_Write_A_Collection_Face_As_A_Standalone_Font()
+        {
+            var font = ReadInterBytes();
+            var ttc = BuildTtc(font, faceCount: 2);
+
+            Assert.True(SfntFace.TryLoad(new MemoryStream(ttc), 1, out var face));
+
+            using (face)
+            {
+                Assert.True(face.TryCreateStandaloneFontData(out var standalone));
+                Assert.Equal(BinaryPrimitives.ReadUInt32BigEndian(font), BinaryPrimitives.ReadUInt32BigEndian(standalone));
+                Assert.True(SfntFace.TryLoad(new MemoryStream(standalone), 0, out var single));
+
+                using (single)
+                {
+                    var numTables = BinaryPrimitives.ReadUInt16BigEndian(standalone.AsSpan(4));
+                    var entrySelector = BinaryPrimitives.ReadUInt16BigEndian(standalone.AsSpan(8));
+
+                    Assert.Equal(BinaryPrimitives.ReadUInt16BigEndian(font.AsSpan(4)), numTables);
+                    Assert.Equal(16 << entrySelector, BinaryPrimitives.ReadUInt16BigEndian(standalone.AsSpan(6)));
+                    Assert.True(1 << entrySelector <= numTables && 2 << entrySelector > numTables);
+
+                    for (var i = 0; i < numTables; i++)
+                    {
+                        var record = standalone.AsSpan(12 + i * 16, 16);
+                        var tag = (OpenTypeTag)BinaryPrimitives.ReadUInt32BigEndian(record);
+                        var checksum = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(4));
+                        var offset = (int)BinaryPrimitives.ReadUInt32BigEndian(record.Slice(8));
+                        var length = (int)BinaryPrimitives.ReadUInt32BigEndian(record.Slice(12));
+
+                        Assert.Equal(0, offset % 4);
+                        Assert.True(face.TryGetTable(tag, out var original));
+                        Assert.True(single.TryGetTable(tag, out var copy));
+                        Assert.Equal(original.Length, length);
+
+                        // The head table differs only in checkSumAdjustment, which the table's
+                        // checksum counts as zero.
+                        var expected = original.ToArray();
+                        var actual = copy.ToArray();
+
+                        if (tag == s_headTag)
+                        {
+                            expected.AsSpan(8, 4).Clear();
+                            actual.AsSpan(8, 4).Clear();
+                        }
+
+                        Assert.Equal(expected, actual);
+                        Assert.Equal(Checksum(actual), checksum);
+                    }
+
+                    // The whole file sums to the magic number checkSumAdjustment exists for.
+                    Assert.Equal(0xB1B0AFBAu, Checksum(standalone));
+                }
+            }
+        }
+
+        private static readonly OpenTypeTag s_headTag = new OpenTypeTag('h', 'e', 'a', 'd');
+
+        /// <summary>The sum of the bytes as big-endian 32-bit words, the last one zero-padded.</summary>
+        private static uint Checksum(ReadOnlySpan<byte> data)
+        {
+            var sum = 0u;
+
+            for (var i = 0; i < data.Length; i += 4)
+            {
+                var word = 0u;
+
+                for (var k = 0; k < 4; k++)
+                {
+                    word = (word << 8) | (i + k < data.Length ? data[i + k] : 0u);
+                }
+
+                sum += word;
+            }
+
+            return sum;
+        }
+
         /// <summary>
         /// Builds a TrueType collection whose face directories all reference one stored copy of
         /// the supplied font.
@@ -300,6 +383,50 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             }
         }
 
+    }
+
+    public class BackendTypefaceFallbackTests
+    {
+        private const string InterFontUri = "resm:Avalonia.Base.UnitTests.Assets.Inter-Regular.ttf?assembly=Avalonia.Base.UnitTests";
+
+        [Fact]
+        public void A_Typeface_The_Backend_Cannot_Load_Gets_A_Managed_Glyph_Run_In_Backend_Mode()
+        {
+            // A backend that refuses the font data, as Skia on macOS refuses collection faces past
+            // the first: the run must still draw, from the managed rasterizer.
+            var renderInterface = new Mock<IPlatformRenderInterface>();
+
+            renderInterface.Setup(x => x.CreateTypeface(It.IsAny<GlyphTypeface>()))
+                .Throws(new InvalidOperationException("The backend cannot load this face."));
+            renderInterface.Setup(x => x.CreateGlyphRun(It.IsAny<GlyphTypeface>(), It.IsAny<double>(),
+                    It.IsAny<IReadOnlyList<GlyphInfo>>(), It.IsAny<Point>()))
+                .Returns(Mock.Of<IGlyphRunImpl>());
+
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+                       renderInterface: renderInterface.Object)))
+            {
+                AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(
+                    new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Backend });
+
+                using var stream = SfntFaceTestHelper.OpenAsset(InterFontUri);
+
+                Assert.True(SfntFace.TryLoad(stream, out var face));
+
+                var glyphTypeface = new GlyphTypeface(face);
+
+                using var glyphRun = new GlyphRun(glyphTypeface, 14, "A".AsMemory(),
+                    new[] { glyphTypeface.CharacterToGlyphMap['A'] });
+
+                Assert.IsType<ManagedGlyphRunImpl>(glyphRun.PlatformImpl.Item);
+                Assert.False(glyphTypeface.TryGetPlatformTypeface(out _));
+
+                // Asking again neither throws nor retries.
+                Assert.False(glyphTypeface.TryGetPlatformTypeface(out _));
+                renderInterface.Verify(x => x.CreateTypeface(glyphTypeface), Times.Once);
+
+                glyphTypeface.Dispose();
+            }
+        }
     }
 
     internal static class SfntFaceTestHelper
