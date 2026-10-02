@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- A console subsystem so driver scripts see progress, errors and the exit code. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Native AOT publish, opt-in so the flag stays scoped to this project (a global
+         PublishAot fails the netstandard tooling projects in the closure):
+         dotnet publish -c Release -r win-x64 /p:TextStressAot=true -->
+    <PublishAot Condition="'$(TextStressAot)' == 'true'">true</PublishAot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The code editor scenario scrolls real repository source, so the content is licence-clean
+         and needs no download. -->
+    <EmbeddedResource Include="..\..\src\Avalonia.Controls\TextBox.cs" LogicalName="TextStress.Code.TextBox.cs" />
+    <EmbeddedResource Include="..\..\src\Avalonia.Base\Media\TextFormatting\TextLayout.cs" LogicalName="TextStress.Code.TextLayout.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\build\SampleApp.props" />
+  <Import Project="..\..\build\ReferenceCoreLibraries.props" />
+  <Import Project="..\..\build\BuildTargets.targets" />
+
+</Project>
