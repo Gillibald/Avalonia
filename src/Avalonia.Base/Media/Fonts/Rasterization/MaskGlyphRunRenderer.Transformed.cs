@@ -508,14 +508,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The coverage correction bucket of a straight ARGB foreground.</summary>
         private static int GetBucket(uint argb) => MaskGamma.GetBucket((byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
+        [ThreadStatic]
+        private static GlyphAtlasBatchBuilder? t_batchBuilder;
+
         /// <summary>
-        /// Places every sprite's glyph mask in the atlas and groups consecutive sprites that
-        /// share a page and a colouring into batches, keeping the run's draw order. Foreground
-        /// glyphs are stored corrected for the foreground's luminance <paramref name="bucket"/>,
-        /// colour glyph layers uncorrected. On a GPU context the atlas is the masks' storage: a
-        /// mask missing from it is rasterized into a transient buffer and copied in, and never
-        /// enters the glyph mask cache. A mask too large for a page, or over the cache's entry
-        /// bound, draws from its own image.
+        /// Places every sprite's glyph mask in the atlas and groups the sprites into batches of
+        /// one page and colouring (see <see cref="GlyphAtlasBatchBuilder"/>), drawn in an order
+        /// that gives every pixel the run's order of draws. Foreground glyphs are stored
+        /// corrected for the foreground's luminance <paramref name="bucket"/>, colour glyph layers
+        /// uncorrected. On a GPU context the atlas is the masks' storage: a mask missing from it
+        /// is rasterized into a transient buffer and copied in, and never enters the glyph mask
+        /// cache. A mask too large for a page, or over the cache's entry bound, draws from its
+        /// own image.
         /// </summary>
         private static void BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
             GlyphMaskAtlas atlas, TransformedGlyphSprites sprites, int bucket)
@@ -524,16 +528,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var tick = atlas.Tick();
             var count = sprites.Count;
-            var geometry = ArrayPool<GlyphAtlasSprite>.Shared.Rent(Math.Max(1, count));
-            var batches = new List<GlyphAtlasBatch>();
+            var builder = t_batchBuilder ??= new GlyphAtlasBatchBuilder();
             var scratch = t_scratch ??= new GlyphPathBuilder();
             var maxEntryBytes = typeface.MaskCache.MaxEntryBytes;
 
-            GlyphAtlasPage? page = null;
-            var kind = TransformedSpriteKind.Foreground;
-            var color = 0u;
-            var start = 0;
-            var pending = 0;
+            builder.Begin(sprites.IsUpright);
 
             try
             {
@@ -565,8 +564,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                             if (mask.Width * mask.Height > maxEntryBytes ||
                                 !atlas.TryAdd(key, spriteBucket, mask, tick, out slot))
                             {
-                                Flush();
-                                batches.Add(new GlyphAtlasBatch(null, i, 1, sprite.Kind, sprite.Color,
+                                builder.AddStandalone(new GlyphAtlasBatch(null, i, 1, sprite.Kind, sprite.Color,
                                     context.CreateAtlasBatch(
                                         new[] { new GlyphAtlasSprite(0, 0, mask.Width, mask.Height, sprite.X, sprite.Y) },
                                         ToStandaloneMask(mask, spriteBucket))));
@@ -587,51 +585,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                         continue;
                     }
 
-                    if (pending > 0 && (slot.Page != page || sprite.Kind != kind || sprite.Color != color))
-                    {
-                        Flush();
-                    }
-
-                    if (pending == 0)
-                    {
-                        page = slot.Page;
-                        kind = sprite.Kind;
-                        color = sprite.Color;
-                        start = i;
-                    }
-
-                    geometry[pending++] = new GlyphAtlasSprite(slot.X, slot.Y, slot.Width, slot.Height,
-                        sprite.X, sprite.Y);
+                    builder.Add(slot.Page!, sprite.Kind, sprite.Color, i,
+                        new GlyphAtlasSprite(slot.X, slot.Y, slot.Width, slot.Height, sprite.X, sprite.Y));
                 }
 
-                Flush();
-
-                sprites.SetBatches(atlas, bucket, batches.ToArray());
+                sprites.SetBatches(atlas, bucket, builder.Build(context));
             }
             catch
             {
-                foreach (var batch in batches)
-                {
-                    batch.Dispose();
-                }
-
+                builder.Abandon();
                 throw;
-            }
-            finally
-            {
-                ArrayPool<GlyphAtlasSprite>.Shared.Return(geometry);
-            }
-
-            void Flush()
-            {
-                if (pending == 0)
-                {
-                    return;
-                }
-
-                batches.Add(new GlyphAtlasBatch(page, start, pending, kind, color,
-                    context.CreateAtlasBatch(geometry.AsSpan(0, pending), null)));
-                pending = 0;
             }
         }
 

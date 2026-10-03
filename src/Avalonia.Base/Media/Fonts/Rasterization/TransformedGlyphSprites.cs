@@ -39,8 +39,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// Consecutive sprites of a run drawn by one backend call: all on one atlas page (or one
-    /// standalone glyph image) and all coloured alike.
+    /// Sprites of a run drawn by one backend call, in the run's order: all on one atlas page (or
+    /// one standalone glyph image) and all coloured alike. A run's batches are drawn in order;
+    /// sprites of a batch need not be consecutive in the run, since a sprite may join a batch
+    /// ahead of batches it overlaps nothing of (see <see cref="GlyphAtlasBatchBuilder"/>).
     /// </summary>
     internal sealed class GlyphAtlasBatch : IDisposable
     {
@@ -58,7 +60,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The atlas page the sprites sample; <c>null</c> for a standalone glyph image.</summary>
         public GlyphAtlasPage? Page { get; }
 
-        /// <summary>The first sprite of the run in this batch.</summary>
+        /// <summary>The run's index of the first sprite in this batch.</summary>
         public int Start { get; }
 
         public int Count { get; }
