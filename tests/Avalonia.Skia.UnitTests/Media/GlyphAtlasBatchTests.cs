@@ -477,32 +477,33 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void Batches_Of_Other_Colours_Are_Drawn_Before_Their_Runs_Outnumber_The_Pending_Run_Limit(
+        public void Batches_Of_Other_Pages_Are_Drawn_Before_Their_Runs_Outnumber_The_Pending_Run_Limit(
             GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-            var runs = CreateCellRuns(typeface, 2000);
 
-            // An opaque and a translucent colour: runs of one page in both cannot share a batch.
-            var brushes = new IBrush[]
-            {
-                Brushes.Black, new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x20, 0x40, 0x90)),
-            };
+            // Runs alternating between a letter on the first atlas page and one on the second.
+            var runs = CreateCellRuns(typeface, 2000, i => i % 2 == 0 ? "o" : "x");
 
-            // Every run joins the batch of its colour while the other colour's batch is pending,
-            // so each run is tested against the runs of the other batch.
+            // Every run joins the batch of its page while the other page's batch is pending, so
+            // each run is tested against the runs of the other batch.
             void Draw(DrawingContextImpl context)
             {
                 for (var i = 0; i < runs.Length; i++)
                 {
-                    context.DrawGlyphRun(brushes[i % 2], runs[i]);
+                    context.DrawGlyphRun(Brushes.Black, runs[i]);
                 }
             }
 
             try
             {
+                Render(gpu, context => context.DrawGlyphRun(Brushes.Black, runs[0]), batched: true, out _);
+                FillFirstAtlasPage(TransformedAtlasTests.AtlasOf(gpu, typeface));
+
                 var expected = Render(gpu, Draw, batched: false, out _);
+
+                Assert.Equal(2, TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length);
 
                 Render(gpu, Draw, batched: true, out _);
 
@@ -519,7 +520,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 // pending, so the two batches are drawn at least once per twice the limit of runs.
                 var flushes = (runs.Length + 2 * MaxPendingRuns - 1) / (2 * MaxPendingRuns);
 
-                TransformedAtlasTests.AssertEqual(expected, batched, "runs alternating colours");
+                TransformedAtlasTests.AssertEqual(expected, batched, "runs alternating pages");
                 Assert.True(drawnWhileAppending >= 2 * (flushes - 1),
                     $"{runs.Length} runs took {drawnWhileAppending} atlas draws before the session ended");
                 Assert.True(draws >= 2 * flushes, $"{runs.Length} runs took {draws} atlas draws");
@@ -1950,7 +1951,8 @@ namespace Avalonia.Skia.UnitTests.Media
         /// <paramref name="count"/> runs of one small glyph each, one per cell of a grid over the
         /// surface, far enough apart that no two of them overlap.
         /// </summary>
-        private static ManagedGlyphRunImpl[] CreateCellRuns(GlyphTypeface typeface, int count)
+        private static ManagedGlyphRunImpl[] CreateCellRuns(GlyphTypeface typeface, int count,
+            Func<int, string>? text = null)
         {
             const int columns = 52;
 
@@ -1960,7 +1962,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var i = 0; i < count; i++)
             {
-                runs[i] = WideRunMaskTests.CreateRun(typeface, "o", 7,
+                runs[i] = WideRunMaskTests.CreateRun(typeface, text?.Invoke(i) ?? "o", 7,
                     new Point(2.3 + i % columns * 10, 8 + i / columns * 9));
             }
 

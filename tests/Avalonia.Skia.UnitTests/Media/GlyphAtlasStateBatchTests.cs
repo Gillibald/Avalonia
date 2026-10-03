@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Xunit;
 using static Avalonia.Skia.UnitTests.Media.GlyphAtlasClipBatchTests;
 
@@ -17,6 +18,8 @@ namespace Avalonia.Skia.UnitTests.Media
         private static readonly Color s_background = Color.FromRgb(0xF4, 0xF0, 0xE6);
 
         public static IEnumerable<object[]> Targets() => HardwareTargets();
+
+        public static IEnumerable<object[]> Contexts() => HardwareContexts();
 
         [Theory]
         [MemberData(nameof(Targets))]
@@ -66,6 +69,63 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     Assert.InRange(draws, 1, 2);
                 }
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Contexts))]
+        public void Runs_In_Translucent_Colours_Of_One_Page_Draw_As_One_Atlas_Call(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 12);
+            var brushes = new IBrush[]
+            {
+                new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x20, 0x40, 0x90)),
+                new ImmutableSolidColorBrush(Color.FromArgb(0x80, 0x30, 0x30, 0x30)),
+                Brushes.Black,
+            };
+
+            // Rows in two translucent colours and an opaque one scaled by an opacity, then the
+            // first row again in the second colour, two pixels lower and three to the right, over
+            // the first: it must land above it.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    if (i % 3 == 2)
+                    {
+                        context.PushOpacity(0.6, null);
+                        context.DrawGlyphRun(brushes[2], rows[i]);
+                        context.PopOpacity();
+                    }
+                    else
+                    {
+                        context.DrawGlyphRun(brushes[i % 3], rows[i]);
+                    }
+                }
+
+                context.Transform = Matrix.CreateTranslation(3, 2);
+                context.DrawGlyphRun(brushes[1], rows[0]);
+                context.Transform = Matrix.Identity;
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel: false, out _);
+                var cold = Render(gpu, Draw, batched: true, subpixel: false, out var coldDraws);
+                var warm = Render(gpu, Draw, batched: true, subpixel: false, out var warmDraws);
+
+                TransformedAtlasTests.AssertEqual(expected, cold, "rows in translucent colours");
+                TransformedAtlasTests.AssertEqual(expected, warm, "warm rows in translucent colours");
+                Assert.Equal(1, coldDraws);
+                Assert.Equal(1, warmDraws);
             }
             finally
             {
