@@ -1090,11 +1090,20 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushOpacity(double opacity, Rect? bounds)
         {
-            PrepareCanvas(GlyphBatchFlushReason.Layer);
+            var useOpacitySaveLayer = _useOpacitySaveLayer || RenderOptions.RequiresFullOpacityHandling == true;
+
+            // Without a layer the opacity only scales the colour of what is drawn inside it, and
+            // pending glyph runs hold their colour already, so they stay pending.
+            if (useOpacitySaveLayer)
+            {
+                PrepareCanvas(GlyphBatchFlushReason.Layer);
+            }
+            else
+            {
+                CheckLease();
+            }
 
             _opacityStack.Push(_currentOpacity);
-
-            var useOpacitySaveLayer = _useOpacitySaveLayer || RenderOptions.RequiresFullOpacityHandling == true;
 
             if (useOpacitySaveLayer)
             {
@@ -1123,14 +1132,17 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PopOpacity()
         {
-            PrepareCanvas(GlyphBatchFlushReason.Layer);
-
             var useOpacitySaveLayer = _useOpacitySaveLayer || RenderOptions.RequiresFullOpacityHandling == true;
 
             if (useOpacitySaveLayer)
             {
+                PrepareCanvas(GlyphBatchFlushReason.Layer);
                 _saveLayerDepth--;
                 RestoreCanvas();
+            }
+            else
+            {
+                CheckLease();
             }
 
             _currentOpacity = _opacityStack.Pop();
