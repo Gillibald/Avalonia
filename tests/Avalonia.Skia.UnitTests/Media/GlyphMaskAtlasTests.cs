@@ -76,6 +76,48 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Entries_Keep_An_Empty_Row_And_Column_On_Every_Side()
+        {
+            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var random = new Random(4321);
+            var tick = atlas.Tick();
+            var entries = new List<(GlyphMask Mask, GlyphAtlasSlot Slot)>();
+
+            // Enough entries to fill several shelves, so some start at the page's left edge and
+            // some on its top shelf.
+            for (var i = 0; i < 400; i++)
+            {
+                var mask = CreateMask(random, random.Next(2, 70), random.Next(2, 90));
+
+                Assert.True(atlas.TryAdd(Key(i), mask, tick, out var slot));
+                entries.Add((mask, slot));
+            }
+
+            foreach (var (mask, slot) in entries)
+            {
+                var pixels = slot.Page!.Pixels;
+
+                // A bilinear draw of the entry reads one texel beyond each edge, which must be
+                // empty page rather than the clamped edge of the page or a neighbour's coverage.
+                Assert.True(slot.X >= 1 && slot.Y >= 1, $"entry at ({slot.X}, {slot.Y}) touches the page edge");
+                Assert.True(slot.X + mask.Width < GlyphMaskAtlas.PageWidth && slot.Y + mask.Height < slot.Page.Height,
+                    $"entry at ({slot.X}, {slot.Y}) touches the page edge");
+
+                for (var x = slot.X - 1; x <= slot.X + mask.Width; x++)
+                {
+                    Assert.Equal(0, pixels[(slot.Y - 1) * GlyphMaskAtlas.PageWidth + x]);
+                    Assert.Equal(0, pixels[(slot.Y + mask.Height) * GlyphMaskAtlas.PageWidth + x]);
+                }
+
+                for (var y = slot.Y; y < slot.Y + mask.Height; y++)
+                {
+                    Assert.Equal(0, pixels[y * GlyphMaskAtlas.PageWidth + slot.X - 1]);
+                    Assert.Equal(0, pixels[y * GlyphMaskAtlas.PageWidth + slot.X + mask.Width]);
+                }
+            }
+        }
+
+        [Fact]
         public void A_Repeated_Key_Returns_The_First_Entry()
         {
             var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
