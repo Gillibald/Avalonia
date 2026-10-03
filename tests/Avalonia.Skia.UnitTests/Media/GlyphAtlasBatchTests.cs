@@ -145,13 +145,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void A_List_Of_Rows_In_Sixteen_Typefaces_Draws_One_Atlas_Call_Per_Typeface(GpuBackend backend,
-            bool software)
+        public void A_List_Of_Rows_In_Sixteen_Typefaces_Draws_One_Atlas_Call(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out _);
 
-            // Every typeface has an atlas of its own, so each one is a page and a pending batch.
+            // The glyphs of every typeface share one page, so the rows are one pending batch.
             var typefaces = Enumerable.Range(0, 16).Select(i => LoadAsset(s_listFonts[i % s_listFonts.Length])).ToArray();
             var runs = CreateListRuns(typefaces, 48);
 
@@ -166,7 +165,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 var batched = Render(gpu, Draw, batched: true, out var draws);
 
                 TransformedAtlasTests.AssertEqual(expected, batched, "list rows");
-                Assert.Equal(typefaces.Length, draws);
+                Assert.Equal(1, draws);
             }
             finally
             {
@@ -176,8 +175,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void List_Rows_In_Opaque_Colours_Of_One_Luminance_Bucket_Draw_One_Atlas_Call_Per_Typeface(
-            GpuBackend backend, bool software)
+        public void List_Rows_In_Opaque_Colours_Of_Several_Typefaces_Draw_One_Atlas_Call(GpuBackend backend,
+            bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out _);
@@ -185,8 +184,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var typefaces = Enumerable.Range(0, 6).Select(i => LoadAsset(s_listFonts[i % s_listFonts.Length])).ToArray();
             var runs = CreateListRuns(typefaces, 48);
 
-            // Four colours of the darkest luminance bucket, so each typeface's runs sample one
-            // page whatever their colour; each typeface draws in every colour.
+            // Four opaque colours, each typeface drawing in every colour.
             var brushes = new IBrush[]
             {
                 Brushes.Black,
@@ -209,10 +207,137 @@ namespace Avalonia.Skia.UnitTests.Media
                 var cold = Render(gpu, Draw, batched: true, out _);
                 var warm = Render(gpu, Draw, batched: true, out var draws);
 
-                Assert.Single(typefaces[0].MaskAtlas.GetPages());
                 TransformedAtlasTests.AssertEqual(expected, cold, "list rows in four colours");
                 TransformedAtlasTests.AssertEqual(expected, warm, "warm list rows in four colours");
-                Assert.Equal(typefaces.Length, draws);
+                Assert.Equal(1, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Rows_Of_Variation_Instances_Of_One_Font_Draw_One_Atlas_Call(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out _);
+
+            // Every instance hints and rasterizes at its own position, so each one owns its
+            // glyph masks; they still share a page.
+            var source = LoadAsset("InterVariable.ttf");
+            var typefaces = new[] { 300, 400, 500, 600, 700, 800 }
+                .Select(weight => source.WithVariations(FontVariationSettings.Parse($"wght={weight}")))
+                .ToArray();
+
+            Assert.Equal(typefaces.Length, typefaces.Distinct().Count());
+
+            var runs = CreateListRuns(typefaces, 48);
+
+            void Draw(DrawingContextImpl context) => DrawAll(context, runs, Brushes.Black);
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var batched = Render(gpu, Draw, batched: true, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, batched, "rows of variation instances");
+                Assert.Equal(1, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Typefaces_Sharing_A_Font_File_Keep_Their_Own_Glyph_Masks(GpuBackend backend, bool software)
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out _);
+
+            // Two instances of one font draw the same glyph ids under equal mask keys but with
+            // different outlines. The rows of each, drawn alone on a context of its own, are
+            // the reference.
+            var source = LoadAsset("InterVariable.ttf");
+            var light = source.WithVariations(FontVariationSettings.Parse("wght=200"));
+            var heavy = source.WithVariations(FontVariationSettings.Parse("wght=900"));
+            var runs = CreateListRuns(new[] { light, heavy }, 24);
+
+            void DrawRows(DrawingContextImpl context, int first, int step)
+            {
+                for (var i = first; i < runs.Length; i += step)
+                {
+                    context.DrawGlyphRun(Brushes.Black, runs[i]);
+                }
+            }
+
+            try
+            {
+                var alone = new byte[2][];
+
+                for (var first = 0; first < 2; first++)
+                {
+                    using var own = TransformedAtlasTests.CreateGpu(backend, software);
+                    var start = first;
+
+                    alone[first] = Render(own, context => DrawRows(context, start, 2), batched: true, out _);
+                }
+
+                Assert.NotEqual(alone[0], alone[1]);
+
+                var expected = new byte[alone[0].Length];
+
+                for (var i = 0; i < expected.Length; i++)
+                {
+                    Assert.True(alone[0][i] == 0 || alone[1][i] == 0, "the rows of the two instances overlap");
+                    expected[i] = (byte)(alone[0][i] | alone[1][i]);
+                }
+
+                using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+
+                // The light instance places its masks first; the heavy one must not sample them.
+                Render(gpu, context => DrawRows(context, 0, 2), batched: true, out _);
+
+                var cold = Render(gpu, context => DrawRows(context, 0, 1), batched: true, out _);
+                var warm = Render(gpu, context => DrawRows(context, 0, 1), batched: true, out _);
+
+                TransformedAtlasTests.AssertEqual(expected, cold, "instances drawn together");
+                TransformedAtlasTests.AssertEqual(expected, warm, "warm instances drawn together");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [InlineData(GpuBackend.NativeGl)]
+        [InlineData(GpuBackend.Angle)]
+        [InlineData(GpuBackend.Metal)]
+        public void A_Context_Without_Partial_Page_Upload_Places_Masks_In_The_Typeface_Atlas(GpuBackend backend)
+        {
+            // No GL entry points are registered for this context, so it cannot update part of a
+            // page and keeps every typeface's masks on pages of their own.
+            using var gpu = GpuTestContext.TryCreate(backend, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
+
+            using var scope = WideRunMaskTests.CreateEnvironment(out _);
+
+            var typeface = LoadAsset("Inter-Regular.ttf");
+            var runs = CreateListRuns(new[] { typeface }, 8);
+
+            try
+            {
+                Render(gpu!, context => DrawAll(context, runs, Brushes.Black), batched: true, out var draws);
+
+                Assert.Equal(1, draws);
+                Assert.True(typeface.MaskAtlas.Count > 0, "no glyph mask entered the typeface's atlas");
             }
             finally
             {
