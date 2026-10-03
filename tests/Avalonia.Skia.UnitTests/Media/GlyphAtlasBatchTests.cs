@@ -492,6 +492,200 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Run_Whose_Glyphs_Alternate_Between_Two_Pages_Draws_One_Atlas_Call_Per_Page(GpuBackend backend,
+            bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var firstPage = CreatePlacedRun(typeface, new Point(10, 20), FirstPageGlyphs());
+            using var run = CreateAlternatingPageRun(typeface, new Point(10, 60));
+
+            Render(gpu, context => context.DrawGlyphRun(Brushes.Black, firstPage), batched: true, out _);
+            FillFirstAtlasPage(typeface);
+
+            void Draw(DrawingContextImpl context) => context.DrawGlyphRun(Brushes.Black, run);
+
+            var expected = Render(gpu, Draw, batched: false, out _);
+
+            Assert.Equal(2, typeface.MaskAtlas.GetPages().Length);
+
+            var cold = Render(gpu, Draw, batched: true, out _);
+            var warm = Render(gpu, Draw, batched: true, out var draws);
+
+            TransformedAtlasTests.AssertEqual(expected, cold, "run on two pages");
+            TransformedAtlasTests.AssertEqual(expected, warm, "warm run on two pages");
+            Assert.Equal(2, draws);
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Run_Grouped_By_Page_Keeps_The_Order_Of_Overlapping_Glyphs(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var firstPage = CreatePlacedRun(typeface, new Point(10, 20), FirstPageGlyphs());
+
+            var background = new ImmutableSolidColorBrush(Color.FromRgb(0xE8, 0xE0, 0xD0));
+            var brushes = new IBrush[]
+            {
+                new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90)),
+                new ImmutableSolidColorBrush(Color.FromArgb(0xB0, 0x60, 0x10, 0x30)),
+            };
+
+            // An entry holds coverage corrected for its colour's luminance, so the upper-case
+            // letters go on the first page in both colours.
+            foreach (var brush in brushes)
+            {
+                Render(gpu, context => context.DrawGlyphRun(brush, firstPage), batched: true, out _);
+            }
+
+            FillFirstAtlasPage(typeface);
+
+            // Glyphs of the two pages alternate. In the first stretch each glyph covers the one
+            // before it and the one before that, so no glyph may be drawn ahead of a glyph of
+            // the other page; in the second the glyphs stand apart, and a glyph that covers one
+            // of the other page follows.
+            var glyphs = new List<(char Character, int X, int Y)>();
+
+            for (var i = 0; i < 12; i++)
+            {
+                glyphs.Add(((char)(i % 2 == 0 ? 'A' + i / 2 : 'a' + i / 2), i * 4, 0));
+            }
+
+            for (var i = 0; i < 8; i++)
+            {
+                glyphs.Add(((char)(i % 2 == 0 ? 'H' + i / 2 : 'h' + i / 2), 80 + i * 20, 0));
+            }
+
+            glyphs.Add(('L', 145, 2));
+            glyphs.Add(('m', 230, 0));
+            glyphs.Add(('M', 234, -3));
+
+            var origin = new Point(12, 70);
+            var placed = glyphs.ToArray();
+
+            using var run = CreatePlacedRun(typeface, origin, placed);
+
+            var singles = placed.Select(g => CreatePlacedRun(typeface, origin, g)).ToArray();
+
+            try
+            {
+                foreach (var brush in brushes)
+                {
+                    void Background(DrawingContextImpl context) =>
+                        context.DrawRectangle(background, null, new RoundedRect(new Rect(0, 0, Width, Height)));
+
+                    // The run drawn one glyph at a time, in its order.
+                    var expected = Render(gpu, context =>
+                    {
+                        Background(context);
+                        DrawAll(context, singles, brush);
+                    }, batched: false, out _);
+
+                    void Draw(DrawingContextImpl context)
+                    {
+                        Background(context);
+                        context.DrawGlyphRun(brush, run);
+                    }
+
+                    var unbatched = Render(gpu, Draw, batched: false, out _);
+                    var batched = Render(gpu, Draw, batched: true, out _);
+
+                    Assert.Equal(2, typeface.MaskAtlas.GetPages().Length);
+                    TransformedAtlasTests.AssertEqual(expected, unbatched, $"{brush} unbatched");
+                    TransformedAtlasTests.AssertEqual(expected, batched, $"{brush} batched");
+                }
+            }
+            finally
+            {
+                DisposeAll(singles);
+            }
+        }
+
+        /// <summary>The upper-case letters that <see cref="CreateAlternatingPageRun"/> takes from the first page.</summary>
+        private static (char Character, int X, int Y)[] FirstPageGlyphs()
+            => Enumerable.Range(0, 16).Select(i => ((char)('A' + i), i * 16, 0)).ToArray();
+
+        /// <summary>
+        /// A run alternating between upper-case letters, whose masks the caller placed on the
+        /// first page, and lower-case ones, which land on the second: in each block two upper-case
+        /// letters, then two lower-case ones set between and after them. Each page's letters of
+        /// a block span those of the other page, so the parts of the run on either page overlap
+        /// in their bounds, while no two glyphs overlap.
+        /// </summary>
+        private static ManagedGlyphRunImpl CreateAlternatingPageRun(GlyphTypeface typeface, Point origin)
+        {
+            var glyphs = new List<(char Character, int X, int Y)>();
+
+            for (var block = 0; block < 6; block++)
+            {
+                var x = block * 64;
+
+                glyphs.Add(((char)('A' + 2 * block), x, 0));
+                glyphs.Add(((char)('A' + 2 * block + 1), x + 32, 0));
+                glyphs.Add(((char)('a' + 2 * block), x + 16, 0));
+                glyphs.Add(((char)('a' + 2 * block + 1), x + 48, 0));
+            }
+
+            return CreatePlacedRun(typeface, origin, glyphs.ToArray());
+        }
+
+        /// <summary>
+        /// A 12 px run of the given letters at whole-pixel offsets from a whole-pixel origin, so a
+        /// letter has the same glyph mask, and atlas entry, wherever a run places it.
+        /// </summary>
+        private static ManagedGlyphRunImpl CreatePlacedRun(GlyphTypeface typeface, Point origin,
+            params (char Character, int X, int Y)[] glyphs)
+        {
+            var infos = glyphs
+                .Select((g, i) => new GlyphInfo(typeface.CharacterToGlyphMap[g.Character], i, 0, new Vector(g.X, g.Y)))
+                .ToList();
+
+            return new ManagedGlyphRunImpl(typeface, 12, infos, origin);
+        }
+
+        /// <summary>
+        /// Fills the typeface's only atlas page to its last row and column with empty entries, so
+        /// glyph masks placed from now on land on a second page while those placed before stay
+        /// on the first.
+        /// </summary>
+        private static void FillFirstAtlasPage(GlyphTypeface typeface)
+        {
+            var atlas = typeface.MaskAtlas;
+            var page = Assert.Single(atlas.GetPages());
+            var tick = atlas.Tick();
+            var filler = 0;
+
+            // A scale no run draws at, so the entries never meet a glyph's key.
+            void Add(int width, int height)
+            {
+                var key = new GlyphMaskKey((ushort)(ushort.MaxValue - filler++), 1, 0, GlyphMaskMode.Antialiased);
+
+                Assert.True(atlas.TryAdd(key, new GlyphMask(new byte[width * height], width, height, 0, 0), tick,
+                    out var slot));
+                Assert.Same(page, slot.Page);
+            }
+
+            // An entry sized to a shelf's remaining width and its height may still land on an
+            // earlier shelf of a similar height, so repeat until every shelf is full.
+            while (page.Shelves.FirstOrDefault(s => s.X < GlyphMaskAtlas.PageWidth - 1) is { Height: > 0 } shelf)
+            {
+                Add(GlyphMaskAtlas.PageWidth - shelf.X - 1, shelf.Height - 1);
+            }
+
+            var rows = GlyphMaskAtlas.MaxPageHeight - page.UsedHeight;
+
+            if (rows > 1)
+            {
+                Add(GlyphMaskAtlas.PageWidth - 2, rows - 1);
+            }
+
+            Assert.True(page.UsedHeight >= GlyphMaskAtlas.MaxPageHeight - 1, $"the page fills {page.UsedHeight} rows");
+            Assert.Single(atlas.GetPages());
+        }
+
         private static GlyphTypeface LoadAsset(string name)
         {
             var directory = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
