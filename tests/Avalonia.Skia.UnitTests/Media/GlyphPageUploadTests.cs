@@ -45,7 +45,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 Render(gpu, context => DrawAll(context, paragraph));
 
-                var page = Assert.Single(typeface.MaskAtlas.GetPages());
+                var page = Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages());
                 var keys = page.Keys.ToHashSet();
                 var height = page.Height;
                 var bytes = DrawingContextImpl.PageImageBytesOnThread;
@@ -57,10 +57,10 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.DrawGlyphRun(Brushes.Black, symbols);
                 });
 
-                Assert.Same(page, Assert.Single(typeface.MaskAtlas.GetPages()));
+                Assert.Same(page, Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages()));
                 Assert.Equal(height, page.Height);
 
-                var written = WrittenRectangle(typeface.MaskAtlas, page, keys);
+                var written = WrittenRectangle(TransformedAtlasTests.AtlasOf(gpu, typeface), page, keys);
 
                 Assert.False(written.Width == 0 || written.Height == 0, "the run placed no new glyph on the page");
                 Assert.Equal(0, DrawingContextImpl.PageImagesCreatedOnThread - created);
@@ -89,7 +89,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     Render(gpu, context => DrawAll(context, paragraph));
 
-                    foreach (var page in typeface.MaskAtlas.GetPages())
+                    foreach (var page in TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages())
                     {
                         heights.Add(page.Height);
                         Assert.Equal(page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(),
@@ -116,15 +116,18 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 byte[] before;
 
-                using (var lost = TransformedAtlasTests.CreateGpu(backend, false))
+                // Both contexts place masks in one atlas, as two contexts of one process do.
+                var atlas = new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes);
+
+                using (var lost = TransformedAtlasTests.CreateGpu(backend, false, atlas))
                 {
                     Render(lost, context => DrawAll(context, paragraph));
                     before = Render(lost, context => DrawAll(context, paragraph));
                     lost.GrContext.AbandonContext();
                 }
 
-                using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
-                var page = Assert.Single(typeface.MaskAtlas.GetPages());
+                using var gpu = TransformedAtlasTests.CreateGpu(backend, false, atlas);
+                var page = Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages());
                 var bytes = DrawingContextImpl.PageImageBytesOnThread;
                 var after = Render(gpu, context => DrawAll(context, paragraph));
 
@@ -141,14 +144,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>The union of the slots of the page's entries that are not in <paramref name="known"/>.</summary>
         private static PixelRect WrittenRectangle(GlyphMaskAtlas atlas, GlyphAtlasPage page,
-            HashSet<(GlyphMaskKey Key, int Bucket)> known)
+            HashSet<GlyphAtlasEntryKey> known)
         {
             var tick = atlas.Tick();
             var union = default(PixelRect);
 
             foreach (var entry in page.Keys)
             {
-                if (known.Contains(entry) || !atlas.TryGet(entry.Key, entry.Bucket, tick, out var slot) ||
+                if (known.Contains(entry) || !atlas.TryGet(entry.Owner, entry.Key, entry.Bucket, tick, out var slot) ||
                     slot.Width == 0 || slot.Height == 0)
                 {
                     continue;

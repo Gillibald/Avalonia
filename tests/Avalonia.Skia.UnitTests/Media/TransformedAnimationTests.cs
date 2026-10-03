@@ -195,16 +195,16 @@ namespace Avalonia.Skia.UnitTests.Media
                 if (frame == TransformChurnGuard.Threshold)
                 {
                     glyphMasks = typeface.MaskCache.Count;
-                    atlasEntries = typeface.MaskAtlas.Count;
-                    atlasBytes = typeface.MaskAtlas.AllocatedBytes;
+                    atlasEntries = TransformedAtlasTests.AtlasOf(output.Context, typeface).Count;
+                    atlasBytes = TransformedAtlasTests.AtlasOf(output.Context, typeface).AllocatedBytes;
                 }
             }
 
             // Only the frames before the guard engaged built sprite sets and stored glyph masks.
             Assert.Equal(TransformChurnGuard.Threshold, run.TransformedSprites.Count);
             Assert.Equal(glyphMasks, typeface.MaskCache.Count);
-            Assert.Equal(atlasEntries, typeface.MaskAtlas.Count);
-            Assert.Equal(atlasBytes, typeface.MaskAtlas.AllocatedBytes);
+            Assert.Equal(atlasEntries, TransformedAtlasTests.AtlasOf(output.Context, typeface).Count);
+            Assert.Equal(atlasBytes, TransformedAtlasTests.AtlasOf(output.Context, typeface).AllocatedBytes);
             Assert.True(output.HasInk(), "the last animation frame drew nothing");
 
             // A CPU surface blends from pooled buffers. A GPU hands each run's coverage to the
@@ -343,7 +343,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 if (frame == TransformChurnGuard.Threshold)
                 {
                     glyphMasks = typeface.MaskCache.Count;
-                    atlasEntries = typeface.MaskAtlas.Count;
+                    atlasEntries = TransformedAtlasTests.AtlasOf(output.Context, typeface).Count;
                 }
             }
 
@@ -351,7 +351,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // nothing to the glyph storage after its first stretched frame.
             Assert.Equal(TransformChurnGuard.Threshold, run.TransformedSprites.Count);
             Assert.Equal(glyphMasks, typeface.MaskCache.Count);
-            Assert.Equal(atlasEntries, typeface.MaskAtlas.Count);
+            Assert.Equal(atlasEntries, TransformedAtlasTests.AtlasOf(output.Context, typeface).Count);
             Assert.True(allocated == 0, $"stretched frames allocated {allocated} bytes");
             Assert.True(output.HasInk(), "the last animation frame drew nothing");
         }

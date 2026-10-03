@@ -427,7 +427,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            var atlas = typeface.MaskAtlas;
+            var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
             var batches = GetBatches(context, typeface, atlas, settled, GetBucket(foregroundArgb));
             var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
 
@@ -447,21 +447,21 @@ namespace Avalonia.Media.Fonts.Rasterization
                    ToArgb(color.A, color));
 
         /// <summary>
-        /// Draws a sprite set from the typeface's atlas, one backend call per batch, placed at
-        /// the run's snapped origin pixel.
+        /// Draws a sprite set from the context's or the typeface's atlas, one backend call per
+        /// batch, placed at the run's snapped origin pixel.
         /// </summary>
         private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb)
             => DrawFromAtlas(context, typeface, sprites, originX, originY, foregroundArgb, GetBucket(foregroundArgb));
 
         /// <summary>
-        /// Draws a sprite set from the typeface's atlas in a foreground whose coverage correction
-        /// <paramref name="bucket"/> the caller already knows.
+        /// Draws a sprite set from the context's or the typeface's atlas in a foreground whose
+        /// coverage correction <paramref name="bucket"/> the caller already knows.
         /// </summary>
         private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb, int bucket)
         {
-            var atlas = typeface.MaskAtlas;
+            var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
             var batches = GetBatches(context, typeface, atlas, sprites, bucket);
 
             DrawBatches(context, atlas, batches, Matrix.CreateTranslation(originX, originY), foregroundArgb,
@@ -527,6 +527,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphRasterDiagnostics.CountAtlasBatchBuild();
 
             var tick = atlas.Tick();
+            var owner = context.MaskAtlas is null ? 0 : typeface.MaskOwnerId;
             var count = sprites.Count;
             var builder = t_batchBuilder ??= new GlyphAtlasBatchBuilder();
             var scratch = t_scratch ??= new GlyphPathBuilder();
@@ -542,7 +543,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var key = sprites.GetGlyphKey(i);
                     var spriteBucket = sprite.Kind == TransformedSpriteKind.Foreground ? bucket : GlyphMaskAtlas.Uncorrected;
 
-                    if (!atlas.TryGet(key, spriteBucket, tick, out var slot))
+                    if (!atlas.TryGet(owner, key, spriteBucket, tick, out var slot))
                     {
                         byte[]? rented = null;
 
@@ -562,7 +563,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                             }
 
                             if (mask.Width * mask.Height > maxEntryBytes ||
-                                !atlas.TryAdd(key, spriteBucket, mask, tick, out slot))
+                                !atlas.TryAdd(owner, key, spriteBucket, mask, tick, out slot))
                             {
                                 builder.AddStandalone(new GlyphAtlasBatch(null, i, 1, sprite.Kind, sprite.Color,
                                     context.CreateAtlasBatch(

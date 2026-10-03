@@ -59,7 +59,7 @@ namespace TextStress.Measurement
         public long MaskEvictions;
         public long AtlasEvictions;
         public int AtlasPages;
-        public int AtlasPagesMaxFace;
+        public int AtlasPagesShared;
         public int AtlasFaces;
         public long TierMask;
         public long TierTransformed;

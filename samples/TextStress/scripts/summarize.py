@@ -324,8 +324,8 @@ def write_counters(w, keys, groups):
       "`img new/repl` atlas page images made for a page without one / replacing an older version's; "
       "`upload` bytes of those images, which a GPU context uploads whole; `raster` glyph rasterizations; "
       "`mask h/m` glyph mask cache hits / misses; `sets` sprite sets laid out; `bb` atlas batch builds; "
-      "`atlas h/m/p` atlas lookups that hit / missed and masks placed; `pages` atlas pages of the tracked "
-      "faces after the last frame (most on one face).")
+      "`atlas h/m/p` atlas lookups that hit / missed and masks placed; `pages` atlas pages after the last frame, "
+      "the shared atlas's and those of the tracked faces' own atlases (the shared atlas's).")
     w("")
     w("| scenario | render | mode | frames | draws/f | batches/f | runs/b | max | flushed by (/f) | slot ev/f | "
       "img new/repl/upd /f | upload KB/f | upload MB/pass | raster/f | raster/pass | mask h/m /f | sets/f | bb/f | "
@@ -354,7 +354,7 @@ def write_counters(w, keys, groups):
           f"{fmt(mean(rows, 'mask_hits'), 1)}/{fmt(mean(rows, 'mask_misses'))} | "
           f"{fmt(mean(rows, 'sprite_set_builds'))} | {fmt(mean(rows, 'atlas_batch_builds'))} | "
           f"{fmt(mean(rows, 'atlas_hits'), 1)}/{fmt(mean(rows, 'atlas_misses'))}/{fmt(mean(rows, 'atlas_placements'))} | "
-          f"{int(last.get('atlas_pages', 0))} ({int(last.get('atlas_pages_max_face', 0))}) |")
+          f"{int(last.get('atlas_pages', 0))} ({int(last.get('atlas_pages_shared', 0))}) |")
     w("")
 
 

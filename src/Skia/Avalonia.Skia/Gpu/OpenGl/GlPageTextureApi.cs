@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 
 namespace Avalonia.Skia
@@ -38,8 +39,9 @@ namespace Avalonia.Skia
         private readonly delegate* unmanaged[Stdcall]<int, int, int, int, int, int, int, int, void*, void> _texImage2D;
         private readonly delegate* unmanaged[Stdcall]<int, int, int, int, int, int, int, int, void*, void> _texSubImage2D;
 
-        private GlPageTextureApi(IntPtr[] entries)
+        private GlPageTextureApi(IntPtr[] entries, GlyphMaskAtlas maskAtlas)
         {
+            MaskAtlas = maskAtlas;
             _genTextures = (delegate* unmanaged[Stdcall]<int, uint*, void>)entries[0];
             _deleteTextures = (delegate* unmanaged[Stdcall]<int, uint*, void>)entries[1];
             _bindTexture = (delegate* unmanaged[Stdcall]<int, uint, void>)entries[2];
@@ -57,11 +59,26 @@ namespace Avalonia.Skia
         };
 
         /// <summary>
+        /// The atlas the glyph masks of every typeface drawn on the context are placed in. Its
+        /// pages change whenever any typeface adds a glyph, which costs a context with these
+        /// entry points the written rectangle only.
+        /// </summary>
+        public GlyphMaskAtlas MaskAtlas { get; }
+
+        /// <summary>
         /// Looks up the entry points for <paramref name="context"/> when its GL is
         /// <paramref name="majorVersion"/> 3 or later; otherwise, or when one is missing, pages on
-        /// that context stay raster images.
+        /// that context stay raster images and every typeface keeps its own atlas.
         /// </summary>
-        public static void Register(GRContext context, Func<string, IntPtr> getProcAddress, int majorVersion)
+        /// <param name="context">The context drawing the pages.</param>
+        /// <param name="getProcAddress">Resolves a GL entry point of the context.</param>
+        /// <param name="majorVersion">The major version of the context's GL or GLES.</param>
+        /// <param name="maskAtlas">
+        /// The atlas of the context's glyph masks; <see cref="GlyphMaskAtlas.Shared"/> unless the
+        /// caller keeps the context's masks apart from other contexts'.
+        /// </param>
+        public static void Register(GRContext context, Func<string, IntPtr> getProcAddress, int majorVersion,
+            GlyphMaskAtlas? maskAtlas = null)
         {
             if (majorVersion < 3 || OperatingSystem.IsBrowser())
             {
@@ -82,7 +99,7 @@ namespace Avalonia.Skia
                 }
             }
 
-            s_apis.AddOrUpdate(context, new GlPageTextureApi(entries));
+            s_apis.AddOrUpdate(context, new GlPageTextureApi(entries, maskAtlas ?? GlyphMaskAtlas.Shared));
         }
 
         /// <summary>The entry points registered for <paramref name="context"/>, unless it is lost.</summary>

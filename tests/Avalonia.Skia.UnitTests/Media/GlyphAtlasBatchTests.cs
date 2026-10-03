@@ -102,8 +102,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void Lines_Alternating_Typefaces_And_Colours_Draw_One_Atlas_Call_Per_Page_And_Colour(GpuBackend backend,
-            bool software)
+        public void Lines_Alternating_Typefaces_And_Colours_Draw_One_Atlas_Call(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
@@ -112,7 +111,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var brushes = new IBrush[] { Brushes.Black, new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90)) };
 
             // Thirty lines of a paragraph that never touch one another, the typeface changing
-            // every line and the colour every other line: two pages, both colours opaque.
+            // every line and the colour every other line: one page, both colours opaque.
             var runs = Enumerable.Range(0, 30)
                 .Select(i => WideRunMaskTests.CreateRun(i % 2 == 0 ? inter : noto, s_lines[i % s_lines.Length], 9,
                     new Point(6.3, 12 + i * 11.6)))
@@ -135,7 +134,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 var batched = Render(gpu, Draw, batched: true, out var draws);
 
                 TransformedAtlasTests.AssertEqual(expected, batched, "alternating lines");
-                Assert.Equal(2, draws);
+                Assert.Equal(1, draws);
             }
             finally
             {
@@ -628,13 +627,13 @@ namespace Avalonia.Skia.UnitTests.Media
             using var run = CreateAlternatingPageRun(typeface, new Point(10, 60));
 
             Render(gpu, context => context.DrawGlyphRun(Brushes.Black, firstPage), batched: true, out _);
-            FillFirstAtlasPage(typeface);
+            FillFirstAtlasPage(TransformedAtlasTests.AtlasOf(gpu, typeface));
 
             void Draw(DrawingContextImpl context) => context.DrawGlyphRun(Brushes.Black, run);
 
             var expected = Render(gpu, Draw, batched: false, out _);
 
-            Assert.Equal(2, typeface.MaskAtlas.GetPages().Length);
+            Assert.Equal(2, TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length);
 
             var cold = Render(gpu, Draw, batched: true, out _);
             var warm = Render(gpu, Draw, batched: true, out var draws);
@@ -653,7 +652,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var firstPage = CreatePlacedRun(typeface, new Point(10, 20), FirstPageGlyphs());
 
             Render(gpu, context => context.DrawGlyphRun(Brushes.Black, firstPage), batched: true, out _);
-            FillFirstAtlasPage(typeface);
+            FillFirstAtlasPage(TransformedAtlasTests.AtlasOf(gpu, typeface));
 
             // Lines that never touch one another, each run's parts on the two pages overlapping
             // in their bounds but in no glyph.
@@ -667,7 +666,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 var expected = Render(gpu, Draw, batched: false, out _);
 
-                Assert.Equal(2, typeface.MaskAtlas.GetPages().Length);
+                Assert.Equal(2, TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length);
 
                 var cold = Render(gpu, Draw, batched: true, out _);
                 var pageChanges = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange);
@@ -708,7 +707,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Render(gpu, context => context.DrawGlyphRun(brush, firstPage), batched: true, out _);
             }
 
-            FillFirstAtlasPage(typeface);
+            FillFirstAtlasPage(TransformedAtlasTests.AtlasOf(gpu, typeface));
 
             // Glyphs of the two pages alternate. In the first stretch each glyph covers the one
             // before it and the one before that, so no glyph may be drawn ahead of a glyph of
@@ -760,7 +759,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     var unbatched = Render(gpu, Draw, batched: false, out _);
                     var batched = Render(gpu, Draw, batched: true, out _);
 
-                    Assert.Equal(2, typeface.MaskAtlas.GetPages().Length);
+                    Assert.Equal(2, TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length);
                     TransformedAtlasTests.AssertEqual(expected, unbatched, $"{brush} unbatched");
                     TransformedAtlasTests.AssertEqual(expected, batched, $"{brush} batched");
                 }
@@ -818,9 +817,8 @@ namespace Avalonia.Skia.UnitTests.Media
         /// glyph masks placed from now on land on a second page while those placed before stay
         /// on the first.
         /// </summary>
-        private static void FillFirstAtlasPage(GlyphTypeface typeface)
+        private static void FillFirstAtlasPage(GlyphMaskAtlas atlas)
         {
-            var atlas = typeface.MaskAtlas;
             var page = Assert.Single(atlas.GetPages());
             var tick = atlas.Tick();
             var filler = 0;
@@ -1113,7 +1111,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out _);
 
-                var pages = typeface.MaskAtlas.GetPages().Length;
+                var pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
 
                 Assert.Equal(1, pages);
                 Assert.Equal(pages, DrawingContextImpl.PageImagesCreatedOnThread - before);
@@ -1137,6 +1135,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var second = WideRunMaskTests.CreateRun(noto, "Overlapping words", 20, new Point(14, 166));
             var clipped = WideRunMaskTests.CreateRun(inter, s_lines[2], 14, new Point(20, 230));
             var last = WideRunMaskTests.CreateRun(inter, s_lines[3], 14, new Point(20, 300));
+            var translucent = new ImmutableSolidColorBrush(Color.FromArgb(0xB0, 0x60, 0x10, 0x30));
 
             // Each step leaves one batch pending for the next to draw.
             void Draw(DrawingContextImpl context)
@@ -1144,7 +1143,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 DrawAll(context, paragraph, Brushes.Black);
                 context.DrawRectangle(Brushes.Orange, null, new RoundedRect(new Rect(300, 10, 40, 40)));
                 context.DrawGlyphRun(Brushes.Black, first);
-                context.DrawGlyphRun(Brushes.Black, second);
+                context.DrawGlyphRun(translucent, second);
                 // A clip with fractional edges draws the batches pending around it.
                 context.PushClip(new Rect(0, 200.5, 400, 60));
                 context.DrawGlyphRun(Brushes.Black, clipped);
@@ -1168,7 +1167,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var warm = Read();
 
-                // Two typefaces, a page each, every page uploaded whole at least once.
+                // The page uploaded whole at least once.
                 Assert.True(warm.PageBytes - cold.PageBytes >= 2L * GlyphMaskAtlas.PageWidth,
                     $"the cold frame uploaded {warm.PageBytes - cold.PageBytes} page bytes");
 
@@ -1191,7 +1190,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Equal(new Dictionary<GlyphBatchFlushReason, long>
                 {
                     [GlyphBatchFlushReason.CanvasOperation] = 1,
-                    [GlyphBatchFlushReason.PageChange] = 1,
+                    [GlyphBatchFlushReason.ColorChange] = 1,
                     [GlyphBatchFlushReason.Clip] = 2,
                     [GlyphBatchFlushReason.EndOfSession] = 1,
                 }, batches);
@@ -1527,17 +1526,17 @@ namespace Avalonia.Skia.UnitTests.Media
                     // set of glyph masks per scale.
                     if (frame == TransformChurnGuard.Threshold - 1)
                     {
-                        entries = typeface.MaskAtlas.Count;
+                        entries = TransformedAtlasTests.AtlasOf(gpu, typeface).Count;
                     }
                 }
 
-                Assert.Equal(entries, typeface.MaskAtlas.Count);
+                Assert.Equal(entries, TransformedAtlasTests.AtlasOf(gpu, typeface).Count);
 
                 // The frame that holds still draws from the atlas again.
                 DrawAll(context, runs, Brushes.Black);
                 context.FlushGlyphBatch();
 
-                Assert.True(typeface.MaskAtlas.Count > entries, "the settling frame added no atlas entries");
+                Assert.True(TransformedAtlasTests.AtlasOf(gpu, typeface).Count > entries, "the settling frame added no atlas entries");
             }
             finally
             {

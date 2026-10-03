@@ -71,6 +71,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             Assert.Same(source.Gasp, variant.Gasp);
             Assert.Same(source.MaskCache, variant.MaskCache);
             Assert.Same(source.MaskAtlas, variant.MaskAtlas);
+            Assert.Equal(source.MaskOwnerId, variant.MaskOwnerId);
         }
 
         [Fact]
@@ -87,6 +88,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             Assert.Same(simulated.GetTrueTypeHinter(scaleQ, GlyphMaskMode.Antialiased),
                 variant.GetTrueTypeHinter(scaleQ, GlyphMaskMode.Antialiased));
             Assert.Same(simulated.MaskCache, variant.MaskCache);
+            Assert.Equal(simulated.MaskOwnerId, variant.MaskOwnerId);
         }
 
         private static string Snapshot(TrueTypeZone zone)

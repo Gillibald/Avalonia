@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -31,11 +32,15 @@ namespace Avalonia.Skia.RenderTests
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
             // Every output draws the same sprite set: the CPU outputs blit its glyph masks, the
-            // software GPU outputs draw it from the typeface's atlas.
+            // software GPU outputs draw it from an atlas, the shared one on GL and the
+            // typeface's own on Vulkan.
             var gpu = MesaSoftwareRenderer.GlEnabled || MesaSoftwareRenderer.VulkanEnabled;
+            var owner = impl.GlyphTypeface.MaskOwnerId;
+            var atlased = impl.GlyphTypeface.MaskAtlas.Count > 0 ||
+                          GlyphMaskAtlas.Shared.GetPages().Any(page => page.Keys.Any(key => key.Owner == owner));
 
             Assert.Equal(1, impl.TransformedSprites.Count);
-            Assert.Equal(gpu, impl.GlyphTypeface.MaskAtlas.Count > 0);
+            Assert.Equal(gpu, atlased);
             Assert.Null(impl.NativeTextArtifact);
         }
 

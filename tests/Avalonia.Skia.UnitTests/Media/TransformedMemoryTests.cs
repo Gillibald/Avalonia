@@ -143,8 +143,8 @@ namespace Avalonia.Skia.UnitTests.Media
             try
             {
                 var cacheBefore = typeface.MaskCache.TotalCost;
-                var atlasBefore = typeface.MaskAtlas.AllocatedBytes;
-                var entriesBefore = typeface.MaskCache.Count + typeface.MaskAtlas.Count;
+                var atlasBefore = TransformedAtlasTests.AtlasOf(output.Context, typeface).AllocatedBytes;
+                var entriesBefore = typeface.MaskCache.Count + TransformedAtlasTests.AtlasOf(output.Context, typeface).Count;
                 var retainedBefore = LiveHeapBytes();
 
                 foreach (var run in runs)
@@ -169,18 +169,18 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
 
                 var storage = typeface.MaskCache.TotalCost - cacheBefore +
-                              typeface.MaskAtlas.AllocatedBytes - atlasBefore + sprites;
+                              TransformedAtlasTests.AtlasOf(output.Context, typeface).AllocatedBytes - atlasBefore + sprites;
 
                 // Beyond the payloads, the caches keep an entry object and a dictionary slot per
                 // glyph mask, and each run keeps its sprite set and batch objects. None of it
                 // grows with a run's pixel area, which a run mask would: the runs' bounding
                 // boxes hold the number of pixels below, at one to four bytes each.
-                var entries = typeface.MaskCache.Count + typeface.MaskAtlas.Count - entriesBefore;
+                var entries = typeface.MaskCache.Count + TransformedAtlasTests.AtlasOf(output.Context, typeface).Count - entriesBefore;
                 var bookkeeping = entries * 256L + runs.Length * 2048L;
 
                 TestContext.Current.TestOutputHelper?.WriteLine(
                     $"{target}: retained {retained} B, glyph cache +{typeface.MaskCache.TotalCost - cacheBefore} B, " +
-                    $"atlas +{typeface.MaskAtlas.AllocatedBytes - atlasBefore} B, sprites {sprites} B, " +
+                    $"atlas +{TransformedAtlasTests.AtlasOf(output.Context, typeface).AllocatedBytes - atlasBefore} B, sprites {sprites} B, " +
                     $"{entries} entries, run bounding boxes {bounds} px");
 
                 Assert.True(retained <= storage + bookkeeping,

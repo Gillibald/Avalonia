@@ -41,7 +41,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Draw(gpu, run, s_rotation, Brushes.Black);
 
             Assert.Equal(1, run.TransformedSprites.Count);
-            Assert.True(typeface.MaskAtlas.Count > 0, "no glyph mask entered the atlas");
+            Assert.True(AtlasOf(gpu, typeface).Count > 0, "no glyph mask entered the atlas");
 
             // The atlas is the storage of these masks, not a second copy of cached ones.
             Assert.Equal(0, typeface.MaskCache.Count);
@@ -335,7 +335,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 GlyphMaskMode.Antialiased, 0u, GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: phaseY);
         }
 
-        internal static GpuTestContext CreateGpu(GpuBackend backend, bool software)
+        /// <summary>
+        /// A test GPU context registered as the backends register theirs. A GL context gets
+        /// <paramref name="maskAtlas"/>, or an atlas of its own, in place of
+        /// <see cref="GlyphMaskAtlas.Shared"/>, so tests running in parallel never share pages.
+        /// </summary>
+        internal static GpuTestContext CreateGpu(GpuBackend backend, bool software, GlyphMaskAtlas? maskAtlas = null)
         {
             var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
@@ -347,11 +352,20 @@ namespace Avalonia.Skia.UnitTests.Media
             // As the GL backend does, so glyph atlas pages live in GL textures.
             if (gpu.GetGlProcAddress is { } getProcAddress)
             {
-                GlPageTextureApi.Register(gpu.GrContext, getProcAddress, gpu.GlMajorVersion);
+                GlPageTextureApi.Register(gpu.GrContext, getProcAddress, gpu.GlMajorVersion,
+                    maskAtlas ?? new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes));
             }
 
             return gpu;
         }
+
+        /// <summary>The atlas the contexts of <paramref name="gpu"/> place the masks of <paramref name="typeface"/> in.</summary>
+        internal static GlyphMaskAtlas AtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
+            => GlPageTextureApi.Get(gpu.GrContext)?.MaskAtlas ?? typeface.MaskAtlas;
+
+        /// <summary>The atlas <paramref name="context"/> places the masks of <paramref name="typeface"/> in.</summary>
+        internal static GlyphMaskAtlas AtlasOf(ITransformedGlyphContext context, GlyphTypeface typeface)
+            => context.MaskAtlas ?? typeface.MaskAtlas;
 
         internal static DrawingContextImpl CreateContext(GpuTestContext gpu, SKSurface? surface)
         {

@@ -42,6 +42,7 @@ namespace Avalonia.Skia
         private bool _disposed;
         private GRContext? _grContext;
         private readonly GlyphRasterTarget _glyphRasterTarget;
+        private readonly GlyphMaskAtlas? _maskAtlas;
         public GRContext? GrContext => _grContext;
         private readonly ISkiaGpu? _gpu;
         private readonly SKPaint _strokePaint = SKPaintCache.Shared.Get();
@@ -233,6 +234,16 @@ namespace Avalonia.Skia
 
             _session = createInfo.CurrentSession;
 
+            // Only a context that updates part of a page in place shares one atlas between
+            // typefaces. A render session is one frame of a render target; the contexts of layers
+            // and offscreen surfaces drawn within it have no session of their own.
+            _maskAtlas = _grContext is null ? null : GlPageTextureApi.Get(_grContext)?.MaskAtlas;
+
+            if (_session is not null)
+            {
+                _maskAtlas?.BeginSession();
+            }
+
             
             if (createInfo.ScaleDrawingToDpi && !createInfo.Dpi.NearlyEquals(SkiaPlatform.DefaultDpi))
             {
@@ -314,6 +325,8 @@ namespace Avalonia.Skia
         internal GlyphRasterTarget GlyphRasterTarget => _glyphRasterTarget;
 
         GlyphRasterTarget ITransformedGlyphContext.RasterTarget => _glyphRasterTarget;
+
+        GlyphMaskAtlas? ITransformedGlyphContext.MaskAtlas => _maskAtlas;
 
         // Ganesh tiles a raster image larger than the texture limit when drawing it, but a mask
         // that fits uploads as one cached texture and does not depend on that fallback.

@@ -40,6 +40,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
+    /// The identity of a <see cref="GlyphMaskAtlas"/> entry: the coverage of <see cref="Key"/>
+    /// rasterized by the typeface <see cref="Owner"/> stands for, corrected for
+    /// <see cref="Bucket"/>. A mask key is complete only within one typeface, so an atlas
+    /// holding the masks of several typefaces tells them apart by owner: the
+    /// <see cref="GlyphTypeface.MaskOwnerId"/> of the typeface the mask belongs to, or 0 in an
+    /// atlas of one typeface.
+    /// </summary>
+    internal readonly record struct GlyphAtlasEntryKey(int Owner, GlyphMaskKey Key, int Bucket);
+
+    /// <summary>
     /// One A8 page of a <see cref="GlyphMaskAtlas"/>: <see cref="GlyphMaskAtlas.PageWidth"/>
     /// columns, rows grown on demand. The pixels live in a pinned array, so a backend can wrap
     /// them as an image without a copy. A page holds entries of every luminance bucket, each
@@ -47,7 +57,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     internal sealed class GlyphAtlasPage
     {
-        internal readonly List<(GlyphMaskKey Key, int Bucket)> Keys = new();
+        internal readonly List<GlyphAtlasEntryKey> Keys = new();
         internal readonly List<(int Y, int Height, int X)> Shelves = new();
 
         internal GlyphAtlasPage(int height)
@@ -138,8 +148,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// The storage of transformed glyph masks on GPU contexts: one set of A8 pages per typeface,
-    /// shelf-packed, drawn by the backend with one batched call per run. Every entry has an
+    /// The storage of transformed glyph masks on GPU contexts: A8 pages, shelf-packed, drawn by
+    /// the backend with one batched call per page. A context that updates part of a page in
+    /// place keeps the masks of every typeface in <see cref="Shared"/>, so text in many
+    /// typefaces samples few pages; other contexts use one atlas per typeface, whose pages are
+    /// uploaded whole whenever they change. Every entry has an
     /// empty row and column on each side: shelves start one column in from the page's left edge
     /// and the first shelf one row down, and every entry keeps one empty column to its right and
     /// one empty row below it. A batch drawn with bilinear sampling under a scaling or rotating
@@ -164,6 +177,12 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// one run cannot evict the entries it placed a moment ago; if every page is in use the
     /// atlas grows past its budget instead.
     /// </para>
+    /// <para>
+    /// Once a drawing session has begun (<see cref="BeginSession"/>), pages touched during the
+    /// session are kept as well, up to twice the budget: a typeface streaming new glyphs then
+    /// drops pages nobody drew this session, never the pages of the text the session draws
+    /// around it. Past twice the budget only the current draw's pages are kept.
+    /// </para>
     /// </remarks>
     internal sealed class GlyphMaskAtlas
     {
@@ -179,23 +198,33 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The bucket of entries holding coverage as rasterized, without correction.</summary>
         public const int Uncorrected = -1;
 
+        /// <summary>The byte budget of <see cref="Shared"/>: 16 pages of the largest size.</summary>
+        public const int SharedBudgetBytes = 32 * 1024 * 1024;
+
         private const int RowQuantum = 64;
 
         // The empty column left of every shelf and the empty row above a page's first shelf.
         private const int LeadingGutter = 1;
 
         private readonly object _lock = new();
-        private readonly Dictionary<(GlyphMaskKey Key, int Bucket), GlyphAtlasSlot> _slots = new();
+        private readonly Dictionary<GlyphAtlasEntryKey, GlyphAtlasSlot> _slots = new();
         private readonly List<GlyphAtlasPage> _pages = new();
         private readonly int _budget;
         private long _allocated;
         private long _clock;
         private long _evictions;
+        private long _sessionStart = long.MaxValue;
 
         public GlyphMaskAtlas(int budgetBytes)
         {
             _budget = Math.Max(budgetBytes, PageWidth * RowQuantum);
         }
+
+        /// <summary>
+        /// The atlas of every typeface drawn on contexts that update part of a page in place,
+        /// entries told apart by <see cref="GlyphAtlasEntryKey.Owner"/>.
+        /// </summary>
+        public static GlyphMaskAtlas Shared { get; } = new(SharedBudgetBytes);
 
         /// <summary>The byte budget of all pages together.</summary>
         public int BudgetBytes => _budget;
@@ -237,19 +266,34 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public long Tick() => Interlocked.Increment(ref _clock);
 
-        /// <summary>Looks up an uncorrected entry and stamps its page with <paramref name="tick"/>.</summary>
+        /// <summary>
+        /// Starts a drawing session: until the next session begins, the pages it draws from are
+        /// kept while the atlas stays within twice its budget. Called once per frame of a render
+        /// target, not by the contexts of layers drawn within that frame.
+        /// </summary>
+        public void BeginSession() => Interlocked.Exchange(ref _sessionStart, Tick());
+
+        /// <summary>Looks up an uncorrected entry of owner 0 and stamps its page with <paramref name="tick"/>.</summary>
         public bool TryGet(in GlyphMaskKey key, long tick, out GlyphAtlasSlot slot)
-            => TryGet(key, Uncorrected, tick, out slot);
+            => TryGet(0, key, Uncorrected, tick, out slot);
 
         /// <summary>
-        /// Looks up the entry holding the coverage of <paramref name="key"/> corrected for
-        /// <paramref name="bucket"/>, and stamps its page with <paramref name="tick"/>.
+        /// Looks up the entry of owner 0 holding the coverage of <paramref name="key"/> corrected
+        /// for <paramref name="bucket"/>, and stamps its page with <paramref name="tick"/>.
         /// </summary>
         public bool TryGet(in GlyphMaskKey key, int bucket, long tick, out GlyphAtlasSlot slot)
+            => TryGet(0, key, bucket, tick, out slot);
+
+        /// <summary>
+        /// Looks up the entry holding the coverage of <paramref name="key"/> as rasterized by
+        /// <paramref name="owner"/>, corrected for <paramref name="bucket"/>, and stamps its page
+        /// with <paramref name="tick"/>.
+        /// </summary>
+        public bool TryGet(int owner, in GlyphMaskKey key, int bucket, long tick, out GlyphAtlasSlot slot)
         {
             lock (_lock)
             {
-                if (!_slots.TryGetValue((key, bucket), out slot))
+                if (!_slots.TryGetValue(new GlyphAtlasEntryKey(owner, key, bucket), out slot))
                 {
                     GlyphRasterDiagnostics.CountAtlasLookup(hit: false);
                     return false;
@@ -267,19 +311,28 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Places <paramref name="mask"/> uncorrected under <paramref name="key"/>, or returns the
-        /// entry a racing caller placed first. Returns <c>false</c> when the mask does not fit a page.
+        /// Places <paramref name="mask"/> uncorrected under <paramref name="key"/> of owner 0, or
+        /// returns the entry a racing caller placed first. Returns <c>false</c> when the mask does
+        /// not fit a page.
         /// </summary>
         public bool TryAdd(in GlyphMaskKey key, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
-            => TryAdd(key, Uncorrected, mask, tick, out slot);
+            => TryAdd(0, key, Uncorrected, mask, tick, out slot);
 
         /// <summary>
-        /// Places <paramref name="mask"/> under <paramref name="key"/> and
-        /// <paramref name="bucket"/>, its coverage corrected by that bucket's table, or returns
-        /// the entry a racing caller placed first. Returns <c>false</c> when the mask does not
-        /// fit a page.
+        /// Places <paramref name="mask"/> under <paramref name="key"/> of owner 0 and
+        /// <paramref name="bucket"/>, its coverage corrected by that bucket's table.
         /// </summary>
         public bool TryAdd(in GlyphMaskKey key, int bucket, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
+            => TryAdd(0, key, bucket, mask, tick, out slot);
+
+        /// <summary>
+        /// Places <paramref name="mask"/>, rasterized by <paramref name="owner"/>, under
+        /// <paramref name="key"/> and <paramref name="bucket"/>, its coverage corrected by that
+        /// bucket's table, or returns the entry a racing caller placed first. Returns
+        /// <c>false</c> when the mask does not fit a page.
+        /// </summary>
+        public bool TryAdd(int owner, in GlyphMaskKey key, int bucket, GlyphMask mask, long tick,
+            out GlyphAtlasSlot slot)
         {
             if (!mask.IsEmpty && !Fits(mask.Width, mask.Height))
             {
@@ -287,9 +340,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
+            var entry = new GlyphAtlasEntryKey(owner, key, bucket);
+
             lock (_lock)
             {
-                if (_slots.TryGetValue((key, bucket), out slot))
+                if (_slots.TryGetValue(entry, out slot))
                 {
                     if (slot.Page is { } existing)
                     {
@@ -302,7 +357,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (mask.IsEmpty)
                 {
                     slot = default;
-                    _slots.Add((key, bucket), slot);
+                    _slots.Add(entry, slot);
                     return true;
                 }
 
@@ -311,11 +366,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 Write(page, mask, x, y, bucket);
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasWrite, timer);
-                page.Keys.Add((key, bucket));
+                page.Keys.Add(entry);
                 page.LastUse = tick;
 
                 slot = new GlyphAtlasSlot(page, x, y, mask.Width, mask.Height, mask.Left, mask.Top);
-                _slots.Add((key, bucket), slot);
+                _slots.Add(entry, slot);
 
                 return true;
             }
@@ -390,28 +445,51 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static int RoundUp(int rows) => (rows + RowQuantum - 1) / RowQuantum * RowQuantum;
 
-        /// <summary>Drops the least recently used pages until <paramref name="bytes"/> more fit the budget.</summary>
+        /// <summary>
+        /// Drops the least recently used pages until <paramref name="bytes"/> more fit the budget,
+        /// sparing the pages of the current session while the atlas stays within twice its budget.
+        /// </summary>
         private void MakeRoom(long bytes, long tick)
         {
+            var sessionStart = Math.Min(Interlocked.Read(ref _sessionStart), tick);
+
             while (_allocated + bytes > _budget)
             {
-                GlyphAtlasPage? victim = null;
-
-                foreach (var page in _pages)
-                {
-                    if (page.LastUse < tick && (victim is null || page.LastUse < victim.LastUse))
-                    {
-                        victim = page;
-                    }
-                }
+                var victim = LeastRecentlyUsed(sessionStart);
 
                 if (victim is null)
                 {
-                    return;
+                    if (sessionStart == tick || _allocated + bytes <= 2L * _budget)
+                    {
+                        return;
+                    }
+
+                    victim = LeastRecentlyUsed(tick);
+
+                    if (victim is null)
+                    {
+                        return;
+                    }
                 }
 
                 Evict(victim);
             }
+        }
+
+        /// <summary>The page used longest ago among those last used before <paramref name="tick"/>.</summary>
+        private GlyphAtlasPage? LeastRecentlyUsed(long tick)
+        {
+            GlyphAtlasPage? victim = null;
+
+            foreach (var page in _pages)
+            {
+                if (page.LastUse < tick && (victim is null || page.LastUse < victim.LastUse))
+                {
+                    victim = page;
+                }
+            }
+
+            return victim;
         }
 
         private void Evict(GlyphAtlasPage page)

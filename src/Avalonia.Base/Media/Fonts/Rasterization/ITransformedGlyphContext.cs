@@ -38,6 +38,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphRasterTarget RasterTarget { get; }
 
         /// <summary>
+        /// The atlas this context places the glyph masks of every typeface in, or <c>null</c> to
+        /// place them in each typeface's own atlas. A shared page changes whenever any typeface
+        /// adds a glyph, so only a context that updates part of a page in place shares one.
+        /// </summary>
+        GlyphMaskAtlas? MaskAtlas { get; }
+
+        /// <summary>
         /// Grants direct write access to the raster surface when a draw may bypass the backend:
         /// a CPU surface with no layer, no ambient opacity, no non-default blend mode and a
         /// rectangular clip, drawn at device scale. Returns <c>false</c> otherwise, and the

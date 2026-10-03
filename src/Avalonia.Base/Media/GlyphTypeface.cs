@@ -76,6 +76,8 @@ namespace Avalonia.Media
         private GlyphCache? _glyphCache;
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
+        private int _maskOwnerId;
+        private static int s_lastMaskOwnerId;
         private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
         private Fonts.Rasterization.StemWidthTable? _stemWidthTable;
         private Fonts.Tables.GaspTable? _gaspTable;
@@ -2579,6 +2581,36 @@ namespace Avalonia.Media
             FontSimulations != FontSimulations.None
                 ? UnsimulatedTypeface.MaskAtlas
                 : _glyphMaskAtlas ?? GetOrCreateGlyphMaskAtlas();
+
+        /// <summary>
+        /// The process-unique id that tells this typeface's glyph masks apart from those of other
+        /// typefaces in an atlas they share. Assigned on first use and never reused, so a mask of
+        /// a dropped typeface can never be read for another. A simulated variant uses its
+        /// unsimulated face's id, as it does the mask cache; a variation instance has its own.
+        /// </summary>
+        internal int MaskOwnerId
+        {
+            get
+            {
+                if (FontSimulations != FontSimulations.None)
+                {
+                    return UnsimulatedTypeface.MaskOwnerId;
+                }
+
+                var id = Volatile.Read(ref _maskOwnerId);
+
+                if (id != 0)
+                {
+                    return id;
+                }
+
+                var created = Interlocked.Increment(ref s_lastMaskOwnerId);
+
+                return Interlocked.CompareExchange(ref _maskOwnerId, created, 0) is var raced && raced != 0
+                    ? raced
+                    : created;
+            }
+        }
 
         /// <summary>
         /// The vertical grid-fit zones for the mask pipeline, measured lazily once. A benign

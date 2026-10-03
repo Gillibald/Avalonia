@@ -247,7 +247,17 @@ namespace TextStress.Measurement
             target.PrivateBytes = ThreadClock.PrivateBytes();
 
             // A simulated face shares its unsimulated face's cache and atlas, so count each once.
+            // A GL 3 or GLES 3 context places the masks of every face in the shared atlas, others in
+            // each face's own atlas.
             var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            var shared = GlyphMaskAtlas.Shared;
+            var sharedPages = shared.GetPages().Length;
+
+            seen.Add(shared);
+            target.AtlasBytes += shared.AllocatedBytes;
+            target.AtlasEvictions += shared.Evictions;
+            target.AtlasPages += sharedPages;
+            target.AtlasPagesShared = sharedPages;
 
             foreach (var typeface in _scenario.Typefaces)
             {
@@ -268,7 +278,6 @@ namespace TextStress.Measurement
                     target.AtlasBytes += atlas.AllocatedBytes;
                     target.AtlasEvictions += atlas.Evictions;
                     target.AtlasPages += pages;
-                    target.AtlasPagesMaxFace = Math.Max(target.AtlasPagesMaxFace, pages);
                     target.AtlasFaces += pages > 0 ? 1 : 0;
                 }
             }
@@ -291,7 +300,7 @@ namespace TextStress.Measurement
             sample.MaskEvictions = after.MaskEvictions - before.MaskEvictions;
             sample.AtlasEvictions = after.AtlasEvictions - before.AtlasEvictions;
             sample.AtlasPages = after.AtlasPages;
-            sample.AtlasPagesMaxFace = after.AtlasPagesMaxFace;
+            sample.AtlasPagesShared = after.AtlasPagesShared;
             sample.AtlasFaces = after.AtlasFaces;
             sample.TierMask = after.TierMask - before.TierMask;
             sample.TierTransformed = after.TierTransformed - before.TierTransformed;
