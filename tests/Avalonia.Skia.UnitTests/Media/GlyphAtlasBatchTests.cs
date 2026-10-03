@@ -521,6 +521,48 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void Parts_Of_One_Run_On_Two_Pages_Do_Not_Flush_Each_Other(GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var firstPage = CreatePlacedRun(typeface, new Point(10, 20), FirstPageGlyphs());
+
+            Render(gpu, context => context.DrawGlyphRun(Brushes.Black, firstPage), batched: true, out _);
+            FillFirstAtlasPage(typeface);
+
+            // Lines that never touch one another, each run's parts on the two pages overlapping
+            // in their bounds but in no glyph.
+            var runs = Enumerable.Range(0, 12)
+                .Select(i => CreateAlternatingPageRun(typeface, new Point(10, 50 + i * 24)))
+                .ToArray();
+
+            void Draw(DrawingContextImpl context) => DrawAll(context, runs, Brushes.Black);
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Assert.Equal(2, typeface.MaskAtlas.GetPages().Length);
+
+                var cold = Render(gpu, Draw, batched: true, out _);
+                var pageChanges = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange);
+                var warm = Render(gpu, Draw, batched: true, out var draws);
+
+                pageChanges = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange) - pageChanges;
+
+                TransformedAtlasTests.AssertEqual(expected, cold, "lines on two pages");
+                TransformedAtlasTests.AssertEqual(expected, warm, "warm lines on two pages");
+                Assert.Equal(0, pageChanges);
+                Assert.Equal(2, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void A_Run_Grouped_By_Page_Keeps_The_Order_Of_Overlapping_Glyphs(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
