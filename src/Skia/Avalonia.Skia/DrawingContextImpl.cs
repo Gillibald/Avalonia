@@ -1106,6 +1106,14 @@ namespace Avalonia.Skia
 
         public void PushClip(RoundedRect clip)
         {
+            // Clips pushed through a drawing context arrive here, most of them without radii. On
+            // whole device pixels the antialiased edge of such a clip covers whole pixels, so it
+            // clips exactly as the rectangle recorded for glyph batching does.
+            if (!clip.IsRounded && TryDeferRectClip(clip.Rect))
+            {
+                return;
+            }
+
             PrepareCanvas(GlyphBatchFlushReason.Clip);
             Canvas.Save();
 
