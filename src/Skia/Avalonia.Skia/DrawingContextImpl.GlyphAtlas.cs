@@ -193,7 +193,7 @@ namespace Avalonia.Skia
                 (byte)((tintArgb >> 24) * _currentOpacity));
 
             if (!bilinear && backend.Image is null && batch.Page is { } page &&
-                TryAppendToGlyphBatch(page, backend, transform, color))
+                TryAppendToGlyphBatch(page, backend, transform, color, batch.DisjointRun))
             {
                 return;
             }

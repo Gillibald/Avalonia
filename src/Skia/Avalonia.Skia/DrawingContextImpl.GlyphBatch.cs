@@ -66,7 +66,10 @@ namespace Avalonia.Skia
         /// overlaps a run of another: then the batches can be drawn in any order and every pixel
         /// still sees its runs in drawing order, so lines that alternate typefaces or colours
         /// draw in one call per page and colour. A run that overlaps a run of another pending
-        /// batch draws every pending batch first, in the order they were begun.
+        /// batch draws every pending batch first, in the order they were begun. The parts of
+        /// one run on different pages share its line, so their bounds overlap; parts that carry
+        /// the run's <see cref="GlyphAtlasBatch.DisjointRun"/> and lie at the same offset put
+        /// coverage on no pixel in common, so they do not count as overlapping.
         /// </para>
         /// <para>
         /// The page image is made when a batch is drawn, not here: runs appended later may
@@ -82,7 +85,7 @@ namespace Avalonia.Skia
         /// </para>
         /// </remarks>
         private bool TryAppendToGlyphBatch(GlyphAtlasPage page, SkiaGlyphAtlasBatch backend, in Matrix transform,
-            SKColor color)
+            SKColor color, object? disjointRun)
         {
             // Sprites are placed in device pixels; a hidden DPI transform would scale the
             // offsets differently from the run's own placement.
@@ -110,8 +113,8 @@ namespace Avalonia.Skia
 
             var target = FindPendingBatch(page, color);
 
-            // A full batch draws on its own: it overlaps no other pending batch, so drawing it
-            // ahead of them keeps every pixel's order.
+            // A full batch draws on its own: no pixel takes coverage from it and from another
+            // pending batch, so drawing it ahead of them keeps every pixel's order.
             if (target is not null && target.SpriteCount + backend.Sources.Length > MaxSpritesPerAtlasDraw)
             {
                 FlushPendingBatch(target, GlyphBatchFlushReason.SpriteCap);
@@ -123,7 +126,7 @@ namespace Avalonia.Skia
                 FlushAtlasBatch(GlyphBatchFlushReason.RunLimit);
                 target = null;
             }
-            else if (FindOverlappingPendingBatch(bounds, target) is { } overlapped)
+            else if (FindOverlappingPendingBatch(bounds, target, disjointRun, x, y) is { } overlapped)
             {
                 FlushAtlasBatch(overlapped.Page == page
                     ? GlyphBatchFlushReason.ColorChange
@@ -147,7 +150,7 @@ namespace Avalonia.Skia
                 pending[_pendingBatchCount++] = target;
             }
 
-            target.Add(new BatchedRun(backend, x, y, color), bounds);
+            target.Add(new BatchedRun(backend, x, y, color, disjointRun), bounds);
             _pendingRunCount++;
 
             return true;
@@ -170,15 +173,17 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// The first pending batch other than <paramref name="target"/> that a run covering
-        /// <paramref name="bounds"/> overlaps.
+        /// <paramref name="bounds"/> overlaps, not counting other parts of
+        /// <paramref name="disjointRun"/> at the same offset.
         /// </summary>
-        private PendingGlyphBatch? FindOverlappingPendingBatch(SKRect bounds, PendingGlyphBatch? target)
+        private PendingGlyphBatch? FindOverlappingPendingBatch(SKRect bounds, PendingGlyphBatch? target,
+            object? disjointRun, int x, int y)
         {
             for (var i = 0; i < _pendingBatchCount; i++)
             {
                 var batch = _pendingBatches![i];
 
-                if (batch != target && batch.Overlaps(bounds))
+                if (batch != target && batch.Overlaps(bounds, disjointRun, x, y))
                 {
                     return batch;
                 }
@@ -516,8 +521,11 @@ namespace Avalonia.Skia
                 SpriteCount += run.Backend.Sources.Length;
             }
 
-            /// <summary>Whether <paramref name="bounds"/> overlaps one of the runs, edges excluded.</summary>
-            public bool Overlaps(SKRect bounds)
+            /// <summary>
+            /// Whether <paramref name="bounds"/> overlaps one of the runs, edges excluded, other
+            /// than a part of <paramref name="disjointRun"/> placed at the same offset.
+            /// </summary>
+            public bool Overlaps(SKRect bounds, object? disjointRun, int x, int y)
             {
                 if (!Intersects(_union, bounds))
                 {
@@ -526,7 +534,9 @@ namespace Avalonia.Skia
 
                 for (var i = 0; i < RunCount; i++)
                 {
-                    if (Intersects(_bounds[i], bounds))
+                    if (Intersects(_bounds[i], bounds) &&
+                        !(disjointRun is not null && Runs[i].DisjointRun == disjointRun && Runs[i].X == x &&
+                          Runs[i].Y == y))
                     {
                         return true;
                     }
@@ -552,8 +562,10 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// A run's atlas sprites in a pending batch, placed at a device pixel offset and drawn in
-        /// a colour.
+        /// a colour, with the identity its run's parts share when they put coverage on no pixel
+        /// in common (<see cref="GlyphAtlasBatch.DisjointRun"/>).
         /// </summary>
-        internal readonly record struct BatchedRun(SkiaGlyphAtlasBatch Backend, int X, int Y, SKColor Color);
+        internal readonly record struct BatchedRun(SkiaGlyphAtlasBatch Backend, int X, int Y, SKColor Color,
+            object? DisjointRun = null);
     }
 }

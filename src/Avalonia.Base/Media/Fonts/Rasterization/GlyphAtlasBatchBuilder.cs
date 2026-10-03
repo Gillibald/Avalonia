@@ -24,6 +24,12 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// batch begun before one of them, so layers stay in their order with everything around
     /// them.
     /// </para>
+    /// <para>
+    /// The batches of one run still overlap in their bounds, since they share the run's line.
+    /// A batch none of whose sprites overlaps a sprite of the run's other batches carries the
+    /// run's identity (<see cref="GlyphAtlasBatch.DisjointRun"/>), so a backend collecting
+    /// batches by page can tell that it may draw them in either order.
+    /// </para>
     /// </remarks>
     internal sealed class GlyphAtlasBatchBuilder
     {
@@ -34,10 +40,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         // Larger sprite arrays are dropped after a build instead of being kept for the next.
         private const int MaxKeptSprites = 4096;
 
+        // Batches of a run tested against each other for the run's identity: every sprite is
+        // tested against every batch, so past this many no batch carries the identity.
+        private const int MaxDisjointTrackedGroups = 16;
+
         private readonly List<Group> _groups = new();
         private readonly Stack<Group> _pool = new();
+        private readonly List<int> _overlapped = new();
         private int _firstOpen;
         private bool _inkOnly;
+        private bool _tracksDisjoint;
 
         /// <summary>
         /// Starts grouping a run's sprites; <paramref name="upright"/> tells whether they are
@@ -48,6 +60,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             Clear();
             _inkOnly = upright;
+            _tracksDisjoint = true;
         }
 
         /// <summary>
@@ -70,16 +83,41 @@ namespace Avalonia.Media.Fonts.Rasterization
                         break;
                     }
                 }
-
-                // Joining an earlier batch draws the sprite ahead of every batch begun after it.
-                if (target >= 0 && OverlapsAny(target + 1, last, page, sprite))
-                {
-                    target = -1;
-                }
             }
             else if (last >= _firstOpen && _groups[last].Matches(page, kind, color))
             {
                 target = last;
+            }
+
+            _overlapped.Clear();
+
+            if (_tracksDisjoint)
+            {
+                var blocked = false;
+
+                for (var g = 0; g <= last; g++)
+                {
+                    if (g != target && Overlaps(_groups[g], page, sprite))
+                    {
+                        _overlapped.Add(g);
+                        blocked |= target >= 0 && g > target;
+                    }
+                }
+
+                if (blocked)
+                {
+                    if (Overlaps(_groups[target], page, sprite))
+                    {
+                        _overlapped.Add(target);
+                    }
+
+                    target = -1;
+                }
+            }
+            else if (target >= 0 && OverlapsAny(target + 1, last, page, sprite))
+            {
+                // Joining an earlier batch draws the sprite ahead of every batch begun after it.
+                target = -1;
             }
 
             if (target < 0)
@@ -98,9 +136,20 @@ namespace Avalonia.Media.Fonts.Rasterization
                 group.Start = index;
                 _groups.Add(group);
                 target = _groups.Count - 1;
+
+                if (_groups.Count > MaxDisjointTrackedGroups)
+                {
+                    _tracksDisjoint = false;
+                }
             }
 
             _groups[target].Append(sprite);
+
+            foreach (var g in _overlapped)
+            {
+                _groups[g].OverlapsOthers = true;
+                _groups[target].OverlapsOthers = true;
+            }
         }
 
         /// <summary>
@@ -113,6 +162,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             group.Standalone = batch;
             _groups.Add(group);
             _firstOpen = _groups.Count;
+
+            if (_groups.Count > MaxDisjointTrackedGroups)
+            {
+                _tracksDisjoint = false;
+            }
         }
 
         /// <summary>
@@ -123,6 +177,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var batches = new GlyphAtlasBatch[_groups.Count];
             var built = 0;
+            var pageGroups = 0;
+
+            foreach (var group in _groups)
+            {
+                pageGroups += group.Standalone is null ? 1 : 0;
+            }
+
+            // A run of one batch on a page has no part to tell apart.
+            var run = _tracksDisjoint && pageGroups > 1 ? batches : null;
 
             try
             {
@@ -131,7 +194,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var group = _groups[built];
 
                     batches[built] = group.Standalone ?? new GlyphAtlasBatch(group.Page, group.Start, group.Count,
-                        group.Kind, group.Color, context.CreateAtlasBatch(group.Sprites.AsSpan(0, group.Count), null));
+                        group.Kind, group.Color, context.CreateAtlasBatch(group.Sprites.AsSpan(0, group.Count), null))
+                    {
+                        DisjointRun = group.OverlapsOthers ? null : run,
+                    };
                     group.Standalone = null;
                 }
             }
@@ -279,6 +345,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             public Box[] Stretches = new Box[4];
             public Box Bounds;
 
+            /// <summary>Whether a sprite overlaps a sprite of another batch of the run.</summary>
+            public bool OverlapsOthers;
+
             public bool Matches(GlyphAtlasPage page, TransformedSpriteKind kind, uint color)
                 => Standalone is null && Page == page && Kind == kind && Color == color;
 
@@ -316,6 +385,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Page = null;
                 Standalone = null;
                 Count = 0;
+                OverlapsOthers = false;
 
                 if (Sprites.Length > MaxKeptSprites)
                 {

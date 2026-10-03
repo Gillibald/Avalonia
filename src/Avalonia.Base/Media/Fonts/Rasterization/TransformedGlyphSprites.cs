@@ -73,6 +73,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The backend's realized sprite arrays (and image, for a standalone glyph).</summary>
         public IDisposable Backend { get; }
 
+        /// <summary>
+        /// The same object for the batches of one run, built together, none of whose sprites
+        /// overlaps a sprite of the run's other batches; <c>null</c> for a batch that overlaps
+        /// one. Two batches carrying the same object, drawn at the same offset, put coverage on
+        /// no pixel in common, so they may be drawn in either order.
+        /// </summary>
+        public object? DisjointRun { get; init; }
+
         public void Dispose() => Backend.Dispose();
     }
 
