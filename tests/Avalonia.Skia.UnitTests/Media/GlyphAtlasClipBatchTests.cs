@@ -503,10 +503,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 .Select(c => $"{c.Key.Kind} {(c.Key.Inside ? "inside" : "crossing")}: {c.Value}"));
 
         /// <summary>The band of row <paramref name="index"/>, which holds its run.</summary>
-        private static Rect RowRect(int index) => new(0, index * RowHeight, Width, RowHeight);
+        internal static Rect RowRect(int index) => new(0, index * RowHeight, Width, RowHeight);
 
         /// <summary>One line of text per row, each inside its row's band.</summary>
-        private static ManagedGlyphRunImpl[] CreateRows(GlyphTypeface typeface, int count)
+        internal static ManagedGlyphRunImpl[] CreateRows(GlyphTypeface typeface, int count)
         {
             var rows = new ManagedGlyphRunImpl[count];
 
@@ -519,7 +519,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return rows;
         }
 
-        private static void DisposeAll(ManagedGlyphRunImpl[] runs)
+        internal static void DisposeAll(ManagedGlyphRunImpl[] runs)
         {
             foreach (var run in runs)
             {
@@ -535,7 +535,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// reporting the atlas draws the session issued. A subpixel frame draws on a display-bound
         /// surface with horizontal RGB stripes, from the subpixel run atlas.
         /// </summary>
-        private static byte[] Render(GpuTestContext gpu, Action<DrawingContextImpl> draw, bool batched, bool subpixel,
+        internal static byte[] Render(GpuTestContext gpu, Action<DrawingContextImpl> draw, bool batched, bool subpixel,
             out int atlasDraws)
         {
             var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
