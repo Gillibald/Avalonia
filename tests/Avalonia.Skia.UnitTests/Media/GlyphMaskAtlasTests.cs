@@ -406,6 +406,31 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.False(slots[7].Page!.IsEvicted);
         }
 
+        [Fact]
+        public void Disposing_A_Typeface_Removes_Its_Atlas_Entries()
+        {
+            var typeface = GlyphAtlasBatchTests.LoadAsset("Inter-Regular.ttf");
+            var other = GlyphAtlasBatchTests.LoadAsset("Inter-Regular.ttf");
+            var atlas = GlyphMaskAtlas.Shared;
+            var random = new Random(37);
+            var tick = atlas.Tick();
+
+            Assert.True(atlas.TryAdd(typeface.MaskOwnerId, Key(1), 0, CreateMask(random, 12, 16), tick, out _));
+            Assert.True(atlas.TryAdd(typeface.MaskOwnerId, Key(2), 0, new GlyphMask(Array.Empty<byte>(), 0, 0, 0, 0),
+                tick, out _));
+            Assert.True(atlas.TryAdd(other.MaskOwnerId, Key(1), 0, CreateMask(random, 12, 16), tick, out _));
+
+            var owner = typeface.MaskOwnerId;
+
+            typeface.Dispose();
+
+            Assert.False(atlas.TryGet(owner, Key(1), 0, atlas.Tick(), out _));
+            Assert.False(atlas.TryGet(owner, Key(2), 0, atlas.Tick(), out _));
+            Assert.True(atlas.TryGet(other.MaskOwnerId, Key(1), 0, atlas.Tick(), out _));
+
+            other.Dispose();
+        }
+
         private static long TallPageBytes(int tall) => (long)GlyphMaskAtlas.PageWidth * ((tall + 1 + 63) / 64 * 64);
 
         private static GlyphMaskKey Key(int glyph)

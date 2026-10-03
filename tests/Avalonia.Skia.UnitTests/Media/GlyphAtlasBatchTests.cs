@@ -851,7 +851,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Single(atlas.GetPages());
         }
 
-        private static GlyphTypeface LoadAsset(string name)
+        internal static GlyphTypeface LoadAsset(string name)
         {
             var directory = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
 
