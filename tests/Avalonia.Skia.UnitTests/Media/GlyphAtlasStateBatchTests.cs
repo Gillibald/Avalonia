@@ -301,6 +301,108 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
+        public void Rows_Clipped_To_Pixel_Rectangles_Without_Corner_Radii_Draw_As_One_Atlas_Call(GpuBackend backend,
+            bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 12);
+            var orange = new ImmutableSolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0x80, 0));
+
+            // A control's own clips arrive as rounded rectangles, most of them without radii.
+            // Every row clips to its band, cut short on the right, and the first row fills a
+            // marker that the clip cuts as well.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    context.Transform = Matrix.Identity;
+                    context.PushClip(new RoundedRect(new Rect(0, i * RowHeight, 200, RowHeight)));
+
+                    if (i == 0)
+                    {
+                        context.DrawRectangle(orange, null,
+                            new RoundedRect(new Rect(190, i * RowHeight + 4.5, 30, 16)));
+                    }
+
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
+                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "rows in rounded clips without radii");
+                Assert.Equal(0, flushed);
+                Assert.Equal(1, draws);
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void Rounded_Clips_With_Radii_Or_Fractional_Edges_Draw_The_Pending_Runs_First(GpuBackend backend,
+            bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 6);
+
+            // Antialiased edges a pixel-aligned rectangle does not have: corner radii, or edges
+            // between pixels.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    var band = RowRect(i);
+
+                    context.Transform = Matrix.Identity;
+                    context.PushClip(i % 2 == 0
+                        ? new RoundedRect(new Rect(band.X + 12.5, band.Y + 2.25, 300.5, band.Height - 4.5))
+                        : new RoundedRect(band.Deflate(new Thickness(12, 2)), 6));
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out _);
+                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "rows in antialiased clips");
+
+                // Every pop draws its own row.
+                Assert.Equal(rows.Length, flushed);
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
         public void Opacity_Through_A_Layer_Draws_The_Pending_Runs_First(GpuBackend backend, bool subpixel)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
