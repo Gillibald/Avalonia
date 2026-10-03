@@ -291,6 +291,36 @@ namespace Avalonia.Skia
             CheckLease();
             FlushGlyphBatch(reason);
         }
+
+        /// <summary>
+        /// The lease check of a canvas draw that changes no pixel outside <paramref name="bounds"/>,
+        /// in local coordinates. Pending glyph batches it cannot reach stay pending: the draw and
+        /// the pending runs change disjoint pixels, so drawing it ahead of them changes none.
+        /// Otherwise they are drawn first, as for every other canvas operation.
+        /// </summary>
+        private void PrepareCanvas(Rect bounds)
+        {
+            CheckLease();
+
+            if (CanDrawAheadOfPendingRuns(bounds))
+            {
+                ForgetBlitTarget();
+                ApplyDeferredClips();
+                return;
+            }
+
+            FlushGlyphBatch(GlyphBatchFlushReason.CanvasOperation);
+        }
+
+        /// <summary>
+        /// Whether a paint of <paramref name="brush"/> shades only the geometry it is drawn with:
+        /// a solid colour or a gradient. A tile brush may render its content through another
+        /// drawing context first.
+        /// </summary>
+        private static bool IsGeometryBounded(IBrush? brush) => brush is null or ISolidColorBrush or IGradientBrush;
+
+        private static bool IsGeometryBounded(IBrush? brush, IPen? pen) =>
+            IsGeometryBounded(brush) && (pen is null || IsGeometryBounded(pen.Brush));
         
         /// <inheritdoc />
         public void Clear(Color color)
@@ -492,7 +522,15 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawLine(IPen? pen, Point p1, Point p2)
         {
-            PrepareCanvas();
+            // A square cap reaches half the thickness times the square root of two past an end.
+            if (pen is not null && IsGeometryBounded(null, pen))
+            {
+                PrepareCanvas(new Rect(p1, p2).Normalize().Inflate(pen.Thickness));
+            }
+            else
+            {
+                PrepareCanvas();
+            }
 
             if (pen is not null
                 && TryCreatePaint(_strokePaint, pen, new Rect(p1, p2).Normalize()) is { } stroke)
@@ -507,9 +545,25 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawGeometry(IBrush? brush, IPen? pen, IGeometryImpl geometry)
         {
-            PrepareCanvas();
             var impl = (GeometryImpl) geometry;
             var rect = geometry.Bounds;
+
+            if (IsGeometryBounded(brush, pen))
+            {
+                // A square cap reaches half the thickness times the square root of two past the
+                // outline, a miter join half the thickness times the miter limit.
+                var reach = pen is null
+                    ? 0
+                    : pen.Thickness / 2 * (pen.LineJoin == PenLineJoin.Miter
+                        ? Math.Max(pen.MiterLimit, Math.Sqrt(2))
+                        : Math.Sqrt(2));
+
+                PrepareCanvas(rect.Inflate(reach));
+            }
+            else
+            {
+                PrepareCanvas();
+            }
 
             if (brush is not null && impl.FillPath != null)
             {
@@ -649,7 +703,17 @@ namespace Avalonia.Skia
                 return;
             }
 
-            PrepareCanvas();
+            // A stroke reaches half its thickness past the rectangle, corners included; shadows
+            // blur past it and flush.
+            if (boxShadows.Count == 0 && IsGeometryBounded(brush, pen))
+            {
+                PrepareCanvas(rect.Rect.Inflate(pen is null ? 0 : pen.Thickness / 2));
+            }
+            else
+            {
+                PrepareCanvas();
+            }
+
             // Arbitrary chosen values
             // On OSX Skia breaks OpenGL context when asked to draw, e. g. (0, 0, 623, 6666600) rect
             if (rect.Rect.Height > 8192 || rect.Rect.Width > 8192)
@@ -804,8 +868,18 @@ namespace Avalonia.Skia
         {
             if (rect.Height <= 0 || rect.Width <= 0)
                 return;
-            PrepareCanvas();
-            
+
+            // The square cap of a dash on the curve reaches up to half the thickness times the
+            // square root of two past the outline.
+            if (IsGeometryBounded(brush, pen))
+            {
+                PrepareCanvas(rect.Inflate(pen is null ? 0 : pen.Thickness));
+            }
+            else
+            {
+                PrepareCanvas();
+            }
+
             var rc = rect.ToSKRect();
 
             if (brush != null)

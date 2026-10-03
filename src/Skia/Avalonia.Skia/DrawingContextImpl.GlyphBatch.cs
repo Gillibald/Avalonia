@@ -190,10 +190,65 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
+        /// Whether a canvas draw that changes no pixel outside <paramref name="bounds"/>, in local
+        /// coordinates, can be drawn while glyph runs are pending: it reaches no pending run, and
+        /// the deferred clips it applies to the canvas cut none, so the runs drawn after it change
+        /// the pixels they would have changed before it.
+        /// </summary>
+        private bool CanDrawAheadOfPendingRuns(Rect bounds)
+        {
+            if (_pendingBatchCount == 0 && _lcdBatchCount == 0)
+            {
+                return false;
+            }
+
+            var transform = Transform;
+
+            if (_postTransform.HasValue || transform.ContainsPerspective())
+            {
+                return false;
+            }
+
+            var device = bounds.TransformToAABB(transform);
+
+            // Antialiasing shades every pixel an edge passes through; one more pixel on each side
+            // covers the rounding of the transform.
+            var left = Math.Floor(device.Left) - 1;
+            var top = Math.Floor(device.Top) - 1;
+            var right = Math.Ceiling(device.Right) + 1;
+            var bottom = Math.Ceiling(device.Bottom) + 1;
+
+            // Also rejects NaN.
+            if (!(Math.Abs(left) <= 1 << 24 && Math.Abs(top) <= 1 << 24 && Math.Abs(right) <= 1 << 24 &&
+                  Math.Abs(bottom) <= 1 << 24))
+            {
+                return false;
+            }
+
+            if (_deferredClips > 0 && !PendingRunsLieInside(_clipLevels[_clipDepth - 1].Trim))
+            {
+                return false;
+            }
+
+            var rect = new SKRect((float)left, (float)top, (float)right, (float)bottom);
+
+            for (var i = 0; i < _pendingBatchCount; i++)
+            {
+                if (_pendingBatches![i].Overlaps(rect, null, 0, 0))
+                {
+                    return false;
+                }
+            }
+
+            return _lcdBatchCount == 0 || !OverlapsLcdBatch(new SKRectI((int)left, (int)top, (int)right, (int)bottom));
+        }
+
+        /// <summary>
         /// Draws the pending glyph batches, grayscale or subpixel, and applies the deferred clips
-        /// to the canvas. Every canvas operation calls this first, as does the end of the drawing
-        /// session, so pending sprites never change their place in the draw order or the clip and
-        /// layer they were collected under, and the operation draws under every clip pushed. A
+        /// to the canvas. Every canvas operation that may reach a pending run calls this first, as
+        /// does the end of the drawing session, so pending sprites never change their place in the
+        /// draw order relative to what covers them, or the clip and layer they were collected
+        /// under, and the operation draws under every clip pushed. A
         /// caller reading the surface back while this context is still drawing calls it too. It
         /// also drops the kept direct-write target, since the operation that follows may change
         /// the clip or move the surface's pixels.
