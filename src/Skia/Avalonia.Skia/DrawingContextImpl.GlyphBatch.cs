@@ -57,9 +57,10 @@ namespace Avalonia.Skia
         /// </summary>
         /// <remarks>
         /// Runs of one page in opaque colours share a batch, each sprite modulated by its run's
-        /// colour: a page holds coverage corrected for one luminance bucket, so every colour
-        /// sampling it is of that bucket. A translucent colour has a batch of its own, since
-        /// Skia rounds a translucent per-sprite colour differently from a paint colour.
+        /// colour: every entry holds coverage already corrected for the luminance bucket of the
+        /// colour it is drawn in, so the colour is all a sprite adds, whatever bucket the other
+        /// runs of the page draw in. A translucent colour has a batch of its own, since Skia
+        /// rounds a translucent per-sprite colour differently from a paint colour.
         /// <para>
         /// Several batches can be pending, one per page and colour, as long as no run of one
         /// overlaps a run of another: then the batches can be drawn in any order and every pixel

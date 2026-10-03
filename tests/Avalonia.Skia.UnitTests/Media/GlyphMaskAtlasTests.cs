@@ -93,7 +93,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Corrected_Entries_Hold_Their_Bucket_Table_Values_On_Pages_Of_Their_Bucket()
+        public void Corrected_Entries_Hold_Their_Bucket_Table_Values()
         {
             var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
             var random = new Random(11);
@@ -106,13 +106,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
             // One glyph, three entries: the same key is stored once per correction.
             Assert.Equal(3, atlas.Count);
-            Assert.Equal(3, atlas.GetPages().Length);
 
             foreach (var (slot, bucket) in new[] { (raw, GlyphMaskAtlas.Uncorrected), (dark, 0), (light, MaskGamma.BucketCount - 1) })
             {
-                Assert.Equal(bucket, slot.Page!.Bucket);
                 Assert.True(atlas.TryGet(Key(1), bucket, tick, out var found));
                 Assert.Same(slot.Page, found.Page);
+                Assert.Equal(slot.X, found.X);
+                Assert.Equal(slot.Y, found.Y);
 
                 for (var y = 0; y < mask.Height; y++)
                 {
@@ -121,7 +121,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         var value = mask.Alpha[y * mask.Width + x];
 
                         Assert.Equal(bucket == GlyphMaskAtlas.Uncorrected ? value : MaskGamma.GetTable(bucket)[value],
-                            slot.Page.Pixels[(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
+                            slot.Page!.Pixels[(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
                     }
                 }
             }

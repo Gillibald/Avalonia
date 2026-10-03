@@ -112,7 +112,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var brushes = new IBrush[] { Brushes.Black, new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90)) };
 
             // Thirty lines of a paragraph that never touch one another, the typeface changing
-            // every line and the colour every other line: two pages, two colours.
+            // every line and the colour every other line: two pages, both colours opaque.
             var runs = Enumerable.Range(0, 30)
                 .Select(i => WideRunMaskTests.CreateRun(i % 2 == 0 ? inter : noto, s_lines[i % s_lines.Length], 9,
                     new Point(6.3, 12 + i * 11.6)))
@@ -135,7 +135,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 var batched = Render(gpu, Draw, batched: true, out var draws);
 
                 TransformedAtlasTests.AssertEqual(expected, batched, "alternating lines");
-                Assert.Equal(4, draws);
+                Assert.Equal(2, draws);
             }
             finally
             {
@@ -359,7 +359,12 @@ namespace Avalonia.Skia.UnitTests.Media
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var runs = CreateCellRuns(typeface, 2000);
-            var brushes = new IBrush[] { Brushes.Black, new ImmutableSolidColorBrush(Color.FromRgb(0x20, 0x40, 0x90)) };
+
+            // An opaque and a translucent colour: runs of one page in both cannot share a batch.
+            var brushes = new IBrush[]
+            {
+                Brushes.Black, new ImmutableSolidColorBrush(Color.FromArgb(0xA0, 0x20, 0x40, 0x90)),
+            };
 
             // Every run joins the batch of its colour while the other colour's batch is pending,
             // so each run is tested against the runs of the other batch.

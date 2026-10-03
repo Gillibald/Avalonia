@@ -84,7 +84,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal sealed class TransformedGlyphSprites : IDisposable
     {
         // Text whose colour changes keeps the batches of its last few luminance buckets, since
-        // each bucket's coverage lives on pages of its own.
+        // each bucket's coverage is a set of atlas entries of its own.
         private const int BucketSlots = 4;
 
         private readonly TransformedSprite[] _sprites;
