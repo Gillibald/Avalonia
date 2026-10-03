@@ -139,9 +139,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
     /// <summary>
     /// The storage of transformed glyph masks on GPU contexts: one set of A8 pages per typeface,
-    /// shelf-packed, drawn by the backend with one batched call per run. Every entry keeps one
-    /// empty column to its right and one empty row below it, so a batch drawn with bilinear
-    /// sampling under a scaling or rotating transform never reads a neighbour's coverage.
+    /// shelf-packed, drawn by the backend with one batched call per run. Every entry has an
+    /// empty row and column on each side: shelves start one column in from the page's left edge
+    /// and the first shelf one row down, and every entry keeps one empty column to its right and
+    /// one empty row below it. A batch drawn with bilinear sampling under a scaling or rotating
+    /// transform therefore reads empty page beyond each edge of an entry, never a neighbour's
+    /// coverage or the clamped page edge, so its pixels do not depend on where the entry sits.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -177,6 +180,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         public const int Uncorrected = -1;
 
         private const int RowQuantum = 64;
+
+        // The empty column left of every shelf and the empty row above a page's first shelf.
+        private const int LeadingGutter = 1;
 
         private readonly object _lock = new();
         private readonly Dictionary<(GlyphMaskKey Key, int Bucket), GlyphAtlasSlot> _slots = new();
@@ -222,7 +228,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>Whether a mask of this size fits a page with its gutters.</summary>
-        public static bool Fits(int width, int height) => width + 1 <= PageWidth && height + 1 <= MaxPageHeight;
+        public static bool Fits(int width, int height)
+            => LeadingGutter + width + 1 <= PageWidth && LeadingGutter + height + 1 <= MaxPageHeight;
 
         /// <summary>
         /// Starts a draw or build: pages stamped with the returned tick are protected from
@@ -338,20 +345,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 if (page.UsedHeight + height <= MaxPageHeight)
                 {
-                    return (page, 0, OpenShelf(page, width, height, tick));
+                    return (page, LeadingGutter, OpenShelf(page, width, height, tick));
                 }
             }
 
-            var rows = RoundUp(height);
+            var rows = RoundUp(LeadingGutter + height);
 
             MakeRoom((long)PageWidth * rows, tick);
 
-            var fresh = new GlyphAtlasPage(rows);
+            var fresh = new GlyphAtlasPage(rows) { UsedHeight = LeadingGutter };
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.Pixels.Length);
 
-            return (fresh, 0, OpenShelf(fresh, width, height, tick));
+            return (fresh, LeadingGutter, OpenShelf(fresh, width, height, tick));
         }
 
         private int OpenShelf(GlyphAtlasPage page, int width, int height, long tick)
@@ -375,7 +382,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Interlocked.Add(ref _allocated, page.Pixels.Length - before);
             }
 
-            page.Shelves.Add((y, height, width));
+            page.Shelves.Add((y, height, LeadingGutter + width));
             page.UsedHeight = y + height;
 
             return y;
