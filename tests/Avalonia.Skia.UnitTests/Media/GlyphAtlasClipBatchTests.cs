@@ -18,9 +18,9 @@ namespace Avalonia.Skia.UnitTests.Media
     /// </summary>
     public class GlyphAtlasClipBatchTests
     {
-        private const int Width = 520;
-        private const int Height = 360;
-        private const int RowHeight = 26;
+        internal const int Width = 520;
+        internal const int Height = 360;
+        internal const int RowHeight = 26;
 
         private static readonly string[] s_lines =
         {
