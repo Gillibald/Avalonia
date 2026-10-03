@@ -209,6 +209,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly object _lock = new();
         private readonly Dictionary<GlyphAtlasEntryKey, GlyphAtlasSlot> _slots = new();
         private readonly List<GlyphAtlasPage> _pages = new();
+        private readonly List<GlyphAtlasPage> _emptied = new();
         private readonly int _budget;
         private long _allocated;
         private long _clock;
@@ -268,10 +269,76 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Starts a drawing session: until the next session begins, the pages it draws from are
-        /// kept while the atlas stays within twice its budget. Called once per frame of a render
-        /// target, not by the contexts of layers drawn within that frame.
+        /// kept while the atlas stays within twice its budget, and the pages <see cref="Retire"/>
+        /// emptied are dropped. Called once per frame of a render target on the thread that draws
+        /// it, not by the contexts of layers drawn within that frame.
         /// </summary>
-        public void BeginSession() => Interlocked.Exchange(ref _sessionStart, Tick());
+        public void BeginSession()
+        {
+            var start = Tick();
+
+            Interlocked.Exchange(ref _sessionStart, start);
+
+            lock (_lock)
+            {
+                // A page emptied by retired owners is dropped here, between frames on the thread
+                // that draws its backend image, unless another owner has placed entries on it since.
+                foreach (var page in _emptied)
+                {
+                    if (!page.IsEvicted && page.Keys.Count == 0 && page.LastUse < start)
+                    {
+                        Evict(page);
+                    }
+                }
+
+                _emptied.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Removes the entries of <paramref name="owner"/>, a typeface that draws no more. A page
+        /// left without entries is dropped when the next session begins. Batches built from the
+        /// removed entries keep sampling their pages: a dropped page's pixels stay readable, and
+        /// the atlas never writes over an entry.
+        /// </summary>
+        public void Retire(int owner)
+        {
+            if (owner == 0)
+            {
+                return;
+            }
+
+            lock (_lock)
+            {
+                List<GlyphAtlasEntryKey>? retired = null;
+
+                foreach (var key in _slots.Keys)
+                {
+                    if (key.Owner == owner)
+                    {
+                        (retired ??= new List<GlyphAtlasEntryKey>()).Add(key);
+                    }
+                }
+
+                if (retired is null)
+                {
+                    return;
+                }
+
+                foreach (var key in retired)
+                {
+                    _slots.Remove(key);
+                }
+
+                foreach (var page in _pages)
+                {
+                    if (page.Keys.RemoveAll(key => key.Owner == owner) > 0 && page.Keys.Count == 0)
+                    {
+                        _emptied.Add(page);
+                    }
+                }
+            }
+        }
 
         /// <summary>Looks up an uncorrected entry of owner 0 and stamps its page with <paramref name="tick"/>.</summary>
         public bool TryGet(in GlyphMaskKey key, long tick, out GlyphAtlasSlot slot)

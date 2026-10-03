@@ -431,6 +431,36 @@ namespace Avalonia.Skia.UnitTests.Media
             other.Dispose();
         }
 
+        [Fact]
+        public void A_Page_Left_Without_Entries_By_Retired_Owners_Is_Dropped_When_The_Next_Session_Begins()
+        {
+            var random = new Random(41);
+            var atlas = new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes);
+            var tick = atlas.Tick();
+
+            // Owner 1 alone fills a page; owners 1 and 2 share another.
+            Assert.True(atlas.TryAdd(1, Key(1), 0, CreateMask(random, GlyphMaskAtlas.PageWidth - 2,
+                GlyphMaskAtlas.MaxPageHeight - 2), tick, out var alone));
+            Assert.True(atlas.TryAdd(1, Key(2), 0, CreateMask(random, 12, 16), tick, out var mixed));
+            Assert.True(atlas.TryAdd(2, Key(2), 0, CreateMask(random, 12, 16), tick, out var kept));
+            Assert.NotSame(alone.Page, mixed.Page);
+            Assert.Same(mixed.Page, kept.Page);
+
+            atlas.Retire(1);
+
+            Assert.False(atlas.TryGet(1, Key(1), 0, tick, out _));
+            Assert.False(atlas.TryGet(1, Key(2), 0, tick, out _));
+            Assert.False(alone.Page!.IsEvicted);
+
+            atlas.BeginSession();
+
+            Assert.True(alone.Page.IsEvicted);
+            Assert.False(mixed.Page!.IsEvicted);
+            Assert.True(atlas.TryGet(2, Key(2), 0, atlas.Tick(), out _));
+            Assert.Equal(1, atlas.Evictions);
+            Assert.Single(atlas.GetPages());
+        }
+
         private static long TallPageBytes(int tall) => (long)GlyphMaskAtlas.PageWidth * ((tall + 1 + 63) / 64 * 64);
 
         private static GlyphMaskKey Key(int glyph)

@@ -4038,6 +4038,12 @@ namespace Avalonia.Media
                 return;
             }
 
+            // The shared glyph atlas outlives the typeface, and masks of a disposed owner can
+            // never be drawn again. A face created with simulations owns its masks through its
+            // unsimulated view.
+            Fonts.Rasterization.GlyphMaskAtlas.Shared.Retire(_maskOwnerId);
+            Fonts.Rasterization.GlyphMaskAtlas.Shared.Retire(_unsimulatedTypeface?._maskOwnerId ?? 0);
+
             // Cascade: the glyph typeface releases its shaper typeface unless it shares its source's,
             // its (possibly lazily created) platform typeface, and its font memory. The shaper typeface
             // goes first because its table blobs may pin the font memory.
