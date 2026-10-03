@@ -12,7 +12,7 @@ namespace Avalonia.Skia
         private static int s_maxPendingBatches = DefaultMaxPendingBatches;
 
         /// <summary>
-        /// Pending batches at once, each of one page in one colour or several opaque ones. Every
+        /// Pending batches at once, each of one page in one colour or several. Every
         /// typeface has its own atlas, so a list whose rows mix a dozen or two typefaces keeps
         /// that many batches pending; past this many, all of them are drawn rather than searched.
         /// A run joining a batch compares its key with every pending batch and its bounds with
@@ -31,7 +31,7 @@ namespace Avalonia.Skia
 
         // Runs pending in the other batches before a run joins one: the run is checked against
         // every run of the others, so this bounds that work per run. A batch's own runs are not
-        // tested against it, so text of one page and colour stays one batch however many runs.
+        // tested against it, so text of one page stays one batch however many runs.
         private const int MaxPendingRuns = 128;
 
         // Contexts are made per frame, so pending batches and their run lists come from a
@@ -46,30 +46,29 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// Whether glyph atlas draws on this GPU context are collected across glyph runs and
-        /// drawn with one call per page, for opaque colours, or per page and colour. On by
-        /// default; tests turn it off to draw every run on its own and compare.
+        /// drawn with one call per page. On by default; tests turn it off to draw every run on
+        /// its own and compare.
         /// </summary>
         internal bool BatchesGlyphAtlasDraws { get; set; } = true;
 
         /// <summary>
         /// Appends a run's atlas batch drawn 1:1 at a whole-pixel offset to the pending batch of
-        /// its page and colour. Returns <c>false</c> when the draw cannot be batched.
+        /// its page. Returns <c>false</c> when the draw cannot be batched.
         /// </summary>
         /// <remarks>
-        /// Runs of one page in opaque colours share a batch, each sprite modulated by its run's
-        /// colour: every entry holds coverage already corrected for the luminance bucket of the
-        /// colour it is drawn in, so the colour is all a sprite adds, whatever bucket the other
-        /// runs of the page draw in. A translucent colour has a batch of its own, since Skia
-        /// rounds a translucent per-sprite colour differently from a paint colour.
+        /// Runs of one page share a batch whatever their colours, each sprite modulated by its
+        /// run's colour: every entry holds coverage already corrected for the luminance bucket of
+        /// the colour it is drawn in, so the colour is all a sprite adds, whatever bucket the
+        /// other runs of the page draw in.
         /// <para>
-        /// Several batches can be pending, one per page and colour, as long as no run of one
-        /// overlaps a run of another: then the batches can be drawn in any order and every pixel
-        /// still sees its runs in drawing order, so lines that alternate typefaces or colours
-        /// draw in one call per page and colour. A run that overlaps a run of another pending
-        /// batch draws every pending batch first, in the order they were begun. The parts of
-        /// one run on different pages share its line, so their bounds overlap; parts that carry
-        /// the run's <see cref="GlyphAtlasBatch.DisjointRun"/> and lie at the same offset put
-        /// coverage on no pixel in common, so they do not count as overlapping.
+        /// Several batches can be pending, one per page, as long as no run of one overlaps a run
+        /// of another: then the batches can be drawn in any order and every pixel still sees its
+        /// runs in drawing order, so lines that alternate pages draw in one call per page. A run
+        /// that overlaps a run of another pending batch draws every pending batch first, in the
+        /// order they were begun. The parts of one run on different pages share its line, so
+        /// their bounds overlap; parts that carry the run's <see cref="GlyphAtlasBatch.DisjointRun"/>
+        /// and lie at the same offset put coverage on no pixel in common, so they do not count as
+        /// overlapping.
         /// </para>
         /// <para>
         /// The page image is made when a batch is drawn, not here: runs appended later may
@@ -111,7 +110,7 @@ namespace Avalonia.Skia
                 return true;
             }
 
-            var target = FindPendingBatch(page, color);
+            var target = FindPendingBatch(page);
 
             // A full batch draws on its own: no pixel takes coverage from it and from another
             // pending batch, so drawing it ahead of them keeps every pixel's order.
@@ -126,11 +125,9 @@ namespace Avalonia.Skia
                 FlushAtlasBatch(GlyphBatchFlushReason.RunLimit);
                 target = null;
             }
-            else if (FindOverlappingPendingBatch(bounds, target, disjointRun, x, y) is { } overlapped)
+            else if (FindOverlappingPendingBatch(bounds, target, disjointRun, x, y) is not null)
             {
-                FlushAtlasBatch(overlapped.Page == page
-                    ? GlyphBatchFlushReason.ColorChange
-                    : GlyphBatchFlushReason.PageChange);
+                FlushAtlasBatch(GlyphBatchFlushReason.PageChange);
                 target = null;
             }
 
@@ -156,13 +153,13 @@ namespace Avalonia.Skia
             return true;
         }
 
-        private PendingGlyphBatch? FindPendingBatch(GlyphAtlasPage page, SKColor color)
+        private PendingGlyphBatch? FindPendingBatch(GlyphAtlasPage page)
         {
             for (var i = 0; i < _pendingBatchCount; i++)
             {
                 var batch = _pendingBatches![i];
 
-                if (batch.Page == page && (batch.Color == color || (batch.Color.Alpha == 255 && color.Alpha == 255)))
+                if (batch.Page == page)
                 {
                     return batch;
                 }
@@ -270,11 +267,11 @@ namespace Avalonia.Skia
         /// coverage alike, so both draws produce the same pixels. They draw with the page
         /// image's own paint, which keeps its shader across draws.
         /// <para>
-        /// A batch of several opaque colours draws with a white paint and modulates each sprite,
-        /// or each vertex, by its run's colour instead. For opaque colours Skia produces the
-        /// pixels of a paint colour that way, and for any colour through vertices; a
-        /// translucent per-sprite atlas colour is off by one step in places, which is why
-        /// translucent colours never share a batch.
+        /// A batch of several colours draws with a white paint and modulates each sprite, or each
+        /// vertex, by its run's colour instead. For opaque colours Skia produces the pixels of a
+        /// paint colour that way, and for any colour through vertices; a translucent per-sprite
+        /// atlas colour is off by one step in places, so a batch of several colours with a
+        /// translucent one among them builds its vertices the first time it is drawn.
         /// </para>
         /// </remarks>
         private void DrawPendingBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
@@ -298,13 +295,13 @@ namespace Avalonia.Skia
 
             var colored = batch.HasMixedColors;
             var verticesTimer = GlyphPhaseTimers.Start();
-            var repeats = first.Backend.TryGetBatchVertices(runs, count, spriteCount, colored, out var vertices,
-                out var built);
+            var fromVertices = first.Backend.TryGetBatchVertices(runs, count, spriteCount, colored,
+                colored && batch.HasTranslucentColors, out var vertices, out var built);
 
             GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchVertices, verticesTimer);
 
             var setupTimer = GlyphPhaseTimers.Start();
-            var paint = repeats ? image.Paint : SKPaintCache.Shared.Get();
+            var paint = fromVertices ? image.Paint : SKPaintCache.Shared.Get();
             var draws = 1;
             SKRect[]? mergedSources = null;
             SKRotationScaleMatrix[]? mergedPlacements = null;
@@ -312,7 +309,7 @@ namespace Avalonia.Skia
 
             paint.Color = colored ? SKColors.White : batch.Color;
 
-            if (repeats)
+            if (fromVertices)
             {
                 Transform = Matrix.CreateTranslation(first.X, first.Y);
             }
@@ -362,7 +359,7 @@ namespace Avalonia.Skia
 
             var drawTimer = GlyphPhaseTimers.Start();
 
-            if (repeats)
+            if (fromVertices)
             {
                 foreach (var part in vertices)
                 {
@@ -402,7 +399,7 @@ namespace Avalonia.Skia
 
             var teardownTimer = GlyphPhaseTimers.Start();
 
-            if (!repeats)
+            if (!fromVertices)
             {
                 SKPaintCache.Shared.ReturnReset(paint);
             }
@@ -482,8 +479,8 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// The runs of one page waiting to be drawn together, in one colour or in several opaque
-        /// ones, with each run's device bounds for the overlap test against other pending batches.
+        /// The runs of one page waiting to be drawn together, in one colour or in several, with
+        /// each run's device bounds for the overlap test against other pending batches.
         /// </summary>
         private sealed class PendingGlyphBatch
         {
@@ -494,6 +491,9 @@ namespace Avalonia.Skia
 
             /// <summary>Whether a run's colour differs from <see cref="Color"/>.</summary>
             public bool HasMixedColors;
+
+            /// <summary>Whether a run's colour is translucent.</summary>
+            public bool HasTranslucentColors;
 
             public BatchedRun[] Runs = new BatchedRun[32];
             public int RunCount;
@@ -516,6 +516,7 @@ namespace Avalonia.Skia
                 Runs[RunCount] = run;
                 _bounds[RunCount] = bounds;
                 HasMixedColors |= run.Color != Color;
+                HasTranslucentColors |= run.Color.Alpha != 255;
                 _union = RunCount == 0 ? bounds : SKRect.Union(_union, bounds);
                 RunCount++;
                 SpriteCount += run.Backend.Sources.Length;
@@ -552,6 +553,7 @@ namespace Avalonia.Skia
                 RunCount = 0;
                 SpriteCount = 0;
                 HasMixedColors = false;
+                HasTranslucentColors = false;
                 Page = null;
                 _union = SKRect.Empty;
             }

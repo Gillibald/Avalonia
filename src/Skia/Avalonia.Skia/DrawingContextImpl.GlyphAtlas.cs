@@ -761,14 +761,15 @@ namespace Avalonia.Skia
             /// carry them (<paramref name="colored"/>). They are built the first time the batch
             /// repeats (<paramref name="built"/>) and kept while it keeps repeating. Otherwise
             /// records the batch for the next frame and returns <c>false</c>, and the caller draws
-            /// the sprites through an atlas draw.
+            /// the sprites through an atlas draw, unless <paramref name="required"/>: then the
+            /// vertices are built for the recorded batch at once.
             /// </summary>
             /// <remarks>
             /// A run's sprite arrays never change, so the runs identify the batch's geometry; the
             /// page they sample may grow or gain glyphs without moving theirs.
             /// </remarks>
             public bool TryGetBatchVertices(BatchedRun[] runs, int count, int spriteCount, bool colored,
-                out SKVertices[] vertices, out bool built)
+                bool required, out SKVertices[] vertices, out bool built)
             {
                 vertices = null!;
                 built = false;
@@ -776,7 +777,11 @@ namespace Avalonia.Skia
                 if (!Repeats(runs, count, colored))
                 {
                     Record(runs, count, colored);
-                    return false;
+
+                    if (!required)
+                    {
+                        return false;
+                    }
                 }
 
                 built = _batchVertices is null;

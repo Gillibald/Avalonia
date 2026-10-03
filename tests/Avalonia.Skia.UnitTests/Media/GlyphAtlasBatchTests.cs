@@ -561,7 +561,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 TransformedAtlasTests.AssertEqual(expected, Render(gpu, Draw, batched: true, out var draws),
                     "overlapping runs");
-                Assert.Equal(3, draws);
+
+                // Both typefaces place their glyphs on the one page of the shared atlas, so the
+                // runs draw in their order within one call.
+                Assert.Equal(1, draws);
             }
             finally
             {
@@ -605,8 +608,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 TransformedAtlasTests.AssertEqual(expected, Render(gpu, Draw, batched: true, out var draws),
                     "warm overlapping runs");
 
-                // The two opaque runs before the translucent one draw in one call.
-                Assert.Equal(3, draws);
+                // Runs of one page draw in their order within one call, whatever their colours.
+                Assert.Equal(1, draws);
             }
             finally
             {
@@ -1144,6 +1147,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 DrawAll(context, paragraph, Brushes.Black);
                 context.DrawRectangle(Brushes.Orange, null, new RoundedRect(new Rect(300, 10, 40, 40)));
                 context.DrawGlyphRun(Brushes.Black, first);
+                // An overlapping run of the same page joins the batch, whatever its colour.
                 context.DrawGlyphRun(translucent, second);
                 // A clip with fractional edges draws the batches pending around it.
                 context.PushClip(new Rect(0, 200.5, 400, 60));
@@ -1191,11 +1195,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Equal(new Dictionary<GlyphBatchFlushReason, long>
                 {
                     [GlyphBatchFlushReason.CanvasOperation] = 1,
-                    [GlyphBatchFlushReason.ColorChange] = 1,
                     [GlyphBatchFlushReason.Clip] = 2,
                     [GlyphBatchFlushReason.EndOfSession] = 1,
                 }, batches);
-                Assert.Equal(5, after.Drawn - warm.Drawn);
+                Assert.Equal(4, after.Drawn - warm.Drawn);
                 Assert.Equal(7, after.Runs - warm.Runs);
                 Assert.Equal(3, DrawingContextImpl.TakeMaxRunsPerBatchOnThread());
                 Assert.Equal(0, after.PageBytes - warm.PageBytes);
