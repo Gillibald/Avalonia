@@ -128,6 +128,34 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Entries_Of_Every_Luminance_Bucket_Share_One_Page()
+        {
+            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var random = new Random(17);
+            var tick = atlas.Tick();
+            var slots = new List<GlyphAtlasSlot>();
+
+            // Colour glyph layers and text of every luminance bucket, a few glyphs each.
+            for (var bucket = GlyphMaskAtlas.Uncorrected; bucket < MaskGamma.BucketCount; bucket++)
+            {
+                for (var glyph = 0; glyph < 4; glyph++)
+                {
+                    Assert.True(atlas.TryAdd(Key(glyph), bucket, CreateMask(random, 12, 16), tick, out var slot));
+                    slots.Add(slot);
+                }
+            }
+
+            var page = Assert.Single(atlas.GetPages());
+
+            Assert.Equal((MaskGamma.BucketCount + 1) * 4, atlas.Count);
+
+            foreach (var slot in slots)
+            {
+                Assert.Same(page, slot.Page);
+            }
+        }
+
+        [Fact]
         public void Masks_Too_Large_For_A_Page_Are_Refused()
         {
             var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);

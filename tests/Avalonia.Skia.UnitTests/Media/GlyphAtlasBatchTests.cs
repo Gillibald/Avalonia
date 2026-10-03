@@ -222,6 +222,111 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void Code_Tokens_In_Opaque_Colours_Of_Several_Luminance_Buckets_Draw_One_Atlas_Call(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            Assert.True(s_syntaxColours.Select(c => MaskGamma.GetBucket(c.R, c.G, c.B)).Distinct().Count() >= 4,
+                "the syntax colours do not span four luminance buckets");
+
+            var (runs, colours) = CreateCodeTokens(typeface, 24);
+            var brushes = colours.Select(c => (IBrush)new ImmutableSolidColorBrush(s_syntaxColours[c])).ToArray();
+
+            void Draw(DrawingContextImpl context)
+            {
+                for (var i = 0; i < runs.Length; i++)
+                {
+                    context.DrawGlyphRun(brushes[i], runs[i]);
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, out _);
+                var cold = Render(gpu, Draw, batched: true, out _);
+                var warm = Render(gpu, Draw, batched: true, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, cold, "code tokens");
+                TransformedAtlasTests.AssertEqual(expected, warm, "warm code tokens");
+                Assert.Equal(1, draws);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void Text_In_Colours_Of_Several_Buckets_Equals_Its_Corrected_Glyph_Masks_Drawn_One_By_One(
+            GpuBackend backend, bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            var (runs, colours) = CreateCodeTokens(typeface, 12);
+
+            try
+            {
+                var drawn = Render(gpu, context =>
+                {
+                    for (var i = 0; i < runs.Length; i++)
+                    {
+                        context.DrawGlyphRun(new ImmutableSolidColorBrush(s_syntaxColours[colours[i]]), runs[i]);
+                    }
+                }, batched: true, out _);
+
+                foreach (var run in runs)
+                {
+                    Assert.Equal(0, run.RunMasks.Count);
+                }
+
+                // Every token's glyph masks through the coverage table of its own colour,
+                // modulated by that colour, drawn in token order.
+                var corrected = Render(gpu, context =>
+                {
+                    var canvas = context.Canvas;
+
+                    for (var i = 0; i < runs.Length; i++)
+                    {
+                        var color = s_syntaxColours[colours[i]];
+                        var table = MaskGamma.GetTable(color.R, color.G, color.B);
+
+                        using var paint = new SKPaint { Color = new SKColor(color.R, color.G, color.B, color.A) };
+
+                        foreach (var (mask, x, y) in UprightGlyphMasks(typeface, runs[i]))
+                        {
+                            if (mask.IsEmpty)
+                            {
+                                continue;
+                            }
+
+                            var alpha = new byte[mask.Width * mask.Height];
+
+                            for (var p = 0; p < alpha.Length; p++)
+                            {
+                                alpha[p] = table[mask.Alpha[p]];
+                            }
+
+                            using var image = TransformedAtlasTests.CreateAlphaImage(alpha, mask.Width, mask.Height);
+
+                            canvas.DrawImage(image, x + mask.Left, y + mask.Top, new SKSamplingOptions(), paint);
+                        }
+                    }
+                }, batched: true, out _);
+
+                TransformedAtlasTests.AssertEqual(corrected, drawn, "tokens in colours of several buckets");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Thousands_Of_Runs_Of_One_Typeface_And_Colour_Are_One_Atlas_Draw(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
@@ -1341,6 +1446,139 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             return runs;
+        }
+
+        private static readonly string[] s_codeLines =
+        {
+            "// Lays out the rows that fit the viewport.",
+            "public int Measure(double width, int count = 42)",
+            "{",
+            "    var label = \"rows\" + count.ToString();",
+            "    if (width > 0.5 && count != 7) return 128;",
+            "    for (var i = 0; i < 16; i++) Log(\"row\", i);",
+            "    return label.Length * 3;",
+            "}",
+        };
+
+        private static readonly string[] s_keywords = { "public", "int", "double", "var", "if", "return", "for" };
+
+        // Identifiers and punctuation, keywords, numbers, strings and comments: syntax colours
+        // of five different luminance buckets.
+        private static readonly Color[] s_syntaxColours =
+        {
+            Color.FromRgb(0x00, 0x00, 0x00),
+            Color.FromRgb(0x20, 0x40, 0x90),
+            Color.FromRgb(0x00, 0x80, 0x00),
+            Color.FromRgb(0xD0, 0x70, 0x00),
+            Color.FromRgb(0x60, 0x90, 0x60),
+        };
+
+        /// <summary>
+        /// <paramref name="lineCount"/> lines of code laid out as one run per token, the tokens
+        /// of a line abutting one another, and the index into <see cref="s_syntaxColours"/> of
+        /// each token's colour.
+        /// </summary>
+        private static (ManagedGlyphRunImpl[] Runs, int[] Colours) CreateCodeTokens(GlyphTypeface typeface,
+            int lineCount)
+        {
+            const double em = 12;
+
+            var scale = em / typeface.Metrics.DesignEmHeight;
+            var runs = new List<ManagedGlyphRunImpl>();
+            var colours = new List<int>();
+
+            Assert.True(12 + (lineCount - 1) * 14 < Height, $"{lineCount} lines do not fit the surface");
+
+            double Advance(string text)
+            {
+                var advance = 0.0;
+
+                foreach (var c in text)
+                {
+                    typeface.TryGetGlyphMetrics(typeface.CharacterToGlyphMap[c], out var metrics);
+                    advance += metrics.AdvanceWidth * scale;
+                }
+
+                return advance;
+            }
+
+            for (var line = 0; line < lineCount; line++)
+            {
+                var text = s_codeLines[line % s_codeLines.Length];
+                var x = 6.3;
+                var y = 12 + line * 14;
+
+                foreach (var (token, colour) in Tokenize(text))
+                {
+                    if (!string.IsNullOrWhiteSpace(token))
+                    {
+                        runs.Add(WideRunMaskTests.CreateRun(typeface, token, em, new Point(x, y)));
+                        colours.Add(colour);
+                    }
+
+                    x += Advance(token);
+                }
+            }
+
+            return (runs.ToArray(), colours.ToArray());
+        }
+
+        private static IEnumerable<(string Token, int Colour)> Tokenize(string line)
+        {
+            var i = 0;
+
+            while (i < line.Length)
+            {
+                var start = i;
+                var c = line[i];
+
+                if (c == '/' && i + 1 < line.Length && line[i + 1] == '/')
+                {
+                    yield return (line.Substring(i), 4);
+                    yield break;
+                }
+
+                if (c == '"')
+                {
+                    i = line.IndexOf('"', i + 1) + 1;
+                    yield return (line.Substring(start, i - start), 3);
+                    continue;
+                }
+
+                if (char.IsLetter(c))
+                {
+                    while (i < line.Length && char.IsLetterOrDigit(line[i]))
+                    {
+                        i++;
+                    }
+
+                    var word = line.Substring(start, i - start);
+
+                    yield return (word, Array.IndexOf(s_keywords, word) >= 0 ? 1 : 0);
+                    continue;
+                }
+
+                if (char.IsDigit(c))
+                {
+                    while (i < line.Length && (char.IsDigit(line[i]) || line[i] == '.'))
+                    {
+                        i++;
+                    }
+
+                    yield return (line.Substring(start, i - start), 2);
+                    continue;
+                }
+
+                var whitespace = char.IsWhiteSpace(c);
+
+                while (i < line.Length && char.IsWhiteSpace(line[i]) == whitespace && !char.IsLetterOrDigit(line[i]) &&
+                       line[i] != '"' && !(line[i] == '/' && i + 1 < line.Length && line[i + 1] == '/'))
+                {
+                    i++;
+                }
+
+                yield return (line.Substring(start, i - start), 0);
+            }
         }
 
         /// <summary>
