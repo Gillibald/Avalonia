@@ -352,7 +352,8 @@ namespace Avalonia.Skia.UnitTests.Media
             // As the GL backend does, so glyph atlas pages live in GL textures.
             if (gpu.GetGlProcAddress is { } getProcAddress)
             {
-                GlPageTextureApi.Register(gpu.GrContext, getProcAddress, gpu.GlMajorVersion,
+                SkiaUpdatableTextures.Register(gpu.GrContext,
+                    GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getProcAddress, gpu.GlMajorVersion),
                     maskAtlas ?? new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes));
             }
 
@@ -361,7 +362,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>The atlas the contexts of <paramref name="gpu"/> place the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
-            => GlPageTextureApi.Get(gpu.GrContext)?.MaskAtlas ?? typeface.MaskAtlas;
+            => SkiaUpdatableTextures.Get(gpu.GrContext)?.MaskAtlas ?? typeface.MaskAtlas;
 
         /// <summary>The atlas <paramref name="context"/> places the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(ITransformedGlyphContext context, GlyphTypeface typeface)

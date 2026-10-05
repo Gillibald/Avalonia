@@ -20,6 +20,7 @@ namespace Avalonia.Skia
         private readonly List<Action> _postDisposeCallbacks = new();
         private bool? _canCreateSurfaces;
         private readonly IExternalObjectsRenderInterfaceContextFeature? _externalObjectsFeature;
+        private readonly GlUpdatableTextureFeature? _updatableTextures;
 
         public GlSkiaGpu(IGlContext context, long? maxResourceBytes, bool? useStencilBuffers)
         {
@@ -51,7 +52,9 @@ namespace Avalonia.Skia
                 SkiaGpuRasterizer.Register(_grContext,
                     SkiaGpuRasterizer.IsSoftwareGlRenderer(context.GlInterface.Renderer,
                         context.TryGetFeature<IGlContextRendererInfoFeature>()?.RendererName));
-                GlPageTextureApi.Register(_grContext, context.GlInterface.GetProcAddress, context.Version.Major);
+                _updatableTextures = GlUpdatableTextureFeature.TryCreate(_grContext, context.GlInterface.GetProcAddress,
+                    context.Version.Major);
+                SkiaUpdatableTextures.Register(_grContext, _updatableTextures);
 
                 context.TryGetFeature<IGlContextExternalObjectsFeature>(out var externalObjects);
                 _externalObjectsFeature = new GlSkiaExternalObjectsFeature(this, externalObjects);
@@ -198,6 +201,8 @@ namespace Avalonia.Skia
                 return _externalObjectsFeature;
             if (featureType == typeof(IExternalObjectsHandleWrapRenderInterfaceContextFeature))
                 return _glContext.TryGetFeature(featureType);
+            if (featureType == typeof(ISkiaUpdatableTextureFeature))
+                return _updatableTextures;
             return null;
         }
         

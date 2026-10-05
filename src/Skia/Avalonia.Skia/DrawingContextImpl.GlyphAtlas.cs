@@ -363,11 +363,11 @@ namespace Avalonia.Skia
         /// The image of an atlas page at its current version.
         /// </summary>
         /// <remarks>
-        /// A GL context keeps the page in a texture of its own, uploaded whole once and then
-        /// updated with only the rectangle the atlas wrote since, so a new glyph moves its own
-        /// pixels to the GPU instead of the page. Elsewhere the image wraps the page's pinned
-        /// array without copying, once per version, and a GPU context uploads that image whole,
-        /// up to 2 MB, the first time it draws it.
+        /// A context with updatable textures keeps the page in a texture of its own, uploaded
+        /// whole once and then updated with only the rectangle the atlas wrote since, so a new
+        /// glyph moves its own pixels to the GPU instead of the page. Elsewhere the image wraps
+        /// the page's pinned array without copying, once per version, and a GPU context uploads
+        /// that image whole, up to 2 MB, the first time it draws it.
         /// </remarks>
         private GlyphPageImage GetPageImage(GlyphAtlasPage page)
         {
@@ -386,9 +386,9 @@ namespace Avalonia.Skia
                 return texture.Image;
             }
 
-            var gl = grContext is null ? null : GlPageTextureApi.Get(grContext);
+            var textures = grContext is null ? null : SkiaUpdatableTextures.Get(grContext)?.Feature;
 
-            if (gl is null && page.Realized is GlyphPageImage current && page.RealizedVersion == page.Version)
+            if (textures is null && page.Realized is GlyphPageImage current && page.RealizedVersion == page.Version)
             {
                 return current;
             }
@@ -405,7 +405,7 @@ namespace Avalonia.Skia
 
             GlyphPageImage image;
 
-            if (gl is not null && GlyphPageTexture.TryCreate(grContext!, gl, page) is { } created)
+            if (textures is not null && GlyphPageTexture.TryCreate(grContext!, textures, page) is { } created)
             {
                 page.Realized = created;
                 image = created.Image;
@@ -500,7 +500,15 @@ namespace Avalonia.Skia
             private SKShader? _shader;
             private SKPaint? _paint;
 
-            public GlyphPageImage(SKImage image) => Image = image;
+            private readonly IDisposable _owner;
+
+            /// <param name="image">The page's image.</param>
+            /// <param name="owner">What releases the image, when not the image itself.</param>
+            public GlyphPageImage(SKImage image, IDisposable? owner = null)
+            {
+                Image = image;
+                _owner = owner ?? image;
+            }
 
             public SKImage Image { get; }
 
@@ -527,34 +535,35 @@ namespace Avalonia.Skia
             {
                 _paint?.Dispose();
                 _shader?.Dispose();
-                Image.Dispose();
+                _owner.Dispose();
             }
         }
 
-        /// <summary>An atlas page held in a GL texture of one GPU context, updated in place as the atlas writes.</summary>
+        /// <summary>An atlas page held in a texture of one GPU context, updated in place as the atlas writes.</summary>
         /// <remarks>
         /// <para>
-        /// The texture is an R8 GL texture this code owns, made with the whole page and wrapped
-        /// for Skia once. An update hands the rectangle the atlas wrote since to glTexSubImage2D
-        /// straight from the page's array, so the page's image, shader and paint stay the same
-        /// across versions. SkiaSharp offers no partial upload of its own: drawing the rectangle
-        /// into a page surface instead makes Skia create and fill a texture for every rectangle,
-        /// 40-60 us of render-thread time each. The array stays the source of truth: a texture
-        /// that no longer fits its page (the page grew, another context draws it, the context was
-        /// lost) is dropped and the page uploaded whole again.
+        /// The texture is a single-channel texture of the context's
+        /// <see cref="ISkiaUpdatableTextureFeature"/>, made with the whole page and wrapped for
+        /// Skia once. An update hands the rectangle the atlas wrote since to the backend straight
+        /// from the page's array, so the page's image, shader and paint stay the same across
+        /// versions. SkiaSharp offers no partial upload of its own: drawing the rectangle into a
+        /// page surface instead makes Skia create and fill a texture for every rectangle, 40-60 us
+        /// of render-thread time each. The array stays the source of truth: a texture that no
+        /// longer fits its page (the page grew, another context draws it, the context was lost)
+        /// is dropped and the page uploaded whole again.
         /// </para>
         /// <para>
-        /// The upload runs at once, while Skia runs the draws recorded earlier in the frame at
-        /// its next flush, so those draws see the new pixels too. They only sample entries the
-        /// atlas wrote before them, and the atlas never writes over an entry, only into rows and
-        /// columns no entry uses yet. Skia's cached GL state is reset after every upload.
+        /// The upload takes effect before the draws recorded earlier in the frame, which Skia
+        /// runs at its next flush, so those draws see the new pixels too. They only sample
+        /// entries the atlas wrote before them, and the atlas never writes over an entry, only
+        /// into rows and columns no entry uses yet.
         /// </para>
         /// <para>
         /// GPU resources are released on the thread that drives their context. Disposing a page
         /// texture, which eviction may do on any thread, only marks it; the thread that made it
         /// frees it when it next makes a texture for that context, together with the textures
-        /// of collected pages and of lost contexts. Skia deletes the GL texture through its
-        /// release callback once no recorded draw uses it any more.
+        /// of collected pages and of lost contexts. The backend frees the texture itself once no
+        /// recorded draw uses it any more.
         /// </para>
         /// </remarks>
         private sealed class GlyphPageTexture : IDisposable
@@ -562,24 +571,18 @@ namespace Avalonia.Skia
             [ThreadStatic]
             private static List<GlyphPageTexture>? t_textures;
 
-            private static readonly SKImageTextureReleaseDelegate s_release = static state =>
-                ((GlPageTextureApi.Texture)state).Delete();
-
             private readonly GRContext _context;
-            private readonly GlPageTextureApi _gl;
-            private readonly uint _id;
+            private readonly ISkiaUpdatableTexture _texture;
             private readonly WeakReference<GlyphAtlasPage> _page;
             private volatile bool _released;
 
-            private GlyphPageTexture(GRContext context, GlPageTextureApi gl, uint id, GlyphAtlasPage page,
-                SKImage image)
+            private GlyphPageTexture(GRContext context, ISkiaUpdatableTexture texture, GlyphAtlasPage page)
             {
                 _context = context;
-                _gl = gl;
-                _id = id;
+                _texture = texture;
                 _page = new WeakReference<GlyphAtlasPage>(page);
                 Height = page.Height;
-                Image = new GlyphPageImage(image);
+                Image = new GlyphPageImage(texture.Image, texture);
             }
 
             /// <summary>The page rows the texture holds.</summary>
@@ -593,11 +596,12 @@ namespace Avalonia.Skia
 
             /// <summary>Whether this texture can stand for <paramref name="page"/> on <paramref name="context"/>.</summary>
             public bool CanDraw(GlyphAtlasPage page, GRContext? context) =>
-                !_released && ReferenceEquals(context, _context) && !GlPageTextureApi.IsLost(_context) &&
+                !_released && ReferenceEquals(context, _context) && !SkiaUpdatableTextures.IsLost(_context) &&
                 Height == page.Height;
 
-            /// <summary>Makes a texture of the whole page, or returns <c>null</c> when GL or Skia refuse it.</summary>
-            public static GlyphPageTexture? TryCreate(GRContext context, GlPageTextureApi gl, GlyphAtlasPage page)
+            /// <summary>Makes a texture of the whole page, or returns <c>null</c> when the backend or Skia refuse it.</summary>
+            public static GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
+                GlyphAtlasPage page)
             {
                 Collect(context);
 
@@ -606,32 +610,15 @@ namespace Avalonia.Skia
 
                 page.TakeWritten(out _);
 
-                var id = gl.Create(page.Pixels, GlyphMaskAtlas.PageWidth, page.Height);
+                var texture = textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, page.Height,
+                    page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height), GlyphMaskAtlas.PageWidth);
 
-                context.ResetContext(GRGlBackendState.All);
-
-                if (id == 0)
+                if (texture is null)
                 {
                     return null;
                 }
 
-                var texture = new GlPageTextureApi.Texture(gl, id, context);
-                SKImage? image;
-
-                using (var backend = new GRBackendTexture(GlyphMaskAtlas.PageWidth, page.Height, false,
-                           new GRGlTextureInfo(GlPageTextureApi.Texture2D, id, GlPageTextureApi.R8)))
-                {
-                    image = SKImage.FromTexture(context, backend, GRSurfaceOrigin.TopLeft, SKColorType.Alpha8,
-                        SKAlphaType.Premul, null, s_release, texture);
-                }
-
-                if (image is null)
-                {
-                    texture.Delete();
-                    return null;
-                }
-
-                var created = new GlyphPageTexture(context, gl, id, page, image) { Version = version };
+                var created = new GlyphPageTexture(context, texture, page) { Version = version };
 
                 (t_textures ??= new List<GlyphPageTexture>()).Add(created);
                 t_pageImagesCreated++;
@@ -647,9 +634,7 @@ namespace Avalonia.Skia
 
                 if (page.TakeWritten(out var written))
                 {
-                    _gl.Upload(_id, page.Pixels, GlyphMaskAtlas.PageWidth, written.X, written.Y, written.Width,
-                        written.Height);
-                    _context.ResetContext(GRGlBackendState.All);
+                    _texture.Update(written, page.Pixels, GlyphMaskAtlas.PageWidth);
                     t_pageTextureUpdates++;
                     t_pageImageBytes += (long)written.Width * written.Height;
                 }
@@ -675,7 +660,7 @@ namespace Avalonia.Skia
                 {
                     var texture = textures[i];
 
-                    if (!GlPageTextureApi.IsLost(texture._context) &&
+                    if (!SkiaUpdatableTextures.IsLost(texture._context) &&
                         (!ReferenceEquals(texture._context, context) ||
                          !texture._released && texture._page.TryGetTarget(out _)))
                     {

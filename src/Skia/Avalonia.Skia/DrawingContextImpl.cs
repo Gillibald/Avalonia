@@ -237,7 +237,7 @@ namespace Avalonia.Skia
             // Only a context that updates part of a page in place shares one atlas between
             // typefaces. A render session is one frame of a render target; the contexts of layers
             // and offscreen surfaces drawn within it have no session of their own.
-            _maskAtlas = _grContext is null ? null : GlPageTextureApi.Get(_grContext)?.MaskAtlas;
+            _maskAtlas = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext)?.MaskAtlas;
 
             if (_session is not null)
             {
