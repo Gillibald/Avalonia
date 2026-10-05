@@ -11,6 +11,7 @@ namespace Avalonia.Skia.Vulkan;
 internal class VulkanSkiaGpu : ISkiaGpu
 {
     private readonly VulkanSkiaExternalObjectsFeature? _externalObjects;
+    private readonly VulkanUpdatableTextureFeature? _updatableTextures;
     public IVulkanPlatformGraphicsContext Vulkan { get; private set; }
     public GRContext GrContext { get; private set; }
 
@@ -58,6 +59,8 @@ internal class VulkanSkiaGpu : ISkiaGpu
                 GrContext.SetResourceCacheLimit(maxResourceBytes.Value);
 
             SkiaGpuRasterizer.Register(GrContext, IsSoftwareDevice(vulkan));
+            _updatableTextures = VulkanUpdatableTextureFeature.TryCreate(vulkan, GrContext);
+            SkiaUpdatableTextures.Register(GrContext, _updatableTextures);
         }
 
         if (vulkan.TryGetFeature<IVulkanContextExternalObjectsFeature>(out var externalObjects))
@@ -91,6 +94,7 @@ internal class VulkanSkiaGpu : ISkiaGpu
         {
             GrContext.AbandonContext();
             GrContext.Dispose();
+            _updatableTextures?.Dispose();
         }
         else
             // Releasing resources does vkQueueWaitIdle and destroys API objects,
@@ -99,6 +103,7 @@ internal class VulkanSkiaGpu : ISkiaGpu
             {
                 GrContext.AbandonContext(true);
                 GrContext.Dispose();
+                _updatableTextures?.Dispose();
             }
         Vulkan.Dispose();
     }
@@ -107,6 +112,8 @@ internal class VulkanSkiaGpu : ISkiaGpu
     {
         if (featureType == typeof(IExternalObjectsRenderInterfaceContextFeature))
             return _externalObjects;
+        if (featureType == typeof(ISkiaUpdatableTextureFeature))
+            return _updatableTextures;
         return null;
     }
 
