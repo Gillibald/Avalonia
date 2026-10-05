@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using SkiaSharp;
 
 namespace Avalonia.Skia
@@ -35,6 +37,28 @@ namespace Avalonia.Skia
         private static readonly SKImageTextureReleaseDelegate s_release = static state =>
             ((Texture)state).Delete();
 
+        // Mono on WebAssembly calls a native function pointer through a trampoline generated at
+        // build time per signature, and the SDK collects signatures only from P/Invokes and from
+        // delegates marked with UnmanagedFunctionPointer, not from calli sites. These delegates
+        // are never used; they declare the signatures of the entry points below, without which
+        // an AOT-compiled browser app aborts on the first call. TryCreate keeps them through
+        // trimming, which runs before the signatures are collected.
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void WasmTextureNames(int count, uint* textures);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void WasmBind(int target, uint name);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void WasmParameter(int target, int name, int value);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void WasmPixelStore(int name, int value);
+
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate void WasmTexImage(int target, int level, int x, int y, int width, int height, int format,
+            int type, void* pixels);
+
         private readonly GRContext _context;
         private readonly delegate* unmanaged[Stdcall]<int, uint*, void> _genTextures;
         private readonly delegate* unmanaged[Stdcall]<int, uint*, void> _deleteTextures;
@@ -65,11 +89,16 @@ namespace Avalonia.Skia
         /// <param name="context">The context drawing the textures.</param>
         /// <param name="getProcAddress">Resolves a GL entry point of the context.</param>
         /// <param name="majorVersion">The major version of the context's GL or GLES.</param>
-        /// <returns>The feature, or <c>null</c> for older GL, the browser, or a missing entry point.</returns>
+        /// <returns>The feature, or <c>null</c> for older GL or a missing entry point.</returns>
+        [DynamicDependency("Invoke", typeof(WasmTextureNames))]
+        [DynamicDependency("Invoke", typeof(WasmBind))]
+        [DynamicDependency("Invoke", typeof(WasmParameter))]
+        [DynamicDependency("Invoke", typeof(WasmPixelStore))]
+        [DynamicDependency("Invoke", typeof(WasmTexImage))]
         public static GlUpdatableTextureFeature? TryCreate(GRContext context, Func<string, IntPtr> getProcAddress,
             int majorVersion)
         {
-            if (majorVersion < 3 || OperatingSystem.IsBrowser())
+            if (majorVersion < 3)
             {
                 return null;
             }
