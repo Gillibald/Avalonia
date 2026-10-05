@@ -30,6 +30,7 @@ namespace Avalonia.Skia.UnitTests.Media
             yield return new object[] { GpuBackend.NativeGl };
             yield return new object[] { GpuBackend.Angle };
             yield return new object[] { GpuBackend.Metal };
+            yield return new object[] { GpuBackend.Vulkan };
         }
 
         [Theory]
@@ -142,6 +143,82 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void The_Vulkan_Backend_Updates_Textures_In_Place_And_Shares_One_Glyph_Atlas()
+        {
+            using var gpu = GpuTestContext.TryCreate(GpuBackend.Vulkan, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable Vulkan context: {reason}");
+
+            Assert.NotNull(gpu!.UpdatableTextures);
+            Assert.Same(GlyphMaskAtlas.Shared, gpu.BackendMaskAtlas);
+        }
+
+        public static IEnumerable<object[]> UpdatableTextureContexts()
+        {
+            yield return new object[] { GpuBackend.NativeGl };
+            yield return new object[] { GpuBackend.Angle };
+            yield return new object[] { GpuBackend.Vulkan };
+        }
+
+        [Theory]
+        [MemberData(nameof(UpdatableTextureContexts))]
+        public void An_Updatable_Texture_Holds_Its_Source_Through_Rectangle_Updates(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            var textures = SkiaUpdatableTextures.Get(gpu.GrContext)?.Feature;
+
+            Assert.NotNull(textures);
+
+            const int width = 300, height = 70, rowBytes = 320;
+            var source = new byte[rowBytes * height];
+
+            for (var i = 0; i < source.Length; i++)
+            {
+                source[i] = (byte)(i * 7 + i / rowBytes);
+            }
+
+            using var texture = textures!.TryCreateAlpha8(width, height, source, rowBytes);
+
+            Assert.NotNull(texture);
+            Assert.Equal(Crop(source, rowBytes, width, height), ReadImage(gpu, texture!.Image, width, height));
+
+            var image = texture.Image;
+
+            // Rectangles at the edges and one in the middle, each written in between two reads.
+            foreach (var rect in new[]
+                     {
+                         new PixelRect(0, 0, 1, 1), new PixelRect(width - 17, height - 5, 17, 5),
+                         new PixelRect(31, 9, 113, 40),
+                     })
+            {
+                for (var y = rect.Y; y < rect.Bottom; y++)
+                {
+                    for (var x = rect.X; x < rect.Right; x++)
+                    {
+                        source[y * rowBytes + x] ^= 0xA5;
+                    }
+                }
+
+                texture.Update(rect, source, rowBytes);
+
+                Assert.Same(image, texture.Image);
+                Assert.Equal(Crop(source, rowBytes, width, height), ReadImage(gpu, texture.Image, width, height));
+            }
+        }
+
+        private static byte[] Crop(byte[] source, int rowBytes, int width, int height)
+        {
+            var pixels = new byte[width * height];
+
+            for (var y = 0; y < height; y++)
+            {
+                source.AsSpan(y * rowBytes, width).CopyTo(pixels.AsSpan(y * width));
+            }
+
+            return pixels;
+        }
+
         /// <summary>The union of the slots of the page's entries that are not in <paramref name="known"/>.</summary>
         private static PixelRect WrittenRectangle(GlyphMaskAtlas atlas, GlyphAtlasPage page,
             HashSet<GlyphAtlasEntryKey> known)
@@ -166,21 +243,28 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>The page as a GPU context draws it, read back through a 1:1 copy into an A8 surface.</summary>
-        private static unsafe byte[] ReadPage(GpuTestContext gpu, GlyphAtlasPage page)
+        private static byte[] ReadPage(GpuTestContext gpu, GlyphAtlasPage page)
         {
-            var info = new SKImageInfo(GlyphMaskAtlas.PageWidth, page.Height, SKColorType.Alpha8, SKAlphaType.Premul);
-            using var target = SKSurface.Create(gpu.GrContext, false, info);
             using var surface = SKSurface.Create(gpu.GrContext, false,
                 new SKImageInfo(4, 4, SKColorType.Rgba8888, SKAlphaType.Premul));
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            return ReadImage(gpu, context.GetAtlasPageImage(page), GlyphMaskAtlas.PageWidth, page.Height);
+        }
+
+        /// <summary>An A8 image as a GPU context draws it, read back through a 1:1 copy into an A8 surface.</summary>
+        private static unsafe byte[] ReadImage(GpuTestContext gpu, SKImage image, int width, int height)
+        {
+            var info = new SKImageInfo(width, height, SKColorType.Alpha8, SKAlphaType.Premul);
+            using var target = SKSurface.Create(gpu.GrContext, false, info);
 
             Assert.NotNull(target);
 
-            using (var context = TransformedAtlasTests.CreateContext(gpu, surface))
             using (var copy = new SKPaint { BlendMode = SKBlendMode.Src })
             {
                 target!.Canvas.Clear(SKColors.Transparent);
-                target.Canvas.DrawImage(context.GetAtlasPageImage(page), 0, 0,
-                    new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None), copy);
+                target.Canvas.DrawImage(image, 0, 0, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None),
+                    copy);
             }
 
             target.Flush();

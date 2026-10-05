@@ -28,6 +28,7 @@ namespace Avalonia.Skia.UnitTests.Media
             yield return new object[] { GpuBackend.Angle, false };
             yield return new object[] { GpuBackend.NativeGl, true };
             yield return new object[] { GpuBackend.Metal, false };
+            yield return new object[] { GpuBackend.Vulkan, false };
         }
 
         [Theory]
@@ -336,9 +337,9 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
-        /// A test GPU context registered as the backends register theirs. A GL context gets
-        /// <paramref name="maskAtlas"/>, or an atlas of its own, in place of
-        /// <see cref="GlyphMaskAtlas.Shared"/>, so tests running in parallel never share pages.
+        /// A test GPU context registered as the backends register theirs. A context with
+        /// updatable textures gets <paramref name="maskAtlas"/>, or an atlas of its own, in place
+        /// of <see cref="GlyphMaskAtlas.Shared"/>, so tests running in parallel never share pages.
         /// </summary>
         internal static GpuTestContext CreateGpu(GpuBackend backend, bool software, GlyphMaskAtlas? maskAtlas = null)
         {
@@ -354,6 +355,11 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext,
                     GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getProcAddress, gpu.GlMajorVersion),
+                    maskAtlas ?? new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes));
+            }
+            else if (gpu.UpdatableTextures is { } textures)
+            {
+                SkiaUpdatableTextures.Register(gpu.GrContext, textures,
                     maskAtlas ?? new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes));
             }
 

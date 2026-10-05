@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Skia.Vulkan;
+using Avalonia.Vulkan;
 using SkiaSharp;
 
 namespace Avalonia.Skia.UnitTests.Media
@@ -11,30 +14,61 @@ namespace Avalonia.Skia.UnitTests.Media
         NativeGl,
         Angle,
         Metal,
+        Vulkan,
     }
 
     /// <summary>
     /// A Skia GPU context on one of the Windows backends: a hidden-window WGL context (native
     /// desktop GL) or an ANGLE D3D11 pbuffer context created from the same av_libglesv2 binary
     /// the real application uses, so GPU tests run against what actually ships; on macOS, a
-    /// Metal context on the system default device, the backend Avalonia.Native renders with.
+    /// Metal context on the system default device, the backend Avalonia.Native renders with; on
+    /// Windows and Linux, the Vulkan backend's own GPU on a device of the system's loader.
     /// Creation returns <c>null</c> with a reason where a backend is unavailable, for the caller
     /// to skip.
     /// </summary>
     internal sealed class GpuTestContext : IDisposable
     {
         private readonly Action _cleanup;
+        private readonly bool _ownsGrContext;
 
         private GpuTestContext(GRContext grContext, Action cleanup, Func<string, IntPtr>? getGlProcAddress = null,
             int glMajorVersion = 0)
         {
             GrContext = grContext;
             _cleanup = cleanup;
+            _ownsGrContext = true;
             GetGlProcAddress = getGlProcAddress;
             GlMajorVersion = glMajorVersion;
         }
 
+        private GpuTestContext(VulkanSkiaGpu vulkan, IDisposable deviceLock)
+        {
+            GrContext = vulkan.GrContext;
+            UpdatableTextures = (ISkiaUpdatableTextureFeature?)vulkan.TryGetFeature(typeof(ISkiaUpdatableTextureFeature));
+
+            BackendMaskAtlas = SkiaUpdatableTextures.Get(GrContext)?.MaskAtlas;
+
+            // Like the GL contexts, the context starts unregistered; tests register it with an
+            // atlas of their own.
+            SkiaUpdatableTextures.Register(GrContext, null);
+            _cleanup = () =>
+            {
+                vulkan.Dispose();
+                deviceLock.Dispose();
+            };
+        }
+
         public GRContext GrContext { get; }
+
+        /// <summary>
+        /// The updatable textures a backend GPU object offers for its context, registered by the
+        /// caller as that backend registers them; <c>null</c> for GL contexts and where the
+        /// backend has none.
+        /// </summary>
+        public ISkiaUpdatableTextureFeature? UpdatableTextures { get; }
+
+        /// <summary>The glyph mask atlas the backend GPU object registered for its context, if any.</summary>
+        public GlyphMaskAtlas? BackendMaskAtlas { get; }
 
         /// <summary>Resolves GL entry points of a GL context; <c>null</c> for other backends.</summary>
         public Func<string, IntPtr>? GetGlProcAddress { get; }
@@ -49,6 +83,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 reason = "not macOS";
 
                 return OperatingSystem.IsMacOS() ? TryCreateMetal(out reason) : null;
+            }
+
+            if (backend == GpuBackend.Vulkan)
+            {
+                // macOS libSkiaSharp is built without Vulkan.
+                reason = "macOS";
+
+                return OperatingSystem.IsMacOS() ? null : TryCreateVulkan(out reason);
             }
 
             reason = "not Windows";
@@ -71,8 +113,93 @@ namespace Avalonia.Skia.UnitTests.Media
 
         public void Dispose()
         {
-            GrContext.Dispose();
+            if (_ownsGrContext)
+            {
+                GrContext.Dispose();
+            }
+
             _cleanup();
+        }
+
+        private static readonly object s_vulkanLock = new();
+        private static IVulkanPlatformGraphicsContext? s_vulkan;
+        private static string? s_vulkanFailure;
+
+        /// <summary>
+        /// A context on one device of the process, which lives as long as the process: Skia
+        /// images of a disposed context may still be released later and free their memory on
+        /// that device. Each test context holds the device lock from creation to disposal, as
+        /// Avalonia's renderer does while it draws, so Vulkan tests run one at a time and never
+        /// submit to the device's queue from two threads.
+        /// </summary>
+        private static GpuTestContext? TryCreateVulkan(out string reason)
+        {
+            lock (s_vulkanLock)
+            {
+                if (s_vulkan is null && s_vulkanFailure is null)
+                {
+                    s_vulkan = CreateVulkanGraphics(out s_vulkanFailure)?.CreateContext() as IVulkanPlatformGraphicsContext;
+                    s_vulkanFailure ??= s_vulkan is null ? "Vulkan context creation failed" : null;
+                }
+            }
+
+            reason = s_vulkanFailure ?? string.Empty;
+
+            if (s_vulkan is not { } context)
+            {
+                return null;
+            }
+
+            var deviceLock = context.Device.Lock();
+
+            try
+            {
+                return new GpuTestContext(new VulkanSkiaGpu(context, null, null), deviceLock);
+            }
+            catch (Exception e)
+            {
+                reason = e.Message;
+                deviceLock.Dispose();
+                return null;
+            }
+        }
+
+        private static VulkanPlatformGraphics? CreateVulkanGraphics(out string? failure)
+        {
+            failure = "no Vulkan loader";
+
+            if (!NativeLibrary.TryLoad(OperatingSystem.IsWindows() ? "vulkan-1" : "libvulkan.so.1", out var loader) ||
+                !NativeLibrary.TryGetExport(loader, "vkGetInstanceProcAddr", out var getInstanceProcAddr))
+            {
+                return null;
+            }
+
+            var graphics = VulkanPlatformGraphics.TryCreate(
+                new VulkanOptions
+                {
+                    VulkanInstanceCreationOptions = { RequireSurfaceExtension = false },
+                    VulkanDeviceCreationOptions = { RequireSwapchainExtension = false, PreferDiscreteGpu = true },
+                },
+                new VulkanPlatformSpecificOptions
+                {
+                    GetProcAddressDelegate = (instance, name) => GetInstanceProcAddress(getInstanceProcAddr, instance, name),
+                });
+
+            failure = graphics is null ? "Vulkan initialization failed" : null;
+
+            return graphics;
+        }
+
+        private static unsafe IntPtr GetInstanceProcAddress(IntPtr getInstanceProcAddr, IntPtr instance, string name)
+        {
+            var bytes = new byte[System.Text.Encoding.UTF8.GetByteCount(name) + 1];
+
+            System.Text.Encoding.UTF8.GetBytes(name, bytes.AsSpan(0, bytes.Length - 1));
+
+            fixed (byte* p = bytes)
+            {
+                return ((delegate* unmanaged[Stdcall]<IntPtr, byte*, IntPtr>)getInstanceProcAddr)(instance, p);
+            }
         }
 
         private static GpuTestContext? TryCreateMetal(out string reason)
