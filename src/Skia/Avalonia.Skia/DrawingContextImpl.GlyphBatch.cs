@@ -188,7 +188,7 @@ namespace Avalonia.Skia
         /// <paramref name="bounds"/> overlaps, not counting other parts of
         /// <paramref name="disjointRun"/> at the same offset.
         /// </summary>
-        private PendingGlyphBatch? FindOverlappingPendingBatch(SKRect bounds, PendingGlyphBatch? target,
+        private PendingGlyphBatch? FindOverlappingPendingBatch(in SKRect bounds, PendingGlyphBatch? target,
             object? disjointRun, int x, int y)
         {
             for (var i = 0; i < _pendingBatchCount; i++)
@@ -565,17 +565,25 @@ namespace Avalonia.Skia
             /// <summary>Whether a run's colour is translucent.</summary>
             public bool HasTranslucentColors;
 
+            // Runs per group whose bounds are united for the overlap test. Runs arrive in drawing
+            // order, which for text is mostly reading order, so a group covers a few neighbouring
+            // lines and a run far from them skips the group's runs after one test.
+            private const int GroupShift = 3;
+            private const int GroupSize = 1 << GroupShift;
+
             public BatchedRun[] Runs = new BatchedRun[32];
             public int RunCount;
             public int SpriteCount;
 
             private SKRect[] _bounds = new SKRect[32];
+            private SKRect[] _groups = new SKRect[32 / GroupSize];
+            private int _grouped;
             private SKRect _union = SKRect.Empty;
 
             /// <summary>The device rectangle the runs cover.</summary>
             public SKRect Bounds => _union;
 
-            public void Add(in BatchedRun run, SKRect bounds)
+            public void Add(in BatchedRun run, in SKRect bounds)
             {
                 if (RunCount == Runs.Length)
                 {
@@ -587,7 +595,16 @@ namespace Avalonia.Skia
                 _bounds[RunCount] = bounds;
                 HasMixedColors |= run.Color != Color;
                 HasTranslucentColors |= run.Color.Alpha != 255;
-                _union = RunCount == 0 ? bounds : SKRect.Union(_union, bounds);
+
+                if (RunCount == 0)
+                {
+                    _union = bounds;
+                }
+                else
+                {
+                    Unite(ref _union, bounds);
+                }
+
                 RunCount++;
                 SpriteCount += run.Backend.Sources.Length;
             }
@@ -596,16 +613,43 @@ namespace Avalonia.Skia
             /// Whether <paramref name="bounds"/> overlaps one of the runs, edges excluded, other
             /// than a part of <paramref name="disjointRun"/> placed at the same offset.
             /// </summary>
-            public bool Overlaps(SKRect bounds, object? disjointRun, int x, int y)
+            public bool Overlaps(in SKRect bounds, object? disjointRun, int x, int y)
             {
                 if (!Intersects(_union, bounds))
                 {
                     return false;
                 }
 
-                for (var i = 0; i < RunCount; i++)
+                if (RunCount <= GroupSize)
                 {
-                    if (Intersects(_bounds[i], bounds) &&
+                    return OverlapsRuns(bounds, 0, RunCount, disjointRun, x, y);
+                }
+
+                var groups = Group();
+
+                for (int start = 0, group = 0; start < RunCount; start += GroupSize, group++)
+                {
+                    if (!Intersects(groups[group], bounds))
+                    {
+                        continue;
+                    }
+
+                    if (OverlapsRuns(bounds, start, Math.Min(start + GroupSize, RunCount), disjointRun, x, y))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            private bool OverlapsRuns(in SKRect bounds, int start, int end, object? disjointRun, int x, int y)
+            {
+                var runBounds = _bounds;
+
+                for (var i = start; i < end; i++)
+                {
+                    if (Intersects(runBounds[i], bounds) &&
                         !(disjointRun is not null && Runs[i].DisjointRun == disjointRun && Runs[i].X == x &&
                           Runs[i].Y == y))
                     {
@@ -616,11 +660,50 @@ namespace Avalonia.Skia
                 return false;
             }
 
+            /// <summary>
+            /// The group unions, brought up to date with the runs added since the last test: a
+            /// batch that is never tested, such as the only one pending, never builds them.
+            /// </summary>
+            private SKRect[] Group()
+            {
+                if (_groups.Length < (RunCount + GroupSize - 1) >> GroupShift)
+                {
+                    Array.Resize(ref _groups, Runs.Length >> GroupShift);
+                }
+
+                for (var i = _grouped; i < RunCount; i++)
+                {
+                    ref var group = ref _groups[i >> GroupShift];
+
+                    if ((i & (GroupSize - 1)) == 0)
+                    {
+                        group = _bounds[i];
+                    }
+                    else
+                    {
+                        Unite(ref group, _bounds[i]);
+                    }
+                }
+
+                _grouped = RunCount;
+
+                return _groups;
+            }
+
+            private static void Unite(ref SKRect target, in SKRect bounds)
+            {
+                target.Left = Math.Min(target.Left, bounds.Left);
+                target.Top = Math.Min(target.Top, bounds.Top);
+                target.Right = Math.Max(target.Right, bounds.Right);
+                target.Bottom = Math.Max(target.Bottom, bounds.Bottom);
+            }
+
             public void Clear()
             {
                 // The pooled lists must not keep the runs' arrays or the page alive.
                 Array.Clear(Runs, 0, RunCount);
                 RunCount = 0;
+                _grouped = 0;
                 SpriteCount = 0;
                 HasMixedColors = false;
                 HasTranslucentColors = false;
@@ -628,7 +711,7 @@ namespace Avalonia.Skia
                 _union = SKRect.Empty;
             }
 
-            private static bool Intersects(SKRect a, SKRect b)
+            private static bool Intersects(in SKRect a, in SKRect b)
                 => a.Left < b.Right && b.Left < a.Right && a.Top < b.Bottom && b.Top < a.Bottom;
         }
 

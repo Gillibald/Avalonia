@@ -535,6 +535,59 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_Run_Over_Any_Run_Of_A_Long_Pending_Batch_Of_Another_Page_Draws_It_First(GpuBackend backend,
+            bool software)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            // A hundred cells of a letter on the first atlas page, one on the second page over the
+            // 78th cell, then the first page's letter again over that one in another colour, so the
+            // order of the last two shows.
+            var cells = CreateCellRuns(typeface, 100);
+            var over = WideRunMaskTests.CreateRun(typeface, "x", 7, new Point(2.3 + 25 * 10 + 2, 8 + 9));
+            var top = WideRunMaskTests.CreateRun(typeface, "o", 7, new Point(2.3 + 25 * 10 + 3, 8 + 9));
+
+            void Draw(DrawingContextImpl context)
+            {
+                for (var i = 0; i < cells.Length; i++)
+                {
+                    context.DrawGlyphRun(Brushes.Black, cells[i]);
+                }
+
+                context.DrawGlyphRun(Brushes.Black, over);
+                context.DrawGlyphRun(Brushes.Blue, top);
+            }
+
+            try
+            {
+                Render(gpu, context => context.DrawGlyphRun(Brushes.Black, cells[0]), batched: true, out _);
+                FillFirstAtlasPage(TransformedAtlasTests.AtlasOf(gpu, typeface));
+
+                var expected = Render(gpu, Draw, batched: false, out _);
+
+                Assert.Equal(2, TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length);
+
+                Render(gpu, Draw, batched: true, out _);
+
+                var before = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange);
+                var batched = Render(gpu, Draw, batched: true, out _);
+                var flushes = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange) - before;
+
+                TransformedAtlasTests.AssertEqual(expected, batched, "a run over a cell of a long batch");
+                // The second page's run draws the first page's batch, the last run the second's.
+                Assert.Equal(2, flushes);
+            }
+            finally
+            {
+                DisposeAll(cells);
+                over.Dispose();
+                top.Dispose();
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void Overlapping_Runs_Of_Other_Pages_And_Colours_Keep_Their_Order(GpuBackend backend, bool software)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
