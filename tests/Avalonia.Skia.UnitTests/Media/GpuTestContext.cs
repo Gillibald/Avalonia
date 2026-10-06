@@ -39,6 +39,12 @@ namespace Avalonia.Skia.UnitTests.Media
             _ownsGrContext = true;
             GetGlProcAddress = getGlProcAddress;
             GlMajorVersion = glMajorVersion;
+
+            // As the GL backend does, while the context is current.
+            if (getGlProcAddress is not null)
+            {
+                SkiaVertexColorPrecision.Register(grContext, SkiaVertexColorPrecision.IsExactOnGl(getGlProcAddress));
+            }
         }
 
         private GpuTestContext(VulkanSkiaGpu vulkan, IDisposable deviceLock)

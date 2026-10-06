@@ -52,6 +52,8 @@ namespace Avalonia.Skia
                 SkiaGpuRasterizer.Register(_grContext,
                     SkiaGpuRasterizer.IsSoftwareGlRenderer(context.GlInterface.Renderer,
                         context.TryGetFeature<IGlContextRendererInfoFeature>()?.RendererName));
+                SkiaVertexColorPrecision.Register(_grContext,
+                    SkiaVertexColorPrecision.IsExactOnGl(context.GlInterface.GetProcAddress));
                 _updatableTextures = GlUpdatableTextureFeature.TryCreate(_grContext, context.GlInterface.GetProcAddress,
                     context.Version.Major);
                 SkiaUpdatableTextures.Register(_grContext, _updatableTextures);

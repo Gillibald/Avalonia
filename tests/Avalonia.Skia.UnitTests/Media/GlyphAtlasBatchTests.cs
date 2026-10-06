@@ -565,8 +565,9 @@ namespace Avalonia.Skia.UnitTests.Media
                     "overlapping runs");
 
                 // Both typefaces place their glyphs on the one page of the shared atlas, so the
-                // runs draw in their order within one call.
-                Assert.Equal(1, draws);
+                // runs draw in their order within one call, unless the translucent run keeps a batch
+                // of its own: then each run draws the one before it first.
+                Assert.Equal(SkiaVertexColorPrecision.IsExact(gpu.GrContext) ? 1 : 3, draws);
             }
             finally
             {
@@ -610,8 +611,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 TransformedAtlasTests.AssertEqual(expected, Render(gpu, Draw, batched: true, out var draws),
                     "warm overlapping runs");
 
-                // Runs of one page draw in their order within one call, whatever their colours.
-                Assert.Equal(1, draws);
+                // Runs of one page draw in their order within one call, whatever their colours,
+                // unless the translucent run keeps a batch of its own: then the opaque batch before
+                // it and the translucent batch draw ahead of the runs that cover them.
+                Assert.Equal(SkiaVertexColorPrecision.IsExact(gpu.GrContext) ? 1 : 3, draws);
             }
             finally
             {
@@ -1149,7 +1152,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 DrawAll(context, paragraph, Brushes.Black);
                 context.DrawRectangle(Brushes.Orange, null, new RoundedRect(new Rect(300, 10, 40, 40)));
                 context.DrawGlyphRun(Brushes.Black, first);
-                // An overlapping run of the same page joins the batch, whatever its colour.
+                // An overlapping run of the same page joins the batch, whatever its colour, where
+                // translucent colours fold into a batch of several colours.
                 context.DrawGlyphRun(translucent, second);
                 // A clip with fractional edges draws the batches pending around it.
                 context.PushClip(new Rect(0, 200.5, 400, 60));
@@ -1194,13 +1198,23 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 }
 
-                Assert.Equal(new Dictionary<GlyphBatchFlushReason, long>
-                {
-                    [GlyphBatchFlushReason.CanvasOperation] = 1,
-                    [GlyphBatchFlushReason.Clip] = 2,
-                    [GlyphBatchFlushReason.EndOfSession] = 1,
-                }, batches);
-                Assert.Equal(4, after.Drawn - warm.Drawn);
+                // Where the translucent run keeps a batch of its own, it draws the batch it overlaps
+                // first.
+                Assert.Equal(SkiaVertexColorPrecision.IsExact(gpu.GrContext)
+                    ? new Dictionary<GlyphBatchFlushReason, long>
+                    {
+                        [GlyphBatchFlushReason.CanvasOperation] = 1,
+                        [GlyphBatchFlushReason.Clip] = 2,
+                        [GlyphBatchFlushReason.EndOfSession] = 1,
+                    }
+                    : new Dictionary<GlyphBatchFlushReason, long>
+                    {
+                        [GlyphBatchFlushReason.CanvasOperation] = 1,
+                        [GlyphBatchFlushReason.PageChange] = 1,
+                        [GlyphBatchFlushReason.Clip] = 2,
+                        [GlyphBatchFlushReason.EndOfSession] = 1,
+                    }, batches);
+                Assert.Equal(SkiaVertexColorPrecision.IsExact(gpu.GrContext) ? 4 : 5, after.Drawn - warm.Drawn);
                 Assert.Equal(7, after.Runs - warm.Runs);
                 Assert.Equal(3, DrawingContextImpl.TakeMaxRunsPerBatchOnThread());
                 Assert.Equal(0, after.PageBytes - warm.PageBytes);

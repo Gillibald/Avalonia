@@ -238,6 +238,7 @@ namespace Avalonia.Skia
             // typefaces. A render session is one frame of a render target; the contexts of layers
             // and offscreen surfaces drawn within it have no session of their own.
             _maskAtlas = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext)?.MaskAtlas;
+            _foldsTranslucentColors = _grContext is not null && SkiaVertexColorPrecision.IsExact(_grContext);
 
             if (_session is not null)
             {

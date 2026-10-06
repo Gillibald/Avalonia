@@ -44,6 +44,12 @@ namespace Avalonia.Skia
         private int _pendingBatchCount;
         private int _pendingRunCount;
 
+        // Whether runs in translucent colours join the batch of their page whatever its colours.
+        // Such a batch draws through per-vertex colours, which only some GPUs draw exactly as the
+        // paint colour of the same run drawn alone (SkiaVertexColorPrecision); elsewhere a
+        // translucent colour keeps a batch of its own, drawn under that colour.
+        private readonly bool _foldsTranslucentColors;
+
         /// <summary>
         /// Whether glyph atlas draws on this GPU context are collected across glyph runs and
         /// drawn with one call per page. On by default; tests turn it off to draw every run on
@@ -59,7 +65,8 @@ namespace Avalonia.Skia
         /// Runs of one page share a batch whatever their colours, each sprite modulated by its
         /// run's colour: every entry holds coverage already corrected for the luminance bucket of
         /// the colour it is drawn in, so the colour is all a sprite adds, whatever bucket the
-        /// other runs of the page draw in.
+        /// other runs of the page draw in. On a GPU that draws translucent per-vertex colours
+        /// inexactly, a translucent colour has a batch of the page to itself instead.
         /// <para>
         /// Several batches can be pending, one per page, as long as no run of one overlaps a run
         /// of another: then the batches can be drawn in any order and every pixel still sees its
@@ -110,7 +117,7 @@ namespace Avalonia.Skia
                 return true;
             }
 
-            var target = FindPendingBatch(page);
+            var target = FindPendingBatch(page, color);
 
             // A full batch draws on its own: no pixel takes coverage from it and from another
             // pending batch, so drawing it ahead of them keeps every pixel's order.
@@ -153,13 +160,21 @@ namespace Avalonia.Skia
             return true;
         }
 
-        private PendingGlyphBatch? FindPendingBatch(GlyphAtlasPage page)
+        /// <summary>
+        /// The pending batch a run of <paramref name="page"/> in <paramref name="color"/> joins:
+        /// the page's batch, or where translucent colours are not folded, the page's batch of
+        /// opaque colours or of exactly that translucent colour.
+        /// </summary>
+        private PendingGlyphBatch? FindPendingBatch(GlyphAtlasPage page, SKColor color)
         {
             for (var i = 0; i < _pendingBatchCount; i++)
             {
                 var batch = _pendingBatches![i];
 
-                if (batch.Page == page)
+                // A batch's first run decides which runs it takes, so a batch begun by a
+                // translucent colour takes only that colour.
+                if (batch.Page == page && (_foldsTranslucentColors ||
+                                           (color.Alpha == 255 ? batch.Color.Alpha == 255 : batch.Color == color)))
                 {
                     return batch;
                 }
