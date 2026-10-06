@@ -5,8 +5,6 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
-using TextStress.Measurement;
-using TextStress.Scenarios;
 
 namespace TextStress
 {
@@ -38,24 +36,7 @@ namespace TextStress
 
                 window.Opened += async (_, _) =>
                 {
-                    var exitCode = 0;
-                    ResultWriter? writer = null;
-
-                    try
-                    {
-                        var scenario = Scenario.Create(options);
-                        writer = options.Out is null ? null : new ResultWriter(options.Out, options);
-                        await new FrameRunner(window, scenario, options, writer).RunAsync();
-                    }
-                    catch (Exception e)
-                    {
-                        Console.Error.WriteLine(e);
-                        exitCode = 1;
-                    }
-                    finally
-                    {
-                        writer?.Dispose();
-                    }
+                    var exitCode = await StressRun.RunAsync(window, options);
 
                     if (options.Frames > 0 || exitCode != 0)
                     {

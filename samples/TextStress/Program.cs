@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using Avalonia;
-using Avalonia.Media;
-using TextStress.Measurement;
 
 namespace TextStress
 {
@@ -30,18 +28,7 @@ namespace TextStress
                 return 2;
             }
 
-            ThreadClock.Calibrate();
-
-            if (Options.PhaseTimers)
-            {
-                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Calibrate();
-                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Enabled = true;
-            }
-
-            if (Options.PendingBatches > 0)
-            {
-                Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = Options.PendingBatches;
-            }
+            StressRun.ConfigureProcess(Options);
 
             return BuildAvaloniaApp(Options).StartWithClassicDesktopLifetime(Array.Empty<string>());
         }
@@ -54,14 +41,7 @@ namespace TextStress
             var builder = AppBuilder.Configure<App>()
                 .UsePlatformDetect()
                 .WithInterFont()
-                // Each process measures one mode; A/B comparisons are separate, interleaved
-                // processes, so neither mode inherits the other's caches.
-                .With(new FontManagerOptions
-                {
-                    TextRasterizationMode = options.Mode == "backend"
-                        ? TextRasterizationMode.Backend
-                        : TextRasterizationMode.Managed
-                })
+                .With(StressRun.CreateFontManagerOptions(options))
                 .LogToTrace();
 
             if (options.Render != "default")

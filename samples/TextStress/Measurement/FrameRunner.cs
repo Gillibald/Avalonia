@@ -18,7 +18,8 @@ using TextStress.Scenarios;
 namespace TextStress.Measurement
 {
     /// <summary>
-    /// Drives a scenario frame by frame through the window's real compositor. For frame N
+    /// Drives a scenario frame by frame through the top level's real compositor (a desktop
+    /// window or a mobile view). For frame N
     /// the scenario mutates the tree on the UI thread, the runner takes the composition batch
     /// that will carry the change and waits until the render thread has applied it and finished
     /// the render pass that drew it; only then does frame N+1 start. Frames therefore never
@@ -37,16 +38,16 @@ namespace TextStress.Measurement
     /// </remarks>
     internal sealed class FrameRunner
     {
-        private readonly Window _window;
+        private readonly TopLevel _topLevel;
         private readonly Scenario _scenario;
         private readonly RunOptions _options;
         private readonly ResultWriter? _writer;
         private Compositor? _compositor;
         private FrameSample? _awaitingCommit;
 
-        public FrameRunner(Window window, Scenario scenario, RunOptions options, ResultWriter? writer)
+        public FrameRunner(TopLevel topLevel, Scenario scenario, RunOptions options, ResultWriter? writer)
         {
-            _window = window;
+            _topLevel = topLevel;
             _scenario = scenario;
             _options = options;
             _writer = writer;
@@ -54,12 +55,12 @@ namespace TextStress.Measurement
 
         public async Task RunAsync()
         {
-            _compositor = ElementComposition.GetElementVisual(_window)?.Compositor
-                          ?? throw new InvalidOperationException("The window has no compositor.");
+            _compositor = ElementComposition.GetElementVisual(_topLevel)?.Compositor
+                          ?? throw new InvalidOperationException("The top level has no compositor.");
             _compositor.AfterCommit += OnAfterCommit;
             TextTierDiagnostics.CountTiers = true;
 
-            var scaling = _window.RenderScaling;
+            var scaling = _topLevel.RenderScaling;
             var environmentWritten = false;
 
             if (_options.Frames > 0 && _options.PrewarmMs > 0)
@@ -69,7 +70,7 @@ namespace TextStress.Measurement
 
             foreach (var n in _options.N)
             {
-                _window.Content = _scenario.CreateView(n, scaling);
+                _topLevel.Content = _scenario.CreateView(n, scaling);
 
                 // Let layout, template application and first rendering of the new content settle.
                 for (var i = 0; i < 3; i++)
@@ -101,7 +102,7 @@ namespace TextStress.Measurement
 
                 for (var frame = 0; interactive || frame < total; frame++)
                 {
-                    if (interactive && !_window.IsVisible)
+                    if (interactive && !_topLevel.IsVisible)
                     {
                         break;
                     }
@@ -122,14 +123,14 @@ namespace TextStress.Measurement
 
                     previousRenderEnd = sample.RenderEnd;
 
-                    if (interactive)
+                    if (interactive && _topLevel is Window window)
                     {
                         recent.Add(Ms(sample.RenderEnd - sample.RenderStart));
 
                         if (recent.Count == 60)
                         {
                             recent.Sort();
-                            _window.Title = string.Format(CultureInfo.InvariantCulture,
+                            window.Title = string.Format(CultureInfo.InvariantCulture,
                                 "TextStress {0} {1} | render p50 {2:F2} ms p95 {3:F2} ms | {4:F0} fps",
                                 _scenario.Name, _options.Mode, recent[30], recent[57], 60 / watch.Elapsed.TotalSeconds);
                             recent.Clear();
@@ -138,7 +139,7 @@ namespace TextStress.Measurement
                     }
                 }
 
-                Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0} n={1} {2} {3}: {4} frames",
+                StressLog.Info(string.Format(CultureInfo.InvariantCulture, "{0} n={1} {2} {3}: {4} frames",
                     _scenario.Name, n, _options.Mode, _options.Render, _options.Frames));
             }
 
@@ -153,7 +154,7 @@ namespace TextStress.Measurement
         /// </summary>
         private async Task PrewarmAsync(int n, double scaling)
         {
-            _window.Content = _scenario.CreateView(n, scaling);
+            _topLevel.Content = _scenario.CreateView(n, scaling);
 
             var watch = Stopwatch.StartNew();
             var period = Math.Max(1, _options.Warmup);
@@ -360,10 +361,8 @@ namespace TextStress.Measurement
             yield return ("graphics", graphics?.GetType().Name ?? "software (no IPlatformGraphics)");
             yield return ("gpu_renderer", renderer);
             yield return ("render_scaling", scaling.ToString(CultureInfo.InvariantCulture));
-            yield return ("client_size", FormattableString.Invariant($"{_window.ClientSize.Width}x{_window.ClientSize.Height}"));
-            yield return ("thread_clock", ThreadClock.IsThreadCpu
-                ? FormattableString.Invariant($"QueryThreadCycleTime at {ThreadClock.CyclesPerMs:F0} cycles/ms")
-                : "wall");
+            yield return ("client_size", FormattableString.Invariant($"{_topLevel.ClientSize.Width}x{_topLevel.ClientSize.Height}"));
+            yield return ("thread_clock", ThreadClock.Description);
             yield return ("phase_timers", GlyphPhaseTimers.Enabled
                 ? FormattableString.Invariant(
                     $"on, stopwatch at {GlyphPhaseTimers.Frequency} Hz, probe pair {PhaseTimes.TicksToMicroseconds(1) * GlyphPhaseTimers.ProbeTicks * 1000:F1} ns")
@@ -388,6 +387,11 @@ namespace TextStress.Measurement
             yield return ("frames", _options.Frames.ToString(CultureInfo.InvariantCulture));
             yield return ("warmup", _options.Warmup.ToString(CultureInfo.InvariantCulture));
             yield return ("prewarm_ms", _options.PrewarmMs.ToString(CultureInfo.InvariantCulture));
+
+            foreach (var entry in StressLog.HostEnvironment)
+            {
+                yield return entry;
+            }
         }
     }
 }

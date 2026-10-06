@@ -16,7 +16,10 @@ namespace TextStress
         /// <summary>"managed" or "backend": the process-wide text rasterization mode.</summary>
         public string Mode { get; private set; } = "managed";
 
-        /// <summary>Win32 rendering mode: "angle", "wgl", "software" or "vulkan"; "default" keeps the platform list.</summary>
+        /// <summary>
+        /// Rendering mode: "angle", "wgl", "software" or "vulkan" on Win32, "egl", "vulkan" or
+        /// "software" on Android; "default" keeps the platform list.
+        /// </summary>
         public string Render { get; private set; } = "default";
 
         /// <summary>Measured frames per sweep value; 0 runs until the window closes (interactive).</summary>
@@ -148,7 +151,8 @@ namespace TextStress
         public const string Usage =
             "TextStress --scenario <code-scroll|list-fling|mixed-ui|sweep-runs|sweep-glyphs|sweep-states>\n" +
             "  --mode managed|backend   text rasterization mode (default managed)\n" +
-            "  --render default|angle|wgl|software|vulkan   Win32 rendering mode (default: platform list)\n" +
+            "  --render default|angle|wgl|software|vulkan   Win32 rendering mode (default: platform list);\n" +
+            "    on Android egl|vulkan|software\n" +
             "  --frames N   measured frames per sweep value, 0 = interactive until closed (default 600)\n" +
             "  --warmup N   unmeasured frames before each measurement (default 60)\n" +
             "  --prewarm-ms N   discarded frames before the first measurement, in ms (default 2000)\n" +

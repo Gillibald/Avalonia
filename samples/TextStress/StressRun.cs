@@ -1,0 +1,64 @@
+using System;
+using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Media;
+using TextStress.Measurement;
+using TextStress.Scenarios;
+
+namespace TextStress
+{
+    /// <summary>The parts of a benchmark process every host shares: process setup and one measured run.</summary>
+    internal static class StressRun
+    {
+        /// <summary>Applies the process-wide options; call once, before Avalonia starts.</summary>
+        public static void ConfigureProcess(RunOptions options)
+        {
+            ThreadClock.Calibrate();
+
+            if (options.PhaseTimers)
+            {
+                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Calibrate();
+                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Enabled = true;
+            }
+
+            if (options.PendingBatches > 0)
+            {
+                Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = options.PendingBatches;
+            }
+        }
+
+        /// <summary>
+        /// The font manager options of the measured mode. Each process measures one mode; A/B
+        /// comparisons are separate, interleaved processes, so neither mode inherits the other's caches.
+        /// </summary>
+        public static FontManagerOptions CreateFontManagerOptions(RunOptions options) => new()
+        {
+            TextRasterizationMode = options.Mode == "backend"
+                ? TextRasterizationMode.Backend
+                : TextRasterizationMode.Managed
+        };
+
+        /// <summary>Runs the scenario in <paramref name="topLevel"/>; returns the process exit code.</summary>
+        public static async Task<int> RunAsync(TopLevel topLevel, RunOptions options)
+        {
+            ResultWriter? writer = null;
+
+            try
+            {
+                var scenario = Scenario.Create(options);
+                writer = options.Out is null ? null : new ResultWriter(options.Out, options);
+                await new FrameRunner(topLevel, scenario, options, writer).RunAsync();
+                return 0;
+            }
+            catch (Exception e)
+            {
+                StressLog.Error(e.ToString());
+                return 1;
+            }
+            finally
+            {
+                writer?.Dispose();
+            }
+        }
+    }
+}
