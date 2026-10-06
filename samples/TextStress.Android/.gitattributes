@@ -1,0 +1,3 @@
+# The Android build packages this file as the app's environment; a carriage return would end
+# up in the value.
+trace.env text eol=lf

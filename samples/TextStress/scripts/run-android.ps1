@@ -14,6 +14,10 @@ app's log lines next to them as .log; per-run thermals and clocks go to runs.txt
 to run.log; summary.md is written at the end. The TSV schema is the desktop one, so summarize.py
 and compare.py read the files unchanged.
 
+After the install, one run of the first job on the first render path is made and discarded
+(-NoWarmupRun skips it): the first runs after an install ran about twice as slow in both modes,
+with the A78 cluster at low clocks.
+
 The window holds the display at -Refresh Hz (the app requests the display mode itself, no
 device setting changes); a run whose rate does not hold exits with code 3 and is reported as
 failed.
@@ -48,6 +52,10 @@ param(
     [int] $RunTimeoutSec = 600,
     [string] $Serial = $env:ANDROID_SERIAL,
     [switch] $NoBuild,
+    [switch] $NoWarmupRun,
+    # An APK built elsewhere, installed instead of this checkout's build (with -NoBuild), and the tag its results carry.
+    [string] $ApkPath = '',
+    [string] $RunTag = '',
     # Skips runs whose result file is already in OutDir, to fill in failed runs of an earlier invocation.
     [switch] $SkipExisting
 )
@@ -128,6 +136,7 @@ if (-not $NoBuild) {
     if ($LASTEXITCODE -ne 0) { throw "build failed" }
 }
 
+if ($ApkPath) { $apk = $ApkPath }
 Invoke-Adb install -r $apk | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "install failed" }
 
@@ -135,6 +144,7 @@ $tag = (git -C $repo rev-parse --short HEAD).Trim()
 $status = git -C $repo status --porcelain -- src samples/TextStress samples/TextStress.Android
 if ($status) { $tag = "$tag+dirty" }
 $tag = "$tag-$Build"
+if ($RunTag) { $tag = $RunTag }
 
 $variantNames = if ($Variants) { @($Variants.Keys) } else { @('default') }
 
@@ -146,6 +156,34 @@ if (-not (Test-Path $runs)) {
 }
 $started = Get-Date
 $failures = 0
+
+if (-not $NoWarmupRun) {
+    $job = $Jobs[0]
+    $file = 'warmup.tsv'
+    $arguments = @('--scenario', $job, '--mode', 'managed', '--render', $Renders[0], '--tag', $tag, '--refresh', $Refresh,
+        '--out', $file)
+    $arguments += if ($Sweeps.Contains($job)) { @('--n', $Sweeps[$job], '--frames', $SweepFrames, '--warmup', $SweepWarmup) }
+        else { @('--frames', $Frames, '--warmup', $Warmup) }
+
+    $cool = Wait-CoolDown
+    $line = "{0:HH:mm:ss} warm-up run {1} {2}, discarded (waited {3} s, AP {4} C)" -f (Get-Date), $Renders[0], $job,
+        $cool.WaitedSec, $cool.Thermal.Ap
+    Write-Host $line
+    Add-Content $log $line
+
+    Invoke-Adb shell am force-stop $package | Out-Null
+    Invoke-Adb shell rm -f "$deviceDir/$file" "$deviceDir/$file.done" | Out-Null
+    Invoke-Adb shell am start -n "$package/.MainActivity" --es args "'$($arguments -join ' ')'" | Out-Null
+
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    while ($watch.Elapsed.TotalSeconds -lt $RunTimeoutSec) {
+        if (Invoke-Adb shell "cat $deviceDir/$file.done 2>/dev/null") { break }
+        Start-Sleep -Milliseconds 500
+    }
+
+    Invoke-Adb shell am force-stop $package | Out-Null
+    Invoke-Adb shell rm -f "$deviceDir/$file" "$deviceDir/$file.done" | Out-Null
+}
 
 for ($pass = 1; $pass -le $Passes; $pass++) {
     $modes = if ($pass % 2 -eq 1) { @('managed', 'backend') } else { @('backend', 'managed') }
