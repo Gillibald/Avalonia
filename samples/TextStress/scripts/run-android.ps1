@@ -47,7 +47,9 @@ param(
     [int] $CoolDownMaxSec = 300,
     [int] $RunTimeoutSec = 600,
     [string] $Serial = $env:ANDROID_SERIAL,
-    [switch] $NoBuild
+    [switch] $NoBuild,
+    # Skips runs whose result file is already in OutDir, to fill in failed runs of an earlier invocation.
+    [switch] $SkipExisting
 )
 
 $ErrorActionPreference = 'Stop'
@@ -171,49 +173,55 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
                         $arguments += @('--frames', $Frames, '--warmup', $Warmup)
                     }
 
-                    $cool = Wait-CoolDown
-                    $line = "{0:HH:mm:ss} pass {1} {2} {3} {4} {5} (waited {6} s, AP {7} C, status {8})" -f (Get-Date), $pass,
-                        $render, $job, $variant, $mode, $cool.WaitedSec, $cool.Thermal.Ap, $cool.Thermal.Status
-                    Write-Host $line
-                    Add-Content $log $line
+                    if ($SkipExisting -and (Test-Path (Join-Path $renderDir $file))) { continue }
 
-                    Invoke-Adb shell am force-stop $package | Out-Null
-                    Invoke-Adb shell rm -f "$deviceDir/$file" "$deviceDir/$file.done" | Out-Null
-                    Invoke-Adb logcat -c | Out-Null
+                    # A run the display rate did not hold for (exit 3) is repeated once.
+                    for ($attempt = 1; $attempt -le 2; $attempt++) {
+                        $cool = Wait-CoolDown
+                        $line = "{0:HH:mm:ss} pass {1} {2} {3} {4} {5} (waited {6} s, AP {7} C, status {8})" -f (Get-Date), $pass,
+                            $render, $job, $variant, $mode, $cool.WaitedSec, $cool.Thermal.Ap, $cool.Thermal.Status
+                        Write-Host $line
+                        Add-Content $log $line
 
-                    $clockFile = Join-Path ([IO.Path]::GetTempPath()) "textstress-clocks-$PID.txt"
-                    Remove-Item $clockFile -ErrorAction SilentlyContinue
-                    $sampler = Start-Job -ScriptBlock $clockSampler -ArgumentList $adb, $Serial, $clockFile
-                    $watch = [Diagnostics.Stopwatch]::StartNew()
+                        Invoke-Adb shell am force-stop $package | Out-Null
+                        Invoke-Adb shell rm -f "$deviceDir/$file" "$deviceDir/$file.done" | Out-Null
+                        Invoke-Adb logcat -c | Out-Null
 
-                    Invoke-Adb shell am start -n "$package/.MainActivity" --es args "'$($arguments -join ' ')'" | Out-Null
+                        $clockFile = Join-Path ([IO.Path]::GetTempPath()) "textstress-clocks-$PID.txt"
+                        Remove-Item $clockFile -ErrorAction SilentlyContinue
+                        $sampler = Start-Job -ScriptBlock $clockSampler -ArgumentList $adb, $Serial, $clockFile
+                        $watch = [Diagnostics.Stopwatch]::StartNew()
 
-                    $exit = 'timeout'
-                    while ($watch.Elapsed.TotalSeconds -lt $RunTimeoutSec) {
-                        $done = Invoke-Adb shell "cat $deviceDir/$file.done 2>/dev/null"
-                        if ($done) { $exit = ($done -join '').Trim(); break }
-                        Start-Sleep -Milliseconds 500
+                        Invoke-Adb shell am start -n "$package/.MainActivity" --es args "'$($arguments -join ' ')'" | Out-Null
+
+                        $exit = 'timeout'
+                        while ($watch.Elapsed.TotalSeconds -lt $RunTimeoutSec) {
+                            $done = Invoke-Adb shell "cat $deviceDir/$file.done 2>/dev/null"
+                            if ($done) { $exit = ($done -join '').Trim(); break }
+                            Start-Sleep -Milliseconds 500
+                        }
+
+                        $seconds = [int]$watch.Elapsed.TotalSeconds
+                        Stop-Job $sampler; Remove-Job $sampler -Force
+                        $clocks = Measure-Clocks $clockFile
+                        Remove-Item $clockFile -ErrorAction SilentlyContinue
+                        $after = Get-Thermal
+
+                        Invoke-Adb logcat -d -s 'TextStress:*' 'AndroidRuntime:E' | Set-Content (Join-Path $renderDir "$name.log")
+                        if ($exit -eq '0') {
+                            Invoke-Adb pull "$deviceDir/$file" (Join-Path $renderDir $file) | Out-Null
+                        }
+                        else {
+                            $failures++
+                            $failure = "  FAILED with exit $exit (3 = refresh rate did not hold)"
+                            Write-Warning $failure
+                            Add-Content $log $failure
+                        }
+
+                        Add-Content $runs (@($render, $job, $variant, $mode, $pass, $exit, $cool.WaitedSec, $cool.Thermal.Status,
+                                $cool.Thermal.Ap, $after.Ap, $after.Status) + $clocks + @($seconds) -join "`t")
+                        if ($exit -ne '3') { break }
                     }
-
-                    $seconds = [int]$watch.Elapsed.TotalSeconds
-                    Stop-Job $sampler; Remove-Job $sampler -Force
-                    $clocks = Measure-Clocks $clockFile
-                    Remove-Item $clockFile -ErrorAction SilentlyContinue
-                    $after = Get-Thermal
-
-                    Invoke-Adb logcat -d -s 'TextStress:*' 'AndroidRuntime:E' | Set-Content (Join-Path $renderDir "$name.log")
-                    if ($exit -eq '0') {
-                        Invoke-Adb pull "$deviceDir/$file" (Join-Path $renderDir $file) | Out-Null
-                    }
-                    else {
-                        $failures++
-                        $failure = "  FAILED with exit $exit (3 = refresh rate did not hold)"
-                        Write-Warning $failure
-                        Add-Content $log $failure
-                    }
-
-                    Add-Content $runs (@($render, $job, $variant, $mode, $pass, $exit, $cool.WaitedSec, $cool.Thermal.Status,
-                            $cool.Thermal.Ap, $after.Ap, $after.Status) + $clocks + @($seconds) -join "`t")
                 }
             }
         }
