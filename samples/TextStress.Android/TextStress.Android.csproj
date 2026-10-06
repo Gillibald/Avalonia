@@ -38,6 +38,17 @@
     <AssemblyMetadata Include="TextStress.TrimMode" Value="$(TrimMode)" />
     <AssemblyMetadata Include="TextStress.UseMonoRuntime" Value="$(UseMonoRuntime)" />
     <AssemblyMetadata Include="TextStress.UseInterpreter" Value="$(UseInterpreter)" />
+    <AssemblyMetadata Include="TextStress.Trace" Value="$(TextStressTrace)" />
+  </ItemGroup>
+
+  <!-- EventPipe over adb for dotnet-trace through dotnet-dsrouter (android mode, port 9000):
+       dotnet build -c Release -p:TextStressTrace=true. The runtime connects to the router at startup
+       and runs on if none is listening. -->
+  <PropertyGroup Condition="'$(TextStressTrace)' == 'true'">
+    <AndroidEnableProfiler>true</AndroidEnableProfiler>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TextStressTrace)' == 'true'">
+    <AndroidEnvironment Include="trace.env" />
   </ItemGroup>
 
   <ItemGroup>
