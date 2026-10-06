@@ -45,6 +45,17 @@ namespace TextStress.Measurement
         private Compositor? _compositor;
         private FrameSample? _awaitingCommit;
 
+        /// <summary>
+        /// Frames between heap size readings. Mono computes <see cref="GC.GetTotalMemory"/> by
+        /// walking every block of the major heap, milliseconds per call on a phone, which would
+        /// load the UI thread and the CPU clocks between measured frames; other runtimes keep a
+        /// running total and read it every frame.
+        /// </summary>
+        private static readonly int s_heapReadPeriod = Type.GetType("Mono.RuntimeStructs") is null ? 1 : 60;
+
+        private int _snapshots;
+        private long _heapBytes;
+
         public FrameRunner(TopLevel topLevel, Scenario scenario, RunOptions options, ResultWriter? writer)
         {
             _topLevel = topLevel;
@@ -244,7 +255,12 @@ namespace TextStress.Measurement
             target.Gc1 = GC.CollectionCount(1);
             target.Gc2 = GC.CollectionCount(2);
             target.GcPauseMs = GC.GetTotalPauseDuration().TotalMilliseconds;
-            target.HeapBytes = GC.GetTotalMemory(false);
+            if (_snapshots++ % s_heapReadPeriod == 0)
+            {
+                _heapBytes = GC.GetTotalMemory(false);
+            }
+
+            target.HeapBytes = _heapBytes;
             target.PrivateBytes = ThreadClock.PrivateBytes();
 
             // A simulated face shares its unsimulated face's cache and atlas, so count each once.
@@ -387,6 +403,7 @@ namespace TextStress.Measurement
             yield return ("frames", _options.Frames.ToString(CultureInfo.InvariantCulture));
             yield return ("warmup", _options.Warmup.ToString(CultureInfo.InvariantCulture));
             yield return ("prewarm_ms", _options.PrewarmMs.ToString(CultureInfo.InvariantCulture));
+            yield return ("heap_read_period", s_heapReadPeriod.ToString(CultureInfo.InvariantCulture));
 
             foreach (var entry in StressLog.HostEnvironment)
             {
