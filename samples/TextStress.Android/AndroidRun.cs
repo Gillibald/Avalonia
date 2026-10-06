@@ -126,9 +126,10 @@ namespace TextStress.AndroidHost
                 exitCode = await StressRun.RunAsync(topLevel, options);
                 rate.StopWatching();
 
-                Info("refresh end " + rate.Describe());
+                var atEnd = rate.Describe();
+                Info("refresh end " + atEnd);
 
-                if (exitCode == 0 && (rate.Deviations > 0 || !rate.Holds))
+                if (exitCode == 0 && (rate.Deviations > 0 || !rate.AppRateHolds))
                 {
                     Error("refresh rate did not hold during the run; results are invalid");
                     exitCode = RefreshFailedExitCode;

@@ -39,18 +39,27 @@ namespace TextStress.AndroidHost
         /// <summary>The rate the app's frames run at, including any frame rate override for the app.</summary>
         public float AppRate => _display.RefreshRate;
 
-        /// <summary>How often the display left the requested rate while it was watched.</summary>
+        /// <summary>How often the app's frame rate left the requested rate while it was watched.</summary>
         public int Deviations { get; private set; }
 
-        /// <summary>The rates seen when it did.</summary>
+        /// <summary>
+        /// How often only the panel left the requested mode while the app's frames kept the
+        /// requested rate. The system switches the panel up for a moment now and then and keeps
+        /// the app at its rate through a frame rate override, so frame pacing is unchanged.
+        /// </summary>
+        public int PanelDeviations { get; private set; }
+
+        /// <summary>The panel and app rates seen when either left the request.</summary>
         public string DeviationRates { get; private set; } = "";
 
-        public bool Holds => Math.Abs(ActiveModeRate - Requested) < Tolerance && Math.Abs(AppRate - Requested) < Tolerance;
+        public bool AppRateHolds => Math.Abs(AppRate - Requested) < Tolerance;
+
+        public bool Holds => Math.Abs(ActiveModeRate - Requested) < Tolerance && AppRateHolds;
 
         public string Describe() => string.Format(CultureInfo.InvariantCulture,
-            "requested={0:F1} mode={1} ({2}x{3}) active_mode={4:F1} app_rate={5:F1} deviations={6}{7}",
+            "requested={0:F1} mode={1} ({2}x{3}) active_mode={4:F1} app_rate={5:F1} deviations={6} panel_deviations={7}{8}",
             Requested, Mode.ModeId, Mode.PhysicalWidth, Mode.PhysicalHeight, ActiveModeRate, AppRate, Deviations,
-            DeviationRates.Length > 0 ? " seen=" + DeviationRates : "");
+            PanelDeviations, DeviationRates.Length > 0 ? " seen=" + DeviationRates : "");
 
         /// <summary>
         /// Asks <paramref name="activity"/>'s window for the mode of the current resolution at
@@ -120,7 +129,15 @@ namespace TextStress.AndroidHost
                 return;
             }
 
-            Deviations++;
+            if (AppRateHolds)
+            {
+                PanelDeviations++;
+            }
+            else
+            {
+                Deviations++;
+            }
+
             DeviationRates += string.Format(CultureInfo.InvariantCulture, "{0:F1}/{1:F1};", ActiveModeRate, AppRate);
         }
 
