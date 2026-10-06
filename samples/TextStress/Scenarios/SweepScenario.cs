@@ -165,6 +165,16 @@ namespace TextStress.Scenarios
         {
             var typeface = new Typeface(
                 "Microsoft YaHei, Microsoft YaHei UI, SimSun, Noto Sans CJK SC, PingFang SC, Hiragino Sans GB");
+
+            // Android lists its CJK faces only as unnamed fallbacks, so no family name above
+            // resolves there; take the face the system falls back to for an ideograph.
+            if ((!typeface.GlyphTypeface.CharacterToGlyphMap.TryGetGlyph(0x4E00, out var probe) || probe == 0) &&
+                FontManager.Current.TryMatchCharacter(0x4E00, FontStyle.Normal, FontWeight.Normal,
+                    FontStretch.Normal, null, new System.Globalization.CultureInfo("zh-Hans"), out var fallback))
+            {
+                typeface = fallback;
+            }
+
             var glyphTypeface = Track(typeface);
             CjkFamilyName = glyphTypeface.FamilyName;
 
