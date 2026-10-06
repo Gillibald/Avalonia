@@ -149,7 +149,7 @@ namespace TextStress
                 : throw new ArgumentException($"--{key} expects an integer, not '{value}'.");
 
         public const string Usage =
-            "TextStress --scenario <code-scroll|list-fling|mixed-ui|sweep-runs|sweep-glyphs|sweep-states>\n" +
+            "TextStress --scenario <code-scroll|list-fling|mixed-ui|sweep-runs|sweep-glyphs|sweep-states|simd-bench>\n" +
             "  --mode managed|backend   text rasterization mode (default managed)\n" +
             "  --render default|angle|wgl|software|vulkan   Win32 rendering mode (default: platform list);\n" +
             "    on Android egl|vulkan|software\n" +
@@ -167,6 +167,7 @@ namespace TextStress
             "  scenario parameters: code-scroll --size --colors --speed --fractional;\n" +
             "    list-fling --rows --speed --faces all|1 --colors 4|1 --motion fling|static;\n" +
             "    mixed-ui --cards --decor --changes;\n" +
-            "    sweep-states --runs --kind mixed|rect|clip|opacity|color\n";
+            "    sweep-states --runs --kind mixed|rect|clip|opacity|color;\n" +
+            "    simd-bench times the rasterizer and blitter on every supported SIMD path by glyph size\n";
     }
 }

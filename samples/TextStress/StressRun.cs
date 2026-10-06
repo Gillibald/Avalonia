@@ -45,6 +45,12 @@ namespace TextStress
 
             try
             {
+                // Not a frame scenario: times the rasterizer and blitter paths off the UI thread.
+                if (options.Scenario == "simd-bench")
+                {
+                    return await Task.Run(() => SimdBench.Run(options));
+                }
+
                 var scenario = Scenario.Create(options);
                 writer = options.Out is null ? null : new ResultWriter(options.Out, options);
                 await new FrameRunner(topLevel, scenario, options, writer).RunAsync();
