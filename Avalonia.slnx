@@ -95,6 +95,9 @@
     <Project Path="samples/SingleProjectSandbox/SingleProjectSandbox.csproj" />
     <Project Path="samples/TextLab/TextLab.csproj" />
     <Project Path="samples/TextStress/TextStress.csproj" />
+    <Project Path="samples/TextStress.Android/TextStress.Android.csproj">
+      <Deploy />
+    </Project>
     <Project Path="samples/VirtualizationDemo/VirtualizationDemo.csproj" />
     <Project Path="samples/WinUIEmbedSample/WinUIEmbedSample.csproj">
       <Platform Project="x64" />

@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentAndroidTargetFramework)</TargetFramework>
+    <SupportedOSPlatformVersion>$(AvsMinSupportedAndroidVersion)</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+    <!-- The desktop host's assembly name, so the shared measurement code reaches the same
+         Avalonia internals through the existing InternalsVisibleTo entries. -->
+    <AssemblyName>TextStress</AssemblyName>
+    <RootNamespace>TextStress.AndroidHost</RootNamespace>
+    <ApplicationId>com.avalonia.textstress</ApplicationId>
+    <ApplicationTitle>TextStress</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\TextStress\RunOptions.cs" Link="Shared\RunOptions.cs" />
+    <Compile Include="..\TextStress\StressRun.cs" Link="Shared\StressRun.cs" />
+    <Compile Include="..\TextStress\Measurement\*.cs" Link="Shared\Measurement\%(Filename)%(Extension)" />
+    <Compile Include="..\TextStress\Scenarios\*.cs" Link="Shared\Scenarios\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\Avalonia.Controls\TextBox.cs" LogicalName="TextStress.Code.TextBox.cs" />
+    <EmbeddedResource Include="..\..\src\Avalonia.Base\Media\TextFormatting\TextLayout.cs" LogicalName="TextStress.Code.TextLayout.cs" />
+  </ItemGroup>
+
+  <!-- The build configuration, written to the result header so every run records how it was compiled. -->
+  <ItemGroup>
+    <AssemblyMetadata Include="TextStress.Configuration" Value="$(Configuration)" />
+    <AssemblyMetadata Include="TextStress.RunAOTCompilation" Value="$(RunAOTCompilation)" />
+    <AssemblyMetadata Include="TextStress.AndroidEnableProfiledAot" Value="$(AndroidEnableProfiledAot)" />
+    <AssemblyMetadata Include="TextStress.PublishTrimmed" Value="$(PublishTrimmed)" />
+    <AssemblyMetadata Include="TextStress.TrimMode" Value="$(TrimMode)" />
+    <AssemblyMetadata Include="TextStress.UseMonoRuntime" Value="$(UseMonoRuntime)" />
+    <AssemblyMetadata Include="TextStress.UseInterpreter" Value="$(UseInterpreter)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Android\Avalonia.Android\Avalonia.Android.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
+  </ItemGroup>
+
+</Project>
