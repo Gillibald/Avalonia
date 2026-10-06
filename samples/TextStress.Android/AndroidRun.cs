@@ -22,15 +22,23 @@ namespace TextStress.AndroidHost
     {
         public const string Tag = "TextStress";
 
+        /// <summary>The exit code of a run whose display did not hold the requested refresh rate.</summary>
+        public const int RefreshFailedExitCode = 3;
+
         private static RunOptions? s_options;
         private static string? s_doneMarker;
+        private static DisplayRate? s_rate;
+        private static List<(string Key, string Value)>? s_environment;
         private static Action<int>? s_finished;
         private static bool s_started;
 
-        public static void Prepare(RunOptions options, string doneMarker, Action<int> finished)
+        public static void Prepare(RunOptions options, string doneMarker, DisplayRate rate,
+            List<(string Key, string Value)> environment, Action<int> finished)
         {
             s_options = options;
             s_doneMarker = doneMarker;
+            s_rate = rate;
+            s_environment = environment;
             s_finished = finished;
             StressLog.Info = Info;
             StressLog.Error = Error;
@@ -93,7 +101,39 @@ namespace TextStress.AndroidHost
                 options.Scenario, options.Mode, options.Render, options.Pass, topLevel.ClientSize,
                 topLevel.RenderScaling, density));
 
-            var exitCode = await StressRun.RunAsync(topLevel, options);
+            // The mode switch lands a few frames after the window asks for it.
+            var rate = s_rate!;
+            wait.Restart();
+
+            while (!rate.Holds && wait.ElapsedMilliseconds < 5000)
+            {
+                await Task.Delay(16);
+            }
+
+            var atStart = rate.Describe();
+            Info("refresh start " + atStart);
+            s_environment?.Add(("refresh_start", atStart));
+            int exitCode;
+
+            if (!rate.Holds)
+            {
+                Error("refresh rate not reached, run skipped");
+                exitCode = RefreshFailedExitCode;
+            }
+            else
+            {
+                rate.StartWatching();
+                exitCode = await StressRun.RunAsync(topLevel, options);
+                rate.StopWatching();
+
+                Info("refresh end " + rate.Describe());
+
+                if (exitCode == 0 && (rate.Deviations > 0 || !rate.Holds))
+                {
+                    Error("refresh rate did not hold during the run; results are invalid");
+                    exitCode = RefreshFailedExitCode;
+                }
+            }
 
             if (options.Out is { } path && File.Exists(path))
             {

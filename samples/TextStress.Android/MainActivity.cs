@@ -76,8 +76,20 @@ namespace TextStress.AndroidHost
                 File.Delete(doneMarker);
             }
 
-            AndroidRun.Prepare(options, doneMarker, Finish);
-            StressLog.HostEnvironment = DescribeHost();
+            var refresh = options.GetInt("refresh", 60);
+            var rate = DisplayRate.Request(this, refresh, out var rateError);
+
+            if (rate is null)
+            {
+                AndroidRun.Error("refresh " + refresh + " Hz unavailable: " + rateError);
+                AndroidRun.WriteDoneMarker(doneMarker, AndroidRun.RefreshFailedExitCode);
+                Java.Lang.JavaSystem.Exit(AndroidRun.RefreshFailedExitCode);
+                return;
+            }
+
+            var host = DescribeHost();
+            AndroidRun.Prepare(options, doneMarker, rate, host, Finish);
+            StressLog.HostEnvironment = host;
 
             foreach (var (key, value) in StressLog.HostEnvironment)
             {
