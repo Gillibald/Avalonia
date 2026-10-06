@@ -40,12 +40,6 @@ namespace Avalonia.Skia.UnitTests.Media
             "quartz, judge my vow! Numbers such as 1234567890 appear.",
         };
 
-        // Skia on Vulkan blends a translucent per-vertex colour one level off the same colour
-        // drawn as a uniform, so a batch that folds translucent runs differs from those runs
-        // drawn one by one; opaque colours are exact.
-        private const string TranslucentVertexColourSkip =
-            "Vulkan: translucent per-vertex colours are not bit-exact against a uniform colour";
-
         public static IEnumerable<object[]> Contexts()
         {
             yield return new object[] { GpuBackend.NativeGl, false };
@@ -67,8 +61,6 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Contexts))]
         public void A_Batched_Frame_Draws_The_Pixels_Of_Its_Runs_Drawn_One_By_One(GpuBackend backend, bool software)
         {
-            Assert.SkipWhen(backend == GpuBackend.Vulkan, TranslucentVertexColourSkip);
-
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var scene = new Scene(typeface);
@@ -545,8 +537,6 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(HardwareContexts))]
         public void Overlapping_Runs_Of_Other_Pages_And_Colours_Keep_Their_Order(GpuBackend backend, bool software)
         {
-            Assert.SkipWhen(backend == GpuBackend.Vulkan, TranslucentVertexColourSkip);
-
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
 
@@ -590,8 +580,6 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(HardwareContexts))]
         public void Overlapping_Runs_In_Colours_Of_One_Page_Keep_Their_Order(GpuBackend backend, bool software)
         {
-            Assert.SkipWhen(backend == GpuBackend.Vulkan, TranslucentVertexColourSkip);
-
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var inter);
 
