@@ -403,6 +403,141 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
+        public void Rows_In_Rounded_Clips_Clear_Of_Their_Corners_Draw_As_One_Atlas_Call(GpuBackend backend,
+            bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 12);
+
+            // Each row in a card clipped to a rounded rectangle with edges between pixels, as a
+            // control with rounded corners clips its content. The text keeps clear of the corners
+            // and edges.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    context.Transform = Matrix.Identity;
+                    context.PushClip(new RoundedRect(new Rect(1.5, i * RowHeight - 4.25, Width - 3, 36.5), 6));
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var clips = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "rows in rounded clips");
+                Assert.Equal(0, DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - clips);
+
+                if (!subpixel)
+                {
+                    Assert.Equal(1, draws);
+                }
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void Rows_Reaching_Into_The_Corners_Of_Rounded_Clips_Draw_The_Pending_Runs_First(GpuBackend backend,
+            bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 6);
+
+            // The clips hug the text, so their corners round off its first and last glyphs.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    context.Transform = Matrix.Identity;
+                    context.PushClip(new RoundedRect(new Rect(10, i * RowHeight + 6, 180, 18), 8));
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out _);
+                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "rows cut by rounded corners");
+
+                // Every row draws under its clip before the clip is popped.
+                Assert.Equal(rows.Length, flushed);
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void Rounded_Clips_Pushed_After_A_Restore_Leave_The_Pending_Runs_Alone(GpuBackend backend, bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var rows = CreateRows(typeface, 8);
+
+            // A layer before the rows restores the canvas, after which only the canvas knows the
+            // transform; the compositor sets it again only when it changes.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+                context.PushLayer(new Rect(0, 0, Width, 40));
+                context.PopLayer();
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    context.PushClip(new RoundedRect(new Rect(1.5, i * RowHeight - 4.25, Width - 3, 36.5), 6));
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out _);
+                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "rows in rounded clips after a restore");
+                Assert.Equal(0, flushed);
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
         public void Opacity_Through_A_Layer_Draws_The_Pending_Runs_First(GpuBackend backend, bool subpixel)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);

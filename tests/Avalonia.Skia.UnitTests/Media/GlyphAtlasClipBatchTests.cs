@@ -162,14 +162,15 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareTargets))]
-        public void Fractional_And_Rounded_Clips_Draw_The_Pending_Runs_First(GpuBackend backend, bool subpixel)
+        public void Fractional_Clips_Draw_The_Pending_Runs_First_And_Rounded_Clips_Clear_Of_Their_Run_Do_Not(GpuBackend backend, bool subpixel)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var rows = CreateRows(typeface, 5);
 
-            // Each clip contains the run drawn inside it, and still draws the run pending before
-            // it when pushed and the run inside it when popped.
+            // Each clip contains the run drawn inside it. The rectangle with edges between pixels
+            // still draws the run pending before it when pushed and the run inside it when popped;
+            // the rounded one keeps its run clear of its corners and edges, so all stay pending.
             void Draw(DrawingContextImpl context)
             {
                 context.Clear(s_background);
@@ -199,8 +200,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "batched frame");
-                Assert.Equal(4, flushed);
-                Assert.Equal(5, draws);
+                Assert.Equal(2, flushed);
+                Assert.Equal(3, draws);
             }
             finally
             {
