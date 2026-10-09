@@ -78,12 +78,30 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal const int PortableMinimumCellsArm64 = 512;
 
-        private static readonly int s_portableMinimumCells =
-            GetPortableMinimumCells(RuntimeInformation.ProcessArchitecture);
+        /// <summary>
+        /// The <see cref="PortableMinimumCells"/> of ARM64 under Mono, as on Android. Mono's scalar
+        /// code is several times slower than CoreCLR's while its four-lane steps keep most of
+        /// their speed, so the portable path is faster from masks of a few dozen cells up.
+        /// </summary>
+        internal const int PortableMinimumCellsMonoArm64 = 48;
 
-        /// <summary>The fewest cells the portable path rasterizes on <paramref name="architecture"/>.</summary>
-        internal static int GetPortableMinimumCells(Architecture architecture)
-            => architecture == Architecture.Arm64 ? PortableMinimumCellsArm64 : PortableMinimumCells;
+        /// <summary>
+        /// Whether the process runs on Mono, which defines <c>Mono.RuntimeStructs</c> in its core
+        /// library; CoreCLR and NativeAOT do not.
+        /// </summary>
+        internal static readonly bool RunsOnMono = Type.GetType("Mono.RuntimeStructs") is not null;
+
+        private static readonly int s_portableMinimumCells =
+            GetPortableMinimumCells(RuntimeInformation.ProcessArchitecture, RunsOnMono);
+
+        /// <summary>
+        /// The fewest cells the portable path rasterizes on <paramref name="architecture"/>, under
+        /// Mono (<paramref name="mono"/>) or another runtime.
+        /// </summary>
+        internal static int GetPortableMinimumCells(Architecture architecture, bool mono = false)
+            => architecture != Architecture.Arm64 ? PortableMinimumCells
+                : mono ? PortableMinimumCellsMonoArm64
+                : PortableMinimumCellsArm64;
 
         /// <summary>
         /// The path that rasterizes a mask of <paramref name="width"/> by <paramref name="height"/>

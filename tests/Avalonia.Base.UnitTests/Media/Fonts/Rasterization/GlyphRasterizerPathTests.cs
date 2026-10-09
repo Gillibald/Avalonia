@@ -184,12 +184,43 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         [Theory]
+        [InlineData(6, 7, false)]
+        [InlineData(1, GlyphRasterizer.PortableMinimumCellsMonoArm64 - 1, false)]
+        [InlineData(1, GlyphRasterizer.PortableMinimumCellsMonoArm64, true)]
+        [InlineData(7, 7, true)]
+        [InlineData(16, 31, true)]
+        public void Portable_On_Arm64_Under_Mono_Keeps_Masks_From_The_Mono_Minimum_Up(int width, int height,
+            bool portable)
+        {
+            var minimum = GlyphRasterizer.GetPortableMinimumCells(Architecture.Arm64, mono: true);
+
+            Assert.Equal(GlyphRasterizer.PortableMinimumCellsMonoArm64, minimum);
+            Assert.Equal(portable ? GlyphRasterizerPath.Portable : GlyphRasterizerPath.Scalar,
+                GlyphRasterizer.EffectivePath(GlyphRasterizerPath.Portable, width, height, minimum));
+        }
+
+        [Theory]
         [InlineData(Architecture.Wasm)]
         [InlineData(Architecture.X64)]
         [InlineData(Architecture.X86)]
         public void Other_Architectures_Keep_The_WebAssembly_Minimum(Architecture architecture)
         {
             Assert.Equal(GlyphRasterizer.PortableMinimumCells, GlyphRasterizer.GetPortableMinimumCells(architecture));
+
+            // The browser runs Mono too.
+            Assert.Equal(GlyphRasterizer.PortableMinimumCells,
+                GlyphRasterizer.GetPortableMinimumCells(architecture, mono: true));
+        }
+
+        [Theory]
+        [InlineData(Architecture.Arm64, true, false)]
+        [InlineData(Architecture.Arm64, false, true)]
+        [InlineData(Architecture.Wasm, true, true)]
+        [InlineData(Architecture.X64, false, true)]
+        public void The_Portable_Blitter_Is_Chosen_Except_On_Arm64_Under_Mono(Architecture architecture, bool mono,
+            bool portable)
+        {
+            Assert.Equal(portable, GlyphMaskBlitter.PortableIsFaster(architecture, mono));
         }
 
         [Theory]

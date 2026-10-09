@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
@@ -325,8 +326,19 @@ namespace Avalonia.Media.Fonts.Rasterization
             => Avx2.IsSupported ? GlyphBlitPath.Avx2
                 : Ssse3.IsSupported ? GlyphBlitPath.Ssse3
                 : IsSupported(GlyphBlitPath.AdvSimd) ? GlyphBlitPath.AdvSimd
-                : Vector128.IsHardwareAccelerated ? GlyphBlitPath.Portable
-                : GlyphBlitPath.Scalar;
+                : Vector128.IsHardwareAccelerated &&
+                  PortableIsFaster(RuntimeInformation.ProcessArchitecture, GlyphRasterizer.RunsOnMono)
+                    ? GlyphBlitPath.Portable
+                    : GlyphBlitPath.Scalar;
+
+        /// <summary>
+        /// Whether the portable path blends faster than the scalar one on
+        /// <paramref name="architecture"/> under Mono (<paramref name="mono"/>) or another runtime.
+        /// Not on ARM64 under Mono, as on Android: there the portable steps take two to two and a
+        /// half times the scalar loop's time at every mask size.
+        /// </summary>
+        internal static bool PortableIsFaster(Architecture architecture, bool mono)
+            => !(mono && architecture == Architecture.Arm64);
 
         /// <summary>Whether this machine and runtime can run <paramref name="path"/>.</summary>
         internal static bool IsSupported(GlyphBlitPath path) => path switch
