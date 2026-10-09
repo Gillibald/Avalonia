@@ -638,14 +638,14 @@ namespace Avalonia.Skia.UnitTests.Media
             context.DrawGlyphRun(Brushes.Black, run);
             context.DrawGlyphRun(Brushes.Black, run);
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
+            var before = ThreadAllocations.Start();
 
             for (var i = 0; i < 100; i++)
             {
                 context.DrawGlyphRun(Brushes.Black, run);
             }
 
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            var allocated = ThreadAllocations.Since(before);
 
             Assert.True(allocated == 0, $"100 warm raster draws allocated {allocated} bytes");
         }

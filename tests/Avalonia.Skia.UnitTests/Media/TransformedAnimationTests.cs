@@ -174,7 +174,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 context.Transform = Rotation(5 + frame % 40 * 1.7);
 
-                var before = GC.GetAllocatedBytesForCurrentThread();
+                var before = ThreadAllocations.Start();
 
                 Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black,
                     TextRenderingMode.Antialias));
@@ -188,7 +188,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 if (frame >= 40 + TransformChurnGuard.Threshold)
                 {
-                    allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+                    allocated += ThreadAllocations.Since(before);
                     frames++;
                 }
 
@@ -330,14 +330,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.Transform = Rotation(5 + frame * 1.7);
 
                 // Allocation is measured once the guard is engaged and the stretched batch built.
-                var before = GC.GetAllocatedBytesForCurrentThread();
+                var before = ThreadAllocations.Start();
 
                 Assert.True(MaskGlyphRunRenderer.TryDrawTransformed(context, run, Brushes.Black,
                     TextRenderingMode.Antialias));
 
                 if (frame > TransformChurnGuard.Threshold)
                 {
-                    allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+                    allocated += ThreadAllocations.Since(before);
                 }
 
                 if (frame == TransformChurnGuard.Threshold)
@@ -738,7 +738,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
 
                 // A third pass without reading the surface back, which allocates and collects.
-                var before = GC.GetAllocatedBytesForCurrentThread();
+                    var before = ThreadAllocations.Start();
 
                 for (var frame = TransformChurnGuard.Threshold; frame <= 24; frame++)
                 {
@@ -750,7 +750,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 }
 
-                var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                var allocated = ThreadAllocations.Since(before);
 
                 Assert.True(allocated == 0, $"zoom frames over cached glyph masks allocated {allocated} bytes");
             }
@@ -782,13 +782,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.Transform = Matrix.CreateScale(1 + frame * 0.05, 1 + frame * 0.05) *
                     Matrix.CreateTranslation(10.25, 12.5);
 
-                var before = GC.GetAllocatedBytesForCurrentThread();
+                var before = ThreadAllocations.Start();
 
                 context.DrawGlyphRun(Brushes.Black, run);
 
                 if (frame > TransformChurnGuard.Threshold)
                 {
-                    allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+                    allocated += ThreadAllocations.Since(before);
                 }
 
                 if (frame == TransformChurnGuard.Threshold)

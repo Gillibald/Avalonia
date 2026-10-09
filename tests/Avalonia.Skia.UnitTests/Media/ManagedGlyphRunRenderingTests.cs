@@ -615,14 +615,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 // Warm-up a second time so pools, paint caches and the Skia image wrap settle.
                 context.DrawGlyphRun(Brushes.Black, run);
 
-                var before = GC.GetAllocatedBytesForCurrentThread();
+                var before = ThreadAllocations.Start();
 
                 for (var i = 0; i < 100; i++)
                 {
                     context.DrawGlyphRun(Brushes.Black, run);
                 }
 
-                var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                var allocated = ThreadAllocations.Since(before);
 
                 Assert.True(allocated == 0, $"100 warm managed draws allocated {allocated} bytes");
             }

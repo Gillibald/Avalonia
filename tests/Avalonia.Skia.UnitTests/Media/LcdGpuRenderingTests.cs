@@ -212,12 +212,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.DrawGlyphRun(Brushes.Black, run);
             });
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
+            var before = ThreadAllocations.Start();
 
             surface!.Canvas.Clear(SKColors.White);
             context.DrawGlyphRun(Brushes.Black, run);
 
-            var allocsPerFrame = GC.GetAllocatedBytesForCurrentThread() - before;
+            var allocsPerFrame = ThreadAllocations.Since(before);
 
             // The grayscale A8 incumbent on the same surface for scale.
             context.PushTextOptions(new TextOptions { TextRenderingMode = TextRenderingMode.Antialias });

@@ -187,14 +187,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.DrawGlyphRun(brushes[frame % brushes.Length], run);
             }
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
+            var before = ThreadAllocations.Start();
 
             for (var frame = 0; frame < 4 * brushes.Length; frame++)
             {
                 context.DrawGlyphRun(brushes[frame % brushes.Length], run);
             }
 
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            var allocated = ThreadAllocations.Since(before);
 
             Assert.True(allocated == 0, $"{4 * brushes.Length} animated frames allocated {allocated} bytes");
         }

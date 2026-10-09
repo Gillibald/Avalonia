@@ -90,7 +90,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.FlushGlyphBatch();
             }
 
-            var before = GC.GetAllocatedBytesForCurrentThread();
+            var before = ThreadAllocations.Start();
 
             for (var i = 0; i < 100; i++)
             {
@@ -98,7 +98,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.FlushGlyphBatch();
             }
 
-            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            var allocated = ThreadAllocations.Since(before);
 
             gpu.GrContext.Flush();
 

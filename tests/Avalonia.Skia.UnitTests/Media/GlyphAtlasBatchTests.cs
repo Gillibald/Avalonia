@@ -1551,14 +1551,14 @@ namespace Avalonia.Skia.UnitTests.Media
                     Frame(frame);
                 }
 
-                var before = GC.GetAllocatedBytesForCurrentThread();
+                var before = ThreadAllocations.Start();
 
                 for (var frame = 0; frame < brushes.Length * 10; frame++)
                 {
                     Frame(frame);
                 }
 
-                var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                var allocated = ThreadAllocations.Since(before);
 
                 gpu.GrContext.Flush();
 
