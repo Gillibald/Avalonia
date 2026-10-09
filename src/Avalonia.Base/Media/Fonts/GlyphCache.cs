@@ -170,6 +170,7 @@ namespace Avalonia.Media.Fonts
                 entry.SetGeometry(built.Geometry, built.Cost, built.Kind, built.Dependencies);
                 _policy.OnAdded(entry);
                 _totalCost += built.Cost;
+                _handle.Charge(built.Cost);
 
                 PinDependencies(entry);
                 EvictToBudget();
@@ -231,6 +232,7 @@ namespace Avalonia.Media.Fonts
                 entry.SetGeometry(built.Geometry, built.Cost, built.Kind, built.Dependencies);
                 _policy.OnAdded(entry);
                 _totalCost += built.Cost;
+                _handle.Charge(built.Cost);
 
                 PinDependencies(entry);
                 EvictToBudget();
@@ -310,6 +312,7 @@ namespace Avalonia.Media.Fonts
                 }
 
                 _totalCost -= victim.Cost;
+                _handle.Credit(victim.Cost);
                 _policy.OnRemoved(victim);
                 UnpinDependencies(victim);
                 victim.ClearGeometry();

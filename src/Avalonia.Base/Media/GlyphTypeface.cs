@@ -2674,11 +2674,11 @@ namespace Avalonia.Media
         /// </summary>
         internal bool HasTrueTypeHinting => _glyfTable is not null && ProgramTables.HasHintingMachinery;
 
-        // One hinter per (quantized size, mask mode): the render class feeds GETINFO, which
-        // prep may branch on, so the size state is per mode. Entries memoise failures as
-        // null. Populated on the render thread like the other per-size caches; the lock only
-        // guards the cold create.
-        private List<(ushort ScaleQ, Fonts.Rasterization.GlyphMaskMode Mode, Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? Hinter)>? _trueTypeHinters;
+        // Populated on the render thread like the other per-size caches.
+        private Fonts.Rasterization.TrueType.TrueTypeHinterCache? _trueTypeHinters;
+
+        /// <summary>The number of bytecode hinters kept, one per quantized size and mask mode.</summary>
+        internal int TrueTypeHinterCount => _trueTypeHinters?.Count ?? 0;
 
         /// <summary>
         /// The bytecode hinter for the given quantized size and mask mode, null when the
@@ -2690,27 +2690,6 @@ namespace Avalonia.Media
         /// to the fitted outline, and the side bearings the hinter reads for its phantom
         /// points must be those of the real glyph, not of the emboldened or slanted box.
         /// </remarks>
-        private const int MaxTrueTypeHinters = 16;
-
-        /// <summary>The number of bytecode hinters kept, one per quantized size and mask mode.</summary>
-        internal int TrueTypeHinterCount
-        {
-            get
-            {
-                var hinters = _trueTypeHinters;
-
-                if (hinters is null)
-                {
-                    return 0;
-                }
-
-                lock (hinters)
-                {
-                    return hinters.Count;
-                }
-            }
-        }
-
         internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? GetTrueTypeHinter(
             ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
         {
@@ -2724,39 +2703,16 @@ namespace Avalonia.Media
                 return null;
             }
 
-            var hinters = _trueTypeHinters ??= new();
+            var hinters = _trueTypeHinters ?? GetOrCreateTrueTypeHinters();
 
-            // Most recently used first. A zoom animation asks for a new size nearly every frame,
-            // so only the last MaxTrueTypeHinters sizes keep their hinter; text at rest keeps
-            // its sizes at the front.
-            lock (hinters)
-            {
-                for (var i = 0; i < hinters.Count; i++)
-                {
-                    var entry = hinters[i];
+            return hinters.Get(scaleQ, mode, this);
+        }
 
-                    if (entry.ScaleQ == scaleQ && entry.Mode == mode)
-                    {
-                        if (i > 0)
-                        {
-                            hinters.RemoveAt(i);
-                            hinters.Insert(0, entry);
-                        }
+        private Fonts.Rasterization.TrueType.TrueTypeHinterCache GetOrCreateTrueTypeHinters()
+        {
+            var created = new Fonts.Rasterization.TrueType.TrueTypeHinterCache(CacheBudget, TrueTypeHinterBytes);
 
-                        return entry.Hinter;
-                    }
-                }
-
-                var hinter = CreateTrueTypeHinter(scaleQ, mode);
-
-                if (hinters.Count == MaxTrueTypeHinters)
-                {
-                    hinters.RemoveAt(hinters.Count - 1);
-                }
-
-                hinters.Insert(0, (scaleQ, mode, hinter));
-                return hinter;
-            }
+            return Interlocked.CompareExchange(ref _trueTypeHinters, created, null) ?? created;
         }
 
         private long _trueTypeHinterBytes;
@@ -2786,7 +2742,7 @@ namespace Avalonia.Media
             }
         }
 
-        private Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? CreateTrueTypeHinter(
+        internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? CreateTrueTypeHinter(
             ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
         {
             var maxp = Fonts.Tables.MaxpTable.Load(this);

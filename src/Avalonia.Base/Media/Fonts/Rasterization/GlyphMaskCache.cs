@@ -154,6 +154,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Volatile.Write(ref entry.Mask, built);
                 RingAdd(entry);
                 _totalCost += built.ByteCost;
+                _handle.Charge(built.ByteCost);
                 EvictToBudget();
 
                 return built;
@@ -171,7 +172,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 while (_hand is { } entry)
                 {
                     RingRemove(entry);
-                    _totalCost -= Volatile.Read(ref entry.Mask)!.ByteCost;
+
+                    var cost = Volatile.Read(ref entry.Mask)!.ByteCost;
+
+                    _totalCost -= cost;
+                    _handle.Credit(cost);
                     Volatile.Write(ref entry.Mask, null);
                     _entries.TryRemove(entry.Key, out _);
                 }
@@ -189,7 +194,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                     break;
                 }
 
-                _totalCost -= Volatile.Read(ref victim.Mask)!.ByteCost;
+                var cost = Volatile.Read(ref victim.Mask)!.ByteCost;
+
+                _totalCost -= cost;
+                _handle.Credit(cost);
                 Interlocked.Increment(ref _evictions);
                 RingRemove(victim);
                 Volatile.Write(ref victim.Mask, null);

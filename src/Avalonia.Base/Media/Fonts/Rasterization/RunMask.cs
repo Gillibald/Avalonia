@@ -329,7 +329,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             if (_primary is { } primary && _primaryKey == key)
             {
-                primary.Dispose();
+                Drop(primary);
                 _primary = null;
                 return;
             }
@@ -340,7 +340,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     if (secondary[i].Mask is { } mask && secondary[i].Key == key)
                     {
-                        mask.Dispose();
+                        Drop(mask);
                         secondary[i] = default;
                         return;
                     }
@@ -350,6 +350,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public void Add(in RunMaskKey key, RunMask mask)
         {
+            _budget.RunMasks.Charge(mask.ByteCost);
+
             if (_primary is null)
             {
                 _primaryKey = key;
@@ -360,24 +362,42 @@ namespace Avalonia.Media.Fonts.Rasterization
             _secondary ??= new (RunMaskKey, RunMask)[SecondarySize];
 
             ref var slot = ref _secondary[_nextEvict];
-            slot.Mask?.Dispose();
+
+            if (slot.Mask is { } replaced)
+            {
+                Drop(replaced);
+            }
+
             slot = (key, mask);
             _nextEvict = (_nextEvict + 1) % SecondarySize;
         }
 
         public void Dispose()
         {
-            _primary?.Dispose();
-            _primary = null;
+            if (_primary is { } primary)
+            {
+                Drop(primary);
+                _primary = null;
+            }
 
             if (_secondary is { } secondary)
             {
                 for (var i = 0; i < secondary.Length; i++)
                 {
-                    secondary[i].Mask?.Dispose();
+                    if (secondary[i].Mask is { } mask)
+                    {
+                        Drop(mask);
+                    }
+
                     secondary[i] = default;
                 }
             }
+        }
+
+        private void Drop(RunMask mask)
+        {
+            _budget.RunMasks.Credit(mask.ByteCost);
+            mask.Dispose();
         }
     }
 

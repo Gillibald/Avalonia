@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -141,7 +142,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// drawn on a raster context. Holding the masks keeps them valid after the glyph mask
         /// cache evicts them, until the run rebuilds its sprites.
         /// </summary>
-        public GlyphMask[]? Masks { get; internal set; }
+        public GlyphMask[]? Masks
+        {
+            get => _masks;
+            internal set
+            {
+                _masks = value;
+                Owner?.Recharge();
+            }
+        }
+
+        private GlyphMask[]? _masks;
+
+        /// <summary>The run state holding this set, which charges its bytes to the glyph cache budget.</summary>
+        internal TransformedRunState? Owner { get; set; }
+
+        /// <summary>Bytes of the pre-tinted images in <see cref="FallbackImages"/>.</summary>
+        internal long FallbackImageBytes { get; private set; }
 
         /// <summary>
         /// Pre-tinted per-sprite bitmaps for draws that cannot write the surface directly (a
@@ -267,6 +284,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             slots[index] = new BucketBatches(bucket, atlas, batches);
             _current = index;
+            Owner?.Recharge();
         }
 
         internal void SetFallbackImages(IDisposable?[] images, uint tint)
@@ -275,6 +293,21 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             FallbackImages = images;
             FallbackTint = tint;
+
+            // Sprites showing the same mask share one image, which is counted once.
+            var distinct = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            long bytes = 0;
+
+            for (var i = 0; i < images.Length; i++)
+            {
+                if (images[i] is { } image && distinct.Add(image))
+                {
+                    bytes += (long)_sprites[i].Width * _sprites[i].Height * 4;
+                }
+            }
+
+            FallbackImageBytes = bytes;
+            Owner?.Recharge();
         }
 
         private void DisposeFallbackImages()
@@ -304,6 +337,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             FallbackImages = null;
+            FallbackImageBytes = 0;
         }
 
         private static void DisposeBatches(GlyphAtlasBatch[]? batches)
@@ -361,6 +395,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             _budget = budget ?? GlyphCacheBudget.Shared;
         }
+
+        private long _charged;
 
         private TransformedGlyphSprites? _primary;
         private TransformedGlyphSprites?[]? _secondary;
@@ -464,10 +500,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         public void Add(TransformedGlyphSprites sprites)
         {
             Version++;
+            sprites.Owner = this;
 
             if (_primary is null)
             {
                 _primary = sprites;
+                Recharge();
                 return;
             }
 
@@ -477,7 +515,28 @@ namespace Avalonia.Media.Fonts.Rasterization
             slot?.Dispose();
             slot = sprites;
             _nextEvict = (_nextEvict + 1) % SecondarySize;
+            Recharge();
         }
+
+        /// <summary>Charges the change in the bytes the cached sets hold since the last charge.</summary>
+        internal void Recharge()
+        {
+            var bytes = ChargedBytes(_primary);
+
+            if (_secondary is { } secondary)
+            {
+                foreach (var entry in secondary)
+                {
+                    bytes += ChargedBytes(entry);
+                }
+            }
+
+            _budget.SpriteSets.Charge(bytes - _charged);
+            _charged = bytes;
+        }
+
+        private static long ChargedBytes(TransformedGlyphSprites? sprites)
+            => sprites is null ? 0 : sprites.ByteCost + sprites.FallbackImageBytes;
 
         public void Dispose()
         {
@@ -494,6 +553,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     secondary[i] = null;
                 }
             }
+
+            _budget.SpriteSets.Credit(_charged);
+            _charged = 0;
         }
     }
 }

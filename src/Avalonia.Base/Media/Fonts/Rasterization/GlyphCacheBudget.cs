@@ -52,10 +52,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphCacheBudget(long limitBytes)
         {
             LimitBytes = Math.Max(1, limitBytes);
+            RunMasks = Register(GlyphCachePoolKind.RunMasks, this);
+            SpriteSets = Register(GlyphCachePoolKind.SpriteSets, this);
         }
 
         /// <summary>The budget of every glyph cache the process creates.</summary>
         public static GlyphCacheBudget Shared { get; } = new(DefaultLimitBytes);
+
+        /// <summary>The composed run masks of every run charged to this budget.</summary>
+        public GlyphCachePoolHandle RunMasks { get; }
+
+        /// <summary>The sprite sets of every run charged to this budget.</summary>
+        public GlyphCachePoolHandle SpriteSets { get; }
 
         /// <summary>The global maximum of all pools together.</summary>
         public long LimitBytes { get; private set; }

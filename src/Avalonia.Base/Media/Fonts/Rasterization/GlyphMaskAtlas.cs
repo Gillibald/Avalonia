@@ -485,6 +485,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.Pixels.Length);
+            _handle.Charge(fresh.Pixels.Length);
 
             return (fresh, LeadingGutter, OpenShelf(fresh, width, height, tick));
         }
@@ -508,6 +509,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 page.Grow(rows);
                 Interlocked.Add(ref _allocated, page.Pixels.Length - before);
+                _handle.Charge(page.Pixels.Length - before);
             }
 
             page.Shelves.Add((y, height, LeadingGutter + width));
@@ -574,6 +576,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _pages.Remove(page);
             Interlocked.Add(ref _allocated, -page.Pixels.Length);
+            _handle.Credit(page.Pixels.Length);
             Interlocked.Increment(ref _evictions);
 
             page.IsEvicted = true;
