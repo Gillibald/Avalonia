@@ -2548,6 +2548,16 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphCacheBudget? _cacheBudget;
 
+        /// <summary>Unlinks the glyph caches of a typeface that draws no more and credits their bytes.</summary>
+        private void ReleaseGlyphCaches()
+        {
+            Interlocked.Exchange(ref _glyphMaskCache, null)?.Release();
+            Interlocked.Exchange(ref _glyphMaskAtlas, null)?.Release();
+            Interlocked.Exchange(ref _trueTypeHinters, null)?.Release();
+            Interlocked.Exchange(ref _glyphCache, null)?.Release();
+            _verticalGridFit = null;
+        }
+
         /// <summary>
         /// The budget this typeface's glyph caches are charged to: <see cref="Fonts.Rasterization.GlyphCacheBudget.Shared"/>
         /// unless set before the first cache is created, which tests do to measure one typeface
@@ -4042,6 +4052,12 @@ namespace Avalonia.Media
             Fonts.Rasterization.GlyphMaskAtlas.Shared.Retire(_maskOwnerId);
             Fonts.Rasterization.GlyphMaskAtlas.Shared.Retire(_unsimulatedTypeface?._maskOwnerId ?? 0);
 
+            // The typeface's own glyph caches give their bytes back to the glyph cache budget
+            // now, not when the GC collects them. Payloads are unlinked, never disposed: runs
+            // still drawing from this face hold independent copies or keep what they hold.
+            ReleaseGlyphCaches();
+            _unsimulatedTypeface?.ReleaseGlyphCaches();
+
             // Cascade: the glyph typeface releases its shaper typeface unless it shares its source's,
             // its (possibly lazily created) platform typeface, and its font memory. The shaper typeface
             // goes first because its table blobs may pin the font memory.
@@ -4049,11 +4065,6 @@ namespace Avalonia.Media
             {
                 _textShaperTypeface?.Dispose();
             }
-
-            // The per-instance glyph cache is deliberately left for the GC, not torn down here. Its
-            // payloads are handed out lock-free and escape into retained compositor render data that
-            // can outlive the typeface, so clearing or disposing the cache on Dispose would risk a
-            // use-after-free. The cache holds no unmanaged handles of its own.
 
             // A variation clone that shares the source's platform typeface leaves it to the
             // source, which releases it exactly once.

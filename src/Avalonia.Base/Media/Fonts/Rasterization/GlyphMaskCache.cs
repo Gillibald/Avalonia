@@ -175,6 +175,16 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// Drops every mask and leaves the budget, for a typeface that draws no more. Masks are
+        /// unlinked, never disposed, so composed run masks stay valid.
+        /// </summary>
+        public void Release()
+        {
+            Clear();
+            _handle.Release();
+        }
+
         long IGlyphCachePool.OldestUse
         {
             get

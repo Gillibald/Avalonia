@@ -500,6 +500,24 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static int RoundUp(int rows) => (rows + RowQuantum - 1) / RowQuantum * RowQuantum;
 
+        /// <summary>
+        /// Forgets every entry and page and leaves the budget, for the atlas of a typeface that
+        /// draws no more. Pages are unlinked, not dropped: batches built from them keep sampling
+        /// their pixels and backend images, which the GC reclaims with the last batch.
+        /// </summary>
+        public void Release()
+        {
+            lock (_lock)
+            {
+                _slots.Clear();
+                _pages.Clear();
+                _emptied.Clear();
+                Interlocked.Exchange(ref _allocated, 0);
+            }
+
+            _handle.Release();
+        }
+
         long IGlyphCachePool.OldestUse
         {
             get

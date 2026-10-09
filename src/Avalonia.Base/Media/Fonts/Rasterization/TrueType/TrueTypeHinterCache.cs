@@ -69,6 +69,17 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             }
         }
 
+        /// <summary>Drops every hinter and leaves the budget, for a typeface that draws no more.</summary>
+        public void Release()
+        {
+            lock (_hinters)
+            {
+                _hinters.Clear();
+            }
+
+            _handle.Release();
+        }
+
         long IGlyphCachePool.OldestUse
         {
             get

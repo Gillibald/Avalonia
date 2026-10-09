@@ -313,6 +313,30 @@ namespace Avalonia.Media.Fonts
         // self-contained and rely on recency.
         private static bool IsReferencing(GlyphPayloadKind kind) => kind == GlyphPayloadKind.ColorDrawing;
 
+        /// <summary>
+        /// Drops every entry and leaves the glyph cache budget, for a typeface that draws no more.
+        /// Payloads are unlinked, never disposed (see the remarks), so callers holding one keep it.
+        /// </summary>
+        public void Release()
+        {
+            lock (_lock)
+            {
+                foreach (var entry in _entries.Values)
+                {
+                    if (entry.HasGeometry)
+                    {
+                        _policy.OnRemoved(entry);
+                        entry.ClearGeometry();
+                    }
+                }
+
+                _entries.Clear();
+                _totalCost = 0;
+            }
+
+            _handle.Release();
+        }
+
         long Rasterization.IGlyphCachePool.OldestUse
         {
             get
