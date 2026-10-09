@@ -45,5 +45,10 @@ namespace Avalonia.Media
         }
 
         private TextRasterizationMode? _textRasterizationMode;
+
+        /// <summary>
+        /// Gets or sets the glyph cache limit in bytes.
+        /// </summary>
+        public long? GlyphCacheLimitBytes { get; set; }
     }
 }

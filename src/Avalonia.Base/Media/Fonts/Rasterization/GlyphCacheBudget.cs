@@ -185,6 +185,20 @@ namespace Avalonia.Media.Fonts.Rasterization
             SpriteSets = new SpriteSetPool(this);
         }
 
+        /// <param name="options">The options whose limit the budget follows.</param>
+        /// <param name="platform">The platform whose default limit applies when the options set none.</param>
+        /// <param name="idleTimer">Schedules the trim after the last frame; a thread-pool timer when omitted.</param>
+        /// <param name="clock">The time since an arbitrary start; a stopwatch when omitted.</param>
+        public GlyphCacheBudget(Func<FontManagerOptions?> options, TextRasterizationPlatform platform,
+            IGlyphCacheIdleTimer? idleTimer = null, Func<TimeSpan>? clock = null)
+            : this(DefaultLimitBytes, idleTimer, clock)
+        {
+        }
+
+        /// <summary>The default limit and retain target on <paramref name="platform"/>.</summary>
+        public static (long Limit, long Retain) DefaultsFor(TextRasterizationPlatform platform)
+            => (DefaultLimitBytes, DefaultLimitBytes / 2);
+
         /// <summary>The budget of every glyph cache the process creates.</summary>
         public static GlyphCacheBudget Shared { get; } = new(DefaultLimitBytes);
 
