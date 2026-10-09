@@ -15,6 +15,10 @@ internal class BrowserActivatableLifetime : ActivatableLifetimeBase
         else
         {
             OnDeactivated(ActivationKind.Background);
+
+            // WebAssembly memory never shrinks, but a hidden tab gives the caches' room back to
+            // the heap for other allocations.
+            Media.FontManager.TrimGlyphCaches();
         }
     }
 }

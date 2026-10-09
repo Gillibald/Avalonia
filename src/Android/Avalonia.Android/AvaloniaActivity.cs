@@ -24,6 +24,7 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
 {
     private EventHandler<ActivatedEventArgs>? _onActivated, _onDeactivated;
     private GlobalLayoutListener? _listener;
+    private readonly MemoryCallbacks _memoryCallbacks = new();
     private object? _content;
     private bool _contentViewSet;
     internal AvaloniaView? _view;
@@ -116,6 +117,8 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
 
         base.OnCreate(savedInstanceState);
 
+        RegisterComponentCallbacks(_memoryCallbacks);
+
         if (Avalonia.Application.Current?.TryGetFeature<IActivatableLifetime>()
             is AndroidActivatableLifetime activatableLifetime)
         {
@@ -135,6 +138,10 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
     protected override void OnStop()
     {
         _onDeactivated?.Invoke(this, new ActivatedEventArgs(ActivationKind.Background));
+
+        // A stopped activity's process is among the first the system kills for memory; glyphs
+        // rasterize again when it returns.
+        Media.FontManager.TrimGlyphCaches();
 
         if (OperatingSystem.IsAndroidVersionAtLeast(33))
         {
@@ -182,6 +189,8 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
             _view.Dispose();
             _view = null;
         }
+
+        UnregisterComponentCallbacks(_memoryCallbacks);
 
         base.OnDestroy();
     }
@@ -240,6 +249,26 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
         BackRequested?.Invoke(this, eventArgs);
 
         _shouldNavigateBack = !eventArgs.Handled;
+    }
+
+    /// <summary>Trims the glyph caches when the system reports memory pressure.</summary>
+    private sealed class MemoryCallbacks : Java.Lang.Object, IComponentCallbacks2
+    {
+        public void OnTrimMemory([GeneratedEnum] TrimMemory level)
+        {
+            // From RunningLow on the system is short of memory or the app is hidden; at
+            // RunningModerate the caches stay.
+            if (level >= TrimMemory.RunningLow)
+            {
+                Media.FontManager.TrimGlyphCaches();
+            }
+        }
+
+        public void OnLowMemory() => Media.FontManager.TrimGlyphCaches();
+
+        public void OnConfigurationChanged(global::Android.Content.Res.Configuration newConfig)
+        {
+        }
     }
 
     private class GlobalLayoutListener : Java.Lang.Object, ViewTreeObserver.IOnGlobalLayoutListener

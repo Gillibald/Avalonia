@@ -27,6 +27,7 @@ namespace Avalonia.iOS
         {
             NSNotificationCenter.DefaultCenter.AddObserver(UIApplication.DidEnterBackgroundNotification, OnEnteredBackground);
             NSNotificationCenter.DefaultCenter.AddObserver(UIApplication.WillEnterForegroundNotification, OnLeavingBackground);
+            NSNotificationCenter.DefaultCenter.AddObserver(UIApplication.DidReceiveMemoryWarningNotification, OnMemoryWarning);
         }
 
         event EventHandler<ActivatedEventArgs> IAvaloniaAppDelegate.Activated
@@ -132,7 +133,13 @@ namespace Avalonia.iOS
         private void OnEnteredBackground(NSNotification notification)
         {
             _onDeactivated?.Invoke(this, new ActivatedEventArgs(ActivationKind.Background));
+
+            // A suspended app is the first the system terminates for memory; glyphs rasterize
+            // again when it returns.
+            Media.FontManager.TrimGlyphCaches();
         }
+
+        private void OnMemoryWarning(NSNotification notification) => Media.FontManager.TrimGlyphCaches();
 
         private void OnLeavingBackground(NSNotification notification)
         {
