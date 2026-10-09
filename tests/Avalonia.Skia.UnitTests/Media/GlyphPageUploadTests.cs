@@ -118,7 +118,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 byte[] before;
 
                 // Both contexts place masks in one atlas, as two contexts of one process do.
-                var atlas = new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes);
+                var atlas = new GlyphMaskAtlas();
 
                 using (var lost = TransformedAtlasTests.CreateGpu(backend, false, atlas))
                 {

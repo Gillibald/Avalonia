@@ -111,15 +111,14 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// and the blend reads the destination, which one draw call reads once for all its sprites.
     /// </para>
     /// <para>
-    /// A page whose entries are all released is dropped at once. Beyond that, the budget is
-    /// enforced a page at a time: when a new shelf would take the atlas over its budget, the
-    /// page used longest ago is dropped whole, and its entries report themselves evicted, so
-    /// their runs compose them again. A page used by a frame still being drawn (see
-    /// <see cref="GlyphCacheBudget.PinFloor"/>) is never dropped; if every page is in use the
-    /// atlas grows past its budget instead.
+    /// A page whose entries are all released is dropped at once. Beyond that, the pages are
+    /// charged to a <see cref="GlyphCacheBudget"/>, which evicts a page at a time, the page used
+    /// longest ago first; its entries report themselves evicted, so their runs compose them
+    /// again. A page used by a frame still being drawn (see
+    /// <see cref="GlyphCacheBudget.PinFloor"/>) is never dropped.
     /// </para>
     /// </remarks>
-    internal sealed class LcdRunAtlas
+    internal sealed class LcdRunAtlas : IGlyphCachePool
     {
         /// <summary>Page width in pixels: the OpenGL ES 3.0 guaranteed texture dimension.</summary>
         public const int PageWidth = 2048;
@@ -131,39 +130,30 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private readonly object _lock = new();
         private readonly List<LcdAtlasPage> _pages = new();
-        private readonly long _budget;
         private readonly int _maxPageHeight;
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
         private long _evictions;
 
-        /// <param name="budget">The budget the atlas charges its pages to.</param>
-        public LcdRunAtlas(GlyphCacheBudget budget)
-            : this(32L * 1024 * 1024, MaxPageHeight, budget)
-        {
-        }
-
-        /// <param name="budgetBytes">The byte budget of all pages together, at least one page of 64 rows.</param>
-        /// <param name="maxPageHeight">The row limit of a page, at most <see cref="MaxPageHeight"/>.</param>
         /// <param name="budget">
         /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
         /// </param>
-        public LcdRunAtlas(long budgetBytes, int maxPageHeight = MaxPageHeight, GlyphCacheBudget? budget = null)
+        /// <param name="maxPageHeight">The row limit of a page, at most <see cref="MaxPageHeight"/>.</param>
+        public LcdRunAtlas(GlyphCacheBudget? budget = null, int maxPageHeight = MaxPageHeight)
         {
-            _budget = Math.Max(budgetBytes, (long)PageWidth * 4 * RowQuantum);
             _maxPageHeight = Math.Clamp(maxPageHeight, RowQuantum, MaxPageHeight);
             _clock = budget ?? GlyphCacheBudget.Shared;
             _handle = _clock.Register(GlyphCachePoolKind.LcdAtlas, this);
         }
 
         /// <summary>The atlas every hardware GPU context places its subpixel run masks in.</summary>
-        public static LcdRunAtlas Shared { get; } = new(32L * 1024 * 1024);
+        public static LcdRunAtlas Shared { get; } = new();
 
         /// <summary>Bytes of all page arrays.</summary>
         public long AllocatedBytes => Interlocked.Read(ref _allocated);
 
-        /// <summary>Pages dropped to stay within the budget since construction.</summary>
+        /// <summary>Pages the glyph cache budget evicted since construction.</summary>
         public long Evictions => Interlocked.Read(ref _evictions);
 
         /// <summary>A snapshot of the live pages; for diagnostics and tests.</summary>
@@ -266,9 +256,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var rows = RoundUp(height);
 
-            MakeRoom((long)PageWidth * 4 * rows);
-
-            var fresh = new LcdAtlasPage(rows);
+            // Stamped before it is charged, so a placement past the limit does not evict it.
+            var fresh = new LcdAtlasPage(rows) { LastUse = tick };
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.Pixels.Length);
@@ -288,9 +277,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (y + height > page.Height)
             {
                 var rows = Math.Min(_maxPageHeight, RoundUp(y + height));
-
-                MakeRoom((long)PageWidth * 4 * (rows - page.Height));
-
                 var before = page.Pixels.Length;
 
                 page.Grow(rows);
@@ -306,31 +292,48 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static int RoundUp(int rows) => (rows + RowQuantum - 1) / RowQuantum * RowQuantum;
 
-        /// <summary>Drops the least recently used pages until <paramref name="bytes"/> more fit the budget.</summary>
-        private void MakeRoom(long bytes)
+        long IGlyphCachePool.OldestUse
         {
-            var pinFloor = _clock.PinFloor;
-
-            while (_allocated + bytes > _budget)
+            get
             {
-                LcdAtlasPage? victim = null;
-
-                foreach (var page in _pages)
+                lock (_lock)
                 {
-                    if (page.LastUse < pinFloor && (victim is null || page.LastUse < victim.LastUse))
-                    {
-                        victim = page;
-                    }
+                    return LeastRecentlyUsed(long.MaxValue)?.LastUse ?? long.MaxValue;
                 }
-
-                if (victim is null)
-                {
-                    return;
-                }
-
-                Evict(victim);
-                Interlocked.Increment(ref _evictions);
             }
+        }
+
+        long IGlyphCachePool.EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_lock)
+            {
+                while (freed < bytes && LeastRecentlyUsed(usedBefore) is { } victim)
+                {
+                    freed += victim.Pixels.Length;
+                    Evict(victim);
+                    Interlocked.Increment(ref _evictions);
+                }
+            }
+
+            return freed;
+        }
+
+        /// <summary>The page used longest ago among those last used before <paramref name="frame"/>.</summary>
+        private LcdAtlasPage? LeastRecentlyUsed(long frame)
+        {
+            LcdAtlasPage? victim = null;
+
+            foreach (var page in _pages)
+            {
+                if (page.LastUse < frame && (victim is null || page.LastUse < victim.LastUse))
+                {
+                    victim = page;
+                }
+            }
+
+            return victim;
         }
 
         private void Evict(LcdAtlasPage page)

@@ -24,10 +24,17 @@ namespace Avalonia.Media.Fonts
         void OnRemoved(GlyphCacheEntry entry);
 
         /// <summary>
-        /// Returns the next entry to evict — one with <see cref="GlyphCacheEntry.PinCount"/> zero — or
-        /// <c>null</c> if every entry is currently pinned and nothing can be freed.
+        /// Returns the next entry to evict (one with <see cref="GlyphCacheEntry.PinCount"/> zero,
+        /// last used before the glyph cache budget frame <paramref name="usedBefore"/>), or
+        /// <c>null</c> if no entry qualifies and nothing can be freed.
         /// </summary>
-        GlyphCacheEntry? SelectVictim();
+        GlyphCacheEntry? SelectVictim(long usedBefore);
+
+        /// <summary>
+        /// The glyph cache budget frame of the least recently used entry that could be evicted,
+        /// or <see cref="long.MaxValue"/> when there is none.
+        /// </summary>
+        long OldestUse();
     }
 
     /// <summary>
@@ -90,7 +97,7 @@ namespace Avalonia.Media.Fonts
             _count--;
         }
 
-        public GlyphCacheEntry? SelectVictim()
+        public GlyphCacheEntry? SelectVictim(long usedBefore)
         {
             if (_hand is null)
             {
@@ -98,7 +105,7 @@ namespace Avalonia.Media.Fonts
             }
 
             // Two trips around the ring clear every referenced bit once, so a victim is found unless
-            // every entry is pinned.
+            // every entry is pinned or used too recently.
             var limit = _count * 2;
             var hand = _hand;
 
@@ -110,7 +117,7 @@ namespace Avalonia.Media.Fonts
                 {
                     Volatile.Write(ref hand.Referenced, 0); // second chance
                 }
-                else if (hand.PinCount == 0)
+                else if (hand.PinCount == 0 && hand.LastUse < usedBefore)
                 {
                     _hand = next;
                     return hand;
@@ -121,6 +128,22 @@ namespace Avalonia.Media.Fonts
 
             _hand = hand;
             return null; // everything pinned
+        }
+
+        public long OldestUse()
+        {
+            var oldest = long.MaxValue;
+            var hand = _hand;
+
+            for (var i = 0; i < _count && hand is not null; i++, hand = hand.Next)
+            {
+                if (hand.PinCount == 0 && hand.LastUse < oldest)
+                {
+                    oldest = hand.LastUse;
+                }
+            }
+
+            return oldest;
         }
     }
 }

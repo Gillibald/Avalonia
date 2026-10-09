@@ -2567,7 +2567,8 @@ namespace Avalonia.Media
             // Retention must include the variable-glyf case, not just CFF / CFF2: a non-default
             // instance's ink box comes from interpreting the gvar-deformed outline, which is exactly
             // the expensive-to-recompute box the retention flag exists to keep.
-            var created = new GlyphCache(retainOutlineBounds: RetainsGlyphBounds, budget: CacheBudget);
+            var created = new GlyphCache(retainOutlineBounds: RetainsGlyphBounds, budgetBytes: int.MaxValue,
+                budget: CacheBudget);
 
             // First publisher wins; later racers reuse it.
             return Interlocked.CompareExchange(ref _glyphCache, created, null) ?? created;
@@ -2818,7 +2819,7 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphMaskAtlas GetOrCreateGlyphMaskAtlas()
         {
-            var created = new Fonts.Rasterization.GlyphMaskAtlas(MaskCache.BudgetBytes, CacheBudget);
+            var created = new Fonts.Rasterization.GlyphMaskAtlas(CacheBudget, perTypeface: true);
 
             return Interlocked.CompareExchange(ref _glyphMaskAtlas, created, null) ?? created;
         }

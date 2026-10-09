@@ -171,21 +171,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// colours can draw in one batched call.
     /// </para>
     /// <para>
-    /// Entries cannot be freed one by one, so the budget is enforced a page at a time: when a
-    /// new shelf would take the atlas over its budget, the page used longest ago is dropped
-    /// whole. Pages record the <see cref="GlyphCacheBudget.Frame"/> of their last use. A page
-    /// used by a frame still being drawn is never dropped, so building one run cannot evict the
-    /// entries it placed a moment ago; if every page is in use the atlas grows past its budget
-    /// instead.
-    /// </para>
-    /// <para>
-    /// Pages drawn by the previous frame of a window (<see cref="GlyphCacheBudget.SoftFloor"/>)
-    /// are kept as well, up to twice the budget: a typeface streaming new glyphs then drops pages
-    /// nobody drew lately, never the pages of the text drawn around it every frame. Past twice
-    /// the budget only the pages of frames still being drawn are kept.
+    /// The pages are charged to a <see cref="GlyphCacheBudget"/>, which bounds them together with
+    /// every other glyph cache. Entries cannot be freed one by one, so the budget evicts a page at
+    /// a time, the page used longest ago first. Pages record the
+    /// <see cref="GlyphCacheBudget.Frame"/> of their last use; a page used by a frame still being
+    /// drawn is never dropped, so building one run cannot evict the entries it placed a moment
+    /// ago. Eviction happens where a frame begins or while the frame that places entries draws,
+    /// on the thread that draws with the pages.
     /// </para>
     /// </remarks>
-    internal sealed class GlyphMaskAtlas : IGlyphCacheFrameListener
+    internal sealed class GlyphMaskAtlas : IGlyphCacheFrameListener, IGlyphCachePool
     {
         /// <summary>Page width in pixels.</summary>
         public const int PageWidth = 1024;
@@ -199,9 +194,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The bucket of entries holding coverage as rasterized, without correction.</summary>
         public const int Uncorrected = -1;
 
-        /// <summary>The byte budget of <see cref="Shared"/>: 16 pages of the largest size.</summary>
-        public const int SharedBudgetBytes = 32 * 1024 * 1024;
-
         private const int RowQuantum = 64;
 
         // The empty column left of every shelf and the empty row above a page's first shelf.
@@ -211,7 +203,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly Dictionary<GlyphAtlasEntryKey, GlyphAtlasSlot> _slots = new();
         private readonly List<GlyphAtlasPage> _pages = new();
         private readonly List<GlyphAtlasPage> _emptied = new();
-        private readonly int _budget;
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
@@ -220,30 +211,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="budget">
         /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
         /// </param>
-        public GlyphMaskAtlas(GlyphCacheBudget? budget = null)
-            : this(SharedBudgetBytes, budget)
+        /// <param name="perTypeface">Whether the atlas holds the masks of one typeface.</param>
+        public GlyphMaskAtlas(GlyphCacheBudget? budget = null, bool perTypeface = false)
         {
-        }
-
-        /// <param name="budgetBytes">The byte budget of all pages together.</param>
-        /// <param name="budget">
-        /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
-        /// </param>
-        public GlyphMaskAtlas(int budgetBytes, GlyphCacheBudget? budget = null)
-        {
-            _budget = Math.Max(budgetBytes, PageWidth * RowQuantum);
             _clock = budget ?? GlyphCacheBudget.Shared;
-            _handle = _clock.Register(GlyphCachePoolKind.Atlas, this);
+            _handle = _clock.Register(GlyphCachePoolKind.Atlas, this, perTypeface);
         }
 
         /// <summary>
         /// The atlas of every typeface drawn on contexts that update part of a page in place,
         /// entries told apart by <see cref="GlyphAtlasEntryKey.Owner"/>.
         /// </summary>
-        public static GlyphMaskAtlas Shared { get; } = new(SharedBudgetBytes);
-
-        /// <summary>The byte budget of all pages together.</summary>
-        public int BudgetBytes => _budget;
+        public static GlyphMaskAtlas Shared { get; } = new();
 
         /// <summary>Number of entries, including memoised no-ink glyphs.</summary>
         public int Count
@@ -485,9 +464,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var rows = RoundUp(LeadingGutter + height);
 
-            MakeRoom((long)PageWidth * rows);
-
-            var fresh = new GlyphAtlasPage(rows) { UsedHeight = LeadingGutter };
+            // Stamped before it is charged, so a build past the limit does not evict it.
+            var fresh = new GlyphAtlasPage(rows) { UsedHeight = LeadingGutter, LastUse = tick };
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.Pixels.Length);
@@ -507,10 +485,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (y + height > page.Height)
             {
                 var rows = Math.Min(MaxPageHeight, RoundUp(y + height));
-                var growth = (long)PageWidth * (rows - page.Height);
-
-                MakeRoom(growth);
-
                 var before = page.Pixels.Length;
 
                 page.Grow(rows);
@@ -526,34 +500,31 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static int RoundUp(int rows) => (rows + RowQuantum - 1) / RowQuantum * RowQuantum;
 
-        /// <summary>
-        /// Drops the least recently used pages until <paramref name="bytes"/> more fit the budget,
-        /// sparing the pages drawn since each window's previous frame while the atlas stays within
-        /// twice its budget, and the pages of frames still being drawn always.
-        /// </summary>
-        private void MakeRoom(long bytes)
+        long IGlyphCachePool.OldestUse
         {
-            while (_allocated + bytes > _budget)
+            get
             {
-                var victim = LeastRecentlyUsed(_clock.SoftFloor);
-
-                if (victim is null)
+                lock (_lock)
                 {
-                    if (_allocated + bytes <= 2L * _budget)
-                    {
-                        return;
-                    }
-
-                    victim = LeastRecentlyUsed(_clock.PinFloor);
-
-                    if (victim is null)
-                    {
-                        return;
-                    }
+                    return LeastRecentlyUsed(long.MaxValue)?.LastUse ?? long.MaxValue;
                 }
-
-                Evict(victim);
             }
+        }
+
+        long IGlyphCachePool.EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_lock)
+            {
+                while (freed < bytes && LeastRecentlyUsed(usedBefore) is { } victim)
+                {
+                    freed += victim.Pixels.Length;
+                    Evict(victim);
+                }
+            }
+
+            return freed;
         }
 
         /// <summary>The page used longest ago among those last used before <paramref name="frame"/>.</summary>

@@ -49,7 +49,7 @@ namespace Avalonia.Media.Fonts
     /// cached here.
     /// </para>
     /// </remarks>
-    internal sealed class GlyphCache
+    internal sealed class GlyphCache : Rasterization.IGlyphCachePool
     {
         /// <summary>Default per-typeface geometry budget. Calibrated against the churn benchmark.</summary>
         public const int DefaultBudgetBytes = 4 * 1024 * 1024;
@@ -75,7 +75,9 @@ namespace Avalonia.Media.Fonts
         /// per-typeface constant: <c>true</c> for CFF / CFF2 (whose bounds are expensive to
         /// recompute), <c>false</c> for glyf (whose bounds are a cheap header read).
         /// </param>
-        /// <param name="budgetBytes">The geometry byte budget eviction keeps the cache under.</param>
+        /// <param name="budgetBytes">
+        /// The geometry byte budget eviction keeps the cache under, besides the glyph cache budget.
+        /// </param>
         /// <param name="policy">The eviction policy; CLOCK when omitted.</param>
         /// <param name="budget">
         /// The budget the cache charges its geometry to; <see cref="Rasterization.GlyphCacheBudget.Shared"/>
@@ -88,7 +90,7 @@ namespace Avalonia.Media.Fonts
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
             _policy = policy ?? new ClockEvictionPolicy();
             _clock = budget ?? Rasterization.GlyphCacheBudget.Shared;
-            _handle = _clock.Register(Rasterization.GlyphCachePoolKind.Outlines, this);
+            _handle = _clock.Register(Rasterization.GlyphCachePoolKind.Outlines, this, perTypeface: true);
         }
 
         /// <summary>Number of cached entries (outline and colour-drawing, with or without built geometry).</summary>
@@ -311,36 +313,68 @@ namespace Avalonia.Media.Fonts
         // self-contained and rely on recency.
         private static bool IsReferencing(GlyphPayloadKind kind) => kind == GlyphPayloadKind.ColorDrawing;
 
+        long Rasterization.IGlyphCachePool.OldestUse
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _policy.OldestUse();
+                }
+            }
+        }
+
+        long Rasterization.IGlyphCachePool.EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_lock)
+            {
+                while (freed < bytes && _policy.SelectVictim(usedBefore) is { } victim)
+                {
+                    freed += victim.Cost;
+                    Evict(victim);
+                }
+            }
+
+            return freed;
+        }
+
         private void EvictToBudget()
         {
             while (_totalCost > _budget)
             {
-                var victim = _policy.SelectVictim();
+                var victim = _policy.SelectVictim(long.MaxValue);
 
                 if (victim is null)
                 {
                     break;   // everything pinned — stay over budget until a dependent frees
                 }
 
-                _totalCost -= victim.Cost;
-                _handle.Credit(victim.Cost);
-                _policy.OnRemoved(victim);
-                UnpinDependencies(victim);
-                victim.ClearGeometry();
-
-                // Keep the entry alive for its retained bounds (CFF / CFF2); otherwise drop it whole,
-                // by the identity it was inserted under (colour drawings never retain bounds, so they
-                // are always dropped whole).
-                if (!victim.RetainBounds)
-                {
-                    _entries.TryRemove(victim.Key, out _);
-                }
-
-                // Deliberately no Dispose here: the payload may still be referenced by anyone the
-                // lock-free hit path handed it to (or by retained compositor render data), so
-                // deterministic teardown would be a use-after-dispose. Unlink only; the GC reclaims
-                // the payload once the last outside reference drops.
+                Evict(victim);
             }
+        }
+
+        private void Evict(GlyphCacheEntry victim)
+        {
+            _totalCost -= victim.Cost;
+            _handle.Credit(victim.Cost);
+            _policy.OnRemoved(victim);
+            UnpinDependencies(victim);
+            victim.ClearGeometry();
+
+            // Keep the entry alive for its retained bounds (CFF / CFF2); otherwise drop it whole,
+            // by the identity it was inserted under (colour drawings never retain bounds, so they
+            // are always dropped whole).
+            if (!victim.RetainBounds)
+            {
+                _entries.TryRemove(victim.Key, out _);
+            }
+
+            // Deliberately no Dispose here: the payload may still be referenced by anyone the
+            // lock-free hit path handed it to (or by retained compositor render data), so
+            // deterministic teardown would be a use-after-dispose. Unlink only; the GC reclaims
+            // the payload once the last outside reference drops.
         }
     }
 }

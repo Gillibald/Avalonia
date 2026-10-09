@@ -382,11 +382,24 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// for other transforms or phases, the same shape as <see cref="RunMaskCache"/>. Owned and
     /// disposed by the run.
     /// </summary>
+    /// <remarks>
+    /// The sets are charged to the glyph cache budget. The secondary sets record the frame of
+    /// their last use, and the budget may evict those of earlier frames
+    /// (<see cref="SpriteSetPool"/>) on the thread that draws the run; the primary slot and the
+    /// settled set stay until the run is disposed.
+    /// </remarks>
     internal sealed class TransformedRunState : IDisposable
     {
         private const int SecondarySize = 3;
 
         private readonly GlyphCacheBudget _budget;
+        private long _charged;
+        private TransformedGlyphSprites? _primary;
+        private TransformedGlyphSprites?[]? _secondary;
+        private long[]? _secondaryUse;
+        private int _nextEvict;
+        private int _ownerThread;
+        private bool _disposed;
 
         /// <param name="budget">
         /// The budget the sprite sets are charged to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
@@ -395,12 +408,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             _budget = budget ?? GlyphCacheBudget.Shared;
         }
-
-        private long _charged;
-
-        private TransformedGlyphSprites? _primary;
-        private TransformedGlyphSprites?[]? _secondary;
-        private int _nextEvict;
 
         /// <summary>The number of cached sprite sets; for diagnostics and tests.</summary>
         public int Count
@@ -468,8 +475,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Changes whenever a sprite set enters the state or the state is disposed, so a set
-        /// taken from it at one version is still held, and not disposed, while the version stays.
+        /// Changes whenever a sprite set enters or leaves the state or the state is disposed, so a
+        /// set taken from it at one version is still held, and not disposed, while the version
+        /// stays.
         /// </summary>
         public int Version { get; private set; }
 
@@ -483,10 +491,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (_secondary is { } secondary)
             {
-                foreach (var entry in secondary)
+                for (var i = 0; i < secondary.Length; i++)
                 {
-                    if (entry is not null && entry.Key == key)
+                    if (secondary[i] is { } entry && entry.Key == key)
                     {
+                        _secondaryUse![i] = _budget.Frame;
                         sprites = entry;
                         return true;
                     }
@@ -501,6 +510,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             Version++;
             sprites.Owner = this;
+            _ownerThread = Environment.CurrentManagedThreadId;
 
             if (_primary is null)
             {
@@ -509,11 +519,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            _secondary ??= new TransformedGlyphSprites?[SecondarySize];
+            if (_secondary is null)
+            {
+                _secondary = new TransformedGlyphSprites?[SecondarySize];
+                _secondaryUse = new long[SecondarySize];
+                _budget.SpriteSets.Track(this);
+            }
 
             ref var slot = ref _secondary[_nextEvict];
             slot?.Dispose();
             slot = sprites;
+            _secondaryUse![_nextEvict] = _budget.Frame;
             _nextEvict = (_nextEvict + 1) % SecondarySize;
             Recharge();
         }
@@ -521,6 +537,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Charges the change in the bytes the cached sets hold since the last charge.</summary>
         internal void Recharge()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             var bytes = ChargedBytes(_primary);
 
             if (_secondary is { } secondary)
@@ -531,15 +552,60 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            _budget.SpriteSets.Charge(bytes - _charged);
+            _budget.SpriteSets.Handle.Charge(bytes - _charged);
             _charged = bytes;
         }
 
         private static long ChargedBytes(TransformedGlyphSprites? sprites)
             => sprites is null ? 0 : sprites.ByteCost + sprites.FallbackImageBytes;
 
+        /// <summary>Whether the run is drawn on the current thread, so its sets may be evicted here.</summary>
+        internal bool IsOwnedByCurrentThread => _ownerThread == Environment.CurrentManagedThreadId;
+
+        internal int SecondaryCount => _secondary?.Length ?? 0;
+
+        /// <summary>
+        /// The frame secondary slot <paramref name="index"/> was last used in;
+        /// <see cref="long.MaxValue"/> when it is empty or holds the settled set.
+        /// </summary>
+        internal long SecondaryLastUse(int index)
+            => _secondary![index] is { } sprites && !ReferenceEquals(sprites, Settled)
+                ? _secondaryUse![index]
+                : long.MaxValue;
+
+        /// <summary>Evicts secondary slot <paramref name="index"/>; returns the bytes freed.</summary>
+        internal long EvictSecondary(int index)
+        {
+            if (_secondary![index] is not { } sprites || ReferenceEquals(sprites, Settled))
+            {
+                return 0;
+            }
+
+            var before = _charged;
+
+            Version++;
+            _secondary[index] = null;
+            sprites.Dispose();
+            Recharge();
+
+            return before - _charged;
+        }
+
         public void Dispose()
         {
+            if (_disposed)
+            {
+                Version++;
+                return;
+            }
+
+            // Leaves the pool first, so no trim evicts a set this disposes.
+            if (_secondary is not null)
+            {
+                _budget.SpriteSets.Untrack(this);
+            }
+
+            _disposed = true;
             Version++;
             Settled = null;
             _primary?.Dispose();
@@ -554,8 +620,113 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            _budget.SpriteSets.Credit(_charged);
+            _budget.SpriteSets.Handle.Credit(_charged);
             _charged = 0;
+        }
+    }
+
+    /// <summary>
+    /// The sprite sets of every run, as one pool of a <see cref="GlyphCacheBudget"/>: the
+    /// secondary sets of the runs that have them may be evicted, oldest first. A run's sets are
+    /// only touched on the thread that draws the run, between its frames, since the pending draws
+    /// of a frame may still hold them.
+    /// </summary>
+    internal sealed class SpriteSetPool : IGlyphCachePool
+    {
+        private readonly object _lock = new();
+        private readonly HashSet<TransformedRunState> _states = new();
+        private readonly List<(TransformedRunState State, int Slot, long LastUse)> _candidates = new();
+
+        internal SpriteSetPool(GlyphCacheBudget budget)
+        {
+            Handle = budget.Register(GlyphCachePoolKind.SpriteSets, this);
+        }
+
+        /// <summary>The registration every run state charges through.</summary>
+        public GlyphCachePoolHandle Handle { get; }
+
+        internal void Track(TransformedRunState state)
+        {
+            lock (_lock)
+            {
+                _states.Add(state);
+            }
+        }
+
+        internal void Untrack(TransformedRunState state)
+        {
+            lock (_lock)
+            {
+                _states.Remove(state);
+            }
+        }
+
+        public long OldestUse
+        {
+            get
+            {
+                var oldest = long.MaxValue;
+
+                lock (_lock)
+                {
+                    foreach (var state in _states)
+                    {
+                        if (!state.IsOwnedByCurrentThread)
+                        {
+                            continue;
+                        }
+
+                        for (var i = 0; i < state.SecondaryCount; i++)
+                        {
+                            oldest = Math.Min(oldest, state.SecondaryLastUse(i));
+                        }
+                    }
+                }
+
+                return oldest;
+            }
+        }
+
+        public long EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_lock)
+            {
+                foreach (var state in _states)
+                {
+                    if (!state.IsOwnedByCurrentThread)
+                    {
+                        continue;
+                    }
+
+                    for (var i = 0; i < state.SecondaryCount; i++)
+                    {
+                        var lastUse = state.SecondaryLastUse(i);
+
+                        if (lastUse < usedBefore)
+                        {
+                            _candidates.Add((state, i, lastUse));
+                        }
+                    }
+                }
+
+                _candidates.Sort(static (a, b) => a.LastUse.CompareTo(b.LastUse));
+
+                foreach (var candidate in _candidates)
+                {
+                    if (freed >= bytes)
+                    {
+                        break;
+                    }
+
+                    freed += candidate.State.EvictSecondary(candidate.Slot);
+                }
+
+                _candidates.Clear();
+            }
+
+            return freed;
         }
     }
 }

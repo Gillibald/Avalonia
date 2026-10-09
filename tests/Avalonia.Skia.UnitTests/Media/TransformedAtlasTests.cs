@@ -355,12 +355,12 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext,
                     GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getProcAddress, gpu.GlMajorVersion),
-                    maskAtlas ?? new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes));
+                    maskAtlas ?? new GlyphMaskAtlas());
             }
             else if (gpu.UpdatableTextures is { } textures)
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext, textures,
-                    maskAtlas ?? new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes));
+                    maskAtlas ?? new GlyphMaskAtlas());
             }
 
             return gpu;

@@ -27,8 +27,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void Concurrent_Builds_Keep_The_Charged_Bytes_Exact()
         {
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var cache = new GlyphMaskCache(budget, budgetBytes: 256 * 1024);
+            var budget = new GlyphCacheBudget(256 * 1024);
+            var cache = new GlyphMaskCache(budget);
             const int threads = 8;
             using var start = new Barrier(threads);
 
@@ -85,7 +85,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void Atlas_Pages_Are_Charged_As_They_Are_Allocated()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024, budget);
+            var atlas = new GlyphMaskAtlas(budget);
             var tick = atlas.Tick();
 
             for (ushort glyph = 1; glyph < 200; glyph++)
@@ -102,7 +102,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void Lcd_Atlas_Pages_Are_Charged_Until_Their_Entries_Are_Released()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new LcdRunAtlas(32L * 1024 * 1024, budget: budget);
+            var atlas = new LcdRunAtlas(budget);
             var entry = atlas.TryAdd(new byte[30 * 10 * 4], 30, 10);
 
             Assert.NotNull(entry);

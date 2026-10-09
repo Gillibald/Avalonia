@@ -5,24 +5,29 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
     /// <summary>
     /// The bytecode hinters of one typeface, one per (quantized size, mask mode): the render
     /// class feeds GETINFO, which prep may branch on, so the size state is per mode. Entries
-    /// memoise failures as <c>null</c>, so a broken prep costs one attempt. Each kept hinter is
-    /// charged to the glyph cache budget.
+    /// memoise failures as <c>null</c>, so a broken prep costs one attempt.
     /// </summary>
-    internal sealed class TrueTypeHinterCache
+    /// <remarks>
+    /// Each kept hinter is charged to the glyph cache budget and records the frame of its last
+    /// use, so a zoom whose glyph masks fit the budget keeps its size states too, and the budget
+    /// evicts the sizes drawn longest ago. A thread that still holds an evicted hinter keeps
+    /// using it; the next request for its size creates another.
+    /// </remarks>
+    internal sealed class TrueTypeHinterCache : IGlyphCachePool
     {
-        private const int MaxHinters = 16;
-
-        // Most recently used first.
-        private readonly List<(ushort ScaleQ, GlyphMaskMode Mode, TrueTypeGlyphHinter? Hinter)> _hinters = new();
+        private readonly Dictionary<(ushort ScaleQ, GlyphMaskMode Mode), Entry> _hinters = new();
+        private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private readonly long _hinterBytes;
+        private readonly List<(ushort, GlyphMaskMode)> _stale = new();
 
         /// <param name="budget">The budget the hinters are charged to.</param>
         /// <param name="hinterBytes">The memory one hinter holds.</param>
         public TrueTypeHinterCache(GlyphCacheBudget budget, long hinterBytes)
         {
             _hinterBytes = hinterBytes;
-            _handle = budget.Register(GlyphCachePoolKind.Hinters, this);
+            _clock = budget;
+            _handle = budget.Register(GlyphCachePoolKind.Hinters, this, perTypeface: true);
         }
 
         /// <summary>The number of hinters kept, including memoised failures.</summary>
@@ -43,34 +48,17 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         /// </summary>
         public TrueTypeGlyphHinter? Get(ushort scaleQ, GlyphMaskMode mode, GlyphTypeface typeface)
         {
-            // A zoom animation asks for a new size nearly every frame, so only the last
-            // MaxHinters sizes keep their hinter; text at rest keeps its sizes at the front.
             lock (_hinters)
             {
-                for (var i = 0; i < _hinters.Count; i++)
+                if (_hinters.TryGetValue((scaleQ, mode), out var entry))
                 {
-                    var entry = _hinters[i];
-
-                    if (entry.ScaleQ == scaleQ && entry.Mode == mode)
-                    {
-                        if (i > 0)
-                        {
-                            _hinters.RemoveAt(i);
-                            _hinters.Insert(0, entry);
-                        }
-
-                        return entry.Hinter;
-                    }
+                    entry.LastUse = _clock.Frame;
+                    return entry.Hinter;
                 }
 
                 var hinter = typeface.CreateTrueTypeHinter(scaleQ, mode);
 
-                if (_hinters.Count == MaxHinters)
-                {
-                    Drop(_hinters.Count - 1);
-                }
-
-                _hinters.Insert(0, (scaleQ, mode, hinter));
+                _hinters.Add((scaleQ, mode), new Entry(hinter) { LastUse = _clock.Frame });
 
                 if (hinter is not null)
                 {
@@ -81,14 +69,87 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             }
         }
 
-        private void Drop(int index)
+        long IGlyphCachePool.OldestUse
         {
-            if (_hinters[index].Hinter is not null)
+            get
             {
-                _handle.Credit(_hinterBytes);
+                var oldest = long.MaxValue;
+
+                lock (_hinters)
+                {
+                    foreach (var entry in _hinters.Values)
+                    {
+                        if (entry.Hinter is not null && entry.LastUse < oldest)
+                        {
+                            oldest = entry.LastUse;
+                        }
+                    }
+                }
+
+                return oldest;
+            }
+        }
+
+        long IGlyphCachePool.EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_hinters)
+            {
+                while (freed < bytes)
+                {
+                    (ushort, GlyphMaskMode) victim = default;
+                    var victimUse = long.MaxValue;
+
+                    foreach (var pair in _hinters)
+                    {
+                        if (pair.Value.Hinter is not null && pair.Value.LastUse < usedBefore &&
+                            pair.Value.LastUse < victimUse)
+                        {
+                            victim = pair.Key;
+                            victimUse = pair.Value.LastUse;
+                        }
+                    }
+
+                    if (victimUse == long.MaxValue)
+                    {
+                        break;
+                    }
+
+                    _hinters.Remove(victim);
+                    _handle.Credit(_hinterBytes);
+                    freed += _hinterBytes;
+                }
+
+                // Memoised failures hold no memory but would make the lookup grow with every size
+                // a zoom passes; they go with the hinters of their age.
+                foreach (var pair in _hinters)
+                {
+                    if (pair.Value.Hinter is null && pair.Value.LastUse < usedBefore)
+                    {
+                        _stale.Add(pair.Key);
+                    }
+                }
+
+                foreach (var key in _stale)
+                {
+                    _hinters.Remove(key);
+                }
+
+                _stale.Clear();
             }
 
-            _hinters.RemoveAt(index);
+            return freed;
+        }
+
+        private sealed class Entry
+        {
+            public Entry(TrueTypeGlyphHinter? hinter) => Hinter = hinter;
+
+            public TrueTypeGlyphHinter? Hinter { get; }
+
+            /// <summary>The frame of the hinter's last use.</summary>
+            public long LastUse;
         }
     }
 }

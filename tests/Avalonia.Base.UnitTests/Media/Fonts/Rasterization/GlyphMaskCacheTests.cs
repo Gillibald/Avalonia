@@ -130,8 +130,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void Eviction_Keeps_Total_Cost_Under_The_Budget()
         {
             var cost = MakeMask().ByteCost;
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var cache = new GlyphMaskCache(budget, budgetBytes: cost * 3);
+            var budget = new GlyphCacheBudget(cost * 3);
+            var cache = new GlyphMaskCache(budget);
 
             for (ushort glyph = 1; glyph <= 6; glyph++)
             {
@@ -139,6 +139,11 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 {
                     cache.GetOrBuild(Key(glyph), _ => MakeMask());
                 }
+            }
+
+            // The next frame trims to the limit.
+            using (budget.BeginFrame())
+            {
             }
 
             Assert.True(cache.TotalCost <= cost * 3, $"TotalCost {cache.TotalCost} exceeds budget {cost * 3}");
@@ -149,8 +154,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void A_Touched_Entry_Survives_Eviction_Pressure()
         {
             var cost = MakeMask().ByteCost;
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var cache = new GlyphMaskCache(budget, budgetBytes: cost * 3);
+            var budget = new GlyphCacheBudget(cost * 3);
+            var cache = new GlyphMaskCache(budget);
 
             using (budget.BeginFrame())
             {
@@ -160,23 +165,28 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 }
             }
 
-            // Over budget: 1 to 3 were last used in the same frame, so the first queued goes.
             using (budget.BeginFrame())
             {
                 cache.GetOrBuild(Key(4), _ => MakeMask());
             }
 
-            Assert.False(cache.TryGet(Key(1), out _));
-
+            // Over the limit: 1 to 3 were last used in the same frame, so the first queued goes
+            // when the next frame begins; that frame touches 2.
             using (budget.BeginFrame())
             {
+                Assert.False(cache.TryGet(Key(1), out _));
+
                 cache.GetOrBuild(Key(2), _ => throw new InvalidOperationException("must be a hit"));
             }
 
-            // The next eviction passes the touched 2 and reclaims 3, used longest ago.
+            // The next trim passes the touched 2 and reclaims 3, used longest ago.
             using (budget.BeginFrame())
             {
                 cache.GetOrBuild(Key(5), _ => MakeMask());
+            }
+
+            using (budget.BeginFrame())
+            {
             }
 
             Assert.True(cache.TryGet(Key(2), out _), "the touched entry was evicted");
@@ -212,8 +222,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 
             // A cache sized to exactly one mask: inserting a second in a later frame evicts the
             // first.
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var cache = new GlyphMaskCache(budget, budgetBytes: mask.ByteCost);
+            var budget = new GlyphCacheBudget(mask.ByteCost);
+            var cache = new GlyphMaskCache(budget);
             GlyphMask published;
 
             using (budget.BeginFrame())
@@ -234,6 +244,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             using (budget.BeginFrame())
             {
                 cache.GetOrBuild(otherKey, _ => GlyphMasks.Build(typeface, scratch, otherKey));
+            }
+
+            using (budget.BeginFrame())
+            {
             }
 
             Assert.False(cache.TryGet(key, out _));

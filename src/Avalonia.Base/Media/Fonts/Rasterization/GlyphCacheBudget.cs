@@ -29,24 +29,64 @@ namespace Avalonia.Media.Fonts.Rasterization
         Outlines,
     }
 
+    /// <summary>A glyph cache whose entries the <see cref="GlyphCacheBudget"/> it is registered with may evict.</summary>
+    /// <remarks>
+    /// Each pool keeps its own data structure and lock and records the
+    /// <see cref="GlyphCacheBudget.Frame"/> each entry was last used in; the budget only picks
+    /// which pool gives up its oldest entries next. A pool credits what it evicts through its
+    /// handle, as it does for every other drop.
+    /// </remarks>
+    internal interface IGlyphCachePool
+    {
+        /// <summary>
+        /// The frame the pool's least recently used evictable entry was last used in, or
+        /// <see cref="long.MaxValue"/> when it holds none.
+        /// </summary>
+        long OldestUse { get; }
+
+        /// <summary>
+        /// Evicts entries last used before <paramref name="usedBefore"/>, oldest first, until
+        /// <paramref name="bytes"/> are freed or no such entry is left. Returns the bytes freed.
+        /// </summary>
+        long EvictOldest(long usedBefore, long bytes);
+    }
+
     /// <summary>
     /// The accountant of every glyph cache in the process: each cache registers as a pool and
     /// charges the bytes it adds and credits the bytes it drops, so <see cref="UsedBytes"/> is the
-    /// memory all glyph caches hold together.
+    /// memory all glyph caches hold together, and one limit (<see cref="LimitBytes"/>) bounds
+    /// them all.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Pools keep their own data structures and locks; the budget only counts. A pool that the
-    /// GC collects without releasing its handle (a typeface nobody disposed) is credited by
-    /// <see cref="SweepCollectedPools"/>.
+    /// Pools keep their own data structures and locks; the budget only counts and picks victims.
+    /// A pool that the GC collects without releasing its handle (a typeface nobody disposed) is
+    /// credited by <see cref="SweepCollectedPools"/>.
     /// </para>
     /// <para>
     /// Recency is counted in frames. A drawing context that is not drawn inside another on its
     /// thread begins a frame (<see cref="BeginFrame"/>): a window's render pass, a bitmap rendered
     /// on its own. Every entry records the <see cref="Frame"/> it was last used in. What the open
     /// frames use is pinned (<see cref="PinFloor"/>), so a frame never evicts what it draws; what
-    /// each source drew in its previous frame is the next candidate to keep
-    /// (<see cref="SoftFloor"/>), since a static scene draws it again.
+    /// each source drew in its previous frame (<see cref="SoftFloor"/>) is kept while the caches
+    /// stay within a quarter over the limit, since a static scene draws it again. When a frame's
+    /// own content does not fit, the caches grow past the limit instead of evicting what the next
+    /// frame draws again, and the frame after brings them back.
+    /// </para>
+    /// <para>
+    /// Nothing is evicted while there is room. Each frame begins with a trim to the limit: among
+    /// the entries older than the floor, the pool whose oldest entry has waited longest past its
+    /// kind's minimum age gives up entries first. The minimum ages order the kinds by what an
+    /// eviction costs to rebuild (run-level state composes again from cached masks, atlas pages
+    /// upload again from cached masks, masks and hinters rasterize again, outlines parse again),
+    /// while age still outweighs kind: content a thousand frames old goes before content two
+    /// frames old whatever it is. A build that takes the caches past half over the limit evicts
+    /// from its own pool at once, without touching other pools' locks.
+    /// </para>
+    /// <para>
+    /// Atlas pages, run masks and sprite sets are frame-affine: their storage may be drawn by the
+    /// thread that draws a frame, so they are trimmed only where a frame begins, and run-level
+    /// state only on the thread that draws it.
     /// </para>
     /// </remarks>
     internal sealed class GlyphCacheBudget
@@ -68,6 +108,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private const int SweepInterval = 64;
 
+        // Frames an entry of each priority must have waited before it is weighed against older
+        // entries of costlier kinds: the cheaper a kind is to rebuild, the earlier it goes.
+        private static readonly int[] s_minimumAge = { 0, 2, 8, 30, 60 };
+
         private readonly object _poolsLock = new();
         private readonly List<GlyphCachePoolHandle> _pools = new();
         private readonly object _frameLock = new();
@@ -75,31 +119,41 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly FrameSource[] _sources = new FrameSource[MaxSources];
         private List<IGlyphCacheFrameListener> _frameListeners = new();
         private List<IGlyphCacheFrameListener> _runningListeners = new();
+        private GlyphCachePoolHandle[] _trimPools = Array.Empty<GlyphCachePoolHandle>();
         private long _used;
         private long _peak;
         private long _frame;
         private long _pinFloor;
         private long _softFloor;
+        private long _evictedBytes;
         private int _nextFrameId;
+        private int _trimming;
+        private int _trimGeneration;
 
         public GlyphCacheBudget(long limitBytes)
         {
             LimitBytes = Math.Max(1, limitBytes);
-            RunMasks = Register(GlyphCachePoolKind.RunMasks, this);
-            SpriteSets = Register(GlyphCachePoolKind.SpriteSets, this);
+            RunMasks = new RunMaskPool(this);
+            SpriteSets = new SpriteSetPool(this);
         }
 
         /// <summary>The budget of every glyph cache the process creates.</summary>
         public static GlyphCacheBudget Shared { get; } = new(DefaultLimitBytes);
 
         /// <summary>The composed run masks of every run charged to this budget.</summary>
-        public GlyphCachePoolHandle RunMasks { get; }
+        public RunMaskPool RunMasks { get; }
 
         /// <summary>The sprite sets of every run charged to this budget.</summary>
-        public GlyphCachePoolHandle SpriteSets { get; }
+        public SpriteSetPool SpriteSets { get; }
 
         /// <summary>The global maximum of all pools together.</summary>
         public long LimitBytes { get; private set; }
+
+        /// <summary>How far the previous frames of each source may keep the caches over the limit.</summary>
+        public long SoftLimitBytes => LimitBytes + LimitBytes / 4;
+
+        /// <summary>Past this, a build evicts from its own pool at once.</summary>
+        public long InlineLimitBytes => LimitBytes + LimitBytes / 2;
 
         /// <summary>Sets <see cref="LimitBytes"/>; the next frame trims to it.</summary>
         public void SetLimit(long limitBytes) => LimitBytes = Math.Max(1, limitBytes);
@@ -109,6 +163,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The highest <see cref="UsedBytes"/> since construction or <see cref="ResetPeak"/>.</summary>
         public long PeakBytes => Interlocked.Read(ref _peak);
+
+        /// <summary>Bytes evicted by trims and builds past the limit since construction; for diagnostics.</summary>
+        public long EvictedBytes => Interlocked.Read(ref _evictedBytes);
 
         /// <summary>Starts a new peak measurement at the current use; for diagnostics.</summary>
         public void ResetPeak() => Interlocked.Exchange(ref _peak, UsedBytes);
@@ -307,6 +364,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SweepCollectedPools();
             }
 
+            RunFrameListeners(frame);
+            TrimAtFrameStart();
+        }
+
+        private void RunFrameListeners(long frame)
+        {
             List<IGlyphCacheFrameListener> listeners;
 
             lock (_frameLock)
@@ -330,12 +393,157 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Trims to the limit what no source drew in its last two frames, then, past a quarter
+        /// over the limit, what no open frame draws.
+        /// </summary>
+        private void TrimAtFrameStart()
+        {
+            if (UsedBytes <= LimitBytes || Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                Trim(LimitBytes, SoftFloor);
+
+                if (UsedBytes > SoftLimitBytes)
+                {
+                    Trim(SoftLimitBytes, PinFloor);
+                }
+            }
+            finally
+            {
+                Volatile.Write(ref _trimming, 0);
+            }
+        }
+
+        /// <summary>
+        /// Evicts entries last used before <paramref name="usedBefore"/> until the caches hold at
+        /// most <paramref name="target"/> bytes or no such entry is left.
+        /// </summary>
+        private void Trim(long target, long usedBefore)
+        {
+            var count = SnapshotPools();
+            var generation = ++_trimGeneration;
+            var frame = Frame;
+
+            try
+            {
+                while (UsedBytes > target)
+                {
+                    GlyphCachePoolHandle? best = null;
+                    IGlyphCachePool? bestPool = null;
+                    var bestScore = long.MinValue;
+                    var secondScore = long.MinValue;
+                    var bestOldest = 0L;
+
+                    for (var i = 0; i < count; i++)
+                    {
+                        var handle = _trimPools[i];
+
+                        if (handle.TrimGeneration == generation || handle.Bytes <= 0 ||
+                            !handle.TryGetPool(out var pool))
+                        {
+                            continue;
+                        }
+
+                        var oldest = pool.OldestUse;
+
+                        if (oldest >= usedBefore)
+                        {
+                            continue;
+                        }
+
+                        var score = frame - oldest - s_minimumAge[handle.Priority];
+
+                        if (score > bestScore)
+                        {
+                            secondScore = bestScore;
+                            bestScore = score;
+                            best = handle;
+                            bestPool = pool;
+                            bestOldest = oldest;
+                        }
+                        else if (score > secondScore)
+                        {
+                            secondScore = score;
+                        }
+                    }
+
+                    if (best is null)
+                    {
+                        return;
+                    }
+
+                    // Evict from the chosen pool while its entries still outrank the next pool's
+                    // oldest, so ages interleave across pools.
+                    var until = usedBefore;
+
+                    if (secondScore != long.MinValue)
+                    {
+                        until = Math.Min(until, frame - s_minimumAge[best.Priority] - secondScore + 1);
+                    }
+
+                    until = Math.Max(until, bestOldest + 1);
+
+                    var freed = bestPool!.EvictOldest(until, UsedBytes - target);
+
+                    Interlocked.Add(ref _evictedBytes, freed);
+
+                    if (freed <= 0)
+                    {
+                        best.TrimGeneration = generation;
+                    }
+                }
+            }
+            finally
+            {
+                Array.Clear(_trimPools, 0, count);
+            }
+        }
+
+        /// <summary>Copies the registered pools for a trim, which calls into pools without the registry lock.</summary>
+        private int SnapshotPools()
+        {
+            lock (_poolsLock)
+            {
+                if (_trimPools.Length < _pools.Count)
+                {
+                    _trimPools = new GlyphCachePoolHandle[Math.Max(_pools.Count, _trimPools.Length * 2)];
+                }
+
+                _pools.CopyTo(_trimPools);
+
+                return _pools.Count;
+            }
+        }
+
+        /// <summary>
+        /// Evicts from the pool of <paramref name="handle"/> alone, after a build took the caches
+        /// past half over the limit: what earlier frames used, until the caches are back within it.
+        /// </summary>
+        internal void EvictInline(GlyphCachePoolHandle handle)
+        {
+            var over = UsedBytes - InlineLimitBytes;
+
+            if (over > 0 && handle.TryGetPool(out var pool))
+            {
+                Interlocked.Add(ref _evictedBytes, pool.EvictOldest(PinFloor, over));
+            }
+        }
+
+        /// <summary>
         /// Registers <paramref name="owner"/> as a pool of <paramref name="kind"/>. The budget
         /// holds the owner weakly; the owner keeps the returned handle and charges through it.
+        /// An owner that implements <see cref="IGlyphCachePool"/> can be trimmed.
         /// </summary>
-        public GlyphCachePoolHandle Register(GlyphCachePoolKind kind, object owner)
+        /// <param name="kind">The kind of cache.</param>
+        /// <param name="owner">The cache.</param>
+        /// <param name="perTypeface">Whether the cache holds the entries of one typeface.</param>
+        public GlyphCachePoolHandle Register(GlyphCachePoolKind kind, object owner, bool perTypeface = false)
         {
-            var handle = new GlyphCachePoolHandle(this, kind, owner);
+            var handle = new GlyphCachePoolHandle(this, kind, owner, perTypeface);
 
             lock (_poolsLock)
             {
@@ -399,7 +607,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        internal void Add(long bytes)
+        internal long Add(long bytes)
         {
             var used = Interlocked.Add(ref _used, bytes);
 
@@ -412,6 +620,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                 }
             }
+
+            return used;
         }
     }
 
@@ -445,12 +655,21 @@ namespace Avalonia.Media.Fonts.Rasterization
     {
         private readonly WeakReference<object> _owner;
         private long _bytes;
-        private bool _released;
+        private volatile bool _released;
 
-        internal GlyphCachePoolHandle(GlyphCacheBudget budget, GlyphCachePoolKind kind, object owner)
+        internal GlyphCachePoolHandle(GlyphCacheBudget budget, GlyphCachePoolKind kind, object owner,
+            bool perTypeface)
         {
             Budget = budget;
             Kind = kind;
+            IsPerTypeface = perTypeface;
+            Priority = kind switch
+            {
+                GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets => 1,
+                GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas => 2,
+                GlyphCachePoolKind.Masks or GlyphCachePoolKind.Hinters => 3,
+                _ => 4,
+            };
             _owner = new WeakReference<object>(owner);
         }
 
@@ -458,25 +677,67 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public GlyphCachePoolKind Kind { get; }
 
+        /// <summary>
+        /// The order in which kinds give up entries of equal age, cheapest to rebuild first: run
+        /// masks and sprite sets compose again from cached masks, atlas pages upload again from
+        /// cached masks, masks and hinters rasterize again, outlines parse and hint again.
+        /// </summary>
+        public int Priority { get; }
+
+        /// <summary>Whether the pool holds the entries of one typeface.</summary>
+        public bool IsPerTypeface { get; }
+
         /// <summary>The bytes the pool holds.</summary>
         public long Bytes => Interlocked.Read(ref _bytes);
 
+        /// <summary>The trim in which the pool last had nothing to give.</summary>
+        internal int TrimGeneration;
+
         internal bool IsOwnerAlive => _owner.TryGetTarget(out _);
 
-        /// <summary>Records that the pool now holds <paramref name="bytes"/> more.</summary>
+        internal bool TryGetPool(out IGlyphCachePool pool)
+        {
+            if (_owner.TryGetTarget(out var owner) && owner is IGlyphCachePool trimmable && !_released)
+            {
+                pool = trimmable;
+                return true;
+            }
+
+            pool = null!;
+            return false;
+        }
+
+        /// <summary>
+        /// Records that the pool now holds <paramref name="bytes"/> more. Past half over the
+        /// limit, the pool evicts what earlier frames used at once; the caller may hold the
+        /// pool's lock.
+        /// </summary>
         public void Charge(long bytes)
         {
-            if (bytes == 0)
+            if (bytes == 0 || _released)
             {
                 return;
             }
 
             Interlocked.Add(ref _bytes, bytes);
-            Budget.Add(bytes);
+
+            if (Budget.Add(bytes) > Budget.InlineLimitBytes && bytes > 0)
+            {
+                Budget.EvictInline(this);
+            }
         }
 
         /// <summary>Records that the pool dropped <paramref name="bytes"/>.</summary>
-        public void Credit(long bytes) => Charge(-bytes);
+        public void Credit(long bytes)
+        {
+            if (bytes == 0 || _released)
+            {
+                return;
+            }
+
+            Interlocked.Add(ref _bytes, -bytes);
+            Budget.Add(-bytes);
+        }
 
         /// <summary>Credits everything the pool holds and removes it from the budget.</summary>
         public void Release()

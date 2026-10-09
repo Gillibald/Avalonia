@@ -98,12 +98,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                // The smallest budget holds one page, and a page of 64 rows holds a fraction of
-                // a frame's masks. Frames alternate between two copies of the scene, so each
-                // frame drops the pages the other copy's frame placed. The atlas counts frames of
-                // a budget of its own, which only this test advances.
-                var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-                var atlas = new LcdRunAtlas(0, 64, budget);
+                // A page of 64 rows holds a fraction of a frame's masks, and the limit not even
+                // one. Frames alternate between two copies of the scene, so each frame drops the
+                // pages the other copy's frame placed. The atlas counts frames of a budget of its
+                // own, which only this test advances.
+                var budget = new GlyphCacheBudget(1);
+                var atlas = new LcdRunAtlas(budget, 64);
                 var scenes = new[] { (own, ownParagraph), (evicting, evictingParagraph) };
                 var expected = Render(gpu, context =>
                 {
@@ -145,7 +145,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
 
-            var atlas = new LcdRunAtlas(16L * 1024 * 1024);
+            var atlas = new LcdRunAtlas();
             var runs = CreateParagraph(typeface, 12, 13, new Point(6.3, 4));
 
             try
@@ -187,7 +187,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var atlas = new LcdRunAtlas(256L * 1024 * 1024);
+                var atlas = new LcdRunAtlas();
                 var expected = Render(gpu, context => DrawAll(context, runs, Brushes.Black), Mode.AtlasOneByOne,
                     out _, atlas);
                 var drawnWhileAppending = 0;

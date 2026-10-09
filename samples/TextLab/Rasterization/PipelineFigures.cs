@@ -436,7 +436,7 @@ namespace TextLab
                 Inv($"GlyphMaskKey: glyph {glyph}, scaleQ {scaleQ} ({scaleQ / GlyphMaskKey.ScaleQuantum:0.###} px/em)"),
                 $"phase 0 of {GlyphMaskKey.PhaseCount}, mode Antialiased, GridFit, no StemSnap",
                 $"mask {mask.Width}x{mask.Height} at ({mask.Left},{mask.Top}), pen-relative",
-                $"cache: {typeface.MaskCache.Count} masks resident, budget {GlyphMaskCache.DefaultBudgetBytes / (1024 * 1024)} MB");
+                $"cache: {typeface.MaskCache.Count} masks resident, glyph cache limit {GlyphCacheBudget.Shared.LimitBytes / (1024 * 1024)} MB");
 
             var width = Math.Max(Math.Max(Math.Max(maskPanelWidth + (embedInfo ? 480 : 0), runWidth * 3 + 40), 600),
                 70 + variantColumnWidth * variantHintings.Length);

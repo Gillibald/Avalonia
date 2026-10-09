@@ -7,15 +7,15 @@ namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
     /// The per-typeface A8 atlas that stores transformed glyph masks on GPU contexts: entries
-    /// hold their masks exactly, keep empty gutters for bilinear sampling, and the page budget
-    /// is enforced least recently used first.
+    /// hold their masks exactly, keep empty gutters for bilinear sampling, and the glyph cache
+    /// budget evicts the page used least recently first.
     /// </summary>
     public class GlyphMaskAtlasTests
     {
         [Fact]
         public void Entries_Hold_Their_Masks_With_Empty_Gutters()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(1234);
             var tick = atlas.Tick();
             var entries = new List<(GlyphMask Mask, GlyphAtlasSlot Slot)>();
@@ -78,7 +78,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Entries_Keep_An_Empty_Row_And_Column_On_Every_Side()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(4321);
             var tick = atlas.Tick();
             var entries = new List<(GlyphMask Mask, GlyphAtlasSlot Slot)>();
@@ -120,7 +120,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void A_Repeated_Key_Returns_The_First_Entry()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(7);
             var tick = atlas.Tick();
 
@@ -137,7 +137,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Corrected_Entries_Hold_Their_Bucket_Table_Values()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(11);
             var tick = atlas.Tick();
             var mask = CreateMask(random, 20, 24);
@@ -172,7 +172,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Entries_Of_Every_Luminance_Bucket_Share_One_Page()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(17);
             var tick = atlas.Tick();
             var slots = new List<GlyphAtlasSlot>();
@@ -200,7 +200,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Masks_Too_Large_For_A_Page_Are_Refused()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(3);
 
             Assert.False(atlas.TryAdd(Key(1), CreateMask(random, GlyphMaskAtlas.PageWidth, 10), atlas.Tick(), out _));
@@ -209,15 +209,14 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Pages_Over_Budget_Are_Evicted_Least_Recently_Used_First()
+        public void Pages_Over_The_Limit_Are_Evicted_Least_Recently_Used_First()
         {
             // Each mask needs a page of its own (two fit neither side by side nor stacked), and the
-            // budget holds two such pages. Every draw is a frame of its own.
+            // limit holds two and a half such pages. Every draw is a frame of its own.
             var random = new Random(11);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
-            var pageBytes = (long)GlyphMaskAtlas.PageWidth * ((tall + 1 + 63) / 64 * 64);
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas((int)(pageBytes * 2 + pageBytes / 2), budget);
+            var budget = new GlyphCacheBudget(TallPageBytes(tall) * 5 / 2);
+            var atlas = new GlyphMaskAtlas(budget);
             GlyphAtlasSlot a, b;
 
             using (budget.BeginFrame())
@@ -235,14 +234,19 @@ namespace Avalonia.Skia.UnitTests.Media
             using (budget.BeginFrame())
                 Assert.True(atlas.TryAdd(Key(3), CreateMask(random, 600, tall), atlas.Tick(), out _));
 
+            // The next frame trims to the limit.
+            using (budget.BeginFrame())
+            {
+            }
+
             Assert.True(atlas.TryGet(Key(1), atlas.Tick(), out _));
             Assert.False(atlas.TryGet(Key(2), atlas.Tick(), out _));
             Assert.True(atlas.TryGet(Key(3), atlas.Tick(), out _));
             Assert.True(b.Page!.IsEvicted);
             Assert.False(a.Page!.IsEvicted);
             Assert.Equal(1, atlas.Evictions);
-            Assert.True(atlas.AllocatedBytes <= atlas.BudgetBytes,
-                $"{atlas.AllocatedBytes} bytes allocated over a budget of {atlas.BudgetBytes}");
+            Assert.True(atlas.AllocatedBytes <= budget.LimitBytes,
+                $"{atlas.AllocatedBytes} bytes allocated over a limit of {budget.LimitBytes}");
         }
 
         [Fact]
@@ -250,21 +254,20 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var random = new Random(13);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
-            var pageBytes = (long)GlyphMaskAtlas.PageWidth * ((tall + 1 + 63) / 64 * 64);
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas((int)(pageBytes * 2 + pageBytes / 2), budget);
+            var budget = new GlyphCacheBudget(TallPageBytes(tall) * 5 / 2);
+            var atlas = new GlyphMaskAtlas(budget);
 
-            // One frame placing three entries keeps all of them, over budget.
+            // One frame placing four entries keeps all of them, past half over the limit.
             using (budget.BeginFrame())
             {
                 var tick = atlas.Tick();
 
-                for (var i = 0; i < 3; i++)
+                for (var i = 0; i < 4; i++)
                 {
                     Assert.True(atlas.TryAdd(Key(i), CreateMask(random, 600, tall), tick, out _));
                 }
 
-                for (var i = 0; i < 3; i++)
+                for (var i = 0; i < 4; i++)
                 {
                     Assert.True(atlas.TryGet(Key(i), tick, out var slot));
                     Assert.False(slot.Page!.IsEvicted);
@@ -272,20 +275,13 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             Assert.Equal(0, atlas.Evictions);
-        }
-
-        [Fact]
-        public void The_Atlas_Budget_Is_The_Mask_Cache_Budget()
-        {
-            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-
-            Assert.Equal(typeface.MaskCache.BudgetBytes, typeface.MaskAtlas.BudgetBytes);
+            Assert.True(atlas.AllocatedBytes > budget.InlineLimitBytes, "the frame's pages fit");
         }
 
         [Fact]
         public void Entries_Of_Two_Owners_With_Equal_Keys_Hold_Their_Own_Masks()
         {
-            var atlas = new GlyphMaskAtlas(8 * 1024 * 1024);
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(17);
             var tick = atlas.Tick();
             var first = CreateMask(random, 12, 16);
@@ -316,17 +312,16 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.False(atlas.TryGet(Key(1), 0, tick, out _));
         }
 
-        [Fact]
-        public void The_Shared_Atlas_Budget_Bounds_All_Typefaces_Together()
-        {
-            Assert.Equal(GlyphMaskAtlas.SharedBudgetBytes, GlyphMaskAtlas.Shared.BudgetBytes);
 
+        [Fact]
+        public void Pages_Of_Every_Owner_Are_Evicted_Least_Recently_Used_First()
+        {
             // Two owners each fill a page; a third owner's page takes the place of the one used
             // longest ago, whoever owns it.
             var random = new Random(19);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas((int)(TallPageBytes(tall) * 2 + TallPageBytes(tall) / 2), budget);
+            var budget = new GlyphCacheBudget(TallPageBytes(tall) * 5 / 2);
+            var atlas = new GlyphMaskAtlas(budget);
             GlyphAtlasSlot a, b;
 
             using (budget.BeginFrame())
@@ -341,49 +336,53 @@ namespace Avalonia.Skia.UnitTests.Media
             using (budget.BeginFrame())
                 Assert.True(atlas.TryAdd(3, Key(1), 0, CreateMask(random, 600, tall), atlas.Tick(), out _));
 
+            using (budget.BeginFrame())
+            {
+            }
+
             Assert.False(a.Page!.IsEvicted);
             Assert.True(b.Page!.IsEvicted);
             Assert.False(atlas.TryGet(2, Key(1), 0, atlas.Tick(), out _));
-            Assert.True(atlas.AllocatedBytes <= atlas.BudgetBytes,
-                $"{atlas.AllocatedBytes} bytes allocated over a budget of {atlas.BudgetBytes}");
+            Assert.True(atlas.AllocatedBytes <= budget.LimitBytes,
+                $"{atlas.AllocatedBytes} bytes allocated over a limit of {budget.LimitBytes}");
         }
 
         [Fact]
-        public void Pages_Drawn_In_The_Previous_Frame_Are_Not_Evicted()
+        public void Pages_Drawn_In_The_Previous_Frame_Are_Kept_Up_To_A_Quarter_Over_The_Limit()
         {
             var random = new Random(23);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas((int)(TallPageBytes(tall) * 2 + TallPageBytes(tall) / 2), budget);
+            var budget = new GlyphCacheBudget(TallPageBytes(tall) * 5 / 2);
+            var atlas = new GlyphMaskAtlas(budget);
             var slots = new GlyphAtlasSlot[3];
 
-            // Two pages in one frame and a third in the next: the next frame keeps the previous
-            // frame's pages, which a static scene draws again.
+            // Three pages, a fifth over the limit, in one frame: the next frame keeps them, since a
+            // static scene draws them again.
             using (budget.BeginFrame())
             {
-                Assert.True(atlas.TryAdd(Key(0), CreateMask(random, 600, tall), atlas.Tick(), out slots[0]));
-                Assert.True(atlas.TryAdd(Key(1), CreateMask(random, 600, tall), atlas.Tick(), out slots[1]));
+                for (var i = 0; i < slots.Length; i++)
+                {
+                    Assert.True(atlas.TryAdd(Key(i), CreateMask(random, 600, tall), atlas.Tick(), out slots[i]));
+                }
             }
 
             using (budget.BeginFrame())
             {
-                Assert.True(atlas.TryAdd(Key(2), CreateMask(random, 600, tall), atlas.Tick(), out slots[2]));
             }
 
             Assert.All(slots, slot => Assert.False(slot.Page!.IsEvicted));
             Assert.Equal(0, atlas.Evictions);
-            Assert.True(atlas.AllocatedBytes > atlas.BudgetBytes, "the frames' pages fit the budget");
+            Assert.True(atlas.AllocatedBytes > budget.LimitBytes, "the frame's pages fit the limit");
         }
 
         [Fact]
-        public void The_Atlas_Grows_Past_Its_Budget_Only_For_Pages_Of_Recent_Frames()
+        public void Pages_No_Recent_Frame_Drew_Are_Trimmed_To_The_Limit()
         {
             var random = new Random(29);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas((int)(TallPageBytes(tall) * 2 + TallPageBytes(tall) / 2), budget);
+            var budget = new GlyphCacheBudget(TallPageBytes(tall) * 5 / 2);
+            var atlas = new GlyphMaskAtlas(budget);
             var slots = new GlyphAtlasSlot[3];
-            GlyphAtlasSlot added;
 
             using (budget.BeginFrame())
             {
@@ -393,35 +392,32 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
 
-            // A frame drawing none of them, then one that draws the first page again and adds a
-            // page: the pages the last two frames did not draw go, back within the budget, and
-            // the drawn one stays.
+            // A frame drawing the first page again, then one drawing nothing: the pages neither
+            // drew go first, until the atlas is back within the limit.
             using (budget.BeginFrame())
             {
+                Assert.True(atlas.TryGet(Key(0), atlas.Tick(), out _));
             }
 
             using (budget.BeginFrame())
             {
-                Assert.True(atlas.TryGet(Key(0), atlas.Tick(), out _));
-                Assert.True(atlas.TryAdd(Key(3), CreateMask(random, 600, tall), atlas.Tick(), out added));
             }
 
             Assert.False(slots[0].Page!.IsEvicted);
             Assert.True(slots[1].Page!.IsEvicted);
-            Assert.True(slots[2].Page!.IsEvicted);
-            Assert.False(added.Page!.IsEvicted);
-            Assert.Equal(2, atlas.Evictions);
-            Assert.True(atlas.AllocatedBytes <= atlas.BudgetBytes,
-                $"{atlas.AllocatedBytes} bytes allocated over a budget of {atlas.BudgetBytes}");
+            Assert.Equal(1, atlas.Evictions);
+            Assert.True(atlas.AllocatedBytes <= budget.LimitBytes,
+                $"{atlas.AllocatedBytes} bytes allocated over a limit of {budget.LimitBytes}");
         }
 
         [Fact]
-        public void The_Previous_Frame_Keeps_Its_Pages_Up_To_Twice_The_Budget()
+        public void Past_A_Quarter_Over_The_Limit_Only_The_Pages_Of_The_Current_Frame_Are_Kept()
         {
             var random = new Random(31);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas((int)(TallPageBytes(tall) * 2 + TallPageBytes(tall) / 2), budget);
+            var page = TallPageBytes(tall);
+            var budget = new GlyphCacheBudget(page * 5 / 2);
+            var atlas = new GlyphMaskAtlas(budget);
             var slots = new GlyphAtlasSlot[8];
 
             using (budget.BeginFrame())
@@ -432,24 +428,24 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
 
-            // Past twice the budget, only the current frame's pages are kept: the least recently
-            // used page of the previous frame goes first.
+            // The next frame trims the previous frame's pages to a quarter over the limit, and its
+            // own pages, past half over the limit, take the place of the previous frame's oldest.
             using (budget.BeginFrame())
             {
+                Assert.True(atlas.AllocatedBytes <= budget.SoftLimitBytes,
+                    $"{atlas.AllocatedBytes} bytes allocated, a quarter over the limit is {budget.SoftLimitBytes}");
+
                 for (var i = 5; i < slots.Length; i++)
                 {
                     Assert.True(atlas.TryAdd(Key(i), CreateMask(random, 600, tall), atlas.Tick(), out slots[i]));
-                    Assert.True(atlas.AllocatedBytes <= 2L * atlas.BudgetBytes,
-                        $"{atlas.AllocatedBytes} bytes allocated, twice the budget is {2L * atlas.BudgetBytes}");
+                    Assert.True(atlas.AllocatedBytes <= budget.InlineLimitBytes,
+                        $"{atlas.AllocatedBytes} bytes allocated, half over the limit is {budget.InlineLimitBytes}");
                 }
             }
 
-            Assert.Equal(5, atlas.GetPages().Length);
-            Assert.Equal(3, atlas.Evictions);
-            Assert.True(slots[0].Page!.IsEvicted);
-            Assert.True(slots[2].Page!.IsEvicted);
-            Assert.False(slots[3].Page!.IsEvicted);
-            Assert.False(slots[7].Page!.IsEvicted);
+            Assert.All(slots[..5], slot => Assert.True(slot.Page!.IsEvicted));
+            Assert.All(slots[5..], slot => Assert.False(slot.Page!.IsEvicted));
+            Assert.Equal(5, atlas.Evictions);
         }
 
         [Fact]
@@ -482,7 +478,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var random = new Random(41);
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
-            var atlas = new GlyphMaskAtlas(GlyphMaskAtlas.SharedBudgetBytes, budget);
+            var atlas = new GlyphMaskAtlas(budget);
             var tick = atlas.Tick();
 
             // Owner 1 alone fills a page; owners 1 and 2 share another.

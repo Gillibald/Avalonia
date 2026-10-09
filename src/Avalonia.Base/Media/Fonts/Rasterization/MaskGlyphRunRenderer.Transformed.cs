@@ -309,7 +309,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 var key = sprites.GetGlyphKey(i);
 
-                masks[i] = laidOut[i].Width * laidOut[i].Height <= cache.MaxEntryBytes
+                masks[i] = laidOut[i].Width * laidOut[i].Height <= GlyphMaskCache.MaxEntryBytes
                     ? cache.GetOrBuild(key, state, s_buildMask)
                     : GlyphMasks.Build(typeface, scratch, key);
             }
@@ -531,7 +531,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var count = sprites.Count;
             var builder = t_batchBuilder ??= new GlyphAtlasBatchBuilder();
             var scratch = t_scratch ??= new GlyphPathBuilder();
-            var maxEntryBytes = typeface.MaskCache.MaxEntryBytes;
+            const int maxEntryBytes = GlyphMaskCache.MaxEntryBytes;
 
             builder.Begin(sprites.IsUpright);
 

@@ -73,9 +73,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void A_Mask_Used_In_The_Current_Frame_Survives_Eviction()
         {
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
             var cost = MakeMask().ByteCost;
-            var cache = new GlyphMaskCache(budget, budgetBytes: cost * 3);
+            var budget = new GlyphCacheBudget(cost * 3);
+            var cache = new GlyphMaskCache(budget);
 
             using (budget.BeginFrame())
             {
@@ -96,6 +96,11 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 cache.GetOrBuild(Key(7), static _ => MakeMask());
             }
 
+            // The next frame trims to the limit.
+            using (budget.BeginFrame())
+            {
+            }
+
             Assert.True(cache.TotalCost <= cost * 3, $"TotalCost {cache.TotalCost} exceeds the budget {cost * 3}");
             Assert.True(cache.TryGet(Key(7), out _));
         }
@@ -103,9 +108,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void The_Mask_Drawn_Longest_Ago_Is_Evicted_First()
         {
-            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
             var cost = MakeMask().ByteCost;
-            var cache = new GlyphMaskCache(budget, budgetBytes: cost * 3);
+            var budget = new GlyphCacheBudget(cost * 3);
+            var cache = new GlyphMaskCache(budget);
 
             using (budget.BeginFrame())
             {
@@ -123,6 +128,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             using (budget.BeginFrame())
             {
                 cache.GetOrBuild(Key(4), static _ => MakeMask());
+            }
+
+            using (budget.BeginFrame())
+            {
             }
 
             Assert.True(cache.TryGet(Key(1), out _), "the mask drawn a frame ago was evicted");

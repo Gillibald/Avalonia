@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -259,11 +260,23 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// graph, so disposing evicted (and finally all) masks here cannot outlive a consumer —
     /// the same lifetime contract the SKTextBlob cache relies on today.
     /// </summary>
+    /// <remarks>
+    /// The masks are charged to the glyph cache budget. The secondary masks record the frame of
+    /// their last use, and the budget may evict those of earlier frames
+    /// (<see cref="RunMaskPool"/>) on the thread that draws the run; the primary slot stays
+    /// until the run is disposed.
+    /// </remarks>
     internal sealed class RunMaskCache : IDisposable
     {
         private const int SecondarySize = 3;
 
         private readonly GlyphCacheBudget _budget;
+        private RunMaskKey _primaryKey;
+        private RunMask? _primary;
+        private Slot[]? _secondary;
+        private int _nextEvict;
+        private int _ownerThread;
+        private bool _disposed;
 
         /// <param name="budget">
         /// The budget the masks are charged to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
@@ -272,11 +285,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             _budget = budget ?? GlyphCacheBudget.Shared;
         }
-
-        private RunMaskKey _primaryKey;
-        private RunMask? _primary;
-        private (RunMaskKey Key, RunMask Mask)[]? _secondary;
-        private int _nextEvict;
 
         /// <summary>The number of cached masks; for diagnostics and tests.</summary>
         public int Count
@@ -314,6 +322,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     if (secondary[i].Mask is { } hit && secondary[i].Key == key)
                     {
+                        secondary[i].LastUse = _budget.Frame;
                         mask = hit;
                         return true;
                     }
@@ -350,7 +359,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public void Add(in RunMaskKey key, RunMask mask)
         {
-            _budget.RunMasks.Charge(mask.ByteCost);
+            _ownerThread = Environment.CurrentManagedThreadId;
+            _budget.RunMasks.Handle.Charge(mask.ByteCost);
 
             if (_primary is null)
             {
@@ -359,7 +369,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            _secondary ??= new (RunMaskKey, RunMask)[SecondarySize];
+            if (_secondary is null)
+            {
+                _secondary = new Slot[SecondarySize];
+                _budget.RunMasks.Track(this);
+            }
 
             ref var slot = ref _secondary[_nextEvict];
 
@@ -368,12 +382,25 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Drop(replaced);
             }
 
-            slot = (key, mask);
+            slot = new Slot { Key = key, Mask = mask, LastUse = _budget.Frame };
             _nextEvict = (_nextEvict + 1) % SecondarySize;
         }
 
         public void Dispose()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            // Leaves the pool first, so no trim evicts a mask this disposes.
+            if (_secondary is not null)
+            {
+                _budget.RunMasks.Untrack(this);
+            }
+
             if (_primary is { } primary)
             {
                 Drop(primary);
@@ -394,10 +421,147 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>Whether the run is drawn on the current thread, so its masks may be evicted here.</summary>
+        internal bool IsOwnedByCurrentThread => _ownerThread == Environment.CurrentManagedThreadId;
+
+        internal int SecondaryCount => _secondary?.Length ?? 0;
+
+        /// <summary>The frame secondary slot <paramref name="index"/> was last used in, <see cref="long.MaxValue"/> when empty.</summary>
+        internal long SecondaryLastUse(int index)
+            => _secondary![index].Mask is null ? long.MaxValue : _secondary[index].LastUse;
+
+        /// <summary>Evicts secondary slot <paramref name="index"/>; returns the bytes freed.</summary>
+        internal long EvictSecondary(int index)
+        {
+            ref var slot = ref _secondary![index];
+
+            if (slot.Mask is not { } mask)
+            {
+                return 0;
+            }
+
+            slot = default;
+            Drop(mask);
+
+            return mask.ByteCost;
+        }
+
         private void Drop(RunMask mask)
         {
-            _budget.RunMasks.Credit(mask.ByteCost);
+            _budget.RunMasks.Handle.Credit(mask.ByteCost);
             mask.Dispose();
+        }
+
+        private struct Slot
+        {
+            public RunMaskKey Key;
+            public RunMask? Mask;
+            public long LastUse;
+        }
+    }
+
+    /// <summary>
+    /// The composed run masks of every run, as one pool of a <see cref="GlyphCacheBudget"/>: the
+    /// secondary masks of the runs that have them may be evicted, oldest first. A run's masks
+    /// are only touched on the thread that draws the run, between its frames, since the pending
+    /// draws of a frame may still hold them.
+    /// </summary>
+    internal sealed class RunMaskPool : IGlyphCachePool
+    {
+        private readonly object _lock = new();
+        private readonly HashSet<RunMaskCache> _caches = new();
+        private readonly List<(RunMaskCache Cache, int Slot, long LastUse)> _candidates = new();
+
+        internal RunMaskPool(GlyphCacheBudget budget)
+        {
+            Handle = budget.Register(GlyphCachePoolKind.RunMasks, this);
+        }
+
+        /// <summary>The registration every run mask cache charges through.</summary>
+        public GlyphCachePoolHandle Handle { get; }
+
+        internal void Track(RunMaskCache cache)
+        {
+            lock (_lock)
+            {
+                _caches.Add(cache);
+            }
+        }
+
+        internal void Untrack(RunMaskCache cache)
+        {
+            lock (_lock)
+            {
+                _caches.Remove(cache);
+            }
+        }
+
+        public long OldestUse
+        {
+            get
+            {
+                var oldest = long.MaxValue;
+
+                lock (_lock)
+                {
+                    foreach (var cache in _caches)
+                    {
+                        if (!cache.IsOwnedByCurrentThread)
+                        {
+                            continue;
+                        }
+
+                        for (var i = 0; i < cache.SecondaryCount; i++)
+                        {
+                            oldest = Math.Min(oldest, cache.SecondaryLastUse(i));
+                        }
+                    }
+                }
+
+                return oldest;
+            }
+        }
+
+        public long EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_lock)
+            {
+                foreach (var cache in _caches)
+                {
+                    if (!cache.IsOwnedByCurrentThread)
+                    {
+                        continue;
+                    }
+
+                    for (var i = 0; i < cache.SecondaryCount; i++)
+                    {
+                        var lastUse = cache.SecondaryLastUse(i);
+
+                        if (lastUse < usedBefore)
+                        {
+                            _candidates.Add((cache, i, lastUse));
+                        }
+                    }
+                }
+
+                _candidates.Sort(static (a, b) => a.LastUse.CompareTo(b.LastUse));
+
+                foreach (var candidate in _candidates)
+                {
+                    if (freed >= bytes)
+                    {
+                        break;
+                    }
+
+                    freed += candidate.Cache.EvictSecondary(candidate.Slot);
+                }
+
+                _candidates.Clear();
+            }
+
+            return freed;
         }
     }
 

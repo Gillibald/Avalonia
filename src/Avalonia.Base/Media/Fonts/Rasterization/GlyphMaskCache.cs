@@ -5,11 +5,11 @@ using System.Threading;
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// A bounded cache of rasterized glyph masks keyed by
-    /// (glyph, scale bucket, subpixel phase, mode) — the sibling of <see cref="GlyphCache"/> for
-    /// the managed rasterization path. Hits are lock-free; builds run outside the lock (racing
-    /// builders may duplicate work, the losing result is discarded); inserts and eviction run
-    /// under one lock, keeping total payload bytes under the budget.
+    /// A cache of rasterized glyph masks keyed by (glyph, scale bucket, subpixel phase, mode),
+    /// the sibling of <see cref="GlyphCache"/> for the managed rasterization path, bounded by the
+    /// <see cref="GlyphCacheBudget"/> it is charged to. Hits are lock-free; builds run outside the
+    /// lock (racing builders may duplicate work, the losing result is discarded); inserts and
+    /// eviction run under one lock.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -24,56 +24,44 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// keeps masks in the order they were queued; eviction takes the head, unless it was used
     /// since it was queued, in which case it moves behind the tail first. That approximates
     /// least-recently-used by frame without a heap or a relink per hit. A mask used by a frame
-    /// still being drawn (<see cref="GlyphCacheBudget.PinFloor"/>) is never evicted, so the
-    /// cache holds more than its budget while one frame draws more than fits.
+    /// still being drawn (<see cref="GlyphCacheBudget.PinFloor"/>) is never evicted.
     /// </para>
     /// </remarks>
-    internal sealed class GlyphMaskCache
+    internal sealed class GlyphMaskCache : IGlyphCachePool
     {
-        /// <summary>Default mask byte budget. Calibrated in Phase 3 against real scenes.</summary>
-        public const int DefaultBudgetBytes = 8 * 1024 * 1024;
+        /// <summary>
+        /// The largest mask worth caching. A bigger mask (a glyph near a thousand pixels per em)
+        /// would evict a whole screen of text masks to be kept, so callers compose it from a
+        /// transient buffer instead. A constant rather than a share of the limit, so the limit
+        /// never changes which masks are cached and which are composed, and pixels stay the same.
+        /// </summary>
+        public const int MaxEntryBytes = 512 * 1024;
 
         private readonly ConcurrentDictionary<GlyphMaskKey, Entry> _entries = new();
         private readonly object _lock = new();
-        private readonly int _budget;
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private Entry? _hand;
         private int _count;
-        private int _totalCost;
+        private long _totalCost;
         private long _evictions;
 
-        public GlyphMaskCache(int budgetBytes = DefaultBudgetBytes)
-            : this(GlyphCacheBudget.Shared, budgetBytes)
+        /// <param name="budget">
+        /// The budget the cache charges its masks to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public GlyphMaskCache(GlyphCacheBudget? budget = null)
         {
+            _clock = budget ?? GlyphCacheBudget.Shared;
+            _handle = _clock.Register(GlyphCachePoolKind.Masks, this, perTypeface: true);
         }
-
-        /// <param name="budget">The budget the cache charges its masks to.</param>
-        /// <param name="budgetBytes">The byte budget of this cache's masks.</param>
-        public GlyphMaskCache(GlyphCacheBudget budget, int budgetBytes = DefaultBudgetBytes)
-        {
-            _budget = budgetBytes < 1 ? 1 : budgetBytes;
-            _clock = budget;
-            _handle = budget.Register(GlyphCachePoolKind.Masks, this);
-        }
-
-        /// <summary>The byte budget of all cached masks together.</summary>
-        public int BudgetBytes => _budget;
 
         /// <summary>Number of cached masks.</summary>
         public int Count => _entries.Count;
 
         /// <summary>Total retained mask bytes.</summary>
-        public int TotalCost => Volatile.Read(ref _totalCost);
+        public long TotalCost => Interlocked.Read(ref _totalCost);
 
-        /// <summary>
-        /// The largest mask worth caching: a sixteenth of the budget. A bigger mask (a glyph
-        /// near a thousand pixels per em) would evict a whole screen of text masks to be kept,
-        /// so callers compose it from a transient buffer instead.
-        /// </summary>
-        public int MaxEntryBytes => _budget / 16;
-
-        /// <summary>Masks evicted to stay within the budget since construction; for diagnostics and tests.</summary>
+        /// <summary>Masks evicted for the glyph cache budget since construction; for diagnostics and tests.</summary>
         public long Evictions => Volatile.Read(ref _evictions);
 
         // Recent mask use of upright run builds, each total decayed by a sixteenth per build so
@@ -158,9 +146,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 Volatile.Write(ref entry.Mask, built);
                 RingAdd(entry);
-                _totalCost += built.ByteCost;
+                Interlocked.Add(ref _totalCost, built.ByteCost);
                 _handle.Charge(built.ByteCost);
-                EvictToBudget();
 
                 return built;
             }
@@ -180,7 +167,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     var cost = Volatile.Read(ref entry.Mask)!.ByteCost;
 
-                    _totalCost -= cost;
+                    Interlocked.Add(ref _totalCost, -cost);
                     _handle.Credit(cost);
                     Volatile.Write(ref entry.Mask, null);
                     _entries.TryRemove(entry.Key, out _);
@@ -188,29 +175,42 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private void EvictToBudget()
+        long IGlyphCachePool.OldestUse
         {
-            while (_totalCost > _budget)
+            get
             {
-                var victim = SelectVictim(_clock.PinFloor);
-
-                if (victim is null)
+                lock (_lock)
                 {
-                    break;
+                    return NormalizeHead()?.LastUse ?? long.MaxValue;
                 }
-
-                var cost = Volatile.Read(ref victim.Mask)!.ByteCost;
-
-                _totalCost -= cost;
-                _handle.Credit(cost);
-                Interlocked.Increment(ref _evictions);
-                RingRemove(victim);
-                Volatile.Write(ref victim.Mask, null);
-                _entries.TryRemove(victim.Key, out _);
-
-                // Unlink only, never dispose: composed run masks copied from this payload and any
-                // lock-free reader that fetched it a moment ago stay valid; the GC reclaims it.
             }
+        }
+
+        long IGlyphCachePool.EvictOldest(long usedBefore, long bytes)
+        {
+            long freed = 0;
+
+            lock (_lock)
+            {
+                while (freed < bytes && SelectVictim(usedBefore) is { } victim)
+                {
+                    var cost = Volatile.Read(ref victim.Mask)!.ByteCost;
+
+                    Interlocked.Add(ref _totalCost, -cost);
+                    freed += cost;
+                    _handle.Credit(cost);
+                    Interlocked.Increment(ref _evictions);
+                    RingRemove(victim);
+                    Volatile.Write(ref victim.Mask, null);
+                    _entries.TryRemove(victim.Key, out _);
+
+                    // Unlink only, never dispose: composed run masks copied from this payload and
+                    // any lock-free reader that fetched it a moment ago stay valid; the GC
+                    // reclaims it.
+                }
+            }
+
+            return freed;
         }
 
         private void RingAdd(Entry entry)
