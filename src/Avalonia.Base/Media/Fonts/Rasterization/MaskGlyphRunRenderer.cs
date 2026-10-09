@@ -319,7 +319,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     runMask = new RunMask(new[]
                     {
-                        new RunMaskPart(coverage, coverage.OffsetX, coverage.OffsetY, coverage.Width, coverage.Height),
+                        new RunMaskPart(coverage, coverage.OffsetX, coverage.OffsetY, coverage.Width, coverage.Height,
+                            coverage.ByteCost),
                     });
 
                     cache.Add(coverageKey, runMask);
@@ -980,7 +981,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
 
                     parts[created++] = new RunMaskPart(new LcdRunPayload(multiply, plus, width, height), chunkX, minY,
-                        width, height);
+                        width, height, (multiply.Length + plus.Length) * 4L);
                 }
 
                 return new RunMask(parts);
@@ -1067,8 +1068,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                             geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
                     }
 
-                    parts[created++] = new RunMaskPart(alphaContext.CreateLcdMask(span, width, height),
-                        chunkX, minY, width, height);
+                    var lcdMask = alphaContext.CreateLcdMask(span, width, height);
+
+                    // An atlas entry's pixels are charged by its atlas.
+                    parts[created++] = new RunMaskPart(lcdMask, chunkX, minY, width, height,
+                        lcdMask is LcdAtlasEntry ? 0 : width * height * 4L);
                 }
 
                 return new RunMask(parts);
@@ -1152,7 +1156,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
 
                     parts[created++] = new RunMaskPart(alphaContext.CreateAlphaMask(span, width, height),
-                        chunkX, minY, width, height);
+                        chunkX, minY, width, height, (long)width * height);
                 }
 
                 return new RunMask(parts);
@@ -1301,7 +1305,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var bitmap = renderInterface.CreateWriteableBitmap(
                         new PixelSize(width, height), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
 
-                    parts[created++] = new RunMaskPart(bitmap, chunkX, minY, width, height);
+                    parts[created++] = new RunMaskPart(bitmap, chunkX, minY, width, height, width * height * 4L);
 
                     using (var framebuffer = bitmap.Lock())
                     {

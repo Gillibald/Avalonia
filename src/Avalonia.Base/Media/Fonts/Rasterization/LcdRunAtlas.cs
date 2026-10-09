@@ -132,16 +132,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly List<LcdAtlasPage> _pages = new();
         private readonly long _budget;
         private readonly int _maxPageHeight;
+        private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
         private long _clock;
         private long _evictions;
 
         /// <param name="budgetBytes">The byte budget of all pages together, at least one page of 64 rows.</param>
         /// <param name="maxPageHeight">The row limit of a page, at most <see cref="MaxPageHeight"/>.</param>
-        public LcdRunAtlas(long budgetBytes, int maxPageHeight = MaxPageHeight)
+        /// <param name="budget">
+        /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public LcdRunAtlas(long budgetBytes, int maxPageHeight = MaxPageHeight, GlyphCacheBudget? budget = null)
         {
             _budget = Math.Max(budgetBytes, (long)PageWidth * 4 * RowQuantum);
             _maxPageHeight = Math.Clamp(maxPageHeight, RowQuantum, MaxPageHeight);
+            _handle = (budget ?? GlyphCacheBudget.Shared).Register(GlyphCachePoolKind.LcdAtlas, this);
         }
 
         /// <summary>The atlas every hardware GPU context places its subpixel run masks in.</summary>

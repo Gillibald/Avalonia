@@ -68,6 +68,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The nonzero coverages of every overlap pixel, in run order.</summary>
         public ReadOnlySpan<byte> OverlapCoverage => _overlapCoverage.AsSpan(0, _stackedCount);
 
+        /// <summary>Bytes of the arrays this coverage holds.</summary>
+        public long ByteCost => _coverage.Length + _overlapPixels.Length * 4L + _overlapStarts.Length * 4L +
+            _overlapCoverage.Length;
+
         /// <summary>Nothing to release: the coverage lives in managed arrays.</summary>
         public void Dispose()
         {

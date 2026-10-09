@@ -211,14 +211,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly List<GlyphAtlasPage> _pages = new();
         private readonly List<GlyphAtlasPage> _emptied = new();
         private readonly int _budget;
+        private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
         private long _clock;
         private long _evictions;
         private long _sessionStart = long.MaxValue;
 
-        public GlyphMaskAtlas(int budgetBytes)
+        /// <param name="budgetBytes">The byte budget of all pages together.</param>
+        /// <param name="budget">
+        /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public GlyphMaskAtlas(int budgetBytes, GlyphCacheBudget? budget = null)
         {
             _budget = Math.Max(budgetBytes, PageWidth * RowQuantum);
+            _handle = (budget ?? GlyphCacheBudget.Shared).Register(GlyphCachePoolKind.Atlas, this);
         }
 
         /// <summary>

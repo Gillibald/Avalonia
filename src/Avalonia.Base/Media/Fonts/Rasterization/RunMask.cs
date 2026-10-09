@@ -142,13 +142,23 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     internal readonly struct RunMaskPart
     {
-        public RunMaskPart(IDisposable handle, int offsetX, int offsetY, int width, int height)
+        /// <param name="handle">The realized drawable.</param>
+        /// <param name="offsetX">Part left relative to the run's snapped origin pixel.</param>
+        /// <param name="offsetY">Part top relative to the run's snapped origin pixel.</param>
+        /// <param name="width">Part width in device pixels.</param>
+        /// <param name="height">Part height in device pixels.</param>
+        /// <param name="bytes">
+        /// The memory the part holds of its own, charged to the glyph cache budget: its pixels,
+        /// or 0 when they live in storage that charges itself (an <see cref="LcdRunAtlas"/> entry).
+        /// </param>
+        public RunMaskPart(IDisposable handle, int offsetX, int offsetY, int width, int height, long bytes)
         {
             Handle = handle;
             OffsetX = offsetX;
             OffsetY = offsetY;
             Width = width;
             Height = height;
+            Bytes = bytes;
         }
 
         /// <summary>
@@ -166,6 +176,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         public int Width { get; }
 
         public int Height { get; }
+
+        /// <summary>The memory the part holds of its own.</summary>
+        public long Bytes { get; }
     }
 
     /// <summary>
@@ -190,10 +203,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         public RunMask(RunMaskPart[] parts)
         {
             _parts = parts;
+
+            foreach (var part in parts)
+            {
+                ByteCost += part.Bytes;
+            }
         }
 
         /// <summary>The realized parts, left to right, then top to bottom.</summary>
         public ReadOnlySpan<RunMaskPart> Parts => _parts;
+
+        /// <summary>The memory the parts hold of their own.</summary>
+        public long ByteCost { get; }
 
         /// <summary>
         /// Whether an atlas dropped the storage of a part, so the mask no longer holds the
@@ -241,6 +262,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal sealed class RunMaskCache : IDisposable
     {
         private const int SecondarySize = 3;
+
+        private readonly GlyphCacheBudget _budget;
+
+        /// <param name="budget">
+        /// The budget the masks are charged to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public RunMaskCache(GlyphCacheBudget? budget = null)
+        {
+            _budget = budget ?? GlyphCacheBudget.Shared;
+        }
 
         private RunMaskKey _primaryKey;
         private RunMask? _primary;

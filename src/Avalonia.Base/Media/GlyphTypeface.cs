@@ -2546,6 +2546,20 @@ namespace Avalonia.Media
             return _glyfTable.TryGetGlyphBounds(glyph, out _, out _, out _, out _);
         }
 
+        private Fonts.Rasterization.GlyphCacheBudget? _cacheBudget;
+
+        /// <summary>
+        /// The budget this typeface's glyph caches are charged to: <see cref="Fonts.Rasterization.GlyphCacheBudget.Shared"/>
+        /// unless set before the first cache is created, which tests do to measure one typeface
+        /// alone. Variation instances and simulated variants use their source's.
+        /// </summary>
+        internal Fonts.Rasterization.GlyphCacheBudget CacheBudget
+        {
+            get => _cacheBudget ?? _sourceTypeface?.CacheBudget ?? _simulationSource?.CacheBudget ??
+                Fonts.Rasterization.GlyphCacheBudget.Shared;
+            set => _cacheBudget = value;
+        }
+
         private GlyphCache GetOrCreateGlyphCache()
         {
             // CFF / CFF2 entries survive geometry eviction for their interpreted bounds; glyf bounds
@@ -2553,7 +2567,7 @@ namespace Avalonia.Media
             // Retention must include the variable-glyf case, not just CFF / CFF2: a non-default
             // instance's ink box comes from interpreting the gvar-deformed outline, which is exactly
             // the expensive-to-recompute box the retention flag exists to keep.
-            var created = new GlyphCache(retainOutlineBounds: RetainsGlyphBounds);
+            var created = new GlyphCache(retainOutlineBounds: RetainsGlyphBounds, budget: CacheBudget);
 
             // First publisher wins; later racers reuse it.
             return Interlocked.CompareExchange(ref _glyphCache, created, null) ?? created;
@@ -2745,6 +2759,33 @@ namespace Avalonia.Media
             }
         }
 
+        private long _trueTypeHinterBytes;
+
+        /// <summary>
+        /// The memory one bytecode hinter of this typeface holds, as charged to the glyph cache
+        /// budget: control values and storage twice (the pristine copy and the working copy a
+        /// glyph program writes), the interpreter stack, pristine and working twilight points,
+        /// and a fixed allowance for the call stack, loader and glyph zones. The tables are the
+        /// same at every size, so the estimate is too.
+        /// </summary>
+        internal long TrueTypeHinterBytes
+        {
+            get
+            {
+                if (_trueTypeHinterBytes == 0)
+                {
+                    var maxp = Fonts.Tables.MaxpTable.Load(this);
+                    const int bytesPerTwilightPoint = 6 * 4 + 1;
+
+                    _trueTypeHinterBytes = 4096 +
+                        4L * (2L * ProgramTables.ControlValueCount + 2L * maxp.MaxStorage + maxp.MaxStackElements) +
+                        2L * bytesPerTwilightPoint * maxp.MaxTwilightPoints;
+                }
+
+                return _trueTypeHinterBytes;
+            }
+        }
+
         private Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? CreateTrueTypeHinter(
             ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
         {
@@ -2814,14 +2855,14 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
-            var created = new Fonts.Rasterization.GlyphMaskCache();
+            var created = new Fonts.Rasterization.GlyphMaskCache(CacheBudget);
 
             return Interlocked.CompareExchange(ref _glyphMaskCache, created, null) ?? created;
         }
 
         private Fonts.Rasterization.GlyphMaskAtlas GetOrCreateGlyphMaskAtlas()
         {
-            var created = new Fonts.Rasterization.GlyphMaskAtlas(MaskCache.BudgetBytes);
+            var created = new Fonts.Rasterization.GlyphMaskAtlas(MaskCache.BudgetBytes, CacheBudget);
 
             return Interlocked.CompareExchange(ref _glyphMaskAtlas, created, null) ?? created;
         }

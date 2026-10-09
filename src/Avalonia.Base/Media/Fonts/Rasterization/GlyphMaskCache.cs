@@ -34,14 +34,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly ConcurrentDictionary<GlyphMaskKey, Entry> _entries = new();
         private readonly object _lock = new();
         private readonly int _budget;
+        private readonly GlyphCachePoolHandle _handle;
         private Entry? _hand;
         private int _count;
         private int _totalCost;
         private long _evictions;
 
         public GlyphMaskCache(int budgetBytes = DefaultBudgetBytes)
+            : this(GlyphCacheBudget.Shared, budgetBytes)
+        {
+        }
+
+        /// <param name="budget">The budget the cache charges its masks to.</param>
+        /// <param name="budgetBytes">The byte budget of this cache's masks.</param>
+        public GlyphMaskCache(GlyphCacheBudget budget, int budgetBytes = DefaultBudgetBytes)
         {
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
+            _handle = budget.Register(GlyphCachePoolKind.Masks, this);
         }
 
         /// <summary>The byte budget of all cached masks together.</summary>
@@ -148,6 +157,24 @@ namespace Avalonia.Media.Fonts.Rasterization
                 EvictToBudget();
 
                 return built;
+            }
+        }
+
+        /// <summary>
+        /// Drops every mask. Masks are unlinked, never disposed, so composed run masks and
+        /// readers that fetched one a moment ago stay valid.
+        /// </summary>
+        public void Clear()
+        {
+            lock (_lock)
+            {
+                while (_hand is { } entry)
+                {
+                    RingRemove(entry);
+                    _totalCost -= Volatile.Read(ref entry.Mask)!.ByteCost;
+                    Volatile.Write(ref entry.Mask, null);
+                    _entries.TryRemove(entry.Key, out _);
+                }
             }
         }
 

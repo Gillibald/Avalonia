@@ -352,6 +352,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     {
         private const int SecondarySize = 3;
 
+        private readonly GlyphCacheBudget _budget;
+
+        /// <param name="budget">
+        /// The budget the sprite sets are charged to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public TransformedRunState(GlyphCacheBudget? budget = null)
+        {
+            _budget = budget ?? GlyphCacheBudget.Shared;
+        }
+
         private TransformedGlyphSprites? _primary;
         private TransformedGlyphSprites?[]? _secondary;
         private int _nextEvict;

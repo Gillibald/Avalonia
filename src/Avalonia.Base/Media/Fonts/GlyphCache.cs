@@ -66,6 +66,7 @@ namespace Avalonia.Media.Fonts
         private readonly int _budget;
         private readonly bool _retainOutlineBounds;
         private readonly object _lock = new();
+        private readonly Rasterization.GlyphCachePoolHandle _handle;
         private int _totalCost;
 
         /// <param name="retainOutlineBounds">
@@ -75,12 +76,18 @@ namespace Avalonia.Media.Fonts
         /// </param>
         /// <param name="budgetBytes">The geometry byte budget eviction keeps the cache under.</param>
         /// <param name="policy">The eviction policy; CLOCK when omitted.</param>
+        /// <param name="budget">
+        /// The budget the cache charges its geometry to; <see cref="Rasterization.GlyphCacheBudget.Shared"/>
+        /// when omitted.
+        /// </param>
         public GlyphCache(bool retainOutlineBounds = false, int budgetBytes = DefaultBudgetBytes,
-            IGlyphEvictionPolicy? policy = null)
+            IGlyphEvictionPolicy? policy = null, Rasterization.GlyphCacheBudget? budget = null)
         {
             _retainOutlineBounds = retainOutlineBounds;
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
             _policy = policy ?? new ClockEvictionPolicy();
+            _handle = (budget ?? Rasterization.GlyphCacheBudget.Shared).Register(
+                Rasterization.GlyphCachePoolKind.Outlines, this);
         }
 
         /// <summary>Number of cached entries (outline and colour-drawing, with or without built geometry).</summary>
