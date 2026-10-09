@@ -92,12 +92,25 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Releases the memory the glyph caches of <see cref="TextRasterizationMode.Managed"/>
-        /// rasterization hold beyond what the frames being drawn use.
+        /// Releases the memory that the glyph caches of <see cref="TextRasterizationMode.Managed"/>
+        /// rasterization hold beyond what the frames being drawn use: rasterized glyph masks,
+        /// glyph atlas pages, composed run masks, hinting state and glyph outlines.
         /// </summary>
-        public static void TrimGlyphCaches()
-        {
-        }
+        /// <remarks>
+        /// <para>
+        /// Call it when the application learns that memory is low, for example from a signal of
+        /// its own; the platforms that report memory pressure or a move to the background call it
+        /// already. Text drawn afterwards rasterizes its glyphs again, so calling it while text
+        /// is animating costs frame time.
+        /// </para>
+        /// <para>
+        /// Safe to call from any thread. Atlas pages and per-run masks that a frame on another
+        /// thread may be drawing from at the time are released when the next frame begins. The
+        /// glyph caches of <see cref="TextRasterizationMode.Backend"/> rasterization belong to the
+        /// render backend and are not affected.
+        /// </para>
+        /// </remarks>
+        public static void TrimGlyphCaches() => Fonts.Rasterization.GlyphCacheBudget.Shared.TrimForMemoryPressure();
 
         /// <summary>
         ///     Gets the system's default font family.

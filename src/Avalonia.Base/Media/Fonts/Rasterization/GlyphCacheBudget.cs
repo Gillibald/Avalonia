@@ -141,8 +141,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly Func<TimeSpan> _clock;
         private readonly Action _onIdleTimer;
 
-        // Held by a trim from outside a frame that may touch frame-affine pools, and briefly by
-        // every frame begin, so no frame begins while such a trim runs.
+        // Held by a trim from outside a frame while no frame is open, so it may touch frame-affine
+        // pools, and briefly by every frame begin, so no frame begins while such a trim runs.
         private readonly object _gate = new();
         private readonly object _poolsLock = new();
         private readonly List<GlyphCachePoolHandle> _pools = new();
@@ -163,6 +163,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private int _trimGeneration;
         private int _idleArmed;
         private volatile bool _pendingIdleTrim;
+        private volatile bool _pendingPressureTrim;
         private long _lastFrameEnd;
         private long _retain;
 
@@ -281,6 +282,19 @@ namespace Avalonia.Media.Fonts.Rasterization
             long frame;
             int id;
 
+            // A context drawn inside a frame of this thread (a layer) neither waits for the gate
+            // nor begins a frame.
+            lock (_frameLock)
+            {
+                foreach (var open in _open)
+                {
+                    if (open.Thread == thread && !IsStale(open.Start))
+                    {
+                        return default;
+                    }
+                }
+            }
+
             lock (_gate)
             lock (_frameLock)
             {
@@ -356,9 +370,87 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        /// <summary>Drops everything no open frame uses.</summary>
+        /// <summary>
+        /// Drops everything no open frame uses, for memory pressure. With a frame open, the
+        /// frame-affine pools are dropped when the next frame begins.
+        /// </summary>
         public void TrimForMemoryPressure()
         {
+            // A frame-start trim finishes in a moment; this one waits for it rather than leaving
+            // the free-threaded pools to the next frame, which may be long in coming.
+            if (TrimOutsideFrame(0, pressure: true, wait: true))
+            {
+                _pendingPressureTrim = true;
+            }
+        }
+
+        /// <summary>
+        /// Runs a trim from a thread that draws no frame. With no frame open it trims every pool
+        /// and holds the gate, so no frame begins meanwhile; with a frame open it trims the
+        /// free-threaded pools only and leaves the gate, so frames never wait for it. Returns
+        /// whether frame-affine pools were left to the next frame start.
+        /// </summary>
+        /// <param name="target">The bytes to trim to.</param>
+        /// <param name="pressure">
+        /// Whether to drop everything no open frame uses, rather than what each source did not draw
+        /// in its last two frames.
+        /// </param>
+        /// <param name="wait">Whether to wait for a trim already running rather than leave it all to the next frame.</param>
+        private bool TrimOutsideFrame(long target, bool pressure, bool wait)
+        {
+            var gate = false;
+
+            try
+            {
+                Monitor.Enter(_gate, ref gate);
+
+                bool quiescent;
+                long usedBefore;
+
+                lock (_frameLock)
+                {
+                    quiescent = !HasOpenFrames();
+                    usedBefore = !pressure ? _softFloor : quiescent ? _frame + 1 : _pinFloor;
+                }
+
+                if (!quiescent)
+                {
+                    Monitor.Exit(_gate);
+                    gate = false;
+                }
+
+                var spin = new SpinWait();
+
+                while (Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
+                {
+                    if (!wait)
+                    {
+                        return true;
+                    }
+
+                    spin.SpinOnce();
+                }
+
+                try
+                {
+                    t_quiescentTrim = quiescent;
+                    Trim(target, usedBefore, fair: false, includeAffine: quiescent);
+
+                    return !quiescent;
+                }
+                finally
+                {
+                    t_quiescentTrim = false;
+                    Volatile.Write(ref _trimming, 0);
+                }
+            }
+            finally
+            {
+                if (gate)
+                {
+                    Monitor.Exit(_gate);
+                }
+            }
         }
 
         // Called under the frame lock.
@@ -397,41 +489,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         private void TrimIdle()
         {
-            if (UsedBytes <= RetainBytes)
+            if (UsedBytes > RetainBytes && TrimOutsideFrame(RetainBytes, pressure: false, wait: false))
             {
-                return;
-            }
-
-            lock (_gate)
-            {
-                bool quiescent;
-
-                lock (_frameLock)
-                {
-                    quiescent = !HasOpenFrames();
-                }
-
-                if (Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
-                {
-                    _pendingIdleTrim = true;
-                    return;
-                }
-
-                try
-                {
-                    t_quiescentTrim = quiescent;
-                    Trim(RetainBytes, SoftFloor, fair: false, includeAffine: quiescent);
-
-                    if (!quiescent)
-                    {
-                        _pendingIdleTrim = true;
-                    }
-                }
-                finally
-                {
-                    t_quiescentTrim = false;
-                    Volatile.Write(ref _trimming, 0);
-                }
+                _pendingIdleTrim = true;
             }
         }
 
@@ -554,7 +614,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         private void TrimAtFrameStart()
         {
-            if (UsedBytes <= RetainBytes && !_pendingIdleTrim ||
+            if (UsedBytes <= RetainBytes && !_pendingIdleTrim && !_pendingPressureTrim ||
                 Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
             {
                 return;
@@ -562,6 +622,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             try
             {
+                if (_pendingPressureTrim)
+                {
+                    _pendingPressureTrim = false;
+                    Trim(0, PinFloor, fair: false);
+                }
+
                 Trim(LimitBytes, SoftFloor, fair: true);
                 Trim(LimitBytes, SoftFloor, fair: false);
 
