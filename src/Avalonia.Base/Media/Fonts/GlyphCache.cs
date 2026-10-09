@@ -66,6 +66,7 @@ namespace Avalonia.Media.Fonts
         private readonly int _budget;
         private readonly bool _retainOutlineBounds;
         private readonly object _lock = new();
+        private readonly Rasterization.GlyphCacheBudget _clock;
         private readonly Rasterization.GlyphCachePoolHandle _handle;
         private int _totalCost;
 
@@ -86,8 +87,8 @@ namespace Avalonia.Media.Fonts
             _retainOutlineBounds = retainOutlineBounds;
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
             _policy = policy ?? new ClockEvictionPolicy();
-            _handle = (budget ?? Rasterization.GlyphCacheBudget.Shared).Register(
-                Rasterization.GlyphCachePoolKind.Outlines, this);
+            _clock = budget ?? Rasterization.GlyphCacheBudget.Shared;
+            _handle = _clock.Register(Rasterization.GlyphCachePoolKind.Outlines, this);
         }
 
         /// <summary>Number of cached entries (outline and colour-drawing, with or without built geometry).</summary>
@@ -123,7 +124,7 @@ namespace Avalonia.Media.Fonts
             var geometry = Volatile.Read(ref entry.Geometry);
             if (geometry != null)
             {
-                _policy.OnAccessed(entry);
+                Touch(entry);
                 PropagateRecency(entry);
                 return geometry;
             }
@@ -139,7 +140,7 @@ namespace Avalonia.Media.Fonts
 
                 if (geometry != null)
                 {
-                    _policy.OnAccessed(entry);
+                    Touch(entry);
                     PropagateRecency(entry);
                     return geometry;
                 }
@@ -148,7 +149,7 @@ namespace Avalonia.Media.Fonts
                 {
                     // Keep the memoised miss warm too, or malformed entries are evicted first under
                     // pressure and re-parsed on every request.
-                    _policy.OnAccessed(entry);
+                    Touch(entry);
                     return null;   // built, but the glyph has no outline (malformed)
                 }
             }
@@ -169,6 +170,7 @@ namespace Avalonia.Media.Fonts
 
                 entry.SetGeometry(built.Geometry, built.Cost, built.Kind, built.Dependencies);
                 _policy.OnAdded(entry);
+                entry.LastUse = _clock.Frame;
                 _totalCost += built.Cost;
                 _handle.Charge(built.Cost);
 
@@ -194,7 +196,7 @@ namespace Avalonia.Media.Fonts
             var existing = Volatile.Read(ref entry.Geometry);
             if (existing != null)
             {
-                _policy.OnAccessed(entry);
+                Touch(entry);
                 PropagateRecency(entry);
                 return existing;
             }
@@ -208,14 +210,14 @@ namespace Avalonia.Media.Fonts
 
                 if (existing != null)
                 {
-                    _policy.OnAccessed(entry);
+                    Touch(entry);
                     PropagateRecency(entry);
                     return existing;
                 }
 
                 if (entry.HasGeometry)
                 {
-                    _policy.OnAccessed(entry);
+                    Touch(entry);
                     return null;   // built, but the glyph has no colour drawing
                 }
             }
@@ -231,6 +233,7 @@ namespace Avalonia.Media.Fonts
 
                 entry.SetGeometry(built.Geometry, built.Cost, built.Kind, built.Dependencies);
                 _policy.OnAdded(entry);
+                entry.LastUse = _clock.Frame;
                 _totalCost += built.Cost;
                 _handle.Charge(built.Cost);
 
@@ -239,6 +242,14 @@ namespace Avalonia.Media.Fonts
 
                 return built.Geometry;
             }
+        }
+
+        // A hit marks the entry for the cache's own policy and records the frame of its use for
+        // the glyph cache budget, which evicts by frame.
+        private void Touch(GlyphCacheEntry entry)
+        {
+            _policy.OnAccessed(entry);
+            entry.LastUse = _clock.Frame;
         }
 
         // Keep a composite's cached components at least as recently used as the composite, so a
@@ -252,7 +263,7 @@ namespace Avalonia.Media.Fonts
             {
                 if (_entries.TryGetValue(GlyphCacheKey.Outline(deps[i]), out var dep) && dep.HasGeometry)
                 {
-                    _policy.OnAccessed(dep);
+                    Touch(dep);
                 }
             }
         }

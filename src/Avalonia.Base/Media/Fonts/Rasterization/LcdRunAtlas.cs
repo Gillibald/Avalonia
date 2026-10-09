@@ -34,7 +34,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Bumps with every write, so a backend knows when its image of the page is stale.</summary>
         public int Version { get; internal set; }
 
-        /// <summary>The atlas tick of the last draw or placement that used this page.</summary>
+        /// <summary>The glyph cache budget frame of the last draw or placement that used this page.</summary>
         public long LastUse { get; internal set; }
 
         /// <summary>Whether the atlas dropped this page; its entries must be composed again.</summary>
@@ -90,8 +90,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Whether the atlas dropped this entry's page, so it no longer holds the mask.</summary>
         public bool IsEvicted => Page.IsEvicted;
 
-        /// <summary>Stamps the entry's page as used by the draw of <paramref name="tick"/>.</summary>
-        public void Touch(long tick) => Page.LastUse = tick;
+        /// <summary>Stamps the entry's page as used by the draw of <paramref name="frame"/>.</summary>
+        public void Touch(long frame) => Page.LastUse = frame;
 
         public void Dispose()
         {
@@ -114,8 +114,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// A page whose entries are all released is dropped at once. Beyond that, the budget is
     /// enforced a page at a time: when a new shelf would take the atlas over its budget, the
     /// page used longest ago is dropped whole, and its entries report themselves evicted, so
-    /// their runs compose them again. A page touched in the current tick is never dropped; if
-    /// every page is in use the atlas grows past its budget instead.
+    /// their runs compose them again. A page used by a frame still being drawn (see
+    /// <see cref="GlyphCacheBudget.PinFloor"/>) is never dropped; if every page is in use the
+    /// atlas grows past its budget instead.
     /// </para>
     /// </remarks>
     internal sealed class LcdRunAtlas
@@ -132,9 +133,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly List<LcdAtlasPage> _pages = new();
         private readonly long _budget;
         private readonly int _maxPageHeight;
+        private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
-        private long _clock;
         private long _evictions;
 
         /// <param name="budgetBytes">The byte budget of all pages together, at least one page of 64 rows.</param>
@@ -146,7 +147,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             _budget = Math.Max(budgetBytes, (long)PageWidth * 4 * RowQuantum);
             _maxPageHeight = Math.Clamp(maxPageHeight, RowQuantum, MaxPageHeight);
-            _handle = (budget ?? GlyphCacheBudget.Shared).Register(GlyphCachePoolKind.LcdAtlas, this);
+            _clock = budget ?? GlyphCacheBudget.Shared;
+            _handle = _clock.Register(GlyphCachePoolKind.LcdAtlas, this);
         }
 
         /// <summary>The atlas every hardware GPU context places its subpixel run masks in.</summary>
@@ -171,10 +173,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         public bool Fits(int width, int height) => width <= PageWidth && height <= _maxPageHeight;
 
         /// <summary>
-        /// Starts a draw or placement: pages stamped with the returned tick are protected from
-        /// eviction until a later tick is taken.
+        /// The frame a draw or placement stamps the pages it uses with: pages stamped with a
+        /// frame still being drawn are protected from eviction.
         /// </summary>
-        public long Tick() => Interlocked.Increment(ref _clock);
+        public long Tick() => _clock.Frame;
 
         /// <summary>
         /// Places an RGBA mask of <paramref name="width"/> x <paramref name="height"/> pixels,
@@ -258,7 +260,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var rows = RoundUp(height);
 
-            MakeRoom((long)PageWidth * 4 * rows, tick);
+            MakeRoom((long)PageWidth * 4 * rows);
 
             var fresh = new LcdAtlasPage(rows);
 
@@ -281,7 +283,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 var rows = Math.Min(_maxPageHeight, RoundUp(y + height));
 
-                MakeRoom((long)PageWidth * 4 * (rows - page.Height), tick);
+                MakeRoom((long)PageWidth * 4 * (rows - page.Height));
 
                 var before = page.Pixels.Length;
 
@@ -299,15 +301,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static int RoundUp(int rows) => (rows + RowQuantum - 1) / RowQuantum * RowQuantum;
 
         /// <summary>Drops the least recently used pages until <paramref name="bytes"/> more fit the budget.</summary>
-        private void MakeRoom(long bytes, long tick)
+        private void MakeRoom(long bytes)
         {
+            var pinFloor = _clock.PinFloor;
+
             while (_allocated + bytes > _budget)
             {
                 LcdAtlasPage? victim = null;
 
                 foreach (var page in _pages)
                 {
-                    if (page.LastUse < tick && (victim is null || page.LastUse < victim.LastUse))
+                    if (page.LastUse < pinFloor && (victim is null || page.LastUse < victim.LastUse))
                     {
                         victim = page;
                     }

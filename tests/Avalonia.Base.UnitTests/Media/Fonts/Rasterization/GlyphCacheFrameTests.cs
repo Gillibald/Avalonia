@@ -1,4 +1,4 @@
-using System.Threading.Tasks;
+using System.Threading;
 using Avalonia.Media.Fonts.Rasterization;
 using Xunit;
 
@@ -46,21 +46,24 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         [Fact]
-        public async Task Frames_Of_Two_Threads_Each_Advance_The_Clock()
+        public void Frames_Of_Two_Threads_Each_Advance_The_Clock()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
 
             using (budget.BeginFrame())
             {
                 var mine = budget.CurrentThreadFrame;
-
-                var other = await Task.Run(() =>
+                long other = 0;
+                var thread = new Thread(() =>
                 {
                     using (budget.BeginFrame())
                     {
-                        return budget.CurrentThreadFrame;
+                        other = budget.CurrentThreadFrame;
                     }
                 });
+
+                thread.Start();
+                thread.Join();
 
                 Assert.Equal(mine + 1, other);
                 Assert.Equal(mine, budget.CurrentThreadFrame);

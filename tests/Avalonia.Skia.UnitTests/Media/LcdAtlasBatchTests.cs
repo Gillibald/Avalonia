@@ -89,29 +89,41 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var reference = new Scene(typeface);
             using var own = new Scene(typeface);
             using var evicting = new Scene(typeface);
+            var referenceParagraph = CreateParagraph(typeface, 20, 15, new Point(250.4, 3));
             var ownParagraph = CreateParagraph(typeface, 20, 15, new Point(250.4, 3));
             var evictingParagraph = CreateParagraph(typeface, 20, 15, new Point(250.4, 3));
 
             try
             {
                 // The smallest budget holds one page, and a page of 64 rows holds a fraction of
-                // the frame's masks.
-                var atlas = new LcdRunAtlas(0, 64);
+                // a frame's masks. Frames alternate between two copies of the scene, so each
+                // frame drops the pages the other copy's frame placed. The atlas counts frames of
+                // a budget of its own, which only this test advances.
+                var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+                var atlas = new LcdRunAtlas(0, 64, budget);
+                var scenes = new[] { (own, ownParagraph), (evicting, evictingParagraph) };
                 var expected = Render(gpu, context =>
                 {
-                    own.Draw(context);
-                    DrawAll(context, ownParagraph, Brushes.Black);
+                    reference.Draw(context);
+                    DrawAll(context, referenceParagraph, Brushes.Black);
                 }, Mode.OwnImages, out _);
 
-                for (var frame = 0; frame < 3; frame++)
+                for (var frame = 0; frame < 4; frame++)
                 {
-                    var actual = Render(gpu, context =>
+                    var (scene, paragraph) = scenes[frame % 2];
+                    byte[] actual;
+
+                    using (budget.BeginFrame())
                     {
-                        evicting.Draw(context);
-                        DrawAll(context, evictingParagraph, Brushes.Black);
-                    }, Mode.Batched, out _, atlas);
+                        actual = Render(gpu, context =>
+                        {
+                            scene.Draw(context);
+                            DrawAll(context, paragraph, Brushes.Black);
+                        }, Mode.Batched, out _, atlas);
+                    }
 
                     TransformedAtlasTests.AssertEqual(expected, actual, $"frame {frame}");
                 }
@@ -120,6 +132,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
+                DisposeAll(referenceParagraph);
                 DisposeAll(ownParagraph);
                 DisposeAll(evictingParagraph);
             }

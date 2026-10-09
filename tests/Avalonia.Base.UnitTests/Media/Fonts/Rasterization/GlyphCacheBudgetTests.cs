@@ -32,17 +32,26 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             const int threads = 8;
             using var start = new Barrier(threads);
 
-            // Eight threads build the masks of one face in different orders: equal keys race
-            // (the losing build is discarded) while inserts evict concurrently.
+            // Eight threads build the masks of one face in different orders, each in frames of
+            // its own, over a window of glyphs that moves with the frames: equal keys race (the
+            // losing build is discarded) while inserts evict what earlier frames drew.
             Parallel.For(0, threads, new ParallelOptions { MaxDegreeOfParallelism = threads }, thread =>
             {
                 var random = new Random(thread);
 
                 start.SignalAndWait(TimeSpan.FromSeconds(10));
 
-                for (var i = 0; i < 4000; i++)
+                for (var frame = 0; frame < 40; frame++)
                 {
-                    cache.GetOrBuild(Key((ushort)random.Next(1500)), static key => MakeMask(4 + key.Glyph % 29));
+                    using (budget.BeginFrame())
+                    {
+                        for (var i = 0; i < 100; i++)
+                        {
+                            var glyph = (ushort)((frame * 37 + random.Next(150)) % 1500);
+
+                            cache.GetOrBuild(Key(glyph), static key => MakeMask(4 + key.Glyph % 29));
+                        }
+                    }
                 }
             });
 

@@ -1,3 +1,6 @@
+using System;
+using System.Runtime.ExceptionServices;
+using System.Threading;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 using Xunit;
@@ -13,6 +16,32 @@ namespace Avalonia.Skia.UnitTests.Media
     {
         [Fact]
         public void A_Top_Level_Drawing_Context_Begins_A_Frame_And_Its_Layers_Do_Not()
+        {
+            // On a thread of its own: a pooled test thread may still hold a context another test
+            // left open across an await.
+            Exception? failure = null;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    DrawWithLayer();
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+
+            thread.Start();
+            thread.Join();
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+        }
+
+        private static void DrawWithLayer()
         {
             var budget = GlyphCacheBudget.Shared;
             var info = new SKImageInfo(64, 64, SKColorType.Bgra8888, SKAlphaType.Premul);

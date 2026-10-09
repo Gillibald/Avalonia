@@ -8,8 +8,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// A bounded cache of rasterized glyph masks keyed by
     /// (glyph, scale bucket, subpixel phase, mode) — the sibling of <see cref="GlyphCache"/> for
     /// the managed rasterization path. Hits are lock-free; builds run outside the lock (racing
-    /// builders may duplicate work, the losing result is discarded); inserts and CLOCK eviction
-    /// run under one lock, keeping total payload bytes under the budget.
+    /// builders may duplicate work, the losing result is discarded); inserts and eviction run
+    /// under one lock, keeping total payload bytes under the budget.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -19,11 +19,13 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// are independent copies, eviction can never invalidate anything already drawable.
     /// </para>
     /// <para>
-    /// The eviction ring is a private copy of <see cref="ClockEvictionPolicy"/>'s scheme rather
-    /// than a reuse of it: that policy is intrusively typed to <see cref="GlyphCacheEntry"/>
-    /// (whose pin/bounds machinery masks do not need), and generalizing it would churn a file
-    /// that is still in review upstream. Fold the two rings together once the outline stack has
-    /// landed.
+    /// Recency is the <see cref="GlyphCacheBudget.Frame"/> a mask was last used in, written by a
+    /// hit with a plain store: a lost update only makes a mask look one frame older. The ring
+    /// keeps masks in the order they were queued; eviction takes the head, unless it was used
+    /// since it was queued, in which case it moves behind the tail first. That approximates
+    /// least-recently-used by frame without a heap or a relink per hit. A mask used by a frame
+    /// still being drawn (<see cref="GlyphCacheBudget.PinFloor"/>) is never evicted, so the
+    /// cache holds more than its budget while one frame draws more than fits.
     /// </para>
     /// </remarks>
     internal sealed class GlyphMaskCache
@@ -34,6 +36,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly ConcurrentDictionary<GlyphMaskKey, Entry> _entries = new();
         private readonly object _lock = new();
         private readonly int _budget;
+        private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private Entry? _hand;
         private int _count;
@@ -50,6 +53,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphMaskCache(GlyphCacheBudget budget, int budgetBytes = DefaultBudgetBytes)
         {
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
+            _clock = budget;
             _handle = budget.Register(GlyphCachePoolKind.Masks, this);
         }
 
@@ -129,7 +133,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
-                Volatile.Write(ref entry.Referenced, 1);
+                entry.LastUse = _clock.Frame;
                 GlyphRasterDiagnostics.CountMaskCacheHit();
                 return hit;
             }
@@ -148,6 +152,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (Volatile.Read(ref entry.Mask) is { } winner)
                 {
                     // Lost the build race — discard our result and hand out the published one.
+                    entry.LastUse = _clock.Frame;
                     return winner;
                 }
 
@@ -187,7 +192,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             while (_totalCost > _budget)
             {
-                var victim = SelectVictim();
+                var victim = SelectVictim(_clock.PinFloor);
 
                 if (victim is null)
                 {
@@ -210,8 +215,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private void RingAdd(Entry entry)
         {
-            // New entries arrive referenced so they survive at least one sweep.
-            Volatile.Write(ref entry.Referenced, 1);
+            var frame = _clock.Frame;
+
+            entry.LastUse = frame;
+            entry.QueuedAt = frame;
 
             if (_hand is null)
             {
@@ -253,37 +260,34 @@ namespace Avalonia.Media.Fonts.Rasterization
             _count--;
         }
 
-        private Entry? SelectVictim()
+        /// <summary>
+        /// Moves masks used since they were queued from the head of the ring behind its tail,
+        /// so the head is the mask used longest ago, as far as the queue order tells.
+        /// </summary>
+        private Entry? NormalizeHead()
         {
-            if (_hand is null)
+            for (var i = 0; i < _count && _hand is { } head; i++)
             {
-                return null;
-            }
+                var lastUse = head.LastUse;
 
-            // Two trips clear every referenced bit once, so a victim is always found (nothing is
-            // ever pinned here).
-            var limit = _count * 2;
-            var hand = _hand;
-
-            for (var i = 0; i < limit; i++)
-            {
-                var next = hand!.Next!;
-
-                if (Volatile.Read(ref hand.Referenced) != 0)
+                if (lastUse == head.QueuedAt)
                 {
-                    Volatile.Write(ref hand.Referenced, 0);
-                }
-                else
-                {
-                    _hand = next;
-                    return hand;
+                    return head;
                 }
 
-                hand = next;
+                head.QueuedAt = lastUse;
+                _hand = head.Next;
             }
 
-            _hand = hand;
             return _hand;
+        }
+
+        /// <summary>The mask used longest ago, unless it was used at or after <paramref name="floor"/>.</summary>
+        private Entry? SelectVictim(long floor)
+        {
+            var head = NormalizeHead();
+
+            return head is not null && head.LastUse < floor ? head : null;
         }
 
         private sealed class Entry
@@ -292,7 +296,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             public readonly GlyphMaskKey Key;
             public GlyphMask? Mask;
-            public int Referenced;
+
+            /// <summary>The frame of the mask's last use.</summary>
+            public long LastUse;
+
+            /// <summary>The <see cref="LastUse"/> the mask had when it was queued at the ring's tail.</summary>
+            public long QueuedAt;
+
             public Entry? Prev;
             public Entry? Next;
         }

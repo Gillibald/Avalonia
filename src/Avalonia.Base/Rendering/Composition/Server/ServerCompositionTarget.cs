@@ -6,6 +6,7 @@ using Avalonia.Collections.Pooled;
 using Avalonia.Diagnostics;
 using Avalonia.Logging;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Platform;
@@ -199,6 +200,9 @@ namespace Avalonia.Rendering.Composition.Server
                             // Check if render target can be rendered to directly and preserves the previous frame
                             || !(_renderTarget.Properties.RetainsPreviousFrameContents
                                  && _renderTarget.Properties.IsSuitableForDirectRendering);
+
+            // Everything this pass draws, the layer and the target, is one frame of the glyph caches.
+            using var glyphCacheFrame = GlyphCacheBudget.Shared.BeginFrame(this);
 
             IDrawingContextImpl renderTargetContext;
             RenderTargetDrawingContextProperties properties;

@@ -43,6 +43,7 @@ namespace Avalonia.Skia
         private GRContext? _grContext;
         private readonly GlyphRasterTarget _glyphRasterTarget;
         private readonly GlyphMaskAtlas? _maskAtlas;
+        private readonly GlyphCacheFrame _glyphCacheFrame;
         public GRContext? GrContext => _grContext;
         private readonly ISkiaGpu? _gpu;
         private readonly SKPaint _strokePaint = SKPaintCache.Shared.Get();
@@ -235,17 +236,10 @@ namespace Avalonia.Skia
             _session = createInfo.CurrentSession;
 
             // Only a context that updates part of a page in place shares one atlas between
-            // typefaces. A render session is one frame of a render target; the contexts of layers
-            // and offscreen surfaces drawn within it have no session of their own.
+            // typefaces.
             _maskAtlas = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext)?.MaskAtlas;
             _foldsTranslucentColors = _grContext is not null && SkiaVertexColorPrecision.IsExact(_grContext);
 
-            if (_session is not null)
-            {
-                _maskAtlas?.BeginSession();
-            }
-
-            
             if (createInfo.ScaleDrawingToDpi && !createInfo.Dpi.NearlyEquals(SkiaPlatform.DefaultDpi))
             {
                 _postTransform =
@@ -261,6 +255,10 @@ namespace Avalonia.Skia
             {
                 _useOpacitySaveLayer = options.UseOpacitySaveLayer;
             }
+
+            // Last, so a constructor that throws leaves no frame open. A context drawn inside
+            // another on this thread (a layer, an offscreen surface) belongs to that frame.
+            _glyphCacheFrame = GlyphCacheBudget.Shared.BeginFrame();
         }
         
         /// <summary>
@@ -1363,6 +1361,7 @@ namespace Avalonia.Skia
             finally
             {
                 _disposed = true;
+                _glyphCacheFrame.Dispose();
             }
         }
 

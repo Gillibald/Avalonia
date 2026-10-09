@@ -105,6 +105,9 @@ namespace Avalonia.Media.Fonts
 
         internal int Referenced;
         internal int PinCount;
+
+        /// <summary>The glyph cache budget frame of the entry's last use.</summary>
+        internal long LastUse;
         internal GlyphCacheEntry? Prev;
         internal GlyphCacheEntry? Next;
     }

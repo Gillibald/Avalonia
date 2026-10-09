@@ -130,11 +130,15 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void Eviction_Keeps_Total_Cost_Under_The_Budget()
         {
             var cost = MakeMask().ByteCost;
-            var cache = new GlyphMaskCache(budgetBytes: cost * 3);
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var cache = new GlyphMaskCache(budget, budgetBytes: cost * 3);
 
             for (ushort glyph = 1; glyph <= 6; glyph++)
             {
-                cache.GetOrBuild(Key(glyph), _ => MakeMask());
+                using (budget.BeginFrame())
+                {
+                    cache.GetOrBuild(Key(glyph), _ => MakeMask());
+                }
             }
 
             Assert.True(cache.TotalCost <= cost * 3, $"TotalCost {cache.TotalCost} exceeds budget {cost * 3}");
@@ -144,28 +148,36 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void A_Touched_Entry_Survives_Eviction_Pressure()
         {
-            // CLOCK gives second chances by comparing referenced bits, so the touch only helps
-            // once a sweep has cleared some bits: when everything is freshly referenced, the
-            // sweep clears the whole ring and correctly degrades to FIFO from the hand. Script
-            // that state instead of racing it.
             var cost = MakeMask().ByteCost;
-            var cache = new GlyphMaskCache(budgetBytes: cost * 3);
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var cache = new GlyphMaskCache(budget, budgetBytes: cost * 3);
 
-            for (ushort glyph = 1; glyph <= 3; glyph++)
+            using (budget.BeginFrame())
             {
-                cache.GetOrBuild(Key(glyph), _ => MakeMask());
+                for (ushort glyph = 1; glyph <= 3; glyph++)
+                {
+                    cache.GetOrBuild(Key(glyph), _ => MakeMask());
+                }
             }
 
-            // Over budget: the sweep clears 1..3, gives new 4 its chance, and evicts 1 (FIFO
-            // among the uniformly-referenced) — leaving 2 and 3 with cleared bits.
-            cache.GetOrBuild(Key(4), _ => MakeMask());
+            // Over budget: 1 to 3 were last used in the same frame, so the first queued goes.
+            using (budget.BeginFrame())
+            {
+                cache.GetOrBuild(Key(4), _ => MakeMask());
+            }
+
             Assert.False(cache.TryGet(Key(1), out _));
 
-            // Touch 2: its bit is now set while 3's stays clear.
-            cache.GetOrBuild(Key(2), _ => throw new InvalidOperationException("must be a hit"));
+            using (budget.BeginFrame())
+            {
+                cache.GetOrBuild(Key(2), _ => throw new InvalidOperationException("must be a hit"));
+            }
 
-            // Next eviction passes the touched 2 (second chance) and reclaims the cold 3.
-            cache.GetOrBuild(Key(5), _ => MakeMask());
+            // The next eviction passes the touched 2 and reclaims 3, used longest ago.
+            using (budget.BeginFrame())
+            {
+                cache.GetOrBuild(Key(5), _ => MakeMask());
+            }
 
             Assert.True(cache.TryGet(Key(2), out _), "the touched entry was evicted");
             Assert.False(cache.TryGet(Key(3), out _), "the cold entry survived");
@@ -198,9 +210,17 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             var mask = GlyphMasks.Build(typeface, scratch, key);
             Assert.False(mask.IsEmpty);
 
-            // A cache sized to exactly one mask: inserting a second evicts the first.
-            var cache = new GlyphMaskCache(budgetBytes: mask.ByteCost);
-            var published = cache.GetOrBuild(key, _ => mask);
+            // A cache sized to exactly one mask: inserting a second in a later frame evicts the
+            // first.
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var cache = new GlyphMaskCache(budget, budgetBytes: mask.ByteCost);
+            GlyphMask published;
+
+            using (budget.BeginFrame())
+            {
+                published = cache.GetOrBuild(key, _ => mask);
+            }
+
             Assert.Same(mask, published);
 
             var width = mask.Width + 8;
@@ -210,7 +230,12 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             var snapshot = composed.AsSpan().ToArray();
 
             var otherKey = key with { Glyph = (ushort)(glyph + 1) };
-            cache.GetOrBuild(otherKey, _ => GlyphMasks.Build(typeface, scratch, otherKey));
+
+            using (budget.BeginFrame())
+            {
+                cache.GetOrBuild(otherKey, _ => GlyphMasks.Build(typeface, scratch, otherKey));
+            }
+
             Assert.False(cache.TryGet(key, out _));
 
             // The composed pixels are an independent copy (D7's one deliberate copy), and a

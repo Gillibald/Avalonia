@@ -78,7 +78,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Bumps with every write, so a backend knows when its image of the page is stale.</summary>
         public int Version { get; internal set; }
 
-        /// <summary>The atlas tick of the last draw or build that used this page.</summary>
+        /// <summary>The glyph cache budget frame of the last draw or build that used this page.</summary>
         public long LastUse { get; internal set; }
 
         /// <summary>Whether the atlas dropped this page; sprites on it must be rebuilt.</summary>
@@ -173,18 +173,19 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <para>
     /// Entries cannot be freed one by one, so the budget is enforced a page at a time: when a
     /// new shelf would take the atlas over its budget, the page used longest ago is dropped
-    /// whole. A page touched during the current draw (same tick) is never dropped, so building
-    /// one run cannot evict the entries it placed a moment ago; if every page is in use the
-    /// atlas grows past its budget instead.
+    /// whole. Pages record the <see cref="GlyphCacheBudget.Frame"/> of their last use. A page
+    /// used by a frame still being drawn is never dropped, so building one run cannot evict the
+    /// entries it placed a moment ago; if every page is in use the atlas grows past its budget
+    /// instead.
     /// </para>
     /// <para>
-    /// Once a drawing session has begun (<see cref="BeginSession"/>), pages touched during the
-    /// session are kept as well, up to twice the budget: a typeface streaming new glyphs then
-    /// drops pages nobody drew this session, never the pages of the text the session draws
-    /// around it. Past twice the budget only the current draw's pages are kept.
+    /// Pages drawn by the previous frame of a window (<see cref="GlyphCacheBudget.SoftFloor"/>)
+    /// are kept as well, up to twice the budget: a typeface streaming new glyphs then drops pages
+    /// nobody drew lately, never the pages of the text drawn around it every frame. Past twice
+    /// the budget only the pages of frames still being drawn are kept.
     /// </para>
     /// </remarks>
-    internal sealed class GlyphMaskAtlas
+    internal sealed class GlyphMaskAtlas : IGlyphCacheFrameListener
     {
         /// <summary>Page width in pixels.</summary>
         public const int PageWidth = 1024;
@@ -211,11 +212,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly List<GlyphAtlasPage> _pages = new();
         private readonly List<GlyphAtlasPage> _emptied = new();
         private readonly int _budget;
+        private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
-        private long _clock;
         private long _evictions;
-        private long _sessionStart = long.MaxValue;
 
         /// <param name="budgetBytes">The byte budget of all pages together.</param>
         /// <param name="budget">
@@ -224,7 +224,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphMaskAtlas(int budgetBytes, GlyphCacheBudget? budget = null)
         {
             _budget = Math.Max(budgetBytes, PageWidth * RowQuantum);
-            _handle = (budget ?? GlyphCacheBudget.Shared).Register(GlyphCachePoolKind.Atlas, this);
+            _clock = budget ?? GlyphCacheBudget.Shared;
+            _handle = _clock.Register(GlyphCachePoolKind.Atlas, this);
         }
 
         /// <summary>
@@ -268,30 +269,22 @@ namespace Avalonia.Media.Fonts.Rasterization
             => LeadingGutter + width + 1 <= PageWidth && LeadingGutter + height + 1 <= MaxPageHeight;
 
         /// <summary>
-        /// Starts a draw or build: pages stamped with the returned tick are protected from
-        /// eviction until a later tick is taken.
+        /// The frame a draw or build stamps the pages it uses with: pages stamped with a frame
+        /// still being drawn are protected from eviction.
         /// </summary>
-        public long Tick() => Interlocked.Increment(ref _clock);
+        public long Tick() => _clock.Frame;
 
         /// <summary>
-        /// Starts a drawing session: until the next session begins, the pages it draws from are
-        /// kept while the atlas stays within twice its budget, and the pages <see cref="Retire"/>
-        /// emptied are dropped. Called once per frame of a render target on the thread that draws
-        /// it, not by the contexts of layers drawn within that frame.
+        /// Drops the pages <see cref="Retire"/> emptied, at the start of a frame on the thread
+        /// that draws it, unless another owner has placed entries on them since.
         /// </summary>
-        public void BeginSession()
+        void IGlyphCacheFrameListener.OnFrameStart(long frame)
         {
-            var start = Tick();
-
-            Interlocked.Exchange(ref _sessionStart, start);
-
             lock (_lock)
             {
-                // A page emptied by retired owners is dropped here, between frames on the thread
-                // that draws its backend image, unless another owner has placed entries on it since.
                 foreach (var page in _emptied)
                 {
-                    if (!page.IsEvicted && page.Keys.Count == 0 && page.LastUse < start)
+                    if (!page.IsEvicted && page.Keys.Count == 0 && page.LastUse < frame)
                     {
                         Evict(page);
                     }
@@ -303,7 +296,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Removes the entries of <paramref name="owner"/>, a typeface that draws no more. A page
-        /// left without entries is dropped when the next session begins. Batches built from the
+        /// left without entries is dropped when the next frame begins. Batches built from the
         /// removed entries keep sampling their pages: a dropped page's pixels stay readable, and
         /// the atlas never writes over an entry.
         /// </summary>
@@ -342,6 +335,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     {
                         _emptied.Add(page);
                     }
+                }
+
+                if (_emptied.Count > 0)
+                {
+                    _clock.RunAtNextFrame(this);
                 }
             }
         }
@@ -479,7 +477,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var rows = RoundUp(LeadingGutter + height);
 
-            MakeRoom((long)PageWidth * rows, tick);
+            MakeRoom((long)PageWidth * rows);
 
             var fresh = new GlyphAtlasPage(rows) { UsedHeight = LeadingGutter };
 
@@ -503,7 +501,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var rows = Math.Min(MaxPageHeight, RoundUp(y + height));
                 var growth = (long)PageWidth * (rows - page.Height);
 
-                MakeRoom(growth, tick);
+                MakeRoom(growth);
 
                 var before = page.Pixels.Length;
 
@@ -522,24 +520,23 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Drops the least recently used pages until <paramref name="bytes"/> more fit the budget,
-        /// sparing the pages of the current session while the atlas stays within twice its budget.
+        /// sparing the pages drawn since each window's previous frame while the atlas stays within
+        /// twice its budget, and the pages of frames still being drawn always.
         /// </summary>
-        private void MakeRoom(long bytes, long tick)
+        private void MakeRoom(long bytes)
         {
-            var sessionStart = Math.Min(Interlocked.Read(ref _sessionStart), tick);
-
             while (_allocated + bytes > _budget)
             {
-                var victim = LeastRecentlyUsed(sessionStart);
+                var victim = LeastRecentlyUsed(_clock.SoftFloor);
 
                 if (victim is null)
                 {
-                    if (sessionStart == tick || _allocated + bytes <= 2L * _budget)
+                    if (_allocated + bytes <= 2L * _budget)
                     {
                         return;
                     }
 
-                    victim = LeastRecentlyUsed(tick);
+                    victim = LeastRecentlyUsed(_clock.PinFloor);
 
                     if (victim is null)
                     {
@@ -551,14 +548,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        /// <summary>The page used longest ago among those last used before <paramref name="tick"/>.</summary>
-        private GlyphAtlasPage? LeastRecentlyUsed(long tick)
+        /// <summary>The page used longest ago among those last used before <paramref name="frame"/>.</summary>
+        private GlyphAtlasPage? LeastRecentlyUsed(long frame)
         {
             GlyphAtlasPage? victim = null;
 
             foreach (var page in _pages)
             {
-                if (page.LastUse < tick && (victim is null || page.LastUse < victim.LastUse))
+                if (page.LastUse < frame && (victim is null || page.LastUse < victim.LastUse))
                 {
                     victim = page;
                 }
