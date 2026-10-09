@@ -137,6 +137,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         private int _trimGeneration;
 
         public GlyphCacheBudget(long limitBytes)
+            : this(limitBytes, null, null)
+        {
+        }
+
+        /// <param name="limitBytes">The global maximum.</param>
+        /// <param name="idleTimer">Schedules the trim after the last frame; a thread-pool timer when omitted.</param>
+        /// <param name="clock">The time since an arbitrary start; a stopwatch when omitted.</param>
+        public GlyphCacheBudget(long limitBytes, IGlyphCacheIdleTimer? idleTimer, Func<TimeSpan>? clock)
         {
             LimitBytes = Math.Max(1, limitBytes);
             RunMasks = new RunMaskPool(this);
@@ -163,6 +171,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Sets <see cref="LimitBytes"/>; the next frame trims to it.</summary>
         public void SetLimit(long limitBytes) => LimitBytes = Math.Max(1, limitBytes);
+
+        /// <summary>What may stay resident once content has aged: the target of idle trims.</summary>
+        public long RetainBytes => LimitBytes / 2;
 
         /// <summary>Bytes charged by all pools together.</summary>
         public long UsedBytes => Interlocked.Read(ref _used);
@@ -679,6 +690,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         public void Dispose() => _budget?.EndFrame(_id);
+    }
+
+    /// <summary>Schedules the trim a <see cref="GlyphCacheBudget"/> runs once frames have stopped.</summary>
+    internal interface IGlyphCacheIdleTimer
+    {
+        /// <summary>Runs <paramref name="callback"/> once, on any thread, after <paramref name="delay"/>.</summary>
+        void Schedule(TimeSpan delay, Action callback);
     }
 
     /// <summary>Work a pool asks the budget to run when the next frame begins.</summary>
