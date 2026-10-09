@@ -103,6 +103,8 @@ namespace Avalonia.Skia
                 return true;
             }
 
+            AdmitToShapeClips(dest);
+
             var bounds = SKRectI.Truncate(dest);
 
             if (_lcdBatchCount > 0)

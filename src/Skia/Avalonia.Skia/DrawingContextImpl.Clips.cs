@@ -15,6 +15,9 @@ namespace Avalonia.Skia
         // stack: applying one applies every clip below it first.
         private int _deferredClips;
 
+        // The shape clips on the stack, applied or deferred.
+        private int _shapeClips;
+
         /// <summary>
         /// Whether pixel-aligned rectangle clips wait to be applied to the canvas until something
         /// other than a batched glyph run draws under them. Glyph runs are trimmed to them
@@ -57,6 +60,156 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
+        /// Records an antialiased rounded rectangle clip, or one with edges between pixels,
+        /// without applying it to the canvas. Returns <c>false</c> when this context applies
+        /// every clip or the transform rotates or skews it.
+        /// </summary>
+        /// <remarks>
+        /// Runs drawn under the clip stay pending only while they keep a pixel clear of its edges
+        /// and of the squares its corners round off (<see cref="ClipLevel.Fits"/>). There the
+        /// clip covers every pixel fully: Skia skips a clip that contains the draw, and its
+        /// antialiased coverage of a pixel centre at least one and a half pixels inside an edge
+        /// saturates to one, however its shader rounds. Such runs draw the same pixels with the
+        /// clip as without, so the clip need not be on the canvas when they are drawn.
+        /// </remarks>
+        private bool TryDeferShapeClip(RoundedRect clip)
+        {
+            if (!DefersClips || CanvasTransform() is not { } transform || transform.M12 != 0 || transform.M21 != 0 ||
+                transform.ContainsPerspective())
+            {
+                return false;
+            }
+
+            var device = clip.Rect.TransformToAABB(transform);
+            var radiusX = Math.Max(Math.Max(clip.RadiiTopLeft.X, clip.RadiiTopRight.X),
+                Math.Max(clip.RadiiBottomRight.X, clip.RadiiBottomLeft.X)) * Math.Abs(transform.M11);
+            var radiusY = Math.Max(Math.Max(clip.RadiiTopLeft.Y, clip.RadiiTopRight.Y),
+                Math.Max(clip.RadiiBottomRight.Y, clip.RadiiBottomLeft.Y)) * Math.Abs(transform.M22);
+
+            // Also rejects NaN.
+            if (!(Math.Abs(device.Left) <= 1 << 24 && Math.Abs(device.Top) <= 1 << 24 &&
+                  Math.Abs(device.Right) <= 1 << 24 && Math.Abs(device.Bottom) <= 1 << 24 &&
+                  radiusX >= 0 && radiusY >= 0))
+            {
+                return false;
+            }
+
+            CheckLease();
+
+            var level = new ClipLevel(GlyphRunClipKind.RoundedRectOrGeometry, device.ToSKRect(), null)
+            {
+                Deferred = true,
+                Transform = transform,
+                IsShape = true,
+                Shape = clip,
+                Across = new SKRect((float)(device.Left + 1), (float)(device.Top + radiusY + 1),
+                    (float)(device.Right - 1), (float)(device.Bottom - radiusY - 1)),
+                Down = new SKRect((float)(device.Left + radiusX + 1), (float)(device.Top + 1),
+                    (float)(device.Right - radiusX - 1), (float)(device.Bottom - 1)),
+            };
+
+            TrackClipLevel(level);
+            _deferredClips++;
+
+            return true;
+        }
+
+        /// <summary>
+        /// The transform the canvas draws under, read back from the canvas when only the canvas
+        /// knows it, such as after a restore. A clip deferred under it restores it when popped,
+        /// which is exact for a 2D canvas matrix; a matrix with depth terms gives <c>null</c>.
+        /// </summary>
+        private Matrix? CanvasTransform()
+        {
+            if (_currentTransform is { } current)
+            {
+                return current;
+            }
+
+            var m = Canvas.TotalMatrix44;
+
+            if (m.M02 != 0 || m.M12 != 0 || m.M20 != 0 || m.M21 != 0 || m.M22 != 1 || m.M23 != 0 || m.M32 != 0)
+            {
+                return null;
+            }
+
+            return Transform;
+        }
+
+        /// <summary>
+        /// Before a run covering <paramref name="bounds"/> in device pixels is batched: marks the
+        /// shape clips it does not fit, so they draw the pending runs when popped, and when one of
+        /// them is still deferred, draws the pending runs and applies the deferred clips, so the
+        /// run is batched under clips on the canvas.
+        /// </summary>
+        private void AdmitToShapeClips(in SKRect bounds)
+        {
+            if (_shapeClips == 0)
+            {
+                return;
+            }
+
+            var applyDeferred = false;
+
+            for (var i = 0; i < _clipDepth; i++)
+            {
+                ref var level = ref _clipLevels[i];
+
+                if (level.IsShape && !level.Fits(bounds))
+                {
+                    level.Unfit = true;
+                    applyDeferred |= level.Deferred;
+                }
+            }
+
+            if (applyDeferred)
+            {
+                FlushGlyphBatch(GlyphBatchFlushReason.Clip);
+            }
+        }
+
+        /// <summary>
+        /// Whether applying the deferred clips to the canvas leaves every pending run's pixels as
+        /// they are: each run lies inside the deferred rectangles and fits the deferred shapes.
+        /// </summary>
+        private bool PendingRunsUnaffectedByDeferredClips()
+        {
+            for (var i = _clipDepth - _deferredClips; i < _clipDepth; i++)
+            {
+                ref readonly var level = ref _clipLevels[i];
+
+                if (level.IsShape ? !PendingRunsFit(level) : !PendingRunsLieInside(level.Device))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>Whether every pending glyph run, grayscale or subpixel, fits the shape clip <paramref name="level"/>.</summary>
+        private bool PendingRunsFit(in ClipLevel level)
+        {
+            for (var i = 0; i < _pendingBatchCount; i++)
+            {
+                if (!level.Fits(_pendingBatches![i].Bounds))
+                {
+                    return false;
+                }
+            }
+
+            for (var i = 0; i < _lcdBatchCount; i++)
+            {
+                if (!level.Fits(_lcdBatch!.Bounds[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Applies the deferred clips to the canvas, in the order they were pushed, each under
         /// the transform it was pushed under; the current transform stays.
         /// </summary>
@@ -76,12 +229,35 @@ namespace Avalonia.Skia
 
                 SetCanvasTransform(level.Transform, default);
                 Canvas.Save();
-                Canvas.ClipRect(level.Local);
+                ClipCanvas(level);
                 level.Deferred = false;
             }
 
             SetCanvasTransform(current, currentMatrix);
             _deferredClips = 0;
+        }
+
+        /// <summary>Clips the canvas to a deferred clip under the current canvas transform, as pushing it would have.</summary>
+        private void ClipCanvas(in ClipLevel level)
+        {
+            if (!level.IsShape)
+            {
+                Canvas.ClipRect(level.Local);
+                return;
+            }
+
+            var clip = level.Shape;
+            var roundRect = SKRoundRectCache.Shared.Get();
+
+            roundRect.SetRectRadii(clip.Rect.ToSKRect(),
+                new[]
+                {
+                    clip.RadiiTopLeft.ToSKPoint(), clip.RadiiTopRight.ToSKPoint(),
+                    clip.RadiiBottomRight.ToSKPoint(), clip.RadiiBottomLeft.ToSKPoint(),
+                });
+
+            Canvas.ClipRoundRect(roundRect, antialias: true);
+            SKRoundRectCache.Shared.Return(roundRect);
         }
 
         private void SetCanvasTransform(Matrix? transform, in SKMatrix44 matrix)
@@ -110,9 +286,10 @@ namespace Avalonia.Skia
                 }
 
                 // Pending runs trimmed to an applied pixel-aligned clip look the same under the
-                // clips around it.
-                if (DefersClips && level.Kind == GlyphRunClipKind.PixelAlignedRect &&
-                    PendingRunsLieInside(level.Device))
+                // clips around it, as do runs batched under an applied shape clip that all fit it:
+                // the clip was applied with no run pending that it would cut.
+                if (DefersClips && (level.Kind == GlyphRunClipKind.PixelAlignedRect &&
+                                    PendingRunsLieInside(level.Device) || level.IsShape && !level.Unfit))
                 {
                     CheckLease();
                     RestoreCanvas();
@@ -281,6 +458,11 @@ namespace Avalonia.Skia
                 level.Trim = level.Device;
             }
 
+            if (level.IsShape)
+            {
+                _shapeClips++;
+            }
+
             _clipLevels[_clipDepth++] = level;
         }
 
@@ -290,6 +472,11 @@ namespace Avalonia.Skia
             // first save as well.
             if (_clipDepth > 0)
             {
+                if (_clipLevels[_clipDepth - 1].IsShape)
+                {
+                    _shapeClips--;
+                }
+
                 _clipLevels[--_clipDepth] = default;
             }
         }
@@ -393,6 +580,38 @@ namespace Avalonia.Skia
 
             /// <summary>The transform a deferred clip was pushed under, which popping it restores.</summary>
             public Matrix Transform;
+
+            /// <summary>
+            /// Whether the clip is an antialiased rounded rectangle that batched runs may stay
+            /// pending under while they keep clear of its edges and corners (<see cref="Fits"/>).
+            /// </summary>
+            public bool IsShape;
+
+            /// <summary>A shape clip as it was pushed, in the coordinates of <see cref="Transform"/>.</summary>
+            public RoundedRect Shape;
+
+            /// <summary>
+            /// The device bands of a shape clip where it leaves every pixel whole: the rectangle
+            /// between the corners' heights, and the one between their widths, each a pixel inside
+            /// the edges.
+            /// </summary>
+            public SKRect Across, Down;
+
+            /// <summary>
+            /// Whether a run that does not <see cref="Fits">fit</see> the shape clip was batched
+            /// while it was pushed, so its pending runs must be drawn before it is popped.
+            /// </summary>
+            public bool Unfit;
+
+            /// <summary>
+            /// Whether <paramref name="bounds"/>, whole device pixels, lie where the shape clip
+            /// covers every pixel fully, so drawing them without the clip changes no pixel.
+            /// </summary>
+            public readonly bool Fits(in SKRect bounds) => Inside(Across, bounds) || Inside(Down, bounds);
+
+            private static bool Inside(in SKRect outer, in SKRect bounds) =>
+                outer.Left <= bounds.Left && outer.Top <= bounds.Top && bounds.Right <= outer.Right &&
+                bounds.Bottom <= outer.Bottom;
 
             /// <summary>Whether <paramref name="bounds"/>, whole device pixels, lie inside the clip.</summary>
             public readonly bool Contains(SKRect bounds)

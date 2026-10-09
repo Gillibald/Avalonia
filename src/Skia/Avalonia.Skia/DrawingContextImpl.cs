@@ -303,7 +303,9 @@ namespace Avalonia.Skia
         {
             CheckLease();
 
-            if (CanDrawAheadOfPendingRuns(bounds))
+            // The deferred clips go on the canvas for the draw and stay there, so they must leave
+            // the pending runs as they are.
+            if (CanDrawAheadOfPendingRuns(bounds) && (_deferredClips == 0 || PendingRunsUnaffectedByDeferredClips()))
             {
                 ForgetBlitTarget();
                 ApplyDeferredClips();
@@ -1110,7 +1112,7 @@ namespace Avalonia.Skia
             // Clips pushed through a drawing context arrive here, most of them without radii. On
             // whole device pixels the antialiased edge of such a clip covers whole pixels, so it
             // clips exactly as the rectangle recorded for glyph batching does.
-            if (!clip.IsRounded && TryDeferRectClip(clip.Rect))
+            if (!clip.IsRounded && TryDeferRectClip(clip.Rect) || TryDeferShapeClip(clip))
             {
                 return;
             }

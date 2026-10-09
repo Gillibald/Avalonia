@@ -117,6 +117,8 @@ namespace Avalonia.Skia
                 return true;
             }
 
+            AdmitToShapeClips(bounds);
+
             var target = FindPendingBatch(page, color);
 
             // A full batch draws on its own: no pixel takes coverage from it and from another
@@ -206,9 +208,8 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// Whether a canvas draw that changes no pixel outside <paramref name="bounds"/>, in local
-        /// coordinates, can be drawn while glyph runs are pending: it reaches no pending run, and
-        /// the deferred clips it applies to the canvas cut none, so the runs drawn after it change
-        /// the pixels they would have changed before it.
+        /// coordinates, can be drawn while glyph runs are pending: it reaches no pending run, so
+        /// the runs drawn after it change the pixels they would have changed before it.
         /// </summary>
         private bool CanDrawAheadOfPendingRuns(Rect bounds)
         {
@@ -236,11 +237,6 @@ namespace Avalonia.Skia
             // Also rejects NaN.
             if (!(Math.Abs(left) <= 1 << 24 && Math.Abs(top) <= 1 << 24 && Math.Abs(right) <= 1 << 24 &&
                   Math.Abs(bottom) <= 1 << 24))
-            {
-                return false;
-            }
-
-            if (_deferredClips > 0 && !PendingRunsLieInside(_clipLevels[_clipDepth - 1].Trim))
             {
                 return false;
             }
