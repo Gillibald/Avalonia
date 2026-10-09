@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -90,9 +91,18 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// another face streaming new glyphs through the whole limit.
     /// </para>
     /// <para>
+    /// Content that stops being drawn ages out to <see cref="RetainBytes"/>: a frame that begins
+    /// with more than that trims what no frame drew for <see cref="IdleFrames"/>. Frames stop
+    /// when nothing changes on screen, so the last frame that ends above the retain target arms
+    /// a timer that trims once, <see cref="IdleDelay"/> later, what each source did not draw in
+    /// its last two frames. Static text keeps its working set, since it is what was drawn last.
+    /// </para>
+    /// <para>
     /// Atlas pages, run masks and sprite sets are frame-affine: their storage may be drawn by the
-    /// thread that draws a frame, so they are trimmed only where a frame begins, and run-level
-    /// state only on the thread that draws it.
+    /// thread that draws a frame, so they are trimmed where a frame begins, run-level state only
+    /// on the thread that draws it, or by a trim from another thread while no frame is open,
+    /// which keeps frames from beginning until it is done. A trim from another thread while a
+    /// frame is drawn leaves them to the next frame start.
     /// </para>
     /// </remarks>
     internal sealed class GlyphCacheBudget
@@ -108,6 +118,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public const int IdleFrames = 120;
 
+        /// <summary>
+        /// How long after the last frame the idle trim runs: the time <see cref="IdleFrames"/>
+        /// take at 60 Hz, so content ages the same whether frames continue or stop.
+        /// </summary>
+        public static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
+
         // Windows and other frame sources whose previous frame is kept; the first slot stands for
         // every frame begun without a source.
         private const int MaxSources = 8;
@@ -118,6 +134,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         // entries of costlier kinds: the cheaper a kind is to rebuild, the earlier it goes.
         private static readonly int[] s_minimumAge = { 0, 2, 8, 30, 60 };
 
+        [ThreadStatic]
+        private static bool t_quiescentTrim;
+
+        private readonly IGlyphCacheIdleTimer _idleTimer;
+        private readonly Func<TimeSpan> _clock;
+        private readonly Action _onIdleTimer;
+
+        // Held by a trim from outside a frame that may touch frame-affine pools, and briefly by
+        // every frame begin, so no frame begins while such a trim runs.
+        private readonly object _gate = new();
         private readonly object _poolsLock = new();
         private readonly List<GlyphCachePoolHandle> _pools = new();
         private readonly object _frameLock = new();
@@ -135,6 +161,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         private int _nextFrameId;
         private int _trimming;
         private int _trimGeneration;
+        private int _idleArmed;
+        private volatile bool _pendingIdleTrim;
+        private long _lastFrameEnd;
+        private long _retain;
 
         public GlyphCacheBudget(long limitBytes)
             : this(limitBytes, null, null)
@@ -146,7 +176,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="clock">The time since an arbitrary start; a stopwatch when omitted.</param>
         public GlyphCacheBudget(long limitBytes, IGlyphCacheIdleTimer? idleTimer, Func<TimeSpan>? clock)
         {
-            LimitBytes = Math.Max(1, limitBytes);
+            SetLimit(limitBytes);
+            _idleTimer = idleTimer ?? new ThreadPoolIdleTimer();
+            _clock = clock ?? (static () => Stopwatch.GetElapsedTime(0));
+            _onIdleTimer = OnIdleTimer;
             RunMasks = new RunMaskPool(this);
             SpriteSets = new SpriteSetPool(this);
         }
@@ -169,11 +202,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Past this, a build evicts from its own pool at once.</summary>
         public long InlineLimitBytes => LimitBytes + LimitBytes / 2;
 
-        /// <summary>Sets <see cref="LimitBytes"/>; the next frame trims to it.</summary>
-        public void SetLimit(long limitBytes) => LimitBytes = Math.Max(1, limitBytes);
+        /// <summary>
+        /// Sets <see cref="LimitBytes"/> and <see cref="RetainBytes"/>, half the limit unless
+        /// given; the next frame trims to them.
+        /// </summary>
+        public void SetLimit(long limitBytes, long retainBytes = -1)
+        {
+            LimitBytes = Math.Max(1, limitBytes);
+            Volatile.Write(ref _retain, retainBytes < 0 ? LimitBytes / 2 : Math.Min(retainBytes, LimitBytes));
+        }
 
         /// <summary>What may stay resident once content has aged: the target of idle trims.</summary>
-        public long RetainBytes => LimitBytes / 2;
+        public long RetainBytes => Volatile.Read(ref _retain);
+
+        /// <summary>Whether the current thread runs a trim while no frame is open; pools of run-level state check it.</summary>
+        internal static bool IsQuiescentTrim => t_quiescentTrim;
 
         /// <summary>Bytes charged by all pools together.</summary>
         public long UsedBytes => Interlocked.Read(ref _used);
@@ -238,6 +281,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             long frame;
             int id;
 
+            lock (_gate)
             lock (_frameLock)
             {
                 for (var i = _open.Count - 1; i >= 0; i--)
@@ -285,14 +329,103 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             lock (_frameLock)
             {
+                var found = false;
+
                 for (var i = 0; i < _open.Count; i++)
                 {
                     if (_open[i].Id == id)
                     {
                         _open.RemoveAt(i);
                         UpdateFloors();
-                        return;
+                        found = true;
+                        break;
                     }
+                }
+
+                if (!found || HasOpenFrames())
+                {
+                    return;
+                }
+
+                Interlocked.Exchange(ref _lastFrameEnd, _clock().Ticks);
+            }
+
+            if (UsedBytes > RetainBytes && Interlocked.CompareExchange(ref _idleArmed, 1, 0) == 0)
+            {
+                _idleTimer.Schedule(IdleDelay, _onIdleTimer);
+            }
+        }
+
+        // Called under the frame lock.
+        private bool HasOpenFrames()
+        {
+            foreach (var open in _open)
+            {
+                if (!IsStale(open.Start))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void OnIdleTimer()
+        {
+            var idle = _clock() - TimeSpan.FromTicks(Interlocked.Read(ref _lastFrameEnd));
+
+            if (idle < IdleDelay)
+            {
+                // Frames continued after the timer was armed: wait for the last one.
+                _idleTimer.Schedule(IdleDelay - idle, _onIdleTimer);
+                return;
+            }
+
+            Volatile.Write(ref _idleArmed, 0);
+            TrimIdle();
+        }
+
+        /// <summary>
+        /// Trims to the retain target what each source did not draw in its last two frames,
+        /// outside a frame. Frame-affine pools are trimmed now when no frame is open, else at the
+        /// next frame start.
+        /// </summary>
+        private void TrimIdle()
+        {
+            if (UsedBytes <= RetainBytes)
+            {
+                return;
+            }
+
+            lock (_gate)
+            {
+                bool quiescent;
+
+                lock (_frameLock)
+                {
+                    quiescent = !HasOpenFrames();
+                }
+
+                if (Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
+                {
+                    _pendingIdleTrim = true;
+                    return;
+                }
+
+                try
+                {
+                    t_quiescentTrim = quiescent;
+                    Trim(RetainBytes, SoftFloor, fair: false, includeAffine: quiescent);
+
+                    if (!quiescent)
+                    {
+                        _pendingIdleTrim = true;
+                    }
+                }
+                finally
+                {
+                    t_quiescentTrim = false;
+                    Volatile.Write(ref _trimming, 0);
                 }
             }
         }
@@ -411,11 +544,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Trims to the limit what no source drew in its last two frames, then, past a quarter
-        /// over the limit, what no open frame draws.
+        /// over the limit, what no open frame draws; then to the retain target what no frame drew
+        /// for the idle period, and what an idle trim from another thread left to this frame.
         /// </summary>
         private void TrimAtFrameStart()
         {
-            if (UsedBytes <= LimitBytes || Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
+            if (UsedBytes <= RetainBytes && !_pendingIdleTrim ||
+                Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
             {
                 return;
             }
@@ -429,6 +564,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     Trim(SoftLimitBytes, PinFloor, fair: false);
                 }
+
+                Trim(RetainBytes, Math.Min(SoftFloor, Frame - IdleFrames), fair: false);
+
+                if (_pendingIdleTrim)
+                {
+                    _pendingIdleTrim = false;
+                    Trim(RetainBytes, SoftFloor, fair: false);
+                }
             }
             finally
             {
@@ -441,7 +584,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// most <paramref name="target"/> bytes or no such entry is left. A <paramref name="fair"/>
         /// trim leaves each typeface the share of its recent entries it is owed.
         /// </summary>
-        private void Trim(long target, long usedBefore, bool fair)
+        private void Trim(long target, long usedBefore, bool fair, bool includeAffine = true)
         {
             if (UsedBytes <= target)
             {
@@ -471,7 +614,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var handle = _trimPools[i];
 
                         if (handle.TrimGeneration == generation || handle.Bytes <= 0 ||
-                            !handle.TryGetPool(out var pool))
+                            !includeAffine && handle.IsFrameAffine || !handle.TryGetPool(out var pool))
                         {
                             continue;
                         }
@@ -699,6 +842,40 @@ namespace Avalonia.Media.Fonts.Rasterization
         void Schedule(TimeSpan delay, Action callback);
     }
 
+    /// <summary>
+    /// An <see cref="IGlyphCacheIdleTimer"/> on one thread-pool timer, made on first use and
+    /// rescheduled after that, so arming it from a frame allocates nothing.
+    /// </summary>
+    internal sealed class ThreadPoolIdleTimer : IGlyphCacheIdleTimer
+    {
+        private readonly object _lock = new();
+        private Timer? _timer;
+        private Action? _callback;
+
+        public void Schedule(TimeSpan delay, Action callback)
+        {
+            lock (_lock)
+            {
+                _callback = callback;
+                _timer ??= new Timer(static state => ((ThreadPoolIdleTimer)state!).Fire(), this,
+                    Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+                _timer.Change(delay, Timeout.InfiniteTimeSpan);
+            }
+        }
+
+        private void Fire()
+        {
+            Action? callback;
+
+            lock (_lock)
+            {
+                callback = _callback;
+            }
+
+            callback?.Invoke();
+        }
+    }
+
     /// <summary>Work a pool asks the budget to run when the next frame begins.</summary>
     internal interface IGlyphCacheFrameListener
     {
@@ -745,6 +922,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Whether the pool holds the entries of one typeface.</summary>
         public bool IsPerTypeface { get; }
+
+        /// <summary>
+        /// Whether the pool's storage may be drawn by a frame in progress (atlas pages, run masks,
+        /// sprite sets), so it is only trimmed where no frame is drawn from it.
+        /// </summary>
+        public bool IsFrameAffine => Kind is GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas or
+            GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets;
 
         /// <summary>The bytes the pool holds.</summary>
         public long Bytes => Interlocked.Read(ref _bytes);

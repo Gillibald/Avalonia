@@ -559,8 +559,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static long ChargedBytes(TransformedGlyphSprites? sprites)
             => sprites is null ? 0 : sprites.ByteCost + sprites.FallbackImageBytes;
 
-        /// <summary>Whether the run is drawn on the current thread, so its sets may be evicted here.</summary>
-        internal bool IsOwnedByCurrentThread => _ownerThread == Environment.CurrentManagedThreadId;
+        /// <summary>
+        /// Whether the run is drawn on the current thread, or no frame is being drawn, so its
+        /// sets may be evicted here.
+        /// </summary>
+        internal bool IsOwnedByCurrentThread =>
+            _ownerThread == Environment.CurrentManagedThreadId || GlyphCacheBudget.IsQuiescentTrim;
 
         internal int SecondaryCount => _secondary?.Length ?? 0;
 
