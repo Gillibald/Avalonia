@@ -84,6 +84,12 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// from its own pool at once, without touching other pools' locks.
     /// </para>
     /// <para>
+    /// A typeface drawn within the idle period keeps at least an eighth of the limit of what it
+    /// drew (or all of it, when less) until older content of every other pool has gone, so a
+    /// face drawn now and then (a tooltip, a dialog opened every few seconds) is not emptied by
+    /// another face streaming new glyphs through the whole limit.
+    /// </para>
+    /// <para>
     /// Atlas pages, run masks and sprite sets are frame-affine: their storage may be drawn by the
     /// thread that draws a frame, so they are trimmed only where a frame begins, and run-level
     /// state only on the thread that draws it.
@@ -405,11 +411,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             try
             {
-                Trim(LimitBytes, SoftFloor);
+                Trim(LimitBytes, SoftFloor, fair: true);
+                Trim(LimitBytes, SoftFloor, fair: false);
 
                 if (UsedBytes > SoftLimitBytes)
                 {
-                    Trim(SoftLimitBytes, PinFloor);
+                    Trim(SoftLimitBytes, PinFloor, fair: false);
                 }
             }
             finally
@@ -420,13 +427,21 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Evicts entries last used before <paramref name="usedBefore"/> until the caches hold at
-        /// most <paramref name="target"/> bytes or no such entry is left.
+        /// most <paramref name="target"/> bytes or no such entry is left. A <paramref name="fair"/>
+        /// trim leaves each typeface the share of its recent entries it is owed.
         /// </summary>
-        private void Trim(long target, long usedBefore)
+        private void Trim(long target, long usedBefore, bool fair)
         {
+            if (UsedBytes <= target)
+            {
+                return;
+            }
+
             var count = SnapshotPools();
             var generation = ++_trimGeneration;
             var frame = Frame;
+            var recent = frame - IdleFrames;
+            var share = LimitBytes / 8;
 
             try
             {
@@ -437,6 +452,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var bestScore = long.MinValue;
                     var secondScore = long.MinValue;
                     var bestOldest = 0L;
+                    var bestBefore = usedBefore;
+                    var bestAllowance = long.MaxValue;
 
                     for (var i = 0; i < count; i++)
                     {
@@ -455,6 +472,28 @@ namespace Avalonia.Media.Fonts.Rasterization
                             continue;
                         }
 
+                        var before = usedBefore;
+                        var allowance = long.MaxValue;
+
+                        if (fair && handle.IsPerTypeface)
+                        {
+                            if (oldest >= recent)
+                            {
+                                // Only recent entries left: the face keeps its share of them.
+                                allowance = handle.Bytes - share;
+
+                                if (allowance <= 0)
+                                {
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                // Its idle entries go first; the recent ones wait for the share check.
+                                before = Math.Min(before, recent);
+                            }
+                        }
+
                         var score = frame - oldest - s_minimumAge[handle.Priority];
 
                         if (score > bestScore)
@@ -464,6 +503,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                             best = handle;
                             bestPool = pool;
                             bestOldest = oldest;
+                            bestBefore = before;
+                            bestAllowance = allowance;
                         }
                         else if (score > secondScore)
                         {
@@ -478,7 +519,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     // Evict from the chosen pool while its entries still outrank the next pool's
                     // oldest, so ages interleave across pools.
-                    var until = usedBefore;
+                    var until = bestBefore;
 
                     if (secondScore != long.MinValue)
                     {
@@ -487,7 +528,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     until = Math.Max(until, bestOldest + 1);
 
-                    var freed = bestPool!.EvictOldest(until, UsedBytes - target);
+                    var freed = bestPool!.EvictOldest(until, Math.Min(UsedBytes - target, bestAllowance));
 
                     Interlocked.Add(ref _evictedBytes, freed);
 

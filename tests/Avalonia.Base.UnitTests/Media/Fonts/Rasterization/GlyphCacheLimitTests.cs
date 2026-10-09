@@ -152,9 +152,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 }
             }
 
-            Frames(budget, 48);
+            Frames(budget, 148);
 
-            // Fifty frames later the atlas is drawn again; the masks are not.
+            // 150 frames later, past the idle period, the atlas is drawn again; the masks are not.
             using (budget.BeginFrame())
             {
                 Assert.True(atlas.TryGet(Key(1), atlas.Tick(), out _));
