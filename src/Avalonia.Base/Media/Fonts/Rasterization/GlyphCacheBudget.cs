@@ -77,6 +77,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Starts a new peak measurement at the current use; for diagnostics.</summary>
         public void ResetPeak() => Interlocked.Exchange(ref _peak, UsedBytes);
 
+        /// <summary>The number of the latest frame begun.</summary>
+        public long Frame => 0;
+
+        /// <summary>
+        /// The frame the current thread is drawing, 0 when it has none open; for diagnostics and
+        /// tests.
+        /// </summary>
+        public long CurrentThreadFrame => 0;
+
+        /// <summary>Begins a frame of <paramref name="source"/>.</summary>
+        public GlyphCacheFrame BeginFrame(object? source = null) => default;
+
         /// <summary>
         /// Registers <paramref name="owner"/> as a pool of <paramref name="kind"/>. The budget
         /// holds the owner weakly; the owner keeps the returned handle and charges through it.
@@ -151,6 +163,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                 }
             }
+        }
+    }
+
+    /// <summary>A frame begun by <see cref="GlyphCacheBudget.BeginFrame"/>; disposing it ends the frame.</summary>
+    internal readonly struct GlyphCacheFrame : IDisposable
+    {
+        public void Dispose()
+        {
         }
     }
 
