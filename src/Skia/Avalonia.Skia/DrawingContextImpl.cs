@@ -299,20 +299,30 @@ namespace Avalonia.Skia
         /// the pending runs change disjoint pixels, so drawing it ahead of them changes none.
         /// Otherwise they are drawn first, as for every other canvas operation.
         /// </summary>
-        private void PrepareCanvas(Rect bounds)
+        /// <returns>
+        /// Whether the deferred clips were applied for this draw alone, since applying them for
+        /// good would cut pending runs; the caller then restores the canvas after the draw.
+        /// </returns>
+        private bool PrepareCanvas(Rect bounds)
         {
             CheckLease();
 
-            // The deferred clips go on the canvas for the draw and stay there, so they must leave
-            // the pending runs as they are.
-            if (CanDrawAheadOfPendingRuns(bounds) && (_deferredClips == 0 || PendingRunsUnaffectedByDeferredClips()))
+            if (CanDrawAheadOfPendingRuns(bounds))
             {
                 ForgetBlitTarget();
-                ApplyDeferredClips();
-                return;
+
+                if (_deferredClips == 0 || PendingRunsUnaffectedByDeferredClips())
+                {
+                    ApplyDeferredClips();
+                    return false;
+                }
+
+                ApplyDeferredClipsUntilRestore();
+                return true;
             }
 
             FlushGlyphBatch(GlyphBatchFlushReason.CanvasOperation);
+            return false;
         }
 
         /// <summary>
@@ -335,7 +345,21 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawBitmap(IBitmapImpl source, double opacity, Rect sourceRect, Rect destRect)
         {
-            PrepareCanvas();
+            // An image drawn source-over shades only its destination rectangle; the snapshot of a
+            // layer or render target is taken in its own way.
+            var restore = false;
+
+            if (source is ImmutableBitmap or WriteableBitmapImpl &&
+                RenderOptions.BitmapBlendingMode is Avalonia.Media.Imaging.BitmapBlendingMode.Unspecified
+                    or Avalonia.Media.Imaging.BitmapBlendingMode.SourceOver)
+            {
+                restore = PrepareCanvas(destRect);
+            }
+            else
+            {
+                PrepareCanvas();
+            }
+
             var drawableImage = (IDrawableBitmapImpl)source;
             var s = sourceRect.ToSKRect();
             var d = destRect.ToSKRect();
@@ -350,6 +374,16 @@ namespace Avalonia.Skia
 
             drawableImage.Draw(this, s, d, samplingOptions, paint);
             SKPaintCache.Shared.ReturnReset(paint);
+            RestoreClipsApplied(restore);
+        }
+
+        /// <summary>Restores the canvas after a draw that the deferred clips were applied for alone.</summary>
+        private void RestoreClipsApplied(bool applied)
+        {
+            if (applied)
+            {
+                Canvas.Restore();
+            }
         }
 
         bool IAlphaGlyphMaskContext.PrefersAlphaMasks => GrContext is not null;
@@ -525,10 +559,12 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawLine(IPen? pen, Point p1, Point p2)
         {
+            var restore = false;
+
             // A square cap reaches half the thickness times the square root of two past an end.
             if (pen is not null && IsGeometryBounded(null, pen))
             {
-                PrepareCanvas(new Rect(p1, p2).Normalize().Inflate(pen.Thickness));
+                restore = PrepareCanvas(new Rect(p1, p2).Normalize().Inflate(pen.Thickness));
             }
             else
             {
@@ -543,6 +579,8 @@ namespace Avalonia.Skia
                     Canvas.DrawLine((float)p1.X, (float)p1.Y, (float)p2.X, (float)p2.Y, stroke.Paint);
                 }
             }
+
+            RestoreClipsApplied(restore);
         }
 
         /// <inheritdoc />
@@ -550,6 +588,7 @@ namespace Avalonia.Skia
         {
             var impl = (GeometryImpl) geometry;
             var rect = geometry.Bounds;
+            var restore = false;
 
             if (IsGeometryBounded(brush, pen))
             {
@@ -561,7 +600,7 @@ namespace Avalonia.Skia
                         ? Math.Max(pen.MiterLimit, Math.Sqrt(2))
                         : Math.Sqrt(2));
 
-                PrepareCanvas(rect.Inflate(reach));
+                restore = PrepareCanvas(rect.Inflate(reach));
             }
             else
             {
@@ -585,6 +624,8 @@ namespace Avalonia.Skia
                     Canvas.DrawPath(impl.StrokePath, stroke.Paint);
                 }
             }
+
+            RestoreClipsApplied(restore);
         }
 
         private static float SkBlurRadiusToSigma(double radius) {
@@ -706,11 +747,13 @@ namespace Avalonia.Skia
                 return;
             }
 
-            // A stroke reaches half its thickness past the rectangle, corners included; shadows
-            // blur past it and flush.
-            if (boxShadows.Count == 0 && IsGeometryBounded(brush, pen))
+            var restore = false;
+
+            // A stroke reaches half its thickness past the rectangle, corners included.
+            if (IsGeometryBounded(brush, pen))
             {
-                PrepareCanvas(rect.Rect.Inflate(pen is null ? 0 : pen.Thickness / 2));
+                restore = PrepareCanvas(ShadowedBounds(rect.Rect.Inflate(pen is null ? 0 : pen.Thickness / 2), rect.Rect,
+                    boxShadows));
             }
             else
             {
@@ -835,6 +878,31 @@ namespace Avalonia.Skia
 
             if (skRoundRect is not null)
                 SKRoundRectCache.Shared.Return(skRoundRect);
+
+            RestoreClipsApplied(restore);
+        }
+
+        /// <summary>
+        /// <paramref name="bounds"/> grown to hold every shadow of <paramref name="rect"/>: an outer
+        /// shadow is the rectangle moved by its offset, grown by its spread and blurred, which
+        /// reaches three standard deviations of the blur further; an inset shadow stays inside the
+        /// rectangle.
+        /// </summary>
+        private static Rect ShadowedBounds(Rect bounds, Rect rect, BoxShadows boxShadows)
+        {
+            foreach (var shadow in boxShadows)
+            {
+                if (shadow == default || shadow.IsInset)
+                {
+                    continue;
+                }
+
+                var reach = Math.Max(0, shadow.Spread) + Math.Ceiling(3 * SkBlurRadiusToSigma(shadow.Blur)) + 1;
+
+                bounds = bounds.Union(rect.Translate(new Vector(shadow.OffsetX, shadow.OffsetY)).Inflate(reach));
+            }
+
+            return bounds;
         }
 
         private static bool IsInvisibleFill(IBrush? brush) =>
@@ -872,11 +940,13 @@ namespace Avalonia.Skia
             if (rect.Height <= 0 || rect.Width <= 0)
                 return;
 
+            var restore = false;
+
             // The square cap of a dash on the curve reaches up to half the thickness times the
             // square root of two past the outline.
             if (IsGeometryBounded(brush, pen))
             {
-                PrepareCanvas(rect.Inflate(pen is null ? 0 : pen.Thickness));
+                restore = PrepareCanvas(rect.Inflate(pen is null ? 0 : pen.Thickness));
             }
             else
             {
@@ -901,6 +971,8 @@ namespace Avalonia.Skia
                     Canvas.DrawOval(rc, stroke.Paint);
                 }
             }
+
+            RestoreClipsApplied(restore);
         }
        
         /// <inheritdoc />

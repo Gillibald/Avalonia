@@ -237,6 +237,28 @@ namespace Avalonia.Skia
             _deferredClips = 0;
         }
 
+        /// <summary>
+        /// Applies the deferred clips to the canvas for one draw that cannot reach the pending
+        /// runs, leaving them deferred; the caller restores the canvas once after the draw.
+        /// </summary>
+        private void ApplyDeferredClipsUntilRestore()
+        {
+            var current = _currentTransform;
+            var currentMatrix = current is null ? Canvas.TotalMatrix44 : default;
+
+            Canvas.Save();
+
+            for (var i = _clipDepth - _deferredClips; i < _clipDepth; i++)
+            {
+                ref readonly var level = ref _clipLevels[i];
+
+                SetCanvasTransform(level.Transform, default);
+                ClipCanvas(level);
+            }
+
+            SetCanvasTransform(current, currentMatrix);
+        }
+
         /// <summary>Clips the canvas to a deferred clip under the current canvas transform, as pushing it would have.</summary>
         private void ClipCanvas(in ClipLevel level)
         {
