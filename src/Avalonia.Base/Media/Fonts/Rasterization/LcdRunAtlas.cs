@@ -138,6 +138,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         private long _allocated;
         private long _evictions;
 
+        /// <param name="budget">The budget the atlas charges its pages to.</param>
+        public LcdRunAtlas(GlyphCacheBudget budget)
+            : this(32L * 1024 * 1024, MaxPageHeight, budget)
+        {
+        }
+
         /// <param name="budgetBytes">The byte budget of all pages together, at least one page of 64 rows.</param>
         /// <param name="maxPageHeight">The row limit of a page, at most <see cref="MaxPageHeight"/>.</param>
         /// <param name="budget">

@@ -101,6 +101,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The global maximum of all pools together.</summary>
         public long LimitBytes { get; private set; }
 
+        /// <summary>Sets <see cref="LimitBytes"/>; the next frame trims to it.</summary>
+        public void SetLimit(long limitBytes) => LimitBytes = Math.Max(1, limitBytes);
+
         /// <summary>Bytes charged by all pools together.</summary>
         public long UsedBytes => Interlocked.Read(ref _used);
 

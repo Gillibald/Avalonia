@@ -217,6 +217,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         private long _allocated;
         private long _evictions;
 
+        /// <param name="budget">
+        /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public GlyphMaskAtlas(GlyphCacheBudget? budget = null)
+            : this(SharedBudgetBytes, budget)
+        {
+        }
+
         /// <param name="budgetBytes">The byte budget of all pages together.</param>
         /// <param name="budget">
         /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
