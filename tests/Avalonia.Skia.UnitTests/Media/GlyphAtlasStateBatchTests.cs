@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
+using SkiaSharp;
 using Xunit;
 using static Avalonia.Skia.UnitTests.Media.GlyphAtlasClipBatchTests;
 
@@ -249,7 +250,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void Fills_Under_A_Clip_That_Would_Cut_The_Pending_Runs_Draw_Them_First(GpuBackend backend,
+        public void Fills_Under_A_Clip_That_Would_Cut_The_Pending_Runs_Leave_Them_Pending(GpuBackend backend,
             bool subpixel)
         {
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
@@ -258,9 +259,10 @@ namespace Avalonia.Skia.UnitTests.Media
             var orange = new ImmutableSolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0x80, 0));
 
             // Each row fills a marker beside its text under its band's clip, then draws its text
-            // under the clip again. The fill applies the band's clip to the canvas, which would
-            // cut the rows still pending above it. Setting the transform, as the compositor does
-            // per visual, lets the clips be recorded instead of applied.
+            // under the clip again. Applying the band's clip to the canvas would cut the rows still
+            // pending above it, so the fill draws under the clip applied for it alone. Setting the
+            // transform, as the compositor does per visual, lets the clips be recorded instead of
+            // applied.
             void Draw(DrawingContextImpl context)
             {
                 context.Clear(s_background);
@@ -290,8 +292,7 @@ namespace Avalonia.Skia.UnitTests.Media
                               before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "clipped rows with fills beside them");
-                // Every fill after the first finds the rows before it pending.
-                Assert.Equal(rows.Length - 1, flushed);
+                Assert.Equal(0, flushed);
             }
             finally
             {
@@ -447,6 +448,77 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 DisposeAll(rows);
             }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void Shadows_Fills_And_Images_Of_Rounded_Cards_Leave_The_Pending_Runs_Alone(GpuBackend backend,
+            bool subpixel)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var image = CreateImage();
+            var rows = CreateRows(typeface, 12);
+            var orange = new ImmutableSolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0x80, 0));
+            var shadow = BoxShadows.Parse("0 2 6 0 #40000000");
+
+            // Each row is a card: a shadowed rectangle on the right before the card's rounded clip,
+            // then a fill and an image under the clip that its right edge cuts, then the text. None
+            // of them reaches the rows drawn before, but applying a card's clip would cut those.
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(s_background);
+
+                for (var i = 0; i < rows.Length; i++)
+                {
+                    context.Transform = Matrix.Identity;
+                    context.DrawRectangle(null, null, new RoundedRect(new Rect(Width - 100, i * RowHeight + 6, 60, 10), 3),
+                        shadow);
+                    context.PushClip(new RoundedRect(new Rect(1.5, i * RowHeight - 4.25, Width - 3, 36.5), 6));
+                    context.DrawRectangle(orange, null, new RoundedRect(new Rect(Width - 12, i * RowHeight + 4, 30, 16)));
+                    context.DrawBitmap(image, 1, new Rect(0, 0, 16, 16), new Rect(Width - 40, i * RowHeight + 5.5, 16, 16));
+                    context.DrawGlyphRun(Brushes.Black, rows[i]);
+                    context.PopClip();
+                }
+            }
+
+            try
+            {
+                var expected = Render(gpu, Draw, batched: false, subpixel, out _);
+
+                Render(gpu, Draw, batched: true, subpixel, out _);
+
+                var operations = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, actual, "rounded cards with shadows, fills and images");
+                Assert.Equal(0,
+                    DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) - operations);
+
+                if (!subpixel)
+                {
+                    Assert.Equal(1, draws);
+                }
+            }
+            finally
+            {
+                DisposeAll(rows);
+            }
+        }
+
+        private static ImmutableBitmap CreateImage()
+        {
+            using var bitmap = new SKBitmap(new SKImageInfo(16, 16, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            for (var y = 0; y < 16; y++)
+            {
+                for (var x = 0; x < 16; x++)
+                {
+                    bitmap.SetPixel(x, y, new SKColor((byte)(x * 16), (byte)(y * 16), 0x80));
+                }
+            }
+
+            return new ImmutableBitmap(SKImage.FromBitmap(bitmap));
         }
 
         [Theory]
