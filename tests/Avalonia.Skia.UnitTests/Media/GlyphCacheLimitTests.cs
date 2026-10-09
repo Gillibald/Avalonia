@@ -170,6 +170,48 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Trimming_The_Glyph_Caches_Releases_What_No_Frame_Draws() =>
+            OnOwnThread(() => TrimAfterFrames());
+
+        private static void TrimAfterFrames()
+        {
+            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var runs = CreateParagraph(typeface, 12, 14);
+
+            try
+            {
+                DropEarlierFrames();
+
+                // A rotation keeps the paragraph's masks in the glyph mask cache on a raster surface.
+                using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+                       {
+                           Surface = surface,
+                           Dpi = new Vector(96, 96),
+                       }))
+                {
+                    context.Transform = Matrix.CreateRotation(0.3);
+
+                    foreach (var run in runs)
+                    {
+                        context.DrawGlyphRun(Brushes.Black, run);
+                    }
+                }
+
+                Assert.True(typeface.MaskCache.TotalCost > 0, "the paragraph cached no masks");
+
+                FontManager.TrimGlyphCaches();
+
+                Assert.Equal(0, typeface.MaskCache.TotalCost);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Fact]
         public void Static_Text_Holds_Only_Its_Working_Set() =>
             OnOwnThread(() => StaticWorkingSet());
 
@@ -307,11 +349,21 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        /// <summary>Trims everything earlier tests left that is not pinned.</summary>
+        /// <summary>
+        /// Trims everything earlier tests left that is not pinned, after enough frames that a
+        /// frame an earlier test left open no longer pins anything.
+        /// </summary>
         private static void DropEarlierFrames()
         {
             var budget = GlyphCacheBudget.Shared;
             var limit = budget.LimitBytes;
+
+            for (var i = 0; i <= GlyphCacheBudget.IdleFrames; i++)
+            {
+                using (budget.BeginFrame())
+                {
+                }
+            }
 
             budget.SetLimit(1);
 

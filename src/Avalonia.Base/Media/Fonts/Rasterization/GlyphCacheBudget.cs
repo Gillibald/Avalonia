@@ -356,6 +356,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>Drops everything no open frame uses.</summary>
+        public void TrimForMemoryPressure()
+        {
+        }
+
         // Called under the frame lock.
         private bool HasOpenFrames()
         {

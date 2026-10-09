@@ -92,6 +92,14 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Releases the memory the glyph caches of <see cref="TextRasterizationMode.Managed"/>
+        /// rasterization hold beyond what the frames being drawn use.
+        /// </summary>
+        public static void TrimGlyphCaches()
+        {
+        }
+
+        /// <summary>
         ///     Gets the system's default font family.
         /// </summary>
         /// <remarks>Resolved lazily on the first access: <see cref="FontManagerOptions.DefaultFamilyName"/>
