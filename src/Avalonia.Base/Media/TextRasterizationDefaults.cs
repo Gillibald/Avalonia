@@ -72,7 +72,8 @@ namespace Avalonia.Media
         public static bool RendersSubpixelByDefault(TextRasterizationPlatform platform)
             => platform is not (TextRasterizationPlatform.MacOS or TextRasterizationPlatform.IOS);
 
-        private static TextRasterizationPlatform CurrentPlatform()
+        /// <summary>The operating system family the process runs on.</summary>
+        internal static TextRasterizationPlatform CurrentPlatform()
         {
             if (OperatingSystem.IsBrowser())
                 return TextRasterizationPlatform.Browser;

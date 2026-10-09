@@ -110,6 +110,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The limit of <see cref="Shared"/> on desktop platforms.</summary>
         public const long DefaultLimitBytes = 64L * 1024 * 1024;
 
+        /// <summary>The smallest limit an application can set.</summary>
+        public const long MinimumLimitBytes = 4L * 1024 * 1024;
+
         /// <summary>
         /// Content not drawn for this many frames counts as idle: about two seconds at 60 Hz, so
         /// text drawn every few frames (a caret blink, a tooltip, a second window) never ages
@@ -137,6 +140,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static bool t_quiescentTrim;
 
+        private readonly Func<FontManagerOptions?>? _options;
+        private readonly TextRasterizationPlatform _platform;
+        private volatile bool _limitSetExplicitly;
         private readonly IGlyphCacheIdleTimer _idleTimer;
         private readonly Func<TimeSpan> _clock;
         private readonly Action _onIdleTimer;
@@ -177,7 +183,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="clock">The time since an arbitrary start; a stopwatch when omitted.</param>
         public GlyphCacheBudget(long limitBytes, IGlyphCacheIdleTimer? idleTimer, Func<TimeSpan>? clock)
         {
-            SetLimit(limitBytes);
+            ApplyLimit(limitBytes, -1);
             _idleTimer = idleTimer ?? new ThreadPoolIdleTimer();
             _clock = clock ?? (static () => Stopwatch.GetElapsedTime(0));
             _onIdleTimer = OnIdleTimer;
@@ -193,14 +199,39 @@ namespace Avalonia.Media.Fonts.Rasterization
             IGlyphCacheIdleTimer? idleTimer = null, Func<TimeSpan>? clock = null)
             : this(DefaultLimitBytes, idleTimer, clock)
         {
+            _options = options;
+            _platform = platform;
+            ApplyOptions();
         }
 
-        /// <summary>The default limit and retain target on <paramref name="platform"/>.</summary>
+        /// <summary>
+        /// The default limit and retain target on <paramref name="platform"/>. Desktop holds a
+        /// hinted CJK zoom (about 20 MB of masks) plus everything static. The browser keeps less
+        /// because WebAssembly memory never shrinks, so the limit is its high-water mark. Phones draw at about three times the desktop scale,
+        /// so a glyph costs about eight times the memory; their default is provisional until
+        /// measured on devices.
+        /// </summary>
         public static (long Limit, long Retain) DefaultsFor(TextRasterizationPlatform platform)
-            => (DefaultLimitBytes, DefaultLimitBytes / 2);
+        {
+            const long mb = 1024 * 1024;
 
-        /// <summary>The budget of every glyph cache the process creates.</summary>
-        public static GlyphCacheBudget Shared { get; } = new(DefaultLimitBytes);
+            return platform switch
+            {
+                TextRasterizationPlatform.Windows or TextRasterizationPlatform.MacOS or
+                    TextRasterizationPlatform.Linux => (64 * mb, 32 * mb),
+                TextRasterizationPlatform.Browser => (32 * mb, 16 * mb),
+                TextRasterizationPlatform.Android or TextRasterizationPlatform.IOS => (32 * mb, 12 * mb),
+                _ => (16 * mb, 8 * mb),
+            };
+        }
+
+        /// <summary>
+        /// The budget of every glyph cache the process creates, limited by
+        /// <see cref="FontManagerOptions.GlyphCacheLimitBytes"/> or the platform default.
+        /// </summary>
+        public static GlyphCacheBudget Shared { get; } =
+            new(static () => AvaloniaLocator.Current.GetService<FontManagerOptions>(),
+                TextRasterizationDefaults.CurrentPlatform());
 
         /// <summary>The composed run masks of every run charged to this budget.</summary>
         public RunMaskPool RunMasks { get; }
@@ -223,8 +254,37 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public void SetLimit(long limitBytes, long retainBytes = -1)
         {
+            _limitSetExplicitly = true;
+            ApplyLimit(limitBytes, retainBytes);
+        }
+
+        /// <summary>Makes a budget that follows options take its limit from them again, at the next frame.</summary>
+        internal void FollowOptions() => _limitSetExplicitly = false;
+
+        private void ApplyLimit(long limitBytes, long retainBytes)
+        {
             LimitBytes = Math.Max(1, limitBytes);
             Volatile.Write(ref _retain, retainBytes < 0 ? LimitBytes / 2 : Math.Min(retainBytes, LimitBytes));
+        }
+
+        /// <summary>Takes the limit from the options, or the platform default when they set none.</summary>
+        private void ApplyOptions()
+        {
+            if (_options is null || _limitSetExplicitly)
+            {
+                return;
+            }
+
+            if (_options()?.GlyphCacheLimitBytes is { } limit)
+            {
+                ApplyLimit(Math.Max(limit, MinimumLimitBytes), -1);
+            }
+            else
+            {
+                var (defaultLimit, defaultRetain) = DefaultsFor(_platform);
+
+                ApplyLimit(defaultLimit, defaultRetain);
+            }
         }
 
         /// <summary>What may stay resident once content has aged: the target of idle trims.</summary>
@@ -336,6 +396,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 UpdateFloors();
             }
 
+            ApplyOptions();
             OnFrameStart(frame);
 
             return new GlyphCacheFrame(this, id);

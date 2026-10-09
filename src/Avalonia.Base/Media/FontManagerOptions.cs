@@ -47,8 +47,28 @@ namespace Avalonia.Media
         private TextRasterizationMode? _textRasterizationMode;
 
         /// <summary>
-        /// Gets or sets the glyph cache limit in bytes.
+        /// Gets or sets the most memory, in bytes, that the glyph caches of
+        /// <see cref="TextRasterizationMode.Managed"/> rasterization hold together: the rasterized
+        /// glyph masks, glyph atlas pages, composed run masks, hinting state and glyph outlines of
+        /// every typeface. When it is not set, the default depends on the platform: 64 MB on
+        /// Windows, macOS and Linux, 32 MB in the browser and on iOS and Android, 16 MB elsewhere.
         /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Glyphs stay cached while there is room. What is no longer drawn ages out once memory is
+        /// needed, and when frames stop, down to half the limit after about two seconds without
+        /// being drawn. A frame whose own text needs more than the limit still draws it from the
+        /// caches, which grow past the limit for that frame and shrink back afterwards. The limit
+        /// counts the bytes of the caches' own memory; GPU textures that mirror glyph atlas pages
+        /// take as much again on contexts that update pages in place.
+        /// </para>
+        /// <para>
+        /// Values below 4 MB are raised to 4 MB. The value is read at the start of every frame,
+        /// so a change applies from the next frame on. The glyph caches of
+        /// <see cref="TextRasterizationMode.Backend"/> rasterization belong to the render backend
+        /// and are not affected.
+        /// </para>
+        /// </remarks>
         public long? GlyphCacheLimitBytes { get; set; }
     }
 }

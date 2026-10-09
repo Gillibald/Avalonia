@@ -419,24 +419,17 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        /// <summary>Sets the process-wide limit for a test and puts the previous one back.</summary>
+        /// <summary>Sets the process-wide limit for a test, then lets it follow the options again.</summary>
         private sealed class LimitScope : IDisposable
         {
-            private readonly long _previous;
-
-            private LimitScope(long previous) => _previous = previous;
-
             public static LimitScope Set(long limit)
             {
-                var budget = GlyphCacheBudget.Shared;
-                var scope = new LimitScope(budget.LimitBytes);
+                GlyphCacheBudget.Shared.SetLimit(limit);
 
-                budget.SetLimit(limit);
-
-                return scope;
+                return new LimitScope();
             }
 
-            public void Dispose() => GlyphCacheBudget.Shared.SetLimit(_previous);
+            public void Dispose() => GlyphCacheBudget.Shared.FollowOptions();
         }
     }
 }
