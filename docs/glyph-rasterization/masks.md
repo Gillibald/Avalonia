@@ -37,10 +37,27 @@ Masks carry a transparent apron so filtering and warping never clip: `Apron = 1`
 
 Two cache levels exist, both allocation-free on hits:
 
-- [GlyphMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskCache.cs) hangs off each `GlyphTypeface` and holds per-glyph masks under a CLOCK (second chance) eviction ring with an 8 MB default budget (`DefaultBudgetBytes`). Population is demand-driven and exact-fit; nothing is allocated per font glyph count.
+- [GlyphMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskCache.cs) hangs off each `GlyphTypeface` and holds per-glyph masks. Population is demand-driven and exact-fit; nothing is allocated per font glyph count. A mask above `MaxEntryBytes` (512 KB) is composed from a transient buffer and never cached.
 - [RunMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) lives on each managed glyph run and holds the composed run bitmaps: one primary slot plus 3 secondary slots (`SecondarySize`), keyed by [RunMaskKey](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) (`ScaleQ`, origin phase, mode, tint when pre-tinted, `GridFit`, `PenSnap`). A run being scrolled or repainted hits the primary slot; a run animating between a few states cycles the secondaries.
 
-Byte budgeting weighs LCD masks by their three channels, so subpixel text does not silently triple memory under the same numeric budget.
+Byte costs weigh LCD masks by their three channels, so subpixel text does not silently triple memory under the same numeric limit.
+
+### One limit for every glyph cache
+
+[GlyphCacheBudget](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphCacheBudget.cs) bounds all glyph caches of the process together: the mask caches and outline caches of every typeface, the glyph atlases, the LCD run atlas, the run masks and sprite sets of every run, and the TrueType hinter size states. Each cache registers as a pool and charges what it adds; the limit comes from `FontManagerOptions.GlyphCacheLimitBytes` or a per-platform default (64 MB on desktop, 32 MB in the browser and on mobile, 16 MB elsewhere; values below 4 MB are raised to 4 MB).
+
+| Rule | Behaviour |
+|---|---|
+| Recency | entries record the frame they were last used in; a drawing context that is not drawn inside another on its thread, or a composition target's render pass, begins a frame |
+| Pinning | what an open frame uses is never evicted; what each window drew in its previous frame stays while the caches are within a quarter over the limit, and past that its atlas pages and run-level state still stay while its glyph masks, hinters and outlines give way, so a static frame that needs more than the limit keeps drawing from its pages |
+| Trim at frame start | nothing is evicted while there is room; over the limit, the pool whose oldest entry has waited longest past its kind's minimum age gives up entries first (run-level state 0 frames, atlas pages 2, masks and hinters 30, outlines 60), so cheap rebuilds go first and age still outweighs kind |
+| Inline | a build past half over the limit evicts earlier frames from its own pool at once |
+| Fairness | a typeface drawn within the idle period keeps an eighth of the limit of what it drew before older content of other pools goes |
+| Idle | half the limit is the retain target: content not drawn for 120 frames (about 2 s) is trimmed to it at a frame start, and once about 2 s after the last frame when frames stop |
+| Disposal | a disposed typeface's caches are unlinked and credited at once |
+| Pressure | `FontManager.TrimGlyphCaches()` drops everything no open frame uses; Android (`OnTrimMemory`, stop), iOS (memory warning, background) and the browser (hidden tab) call it |
+
+Atlas pages, run masks and sprite sets may be drawn by a frame in progress, so they are only trimmed where a frame begins, run-level state on the thread that draws the run, or by a trim from another thread while no frame is open (frames wait for it). The limit counts the caches' own bytes; GPU textures mirroring atlas pages take as much again on contexts that update pages in place, and per-version page images on other contexts go through the backend's resource cache. Payloads are unlinked, never disposed, so anything already drawable stays valid.
 
 ## Run composition: RunMaskComposer
 
