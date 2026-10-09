@@ -170,6 +170,41 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             GraphicsState = TrueTypeGraphicsState.Default;
         }
 
+        /// <summary>
+        /// An interpreter for glyph programs of <paramref name="prepared"/>'s size: it shares the
+        /// programs, the function and instruction definitions and the pristine CVT, storage and
+        /// twilight zone, which no glyph program writes, and has a stack and working copies of
+        /// its own, so the two can run glyph programs on different threads.
+        /// </summary>
+        private TrueTypeInterpreter(TrueTypeInterpreter prepared)
+        {
+            _fontProgram = prepared._fontProgram;
+            _cvtProgram = prepared._cvtProgram;
+            _cvt = prepared._cvt;
+            _storage = prepared._storage;
+            _activeCvt = _cvt;
+            _activeStorage = _storage;
+            _functions = prepared._functions;
+            _instructionDefs = prepared._instructionDefs;
+            _maxFunctionDefs = prepared._maxFunctionDefs;
+            _maxInstructionDefs = prepared._maxInstructionDefs;
+            _stack = new int[prepared._stack.Length];
+            _ppem = prepared._ppem;
+            _pointSize = prepared._pointSize;
+            _scale = prepared._scale;
+            _renderClass = prepared._renderClass;
+            _isVariation = prepared._isVariation;
+            _twilight = prepared._twilight;
+            _activeTwilight = _twilight;
+            GraphicsState = TrueTypeGraphicsState.Default;
+        }
+
+        /// <summary>
+        /// Makes an interpreter that runs glyph programs against this one's post-prep state;
+        /// call only once the control programs have run.
+        /// </summary>
+        public TrueTypeInterpreter CreateGlyphInterpreter() => new(this);
+
         public TrueTypeGraphicsState GraphicsState;
 
         /// <summary>

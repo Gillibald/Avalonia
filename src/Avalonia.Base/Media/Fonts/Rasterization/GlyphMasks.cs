@@ -77,9 +77,19 @@ namespace Avalonia.Media.Fonts.Rasterization
                 else
                 {
                     // The font's own programs grid-fit the outline. Any veto falls through
-                    // to the auto-hinter below, never to a partial result.
-                    hinted = TryBuildHintedContours(hinter, scratch, key, subpixelFactor, apron,
-                        out left, out top, out width, out height);
+                    // to the auto-hinter below, never to a partial result. The hinted zone
+                    // belongs to the rented hinter until its contours are emitted.
+                    var rented = hinter.Rent();
+
+                    try
+                    {
+                        hinted = TryBuildHintedContours(rented, scratch, key, subpixelFactor, apron,
+                            out left, out top, out width, out height);
+                    }
+                    finally
+                    {
+                        hinter.Return(rented);
+                    }
                 }
             }
 

@@ -64,12 +64,15 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         /// per-run copies.
         /// </summary>
         public bool RunGlyphProgram(ReadOnlyMemory<byte> code, int backwardCompatibility)
-        {
-            if (Interpreter is not { } interpreter)
-            {
-                return false;
-            }
+            => Interpreter is { } interpreter && RunGlyphProgram(interpreter, code, backwardCompatibility);
 
+        /// <summary>
+        /// Runs a glyph instruction stream like <see cref="RunGlyphProgram(ReadOnlyMemory{byte}, int)"/>
+        /// on <paramref name="interpreter"/>: this size's own interpreter, or one made from it
+        /// with <see cref="TrueTypeInterpreter.CreateGlyphInterpreter"/>.
+        /// </summary>
+        public bool RunGlyphProgram(TrueTypeInterpreter interpreter, ReadOnlyMemory<byte> code, int backwardCompatibility)
+        {
             interpreter.GraphicsState = DefaultGraphicsState;
             interpreter.BackwardCompatibility = backwardCompatibility;
 

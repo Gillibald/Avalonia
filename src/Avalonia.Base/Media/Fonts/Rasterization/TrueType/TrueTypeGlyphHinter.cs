@@ -9,6 +9,8 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
+using System.Threading;
 using Avalonia.Media.Fonts.Tables.Glyf;
 using Avalonia.Media.Fonts.Tables.Variation;
 
@@ -49,6 +51,11 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         private readonly int[] _chain = new int[MaxDepth];
         private TrueTypeZone?[] _assemblies = new TrueTypeZone?[MaxDepth];
 
+        private readonly TrueTypeInterpreter _interpreter;
+        private readonly Stack<TrueTypeGlyphHinter> _idleSiblings = new();
+        private readonly TrueTypeGlyphHinter? _primary;
+        private int _rented;
+
         private int _backwardCompatibility;
         private long _instructionsUsed;
 
@@ -66,6 +73,19 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _activeCoords = activeCoords;
             _metrics = metrics;
             _verticalAdvance = verticalAdvance;
+            _interpreter = state.Interpreter!;
+        }
+
+        private TrueTypeGlyphHinter(TrueTypeGlyphHinter primary)
+        {
+            _state = primary._state;
+            _glyfTable = primary._glyfTable;
+            _gvarTable = primary._gvarTable;
+            _activeCoords = primary._activeCoords;
+            _metrics = primary._metrics;
+            _verticalAdvance = primary._verticalAdvance;
+            _interpreter = primary._state.IsValid ? primary._interpreter.CreateGlyphInterpreter() : primary._interpreter;
+            _primary = primary;
         }
 
         /// <summary>The hinted zone of the last successful <see cref="TryHint"/>.</summary>
@@ -73,6 +93,50 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
         /// <summary>The size context this hinter runs against.</summary>
         public TrueTypeSizeState State => _state;
+
+        /// <summary>
+        /// A hinter of this size for the caller's exclusive use until it is passed to
+        /// <see cref="Return"/>: this one when no other caller holds it, otherwise a sibling
+        /// that hints the same way with an interpreter, loader and zones of its own, so
+        /// threads can hint one size at the same time.
+        /// </summary>
+        public TrueTypeGlyphHinter Rent()
+        {
+            if (Interlocked.CompareExchange(ref _rented, 1, 0) == 0)
+            {
+                return this;
+            }
+
+            lock (_idleSiblings)
+            {
+                if (_idleSiblings.Count > 0)
+                {
+                    return _idleSiblings.Pop();
+                }
+            }
+
+            return new TrueTypeGlyphHinter(this);
+        }
+
+        /// <summary>Gives back a hinter <see cref="Rent"/> handed out.</summary>
+        public void Return(TrueTypeGlyphHinter hinter)
+        {
+            if (hinter == this)
+            {
+                Volatile.Write(ref _rented, 0);
+                return;
+            }
+
+            if (hinter._primary != this)
+            {
+                throw new ArgumentException("The hinter was not rented from this one.", nameof(hinter));
+            }
+
+            lock (_idleSiblings)
+            {
+                _idleSiblings.Push(hinter);
+            }
+        }
 
         public bool TryHint(int glyphIndex, int backwardCompatibility)
         {
@@ -421,7 +485,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 return true;
             }
 
-            var interpreter = _state.Interpreter!;
+            var interpreter = _interpreter;
 
             interpreter.SetGlyphZone(zone);
             interpreter.IsCompositeGlyph = isComposite;
@@ -438,7 +502,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 savedY[i] = zone.CurY[outline + i];
             }
 
-            var ok = _state.RunGlyphProgram(instructions, _backwardCompatibility);
+            var ok = _state.RunGlyphProgram(interpreter, instructions, _backwardCompatibility);
 
             interpreter.SetGlyphZone(null);
 
