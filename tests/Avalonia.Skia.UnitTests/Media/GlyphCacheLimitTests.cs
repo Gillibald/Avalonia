@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
+using System.Threading;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.TextFormatting;
@@ -38,7 +40,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void A_Zoom_Revisit_On_A_Hardware_Gpu_Rasterizes_No_Glyph_When_Its_Masks_Fit_The_Limit(GpuBackend backend)
+        public void A_Zoom_Revisit_On_A_Hardware_Gpu_Rasterizes_No_Glyph_When_Its_Masks_Fit_The_Limit(GpuBackend backend) =>
+            OnOwnThread(() => ZoomRevisit(backend));
+
+        private static void ZoomRevisit(GpuBackend backend)
         {
             using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
@@ -86,8 +91,89 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        public static IEnumerable<object[]> Targets()
+        {
+            yield return new object[] { null! };
+
+            foreach (var context in HardwareContexts())
+            {
+                yield return context;
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Typeface_Drawn_Every_Frame_Rasterizes_Nothing_While_Another_Fills_The_Limit(GpuBackend? backend) =>
+            OnOwnThread(() => LabelDuringZoom(backend));
+
+        private static void LabelDuringZoom(GpuBackend? backend)
+        {
+            using var limit = LimitScope.Set(2 * 1024 * 1024);
+            using var gpu = backend is { } gpuBackend ? TransformedAtlasTests.CreateGpu(gpuBackend, false) : null;
+            using var scope = WideRunMaskTests.CreateEnvironment(out var labelFace);
+            using var surface = gpu is null
+                ? SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul))
+                : SKSurface.Create(gpu.GrContext, true, new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+            var zoomFace = GlyphAtlasBatchTests.LoadAsset("NotoSans-Italic.ttf");
+            using var label = WideRunMaskTests.CreateRun(labelFace, s_lines[0], 14, new Point(4.3, 680.2));
+            var zoom = CreateParagraph(zoomFace, 10, 28);
+
+            // The label's own rasterizations and atlas misses.
+            var labelMisses = 0L;
+
+            void Frame(double scale)
+            {
+                using var context = gpu is null
+                    ? new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface, Dpi = new Vector(96, 96) })
+                    : TransformedAtlasTests.CreateContext(gpu, surface);
+
+                context.Transform = Matrix.CreateScale(scale, scale);
+
+                foreach (var run in zoom)
+                {
+                    context.DrawGlyphRun(Brushes.Black, run);
+                }
+
+                var before = GlyphRasterDiagnostics.MaskCacheMissesOnThread + GlyphRasterDiagnostics.AtlasMissesOnThread;
+
+                context.Transform = Matrix.Identity;
+                context.DrawGlyphRun(Brushes.Black, label);
+                context.FlushGlyphBatch();
+                labelMisses += GlyphRasterDiagnostics.MaskCacheMissesOnThread + GlyphRasterDiagnostics.AtlasMissesOnThread -
+                    before;
+            }
+
+            try
+            {
+                DropEarlierFrames();
+                Frame(1);
+                Frame(1);
+
+                var zoomEvictions = zoomFace.MaskCache.Evictions;
+
+                labelMisses = 0;
+
+                // A zoom that needs far more than the limit, every frame a new scale.
+                for (var step = 1; step < 120; step++)
+                {
+                    Frame(1 + step * 0.01);
+                }
+
+                Assert.True(zoomFace.MaskCache.Evictions > zoomEvictions, "the zoom fit the limit");
+                Assert.Equal(0, labelMisses);
+            }
+            finally
+            {
+                DisposeAll(zoom);
+                zoomFace.Dispose();
+            }
+        }
+
         [Fact]
-        public void Static_Text_Holds_Only_Its_Working_Set()
+        public void Static_Text_Holds_Only_Its_Working_Set() =>
+            OnOwnThread(() => StaticWorkingSet());
+
+        private static void StaticWorkingSet()
         {
             using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -137,7 +223,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void A_Frame_Whose_Pinned_Content_Exceeds_The_Limit_Draws_It_Without_Thrashing(GpuBackend backend)
+        public void A_Frame_Whose_Pinned_Content_Exceeds_The_Limit_Draws_It_Without_Thrashing(GpuBackend backend) =>
+            OnOwnThread(() => PinnedWorkingSet(backend));
+
+        private static void PinnedWorkingSet(GpuBackend backend)
         {
             using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
@@ -186,6 +275,35 @@ namespace Avalonia.Skia.UnitTests.Media
             finally
             {
                 DisposeAll(runs);
+            }
+        }
+
+        /// <summary>
+        /// Runs <paramref name="test"/> on a thread of its own: a pooled test thread may still hold
+        /// a drawing context another test left open, in whose frame every context of the test
+        /// would be drawn.
+        /// </summary>
+        private static void OnOwnThread(Action test)
+        {
+            Exception? failure = null;
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    test();
+                }
+                catch (Exception e)
+                {
+                    failure = e;
+                }
+            });
+
+            thread.Start();
+            thread.Join();
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
             }
         }
 

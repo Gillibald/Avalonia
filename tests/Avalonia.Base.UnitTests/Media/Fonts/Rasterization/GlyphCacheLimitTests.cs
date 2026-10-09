@@ -251,6 +251,47 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         [Fact]
+        public void A_Typeface_Drawn_Every_Second_Keeps_Its_Masks_While_Another_Streams_New_Ones()
+        {
+            const long limit = 1024 * Kb;
+            var budget = new GlyphCacheBudget(limit);
+            var tooltip = new GlyphMaskCache(budget);
+            var zoom = new GlyphMaskCache(budget);
+            var rebuilds = 0;
+
+            GlyphMask BuildTooltip(GlyphMaskKey key)
+            {
+                rebuilds++;
+                return MakeMask(32);
+            }
+
+            // A tooltip of 60 glyphs, far below an eighth of the limit, shown once a second while
+            // a zoom draws 40 new glyphs every frame, so the zoom's masks of the last 25 frames
+            // fill the limit.
+            for (var frame = 0; frame < 300; frame++)
+            {
+                using (budget.BeginFrame())
+                {
+                    if (frame % 60 == 0)
+                    {
+                        for (var glyph = 0; glyph < 60; glyph++)
+                        {
+                            tooltip.GetOrBuild(Key(glyph), BuildTooltip);
+                        }
+                    }
+
+                    for (var i = 0; i < 40; i++)
+                    {
+                        zoom.GetOrBuild(Key(frame * 40 + i), static _ => MakeMask(32));
+                    }
+                }
+            }
+
+            Assert.Equal(60, rebuilds);
+            Assert.True(budget.UsedBytes <= budget.SoftLimitBytes, $"{budget.UsedBytes} bytes over the limit");
+        }
+
+        [Fact]
         public void Secondary_Run_Masks_Of_Old_Frames_Are_Evicted_And_The_Primary_Kept()
         {
             const long limit = 10 * Kb;
