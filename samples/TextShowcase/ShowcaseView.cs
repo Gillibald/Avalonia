@@ -80,7 +80,17 @@ namespace TextShowcase
                 HorizontalAlignment = HorizontalAlignment.Right,
             };
 
-            var header = new DockPanel { Margin = new Thickness(32, 18, 32, 10) };
+            var header = new DockPanel { Margin = new Thickness(32, 18, 32, 10), Background = Brushes.Transparent };
+
+            // Touch and mouse navigation for hosts without a keyboard: the right half of the
+            // header goes forward, the left half back.
+            header.Tapped += (_, e) =>
+            {
+                if (_splash is { IsVisible: false })
+                {
+                    ShowScene(e.GetPosition(header).X > header.Bounds.Width / 2 ? _index + 1 : _index - 1);
+                }
+            };
             DockPanel.SetDock(_position, Dock.Left);
             DockPanel.SetDock(_platform, Dock.Right);
             header.Children.Add(_position);

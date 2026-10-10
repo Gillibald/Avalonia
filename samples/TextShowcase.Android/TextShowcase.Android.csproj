@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentAndroidTargetFramework)</TargetFramework>
+    <SupportedOSPlatformVersion>$(AvsMinSupportedAndroidVersion)</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+    <!-- The desktop host's assembly name, so the shared code reaches the same Avalonia internals
+         through the existing InternalsVisibleTo entries and the avares:// font URIs resolve. -->
+    <AssemblyName>TextShowcase</AssemblyName>
+    <RootNamespace>TextShowcase.AndroidHost</RootNamespace>
+    <ApplicationId>com.avalonia.textshowcase</ApplicationId>
+    <ApplicationTitle>TextShowcase</ApplicationTitle>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <Import Project="..\TextShowcase\TextShowcase.Shared.props" />
+
+  <ItemGroup>
+    <Compile Include="..\TextShowcase\ShowcaseOptions.cs" Link="Shared\ShowcaseOptions.cs" />
+    <Compile Include="..\TextShowcase\ShowcaseView.cs" Link="Shared\ShowcaseView.cs" />
+    <Compile Include="..\TextShowcase\Diagnostics\*.cs" Link="Shared\Diagnostics\%(Filename)%(Extension)" />
+    <Compile Include="..\TextShowcase\Panes\*.cs" Link="Shared\Panes\%(Filename)%(Extension)" />
+    <Compile Include="..\TextShowcase\Scenes\*.cs" Link="Shared\Scenes\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Android\Avalonia.Android\Avalonia.Android.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
+  </ItemGroup>
+
+</Project>
