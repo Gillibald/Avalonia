@@ -512,11 +512,11 @@ namespace TextLab
             var glyph = PickOverlayGlyph(clone, sample);
             var probe = TrueTypeHintingProbe.TryCreate(clone, glyph, size,
                 Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased,
-                stemSnap: false, out var engineNote);
+                strong: false, out var engineNote);
 
             if (probe is { } p)
             {
-                var interpretation = p.FullInterpretation ? "full interpretation" : "v40 class (y only)";
+                var interpretation = p.Interpretation;
 
                 _engineText.Text = FormattableString.Invariant(
                     $"engine: TrueType bytecode at this instance, {interpretation}, {p.InstructionsExecuted} ops - the CVT the programs read carries the cvar deltas for this variation point");

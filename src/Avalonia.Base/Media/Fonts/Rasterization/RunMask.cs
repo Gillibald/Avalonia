@@ -26,12 +26,14 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether the run's origin and every glyph pen round to whole pixels with phase zero
-        /// instead of taking quarter-pixel phases.
+        /// instead of taking quarter-pixel phases: bi-level Strong text only, whose masks keep
+        /// the font's x fitting, which only holds on a whole-pixel pen.
         /// </summary>
         public bool SnapsPens => SnapsPensUnder(Strong, Mode);
 
         /// <summary>The pen policy of <see cref="SnapsPens"/>, for a key not built yet.</summary>
-        public static bool SnapsPensUnder(bool strong, GlyphMaskMode mode) => strong;
+        public static bool SnapsPensUnder(bool strong, GlyphMaskMode mode)
+            => strong && mode == GlyphMaskMode.Aliased;
     }
 
     /// <summary>

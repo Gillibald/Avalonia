@@ -40,10 +40,12 @@ namespace TextLab
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var gridFit = hinting != TextHintingMode.None;
-            var stemSnap = hinting == TextHintingMode.Strong;
+            var strong = hinting == TextHintingMode.Strong;
 
+            // Grayscale masks keep the natural x under every mode; only bi-level Strong
+            // masks snap stems.
             var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
-                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, gridFit, stemSnap));
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, gridFit, strong));
 
             var unhinted = new GlyphPathBuilder();
             typeface.TryBuildGlyphContours(glyph, new Matrix(scale, 0, 0, -scale, 0, 0), unhinted);
@@ -64,12 +66,6 @@ namespace TextLab
                     typeface.StemWidths.HorizontalStrokeWidths, designToPixels, strokeFrom, strokeTo);
                 hinted.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(hinted, scaleQ,
                     typeface.StemWidths.HorizontalStrokeWidths));
-            }
-
-            if (stemSnap)
-            {
-                hinted.ApplyHorizontalWarp(StemFit.BuildWarp(hinted, 1f,
-                    typeface.StemWidths.VerticalStemWidths, scale));
             }
 
             var zoom = Math.Clamp(400 / Math.Max(mask.Width, Math.Max(mask.Height, 1)), 6, 30);
@@ -200,10 +196,10 @@ namespace TextLab
 
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
-            var stemSnap = hinting == TextHintingMode.Strong;
+            var strong = hinting == TextHintingMode.Strong;
 
             var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
-                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: true, stemSnap));
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: true, strong));
 
             var unhinted = new GlyphPathBuilder();
 
@@ -335,7 +331,7 @@ namespace TextLab
             {
                 using var font = new SKFont(SKTypeface.Default, 13);
                 using var text = new SKPaint { Color = t.Label };
-                var engine = probe.FullInterpretation ? "full interpretation" : "v40 class (y only)";
+                var engine = probe.Interpretation;
 
                 canvas.DrawText(
                     Inv($"{label} {size:0.#}px  hinting {hinting}  |  engine: TrueType bytecode, {engine}, {probe.InstructionsExecuted} ops"),
@@ -417,10 +413,10 @@ namespace TextLab
             {
                 for (var h = 0; h < variantHintings.Length; h++)
                 {
-                    var (_, gridFit, stemSnap) = variantHintings[h];
+                    var (_, gridFit, strong) = variantHintings[h];
 
                     variants[m, h] = GlyphMasks.Build(typeface, scratch, new GlyphMaskKey(
-                        glyph, scaleQ, 0, variantModes[m].Item2, gridFit, stemSnap));
+                        glyph, scaleQ, 0, variantModes[m].Item2, gridFit, strong));
                     variantCellWidth = Math.Max(variantCellWidth, variants[m, h].Width);
                     variantCellHeight = Math.Max(variantCellHeight, variants[m, h].Height);
                 }
@@ -601,10 +597,10 @@ namespace TextLab
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
             var scale = scaleQ / (GlyphMaskKey.ScaleQuantum * typeface.Metrics.DesignEmHeight);
             var gridFit = hinting != TextHintingMode.None;
-            var stemSnap = hinting == TextHintingMode.Strong;
+            var strong = hinting == TextHintingMode.Strong;
 
             var mask = GlyphMasks.Build(typeface, new GlyphPathBuilder(),
-                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Subpixel, gridFit, stemSnap));
+                new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Subpixel, gridFit, strong));
 
             if (mask.IsEmpty)
             {
@@ -615,7 +611,7 @@ namespace TextLab
             // programs when the bytecode engine fit this mask, the auto-warps otherwise.
             var contours = new GlyphPathBuilder();
             var lcdProbe = gridFit
-                ? TrueTypeHintingProbe.TryCreate(typeface, glyph, size, GlyphMaskMode.Subpixel, stemSnap, out _)
+                ? TrueTypeHintingProbe.TryCreate(typeface, glyph, size, GlyphMaskMode.Subpixel, strong, out _)
                 : null;
 
             if (lcdProbe is not null)
@@ -630,12 +626,6 @@ namespace TextLab
                 {
                     contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, scaleQ,
                         typeface.StemWidths.HorizontalStrokeWidths));
-                }
-
-                if (stemSnap)
-                {
-                    contours.ApplyHorizontalWarp(StemFit.BuildWarp(contours, 3f,
-                        typeface.StemWidths.VerticalStemWidths, scale));
                 }
             }
 

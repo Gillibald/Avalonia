@@ -169,8 +169,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // TextHintingMode drives the grid fit: None means outlines scaled only, Light
             // takes the natural fit (bytecode in the v40 compatibility class when the font
-            // is instructed, the light auto-fit otherwise), and Strong adds whole-pixel pens
-            // with full program interpretation — the GDI-classic positioning trade.
+            // is instructed, the light auto-fit otherwise), and Strong takes the font's full
+            // program in y. Glyphs stay at the shaper's positions in every mode, so x keeps
+            // its natural shape and quarter-pixel phases; only bi-level Strong text fits x as
+            // well, on whole-pixel pens.
             // Unspecified resolves through the font's gasp table: a grid-fit range without
             // smoothing flags is the legacy bi-level signature (Courier New) and gets the
             // Strong treatment outright; a grid-fit range whose only smoothing flag is
@@ -854,9 +856,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 : alphaContext is null ? 4 : 1;
 
         /// <summary>
-        /// Splits a glyph pen into placement pixel and phase. Under Strong hinting every pen
-        /// rounds to a whole pixel with phase zero, so identical glyphs rasterize identically
-        /// across the run — the uniformity that reads as GDI-era crispness.
+        /// Splits a glyph pen into placement pixel and phase. Under bi-level Strong hinting
+        /// every pen rounds to a whole pixel with phase zero, which the masks' x fitting needs;
+        /// everywhere else the pen takes the nearest quarter-pixel phase.
         /// </summary>
         private static void SnapGlyphPen(in RunMaskKey key, float relativeX, out int penX, out byte phase)
         {

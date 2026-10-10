@@ -19,13 +19,13 @@ namespace TextLab
         internal readonly record struct Step(string Instruction, int[] CurX, int[] CurY, byte[] Tags);
 
         private TrueTypeHintingProbe(TrueTypeZone zone, List<Step> steps, bool canScrub,
-            int instructionsExecuted, bool fullInterpretation)
+            int instructionsExecuted, string interpretation)
         {
             Zone = zone;
             Steps = steps;
             CanScrub = canScrub;
             InstructionsExecuted = instructionsExecuted;
-            FullInterpretation = fullInterpretation;
+            Interpretation = interpretation;
         }
 
         /// <summary>The final hinted zone (26.6 device pixels, y-up, phantoms last).</summary>
@@ -42,8 +42,10 @@ namespace TextLab
 
         public int InstructionsExecuted { get; }
 
-        /// <summary>Full both-axes interpretation (Strong/Aliased) vs the v40 y-only class.</summary>
-        public bool FullInterpretation { get; }
+        /// <summary>How the program ran: full interpretation on both axes (aliased), full
+        /// interpretation with the natural x kept (Strong grayscale and subpixel), or the v40
+        /// y-only class.</summary>
+        public string Interpretation { get; }
 
         public int StepCount => CanScrub ? Steps.Count : 0;
 
@@ -112,7 +114,7 @@ namespace TextLab
         /// disable, or a glyph-level veto) - the caller shows the fallback engine instead.
         /// </summary>
         public static TrueTypeHintingProbe? TryCreate(GlyphTypeface typeface, ushort glyph,
-            float size, GlyphMaskMode mode, bool stemSnap, out string? reason)
+            float size, GlyphMaskMode mode, bool strong, out string? reason)
         {
             reason = null;
 
@@ -214,8 +216,17 @@ namespace TextLab
                 steps.Add(new Step(line, curX, curY, tags));
             };
 
-            var compat = stemSnap || mode == GlyphMaskMode.Aliased ? 0 : 4;
-            var hinted = hinter.TryHint(glyph, compat);
+            // The same choice GlyphMasks.Build makes.
+            var interpretation = mode == GlyphMaskMode.Aliased
+                ? "full interpretation"
+                : strong
+                    ? "full interpretation, natural x kept"
+                    : "v40 class (y only)";
+            var hinted = mode == GlyphMaskMode.Aliased
+                ? hinter.TryHint(glyph, backwardCompatibility: 0)
+                : strong
+                    ? hinter.TryHintVertically(glyph)
+                    : hinter.TryHint(glyph, backwardCompatibility: 4);
 
             interpreter.Trace = null;
 
@@ -232,7 +243,7 @@ namespace TextLab
                            steps[^1].CurX.Length == hinter.Zone!.PointCount;
 
             return new TrueTypeHintingProbe(hinter.Zone!, canScrub ? steps : new List<Step>(),
-                canScrub, totalOps, compat == 0);
+                canScrub, totalOps, interpretation);
         }
     }
 }

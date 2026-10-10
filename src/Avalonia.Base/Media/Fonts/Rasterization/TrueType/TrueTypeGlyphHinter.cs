@@ -58,6 +58,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
 
         private int _backwardCompatibility;
         private long _instructionsUsed;
+        private int[] _naturalX = Array.Empty<int>();
 
         public TrueTypeGlyphHinter(
             TrueTypeSizeState state,
@@ -158,6 +159,66 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             Zone = zone;
             return true;
         }
+
+        /// <summary>
+        /// Hints with full interpretation and keeps only the vertical result: every outline
+        /// point's x returns to where the natural (v40) class leaves it, the scaled design
+        /// outline, with composites assembled at their unrounded offsets. Text laid out at
+        /// design advances keeps its spacing this way while y gets the font's complete program,
+        /// including the moves the natural class withholds. The phantom points keep the full
+        /// interpretation's values.
+        /// </summary>
+        public bool TryHintVertically(int glyphIndex)
+        {
+            if (!IsComposite(glyphIndex))
+            {
+                // A simple glyph's originals are its scaled design points, and no program
+                // writes them.
+                if (!TryHint(glyphIndex, backwardCompatibility: 0))
+                {
+                    return false;
+                }
+
+                var zone = Zone!;
+
+                Array.Copy(zone.OrgX, zone.CurX, zone.PointCount - 4);
+                return true;
+            }
+
+            // A composite's originals are component-local or already hinted, so the natural x
+            // comes from a natural run. Both runs reuse the same zones, so it is saved first.
+            if (!TryHint(glyphIndex, backwardCompatibility: 4))
+            {
+                return false;
+            }
+
+            var outline = Zone!.PointCount - 4;
+
+            if (_naturalX.Length < outline)
+            {
+                _naturalX = new int[Math.Max(outline, _naturalX.Length * 2)];
+            }
+
+            Array.Copy(Zone.CurX, _naturalX, outline);
+
+            if (!TryHint(glyphIndex, backwardCompatibility: 0))
+            {
+                return false;
+            }
+
+            if (Zone!.PointCount - 4 != outline)
+            {
+                Zone = null;
+                return false;
+            }
+
+            Array.Copy(_naturalX, Zone.CurX, outline);
+            return true;
+        }
+
+        private bool IsComposite(int glyphIndex)
+            => _glyfTable.TryGetGlyphData(glyphIndex, out var glyphData) &&
+               glyphData.Length >= 10 && BinaryPrimitives.ReadInt16BigEndian(glyphData.Span) < 0;
 
         private bool HintRecursive(int glyphIndex, int depth, out TrueTypeZone zone)
         {

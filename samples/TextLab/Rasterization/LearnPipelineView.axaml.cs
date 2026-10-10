@@ -92,7 +92,7 @@ namespace TextLab
             string legend2;
 
             if (TrueTypeHintingProbe.TryCreate(typeface, g, 12,
-                    Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased, stemSnap: false,
+                    Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased, strong: false,
                     out _) is { } probe)
             {
                 hintFigure = PipelineFigures.BytecodeHintingAnatomy(typeface, g, "'g'", 12,

@@ -3,7 +3,7 @@ using System;
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// Horizontal stem snapping for Strong hinting — the x-axis analog of the vertical zone
+    /// Horizontal stem snapping for bi-level Strong hinting — the x-axis analog of the vertical zone
     /// fit: straight vertical stem flanks land on pixel columns with quantized widths, so a
     /// 1.4-pixel stem renders as one solid column instead of two partial ones. Detection is
     /// deliberately conservative: only long, straight, near-vertical line segments paired by

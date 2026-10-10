@@ -36,11 +36,11 @@ Small masks rasterize scalar where the vector setup costs more than it saves: be
 | `Phase` | 0..3 (`PhaseCount = 4`) | quarter-pixel horizontal subpixel position |
 | `Mode` | `Antialiased`, `Aliased`, `Subpixel` | grayscale, thresholded, or 3-channel LCD |
 | `GridFit` | bool, default true | vertical zone + stroke fitting applied (off for `TextHintingMode.None`) |
-| `StemSnap` | bool, default false | horizontal stem snapping applied (`TextHintingMode.Strong`) |
+| `Strong` | bool, default false | built under `TextHintingMode.Strong`: the font's full program in y; bi-level masks also keep its x fitting and the auto-hinter's stem snapping |
 
 Masks carry a transparent apron so filtering and warping never clip: `Apron = 1` pixel normally, `SubpixelApron = 2` for LCD masks and stem-snapped masks (snapping can move an edge outward by up to a pixel). Builds beyond `MaxMaskSize = 4096` in either dimension return the empty mask and the draw falls through to another tier.
 
-[GlyphMasks.Build](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMasks.cs) executes a build: capture contours at the keyed scale and phase, apply the vertical warp (`GridFit`), apply the horizontal stem warp (`StemSnap`), then rasterize. Subpixel masks rasterize at 3x horizontal resolution and downfilter (see [subpixel.md](subpixel.md)).
+[GlyphMasks.Build](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMasks.cs) executes a build: capture contours at the keyed scale and phase, apply the vertical warp (`GridFit`), apply the horizontal stem warp (bi-level `Strong`), then rasterize. Subpixel masks rasterize at 3x horizontal resolution and downfilter (see [subpixel.md](subpixel.md)).
 
 ![Mask anatomy: the per-glyph mask with its apron marked, the cache key fields, and a run composed from per-glyph masks at 1x and 4x](images/mask-anatomy.png)
 
@@ -51,7 +51,7 @@ Masks carry a transparent apron so filtering and warping never clip: `Apron = 1`
 Two cache levels exist, both allocation-free on hits:
 
 - [GlyphMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskCache.cs) hangs off each `GlyphTypeface` and holds per-glyph masks; a second instance keyed by `ColorGlyphMaskKey` (`GlyphTypeface.ColorMaskCache`) holds the colour masks of COLR v1 glyphs. Population is demand-driven and exact-fit; nothing is allocated per font glyph count. A mask above `MaxEntryBytes` (512 KB) is composed from a transient buffer and never cached.
-- [RunMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) lives on each managed glyph run and holds what the run draws from: untinted run coverage on CPU surfaces, pre-tinted BGRA chunks, LCD payloads, A8 or RGBA run masks on GPU contexts. One primary slot plus 3 secondary slots (`SecondarySize`), keyed by [RunMaskKey](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) (`ScaleQ`, origin phase, mode, tint when pre-tinted, `GridFit`, `PenSnap`, and for the transformed tier the quantized transform and vertical phase). A run being scrolled or repainted hits the primary slot; a run animating between a few states cycles the secondaries; only secondaries are evicted.
+- [RunMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) lives on each managed glyph run and holds what the run draws from: untinted run coverage on CPU surfaces, pre-tinted BGRA chunks, LCD payloads, A8 or RGBA run masks on GPU contexts. One primary slot plus 3 secondary slots (`SecondarySize`), keyed by [RunMaskKey](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) (`ScaleQ`, origin phase, mode, tint when pre-tinted, `GridFit`, `Strong`, and for the transformed tier the quantized transform and vertical phase). A run being scrolled or repainted hits the primary slot; a run animating between a few states cycles the secondaries; only secondaries are evicted.
 - Hardware GPU text keeps its masks in the glyph atlas instead, plus a per-run sprite set per luminance bucket ([gpu-atlas.md](gpu-atlas.md)).
 
 Byte costs weigh LCD masks by their three channels, so subpixel text does not silently triple memory under the same numeric limit.

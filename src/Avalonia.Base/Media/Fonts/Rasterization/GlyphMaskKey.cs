@@ -90,6 +90,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// bucket alone does not determine once a transform scales the text. <see cref="EmboldenQ"/>
     /// and <see cref="Oblique"/> together are the simulation the mask is built with, upright or
     /// transformed, so the masks of a face and of its simulated variants share one cache.
+    /// <see cref="Strong"/> marks a build under <see cref="TextHintingMode.Strong"/>: the font's
+    /// full program in y, plus its x fitting for bi-level masks (see <see cref="GlyphMasks"/>).
     /// </summary>
     internal readonly record struct GlyphMaskKey(
         ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool Strong = false,

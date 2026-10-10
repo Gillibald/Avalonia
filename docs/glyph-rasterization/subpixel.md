@@ -42,4 +42,4 @@ The composer bakes the gamma tables into both payloads at compose time, keyed by
 
 ## Interaction with hinting
 
-Subpixel rendering and hinting compose: LCD masks go through the same vertical grid fit and, under `Strong`, stem snapping (in 3x device space, converted through the subpixel factor) and integer pen snapping. Vertical zone snapping matters more for LCD than for grayscale, because the eye reads horizontal feature smear as color fringing on top of blur.
+Subpixel rendering and hinting compose: LCD masks go through the same vertical grid fit as grayscale ones, and under `Strong` take the font's full program in y while keeping the natural x and quarter-pixel phases, like grayscale (see [hinting.md](hinting.md)). Vertical zone snapping matters more for LCD than for grayscale, because the eye reads horizontal feature smear as color fringing on top of blur.

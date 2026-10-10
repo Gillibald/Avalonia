@@ -160,14 +160,14 @@ namespace TextLab
             {
                 _probe = TrueTypeHintingProbe.TryCreate(typeface, _glyph, size,
                     Avalonia.Media.Fonts.Rasterization.GlyphMaskMode.Antialiased,
-                    stemSnap: hinting == TextHintingMode.Strong, out engineNote);
+                    strong: hinting == TextHintingMode.Strong, out engineNote);
             }
 
             if (_probe is { } probe)
             {
                 _hintingTitle.Text = "Hinting — the font's own bytecode";
 
-                var interpretation = probe.FullInterpretation ? "full interpretation" : "v40 class (y only)";
+                var interpretation = probe.Interpretation;
                 var scrubNote = probe.CanScrub ? "" : " (composite — scrubber off)";
 
                 _engineText.Text = FormattableString.Invariant(

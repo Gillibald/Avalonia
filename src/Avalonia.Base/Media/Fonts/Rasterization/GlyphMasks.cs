@@ -55,9 +55,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             GlyphRasterDiagnostics.CountGlyphRasterization();
 
-            // Stem snapping can move the right edge outward by up to a pixel, so it shares
-            // the wider apron.
-            var apron = key.Mode == GlyphMaskMode.Subpixel || key.Strong ? SubpixelApron : Apron;
+            // Bi-level Strong text is the one build that fits x on whole-pixel pens; every
+            // other build keeps the outline's natural x, which spacing at the shaper's
+            // positions relies on. Stem snapping can move the right edge outward by up to a
+            // pixel, so it shares the wider apron.
+            var fitsX = key.Strong && key.Mode == GlyphMaskMode.Aliased;
+            var apron = key.Mode == GlyphMaskMode.Subpixel || fitsX ? SubpixelApron : Apron;
             var subpixelFactor = key.Mode == GlyphMaskMode.Subpixel ? 3 : 1;
 
             scratch.Reset();
@@ -116,7 +119,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         typeface.StemWidths.HorizontalStrokeWidths));
                 }
 
-                if (key.Strong && applyAutoWarps)
+                if (fitsX && applyAutoWarps)
                 {
                     scratch.ApplyHorizontalWarp(StemFit.BuildWarp(scratch, subpixelFactor,
                         typeface.StemWidths.VerticalStemWidths, scale));
@@ -353,12 +356,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             left = top = width = height = 0;
 
-            // Strong hinting and bi-level rendering interpret the full program; the natural
-            // modes run the v40 compatibility class, where x never moves and quarter-pixel
-            // phases stay valid.
-            var backwardCompatibility = key.Strong || key.Mode == GlyphMaskMode.Aliased ? 0 : 4;
+            // Bi-level rendering interprets the full program on both axes. Strong grayscale and
+            // subpixel text takes the full program's y and keeps the natural x, so glyphs keep
+            // their designed ink widths at the shaper's positions and quarter-pixel phases stay
+            // valid. Light runs the v40 compatibility class, where x never moves either.
+            var hinted = key.Mode == GlyphMaskMode.Aliased
+                ? hinter.TryHint(key.Glyph, backwardCompatibility: 0)
+                : key.Strong
+                    ? hinter.TryHintVertically(key.Glyph)
+                    : hinter.TryHint(key.Glyph, backwardCompatibility: 4);
 
-            if (!hinter.TryHint(key.Glyph, backwardCompatibility))
+            if (!hinted)
             {
                 return false;
             }
