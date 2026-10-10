@@ -38,6 +38,8 @@ namespace TextStress.Scenarios
         private readonly SweepKind _kind;
         private readonly int _stateRuns;
         private readonly string _stateKind;
+        private readonly int _zoomSteps;
+        private readonly double _zoomStep;
         private SweepCanvas? _canvas;
         private double _scaling = 1;
 
@@ -46,6 +48,8 @@ namespace TextStress.Scenarios
             _kind = kind;
             _stateRuns = options.GetInt("runs", 2000);
             _stateKind = options.GetString("kind", "mixed").ToLowerInvariant();
+            _zoomSteps = options.GetInt("zoom", 0);
+            _zoomStep = options.GetDouble("zoom-step", 0.01);
         }
 
         public override string Name => _kind switch
@@ -65,7 +69,10 @@ namespace TextStress.Scenarios
         public override string Describe() => _kind switch
         {
             SweepKind.Runs => FormattableString.Invariant($"size={LatinSize};cell={LatinCellWidth}x{LatinCellHeight}"),
-            SweepKind.Glyphs => FormattableString.Invariant($"size={CjkSize};instances={CjkInstances};font={CjkFamilyName}"),
+            SweepKind.Glyphs => _zoomSteps > 0
+                ? FormattableString.Invariant(
+                    $"size={CjkSize};instances=n;font={CjkFamilyName};zoom={_zoomSteps};zoom-step={_zoomStep}")
+                : FormattableString.Invariant($"size={CjkSize};instances={CjkInstances};font={CjkFamilyName}"),
             _ => FormattableString.Invariant($"size={LatinSize};runs={_stateRuns};kind={_stateKind}")
         };
 
@@ -89,7 +96,10 @@ namespace TextStress.Scenarios
 
                 case SweepKind.Glyphs:
                 {
-                    var runs = BuildCjkRuns(Math.Max(1, n), width, height);
+                    // A zoom draws each distinct glyph once, as a paragraph that grows past the
+                    // canvas, instead of a screen filled with repeats.
+                    var distinct = Math.Max(1, n);
+                    var runs = BuildCjkRuns(distinct, _zoomSteps > 0 ? distinct : CjkInstances, width, height);
                     _canvas = new SweepCanvas(runs, new[] { black }, Array.Empty<StateChange>(), "mixed");
                     break;
                 }
@@ -125,6 +135,9 @@ namespace TextStress.Scenarios
         {
             if (_canvas is not null)
             {
+                // A zoom changes the scale every frame; a sawtooth from 1 upwards revisits each
+                // scale once per cycle of the steps.
+                _canvas.Scale = _zoomSteps > 0 ? 1 + _zoomStep * (frame % _zoomSteps) : 1;
                 _canvas.Shift = frame % 2 == 0 ? 0 : 1 / _scaling;
             }
         }
@@ -161,7 +174,7 @@ namespace TextStress.Scenarios
             return runs;
         }
 
-        private List<PlacedRun> BuildCjkRuns(int distinct, double width, double height)
+        private List<PlacedRun> BuildCjkRuns(int distinct, int instances, double width, double height)
         {
             var typeface = new Typeface(
                 "Microsoft YaHei, Microsoft YaHei UI, SimSun, Noto Sans CJK SC, PingFang SC, Hiragino Sans GB");
@@ -206,12 +219,12 @@ namespace TextStress.Scenarios
             var runs = new List<PlacedRun>();
             var index = 0;
 
-            for (var line = 0; index < CjkInstances; line++)
+            for (var line = 0; index < instances; line++)
             {
                 var layer = line / rows;
                 var x = 4 + layer % 4 * 3;
                 var y = 4 + line % rows * lineHeight + layer % 3 * 2;
-                var count = Math.Min(columns, CjkInstances - index);
+                var count = Math.Min(columns, instances - index);
                 var chars = new char[count];
                 var glyphs = new ushort[count];
 
@@ -246,6 +259,7 @@ namespace TextStress.Scenarios
         private readonly StateChange[] _states;
         private readonly string _kind;
         private double _shift;
+        private double _scale = 1;
 
         public SweepCanvas(List<PlacedRun> runs, IImmutableSolidColorBrush[] brushes, StateChange[] states, string kind)
         {
@@ -268,11 +282,23 @@ namespace TextStress.Scenarios
             }
         }
 
+        /// <summary>Scale of the drawn runs about the top left corner.</summary>
+        public double Scale
+        {
+            get => _scale;
+            set
+            {
+                _scale = value;
+                InvalidateVisual();
+            }
+        }
+
         public override void Render(DrawingContext context)
         {
             context.FillRectangle(Brushes.White, new Rect(Bounds.Size));
 
-            using var shift = context.PushTransform(Matrix.CreateTranslation(0, _shift));
+            using var shift = context.PushTransform(Matrix.CreateScale(_scale, _scale) *
+                                                    Matrix.CreateTranslation(0, _shift));
             var brush = _brushes[0];
             var brushIndex = 0;
             var next = 0;

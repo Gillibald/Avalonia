@@ -64,5 +64,11 @@ namespace TextStress.Measurement
         public long TierMask;
         public long TierTransformed;
         public long TierBlob;
+
+        // The process-wide glyph cache budget: bytes charged after the frame, the peak since the
+        // sweep value started, and bytes evicted during the frame.
+        public long BudgetUsedBytes;
+        public long BudgetPeakBytes;
+        public long BudgetEvictedBytes;
     }
 }

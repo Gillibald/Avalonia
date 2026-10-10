@@ -161,11 +161,14 @@ namespace TextStress
             "  --prewarm-pass   run every measured frame once, discarded, before measuring (warm caches)\n" +
             "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 32)\n" +
             "  --phase-timers   record the render thread's glyph phase timers (us_/n_ columns)\n" +
+            "  --glyph-cache-mb N   FontManagerOptions.GlyphCacheLimitBytes in MB (default: platform default)\n" +
+            "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +
             "  scenario parameters: code-scroll --size --colors --speed --fractional;\n" +
-            "    list-fling --rows --speed --faces all|1 --colors 4|1 --motion fling|static;\n" +
+            "    list-fling --rows --speed --faces all|1 --colors 4|1 --motion fling|static --script latin|cjk;\n" +
+            "    sweep-glyphs --zoom S --zoom-step d (each distinct glyph once, scaled 1 + d * (frame % S));\n" +
             "    mixed-ui --cards --decor --changes;\n" +
             "    sweep-states --runs --kind mixed|rect|clip|opacity|color;\n" +
             "    simd-bench times the rasterizer and blitter on every supported SIMD path by glyph size\n";

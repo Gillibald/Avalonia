@@ -31,12 +31,20 @@ namespace TextStress
         /// The font manager options of the measured mode. Each process measures one mode; A/B
         /// comparisons are separate, interleaved processes, so neither mode inherits the other's caches.
         /// </summary>
-        public static FontManagerOptions CreateFontManagerOptions(RunOptions options) => new()
+        public static FontManagerOptions CreateFontManagerOptions(RunOptions options)
         {
-            TextRasterizationMode = options.Mode == "backend"
-                ? TextRasterizationMode.Backend
-                : TextRasterizationMode.Managed
-        };
+            var limitMb = options.GetInt("glyph-cache-mb", 0);
+
+            return new FontManagerOptions
+            {
+                TextRasterizationMode = options.Mode == "backend"
+                    ? TextRasterizationMode.Backend
+                    : TextRasterizationMode.Managed,
+
+                // Unset keeps the platform default.
+                GlyphCacheLimitBytes = limitMb > 0 ? limitMb * 1024L * 1024 : null
+            };
+        }
 
         /// <summary>Runs the scenario in <paramref name="topLevel"/>; returns the process exit code.</summary>
         public static async Task<int> RunAsync(TopLevel topLevel, RunOptions options)

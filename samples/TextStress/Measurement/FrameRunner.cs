@@ -103,6 +103,7 @@ namespace TextStress.Measurement
                     environmentWritten = true;
                 }
 
+                GlyphCacheBudget.Shared.ResetPeak();
                 var interactive = _options.Frames <= 0;
                 var total = _options.Warmup + _options.Frames;
                 var previous = new FrameSample();
@@ -152,9 +153,20 @@ namespace TextStress.Measurement
 
                 StressLog.Info(string.Format(CultureInfo.InvariantCulture, "{0} n={1} {2} {3}: {4} frames",
                     _scenario.Name, n, _options.Mode, _options.Render, _options.Frames));
+                StressLog.Info(string.Format(CultureInfo.InvariantCulture, "budget n={0} end {1}", n, DescribeBudget()));
             }
 
             _compositor.AfterCommit -= OnAfterCommit;
+
+            var settleMs = _options.GetInt("settle-ms", 0);
+
+            if (settleMs > 0)
+            {
+                // No frames run meanwhile, so the idle trim after the last frame takes effect.
+                await Task.Delay(settleMs);
+                StressLog.Info(string.Format(CultureInfo.InvariantCulture, "budget settled after {0} ms {1}",
+                    settleMs, DescribeBudget()));
+            }
         }
 
         /// <summary>
@@ -299,6 +311,11 @@ namespace TextStress.Measurement
                 }
             }
 
+            var budget = GlyphCacheBudget.Shared;
+            target.BudgetUsedBytes = budget.UsedBytes;
+            target.BudgetPeakBytes = budget.PeakBytes;
+            target.BudgetEvictedBytes = budget.EvictedBytes;
+
             target.TierMask = Interlocked.Read(ref TextTierDiagnostics.MaskTierDraws);
             target.TierTransformed = Interlocked.Read(ref TextTierDiagnostics.TransformedMaskTierDraws);
             target.TierBlob = Interlocked.Read(ref TextTierDiagnostics.BlobTierDraws);
@@ -319,10 +336,32 @@ namespace TextStress.Measurement
             sample.AtlasPages = after.AtlasPages;
             sample.AtlasPagesShared = after.AtlasPagesShared;
             sample.AtlasFaces = after.AtlasFaces;
+            sample.BudgetUsedBytes = after.BudgetUsedBytes;
+            sample.BudgetPeakBytes = after.BudgetPeakBytes;
+            sample.BudgetEvictedBytes = after.BudgetEvictedBytes - before.BudgetEvictedBytes;
             sample.TierMask = after.TierMask - before.TierMask;
             sample.TierTransformed = after.TierTransformed - before.TierTransformed;
             sample.TierBlob = after.TierBlob - before.TierBlob;
         }
+
+        /// <summary>The glyph cache budget's limits and the bytes each pool kind holds, in MB.</summary>
+        private static string DescribeBudget()
+        {
+            var budget = GlyphCacheBudget.Shared;
+            var line = new System.Text.StringBuilder();
+
+            line.Append(FormattableString.Invariant(
+                $"limit={Mb(budget.LimitBytes):F1} retain={Mb(budget.RetainBytes):F1} used={Mb(budget.UsedBytes):F2} peak={Mb(budget.PeakBytes):F2} evicted_total={Mb(budget.EvictedBytes):F2}"));
+
+            foreach (var kind in Enum.GetValues<GlyphCachePoolKind>())
+            {
+                line.Append(FormattableString.Invariant($" {kind}={Mb(budget.BytesOf(kind)):F2}"));
+            }
+
+            return line.ToString();
+        }
+
+        private static double Mb(long bytes) => bytes / 1048576.0;
 
         internal static double Ms(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
 
@@ -403,6 +442,8 @@ namespace TextStress.Measurement
             yield return ("frames", _options.Frames.ToString(CultureInfo.InvariantCulture));
             yield return ("warmup", _options.Warmup.ToString(CultureInfo.InvariantCulture));
             yield return ("prewarm_ms", _options.PrewarmMs.ToString(CultureInfo.InvariantCulture));
+            yield return ("glyph_cache_limit_mb",
+                (GlyphCacheBudget.Shared.LimitBytes / 1048576.0).ToString(CultureInfo.InvariantCulture));
             yield return ("heap_read_period", s_heapReadPeriod.ToString(CultureInfo.InvariantCulture));
 
             foreach (var entry in StressLog.HostEnvironment)

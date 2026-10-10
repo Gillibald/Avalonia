@@ -17,7 +17,7 @@ namespace TextStress.Measurement
             "latency_ms\tui_alloc\trender_alloc\tgc0\tgc1\tgc2\tgc_pause_ms\theap_bytes\tprivate_bytes\t" +
             "mask_cache_bytes\tatlas_bytes\tmask_evictions\tatlas_evictions\ttier_mask\ttier_transformed\ttier_blob\t" +
             "atlas_draws\tpage_uploads\tatlas_geometry\tmax_runs_per_batch\tatlas_pages\tatlas_pages_shared\t" +
-            "atlas_faces\t" + string.Join("\t", RenderCounters.Columns) + "\t" + string.Join("\t", PhaseTimes.Columns);
+            "atlas_faces\tbudget_used_bytes\tbudget_peak_bytes\tbudget_evicted_bytes\t" + string.Join("\t", RenderCounters.Columns) + "\t" + string.Join("\t", PhaseTimes.Columns);
 
         private readonly StreamWriter _writer;
         private readonly RunOptions _options;
@@ -71,7 +71,8 @@ namespace TextStress.Measurement
                 .Append(sameRenderThread ? s.PageUploadsEnd - s.PageUploadsStart : -1)
                 .Append(sameRenderThread ? s.AtlasGeometryEnd - s.AtlasGeometryStart : -1)
                 .Append(sameRenderThread ? s.MaxRunsPerBatch : -1)
-                .Append(s.AtlasPages).Append(s.AtlasPagesShared).Append(s.AtlasFaces);
+                .Append(s.AtlasPages).Append(s.AtlasPagesShared).Append(s.AtlasFaces)
+                .Append(s.BudgetUsedBytes).Append(s.BudgetPeakBytes).Append(s.BudgetEvictedBytes);
 
             for (var i = 0; i < RenderCounters.Count; i++)
             {

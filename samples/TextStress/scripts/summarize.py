@@ -32,8 +32,8 @@ NUMERIC = ["interval_ms", "render_ms", "render_cpu_ms", "ui_ms", "ui_cpu_ms", "l
 TEXT = {"scenario", "mode", "render"}
 
 # Scenario parameters whose non-default values name a variant in the tables.
-VARIANT_DEFAULTS = {"fonts": "7", "colors": "4", "motion": "fling", "clip": "on"}
-VARIANT_FLAGS = ("prewarm-pass", "pending-batches", "phase-timers")
+VARIANT_DEFAULTS = {"fonts": "7", "colors": "4", "motion": "fling", "clip": "on", "script": "latin"}
+VARIANT_FLAGS = ("prewarm-pass", "pending-batches", "phase-timers", "zoom")
 
 # Glyph phase timers in their enum order, with the phases each one includes.
 PHASES = ["glyph_run", "backend_text_setup", "backend_draw_text", "mask_run_draw", "sprite_set_build", "rasterize",

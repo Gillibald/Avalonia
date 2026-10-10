@@ -19,11 +19,16 @@ namespace TextStress.Scenarios
     /// again without new rows, glyphs or atlas writes. <c>--clip off</c> turns off
     /// <see cref="Visual.ClipToBounds"/> on every row text and on the item containers, which
     /// clip like every templated control; nothing in a row draws outside it here, so no clip is
-    /// pushed around the rows or their texts.
+    /// pushed around the rows or their texts. <c>--script cjk</c> writes titles and details in
+    /// ideographs drawn from the first <see cref="CjkPool"/> of the CJK Unified Ideographs block,
+    /// which every family reaches through character fallback.
     /// </remarks>
     internal sealed class ListFlingScenario : Scenario
     {
         internal const double RowHeight = 52;
+
+        /// <summary>Distinct ideographs the CJK texts draw from, about a newspaper's working set.</summary>
+        internal const int CjkPool = 3500;
 
         private static readonly string[] s_families =
         {
@@ -52,6 +57,7 @@ namespace TextStress.Scenarios
         private readonly bool _singleColor;
         private readonly bool _static;
         private readonly bool _clipTexts;
+        private readonly bool _cjk;
         private ListBox? _list;
         private int _lastFrame = -1;
         private double _offset;
@@ -88,6 +94,12 @@ namespace TextStress.Scenarios
                 "off" => false,
                 var other => throw new ArgumentException($"--clip must be on or off, not '{other}'.")
             };
+            _cjk = options.GetString("script", "latin") switch
+            {
+                "latin" => false,
+                "cjk" => true,
+                var other => throw new ArgumentException($"--script must be latin or cjk, not '{other}'.")
+            };
         }
 
         public override string Name => "list-fling";
@@ -95,7 +107,8 @@ namespace TextStress.Scenarios
         public override string Describe() =>
             FormattableString.Invariant($"rows={_rowCount};speed={_speed};decay={_decay};") +
             FormattableString.Invariant($"fonts={(_singleFace ? 1 : s_families.Length)};colors={(_singleColor ? 1 : 4)};") +
-            (_static ? "motion=static" : "motion=fling") + (_clipTexts ? ";clip=on" : ";clip=off");
+            (_static ? "motion=static" : "motion=fling") + (_clipTexts ? ";clip=on" : ";clip=off") +
+            (_cjk ? ";script=cjk" : "");
 
         public override Control CreateView(int n, double scaling)
         {
@@ -121,8 +134,8 @@ namespace TextStress.Scenarios
             for (var i = 0; i < rows.Length; i++)
             {
                 var random = generator.Random;
-                var title = generator.Sentence(2, 6);
-                var detail = generator.Sentence(5, 14, capitalize: false);
+                var title = _cjk ? Ideographs(random, 4, 12) : generator.Sentence(2, 6);
+                var detail = _cjk ? Ideographs(random, 10, 28) : generator.Sentence(5, 14, capitalize: false);
                 var meta = FormattableString.Invariant($"{random.Next(1, 999)}.{random.Next(0, 99):00} kB");
                 var titleFamily = families[random.Next(families.Length)];
                 var detailFamily = families[random.Next(families.Length)];
@@ -155,6 +168,18 @@ namespace TextStress.Scenarios
             _lastFrame = -1;
 
             return _list;
+        }
+
+        private static string Ideographs(Random random, int minLength, int maxLength)
+        {
+            var chars = new char[random.Next(minLength, maxLength + 1)];
+
+            for (var i = 0; i < chars.Length; i++)
+            {
+                chars[i] = (char)(0x4E00 + random.Next(CjkPool));
+            }
+
+            return new string(chars);
         }
 
         public override void Apply(int frame)
