@@ -6,20 +6,23 @@ using SkiaSharp;
 namespace Avalonia.Skia
 {
     /// <summary>
-    /// R8 GL textures of one GL-backed <see cref="GRContext"/>, updated with
+    /// R8 and RGBA8 GL textures of one GL-backed <see cref="GRContext"/>, updated with
     /// <c>glTexSubImage2D</c>.
     /// </summary>
     /// <remarks>
     /// An update reads a sub-rectangle of a larger CPU buffer, which needs
-    /// <c>GL_UNPACK_ROW_LENGTH</c>: desktop GL 3.0 or GLES 3.0 and later have both. Skia's cached
-    /// GL state is reset after every call that binds a texture.
+    /// <c>GL_UNPACK_ROW_LENGTH</c>: desktop GL 3.0 or GLES 3.0 and later have both. Colour texels go
+    /// up as <c>GL_RGBA</c>, the one byte order GLES 3 and WebGL 2 accept without an extension.
+    /// Skia's cached GL state is reset after every call that binds a texture.
     /// </remarks>
     internal sealed unsafe class GlUpdatableTextureFeature : ISkiaUpdatableTextureFeature
     {
         private const uint Texture2D = 0x0DE1;
         private const uint R8 = 0x8229;
+        private const uint Rgba8 = 0x8058;
 
         private const int Red = 0x1903;
+        private const int Rgba = 0x1908;
         private const int UnsignedByte = 0x1401;
         private const int UnpackRowLength = 0x0CF2;
         private const int UnpackAlignment = 0x0CF5;
@@ -119,7 +122,17 @@ namespace Avalonia.Skia
         }
 
         public ISkiaUpdatableTexture? TryCreateAlpha8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
+            => TryCreate(width, height, pixels, rowBytes, 1);
+
+        public ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
+            => TryCreate(width, height, pixels, rowBytes, 4);
+
+        private ISkiaUpdatableTexture? TryCreate(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes,
+            int bytesPerPixel)
         {
+            var rgba = bytesPerPixel == 4;
+            var internalFormat = rgba ? Rgba8 : R8;
+            var rowLength = rowBytes / bytesPerPixel;
             uint id;
 
             _genTextures(1, &id);
@@ -131,14 +144,15 @@ namespace Avalonia.Skia
                 _texParameteri((int)Texture2D, TextureMinFilter, Nearest);
                 _texParameteri((int)Texture2D, TextureMagFilter, Nearest);
                 _pixelStorei(UnpackAlignment, 1);
-                _pixelStorei(UnpackRowLength, rowBytes == width ? 0 : rowBytes);
+                _pixelStorei(UnpackRowLength, rowLength == width ? 0 : rowLength);
 
                 fixed (byte* p = pixels)
                 {
-                    _texImage2D((int)Texture2D, 0, (int)R8, width, height, 0, Red, UnsignedByte, p);
+                    _texImage2D((int)Texture2D, 0, (int)internalFormat, width, height, 0, rgba ? Rgba : Red,
+                        UnsignedByte, p);
                 }
 
-                if (rowBytes != width)
+                if (rowLength != width)
                 {
                     _pixelStorei(UnpackRowLength, 0);
                 }
@@ -151,13 +165,14 @@ namespace Avalonia.Skia
                 return null;
             }
 
-            var texture = new Texture(this, id);
+            var texture = new Texture(this, id, bytesPerPixel);
             SKImage? image;
 
-            using (var backend = new GRBackendTexture(width, height, false, new GRGlTextureInfo(Texture2D, id, R8)))
+            using (var backend = new GRBackendTexture(width, height, false,
+                       new GRGlTextureInfo(Texture2D, id, internalFormat)))
             {
-                image = SKImage.FromTexture(_context, backend, GRSurfaceOrigin.TopLeft, SKColorType.Alpha8,
-                    SKAlphaType.Premul, null, s_release, texture);
+                image = SKImage.FromTexture(_context, backend, GRSurfaceOrigin.TopLeft,
+                    rgba ? SKColorType.Rgba8888 : SKColorType.Alpha8, SKAlphaType.Premul, null, s_release, texture);
             }
 
             if (image is null)
@@ -171,20 +186,17 @@ namespace Avalonia.Skia
             return texture;
         }
 
-        public ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
-            => null;
-
-        private void Upload(uint id, PixelRect rect, ReadOnlySpan<byte> source, int rowBytes)
+        private void Upload(uint id, int bytesPerPixel, PixelRect rect, ReadOnlySpan<byte> source, int rowBytes)
         {
             _bindBuffer(PixelUnpackBuffer, 0);
             _bindTexture((int)Texture2D, id);
             _pixelStorei(UnpackAlignment, 1);
-            _pixelStorei(UnpackRowLength, rowBytes);
+            _pixelStorei(UnpackRowLength, rowBytes / bytesPerPixel);
 
             fixed (byte* p = source)
             {
-                _texSubImage2D((int)Texture2D, 0, rect.X, rect.Y, rect.Width, rect.Height, Red, UnsignedByte,
-                    p + rect.Y * rowBytes + rect.X);
+                _texSubImage2D((int)Texture2D, 0, rect.X, rect.Y, rect.Width, rect.Height,
+                    bytesPerPixel == 4 ? Rgba : Red, UnsignedByte, p + rect.Y * rowBytes + rect.X * bytesPerPixel);
             }
 
             _pixelStorei(UnpackRowLength, 0);
@@ -196,17 +208,19 @@ namespace Avalonia.Skia
         {
             private readonly GlUpdatableTextureFeature _gl;
             private readonly uint _id;
+            private readonly int _bytesPerPixel;
 
-            public Texture(GlUpdatableTextureFeature gl, uint id)
+            public Texture(GlUpdatableTextureFeature gl, uint id, int bytesPerPixel)
             {
                 _gl = gl;
                 _id = id;
+                _bytesPerPixel = bytesPerPixel;
             }
 
             public SKImage Image { get; set; } = null!;
 
             public void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes) =>
-                _gl.Upload(_id, rect, source, rowBytes);
+                _gl.Upload(_id, _bytesPerPixel, rect, source, rowBytes);
 
             /// <summary>Drops the wrapper; Skia deletes the texture once no recorded draw uses it.</summary>
             public void Dispose() => Image.Dispose();

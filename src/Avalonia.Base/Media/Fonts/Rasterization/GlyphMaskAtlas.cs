@@ -60,27 +60,29 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// One A8 page of a <see cref="GlyphMaskAtlas"/>: <see cref="GlyphMaskAtlas.PageWidth"/>
-    /// columns, rows grown on demand. The pixels live in a pinned array, so a backend can wrap
-    /// them as an image without a copy. A page holds entries of every luminance bucket, each
-    /// stored through its own bucket's correction.
+    /// One page of a <see cref="GlyphMaskAtlas"/>: <see cref="GlyphMaskAtlas.PageWidth"/>
+    /// columns, rows grown on demand, holding A8 coverage or premultiplied RGBA colour. The pixels
+    /// live in a pinned array, so a backend can wrap them as an image without a copy. A coverage
+    /// page holds entries of every luminance bucket, each stored through its own bucket's
+    /// correction.
     /// </summary>
     internal sealed class GlyphAtlasPage
     {
         internal readonly List<GlyphAtlasEntryKey> Keys = new();
         internal readonly List<(int Y, int Height, int X)> Shelves = new();
 
-        internal GlyphAtlasPage(int height)
+        internal GlyphAtlasPage(int height, int bytesPerPixel = 1)
         {
-            Pixels = GC.AllocateArray<byte>(GlyphMaskAtlas.PageWidth * height, pinned: true);
+            BytesPerPixel = bytesPerPixel;
+            Pixels = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
             Height = height;
         }
 
-        /// <summary>Row-major coverage, <see cref="GlyphMaskAtlas.PageWidth"/> bytes per row.</summary>
+        /// <summary>Row-major texels, <see cref="RowBytes"/> bytes per row.</summary>
         public byte[] Pixels { get; private set; }
 
         /// <summary>Bytes per texel: 1 for coverage, 4 for premultiplied RGBA.</summary>
-        public int BytesPerPixel => 1;
+        public int BytesPerPixel { get; }
 
         /// <summary>Bytes per row of <see cref="Pixels"/>.</summary>
         public int RowBytes => GlyphMaskAtlas.PageWidth * BytesPerPixel;
@@ -152,11 +154,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         internal void Grow(int height)
         {
-            var grown = GC.AllocateArray<byte>(GlyphMaskAtlas.PageWidth * height, pinned: true);
+            var grown = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
 
             // A fresh array rather than a resize in place: a backend image of the old version
             // can still be waiting to be read by a pending GPU upload.
-            Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * UsedHeight).CopyTo(grown);
+            Pixels.AsSpan(0, RowBytes * UsedHeight).CopyTo(grown);
             Pixels = grown;
             Height = height;
             Version++;
@@ -174,6 +176,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// one empty row below it. A batch drawn with bilinear sampling under a scaling or rotating
     /// transform therefore reads empty page beyond each edge of an entry, never a neighbour's
     /// coverage or the clamped page edge, so its pixels do not depend on where the entry sits.
+    /// An atlas of <see cref="GlyphAtlasFormat.Rgba"/> pages holds colour glyph content the same
+    /// way: premultiplied colour masks, drawn untinted.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -239,6 +243,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The texel layout of the pages.</summary>
         public GlyphAtlasFormat Format { get; }
+
+        /// <summary>Bytes per texel of the pages.</summary>
+        public int BytesPerPixel => Format == GlyphAtlasFormat.Rgba ? 4 : 1;
 
         /// <summary>
         /// The atlas of every typeface drawn on contexts that update part of a page in place,
@@ -409,12 +416,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Places <paramref name="mask"/>, rasterized by <paramref name="owner"/>, under
         /// <paramref name="key"/> and <paramref name="bucket"/>, its coverage corrected by that
         /// bucket's table, or returns the entry a racing caller placed first. Returns
-        /// <c>false</c> when the mask does not fit a page.
+        /// <c>false</c> when the mask does not fit a page. An atlas of
+        /// <see cref="GlyphAtlasFormat.Rgba"/> pages takes premultiplied BGRA masks of four
+        /// channels, stored in RGBA order and never corrected; an A8 atlas takes coverage masks.
         /// </summary>
         public bool TryAdd(int owner, in GlyphMaskKey key, int bucket, GlyphMask mask, long tick,
             out GlyphAtlasSlot slot)
         {
-            if (!mask.IsEmpty && !Fits(mask.Width, mask.Height))
+            if (!mask.IsEmpty && (!Fits(mask.Width, mask.Height) || mask.Channels != BytesPerPixel))
             {
                 slot = default;
                 return false;
@@ -487,7 +496,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var rows = RoundUp(LeadingGutter + height);
 
             // Stamped before it is charged, so a build past the limit does not evict it.
-            var fresh = new GlyphAtlasPage(rows) { UsedHeight = LeadingGutter, LastUse = tick };
+            var fresh = new GlyphAtlasPage(rows, BytesPerPixel) { UsedHeight = LeadingGutter, LastUse = tick };
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.Pixels.Length);
@@ -604,6 +613,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var pixels = page.Pixels;
 
+            if (page.BytesPerPixel == 4)
+            {
+                WriteRgba(page, mask, x, y);
+                return;
+            }
+
             for (var row = 0; row < mask.Height; row++)
             {
                 var source = mask.Alpha.AsSpan(row * mask.Width, mask.Width);
@@ -616,6 +631,31 @@ namespace Avalonia.Media.Fonts.Rasterization
                 else
                 {
                     Correct(source, target, bucket);
+                }
+            }
+
+            page.MarkWritten(x, y, mask.Width, mask.Height);
+            page.Version++;
+            GlyphRasterDiagnostics.CountAtlasPlacement();
+        }
+
+        /// <summary>Copies a premultiplied BGRA mask onto an RGBA page, swapping red and blue.</summary>
+        private static void WriteRgba(GlyphAtlasPage page, GlyphMask mask, int x, int y)
+        {
+            var pixels = page.Pixels;
+            var rowBytes = page.RowBytes;
+
+            for (var row = 0; row < mask.Height; row++)
+            {
+                var source = mask.Alpha.AsSpan(row * mask.Width * 4, mask.Width * 4);
+                var target = pixels.AsSpan((y + row) * rowBytes + x * 4, mask.Width * 4);
+
+                for (var i = 0; i < source.Length; i += 4)
+                {
+                    target[i] = source[i + 2];
+                    target[i + 1] = source[i + 1];
+                    target[i + 2] = source[i];
+                    target[i + 3] = source[i + 3];
                 }
             }
 

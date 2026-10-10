@@ -367,7 +367,7 @@ namespace Avalonia.Skia
         /// whole once and then updated with only the rectangle the atlas wrote since, so a new
         /// glyph moves its own pixels to the GPU instead of the page. Elsewhere the image wraps
         /// the page's pinned array without copying, once per version, and a GPU context uploads
-        /// that image whole, up to 2 MB, the first time it draws it.
+        /// that image whole, up to 2 MB (8 MB for a colour page), the first time it draws it.
         /// </remarks>
         private GlyphPageImage GetPageImage(GlyphAtlasPage page)
         {
@@ -480,10 +480,11 @@ namespace Avalonia.Skia
         private static unsafe SKImage CreatePageImage(GlyphAtlasPage page)
         {
             var pixels = page.Pixels;
-            var info = new SKImageInfo(GlyphMaskAtlas.PageWidth, page.Height, SKColorType.Alpha8, SKAlphaType.Premul);
+            var info = new SKImageInfo(GlyphMaskAtlas.PageWidth, page.Height,
+                page.BytesPerPixel == 4 ? SKColorType.Rgba8888 : SKColorType.Alpha8, SKAlphaType.Premul);
             var address = (IntPtr)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pixels));
 
-            using var pixmap = new SKPixmap(info, address, GlyphMaskAtlas.PageWidth);
+            using var pixmap = new SKPixmap(info, address, page.RowBytes);
 
             t_pageImagesCreated++;
             t_pageImageBytes += info.BytesSize64;
@@ -542,7 +543,7 @@ namespace Avalonia.Skia
         /// <summary>An atlas page held in a texture of one GPU context, updated in place as the atlas writes.</summary>
         /// <remarks>
         /// <para>
-        /// The texture is a single-channel texture of the context's
+        /// The texture is a single-channel or RGBA texture, as the page holds, of the context's
         /// <see cref="ISkiaUpdatableTextureFeature"/>, made with the whole page and wrapped for
         /// Skia once. An update hands the rectangle the atlas wrote since to the backend straight
         /// from the page's array, so the page's image, shader and paint stay the same across
@@ -610,8 +611,10 @@ namespace Avalonia.Skia
 
                 page.TakeWritten(out _);
 
-                var texture = textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, page.Height,
-                    page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height), GlyphMaskAtlas.PageWidth);
+                var bytes = page.Pixels.AsSpan(0, page.RowBytes * page.Height);
+                var texture = page.BytesPerPixel == 4
+                    ? textures.TryCreateRgba8(GlyphMaskAtlas.PageWidth, page.Height, bytes, page.RowBytes)
+                    : textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, page.Height, bytes, page.RowBytes);
 
                 if (texture is null)
                 {
@@ -622,7 +625,7 @@ namespace Avalonia.Skia
 
                 (t_textures ??= new List<GlyphPageTexture>()).Add(created);
                 t_pageImagesCreated++;
-                t_pageImageBytes += (long)GlyphMaskAtlas.PageWidth * page.Height;
+                t_pageImageBytes += bytes.Length;
 
                 return created;
             }
@@ -634,9 +637,9 @@ namespace Avalonia.Skia
 
                 if (page.TakeWritten(out var written))
                 {
-                    _texture.Update(written, page.Pixels, GlyphMaskAtlas.PageWidth);
+                    _texture.Update(written, page.Pixels, page.RowBytes);
                     t_pageTextureUpdates++;
-                    t_pageImageBytes += (long)written.Width * written.Height;
+                    t_pageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;
                 }
 
                 Version = version;

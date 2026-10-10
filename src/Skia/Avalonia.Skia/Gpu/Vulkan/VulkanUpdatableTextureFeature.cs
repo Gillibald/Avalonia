@@ -8,7 +8,7 @@ using SkiaSharp;
 namespace Avalonia.Skia.Vulkan;
 
 /// <summary>
-/// R8 Vulkan images of one Vulkan-backed <see cref="GRContext"/>, updated through a staging
+/// R8 and R8G8B8A8 Vulkan images of one Vulkan-backed <see cref="GRContext"/>, updated through a staging
 /// buffer and <c>vkCmdCopyBufferToImage</c> on the device's main queue.
 /// </summary>
 /// <remarks>
@@ -34,6 +34,7 @@ namespace Avalonia.Skia.Vulkan;
 internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextureFeature, IDisposable
 {
     private const uint FormatR8Unorm = 9;
+    private const uint FormatR8G8B8A8Unorm = 37;
     private const uint ImageType2D = 1;
     private const uint TilingOptimal = 0;
     private const uint UsageTransferSrc = 0x1;
@@ -60,7 +61,7 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
     private const int SlotCount = 4;
     private const int MinStagingBytes = 64 * 1024;
 
-    // A whole page goes up when a texture is made, up to 2 MB; a slot keeps at most this much
+    // A whole page goes up when a texture is made, up to 2 MB (8 MB for a colour page); a slot keeps at most this much
     // afterwards, enough for the rectangles of ordinary updates.
     private const int MaxRetainedStagingBytes = 256 * 1024;
 
@@ -153,6 +154,13 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
     }
 
     public ISkiaUpdatableTexture? TryCreateAlpha8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
+        => TryCreate(width, height, pixels, rowBytes, FormatR8Unorm, 1, SKColorType.Alpha8);
+
+    public ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
+        => TryCreate(width, height, pixels, rowBytes, FormatR8G8B8A8Unorm, 4, SKColorType.Rgba8888);
+
+    private ISkiaUpdatableTexture? TryCreate(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes,
+        uint format, int bytesPerPixel, SKColorType colorType)
     {
         using var _ = _vulkan.Device.Lock();
 
@@ -165,7 +173,7 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         {
             sType = StructureImageCreateInfo,
             imageType = ImageType2D,
-            format = FormatR8Unorm,
+            format = format,
             width = (uint)width,
             height = (uint)height,
             depth = 1,
@@ -196,7 +204,7 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
             return null;
         }
 
-        var texture = new Texture(this, image, memory);
+        var texture = new Texture(this, image, memory, bytesPerPixel);
 
         if (!Upload(texture, new PixelRect(0, 0, width, height), pixels, rowBytes, LayoutUndefined))
         {
@@ -212,7 +220,7 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
             Alloc = new GRVkAlloc { Memory = memory, Size = requirements.size },
             ImageTiling = TilingOptimal,
             ImageLayout = LayoutShaderReadOnly,
-            Format = FormatR8Unorm,
+            Format = format,
             ImageUsageFlags = ImageUsage,
             SampleCount = 1,
             LevelCount = 1,
@@ -223,7 +231,7 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
 
         using (var backend = new GRBackendTexture(width, height, info))
         {
-            wrapped = SKImage.FromTexture(_context, backend, GRSurfaceOrigin.TopLeft, SKColorType.Alpha8,
+            wrapped = SKImage.FromTexture(_context, backend, GRSurfaceOrigin.TopLeft, colorType,
                 SKAlphaType.Premul, null, s_release, texture);
         }
 
@@ -237,9 +245,6 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
 
         return texture;
     }
-
-    public ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
-        => null;
 
     /// <summary>
     /// Waits for every copy, then frees the images Skia has not released yet and the upload
@@ -289,7 +294,8 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
     /// </summary>
     private bool Upload(Texture texture, PixelRect rect, ReadOnlySpan<byte> source, int rowBytes, uint oldLayout)
     {
-        var bytes = (long)rect.Width * rect.Height;
+        var rowWidth = rect.Width * texture.BytesPerPixel;
+        var bytes = (long)rowWidth * rect.Height;
         var slot = AcquireSlot(bytes);
 
         if (slot is null)
@@ -298,9 +304,9 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         }
 
         // Rows go into the staging buffer tightly packed; whole rows in one block.
-        var start = rect.Y * rowBytes + rect.X;
+        var start = rect.Y * rowBytes + rect.X * texture.BytesPerPixel;
 
-        if (rect.Width == rowBytes)
+        if (rowWidth == rowBytes)
         {
             source.Slice(start, (int)bytes).CopyTo(new Span<byte>((void*)slot.Mapped, (int)bytes));
         }
@@ -308,8 +314,8 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         {
             for (var y = 0; y < rect.Height; y++)
             {
-                source.Slice(start + y * rowBytes, rect.Width)
-                    .CopyTo(new Span<byte>((byte*)slot.Mapped + (long)y * rect.Width, rect.Width));
+                source.Slice(start + y * rowBytes, rowWidth)
+                    .CopyTo(new Span<byte>((byte*)slot.Mapped + (long)y * rowWidth, rowWidth));
             }
         }
 
@@ -604,14 +610,18 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         private readonly VulkanUpdatableTextureFeature _owner;
         private bool _released;
 
-        public Texture(VulkanUpdatableTextureFeature owner, ulong handle, ulong memory)
+        public Texture(VulkanUpdatableTextureFeature owner, ulong handle, ulong memory, int bytesPerPixel)
         {
             _owner = owner;
             Handle = handle;
             Memory = memory;
+            BytesPerPixel = bytesPerPixel;
         }
 
         public ulong Handle { get; }
+
+        /// <summary>Bytes per texel of the image's format.</summary>
+        public int BytesPerPixel { get; }
 
         public ulong Memory { get; }
 
