@@ -15,9 +15,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// caches only their placements: a raster context blends the cached masks straight into
         /// its surface, a GPU context draws them from the typeface's atlas in one batched call,
         /// and any other context blits them one by one. Returns <c>false</c> when this draw
-        /// cannot take the run (non-solid foreground, bitmap strikes, a COLR v1 glyph, a
-        /// degenerate or extreme transform, a glyph past the mask bounds) and the caller falls
-        /// back.
+        /// cannot take the run (non-solid foreground, bitmap strikes, a degenerate or extreme
+        /// transform, a glyph past the mask bounds) and the caller falls back. A run with COLR v1
+        /// glyphs is taken only by a hardware GPU drawing it under a static rotation, skew or
+        /// anisotropic scale: its paint graphs are rasterized once under the transform into colour
+        /// atlas entries; every other draw of such a run, an animating transform included, leaves
+        /// the v1 glyphs to the caller's vector replay.
         /// </summary>
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
@@ -39,8 +42,14 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // A strike bitmap under a free transform would need resampling that masks do not
             // do; the native path keeps those runs.
-            if (typeface.OutlineType == GlyphOutlineType.None || typeface.BitmapSource is not null ||
-                HasColrV1Glyph(run))
+            if (typeface.OutlineType == GlyphOutlineType.None || typeface.BitmapSource is not null)
+            {
+                return false;
+            }
+
+            var colorGlyphs = HasColrV1Glyph(run);
+
+            if (colorGlyphs && !DrawsTransformedColorMasks(context, transform))
             {
                 return false;
             }
@@ -49,7 +58,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (alpha == 0)
             {
-                return true;   // fully transparent — nothing to draw, but handled
+                // Fully transparent: nothing to draw, but handled. Colour glyphs keep their own
+                // colours, so a run with v1 glyphs goes to the vector path.
+                return !colorGlyphs;
             }
 
             // The em scale is the square root of the determinant's magnitude, which leaves a
@@ -76,8 +87,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphMaskKey.SnapPen((float)(origin.X * transform.M12 + origin.Y * transform.M22 + transform.M32),
                 out var originY, out var originPhaseY);
 
-            // Sprites carry no colour: every path tints at draw time.
-            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode, 0u,
+            // Glyph sprites carry no colour: every path tints at draw time. A paint graph that uses
+            // the text colour bakes it into its colour mask, so a run with v1 glyphs keys its
+            // sprites by the colour.
+            var foregroundColor = Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B);
+            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode,
+                colorGlyphs ? RunMaskComposer.MakeTint(alpha, solid.Color.R, solid.Color.G, solid.Color.B) : 0u,
                 GridFit: false, Strong: false, Transform: linear, OriginPhaseY: originPhaseY);
 
             var state = run.TransformedSprites;
@@ -98,6 +113,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (transformedContext is not null &&
                 run.TransformChurn.Record(key.ScaleQ, linear, hit, holdOnCacheHit: true) && !hit)
             {
+                // Colour masks made for one frame of an animation would never be drawn again.
+                if (colorGlyphs)
+                {
+                    return false;
+                }
+
                 if (transformedContext.RasterTarget != GlyphRasterTarget.SoftwareGpu)
                 {
                     return TryDrawTransient(transformedContext, run, key, transform, originX, originY, alpha,
@@ -113,7 +134,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!hit)
             {
-                if (!TryBuildSprites(run, key, transform, out var built))
+                if (!TryBuildSprites(run, key, transform, colorGlyphs, foregroundColor, out var built))
                 {
                     return false;
                 }
@@ -139,13 +160,25 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY, tint);
             }
-            else
+            else if (!DrawFromAtlas(transformedContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color)))
             {
-                DrawFromAtlas(transformedContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color));
+                return false;
             }
 
             return true;
         }
+
+        /// <summary>
+        /// Whether a run with COLR v1 glyphs drawn under <paramref name="transform"/> takes the
+        /// transformed tier: a hardware GPU with colour masks and the colour atlas on, and a
+        /// rotation, skew or anisotropic scale. Upright draws the upright tier declined (sizes
+        /// above its ceiling, a zoom without a settled mask) keep the vector replay.
+        /// </summary>
+        private static bool DrawsTransformedColorMasks(IDrawingContextImpl context, in Matrix transform)
+            => ColorGlyphRunSplitter.UseColorMasks && ColorGlyphRunSplitter.UseColorAtlas &&
+               context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } &&
+               !(transform.M12 == 0 && transform.M21 == 0 && transform.M11 > 0 && transform.M22 > 0 &&
+                 Math.Abs(transform.M11 - transform.M22) <= transform.M11 * 0.001);
 
         private static uint ToArgb(byte alpha, Color color)
             => ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
@@ -188,12 +221,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Lays the run's glyph masks out relative to its snapped origin pixel under the key's
-        /// transform and phases. Returns <c>false</c> when a glyph mask would exceed
-        /// <see cref="GlyphMasks.MaxMaskSize"/>, and <c>true</c> with a <c>null</c> set when the
-        /// run has no ink.
+        /// transform and phases, with <paramref name="colorGlyphs"/> its v1 glyphs as colour
+        /// sprites resolved with <paramref name="foreground"/>. Returns <c>false</c> when a glyph
+        /// mask would exceed <see cref="GlyphMasks.MaxMaskSize"/> or a colour mask the entry bound,
+        /// and <c>true</c> with a <c>null</c> set when the run has no ink.
         /// </summary>
         private static bool TryBuildSprites(ManagedGlyphRunImpl run, in RunMaskKey key, in Matrix transform,
-            out TransformedGlyphSprites? sprites)
+            bool colorGlyphs, Color foreground, out TransformedGlyphSprites? sprites)
         {
             sprites = null;
 
@@ -202,7 +236,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             try
             {
-                if (!TryCollectTransformedItems(run, key, transform, ref items, ref count))
+                if (!TryCollectTransformedItems(run, key, transform, colorGlyphs, foreground, ref items, ref count))
                 {
                     return false;
                 }
@@ -224,6 +258,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         PhaseX = item.Key.Phase,
                         PhaseY = item.Key.PhaseY,
                         Kind = item.Kind,
+                        Entry = item.Entry,
                         X = item.PenX + item.Left,
                         Y = item.PenY + item.Top,
                         Width = item.Width,
@@ -750,15 +785,17 @@ namespace Avalonia.Media.Fonts.Rasterization
             public int Height;
             public TransformedSpriteKind Kind;
             public uint Color;
+            public ColorAtlasEntry Entry;
         }
 
         /// <summary>
-        /// Expands the run into glyph mask items (COLR v0 glyphs into their layers) with snapped
-        /// pens and placements. Returns <c>false</c> when a glyph mask would exceed
-        /// <see cref="GlyphMasks.MaxMaskSize"/>.
+        /// Expands the run into glyph mask items (COLR v0 glyphs into their layers, with
+        /// <paramref name="colorGlyphs"/> COLR v1 glyphs into colour atlas items) with snapped pens
+        /// and placements. Returns <c>false</c> when a glyph mask would exceed
+        /// <see cref="GlyphMasks.MaxMaskSize"/> or a v1 glyph has no colour mask at this size.
         /// </summary>
         private static bool TryCollectTransformedItems(ManagedGlyphRunImpl run, in RunMaskKey key,
-            in Matrix transform, ref TransformedGlyphItem[] items, ref int count)
+            in Matrix transform, bool colorGlyphs, Color foreground, ref TransformedGlyphItem[] items, ref int count)
         {
             var typeface = run.GlyphTypeface;
             var colr = typeface.ColorTable;
@@ -790,7 +827,40 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var glyphKey = new GlyphMaskKey(indices[i], key.ScaleQ, phaseX, key.Mode, GridFit: false,
                     Strong: false, EmboldenQ: embolden, Oblique: oblique, Transform: key.Transform, PhaseY: phaseY);
 
-                if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
+                if (colorGlyphs && ColorGlyphRunSplitter.IsV1Glyph(typeface, colr!, indices[i]))
+                {
+                    // COLR v1: the paint graph rasterized under the transform, a colour atlas entry.
+                    if (!ColorGlyphMasks.TryGetAtlasPlacement(typeface, indices[i], key.ScaleQ, phaseX, key.Transform,
+                            phaseY, foreground, out var colorKey, out var left, out var top, out var width,
+                            out var height))
+                    {
+                        return false;
+                    }
+
+                    if (count == items.Length)
+                    {
+                        var grown = ArrayPool<TransformedGlyphItem>.Shared.Rent(items.Length * 2);
+
+                        items.AsSpan(0, count).CopyTo(grown);
+                        ArrayPool<TransformedGlyphItem>.Shared.Return(items);
+                        items = grown;
+                    }
+
+                    items[count++] = new TransformedGlyphItem
+                    {
+                        Key = glyphKey with { EmboldenQ = 0, Oblique = false },
+                        PenX = penX,
+                        PenY = penY,
+                        Left = left,
+                        Top = top,
+                        Width = width,
+                        Height = height,
+                        Kind = TransformedSpriteKind.Color,
+                        Entry = ColorAtlasEntry.PaintGraph,
+                        Color = colorKey.HasForeground ? colorKey.Foreground : 0,
+                    };
+                }
+                else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                 {
                     // COLR v0: flat-color layers drawn bottom-to-top in record order. The 0xFFFF
                     // palette sentinel means "use the text foreground".

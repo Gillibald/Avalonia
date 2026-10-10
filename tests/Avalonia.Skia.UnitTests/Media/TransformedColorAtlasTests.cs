@@ -21,8 +21,8 @@ namespace Avalonia.Skia.UnitTests.Media
     /// </summary>
     public class TransformedColorAtlasTests
     {
-        private const int Width = 320;
-        private const int Height = 240;
+        private const int Width = 640;
+        private const int Height = 640;
         private const double EmSize = 32;
         private const double Advance = 40;
 
@@ -121,7 +121,12 @@ namespace Avalonia.Skia.UnitTests.Media
         /// runs: the GPU draws the mask's bytes 1:1.
         /// </summary>
         /// <remarks>
-        /// The bounds are those of the upright colour masks.
+        /// Measured on Windows x64 with Skia's raster pipeline as the reference and desktop GL
+        /// drawing the masks, over every pixel either draw inked on white, all three transforms:
+        /// solid fills match exactly, single gradients differ by at most 1 level (mean 0.05-0.10,
+        /// higher than upright only because these runs hold no outline glyphs, which match exactly),
+        /// Segoe UI Emoji by at most 5 (mean 0.065-0.076). The bounds allow about one and a half
+        /// times the largest measured value and twice the mean, as the upright bound does.
         /// </remarks>
         [Theory]
         [MemberData(nameof(BoundCases))]
@@ -144,7 +149,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var (max, mean, inked) = Difference(vectors, maskedPixels);
             var maxBound = font == ColorGlyphMaskTests.Font.SegoeUiEmoji ? 8 : 2;
-            var meanBound = font == ColorGlyphMaskTests.Font.SegoeUiEmoji ? 0.15 : 0.1;
+            var meanBound = font == ColorGlyphMaskTests.Font.SegoeUiEmoji ? 0.15 : 0.2;
 
             Assert.True(inked > 100, $"only {inked} pixels were inked");
             Assert.True(max <= maxBound, $"largest channel difference {max} levels (bound {maxBound}), mean {mean:F3}");
@@ -205,7 +210,8 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
-        /// The test transforms about the run's origin. The exact ones keep pens and the linear part
+        /// The test transforms, moving the run's origin to (200, 200), where no transform takes a glyph
+        /// past the surface's edge. The exact ones keep pens and the linear part
         /// on their quantization grids: a quarter turn, a horizontal skew of a quarter, and a scale
         /// of 2 by 0.5, whose determinant keeps the em size.
         /// </summary>
@@ -221,7 +227,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static Matrix About(Matrix linear)
             => Matrix.CreateTranslation(-s_origin.X, -s_origin.Y) * linear *
-               Matrix.CreateTranslation(Width / 2.0 - 60, Height / 2.0);
+               Matrix.CreateTranslation(200, 200);
 
         private static GlyphRun CreateGlyphRun(GlyphTypeface typeface, ushort[] glyphs)
         {

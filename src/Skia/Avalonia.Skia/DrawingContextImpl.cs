@@ -1052,13 +1052,25 @@ namespace Avalonia.Skia
                     return;
                 }
 
-                // COLR v1 glyphs the upright tier did not compose from colour masks draw from their
-                // drawings, and the stretches between them come back through here as runs of
-                // their own, so they take the tiers and the native fallbacks only for their own
-                // reasons.
+                // COLR v1 glyphs the upright tier did not compose from colour masks draw from colour
+                // masks under a static rotation or skew on a hardware GPU (the transformed tier),
+                // and from their drawings otherwise; the stretches between them come back through
+                // here as runs of their own, so they take the tiers and the native fallbacks only
+                // for their own reasons.
                 if (managedRun.ColorGlyphSegments is { } colorSegments)
                 {
-                    ColorGlyphRunSplitter.DrawSegments(this, colorSegments, foreground);
+                    if (MaskGlyphRunRenderer.TryDrawTransformed(this, managedRun, foreground,
+                            effectiveTextOptions.TextRenderingMode))
+                    {
+                        if (TextTierDiagnostics.CountTiers)
+                        {
+                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
+                        }
+                    }
+                    else
+                    {
+                        ColorGlyphRunSplitter.DrawSegments(this, colorSegments, foreground);
+                    }
 
                     return;
                 }

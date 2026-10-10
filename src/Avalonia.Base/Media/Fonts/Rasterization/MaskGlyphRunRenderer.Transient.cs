@@ -32,7 +32,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             try
             {
-                if (!TryCollectTransformedItems(run, key, transform, ref items, ref count))
+                if (!TryCollectTransformedItems(run, key, transform, colorGlyphs: false, default, ref items, ref count))
                 {
                     return false;
                 }
