@@ -59,6 +59,7 @@ namespace TextStress.Scenarios
             "sweep-runs" or "w1" => new SweepScenario(options, SweepKind.Runs),
             "sweep-glyphs" or "w2" => new SweepScenario(options, SweepKind.Glyphs),
             "sweep-states" or "w3" => new SweepScenario(options, SweepKind.States),
+            "color-glyphs" or "c1" => new ColorGlyphScenario(options),
             _ => throw new ArgumentException($"Unknown scenario '{options.Scenario}'.")
         };
 
