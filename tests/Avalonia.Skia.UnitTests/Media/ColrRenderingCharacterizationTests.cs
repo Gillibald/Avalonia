@@ -409,6 +409,7 @@ namespace Avalonia.Skia.UnitTests.Media
             protected override void PopEffectCore() { }
             protected override void DisposeCore() { }
             internal override void DrawBitmap(IRef<IBitmapImpl> source, double opacity, Rect sourceRect, Rect destRect) { }
+            internal override void DrawRecordingCore(Rendering.Composition.DrawingRecording recording, Matrix transform) { }
             public override void Custom(ICustomDrawOperation custom) { }
             public override void DrawGlyphRun(IBrush? foreground, GlyphRun glyphRun) { }
         }

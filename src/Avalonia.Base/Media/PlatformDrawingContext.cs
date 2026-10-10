@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Avalonia.Logging;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.Platform;
+using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.SceneGraph;
 using Avalonia.Threading;
 using Avalonia.Utilities;
@@ -40,6 +41,26 @@ internal sealed class PlatformDrawingContext : DrawingContext
 
     internal override void DrawBitmap(IRef<IBitmapImpl> source, double opacity, Rect sourceRect, Rect destRect) =>
         _impl.DrawBitmap(source.Item, opacity, sourceRect, destRect);
+
+    internal override void DrawRecordingCore(DrawingRecording recording, Matrix transform)
+    {
+        if (transform.IsIdentity)
+        {
+            Replay(recording);
+            return;
+        }
+
+        using (PushTransform(transform))
+            Replay(recording);
+    }
+
+    private void Replay(DrawingRecording recording)
+    {
+        if (recording.IsCompositorBound)
+            recording.RenderData!.Render(_impl);
+        else
+            recording.Stream!.Replay(_impl);
+    }
 
     public override void Custom(ICustomDrawOperation custom)
     {
@@ -184,7 +205,7 @@ internal sealed class PlatformDrawingContext : DrawingContext
             (_transforms ?? throw new ObjectDisposedException(nameof(PlatformDrawingContext))).Pop();
 
     protected override void PopRenderOptionsCore() => _impl.PopRenderOptions();
-    
+
     protected override void PopTextOptionsCore() => _impl.PopTextOptions();
 
     /// <inheritdoc />
