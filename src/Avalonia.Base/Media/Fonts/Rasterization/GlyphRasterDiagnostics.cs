@@ -34,6 +34,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static long t_atlasPlacements;
 
+        [ThreadStatic]
+        private static long t_colorMaskRasterizations;
+
+        [ThreadStatic]
+        private static long t_colorGlyphVectorDraws;
+
         /// <summary>Glyph outlines filled into coverage, upright or transformed, cached or transient.</summary>
         public static long GlyphRasterizationsOnThread => t_glyphRasterizations;
 
@@ -58,7 +64,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Glyph masks written into an atlas page, each a new version of the page.</summary>
         public static long AtlasPlacementsOnThread => t_atlasPlacements;
 
+        /// <summary>COLR v1 paint graphs rasterized into colour masks.</summary>
+        public static long ColorMaskRasterizationsOnThread => t_colorMaskRasterizations;
+
+        /// <summary>Colour glyphs drawn as vectors, from their recordings or live drawings.</summary>
+        public static long ColorGlyphVectorDrawsOnThread => t_colorGlyphVectorDraws;
+
         internal static void CountGlyphRasterization() => t_glyphRasterizations++;
+
+        internal static void CountColorMaskRasterization() => t_colorMaskRasterizations++;
+
+        internal static void CountColorGlyphVectorDraw() => t_colorGlyphVectorDraws++;
 
         internal static void CountMaskCacheHit() => t_maskCacheHits++;
 

@@ -75,6 +75,7 @@ namespace Avalonia.Media
         // and outlines at its own variation point. The delegate is cached to keep the hot path alloc-free.
         private GlyphCache? _glyphCache;
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
+        private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>? _colorMaskCache;
         private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
         private int _maskOwnerId;
         private static int s_lastMaskOwnerId;
@@ -2552,6 +2553,7 @@ namespace Avalonia.Media
         private void ReleaseGlyphCaches()
         {
             Interlocked.Exchange(ref _glyphMaskCache, null)?.Release();
+            Interlocked.Exchange(ref _colorMaskCache, null)?.Release();
             Interlocked.Exchange(ref _glyphMaskAtlas, null)?.Release();
             Interlocked.Exchange(ref _trueTypeHinters, null)?.Release();
             Interlocked.Exchange(ref _glyphCache, null)?.Release();
@@ -2819,6 +2821,24 @@ namespace Avalonia.Media
 
         internal ReadOnlySpan<float> ActiveVariationCoordinates =>
             _gvarTable is not null && _activeCoords is not null ? _activeCoords : default;
+
+        /// <summary>
+        /// The colour masks of COLR v1 glyphs used by the managed text rasterization path: each
+        /// glyph's paint graph rasterized into premultiplied BGRA per scale bucket and phase.
+        /// Created on first use, per instance like <see cref="MaskCache"/>; a simulated variant
+        /// uses its unsimulated face's, since colour glyphs are never simulated.
+        /// </summary>
+        internal Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey> ColorMaskCache =>
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.ColorMaskCache
+                : _colorMaskCache ?? GetOrCreateColorMaskCache();
+
+        private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey> GetOrCreateColorMaskCache()
+        {
+            var created = new Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>(CacheBudget);
+
+            return Interlocked.CompareExchange(ref _colorMaskCache, created, null) ?? created;
+        }
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {

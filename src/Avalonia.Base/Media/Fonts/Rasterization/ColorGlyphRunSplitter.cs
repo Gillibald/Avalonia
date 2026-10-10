@@ -32,6 +32,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static bool UseRecordings { get; set; } = true;
 
+        /// <summary>
+        /// Whether managed rasterization draws COLR v1 glyphs of upright runs from colour masks
+        /// (each paint graph rasterized once per scale and phase); off draws them as vectors on
+        /// every draw. For A/B comparisons.
+        /// </summary>
+        internal static bool UseColorMasks { get; set; } = true;
+
         public static bool IsManagedTextRasterization()
             => (AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode
                 ?? TextRasterizationDefaults.PlatformDefault) == TextRasterizationMode.Managed;
@@ -245,6 +252,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             // Drawings render in font design units (the Y-flip is internal): scale to the run's em
             // size and land the local origin on the pen.
             var transform = Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(pen.X, pen.Y);
+
+            GlyphRasterDiagnostics.CountColorGlyphVectorDraw();
 
             // The two contexts that take recordings replay the glyph's cached recording: the same
             // calls the live drawing makes, without building and walking its paint graph per draw.
