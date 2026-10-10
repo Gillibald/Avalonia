@@ -214,12 +214,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal UprightRasterCost LastUprightRaster;
 
+        /// <summary>Whether the run holds a COLR v1 glyph; <c>null</c> until first asked.</summary>
+        internal bool? HasColrV1Glyph;
+
         private ColorGlyphSegments? _colorGlyphSegments;
         private bool _colorGlyphSegmentsResolved;
 
         /// <summary>
-        /// The run cut at its COLR v1 glyphs, which no mask tier renders, or <c>null</c> when
-        /// the run holds none. Built on first use and kept with the run, so the stretches between
+        /// The run cut at its COLR v1 glyphs, for the draws the upright tier's colour masks do
+        /// not take, or <c>null</c> when the run holds none. Built on first use and kept with the run, so the stretches between
         /// the colour glyphs keep their mask caches from frame to frame.
         /// </summary>
         internal ColorGlyphSegments? ColorGlyphSegments

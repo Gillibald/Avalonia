@@ -89,8 +89,8 @@ namespace Avalonia.Media.TextFormatting
                 }
 
                 // COLR glyphs draw through the typeface's own implementation in every
-                // rasterization mode; the splitter decides scope per mode (v0 stays in the run
-                // under managed rasterization, where server-side masks compose it cheaper).
+                // rasterization mode; the splitter decides scope per mode (under managed
+                // rasterization colour glyphs stay in the run, whose masks compose them).
                 if ((GlyphRun.GlyphTypeface.ColorTable is not null ||
                      GlyphRun.GlyphTypeface.BitmapSource is not null) &&
                     Fonts.Rasterization.ColorGlyphRunSplitter.TryDraw(drawingContext, GlyphRun, Properties.ForegroundBrush))

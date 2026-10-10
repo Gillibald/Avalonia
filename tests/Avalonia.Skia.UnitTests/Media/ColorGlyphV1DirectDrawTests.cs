@@ -73,6 +73,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
 
+            // Compared with the drawings drawn as vectors byte for byte, which the colour masks of
+            // the upright tier only approximate on a GPU (they are rasterized on the CPU).
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = ColorGlyphV1SplitTests.CreateEnvironment();
             var typeface = ColorGlyphV1SplitTests.CreateV1Typeface(out var v1Glyph);
             var transform = rotated ? s_rotation : Matrix.CreateTranslation(3, 2);
@@ -84,6 +87,9 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void A_Direct_Draw_Matches_The_Text_Layout_Split()
         {
+            // The record-time split is the vector path; under managed rasterization it only
+            // splits v1 glyphs with colour masks switched off.
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = ColorGlyphV1SplitTests.CreateEnvironment();
             var typeface = ColorGlyphV1SplitTests.CreateV1Typeface(out var v1Glyph);
             var transform = Matrix.CreateTranslation(3, 2);

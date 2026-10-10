@@ -238,66 +238,58 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(CountColored(pixels) > 20, "the colour glyphs were not drawn");
         }
 
-        [Fact]
-        public void An_Animating_Upright_Scale_Stops_Rasterizing_Colour_Masks_On_A_Raster_Surface()
+        [Theory]
+        [InlineData(null)]
+        [InlineData(GpuBackend.NativeGl)]
+        [InlineData(GpuBackend.Angle)]
+        public void An_Animating_Upright_Scale_Stretches_The_Settled_Mask_Instead_Of_Rasterizing(GpuBackend? backend)
         {
+            using var gpu = backend is { } b ? GpuTestContext.TryCreate(b, out _) : null;
+
+            Assert.SkipWhen(backend is not null && gpu is null, $"No usable {backend} context");
+
             using var scope = CreateEnvironment();
             var typeface = CreateTypeface(Font.V1Radial, out var glyphs);
             using var run = CreateGlyphRun(typeface, glyphs, s_text);
-            var perFrame = new List<long>();
 
-            for (var frame = 0; frame < 12; frame++)
+            Counts DrawAt(double scale)
             {
-                var scale = 1 + frame * 0.01;
+                var transform = Matrix.CreateScale(scale, scale);
 
-                perFrame.Add(Measure(() => RenderOnRaster(Matrix.CreateScale(scale, scale),
-                    (context, _) => context.DrawGlyphRun(s_text, run)), out _).Rasterizations);
+                return gpu is null
+                    ? Measure(() => RenderOnRaster(transform, (context, _) => context.DrawGlyphRun(s_text, run)), out _)
+                    : Measure(() => RenderOnGpu(gpu, transform, (context, _) => context.DrawGlyphRun(s_text, run)),
+                        out _);
             }
 
             // The first frames rasterize at their scales until the run counts as animating
-            // (TransformChurnGuard.Threshold changes); from then on the settled mask stretches.
-            Assert.All(perFrame.Take(TransformChurnGuard.Threshold), count => Assert.Equal(1, count));
-            Assert.All(perFrame.Skip(TransformChurnGuard.Threshold), count => Assert.Equal(0, count));
+            // (TransformChurnGuard.Threshold changes); from then on the settled mask stretches,
+            // since the zoom stays within the stretch band.
+            var frames = Enumerable.Range(0, 12).Select(frame => DrawAt(1 + frame * 0.01)).ToList();
+
+            Assert.All(frames.Take(TransformChurnGuard.Threshold), c => Assert.True(c.Rasterizations > 0));
+            Assert.All(frames.Skip(TransformChurnGuard.Threshold), c => Assert.Equal(new Counts(0, 0), c));
+
+            // Once the scale holds, the run rasterizes at it and draws from masks again.
+            var settled = DrawAt(1.11);
+
+            Assert.True(settled.Rasterizations > 0);
+            Assert.Equal(0, settled.VectorDraws);
+            Assert.Equal(new Counts(0, 0), DrawAt(1.11));
         }
 
-        [Theory]
-        [InlineData(GpuBackend.NativeGl)]
-        [InlineData(GpuBackend.Angle)]
-        public void An_Animating_Upright_Scale_Replays_Vectors_On_A_Gpu_Context(GpuBackend backend)
+        [Fact]
+        public void An_Animating_Upright_Scale_Beyond_The_Stretch_Band_Replays_Vectors()
         {
-            using var gpu = GpuTestContext.TryCreate(backend, out var reason);
-
-            Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
-
             using var scope = CreateEnvironment();
             var typeface = CreateTypeface(Font.V1Radial, out var glyphs);
             using var run = CreateGlyphRun(typeface, glyphs, s_text);
-            var counts = new List<Counts>();
 
-            for (var frame = 0; frame < 12; frame++)
-            {
-                var scale = 1 + frame * 0.01;
+            var frames = Enumerable.Range(0, 8).Select(frame => Measure(() => RenderOnRaster(
+                Matrix.CreateScale(1 + frame * 0.5, 1 + frame * 0.5),
+                (context, _) => context.DrawGlyphRun(s_text, run)), out _)).ToList();
 
-                counts.Add(Measure(() => RenderOnGpu(gpu!, Matrix.CreateScale(scale, scale),
-                    (context, _) => context.DrawGlyphRun(s_text, run)), out _));
-            }
-
-            Assert.All(counts.Take(TransformChurnGuard.Threshold), c => Assert.Equal(1, c.Rasterizations));
-            Assert.All(counts.Skip(TransformChurnGuard.Threshold), c =>
-            {
-                Assert.Equal(0, c.Rasterizations);
-                Assert.Equal(2, c.VectorDraws);
-            });
-
-            // Once the scale holds, the run rasterizes at it and draws from masks again.
-            var settledScale = Matrix.CreateScale(1.11, 1.11);
-            var settled = Measure(() => RenderOnGpu(gpu!, settledScale,
-                (context, _) => context.DrawGlyphRun(s_text, run)), out _);
-            var again = Measure(() => RenderOnGpu(gpu!, settledScale,
-                (context, _) => context.DrawGlyphRun(s_text, run)), out _);
-
-            Assert.Equal(new Counts(1, 0), settled);
-            Assert.Equal(new Counts(0, 0), again);
+            Assert.All(frames.Skip(TransformChurnGuard.Threshold), c => Assert.Equal(new Counts(0, 2), c));
         }
 
         public static IEnumerable<object[]> BoundCases()
@@ -319,12 +311,15 @@ namespace Avalonia.Skia.UnitTests.Media
         /// fill onto the destination.
         /// </summary>
         /// <remarks>
-        /// Measured on Windows x64 with Skia's raster pipeline, over every pixel either draw
-        /// inked on the white background: the largest channel difference is 2 levels for the
-        /// synthetic paints and 3 for Segoe UI Emoji, whose layered gradients round at every layer;
-        /// the mean is below 0.25 levels. The bounds leave a level of room above the largest
-        /// measured value and keep the mean at a quarter level, so a misplaced mask (a phase or
-        /// pad error moves whole edges, tens of levels) or a lost composite fails at once.
+        /// Measured on Windows x64 with Skia's raster pipeline over every pixel either draw inked
+        /// on the white background, all four phases: solid fills match exactly and single
+        /// gradients differ by at most 1 level (mean 0.03-0.05), where the gradient's 8-bit colour
+        /// is rounded once more by the source-over blend of the mask; Segoe UI Emoji, whose glyphs
+        /// stack up to a hundred translucent gradient fills that each round onto the layer below,
+        /// differs by at most 5 levels (mean 0.058-0.065). The bounds allow about one and a half
+        /// times the largest measured value and twice the mean, so a misplaced mask (a phase or
+        /// pad error moves whole edges, tens of levels at hundreds of pixels) or a lost composite
+        /// fails at once.
         /// </remarks>
         [Theory]
         [MemberData(nameof(BoundCases))]
@@ -358,11 +353,13 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(CountColored(vectors) > 20, "the vector replay drew no colour");
 
             var (max, mean, inked) = Difference(vectors, maskedPixels);
-            var maxBound = font == Font.SegoeUiEmoji ? 4 : 3;
+            var maxBound = font == Font.SegoeUiEmoji ? 8 : 2;
+            var meanBound = font == Font.SegoeUiEmoji ? 0.15 : 0.1;
 
             Assert.True(inked > 100, $"only {inked} pixels were inked");
             Assert.True(max <= maxBound, $"largest channel difference {max} levels (bound {maxBound}), mean {mean:F3}");
-            Assert.True(mean <= 0.25, $"mean channel difference {mean:F3} levels over {inked} pixels, max {max}");
+            Assert.True(mean <= meanBound,
+                $"mean channel difference {mean:F3} levels over {inked} pixels (bound {meanBound}), max {max}");
         }
 
         [Theory]
@@ -388,8 +385,24 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var (max, _, _) = Difference(raster, gpuPixels);
 
-            // The mask is the same bytes on both; the GPU blends it in its own arithmetic.
+            // Both draw the same mask bytes 1:1 at a whole-pixel offset; measured identical on
+            // desktop GL and ANGLE, a level is left for a GPU whose blend rounds differently.
             Assert.True(max <= 1, $"largest channel difference {max} levels between raster and GPU");
+        }
+
+        /// <summary>
+        /// Draws v1 glyphs as vectors until disposed, for tests of the vector path that the
+        /// upright tier's colour masks would otherwise take.
+        /// </summary>
+        internal static IDisposable SwitchColorMasksOff() => new ColorMaskSwitch();
+
+        private sealed class ColorMaskSwitch : IDisposable
+        {
+            private readonly bool _previous = ColorGlyphRunSplitter.UseColorMasks;
+
+            public ColorMaskSwitch() => ColorGlyphRunSplitter.UseColorMasks = false;
+
+            public void Dispose() => ColorGlyphRunSplitter.UseColorMasks = _previous;
         }
 
         private static Counts DrawOnce(GlyphTypeface typeface, ushort[] glyphs, IBrush? brush = null)

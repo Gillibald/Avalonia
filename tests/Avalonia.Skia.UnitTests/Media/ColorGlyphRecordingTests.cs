@@ -462,8 +462,11 @@ namespace Avalonia.Skia.UnitTests.Media
             return typeface;
         }
 
+        // Recordings are the vector path: under managed rasterization the upright tier would draw
+        // the v1 glyphs from colour masks instead.
         private static IDisposable CreateEnvironment(bool managed)
         {
+            var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             var scope = AvaloniaLocator.EnterScope();
 
             AvaloniaLocator.CurrentMutable
@@ -476,7 +479,18 @@ namespace Avalonia.Skia.UnitTests.Media
                     TextRasterizationMode = managed ? TextRasterizationMode.Managed : TextRasterizationMode.Backend,
                 });
 
-            return scope;
+            return new CompositeDisposable(scope, masksOff);
+        }
+
+        private sealed class CompositeDisposable(params IDisposable[] parts) : IDisposable
+        {
+            public void Dispose()
+            {
+                foreach (var part in parts)
+                {
+                    part.Dispose();
+                }
+            }
         }
 
         private static byte[] RenderOnRaster(Matrix transform, Action<DrawingContext, IDrawingContextImpl> draw)

@@ -189,6 +189,61 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Draws a colour mask (premultiplied BGRA, four channels, see <see cref="ColorGlyphMasks"/>)
+        /// into a premultiplied BGRA run buffer, source-over and 1:1 at the glyph's pen.
+        /// </summary>
+        public static void ComposeColor(GlyphMask mask, int penX, int penY, Span<byte> destination,
+            int destWidth, int destHeight, int destStride = 0)
+        {
+            if (mask.IsEmpty)
+            {
+                return;
+            }
+
+            if (destStride == 0)
+            {
+                destStride = destWidth * 4;
+            }
+
+            ClipMask(mask, penX, penY, destWidth, destHeight,
+                out var srcX, out var srcY, out var dstX, out var dstY, out var width, out var height);
+
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            for (var y = 0; y < height; y++)
+            {
+                var src = mask.Alpha.AsSpan(((srcY + y) * mask.Width + srcX) * 4, width * 4);
+                var dst = destination.Slice((dstY + y) * destStride + dstX * 4, width * 4);
+
+                for (var d = 0; d < src.Length; d += 4)
+                {
+                    var sa = src[d + 3];
+
+                    if (sa == 0)
+                    {
+                        continue;
+                    }
+
+                    if (sa == 255 || dst[d + 3] == 0)
+                    {
+                        src.Slice(d, 4).CopyTo(dst.Slice(d, 4));
+                        continue;
+                    }
+
+                    var inv = 255 - sa;
+
+                    dst[d] = (byte)(src[d] + Div255(dst[d] * inv));
+                    dst[d + 1] = (byte)(src[d + 1] + Div255(dst[d + 1] * inv));
+                    dst[d + 2] = (byte)(src[d + 2] + Div255(dst[d + 2] * inv));
+                    dst[d + 3] = (byte)(sa + Div255(dst[d + 3] * inv));
+                }
+            }
+        }
+
+        /// <summary>
         /// Draws a decoded strike bitmap into a premultiplied BGRA run buffer, source-over,
         /// scaled to the destination rectangle by nearest-neighbor sampling (strike-exact draws
         /// are 1:1; scaled draws happen when no strike matches the requested ppem — bilinear is

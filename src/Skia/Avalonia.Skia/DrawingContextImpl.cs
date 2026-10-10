@@ -1024,16 +1024,6 @@ namespace Avalonia.Skia
             // triage rejects this draw (transform class, size, foreground kind).
             if (glyphRun is ManagedGlyphRunImpl managedRun)
             {
-                // Masks carry no COLR v1 paint: those glyphs draw from their drawings, and the
-                // stretches between them come back through here as runs of their own, so they
-                // take the tiers below and the native fallbacks only for their own reasons.
-                if (managedRun.ColorGlyphSegments is { } colorSegments)
-                {
-                    ColorGlyphRunSplitter.DrawSegments(this, colorSegments, foreground);
-
-                    return;
-                }
-
                 var maskTimer = GlyphPhaseTimers.Start();
                 var drawn = MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
                     effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode);
@@ -1052,6 +1042,17 @@ namespace Avalonia.Skia
                         FlushGlyphBatch(GlyphBatchFlushReason.Other);
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
                     }
+
+                    return;
+                }
+
+                // COLR v1 glyphs the upright tier did not compose from colour masks draw from their
+                // drawings, and the stretches between them come back through here as runs of
+                // their own, so they take the tiers and the native fallbacks only for their own
+                // reasons.
+                if (managedRun.ColorGlyphSegments is { } colorSegments)
+                {
+                    ColorGlyphRunSplitter.DrawSegments(this, colorSegments, foreground);
 
                     return;
                 }

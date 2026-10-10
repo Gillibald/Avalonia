@@ -8,13 +8,13 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <summary>
     /// Record-time split: COLR glyphs draw through the typeface's own drawings (the "prefer our
     /// implementation" rule holds in every rasterization mode), while other stretches keep an
-    /// ordinary glyph-run node. Scope differs by mode only for v0: under managed rasterization
-    /// a glyph with v0 layers and no v1 paint graph stays in the run because the mask renderer
-    /// composes those layers server-side more cheaply; under backend rasterization the blob would
-    /// rasterize COLR itself, so v0 splits to drawings too. Direct <see cref="GlyphRun"/> draws bypass this splitter: under managed
-    /// rasterization the renderer cuts those runs at the same glyphs when it draws them (see
-    /// <see cref="ColorGlyphSegments"/>), and under backend rasterization the backend's native
-    /// text handling draws them.
+    /// ordinary glyph-run node. Under backend rasterization the blob would rasterize COLR
+    /// itself, so every colour glyph splits to its drawing. Under managed rasterization nothing
+    /// splits here: the mask renderer composes v0 layers and, from colour masks, v1 paint
+    /// graphs into the run's mask, and cuts the v1 glyphs out of the draws its masks do not take
+    /// (see <see cref="ColorGlyphSegments"/>). Direct <see cref="GlyphRun"/> draws bypass this
+    /// splitter: under managed rasterization they take the same drawing-thread path, and under
+    /// backend rasterization the backend's native text handling draws them.
     /// </summary>
     /// <remarks>
     /// The drawings are those of the unsimulated face, drawn without the oblique shear: font
@@ -59,12 +59,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            // Managed rasterization composes v0 layers AND bitmap strikes server-side; only v1
-            // paint graphs need the drawing split there. Backend rasterization splits all of
-            // them, so the backend never rasterizes color or bitmap glyph content itself.
+            // Managed rasterization composes v0 layers, bitmap strikes and, from colour masks, v1
+            // paint graphs on the drawing thread, which cuts out the v1 glyphs of the draws its
+            // masks do not take; v1 glyphs split here only with colour masks switched off.
+            // Backend rasterization splits all of them, so the backend never rasterizes colour or
+            // bitmap glyph content itself.
             var includeServerSideKinds = !IsManagedTextRasterization();
 
-            if (!includeServerSideKinds && colr is not { HasV1Data: true })
+            if (!includeServerSideKinds && (UseColorMasks || colr is not { HasV1Data: true }))
             {
                 return false;
             }

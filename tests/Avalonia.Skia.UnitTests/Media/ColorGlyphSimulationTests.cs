@@ -24,13 +24,14 @@ namespace Avalonia.Skia.UnitTests.Media
         public enum ColorKind
         {
             ColrV0,
+            ColrV1,
             Cbdt,
             Sbix,
         }
 
         public static IEnumerable<object[]> ColorKindsAndSimulations()
         {
-            foreach (var kind in new[] { ColorKind.ColrV0, ColorKind.Cbdt, ColorKind.Sbix })
+            foreach (var kind in new[] { ColorKind.ColrV0, ColorKind.ColrV1, ColorKind.Cbdt, ColorKind.Sbix })
             {
                 foreach (var simulations in Simulations)
                 {
@@ -87,6 +88,9 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(FontSimulations.Bold | FontSimulations.Oblique)]
         public void Colour_V1_Glyphs_Are_Not_Simulated_Through_The_Split(FontSimulations simulations)
         {
+            // The record-time split is the vector path; under managed rasterization it only
+            // splits v1 glyphs with colour masks switched off.
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = CreateEnvironment();
             var typeface = ColorGlyphV1SplitTests.CreateV1Typeface(out var v1Glyph);
 
@@ -126,6 +130,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 case ColorKind.ColrV0:
                 {
                     var typeface = ColorGlyphV1SplitTests.CreateV0Typeface(out colorGlyph);
+                    plainGlyph = typeface.CharacterToGlyphMap['A'];
+                    return typeface;
+                }
+                case ColorKind.ColrV1:
+                {
+                    var typeface = ColorGlyphV1SplitTests.CreateV1Typeface(out colorGlyph);
                     plainGlyph = typeface.CharacterToGlyphMap['A'];
                     return typeface;
                 }

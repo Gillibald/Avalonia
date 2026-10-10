@@ -84,7 +84,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            if (HasColrV1Glyph(run))
+            // COLR v1 glyphs compose from colour masks (see ColorGlyphMasks); where this tier
+            // declines, the caller cuts the run and draws them as vectors.
+            var colorGlyphs = HasColrV1Glyph(run);
+
+            if (colorGlyphs && !ColorGlyphRunSplitter.UseColorMasks)
             {
                 return false;
             }
@@ -93,7 +97,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (alpha == 0)
             {
-                return true;   // fully transparent — nothing to draw, but handled
+                // Nothing to draw, but handled; colour glyphs keep their own colours under a
+                // transparent foreground, so a run with v1 glyphs goes to the vector path.
+                return !colorGlyphs;
             }
 
             // Backend fast path: untinted alpha masks, tinted per draw — color leaves the cache
@@ -274,6 +280,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                 (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
                 run.UprightChurn.Record(key.ScaleQ, default, hit);
 
+            // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
+            // more than outline masks and fill the mask cache with sizes that never return, so a
+            // run with colour glyphs stretches its settled mask on a hardware GPU too.
+            if (colorGlyphs && zoomContext is { RasterTarget: GlyphRasterTarget.HardwareGpu } &&
+                run.UprightChurn.Record(key.ScaleQ, default, hit))
+            {
+                zooming = true;
+            }
+
             if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform) &&
                 TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
             {
@@ -303,6 +318,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;
             }
 
+            // A zooming run with colour glyphs and no settled mask within the stretch band draws
+            // them as vectors until the scale holds still.
+            if (colorGlyphs && zooming && !hit)
+            {
+                return false;
+            }
+
             if (!hit && blendsCoverage)
             {
                 if (!TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: false, out var coverage))
@@ -330,6 +352,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!hit)
             {
+                var declined = false;
+
                 // The bound only sizes the chunks, it is not part of the key: chunks partition
                 // the same pixels, so a mask composed for one context draws correctly on another.
                 var composed = mode == GlyphMaskMode.Subpixel
@@ -338,8 +362,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                             alpha, solid.Color.R, solid.Color.G, solid.Color.B)
                         : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize, lcdGeometry)
                     : alphaContext is null
-                        ? Compose(run, key, (float)scaleX, (float)scaleY, maxSize)
+                        ? Compose(run, key, (float)scaleX, (float)scaleY, maxSize,
+                            Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B), out declined)
                         : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize);
+
+                if (declined)
+                {
+                    return false;
+                }
 
                 if (composed is null)
                 {
@@ -433,7 +463,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             settledMask = null!;
 
             var composed = Compose(run, settled.Key, (float)settled.Transform.M11, (float)settled.Transform.M22,
-                maxSize);
+                maxSize, null, out _);
 
             if (composed is null)
             {
@@ -703,12 +733,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether the run holds a glyph with a COLR v1 paint graph
-        /// (<see cref="ColorGlyphRunSplitter.IsV1Glyph"/>). Masks have no v1 paint: such a
-        /// glyph draws through its drawing, and the caller cuts the run around it (see
-        /// <see cref="ManagedGlyphRunImpl.ColorGlyphSegments"/>) rather than draw it as a
-        /// monochrome outline.
+        /// (<see cref="ColorGlyphRunSplitter.IsV1Glyph"/>), scanned once per run. The upright
+        /// tier composes such glyphs from colour masks; every other tier declines the run, and
+        /// the caller cuts it around them (see <see cref="ManagedGlyphRunImpl.ColorGlyphSegments"/>)
+        /// rather than draw them as monochrome outlines.
         /// </summary>
         private static bool HasColrV1Glyph(ManagedGlyphRunImpl run)
+            => run.HasColrV1Glyph ??= ScanForColrV1Glyph(run);
+
+        private static bool ScanForColrV1Glyph(ManagedGlyphRunImpl run)
         {
             var typeface = run.GlyphTypeface;
 
@@ -1172,9 +1205,18 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// Composes the pre-tinted BGRA run mask: outline glyphs tinted through the gamma table,
+        /// COLR v0 layers tinted without it, strike bitmaps copied and COLR v1 glyphs from their
+        /// colour masks, resolved with <paramref name="foreground"/> where the paint uses the
+        /// foreground sentinel. Returns <c>null</c> for a run without ink, and sets
+        /// <paramref name="declined"/> when a v1 glyph cannot draw from a colour mask at this size.
+        /// </summary>
         private static unsafe RunMask? Compose(ManagedGlyphRunImpl run, RunMaskKey key, float scaleX, float scaleY,
-            int maxSize)
+            int maxSize, Color? foreground, out bool declined)
         {
+            declined = false;
+
             var typeface = run.GlyphTypeface;
             var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
             var oblique = (typeface.FontSimulations & FontSimulations.Oblique) != 0;
@@ -1187,6 +1229,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             var colr = typeface.ColorTable;
             var cpal = typeface.ColorPaletteTable;
             var state = (typeface, scratch);
+            var v1Colr = colr is { HasV1Data: true } && HasColrV1Glyph(run) ? colr : null;
+
+            bool IsV1(ushort glyph) => v1Colr is not null && ColorGlyphRunSplitter.IsV1Glyph(typeface, v1Colr, glyph);
 
             // Bitmap strikes (CBDT or sbix): pick once per compose; glyphs the strike covers
             // draw as scaled decoded images, everything else falls through to outlines/COLR.
@@ -1257,7 +1302,18 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                if (TryGetBitmapRect(indices[i], penX, penY, out _, out var bx, out var by, out var bw, out var bh))
+                if (IsV1(indices[i]))
+                {
+                    if (!ColorGlyphMasks.TryGetMask(typeface, indices[i], key.ScaleQ, glyphPhase, foreground,
+                            out var colorMask))
+                    {
+                        declined = true;
+                        return null;
+                    }
+
+                    UnionMask(colorMask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+                }
+                else if (TryGetBitmapRect(indices[i], penX, penY, out _, out var bx, out var by, out var bw, out var bh))
                 {
                     minX = Math.Min(minX, bx);
                     minY = Math.Min(minY, by);
@@ -1320,7 +1376,19 @@ namespace Avalonia.Media.Fonts.Rasterization
                             SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                             var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                            if (TryGetBitmapRect(indices[i], penX, penY, out var placement, out var bx, out var by, out var bw, out var bh))
+                            if (IsV1(indices[i]))
+                            {
+                                // COLR v1: the paint graph rasterized once per scale and phase. The
+                                // first pass resolved every mask, so a miss here only follows an
+                                // eviction in between and rasterizes again.
+                                if (ColorGlyphMasks.TryGetMask(typeface, indices[i], key.ScaleQ, glyphPhase, foreground,
+                                        out var colorMask))
+                                {
+                                    RunMaskComposer.ComposeColor(colorMask, penX - chunkX, penY - minY, span, width,
+                                        height, framebuffer.RowBytes);
+                                }
+                            }
+                            else if (TryGetBitmapRect(indices[i], penX, penY, out var placement, out var bx, out var by, out var bw, out var bh))
                             {
                                 // Strike bitmap: decoded once per (glyph, strike) via the source's memo,
                                 // then blitted scaled, source-over.
