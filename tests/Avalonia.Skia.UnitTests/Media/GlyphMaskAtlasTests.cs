@@ -411,7 +411,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Past_A_Quarter_Over_The_Limit_Only_The_Pages_Of_The_Current_Frame_Are_Kept()
+        public void Past_A_Quarter_Over_The_Limit_The_Pages_Of_The_Previous_Frame_Stay_Until_A_Frame_Passes_Without_Them()
         {
             var random = new Random(31);
             var tall = GlyphMaskAtlas.MaxPageHeight / 2 + 10;
@@ -428,24 +428,28 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
 
-            // The next frame trims the previous frame's pages to a quarter over the limit, and its
-            // own pages, past half over the limit, take the place of the previous frame's oldest.
+            // Twice the limit: the next frame keeps the previous frame's pages, which a static
+            // scene draws from, and places pages of its own beside them.
             using (budget.BeginFrame())
             {
-                Assert.True(atlas.AllocatedBytes <= budget.SoftLimitBytes,
-                    $"{atlas.AllocatedBytes} bytes allocated, a quarter over the limit is {budget.SoftLimitBytes}");
+                Assert.Equal(5 * page, atlas.AllocatedBytes);
 
                 for (var i = 5; i < slots.Length; i++)
                 {
                     Assert.True(atlas.TryAdd(Key(i), CreateMask(random, 600, tall), atlas.Tick(), out slots[i]));
-                    Assert.True(atlas.AllocatedBytes <= budget.InlineLimitBytes,
-                        $"{atlas.AllocatedBytes} bytes allocated, half over the limit is {budget.InlineLimitBytes}");
                 }
+            }
+
+            // A frame later the first frame's pages go; the second frame's stay, still within a
+            // quarter over the limit.
+            using (budget.BeginFrame())
+            {
             }
 
             Assert.All(slots[..5], slot => Assert.True(slot.Page!.IsEvicted));
             Assert.All(slots[5..], slot => Assert.False(slot.Page!.IsEvicted));
             Assert.Equal(5, atlas.Evictions);
+            Assert.True(atlas.AllocatedBytes <= budget.SoftLimitBytes);
         }
 
         [Fact]

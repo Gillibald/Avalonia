@@ -72,7 +72,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// each source drew in its previous frame (<see cref="SoftFloor"/>) is kept while the caches
     /// stay within a quarter over the limit, since a static scene draws it again. When a frame's
     /// own content does not fit, the caches grow past the limit instead of evicting what the next
-    /// frame draws again, and the frame after brings them back.
+    /// frame draws again, and the frame after brings them back. Past a quarter over the limit,
+    /// the previous frame's glyph masks, hinters and outlines give way, while its atlas pages and
+    /// run-level state, which a static scene draws from, stay.
     /// </para>
     /// <para>
     /// Nothing is evicted while there is room. Each frame begins with a trim to the limit: among
@@ -706,9 +708,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 Trim(LimitBytes, SoftFloor, fair: true);
                 Trim(LimitBytes, SoftFloor, fair: false);
 
+                // What the previous frame drew from atlas pages and run-level state stays: a static
+                // scene draws it again, and its glyph masks, which rebuild those, give way instead.
+                // Evicting the pages would make every frame place them again from the masks.
                 if (UsedBytes > SoftLimitBytes)
                 {
-                    Trim(SoftLimitBytes, PinFloor, fair: false);
+                    Trim(SoftLimitBytes, PinFloor, fair: false, includeAffine: false);
                 }
 
                 Trim(RetainBytes, Math.Min(SoftFloor, Frame - IdleFrames), fair: false);
@@ -863,6 +868,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Evicts from the pool of <paramref name="handle"/> alone, after a build took the caches
         /// past half over the limit: what earlier frames used, until the caches are back within it.
+        /// Frame-affine pools keep what each source drew in its previous frame, which the frame
+        /// being drawn is likely to draw again.
         /// </summary>
         internal void EvictInline(GlyphCachePoolHandle handle)
         {
@@ -870,7 +877,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (over > 0 && handle.TryGetPool(out var pool))
             {
-                Interlocked.Add(ref _evictedBytes, pool.EvictOldest(PinFloor, over));
+                var usedBefore = handle.IsFrameAffine ? SoftFloor : PinFloor;
+
+                Interlocked.Add(ref _evictedBytes, pool.EvictOldest(usedBefore, over));
             }
         }
 
