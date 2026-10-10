@@ -14,6 +14,7 @@
       "samples\\SampleControls\\ControlSamples.csproj",
       "samples\\Sandbox\\Sandbox.csproj",
       "samples\\TextLab\\TextLab.csproj",
+      "samples\\TextShowcase\\TextShowcase.csproj",
       "samples\\TextStress\\TextStress.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContextPlug\\UnloadableAssemblyLoadContextPlug.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext.csproj",

@@ -1,0 +1,24 @@
+<Project>
+
+  <!-- Content shared by the desktop and Android hosts. Fonts come from the repository's own
+       assets, all redistributable (Inter and Inter Variable OFL, Noto Sans Arabic and Hebrew OFL,
+       Noto Mono Apache 2.0, WenQuanYi Micro Hei Apache 2.0), so captures of the reference scene
+       compare across machines. -->
+  <PropertyGroup>
+    <ShowcaseRepoRoot>$(MSBuildThisFileDirectory)..\..\</ShowcaseRepoRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="$(ShowcaseRepoRoot)tests\Avalonia.RenderTests\Assets\InterVariable.ttf" Link="Assets\Fonts\InterVariable.ttf" />
+    <AvaloniaResource Include="$(ShowcaseRepoRoot)tests\Avalonia.RenderTests\Assets\NotoSansArabic-Regular.ttf" Link="Assets\Fonts\NotoSansArabic-Regular.ttf" />
+    <AvaloniaResource Include="$(ShowcaseRepoRoot)tests\Avalonia.RenderTests\Assets\NotoSansHebrew-Regular.ttf" Link="Assets\Fonts\NotoSansHebrew-Regular.ttf" />
+    <AvaloniaResource Include="$(ShowcaseRepoRoot)tests\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" Link="Assets\Fonts\NotoMono-Regular.ttf" />
+    <AvaloniaResource Include="$(ShowcaseRepoRoot)samples\ControlCatalog\Assets\Fonts\WenQuanYiMicroHei-01.ttf" Link="Assets\Fonts\WenQuanYiMicroHei-01.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The code view scrolls real repository source, so the content is licence-clean. -->
+    <EmbeddedResource Include="$(ShowcaseRepoRoot)src\Avalonia.Base\Media\TextFormatting\TextLayout.cs" LogicalName="TextShowcase.Code.TextLayout.cs" />
+  </ItemGroup>
+
+</Project>

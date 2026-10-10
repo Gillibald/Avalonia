@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Native AOT publish, opt-in so the flag stays scoped to this project (a global
+         PublishAot fails the netstandard tooling projects in the closure):
+         dotnet publish -c Release -r win-x64 /p:TextShowcaseAot=true -->
+    <PublishAot Condition="'$(TextShowcaseAot)' == 'true'">true</PublishAot>
+  </PropertyGroup>
+
+  <Import Project="TextShowcase.Shared.props" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
+    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\..\build\SampleApp.props" />
+  <Import Project="..\..\build\ReferenceCoreLibraries.props" />
+  <Import Project="..\..\build\BuildTargets.targets" />
+
+</Project>
