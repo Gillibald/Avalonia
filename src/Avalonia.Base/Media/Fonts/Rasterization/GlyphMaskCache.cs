@@ -5,8 +5,9 @@ using System.Threading;
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// A cache of rasterized glyph masks keyed by (glyph, scale bucket, subpixel phase, mode),
-    /// the sibling of <see cref="GlyphCache"/> for the managed rasterization path, bounded by the
+    /// A cache of rasterized glyph masks keyed by <typeparamref name="TKey"/> (glyph, scale bucket,
+    /// subpixel phase and whatever else the raster depends on), the sibling of
+    /// <see cref="GlyphCache"/> for the managed rasterization path, bounded by the
     /// <see cref="GlyphCacheBudget"/> it is charged to. Hits are lock-free; builds run outside the
     /// lock (racing builders may duplicate work, the losing result is discarded); inserts and
     /// eviction run under one lock.
@@ -27,7 +28,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// still being drawn (<see cref="GlyphCacheBudget.PinFloor"/>) is never evicted.
     /// </para>
     /// </remarks>
-    internal sealed class GlyphMaskCache : IGlyphCachePool
+    internal class GlyphMaskCache<TKey> : IGlyphCachePool
+        where TKey : struct, IEquatable<TKey>
     {
         /// <summary>
         /// The largest mask worth caching. A bigger mask (a glyph near a thousand pixels per em)
@@ -37,7 +39,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public const int MaxEntryBytes = 512 * 1024;
 
-        private readonly ConcurrentDictionary<GlyphMaskKey, Entry> _entries = new();
+        private readonly ConcurrentDictionary<TKey, Entry> _entries = new();
         private readonly object _lock = new();
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
@@ -90,7 +92,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>Peeks a cached mask without building. Lock-free; for diagnostics and tests.</summary>
-        public bool TryGet(in GlyphMaskKey key, out GlyphMask mask)
+        public bool TryGet(in TKey key, out GlyphMask mask)
         {
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
@@ -108,16 +110,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// race, one result wins at insertion and both callers receive the winner. A no-ink glyph
         /// is memoised as <see cref="GlyphMask.Empty"/> so it is never rebuilt.
         /// </summary>
-        public GlyphMask GetOrBuild(in GlyphMaskKey key, Func<GlyphMaskKey, GlyphMask> build)
+        public GlyphMask GetOrBuild(in TKey key, Func<TKey, GlyphMask> build)
             => GetOrBuild(key, build, static (k, b) => b(k));
 
         /// <summary>
-        /// State-passing variant of <see cref="GetOrBuild(in GlyphMaskKey, Func{GlyphMaskKey, GlyphMask})"/>
+        /// State-passing variant of <see cref="GetOrBuild(in TKey, Func{TKey, GlyphMask})"/>
         /// so hot callers can use a static build delegate — the compose loop must not allocate a
         /// closure per glyph.
         /// </summary>
-        public GlyphMask GetOrBuild<TState>(in GlyphMaskKey key, TState state,
-            Func<GlyphMaskKey, TState, GlyphMask> build)
+        public GlyphMask GetOrBuild<TState>(in TKey key, TState state,
+            Func<TKey, TState, GlyphMask> build)
         {
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
@@ -302,9 +304,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private sealed class Entry
         {
-            public Entry(GlyphMaskKey key) => Key = key;
+            public Entry(TKey key) => Key = key;
 
-            public readonly GlyphMaskKey Key;
+            public readonly TKey Key;
             public GlyphMask? Mask;
 
             /// <summary>The frame of the mask's last use.</summary>
@@ -315,6 +317,18 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             public Entry? Prev;
             public Entry? Next;
+        }
+    }
+
+    /// <summary>The rasterized coverage masks of one typeface, keyed by <see cref="GlyphMaskKey"/>.</summary>
+    internal sealed class GlyphMaskCache : GlyphMaskCache<GlyphMaskKey>
+    {
+        /// <param name="budget">
+        /// The budget the cache charges its masks to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// </param>
+        public GlyphMaskCache(GlyphCacheBudget? budget = null)
+            : base(budget)
+        {
         }
     }
 }
