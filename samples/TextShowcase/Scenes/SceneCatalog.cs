@@ -15,6 +15,9 @@ namespace TextShowcase.Scenes
             new SimulationsScene(),
             new ScriptsScene(),
             new LcdScene(),
+            new TransformsScene(),
+            new PerformanceScene(),
+            new BackendScene(),
         };
     }
 }

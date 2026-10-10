@@ -234,7 +234,7 @@ namespace TextShowcase
 
             if (!_swapped && scene.HasCustomRightPane && scene.BuildRightPane(_rightContext) is { } custom)
             {
-                _right.SetContent(custom, TextRasterizationMode.Backend, "BACKEND",
+                _right.SetContent(custom, TextRasterizationMode.Backend, "BACKEND INPUT",
                     scene.RightPaneLabel ?? "", null);
             }
             else
@@ -349,7 +349,7 @@ namespace TextShowcase
                 return;
             }
 
-            if (Current.HasCustomRightPane && !_swapped)
+            if (!Current.SupportsDiff || (Current.HasCustomRightPane && !_swapped))
             {
                 return;
             }
@@ -462,7 +462,21 @@ namespace TextShowcase
             for (var i = 0; i < _scenes.Count; i++)
             {
                 ShowScene(i);
-                _frozenTime = Current.CaptureTime;
+
+                if (Current.CaptureLiveSeconds > 0)
+                {
+                    var until = DateTime.UtcNow.AddSeconds(Current.CaptureLiveSeconds);
+
+                    while (DateTime.UtcNow < until)
+                    {
+                        await Frames(1);
+                    }
+                }
+                else
+                {
+                    _frozenTime = Current.CaptureTime;
+                }
+
                 await Frames(Current.IsAnimated ? 40 : 12);
 
                 Capture.Scene(directory, i + 1, Current, _surface, _left, _right, !_swapped, withDiff: true);

@@ -55,7 +55,7 @@ namespace TextShowcase.Diagnostics
             SavePng(rightImage, prefix + (leftIsManaged ? "-backend.png" : "-managed.png"));
             count += 2;
 
-            if (withDiff)
+            if (withDiff && scene.SupportsDiff)
             {
                 var result = PixelDiff.Compare(leftImage, rightImage);
 

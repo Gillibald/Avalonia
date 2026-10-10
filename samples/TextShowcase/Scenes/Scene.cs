@@ -40,6 +40,15 @@ namespace TextShowcase.Scenes
         /// <summary>The clock value captures freeze an animated scene at, in seconds.</summary>
         public virtual double CaptureTime => 2.5;
 
+        /// <summary>
+        /// Seconds an unattended capture lets the scene run live before capturing, instead of
+        /// freezing the clock; for scenes whose content is a measurement.
+        /// </summary>
+        public virtual double CaptureLiveSeconds => 0;
+
+        /// <summary>Whether the two panes show the same content, so a pixel diff means something.</summary>
+        public virtual bool SupportsDiff => true;
+
         /// <summary>A file-name friendly name.</summary>
         public string Slug
         {
