@@ -408,8 +408,8 @@ namespace Avalonia.Skia
             // composited layer, on targets that permit subpixel text at all. Inside a layer
             // the backdrop is transparent, and per-channel coverage would bake fringes. A GPU
             // context additionally needs the per-channel blender to have compiled; the CPU
-            // two-pass blits cannot fold a tracked ambient opacity into their fixed payloads,
-            // so those draws degrade to grayscale instead of blending wrong.
+            // per-channel blit takes no ambient opacity, so those draws degrade to grayscale
+            // instead of blending wrong.
             return _lcdMaskGeometry.HasValue && !_disableSubpixelTextRendering && _saveLayerDepth == 0 &&
                    (GrContext is not null ? LcdTextBlender.IsSupported : _currentOpacity >= 1);
         }

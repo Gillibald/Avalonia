@@ -12,9 +12,9 @@ namespace Avalonia.Skia
         private static int s_maxPendingBatches = DefaultMaxPendingBatches;
 
         /// <summary>
-        /// Pending batches at once, each of one page in one colour or several. Every
-        /// typeface has its own atlas, so a list whose rows mix a dozen or two typefaces keeps
-        /// that many batches pending; past this many, all of them are drawn rather than searched.
+        /// Pending batches at once, each of one page in one colour or several. On contexts that
+        /// do not update atlas pages in place every typeface has its own atlas, so a list whose
+        /// rows mix a dozen or two typefaces keeps that many batches pending; past this many, all of them are drawn rather than searched.
         /// A run joining a batch compares its key with every pending batch and its bounds with
         /// each one's union, so this bounds that work per run alongside
         /// <see cref="MaxPendingRuns"/>.

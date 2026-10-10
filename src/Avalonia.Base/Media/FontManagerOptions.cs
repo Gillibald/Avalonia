@@ -57,8 +57,8 @@ namespace Avalonia.Media
         /// <remarks>
         /// <para>
         /// Glyphs stay cached while there is room. What is no longer drawn ages out once memory is
-        /// needed, and when frames stop, down to half the limit after about two seconds without
-        /// being drawn. A frame whose own text needs more than the limit still draws it from the
+        /// needed, and when frames stop, down to a retain target after about two seconds without
+        /// being drawn: half the limit, or 12 MB with the default limit on iOS and Android. A frame whose own text needs more than the limit still draws it from the
         /// caches, which grow past the limit for that frame and shrink back afterwards. The limit
         /// counts the bytes of the caches' own memory; GPU textures that mirror glyph atlas pages
         /// take as much again on contexts that update pages in place.
