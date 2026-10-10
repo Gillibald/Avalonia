@@ -238,6 +238,9 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         return texture;
     }
 
+    public ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
+        => null;
+
     /// <summary>
     /// Waits for every copy, then frees the images Skia has not released yet and the upload
     /// resources. Images released later free nothing: a disposed context took them along.

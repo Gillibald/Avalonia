@@ -171,6 +171,9 @@ namespace Avalonia.Skia
             return texture;
         }
 
+        public ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes)
+            => null;
+
         private void Upload(uint id, PixelRect rect, ReadOnlySpan<byte> source, int rowBytes)
         {
             _bindBuffer(PixelUnpackBuffer, 0);

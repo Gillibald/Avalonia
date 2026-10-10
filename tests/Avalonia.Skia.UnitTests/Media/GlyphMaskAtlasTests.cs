@@ -510,6 +510,98 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Single(atlas.GetPages());
         }
 
+        [Fact]
+        public void Rgba_Entries_Hold_Their_Colour_Masks_In_Rgba_Order_With_Empty_Gutters()
+        {
+            var atlas = new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba);
+            var random = new Random(99);
+            var tick = atlas.Tick();
+            var entries = new List<(GlyphMask Mask, GlyphAtlasSlot Slot)>();
+
+            for (var i = 0; i < 200; i++)
+            {
+                var mask = CreateColorMask(random, random.Next(2, 60), random.Next(2, 70));
+
+                Assert.True(atlas.TryAdd(Key(i), mask, tick, out var slot));
+                entries.Add((mask, slot));
+            }
+
+            foreach (var (mask, slot) in entries)
+            {
+                var page = slot.Page!;
+
+                Assert.Equal(4, page.BytesPerPixel);
+                Assert.Equal(GlyphMaskAtlas.PageWidth * 4, page.RowBytes);
+                Assert.Equal(page.RowBytes * page.Height, page.Pixels.Length);
+                Assert.Equal(mask.Left, slot.Left);
+                Assert.Equal(mask.Top, slot.Top);
+
+                // The masks are BGRA; the page holds the same premultiplied colour in RGBA order, and
+                // the row and column on every side of the entry stay transparent.
+                for (var y = -1; y <= mask.Height; y++)
+                {
+                    for (var x = -1; x <= mask.Width; x++)
+                    {
+                        var texel = (slot.Y + y) * page.RowBytes + (slot.X + x) * 4;
+                        var inside = x >= 0 && y >= 0 && x < mask.Width && y < mask.Height;
+
+                        for (var c = 0; c < 4; c++)
+                        {
+                            var expected = inside ? mask.Alpha[(y * mask.Width + x) * 4 + s_bgraOfRgba[c]] : 0;
+
+                            Assert.Equal(expected, page.Pixels[texel + c]);
+                        }
+                    }
+                }
+            }
+        }
+
+        [Fact]
+        public void Rgba_Pages_Charge_Four_Bytes_Per_Texel_And_Eviction_Credits_Them()
+        {
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var atlas = new GlyphMaskAtlas(budget, format: GlyphAtlasFormat.Rgba);
+            var random = new Random(5);
+            GlyphAtlasSlot slot;
+
+            using (budget.BeginFrame())
+            {
+                Assert.True(atlas.TryAdd(Key(1), CreateColorMask(random, 40, 40), atlas.Tick(), out slot));
+            }
+
+            var page = slot.Page!;
+            var bytes = (long)GlyphMaskAtlas.PageWidth * 4 * page.Height;
+
+            Assert.Equal(bytes, atlas.AllocatedBytes);
+            Assert.Equal(bytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
+            Assert.Equal(bytes, ((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue));
+            Assert.True(page.IsEvicted);
+            Assert.Equal(0, atlas.AllocatedBytes);
+            Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
+            Assert.False(atlas.TryGet(Key(1), atlas.Tick(), out _));
+        }
+
+        // For each RGBA channel, the BGRA channel holding it.
+        private static readonly int[] s_bgraOfRgba = { 2, 1, 0, 3 };
+
+        /// <summary>A premultiplied BGRA mask of random colours.</summary>
+        internal static GlyphMask CreateColorMask(Random random, int width, int height)
+        {
+            var pixels = new byte[width * height * 4];
+
+            for (var i = 0; i < pixels.Length; i += 4)
+            {
+                var alpha = random.Next(1, 256);
+
+                pixels[i] = (byte)random.Next(0, alpha + 1);
+                pixels[i + 1] = (byte)random.Next(0, alpha + 1);
+                pixels[i + 2] = (byte)random.Next(0, alpha + 1);
+                pixels[i + 3] = (byte)alpha;
+            }
+
+            return new GlyphMask(pixels, width, height, -random.Next(0, 4), -random.Next(0, 20), channels: 4);
+        }
+
         private static long TallPageBytes(int tall) => (long)GlyphMaskAtlas.PageWidth * ((tall + 1 + 63) / 64 * 64);
 
         private static GlyphMaskKey Key(int glyph)

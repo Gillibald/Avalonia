@@ -207,6 +207,143 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Theory]
+        [MemberData(nameof(UpdatableTextureContexts))]
+        public void An_Updatable_Rgba_Texture_Holds_Its_Source_Through_Rectangle_Updates(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            var textures = SkiaUpdatableTextures.Get(gpu.GrContext)?.Feature;
+
+            Assert.NotNull(textures);
+
+            const int width = 300, height = 70, rowBytes = 1312;
+            var random = new Random(17);
+            var source = new byte[rowBytes * height];
+
+            for (var y = 0; y < height; y++)
+            {
+                FillPremultiplied(random, source.AsSpan(y * rowBytes, width * 4));
+            }
+
+            using var texture = textures!.TryCreateRgba8(width, height, source, rowBytes);
+
+            Assert.NotNull(texture);
+            Assert.Equal(Crop(source, rowBytes, width * 4, height), ReadRgbaImage(gpu, texture!.Image, width, height));
+
+            var image = texture.Image;
+
+            foreach (var rect in new[]
+                     {
+                         new PixelRect(0, 0, 1, 1), new PixelRect(width - 17, height - 5, 17, 5),
+                         new PixelRect(31, 9, 113, 40),
+                     })
+            {
+                for (var y = rect.Y; y < rect.Bottom; y++)
+                {
+                    FillPremultiplied(random, source.AsSpan(y * rowBytes + rect.X * 4, rect.Width * 4));
+                }
+
+                texture.Update(rect, source, rowBytes);
+
+                Assert.Same(image, texture.Image);
+                Assert.Equal(Crop(source, rowBytes, width * 4, height), ReadRgbaImage(gpu, texture.Image, width, height));
+            }
+        }
+
+        public static IEnumerable<object[]> ColorPageContexts()
+        {
+            foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })
+            {
+                yield return new object[] { backend, true };
+                yield return new object[] { backend, false };
+            }
+        }
+
+        /// <summary>
+        /// A colour atlas page draws as its pixel array on every context: from a texture updated in
+        /// place where the context registered updatable textures, from an image wrapping the array
+        /// elsewhere, after every placement.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(ColorPageContexts))]
+        public void A_Colour_Atlas_Page_Draws_As_Its_Pixels_Through_Updates(GpuBackend backend, bool updatable)
+        {
+            using var gpu = updatable ? TransformedAtlasTests.CreateGpu(backend, false) : GpuTestContext.TryCreate(backend, out _);
+
+            Assert.SkipWhen(gpu is null, $"No usable {backend} context");
+            Assert.SkipWhen(updatable && SkiaUpdatableTextures.Get(gpu!.GrContext) is null,
+                $"{backend} has no updatable textures");
+
+            var atlas = new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba);
+            var random = new Random(23);
+            GlyphAtlasSlot slot = default;
+
+            for (var round = 0; round < 3; round++)
+            {
+                for (var i = 0; i < 40; i++)
+                {
+                    Assert.True(atlas.TryAdd(new GlyphMaskKey((ushort)(round * 100 + i), 200, 0, GlyphMaskMode.Antialiased),
+                        GlyphMaskAtlasTests.CreateColorMask(random, random.Next(4, 50), random.Next(4, 50)), atlas.Tick(),
+                        out slot));
+                }
+
+                var page = slot.Page!;
+
+                Assert.Equal(page.Pixels.AsSpan(0, page.RowBytes * page.Height).ToArray(),
+                    ReadRgbaImage(gpu!, PageImage(gpu!, page), GlyphMaskAtlas.PageWidth, page.Height));
+            }
+        }
+
+        private static SKImage PageImage(GpuTestContext gpu, GlyphAtlasPage page)
+        {
+            using var surface = SKSurface.Create(gpu.GrContext, false,
+                new SKImageInfo(4, 4, SKColorType.Rgba8888, SKAlphaType.Premul));
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            return context.GetAtlasPageImage(page);
+        }
+
+        private static void FillPremultiplied(Random random, Span<byte> rgba)
+        {
+            for (var i = 0; i < rgba.Length; i += 4)
+            {
+                var alpha = random.Next(0, 256);
+
+                rgba[i] = (byte)random.Next(0, alpha + 1);
+                rgba[i + 1] = (byte)random.Next(0, alpha + 1);
+                rgba[i + 2] = (byte)random.Next(0, alpha + 1);
+                rgba[i + 3] = (byte)alpha;
+            }
+        }
+
+        /// <summary>A premultiplied RGBA image as a GPU context draws it, read back through a 1:1 copy.</summary>
+        private static unsafe byte[] ReadRgbaImage(GpuTestContext gpu, SKImage image, int width, int height)
+        {
+            var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var target = SKSurface.Create(gpu.GrContext, false, info);
+
+            Assert.NotNull(target);
+
+            using (var copy = new SKPaint { BlendMode = SKBlendMode.Src })
+            {
+                target!.Canvas.Clear(SKColors.Transparent);
+                target.Canvas.DrawImage(image, 0, 0, new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None),
+                    copy);
+            }
+
+            target.Flush();
+            gpu.GrContext.Flush(true, true);
+
+            var pixels = new byte[info.BytesSize];
+
+            fixed (byte* p = pixels)
+            {
+                Assert.True(target.ReadPixels(info, (IntPtr)p, info.RowBytes, 0, 0));
+            }
+
+            return pixels;
+        }
+
         private static byte[] Crop(byte[] source, int rowBytes, int width, int height)
         {
             var pixels = new byte[width * height];

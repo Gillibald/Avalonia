@@ -49,6 +49,16 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     internal readonly record struct GlyphAtlasEntryKey(int Owner, GlyphMaskKey Key, int Bucket);
 
+    /// <summary>The texel layout of a <see cref="GlyphMaskAtlas"/>'s pages.</summary>
+    internal enum GlyphAtlasFormat : byte
+    {
+        /// <summary>One byte of coverage per texel.</summary>
+        Alpha8,
+
+        /// <summary>Premultiplied colour, four bytes per texel in R, G, B, A order.</summary>
+        Rgba,
+    }
+
     /// <summary>
     /// One A8 page of a <see cref="GlyphMaskAtlas"/>: <see cref="GlyphMaskAtlas.PageWidth"/>
     /// columns, rows grown on demand. The pixels live in a pinned array, so a backend can wrap
@@ -68,6 +78,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Row-major coverage, <see cref="GlyphMaskAtlas.PageWidth"/> bytes per row.</summary>
         public byte[] Pixels { get; private set; }
+
+        /// <summary>Bytes per texel: 1 for coverage, 4 for premultiplied RGBA.</summary>
+        public int BytesPerPixel => 1;
+
+        /// <summary>Bytes per row of <see cref="Pixels"/>.</summary>
+        public int RowBytes => GlyphMaskAtlas.PageWidth * BytesPerPixel;
 
         /// <summary>The allocated rows.</summary>
         public int Height { get; private set; }
@@ -212,11 +228,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// The budget the atlas charges its pages to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
         /// </param>
         /// <param name="perTypeface">Whether the atlas holds the masks of one typeface.</param>
-        public GlyphMaskAtlas(GlyphCacheBudget? budget = null, bool perTypeface = false)
+        /// <param name="format">The texel layout of the pages.</param>
+        public GlyphMaskAtlas(GlyphCacheBudget? budget = null, bool perTypeface = false,
+            GlyphAtlasFormat format = GlyphAtlasFormat.Alpha8)
         {
             _clock = budget ?? GlyphCacheBudget.Shared;
             _handle = _clock.Register(GlyphCachePoolKind.Atlas, this, perTypeface);
+            Format = format;
         }
+
+        /// <summary>The texel layout of the pages.</summary>
+        public GlyphAtlasFormat Format { get; }
 
         /// <summary>
         /// The atlas of every typeface drawn on contexts that update part of a page in place,

@@ -24,6 +24,14 @@ namespace Avalonia.Skia
         /// </summary>
         /// <returns>The texture, or <c>null</c> when the backend or Skia refuse it.</returns>
         ISkiaUpdatableTexture? TryCreateAlpha8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes);
+
+        /// <summary>
+        /// Makes a premultiplied RGBA texture holding <paramref name="height"/> rows of
+        /// <paramref name="pixels"/>, four bytes per texel in R, G, B, A order, rows
+        /// <paramref name="rowBytes"/> apart, wrapped once as an image of the context.
+        /// </summary>
+        /// <returns>The texture, or <c>null</c> when the backend or Skia refuse it.</returns>
+        ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes);
     }
 
     /// <summary>A single-channel texture of one GPU context that is updated in place.</summary>
