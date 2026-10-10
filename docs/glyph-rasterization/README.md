@@ -26,11 +26,11 @@ Inside managed mode every glyph run is dispatched through up to three tiers, in 
 
 | Tier | Handles | Technique |
 | --- | --- | --- |
-| Run masks | axis-aligned text up to 160 px/em | per-glyph 8-bit coverage masks composed into one immutable run bitmap, cached per run |
+| Upright masks | axis-aligned text up to 160 px/em | hinted per-glyph 8-bit coverage masks; CPU surfaces blend the run's cached coverage directly, hardware GPUs draw sprites from the glyph atlas in batched draws, other contexts compose a cached run mask |
 | Transformed masks | rotated, skewed and very large text | per-glyph masks rasterized unhinted under the device transform's quantized linear part, blended into raster surfaces or drawn from the typeface's glyph atlas in one batched call on GPU contexts; an animating transform re-rasterizes every frame into transient buffers (software GL stretches the settled batch instead) |
 | Native blob | anything the first two decline | the backend's own text stack (`SKTextBlob` on Skia) |
 
-A declined draw always falls through to the next tier; there is no configuration in which text silently fails to render. The mask tier is the workhorse: warm frames draw pre-composed bitmaps with zero allocations and, measured on the development machine, run about 30% faster than the Skia blob path for typical UI scenes.
+A declined draw always falls through to the next tier; there is no configuration in which text silently fails to render. The mask tier is the workhorse: warm frames allocate nothing. On CPU surfaces a run's cached coverage is blended straight into the surface pixels; on hardware GPUs glyphs are drawn as sprites from shared atlas pages, and the runs of a frame are batched into a few draws (see [gpu-atlas.md](gpu-atlas.md)).
 
 ## The two hook altitudes
 
@@ -40,8 +40,10 @@ Monochrome glyphs, COLR v0 layer glyphs and bitmap strikes are handled server si
 
 | Document | Covers |
 | --- | --- |
+| [architecture.md](architecture.md) | layers, data flow on CPU and GPU, backend seams, caches and the budget, threads |
 | [pipeline.md](pipeline.md) | run creation, draw dispatch, triage rules, fallback chain |
-| [masks.md](masks.md) | contour capture, the analytic rasterizer, mask keys and caches, run composition, gamma |
+| [masks.md](masks.md) | contour capture, the analytic rasterizer and its SIMD paths, mask keys and caches, the glyph cache budget, run composition, CPU blending, gamma |
+| [gpu-atlas.md](gpu-atlas.md) | atlas pages and the shared atlas, sprite grouping, frame-level batching, state folding, page texture uploads per backend |
 | [hinting.md](hinting.md) | the hinting ladder, the TrueType bytecode engine, the fallback auto-hinter (zones, stroke fit, stem snapping), pen snapping |
 | [subpixel.md](subpixel.md) | LCD subpixel rendering: eligibility, mask format, GPU blender, CPU two-pass |
 | [color-glyphs.md](color-glyphs.md) | COLR v0 mask stacks, COLR v1 paint graphs, layers and composites |
@@ -54,30 +56,45 @@ Monochrome glyphs, COLR v0 layer glyphs and bitmap strikes are handled server si
 ```
 src/Avalonia.Base/Media/Fonts/Rasterization/   the backend-neutral core
     GlyphPathBuilder.cs      contour capture sink
-    GlyphRasterizer.cs       analytic scanline rasterizer
-    GlyphMask*.cs            per-glyph mask model, key, cache, builder
-    RunMask*.cs              run-level composition and cache
-    MaskGlyphRunRenderer.cs  mask tier dispatch and composition policy
-    MaskGlyphRunRenderer.Transformed.cs  transformed mask tier: rotated, skewed and large text
-    GlyphMaskAtlas.cs        per-typeface glyph atlas for GPU draws
+    GlyphRasterizer*.cs      analytic scanline rasterizer, scalar and SIMD paths
+    GlyphMask*.cs            per-glyph mask model, key, cache, builder, atlas, blitter
+    GlyphAtlasBatchBuilder.cs groups a run's sprites by atlas page
+    GlyphCacheBudget.cs      one byte limit for every glyph cache
+    RunMask*.cs, RunCoverage.cs  run-level composition and cache
+    LcdMaskBlitter.cs        one-pass subpixel blend into CPU surfaces
+    LcdRunAtlas.cs           shared atlas of subpixel run masks
+    MaskGlyphRunRenderer*.cs tier dispatch, upright, transformed and transient tiers
+    TransformedGlyphSprites.cs, UprightAtlasDecision.cs  per-run sprite state
     MaskGamma.cs             gamma/contrast coverage correction
     VerticalGridFit.cs       vertical zone and stroke fitting (auto-hinter)
-    StemFit.cs               edge detection, horizontal stem snapping
+    StemFit.cs, StemWidthTable.cs  edge detection, stem snapping, width unification
+    GlyphSimulation.cs       synthetic bold and oblique
     TrueType/                the TrueType bytecode interpreter (see hinting.md)
-    IAlphaGlyphMaskContext.cs backend capability seam for A8/LCD fast paths
-    ColorGlyphRunSplitter.cs record-time COLR v1 / bitmap split
+    ITransformedGlyphContext.cs, IAlphaGlyphMaskContext.cs  backend seams
+    ColorGlyphRunSplitter.cs, ColorGlyphSegments.cs  COLR v1 / bitmap splits
     IBitmapGlyphDecoder.cs   image decoder seam for bitmap strikes
     ManagedGlyphRunImpl.cs   the managed glyph run implementation
+    GlyphRasterDiagnostics.cs, GlyphPhaseTimers.cs  internal counters and timers
+src/Avalonia.Base/Media/TextRasterizationDefaults.cs  per-platform default mode
+src/Avalonia.Base/Media/Fonts/SfntFace.cs      font file view: tables as slices of shared, memory-mapped file data
 src/Avalonia.Base/Media/Fonts/Tables/Colr/     COLR/CPAL parsing and painters
 src/Avalonia.Base/Media/Fonts/Tables/Bitmaps/  CBDT/CBLC, sbix, IBitmapGlyphSource
 src/Skia/Avalonia.Skia/                        Skia-side implementations
-    NativeTextBlob.cs           lazy native blob fallback for managed runs
+    DrawingContextImpl.GlyphBatch.cs   pending batches and flushes
+    DrawingContextImpl.GlyphAtlas.cs   page images and textures, blit targets, sprite draws
+    DrawingContextImpl.Clips.cs        deferred clips and sprite trimming
+    DrawingContextImpl.LcdBatch.cs     subpixel atlas batch
+    Gpu/ISkiaUpdatableTextureFeature.cs   page texture contract and registration
+    Gpu/OpenGl/GlUpdatableTextureFeature.cs, Gpu/Vulkan/VulkanUpdatableTextureFeature.cs
+    Gpu/SkiaGpuRasterizer.cs, Gpu/SkiaVertexColorPrecision.cs  context classification
+    NativeTextBlob.cs, ManagedGlyphOutlines.cs  native blob and outline fallbacks
     LcdTextBlender.cs           runtime SkSL blender for subpixel text
     MaskGammaFilters.cs         per-bucket color filters for gamma
-    SkiaFontData.cs             zero-copy font table access
     SkiaBitmapGlyphDecoder.cs   PNG/JPEG strike decoding
+    TextTierDiagnostics.cs      tier counters and badges
 samples/GlyphRasterDemo/                       capability tour and A/B visual review surface
-samples/TextLab/Rasterization/             pipeline inspector, glyph explorer, doc figure export
+samples/TextLab/                               pipeline inspector, glyph explorer, doc figure export
+samples/TextStress/                            full-pipeline throughput benchmark (desktop and Android)
 ```
 
 ## Status
