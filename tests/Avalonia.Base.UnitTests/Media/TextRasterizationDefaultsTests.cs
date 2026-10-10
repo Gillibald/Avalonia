@@ -32,7 +32,8 @@ namespace Avalonia.Base.UnitTests.Media
         [InlineData(nameof(TextRasterizationPlatform.Linux), Architecture.X64)]
         [InlineData(nameof(TextRasterizationPlatform.Linux), Architecture.Arm64)]
         [InlineData(nameof(TextRasterizationPlatform.MacOS), Architecture.X64)]
-        [InlineData(nameof(TextRasterizationPlatform.Android), Architecture.Arm64)]
+        [InlineData(nameof(TextRasterizationPlatform.Android), Architecture.X64)]
+        [InlineData(nameof(TextRasterizationPlatform.Android), Architecture.Arm)]
         [InlineData(nameof(TextRasterizationPlatform.IOS), Architecture.Arm64)]
         [InlineData(nameof(TextRasterizationPlatform.Windows), Architecture.X86)]
         [InlineData(nameof(TextRasterizationPlatform.Other), Architecture.X64)]
@@ -43,6 +44,45 @@ namespace Avalonia.Base.UnitTests.Media
             Assert.Equal(TextRasterizationMode.Backend,
                 TextRasterizationDefaults.Resolve(null, Enum.Parse<TextRasterizationPlatform>(platform),
                     architecture));
+        }
+
+        [Fact]
+        public void Android_Gpu_Rendering_Defaults_To_Managed()
+        {
+            Assert.Equal(TextRasterizationMode.Managed,
+                TextRasterizationDefaults.Resolve(null, TextRasterizationPlatform.Android, Architecture.Arm64,
+                    rendersInSoftware: false));
+        }
+
+        [Fact]
+        public void Android_Software_Rendering_Defaults_To_Backend()
+        {
+            Assert.Equal(TextRasterizationMode.Backend,
+                TextRasterizationDefaults.Resolve(null, TextRasterizationPlatform.Android, Architecture.Arm64,
+                    rendersInSoftware: true));
+        }
+
+        [Theory]
+        [InlineData(TextRasterizationMode.Managed, true)]
+        [InlineData(TextRasterizationMode.Backend, false)]
+        public void Explicit_Mode_On_Android_Wins_Over_The_Render_Path(TextRasterizationMode mode,
+            bool rendersInSoftware)
+        {
+            Assert.Equal(mode,
+                TextRasterizationDefaults.Resolve(mode, TextRasterizationPlatform.Android, Architecture.Arm64,
+                    rendersInSoftware));
+        }
+
+        [Theory]
+        [InlineData(nameof(TextRasterizationPlatform.Windows), Architecture.X64, TextRasterizationMode.Managed)]
+        [InlineData(nameof(TextRasterizationPlatform.MacOS), Architecture.Arm64, TextRasterizationMode.Managed)]
+        [InlineData(nameof(TextRasterizationPlatform.Linux), Architecture.X64, TextRasterizationMode.Backend)]
+        public void Software_Rendering_Keeps_The_Default_Of_Other_Platforms(string platform,
+            Architecture architecture, TextRasterizationMode expected)
+        {
+            Assert.Equal(expected,
+                TextRasterizationDefaults.Resolve(null, Enum.Parse<TextRasterizationPlatform>(platform),
+                    architecture, rendersInSoftware: true));
         }
 
         [Fact]

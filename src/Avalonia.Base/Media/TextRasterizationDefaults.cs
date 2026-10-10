@@ -34,11 +34,11 @@ namespace Avalonia.Media
 
         /// <summary>
         /// Returns <paramref name="explicitMode"/> when the application chose one, otherwise the
-        /// default for <paramref name="platform"/> and <paramref name="architecture"/>.
+        /// default for <paramref name="platform"/>, <paramref name="architecture"/> and the render path.
         /// </summary>
         public static TextRasterizationMode Resolve(TextRasterizationMode? explicitMode,
-            TextRasterizationPlatform platform, Architecture architecture)
-            => explicitMode ?? ForPlatform(platform, architecture);
+            TextRasterizationPlatform platform, Architecture architecture, bool rendersInSoftware = false)
+            => explicitMode ?? ForPlatform(platform, architecture, rendersInSoftware);
 
         /// <summary>
         /// Managed rasterization is the default only where it was measured against the backend
@@ -46,7 +46,7 @@ namespace Avalonia.Media
         /// stays the default.
         /// </summary>
         public static TextRasterizationMode ForPlatform(TextRasterizationPlatform platform,
-            Architecture architecture)
+            Architecture architecture, bool rendersInSoftware = false)
             => (platform, architecture) switch
             {
                 (TextRasterizationPlatform.Windows, Architecture.X64) => TextRasterizationMode.Managed,
