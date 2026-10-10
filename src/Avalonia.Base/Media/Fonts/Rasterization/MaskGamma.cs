@@ -3,45 +3,52 @@ using System;
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// Coverage correction for monochrome text — the reason backend text reads crisp while
-    /// naively blended coverage reads thin and soft. Blending happens in gamma-encoded device
-    /// space, so linear coverage produces the wrong intermediate tones; like the platform text
-    /// stacks (Skia's mask gamma, DirectWrite's ClearType tables), this precompensates each
-    /// coverage value so the device-space blend lands on the tone a linear-light blend would
-    /// have produced, plus a contrast boost that steepens the edge profile.
+    /// Coverage correction for monochrome text. Blending happens in gamma-encoded device space,
+    /// where the platform text stacks do not blend raw coverage linearly either: each coverage
+    /// value is mapped through a per-luminance table before the device-space blit, so text
+    /// carries the weight the platform gives it.
     /// </summary>
     /// <remarks>
-    /// Tables are keyed by the text color's luminance (8 buckets, top 3 bits — the platform
-    /// convention) and assume the destination is the opposite extreme, the same guess the
-    /// platform tables make: the correction is exact for dark-on-light and light-on-dark text
-    /// and tapers off in between. Color glyph layers must NOT go through this — the transform
-    /// is non-linear, so abutting layers whose coverages sum to full would show seams.
+    /// Tables are keyed by the text color's luminance (8 buckets, top 3 bits, the platform
+    /// convention). Grayscale tables reproduce DirectWrite's grayscale blend per bucket; the LCD
+    /// tables are a separate family built with Skia's mask-gamma model, which assumes the
+    /// destination is the opposite extreme of the text color. Color glyph layers must NOT go
+    /// through this: the transform is non-linear, so abutting layers whose coverages sum to
+    /// full would show seams.
     /// </remarks>
     internal static class MaskGamma
     {
-        /// <summary>Contrast boost applied to source coverage; the platform-typical value.</summary>
-        internal const double Contrast = 0.5;
+        /// <summary>
+        /// Grayscale transfer per luminance bucket: coverage c maps to c + c(1 - c)(A + B c),
+        /// least-squares fitted to the effective alpha that DirectWrite's grayscale blend gives
+        /// raw coverage (default rendering parameters: gamma 1.8, grayscale enhanced contrast
+        /// 1.0) for gray text at the bucket's luminance, over 5 fonts at 9-16 px; every bucket
+        /// within RMS 3.4/255 of the measurement. Black text blends almost linearly; lighter
+        /// text comes out heavier than its raw coverage, white text most. The form keeps 0 and
+        /// 1 fixed, and with these coefficients its slope stays above 0.5 on [0, 1], so every
+        /// table is monotonic.
+        /// </summary>
+        private static readonly (double A, double B)[] s_grayscaleTransfer =
+        {
+            (-0.040, -0.158), (0.315, -0.449), (0.613, -0.642), (0.978, -0.956),
+            (1.093, -1.049), (0.900, -0.914), (0.928, -0.776), (1.127, -0.734),
+        };
 
         /// <summary>
-        /// The LCD channels take a deliberately weaker correction than grayscale: subpixel
-        /// coverage already triples effective edge resolution, and grayscale-strength
-        /// boosting hardens stems past the platform look and saturates the fringes — Windows
-        /// runs ClearType near gamma 1.8 against 2.2-class grayscale for the same reason.
-        /// Values picked by the LCD_GAMMA_CALIBRATION probe:
+        /// The LCD channels take their own family: subpixel coverage already triples effective
+        /// edge resolution, and a strong boost hardens stems past the platform look and
+        /// saturates the fringes. Values picked by the LCD_GAMMA_CALIBRATION probe:
         /// per-candidate RMSE against the DirectWrite-host LCD blob at identical glyphs,
-        /// pens and hinting — measured optimum 1.6/0.20 (aggregate RMSE 88.4 across
-        /// 11-24 px vs 102.0 for grayscale-strength 2.2/0.50 and 111.9 for no correction).
+        /// pens and hinting, measured optimum 1.6/0.20 (aggregate RMSE 88.4 across
+        /// 11-24 px vs 102.0 for 2.2/0.50 and 111.9 for no correction).
         /// </summary>
         internal const double LcdContrast = 0.2;
         internal const double LcdGamma = 1.6;
 
-        /// <summary>Gamma exponent approximating the sRGB transfer curve for both endpoints.</summary>
-        internal const double Gamma = 2.2;
-
         private const int LuminanceBits = 3;
         private const int TableCount = 1 << LuminanceBits;
 
-        private static readonly byte[][] s_tables = BuildTables(Contrast, Gamma);
+        private static readonly byte[][] s_tables = BuildGrayscaleTables();
         private static readonly byte[][] s_lcdTables = BuildTables(LcdContrast, LcdGamma);
 
         /// <summary>
@@ -140,6 +147,29 @@ namespace Avalonia.Media.Fonts.Rasterization
         // Replicate the bucket bits across the byte so bucket 0 keys pure black and the last
         // bucket pure white.
         private static int ReplicateBucket(int bucket) => (bucket << 5) | (bucket << 2) | (bucket >> 1);
+
+        private static byte[][] BuildGrayscaleTables()
+        {
+            var tables = new byte[TableCount][];
+
+            for (var i = 0; i < TableCount; i++)
+            {
+                var (a, b) = s_grayscaleTransfer[i];
+                var table = new byte[256];
+
+                for (var j = 0; j < 256; j++)
+                {
+                    var coverage = j / 255.0;
+                    var result = coverage + coverage * (1.0 - coverage) * (a + b * coverage);
+
+                    table[j] = (byte)Math.Clamp((int)Math.Round(255.0 * result), 0, 255);
+                }
+
+                tables[i] = table;
+            }
+
+            return tables;
+        }
 
         private static byte[][] BuildTables(double contrast, double gamma)
         {

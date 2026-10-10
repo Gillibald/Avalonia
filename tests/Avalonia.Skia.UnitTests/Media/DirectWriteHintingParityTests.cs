@@ -111,7 +111,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static byte[] ComposeGrayscale(GlyphTypeface typeface, float size, int[] pens,
             int width, int height, bool stemSnap)
         {
-            var table = MaskGamma.BuildCalibrationTable(0, MaskGamma.Contrast, MaskGamma.Gamma);
+            var table = MaskGamma.GetTable(0, 0, 0);
             var luma = new byte[width * height];
 
             Array.Fill(luma, (byte)255);

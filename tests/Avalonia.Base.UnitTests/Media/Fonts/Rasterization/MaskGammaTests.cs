@@ -96,31 +96,24 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             Assert.Same(straight, premul);
         }
 
-        [Fact]
-        public void Lcd_Correction_Is_Weaker_Than_Grayscale()
+        [Theory]
+        [InlineData(0, 64, 49)]
+        [InlineData(0, 128, 101)]
+        [InlineData(0, 191, 158)]
+        [InlineData(255, 64, 107)]
+        [InlineData(255, 128, 166)]
+        [InlineData(255, 191, 213)]
+        public void Lcd_Tables_Keep_Their_Own_Calibration(int luminance, int coverage, int expected)
         {
-            // The LCD channels take the calibrated gentler transfer (1.6/0.20 measured
-            // against the DirectWrite-host LCD blob); grayscale keeps 2.2/0.50. For dark
-            // text the LCD boost must sit strictly below the grayscale boost through the
-            // midtones, with both endpoint-pinned.
-            var gray = MaskGamma.GetTable(0, 0, 0);
-            var lcd = MaskGamma.GetLcdTable(0, 0, 0);
+            // The LCD channels keep the family calibrated against the DirectWrite-host LCD blob
+            // (contrast 0.2, gamma 1.6), independent of the grayscale tables.
+            var level = (byte)luminance;
+            var lcd = MaskGamma.GetLcdTable(level, level, level);
 
+            Assert.NotSame(MaskGamma.GetTable(level, level, level), lcd);
             Assert.Equal(0, lcd[0]);
             Assert.Equal(255, lcd[255]);
-            Assert.NotSame(gray, lcd);
-
-            // "Weaker" precisely: the LCD transfer deviates less from linear coverage than
-            // the grayscale transfer through the working range, on whichever side of linear
-            // the curves sit (both dip below it in the low-mid tail for dark text).
-            for (var coverage = 32; coverage <= 224; coverage += 16)
-            {
-                var lcdDeviation = System.Math.Abs(lcd[coverage] - coverage);
-                var grayDeviation = System.Math.Abs(gray[coverage] - coverage);
-
-                Assert.True(lcdDeviation <= grayDeviation,
-                    $"coverage {coverage}: lcd deviates {lcdDeviation}, grayscale {grayDeviation}");
-            }
+            Assert.Equal(expected, lcd[coverage]);
         }
     }
 }

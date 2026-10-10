@@ -34,7 +34,7 @@ namespace Avalonia.Skia.UnitTests.Media
             double[] levels = { 1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.35, 0.2, 0.0 };
 
             var lcdTable = MaskGamma.BuildCalibrationTable(0, 0.2, 1.6);     // production LCD family
-            var grayTable = MaskGamma.BuildCalibrationTable(0, 0.5, 2.2);    // production grayscale family
+            var grayTable = MaskGamma.GetTable(0, 0, 0);                     // production grayscale table
 
             var levelTotals = new double[levels.Length];
             double grayTotal = 0;
