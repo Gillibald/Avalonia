@@ -10,7 +10,7 @@ The builder also hosts the hinting warps: `ApplyVerticalWarp` and `ApplyHorizont
 
 ## Rasterization: GlyphRasterizer
 
-[GlyphRasterizer](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphRasterizer.cs) is an analytic cell-coverage scanline rasterizer in the font-rs family: exact area coverage per pixel, no supersampling, nonzero and even-odd fill rules, an aliased threshold mode, pooled transient buffers and bit-deterministic output (the same contours produce the same bytes on every platform). Determinism is what makes cross-machine golden tests possible.
+[GlyphRasterizer](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphRasterizer.cs) is an analytic cell-coverage scanline rasterizer in the font-rs family: exact area coverage per pixel, no supersampling, nonzero and even-odd fill rules, an aliased threshold mode, pooled transient buffers and bit-deterministic output (the same contours produce the same bytes on every platform). Determinism is what makes cross-machine golden tests possible. Curves flatten into uniform chords to `FlattenTolerance = 0.02` px: every chord cuts the convex side of its curve, so the tolerance is ink lost along curved edges, and at text sizes a coarse tolerance draws whole bowl segments as single chords (Courier New 'o' at 12 px keeps 84 % of its ink at 0.25 px). At 0.02 px coverage stays within 8 levels of the exact curve (mean under 1) over Latin and CJK glyphs at 9-96 px, for 13-60 % more rasterizer time: about 0.4 us per cold glyph at text sizes, 6-9 % of a whole mask build.
 
 ### SIMD paths
 

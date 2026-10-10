@@ -26,14 +26,22 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </remarks>
     internal static partial class GlyphRasterizer
     {
-        /// <summary>Maximum curve-to-chord deviation after flattening, in device pixels.</summary>
-        internal const float FlattenTolerance = 0.25f;
+        /// <summary>
+        /// Maximum curve-to-chord deviation after flattening, in device pixels. Every chord
+        /// cuts the convex side of its curve, so the deviation is ink lost along each curved
+        /// edge: at 0.25 px a 12 px Courier New 'o' draws most of its curves as single chords and
+        /// keeps 84 % of its ink. At 0.02 px coverage stays within a few levels of the exact
+        /// curve (Courier New 12 px 'o' within 4 levels) for about 0.4 us more per cold glyph
+        /// mask at text sizes, under a tenth of a whole mask build.
+        /// </summary>
+        internal const float FlattenTolerance = 0.02f;
 
-        // Curves flatten into at most this many segments. The tolerance formulas reach it only at a
-        // second difference of about 65000 px (quadratic) or 21700 px (cubic); a curve whose
-        // control points stay inside a glyph mask (at most MaxMaskSize px square) has a second
-        // difference of at most twice the mask diagonal, about 11600 px. So it is a defensive
-        // bound against hostile outlines, not a quality knob.
+        // Curves flatten into at most this many segments. The tolerance formulas reach it at a
+        // second difference of about 5200 px (quadratic) or 1730 px (cubic), that is only in
+        // glyphs a few thousand pixels tall. A curve whose control points stay inside a glyph mask
+        // (at most MaxMaskSize px square) has a second difference of at most twice the mask
+        // diagonal, about 11600 px, which 256 pieces still follow to within 0.05 px (quadratic)
+        // or 0.14 px (cubic). The bound is a defence against hostile outlines.
         private const int MaxCurveSegments = 256;
 
         /// <summary>
