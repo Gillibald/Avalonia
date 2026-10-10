@@ -1,6 +1,6 @@
 # GPU atlas and batching
 
-On GPU contexts the cost of text is the number of draws, not rasterization: every `DrawAtlas` or `DrawVertices` becomes its own Skia op, and Skia does not merge them. The GPU path is therefore built to draw a frame's text in as few calls as possible: glyph masks live on shared atlas pages, a run's sprites are grouped by page, and `DrawingContextImpl` keeps runs pending across the state changes that do not affect them.
+On GPU contexts the cost of text is the number of draws, not rasterization: every `DrawAtlas` or `DrawVertices` becomes its own Skia op, and Skia does not merge them. The GPU path is therefore built to draw a frame's text in as few calls as possible: glyph masks live on shared atlas pages, a run's sprites are grouped by page, and `DrawingContextImpl` keeps runs pending across the state changes that do not affect them. Colour glyph content (COLR, bitmap strikes) takes the same path from premultiplied RGBA pages ([below](#colour-atlas-pages)).
 
 ## Atlas pages
 
@@ -20,7 +20,30 @@ Owner ids come from `GlyphTypeface.MaskOwnerId` (assigned once, never reused; si
 
 ### Shared or per typeface
 
-One process-wide atlas (`GlyphMaskAtlas.Shared`) serves every context whose `GRContext` has an updatable texture feature registered (see [architecture.md](architecture.md#seams-to-the-backend)): GL 3 / GLES 3 and later, WebGL 2, Vulkan. Those contexts upload only the rectangle a frame wrote, so a page written by every typeface costs little to keep current. Other contexts (Metal, older GL, WebGL 1) keep one atlas per typeface, because each new page version there becomes a new `SKImage` that Skia uploads whole (up to 2 MB).
+One process-wide atlas (`GlyphMaskAtlas.Shared`) serves every context whose `GRContext` has an updatable texture feature registered (see [architecture.md](architecture.md#seams-to-the-backend)): GL 3 / GLES 3 and later, WebGL 2, Vulkan. Those contexts upload only the rectangle a frame wrote, so a page written by every typeface costs little to keep current. Other contexts (Metal, older GL, WebGL 1) keep one atlas per typeface, because each new page version there becomes a new `SKImage` that Skia uploads whole (up to 2 MB). The colour atlas follows the same rule: `GlyphMaskAtlas.SharedColor` where the A8 atlas is shared, `GlyphTypeface.ColorAtlas` elsewhere.
+
+## Colour atlas pages
+
+An atlas of `GlyphAtlasFormat.Rgba` pages holds premultiplied colour, four bytes per texel in R, G, B, A order (the one byte order GL 3, GLES 3 and WebGL 2 upload without an extension, and Vulkan's mandatory `R8G8B8A8_UNORM`); masks arrive as BGRA and are swizzled when placed. Pages, shelves, gutters, dirty rectangles, eviction and budget charging are those of the A8 atlas, at four bytes per texel (a full page is 8 MB).
+
+On hardware GPU contexts an upright run of a colour typeface draws from colour pages instead of composing a run-mask texture per run. Each glyph's share of the pre-tinted run mask becomes an entry (`ColorAtlasEntry`), holding exactly the bytes the run-mask compose writes for that glyph onto transparent:
+
+| Entry | Pixels | Key beyond the glyph and scale |
+|---|---|---|
+| `PaintGraph` | the COLR v1 colour mask ([color-glyphs.md](color-glyphs.md#colour-masks-managed-upright)) | phase; the text colour when the paint uses the 0xFFFF sentinel |
+| `Layers` | the COLR v0 layers composed tinted, without gamma | phase, mode, grid fit; the tint when a layer uses the sentinel |
+| `Strike` | the bitmap strike scaled nearest | none |
+| `Outline` | an outline glyph tinted through its bucket's gamma table | the full mask key and the tint |
+
+The entry key is `GlyphAtlasEntryKey` with `Bucket` naming the entry kind and `Color` the baked colour. Colour sprites (`TransformedSpriteKind.Color`) draw untinted: the context draws them white, the ambient opacity in the alpha, so Skia passes the texel through at opacity 1. Pending batches are keyed by page as for A8 text, so colour and A8 batches of a frame pend, order, fold state and flush under the same rules.
+
+| Property | Rule |
+|---|---|
+| Pixels | the run mask's: entries hold its bytes, both draws sample one texel per pixel at whole pixels; below opacity 1 the per-sprite alpha may round a level apart from the run mask's paint alpha |
+| Overlap | a run whose glyphs share an inked pixel keeps its run mask: the run mask blends overlapping glyphs into each other in 8 bits before the target, which sprites drawn one after the other cannot reproduce |
+| Storage | an upright v1 mask comes from the colour mask cache on a hit and is otherwise rasterized for the page alone, so the page is its only copy |
+| Zoom | a zooming colour run stretches its last static sprites bilinearly within the stretch band; beyond it the run-mask path decides |
+| Transformed | a static rotated, skewed or anisotropically scaled run with COLR v1 glyphs takes the transformed tier: each paint graph is rasterized once under the quantized transform and both phases into a `PaintGraph` entry and drawn beside the run's A8 sprites; an animating transform keeps the vector replay |
 
 ## From a run to sprites
 
@@ -72,9 +95,9 @@ Everything else (layers, effects, opacity masks, region and geometry clips, othe
 | Context | Upload of a changed page |
 |---|---|
 | With `ISkiaUpdatableTextureFeature` | one texture per page and `GRContext`, created with the page's content; later frames upload `TakeWritten`'s rectangle in place. The image, shader and paint stay the same across versions. Draws recorded earlier in the frame see the new texels at flush, which is safe because they only sample entries the atlas never rewrites. Growth, another context or a lost context create a new texture uploaded whole. Textures are freed on the thread that created them |
-| GL / GLES / WebGL 2 | `glTexSubImage2D` of the rectangle from the pinned page array with `GL_UNPACK_ROW_LENGTH`, then `GRContext.ResetContext` |
-| Vulkan | rows packed into a host-visible staging buffer (ring of 4 slots, each kept at most 256 KB after a whole-page upload), one command buffer: barrier to `TRANSFER_DST`, `vkCmdCopyBufferToImage`, barrier back to `SHADER_READ_ONLY`, `vkQueueSubmit` on the main queue under the device lock; queue order places the copy after Skia's submitted work and before its unsubmitted work |
-| Without the feature | `SKImage.FromPixels` over the pinned page array, once per version; Skia uploads that image whole the first time it draws it |
+| GL / GLES / WebGL 2 | `glTexSubImage2D` of the rectangle from the pinned page array with `GL_UNPACK_ROW_LENGTH`, then `GRContext.ResetContext`; `GL_R8` textures for A8 pages, `GL_RGBA8` uploaded as `GL_RGBA` for colour pages |
+| Vulkan | rows packed into a host-visible staging buffer (ring of 4 slots, each kept at most 256 KB after a whole-page upload), one command buffer: barrier to `TRANSFER_DST`, `vkCmdCopyBufferToImage`, barrier back to `SHADER_READ_ONLY`, `vkQueueSubmit` on the main queue under the device lock; queue order places the copy after Skia's submitted work and before its unsubmitted work; `R8_UNORM` or `R8G8B8A8_UNORM` images |
+| Without the feature | `SKImage.FromPixels` over the pinned page array (`Alpha8` or `Rgba8888`), once per version; Skia uploads that image whole the first time it draws it |
 
 ## Subpixel text on GPUs
 

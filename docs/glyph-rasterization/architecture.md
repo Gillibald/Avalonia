@@ -110,7 +110,7 @@ glyph ids + pens
         page texture updated in place (dirty rectangle) where the context supports it
 ```
 
-Software GPUs (llvmpipe, lavapipe, SwiftShader, WARP), subpixel runs and zoom gestures compose a run mask instead (A8 through `IAlphaGlyphMaskContext.CreateAlphaMask`, or RGBA for subpixel) and draw it tinted. Subpixel runs on hardware GPUs go into the shared `LcdRunAtlas` and batch across runs through a runtime blender.
+Software GPUs (llvmpipe, lavapipe, SwiftShader, WARP), subpixel runs and zoom gestures compose a run mask instead (A8 through `IAlphaGlyphMaskContext.CreateAlphaMask`, or RGBA for subpixel) and draw it tinted. Subpixel runs on hardware GPUs go into the shared `LcdRunAtlas` and batch across runs through a runtime blender. Runs of colour typefaces (COLR, bitmap strikes) on hardware GPUs place each glyph's share of their pre-tinted run mask on premultiplied RGBA pages of a colour atlas and batch like A8 text (see [gpu-atlas.md](gpu-atlas.md#colour-atlas-pages)).
 
 ### Transformed text
 
@@ -124,6 +124,7 @@ The managed side talks to the backend through two internal interfaces in `Avalon
 |---|---|---|
 | `ITransformedGlyphContext` | `RasterTarget` | `Raster`, `SoftwareGpu` or `HardwareGpu`; decides atlas vs run masks, re-raster vs stretch |
 | | `MaskAtlas` | the shared atlas, or null to use each typeface's own atlas |
+| | `ColorAtlas` | the shared colour atlas (RGBA pages), or null to use each typeface's own |
 | | `TryGetBlitTarget` | direct access to CPU surface pixels |
 | | `CreateAtlasBatch`, `DrawAtlasBatch` | realize a batch's sprite arrays; draw sprites from atlas pages, tinted, nearest or bilinear |
 | | `CreateTransientImage`, `DrawTransientSprites` | one-frame A8 images for animated text |
@@ -140,6 +141,7 @@ Inside the Skia backend, page textures go through `ISkiaUpdatableTextureFeature`
 internal interface ISkiaUpdatableTextureFeature
 {
     ISkiaUpdatableTexture? TryCreateAlpha8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes);
+    ISkiaUpdatableTexture? TryCreateRgba8(int width, int height, ReadOnlySpan<byte> pixels, int rowBytes);
 }
 
 internal interface ISkiaUpdatableTexture : IDisposable
@@ -149,13 +151,13 @@ internal interface ISkiaUpdatableTexture : IDisposable
 }
 ```
 
-`SkiaUpdatableTextures.Register` ties a feature and the atlas to use to a `GRContext`. Where a feature is registered, the context uses the process-wide shared atlas; elsewhere each typeface keeps its own atlas and a page is re-wrapped and uploaded whole when it changes. See [gpu-atlas.md](gpu-atlas.md).
+`SkiaUpdatableTextures.Register` ties a feature and the atlases to use (A8 and colour) to a `GRContext`. Where a feature is registered, the context uses the process-wide shared atlases; elsewhere each typeface keeps its own and a page is re-wrapped and uploaded whole when it changes. See [gpu-atlas.md](gpu-atlas.md).
 
 | Context | Updatable textures | Atlas |
 |---|---|---|
-| OpenGL 3+ / GLES 3+ (WGL, ANGLE, desktop GL, Mesa) | `GlUpdatableTextureFeature`: R8 texture, `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH` | shared |
+| OpenGL 3+ / GLES 3+ (WGL, ANGLE, desktop GL, Mesa) | `GlUpdatableTextureFeature`: R8 and RGBA8 textures, `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH` | shared |
 | WebGL 2 (browser) | same feature; signatures declared for Mono's WebAssembly trampolines | shared |
-| Vulkan | `VulkanUpdatableTextureFeature`: R8 image, staging ring, `vkCmdCopyBufferToImage` between barriers | shared |
+| Vulkan | `VulkanUpdatableTextureFeature`: R8 and R8G8B8A8 images, staging ring, `vkCmdCopyBufferToImage` between barriers | shared |
 | Metal, GL below 3, WebGL 1 | none | per typeface, whole-page uploads |
 | CPU raster | not needed (direct blends) | per typeface |
 
@@ -167,6 +169,7 @@ internal interface ISkiaUpdatableTexture : IDisposable
 | `GlyphMaskCache` | typeface (simulated variants share their base face's) | per-glyph masks; entries above 512 KB are never cached |
 | `TrueTypeHinterCache` | typeface | hinter size states per (scale, mask mode) |
 | `GlyphMaskAtlas` | process (`Shared`) or typeface | A8 pages, 1024 wide, up to 2048 rows |
+| `GlyphMaskAtlas` (colour) | process (`SharedColor`) or typeface | premultiplied RGBA pages of colour glyph content, same geometry |
 | `LcdRunAtlas` | process | RGBA pages of whole-run subpixel masks |
 | `RunMaskCache` | run | primary slot plus three secondaries: run coverage, pre-tinted chunks, LCD payloads, alpha masks |
 | sprite sets | run | sprites and kept geometry per luminance bucket |
