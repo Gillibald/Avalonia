@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Platform;
+using Avalonia.Rendering.Composition.Drawing;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -241,14 +242,33 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static void DrawGlyph(DrawingContext context, GlyphTypeface typeface, ushort glyph,
             GlyphDrawingOptions? drawingOptions, double scale, Point pen)
         {
-            // Fetched with the run's foreground so sentinel palette entries resolve to it
-            // (foreground-bearing drawings build uncached; the plain probe stayed on the cached
-            // path). Drawings render in font design units (the Y-flip is internal): scale to
-            // the run's em size and land the local origin on the pen.
+            // Drawings render in font design units (the Y-flip is internal): scale to the run's em
+            // size and land the local origin on the pen.
+            var transform = Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(pen.X, pen.Y);
+
+            // The two contexts that take recordings replay the glyph's cached recording: the same
+            // calls the live drawing makes, without building and walking its paint graph per draw.
+            // The lease keeps the cache from disposing the recording during the replay; render
+            // data takes its own reference to it.
+            if (UseRecordings && context is RenderDataDrawingContext or PlatformDrawingContext &&
+                typeface.GetGlyphRecording(glyph, drawingOptions) is { } recorded && recorded.TryAcquire())
+            {
+                try
+                {
+                    context.DrawRecording(recorded.Recording, transform);
+                }
+                finally
+                {
+                    recorded.Release();
+                }
+
+                return;
+            }
+
+            // Fetched with the run's foreground so sentinel palette entries resolve to it.
             var drawing = typeface.GetGlyphDrawing(glyph, drawingOptions)!;
 
-            using (context.PushTransform(
-                Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(pen.X, pen.Y)))
+            using (context.PushTransform(transform))
             {
                 drawing.Draw(context, default);
             }

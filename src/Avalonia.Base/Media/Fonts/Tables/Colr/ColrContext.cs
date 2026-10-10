@@ -15,7 +15,8 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             ColrTable colrTable,
             CpalTable cpalTable,
             int paletteIndex,
-            Color? foreground = null)
+            Color? foreground = null,
+            ColrForegroundUse? foregroundUse = null)
         {
             GlyphTypeface = glyphTypeface;
             ColrData = colrTable.ColrData;
@@ -23,6 +24,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             CpalTable = cpalTable;
             PaletteIndex = paletteIndex;
             Foreground = foreground;
+            ForegroundUse = foregroundUse;
         }
 
         public GlyphTypeface GlyphTypeface { get; }
@@ -36,6 +38,12 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         /// caller provided one. Null keeps the historical black fallback.
         /// </summary>
         public Color? Foreground { get; }
+
+        /// <summary>
+        /// Marked when the paint resolves the CPAL 0xFFFF sentinel, with or without a
+        /// <see cref="Foreground"/>: the resolved paint then depends on the text colour.
+        /// </summary>
+        public ColrForegroundUse? ForegroundUse { get; }
 
         /// <summary>The instance's normalized variation coordinates (empty at the default instance).</summary>
         public ReadOnlySpan<float> ActiveCoords => GlyphTypeface.ActiveVariationCoords;
@@ -151,5 +159,13 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
             return normalizedStops;
         }
+    }
+
+    /// <summary>Records whether a resolved COLR paint used the CPAL foreground sentinel.</summary>
+    internal sealed class ColrForegroundUse
+    {
+        public bool Used { get; private set; }
+
+        public void Mark() => Used = true;
     }
 }

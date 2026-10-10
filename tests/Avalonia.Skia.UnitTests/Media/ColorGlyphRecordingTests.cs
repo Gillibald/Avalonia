@@ -140,7 +140,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.NotNull(first);
             Assert.Same(first, second);
             Assert.False(first!.Recording.IsDisposed);
-            Assert.Null(typeface.GetGlyphRecording(glyphs[0], null));
+            // .notdef has no colour drawing in any of the fonts.
+            Assert.Null(typeface.GetGlyphRecording(0, null));
         }
 
         [Fact]

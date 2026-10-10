@@ -155,6 +155,11 @@ namespace Avalonia.Media.Fonts.Tables.Colr
 
                 Color color;
 
+                if (paletteIndex == 0xFFFF)
+                {
+                    context.ForegroundUse?.Mark();
+                }
+
                 if (paletteIndex == 0xFFFF && context.Foreground is { } foreground)
                 {
                     // CPAL sentinel: this stop follows the text foreground.

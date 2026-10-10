@@ -19,11 +19,14 @@ namespace Avalonia.Media.Fonts
     /// </remarks>
     internal readonly record struct GlyphCacheKey
     {
-        private GlyphCacheKey(ushort glyphIndex, GlyphPayloadKind kind, ushort paletteIndex)
+        private GlyphCacheKey(ushort glyphIndex, GlyphPayloadKind kind, ushort paletteIndex,
+            uint foreground = 0, bool hasForeground = false)
         {
             GlyphIndex = glyphIndex;
             Kind = kind;
             PaletteIndex = paletteIndex;
+            Foreground = foreground;
+            HasForeground = hasForeground;
         }
 
         /// <summary>The glyph id.</summary>
@@ -35,6 +38,15 @@ namespace Avalonia.Media.Fonts
         /// <summary>The normalized CPAL palette for colour drawings; 0 otherwise.</summary>
         public ushort PaletteIndex { get; }
 
+        /// <summary>
+        /// The ARGB text colour a colour recording resolved the CPAL foreground sentinel with, when
+        /// <see cref="HasForeground"/>; only recordings whose paint uses the sentinel are keyed by it.
+        /// </summary>
+        public uint Foreground { get; }
+
+        /// <summary>Whether <see cref="Foreground"/> is part of the key.</summary>
+        public bool HasForeground { get; }
+
         /// <summary>The key of a glyph's outline payload (composites are keyed as outlines).</summary>
         public static GlyphCacheKey Outline(ushort glyph)
             => new(glyph, GlyphPayloadKind.Outline, 0);
@@ -42,5 +54,14 @@ namespace Avalonia.Media.Fonts
         /// <summary>The key of a glyph's colour drawing resolved with <paramref name="palette"/>.</summary>
         public static GlyphCacheKey Color(ushort glyph, ushort palette)
             => new(glyph, GlyphPayloadKind.ColorDrawing, palette);
+
+        /// <summary>
+        /// The key of a glyph's colour recording resolved with <paramref name="palette"/>, and with
+        /// <paramref name="foreground"/> for a paint that uses the CPAL foreground sentinel.
+        /// </summary>
+        public static GlyphCacheKey Recording(ushort glyph, ushort palette, Media.Color? foreground)
+            => foreground is { } color
+                ? new(glyph, GlyphPayloadKind.ColorRecording, palette, color.ToUInt32(), true)
+                : new(glyph, GlyphPayloadKind.ColorRecording, palette);
     }
 }

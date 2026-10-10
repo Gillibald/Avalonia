@@ -2954,11 +2954,118 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// The colour drawing of <paramref name="glyphIndex"/> recorded once for replay, or
-        /// <c>null</c> when the glyph has no colour drawing.
+        /// The colour drawing of <paramref name="glyphIndex"/> (the one
+        /// <see cref="GetGlyphDrawing(ushort, GlyphDrawingOptions?)"/> returns for
+        /// <paramref name="options"/>) recorded once for replay, or <c>null</c> when the glyph has no
+        /// colour drawing. Draws of the same glyph and palette share one recording; a foreground
+        /// gets a recording of its own only when the paint resolves the CPAL foreground sentinel.
+        /// <see cref="GlyphDrawingOptions.PixelSize"/> is not part of the key: the recording holds
+        /// the drawing made without it.
         /// </summary>
         internal Fonts.ColorGlyphRecording? GetGlyphRecording(ushort glyphIndex, GlyphDrawingOptions? options)
-            => null;
+        {
+            if (glyphIndex >= GlyphCount)
+            {
+                return null;
+            }
+
+            // Colour glyphs are never simulated, so their recordings live with the unsimulated face.
+            if (FontSimulations != FontSimulations.None)
+            {
+                return UnsimulatedTypeface.GetGlyphRecording(glyphIndex, options);
+            }
+
+            var palette = _cpalTable is null ? (ushort)0 : NormalizePaletteIndex(options);
+            var cache = _glyphCache ?? GetOrCreateGlyphCache();
+            var build = _buildColorRecording ??= BuildColorRecordingEntry;
+            var recording = (Fonts.ColorGlyphRecording?)cache.GetOrBuildDrawing(
+                cache.GetRecordingEntry(glyphIndex, palette, null), build);
+
+            if (recording is null || !recording.UsesForeground || options?.Foreground is not { } foreground)
+            {
+                return recording;
+            }
+
+            return (Fonts.ColorGlyphRecording?)cache.GetOrBuildDrawing(
+                cache.GetRecordingEntry(glyphIndex, palette, foreground), build);
+        }
+
+        private Func<GlyphCacheEntry, BuiltGeometry>? _buildColorRecording;
+
+        // A recording's own bytes: its opcodes plus the brushes, outline and bitmap references it
+        // holds. The layer outlines themselves stay charged on their own (pinned) entries.
+        private const int RecordingBaseCost = 256;
+        private const int RecordingResourceCost = 96;
+
+        /// <summary>
+        /// Builds the colour-recording payload: the glyph's colour drawing, recorded at the local
+        /// origin exactly as a live draw emits it. Keys without a foreground record the drawing
+        /// <see cref="GetGlyphDrawing(ushort, GlyphDrawingOptions?)"/> returns for the palette and
+        /// note whether its paint uses the foreground sentinel; keys with one are only requested for
+        /// such paints, and record a v1 drawing resolved with that foreground.
+        /// </summary>
+        private BuiltGeometry BuildColorRecordingEntry(GlyphCacheEntry entry)
+        {
+            var key = entry.Key;
+            var glyphIndex = entry.Glyph;
+            IGlyphDrawing? drawing = null;
+            var dependencies = Array.Empty<ushort>();
+            var usesForeground = false;
+
+            if (key.HasForeground)
+            {
+                if (_colrTable is { HasV1Data: true } colr && _cpalTable is not null &&
+                    colr.TryGetBaseGlyphV1Record(glyphIndex, out var record))
+                {
+                    var v1 = new ColorGlyphV1Drawing(this, colr, _cpalTable, glyphIndex, record, entry.Palette,
+                        Color.FromUInt32(key.Foreground));
+
+                    drawing = v1;
+                    dependencies = v1.Dependencies;
+                    usesForeground = true;
+                }
+            }
+            else
+            {
+                drawing = GetGlyphDrawing(glyphIndex,
+                    entry.Palette == 0 ? null : new GlyphDrawingOptions { PaletteIndex = entry.Palette });
+
+                switch (drawing)
+                {
+                    case ColorGlyphV1Drawing v1:
+                        dependencies = v1.Dependencies;
+                        usesForeground = v1.UsesForeground;
+                        break;
+                    case ColorGlyphDrawing:
+                        dependencies = CollectColorLayerDependencies(glyphIndex);
+                        break;
+                }
+            }
+
+            if (drawing is null)
+            {
+                return new BuiltGeometry(null, 0, GlyphPayloadKind.ColorRecording, Array.Empty<ushort>(), default,
+                    hasBounds: false);
+            }
+
+            Rendering.Composition.DrawingRecording recording;
+
+            try
+            {
+                recording = Rendering.Composition.DrawingRecording.Create(context => drawing.Draw(context, default));
+            }
+            finally
+            {
+                // A bitmap drawing is made per request; the recording holds its own bitmap reference.
+                (drawing as IDisposable)?.Dispose();
+            }
+
+            var stream = recording.Stream!;
+            var cost = RecordingBaseCost + stream.OpcodeLength + stream.ResourceCount * RecordingResourceCost;
+
+            return new BuiltGeometry(new Fonts.ColorGlyphRecording(recording, usesForeground), cost,
+                GlyphPayloadKind.ColorRecording, dependencies, default, hasBounds: false);
+        }
 
         private GlyphTypeface UnsimulatedTypeface
         {
@@ -4231,7 +4338,9 @@ namespace Avalonia.Media
         public ColorGlyphV1Drawing(GlyphTypeface glyphTypeface, ColrTable colrTable, CpalTable cpalTable,
             ushort glyphIndex, BaseGlyphV1Record record, int paletteIndex = 0, Color? foreground = null)
         {
-            _context = new ColrContext(glyphTypeface, colrTable, cpalTable, paletteIndex, foreground);
+            var foregroundUse = new ColrForegroundUse();
+
+            _context = new ColrContext(glyphTypeface, colrTable, cpalTable, paletteIndex, foreground, foregroundUse);
             _glyphIndex = glyphIndex;
             _paletteIndex = paletteIndex;
 
@@ -4264,11 +4373,18 @@ namespace Avalonia.Media
             }
 
             _dependencies = dependencies;
+            UsesForeground = foregroundUse.Used;
         }
 
         public GlyphDrawingType Type => GlyphDrawingType.ColorLayers;
 
         public Rect Bounds => _bounds;
+
+        /// <summary>
+        /// Whether the paint resolves the CPAL foreground sentinel, so the drawing depends on the
+        /// text colour it was built with.
+        /// </summary>
+        public bool UsesForeground { get; }
 
         /// <summary>The layer glyph ids this drawing re-fetches on every <see cref="Draw"/>; the cache
         /// pins their outlines while this drawing is cached.</summary>

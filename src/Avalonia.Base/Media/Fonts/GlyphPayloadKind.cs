@@ -23,6 +23,13 @@ namespace Avalonia.Media.Fonts
         ColorDrawing,
 
         /// <summary>A bitmap-strike glyph (<c>sbix</c> / <c>CBDT</c>, future): a pixel payload.</summary>
-        Bitmap
+        Bitmap,
+
+        /// <summary>
+        /// A colour glyph's drawing recorded for replay (<see cref="ColorGlyphRecording"/>). It holds
+        /// its layer glyphs' outlines, so it pins its <see cref="GlyphCacheEntry.Dependencies"/>, and
+        /// it holds resources that are released explicitly when the cache gives it up.
+        /// </summary>
+        ColorRecording
     }
 }

@@ -11,7 +11,7 @@ namespace Avalonia.Media
     /// and land the origin on the pen; there is no Y-flip — strike bearings already describe
     /// the y-down placement relative to the pen).
     /// </summary>
-    internal sealed class BitmapGlyphDrawing : IGlyphDrawing
+    internal sealed class BitmapGlyphDrawing : IGlyphDrawing, System.IDisposable
     {
         private readonly Bitmap _bitmap;
         private readonly Rect _sourceRect;
@@ -48,5 +48,8 @@ namespace Avalonia.Media
         {
             context.DrawImage(_bitmap, _sourceRect, _bounds.Translate(new Vector(origin.X, origin.Y)));
         }
+
+        /// <summary>Releases the strike bitmap; anything that drew it holds its own reference.</summary>
+        public void Dispose() => _bitmap.Dispose();
     }
 }

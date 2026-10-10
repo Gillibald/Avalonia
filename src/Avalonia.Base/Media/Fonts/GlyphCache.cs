@@ -42,11 +42,12 @@ namespace Avalonia.Media.Fonts
     /// referencing payloads (color drawings) additionally pin their dependencies.
     /// </para>
     /// <para>
-    /// Payloads must be immutable, non-disposable managed objects: hits are handed out lock-free and
-    /// escape with unbounded lifetime (public callers, retained compositor render data), so eviction
-    /// only unlinks — the GC reclaims a payload (and any native memory behind it, via finalizers) once
-    /// the last outside reference drops. Anything that needs deterministic teardown must not be
-    /// cached here.
+    /// Payloads must be immutable managed objects: hits are handed out lock-free and escape with
+    /// unbounded lifetime (public callers, retained compositor render data), so eviction only
+    /// unlinks — the GC reclaims a payload once the last outside reference drops. The one exception
+    /// is <see cref="ColorGlyphRecording"/>, whose resources are released explicitly: it guards its
+    /// own use with leases, and the cache retires it wherever it gives it up (eviction,
+    /// <see cref="Release"/>, a build that lost a race).
     /// </para>
     /// </remarks>
     internal sealed class GlyphCache : Rasterization.IGlyphCachePool
@@ -115,6 +116,15 @@ namespace Avalonia.Media.Fonts
         /// </summary>
         public GlyphCacheEntry GetColorEntry(ushort glyph, ushort palette = 0)
             => _entries.GetOrAdd(GlyphCacheKey.Color(glyph, palette), s_createEntry, false);
+
+        /// <summary>
+        /// Gets (creating if absent) the colour-recording entry for <paramref name="glyph"/> resolved
+        /// with <paramref name="palette"/> and, for a paint that uses the foreground sentinel,
+        /// <paramref name="foreground"/>. Built with <see cref="GetOrBuildDrawing"/>; dropped whole on
+        /// eviction. Lock-free.
+        /// </summary>
+        public GlyphCacheEntry GetRecordingEntry(ushort glyph, ushort palette, Color? foreground)
+            => _entries.GetOrAdd(GlyphCacheKey.Recording(glyph, palette, foreground), s_createEntry, false);
 
         /// <summary>
         /// Returns the built outline geometry for <paramref name="entry"/>, building it with
@@ -230,7 +240,9 @@ namespace Avalonia.Media.Fonts
             {
                 if (entry.HasGeometry)
                 {
-                    return entry.Geometry;   // another thread built it while we parsed
+                    // Another thread built it while we parsed; nobody else has seen this build.
+                    (built.Geometry as ColorGlyphRecording)?.Retire();
+                    return entry.Geometry;
                 }
 
                 entry.SetGeometry(built.Geometry, built.Cost, built.Kind, built.Dependencies);
@@ -311,11 +323,13 @@ namespace Avalonia.Media.Fonts
 
         // Only payloads that hold live references to their components pin them; flattened outlines are
         // self-contained and rely on recency.
-        private static bool IsReferencing(GlyphPayloadKind kind) => kind == GlyphPayloadKind.ColorDrawing;
+        private static bool IsReferencing(GlyphPayloadKind kind)
+            => kind is GlyphPayloadKind.ColorDrawing or GlyphPayloadKind.ColorRecording;
 
         /// <summary>
         /// Drops every entry and leaves the glyph cache budget, for a typeface that draws no more.
-        /// Payloads are unlinked, never disposed (see the remarks), so callers holding one keep it.
+        /// Payloads are unlinked, never disposed (see the remarks), so callers holding one keep it;
+        /// colour recordings are retired.
         /// </summary>
         public void Release()
         {
@@ -325,8 +339,11 @@ namespace Avalonia.Media.Fonts
                 {
                     if (entry.HasGeometry)
                     {
+                        var payload = entry.Geometry;
+
                         _policy.OnRemoved(entry);
                         entry.ClearGeometry();
+                        (payload as ColorGlyphRecording)?.Retire();
                     }
                 }
 
@@ -383,9 +400,12 @@ namespace Avalonia.Media.Fonts
         {
             _totalCost -= victim.Cost;
             _handle.Credit(victim.Cost);
+            var payload = victim.Geometry;
+
             _policy.OnRemoved(victim);
             UnpinDependencies(victim);
             victim.ClearGeometry();
+            (payload as ColorGlyphRecording)?.Retire();
 
             // Keep the entry alive for its retained bounds (CFF / CFF2); otherwise drop it whole,
             // by the identity it was inserted under (colour drawings never retain bounds, so they
@@ -398,7 +418,8 @@ namespace Avalonia.Media.Fonts
             // Deliberately no Dispose here: the payload may still be referenced by anyone the
             // lock-free hit path handed it to (or by retained compositor render data), so
             // deterministic teardown would be a use-after-dispose. Unlink only; the GC reclaims
-            // the payload once the last outside reference drops.
+            // the payload once the last outside reference drops. A retired colour recording is
+            // disposed by its last lease instead.
         }
     }
 }
