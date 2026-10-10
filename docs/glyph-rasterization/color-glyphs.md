@@ -4,13 +4,15 @@ Avalonia parses and renders COLR v0 and COLR v1 itself ([ColrTable](../../src/Av
 
 ## COLR v0: tinted mask stacks, server side
 
+This applies to glyphs with v0 layers and no v1 paint graph. A glyph with both (Segoe UI Emoji has both for every emoji) is drawn from its v1 paint graph: a renderer that supports v1 prefers it, as the COLR spec asks.
+
 A v0 glyph is an ordered list of (layer glyph, palette entry) pairs. In managed mode the mask tier expands the layers during run composition: each layer glyph's coverage mask is composed tinted with its CPAL color (premultiplied), in record order, into the same BGRA run mask. This costs one extra mask per layer and nothing else; no layers, contexts or blend modes are involved. Palette entry 0xFFFF is the standard "current text foreground" sentinel and substitutes the run's brush color.
 
 Because all layers of a glyph warp through the same per-typeface hinting map, grid fitting cannot introduce seams between abutting layers. Gamma correction is skipped for v0 layers for the same reason (see [masks.md](masks.md)).
 
 ## COLR v1: paint graphs at record time
 
-A v1 glyph is a paint graph: solid and gradient fills (linear, radial, sweep), affine transforms, palette and foreground references, groups with alpha, and composite nodes with Porter-Duff and blend modes. This needs the full `DrawingContext`, so v1 glyphs are split out of the run at record time by [ColorGlyphRunSplitter](../../src/Avalonia.Base/Media/Fonts/Rasterization/ColorGlyphRunSplitter.cs) (see [pipeline.md](pipeline.md)) and drawn as cached `IGlyphDrawing` objects produced by `GlyphTypeface.GetGlyphDrawing(glyphIndex, options)`.
+A v1 glyph is a paint graph: solid and gradient fills (linear, radial, sweep), affine transforms, palette and foreground references, groups with alpha, and composite nodes with Porter-Duff and blend modes. This needs the full `DrawingContext`, so v1 glyphs are split out of the run at record time by [ColorGlyphRunSplitter](../../src/Avalonia.Base/Media/Fonts/Rasterization/ColorGlyphRunSplitter.cs) (see [pipeline.md](pipeline.md)) and drawn from their `IGlyphDrawing` (`GlyphTypeface.GetGlyphDrawing(glyphIndex, options)`). Under managed rasterization a direct `GlyphRun` draw is cut at the same glyphs on the drawing thread ([ColorGlyphSegments](../../src/Avalonia.Base/Media/Fonts/Rasterization/ColorGlyphSegments.cs)).
 
 [ColorGlyphV1Painter](../../src/Avalonia.Base/Media/Fonts/Tables/Colr/ColorGlyphV1Painter.cs) walks the resolved graph and emits drawing groups. Design decisions that matter:
 
@@ -34,3 +36,11 @@ Color glyphs are never simulated: synthetic bold or oblique applies to outline g
 ## Bounds
 
 Color ink routinely exceeds the base outline's bounding box (Segoe UI Emoji's heart exceeds it on all four sides), so run bounds use `GlyphTypeface.TryGetColorGlyphInkBounds`: the COLR v1 clip box when present (variation aware), else the cached drawing's bounds, else the union of v0 layer ink boxes. Under-reported bounds show up as clipped emoji under partial invalidation, which is why this is a dedicated code path rather than a fallback to outline boxes.
+
+## Recordings
+
+The split does not walk a paint graph per draw. `GlyphTypeface.GetGlyphRecording` records the glyph's drawing once into an immutable `DrawingRecording` ([ColorGlyphRecording](../../src/Avalonia.Base/Media/Fonts/ColorGlyphRecording.cs)), cached in the typeface's glyph cache per (glyph, palette), and every draw into render data or a platform context replays it under the scale-and-pen transform. The replay issues the same drawing calls as the live drawing, so the pixels are the same. Other contexts (a `DrawingGroup`'s) draw the live drawing.
+
+- A foreground gets a recording of its own only when the paint resolves the CPAL 0xFFFF sentinel (tracked while the paint is parsed); every other paint shares one recording across text colours.
+- Recordings are charged to the glyph cache budget and pin their layer outlines. Eviction and typeface disposal retire a recording; it is disposed once the draws replaying it at that moment have finished, and render data that drew it holds its own reference to the recorded stream.
+- In Backend mode v0 layer glyphs and bitmap strikes split to drawings too and are recorded the same way.
