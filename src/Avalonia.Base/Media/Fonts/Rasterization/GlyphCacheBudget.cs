@@ -209,9 +209,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// The default limit and retain target on <paramref name="platform"/>. Desktop holds a
         /// hinted CJK zoom (about 20 MB of masks) plus everything static. The browser keeps less
-        /// because WebAssembly memory never shrinks, so the limit is its high-water mark. Phones draw at about three times the desktop scale,
-        /// so a glyph costs about eight times the memory; their default is provisional until
-        /// measured on devices.
+        /// because WebAssembly memory never shrinks, so the limit is its high-water mark.
+        /// Phones draw at about three times the desktop scale, so a glyph costs about eight times
+        /// the memory. On an Android phone at a scaling of 2.8 a flung CJK list needs 11.9 MB:
+        /// 16 MB already makes it rasterize glyphs again, while 64 MB gains nothing over 32 MB,
+        /// and retaining 12 MB keeps that list's glyphs through an idle trim. iOS shares the
+        /// Android values without having been measured.
         /// </summary>
         public static (long Limit, long Retain) DefaultsFor(TextRasterizationPlatform platform)
         {

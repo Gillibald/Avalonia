@@ -44,7 +44,7 @@ Byte costs weigh LCD masks by their three channels, so subpixel text does not si
 
 ### One limit for every glyph cache
 
-[GlyphCacheBudget](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphCacheBudget.cs) bounds all glyph caches of the process together: the mask caches and outline caches of every typeface, the glyph atlases, the LCD run atlas, the run masks and sprite sets of every run, and the TrueType hinter size states. Each cache registers as a pool and charges what it adds; the limit comes from `FontManagerOptions.GlyphCacheLimitBytes` or a per-platform default (64 MB on desktop, 32 MB in the browser and on mobile, 16 MB elsewhere; values below 4 MB are raised to 4 MB).
+[GlyphCacheBudget](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphCacheBudget.cs) bounds all glyph caches of the process together: the mask caches and outline caches of every typeface, the glyph atlases, the LCD run atlas, the run masks and sprite sets of every run, and the TrueType hinter size states. Each cache registers as a pool and charges what it adds; the limit comes from `FontManagerOptions.GlyphCacheLimitBytes` or a per-platform default (64 MB on desktop, 32 MB in the browser and on mobile, 16 MB elsewhere; values below 4 MB are raised to 4 MB). The mobile default retains 12 MB instead of half the limit and was measured on Android (a flung CJK list at a scaling of 2.8 needs 11.9 MB, 16 MB already re-rasterizes, 64 MB gains nothing over 32 MB); iOS shares it unmeasured.
 
 | Rule | Behaviour |
 |---|---|
