@@ -499,7 +499,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Draws a sprite set from the context's or the typeface's atlases in a foreground whose
         /// coverage correction <paramref name="bucket"/> the caller already knows. Returns
         /// <c>false</c>, drawing nothing, when the set's colour content cannot draw from the colour
-        /// atlas (see <see cref="TransformedGlyphSprites.KeepsRunMask"/>).
+        /// atlas (see <see cref="TransformedGlyphSprites.DeclinesColorAtlas"/>).
         /// </summary>
         private static bool DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb, int bucket)
@@ -540,7 +540,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return batches;
             }
 
-            if (sprites.KeepsRunMask)
+            if (sprites.DeclinesColorAtlas)
             {
                 return null;
             }
@@ -629,7 +629,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         if (!TryPlaceColorSprite(typeface, colorAtlas!, colorOwner, colorTick, sprites, i, ref content,
                                 out var colorSlot))
                         {
-                            sprites.KeepsRunMask = true;
+                            sprites.DeclinesColorAtlas = true;
                             builder.Abandon();
                             return false;
                         }
@@ -703,7 +703,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (placedColor is not null && ColorSpritesShareInk(placedColor))
                 {
-                    sprites.KeepsRunMask = true;
+                    sprites.DeclinesColorAtlas = true;
                     builder.Abandon();
                     return false;
                 }

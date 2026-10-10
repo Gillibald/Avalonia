@@ -48,7 +48,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
             }
 
-            if (sprites.KeepsRunMask)
+            if (sprites.DeclinesColorAtlas)
             {
                 return false;
             }
@@ -78,7 +78,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var state = run.TransformedSprites;
 
-            return state.Settled is { IsDisposed: false, IsUpright: true, HasColor: true, KeepsRunMask: false } settled &&
+            return state.Settled is { IsDisposed: false, IsUpright: true, HasColor: true, DeclinesColorAtlas: false } settled &&
                    settled.Key.Tint == key.Tint && settled.Key.Mode == key.Mode &&
                    IsWithinStretchBand(state, transform) &&
                    TryDrawStretched(context, run.GlyphTypeface, state, transform, uint.MaxValue);
@@ -114,7 +114,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     return new TransformedGlyphSprites(key, embolden, oblique, Array.Empty<TransformedSprite>())
                     {
-                        IsUpright = true, KeepsRunMask = true,
+                        IsUpright = true, DeclinesColorAtlas = true,
                     };
                 }
 
@@ -178,15 +178,26 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether two of the colour sprites hold ink at a pixel they both cover; the entries are
-        /// on their pages, read from the alpha of each texel.
+        /// on their pages, read from the alpha of each texel. Sorts <paramref name="placed"/> by
+        /// column, so each sprite is tested only against those that start less than the widest
+        /// sprite before it.
         /// </summary>
         private static bool ColorSpritesShareInk(List<(GlyphAtlasPage Page, GlyphAtlasSprite Sprite)> placed)
         {
+            var widest = 0;
+
+            foreach (var (_, sprite) in placed)
+            {
+                widest = Math.Max(widest, sprite.Width);
+            }
+
+            placed.Sort(static (a, b) => a.Item2.X.CompareTo(b.Item2.X));
+
             for (var i = 1; i < placed.Count; i++)
             {
                 var (page, sprite) = placed[i];
 
-                for (var j = 0; j < i; j++)
+                for (var j = i - 1; j >= 0 && placed[j].Sprite.X + widest > sprite.X; j--)
                 {
                     var (otherPage, other) = placed[j];
 

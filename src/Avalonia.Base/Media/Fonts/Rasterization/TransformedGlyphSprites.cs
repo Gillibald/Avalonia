@@ -167,10 +167,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         public bool UsesForegroundBucket { get; }
 
         /// <summary>
-        /// Whether the run draws its run mask rather than these sprites: its colour content cannot
-        /// be drawn from the colour atlas with the run mask's pixels.
+        /// Whether the run draws without these sprites because its colour content cannot draw from
+        /// the colour atlas: an upright run keeps its run mask (its glyphs share ink, or a colour
+        /// mask exceeds the entry bound), a transformed run its vector replay.
         /// </summary>
-        public bool KeepsRunMask { get; internal set; }
+        public bool DeclinesColorAtlas { get; internal set; }
 
         public RunMaskKey Key { get; }
 
