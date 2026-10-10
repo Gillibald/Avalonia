@@ -287,6 +287,8 @@ namespace TextStress.Measurement
             target.AtlasEvictions += shared.Evictions;
             target.AtlasPages += sharedPages;
             target.AtlasPagesShared = sharedPages;
+            target.ColorAtlasBytes = GlyphMaskAtlas.SharedColor.AllocatedBytes;
+            target.ColorAtlasPages = GlyphMaskAtlas.SharedColor.GetPages().Length;
 
             foreach (var typeface in _scenario.Typefaces)
             {
@@ -336,6 +338,8 @@ namespace TextStress.Measurement
             sample.AtlasPages = after.AtlasPages;
             sample.AtlasPagesShared = after.AtlasPagesShared;
             sample.AtlasFaces = after.AtlasFaces;
+            sample.ColorAtlasBytes = after.ColorAtlasBytes;
+            sample.ColorAtlasPages = after.ColorAtlasPages;
             sample.BudgetUsedBytes = after.BudgetUsedBytes;
             sample.BudgetPeakBytes = after.BudgetPeakBytes;
             sample.BudgetEvictedBytes = after.BudgetEvictedBytes - before.BudgetEvictedBytes;
