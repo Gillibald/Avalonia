@@ -27,6 +27,7 @@
     <InternalsVisibleTo Include="Avalonia.Base.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="TextLab, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="TextStress, PublicKey=$(AvaloniaPublicKey)" />
+    <InternalsVisibleTo Include="TextShowcase, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Desktop, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Benchmarks, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Controls, PublicKey=$(AvaloniaPublicKey)" />
