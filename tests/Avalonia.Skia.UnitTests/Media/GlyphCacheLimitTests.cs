@@ -266,9 +266,20 @@ namespace Avalonia.Skia.UnitTests.Media
         [Theory]
         [MemberData(nameof(HardwareContexts))]
         public void A_Frame_Whose_Pinned_Content_Exceeds_The_Limit_Draws_It_Without_Thrashing(GpuBackend backend) =>
-            OnOwnThread(() => PinnedWorkingSet(backend));
+            OnOwnThread(() => PinnedWorkingSet(backend, 90));
 
-        private static void PinnedWorkingSet(GpuBackend backend)
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Static_Frame_Of_Twice_The_Limit_Draws_From_The_Atlas_Without_Thrashing(GpuBackend backend) =>
+            OnOwnThread(() => PinnedWorkingSet(backend, 50));
+
+        /// <summary>
+        /// Draws every glyph of a typeface frame after frame under a limit of
+        /// <paramref name="limitPercent"/> of the frame's working set: the frames keep drawing
+        /// from the atlas, whose pages the previous frame drew, and only the glyph masks the atlas
+        /// already holds copies of give way.
+        /// </summary>
+        private static void PinnedWorkingSet(GpuBackend backend, int limitPercent)
         {
             using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
@@ -299,10 +310,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 Frame();
                 Frame();
 
-                // A limit below the frame's working set, within a quarter of it.
                 var workingSet = budget.UsedBytes;
 
-                budget.SetLimit(workingSet * 9 / 10);
+                // From a cold start under the limit: the first frame builds masks and atlas pages
+                // together, so they are equally old when the next frames trim.
+                DropEarlierFrames();
+                budget.SetLimit(workingSet * limitPercent / 100);
+                Frame();
+                Frame();
 
                 var misses = GlyphRasterDiagnostics.AtlasMissesOnThread;
 
