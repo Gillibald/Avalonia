@@ -15,7 +15,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// caches only their placements: a raster context blends the cached masks straight into
         /// its surface, a GPU context draws them from the typeface's atlas in one batched call,
         /// and any other context blits them one by one. Returns <c>false</c> when this draw
-        /// cannot take the run (non-solid foreground, bitmap strikes, a COLR v1-only glyph, a
+        /// cannot take the run (non-solid foreground, bitmap strikes, a COLR v1 glyph, a
         /// degenerate or extreme transform, a glyph past the mask bounds) and the caller falls
         /// back.
         /// </summary>
@@ -40,7 +40,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // A strike bitmap under a free transform would need resampling that masks do not
             // do; the native path keeps those runs.
             if (typeface.OutlineType == GlyphOutlineType.None || typeface.BitmapSource is not null ||
-                HasColrV1OnlyGlyph(run))
+                HasColrV1Glyph(run))
             {
                 return false;
             }

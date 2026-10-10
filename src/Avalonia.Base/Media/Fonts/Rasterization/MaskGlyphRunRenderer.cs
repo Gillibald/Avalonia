@@ -84,7 +84,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            if (HasColrV1OnlyGlyph(run))
+            if (HasColrV1Glyph(run))
             {
                 return false;
             }
@@ -702,13 +702,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Whether the run holds a glyph with only a COLR v1 paint graph
-        /// (<see cref="ColorGlyphRunSplitter.IsV1OnlyGlyph"/>). Masks have no v1 paint: such a
+        /// Whether the run holds a glyph with a COLR v1 paint graph
+        /// (<see cref="ColorGlyphRunSplitter.IsV1Glyph"/>). Masks have no v1 paint: such a
         /// glyph draws through its drawing, and the caller cuts the run around it (see
         /// <see cref="ManagedGlyphRunImpl.ColorGlyphSegments"/>) rather than draw it as a
         /// monochrome outline.
         /// </summary>
-        private static bool HasColrV1OnlyGlyph(ManagedGlyphRunImpl run)
+        private static bool HasColrV1Glyph(ManagedGlyphRunImpl run)
         {
             var typeface = run.GlyphTypeface;
 
@@ -721,7 +721,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             for (var i = 0; i < glyphs.Length; i++)
             {
-                if (ColorGlyphRunSplitter.IsV1OnlyGlyph(typeface, v1Colr, glyphs[i]))
+                if (ColorGlyphRunSplitter.IsV1Glyph(typeface, v1Colr, glyphs[i]))
                 {
                     return true;
                 }

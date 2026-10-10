@@ -3,7 +3,7 @@ using System;
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// A managed run cut at its COLR v1-only glyphs (<see cref="ColorGlyphRunSplitter.IsV1OnlyGlyph"/>),
+    /// A managed run cut at its COLR v1 glyphs (<see cref="ColorGlyphRunSplitter.IsV1Glyph"/>),
     /// the managed-run counterpart of the text layout's split in
     /// <see cref="ColorGlyphRunSplitter.TryDraw"/>: each v1 glyph draws through its drawing, and
     /// each stretch of glyphs between them is a run of its own that the mask tiers take. Owned
@@ -30,7 +30,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         public ReadOnlySpan<Segment> Items => _items;
 
         /// <summary>
-        /// Cuts <paramref name="run"/> at its v1-only glyphs, or returns <c>null</c> when it holds none.
+        /// Cuts <paramref name="run"/> at its v1 glyphs, or returns <c>null</c> when it holds none.
         /// </summary>
         public static ColorGlyphSegments? TryCreate(ManagedGlyphRunImpl run)
         {
@@ -97,7 +97,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         // The mask triage declines a run on exactly this test, so no stretch is ever declined
         // for a colour glyph left in it.
         private static bool IsCut(GlyphTypeface typeface, Tables.Colr.ColrTable colr, ushort glyph)
-            => ColorGlyphRunSplitter.IsV1OnlyGlyph(typeface, colr, glyph);
+            => ColorGlyphRunSplitter.IsV1Glyph(typeface, colr, glyph);
 
         public void Dispose()
         {

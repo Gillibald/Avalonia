@@ -218,7 +218,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private bool _colorGlyphSegmentsResolved;
 
         /// <summary>
-        /// The run cut at its COLR v1-only glyphs, which no mask tier renders, or <c>null</c> when
+        /// The run cut at its COLR v1 glyphs, which no mask tier renders, or <c>null</c> when
         /// the run holds none. Built on first use and kept with the run, so the stretches between
         /// the colour glyphs keep their mask caches from frame to frame.
         /// </summary>

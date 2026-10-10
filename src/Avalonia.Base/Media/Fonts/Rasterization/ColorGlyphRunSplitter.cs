@@ -8,9 +8,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// Record-time split: COLR glyphs draw through the typeface's own drawings (the "prefer our
     /// implementation" rule holds in every rasterization mode), while other stretches keep an
     /// ordinary glyph-run node. Scope differs by mode only for v0: under managed rasterization
-    /// v0 stays in the run because the mask renderer composes those layers server-side more
-    /// cheaply; under backend rasterization the blob would rasterize COLR itself, so v0 splits
-    /// to drawings too. Direct <see cref="GlyphRun"/> draws bypass this splitter: under managed
+    /// a glyph with v0 layers and no v1 paint graph stays in the run because the mask renderer
+    /// composes those layers server-side more cheaply; under backend rasterization the blob would
+    /// rasterize COLR itself, so v0 splits to drawings too. Direct <see cref="GlyphRun"/> draws bypass this splitter: under managed
     /// rasterization the renderer cuts those runs at the same glyphs when it draws them (see
     /// <see cref="ColorGlyphSegments"/>), and under backend rasterization the backend's native
     /// text handling draws them.
@@ -61,7 +61,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                        (colr.HasColorLayers(glyph) ||
                         (colr.HasV1Data && colr.TryGetBaseGlyphV1Record(glyph, out _)))) ||
                       (bitmaps?.HasGlyphImage(glyph) ?? false)
-                    : IsV1OnlyGlyph(typeface, colr!, glyph);
+                    : IsV1Glyph(typeface, colr!, glyph);
 
             var infos = glyphRun.GlyphInfos;
             var hasSplitGlyph = false;
@@ -127,17 +127,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Whether <paramref name="glyph"/> has only a COLR v1 paint graph, with no v0 layers to
-        /// compose, and a palette to resolve it with. No mask tier renders such a glyph: it draws
-        /// through its drawing. Without a CPAL table the glyph has no drawing and renders as its
-        /// outline, like a v0 glyph without one.
+        /// Whether <paramref name="glyph"/> has a COLR v1 paint graph and a palette to resolve it
+        /// with. No mask tier renders such a glyph: it draws through its drawing. A glyph that also
+        /// has v0 layers (Segoe UI Emoji has both for every emoji) draws its paint graph too, since
+        /// a renderer that supports v1 prefers it over the v0 layers. Without a CPAL table the
+        /// glyph has no drawing and renders as its outline, like a v0 glyph without one.
         /// </summary>
-        internal static bool IsV1OnlyGlyph(GlyphTypeface typeface, Tables.Colr.ColrTable colr, ushort glyph)
+        internal static bool IsV1Glyph(GlyphTypeface typeface, Tables.Colr.ColrTable colr, ushort glyph)
             => colr.HasV1Data && typeface.ColorPaletteTable is not null && glyph < typeface.GlyphCount &&
-               colr.TryGetBaseGlyphV1Record(glyph, out _) && !colr.TryGetBaseGlyphRecord(glyph, out _);
+               colr.TryGetBaseGlyphV1Record(glyph, out _);
 
         /// <summary>
-        /// Draws a run cut at its v1-only glyphs: the stretches between them as runs of their own
+        /// Draws a run cut at its v1 glyphs: the stretches between them as runs of their own
         /// through <paramref name="context"/>'s glyph run path, and each v1 glyph through its
         /// drawing at the run's pen, in run order.
         /// </summary>
