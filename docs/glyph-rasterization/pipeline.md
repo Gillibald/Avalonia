@@ -16,12 +16,19 @@ This document follows one glyph run through the managed path: creation, dispatch
 `DrawingContextImpl.DrawGlyphRun` tries the tiers in order:
 
 ```
-MaskGlyphRunRenderer.TryDraw(...)             axis-aligned, <= 160 px/em: composed run masks
-MaskGlyphRunRenderer.TryDrawTransformed(...)  everything else: transformed glyph masks
+ColorGlyphRunSplitter.DrawSegments(...)       a direct run holding COLR v1-only glyphs: v1 glyphs
+                                              draw from their drawings, the stretches between
+                                              them come back through this dispatch
+MaskGlyphRunRenderer.TryDraw(...)             upright, <= 160 px/em: upright masks
+MaskGlyphRunRenderer.TryDrawTransformed(...)  rotation, skew, anisotropic scale, large text
+managed outline path                          varied clones and faces Skia cannot load: their
+                                              Skia face would draw the wrong outlines, since
+                                              SkiaSharp cannot create a typeface at variation
+                                              coordinates
 NativeTextBlob.TryGetTextBlob(...)            native backend blob
 ```
 
-Each `TryDraw` returns false to decline, and declining is cheap: triage is a handful of comparisons.
+Each `TryDraw` returns false to decline, and declining is cheap: triage is a handful of comparisons. Before a native fallback draws, the pending GPU batches are drawn, so text keeps its order.
 
 ## Mask tier triage
 
@@ -29,18 +36,23 @@ Each `TryDraw` returns false to decline, and declining is cheap: triage is a han
 
 | Condition | Constant | Why |
 | --- | --- | --- |
-| transform has no rotation or skew (`M12 == 0 && M21 == 0`) | | masks are axis-aligned bitmaps; resampling them would blur |
-| effective pixels per em `<=` | `MaxPixelsPerEm = 160` | above this, a run mask costs more than it saves; the transformed tier takes over |
-| composed run width `<=` | `MaxRunMaskWidth = 2048` | run masks are single bitmaps; degenerate widths go to the blob |
+| transform has no rotation or skew (`M12 == 0 && M21 == 0`), a positive scale, and equal scales within 0.1 % | | masks are axis-aligned, hinted bitmaps; resampling them would blur |
+| effective pixels per em `<=` | `MaxPixelsPerEm = 160` | above this, hinting gains nothing and masks grow with the square of the size; the transformed tier takes over |
+| composed run height `<=` the context's run mask bound, and width x height x bytes per pixel `<=` `MaxRunMaskBytes` (32 MB) | `IAlphaGlyphMaskContext.MaxRunMaskSize` (GPU: the `GRContext`'s maximum texture size; CPU: unbounded), `DefaultMaxRunMaskSize = 2048` for contexts without the interface | wider runs are composed in disjoint column chunks, each within the bound, byte-identical to one mask |
 | foreground is a solid brush (or per-layer solid for COLR v0) | | gradient foregrounds would need an opacity-mask layer; the blob path handles them |
 
 Uniform scale is folded into the mask scale; the quantized scale plus a quarter-pixel horizontal phase identifies the raster (see [masks.md](masks.md)).
 
 ## What each tier renders
 
-- The mask tier renders monochrome glyphs, COLR v0 layer glyphs (as stacked tinted masks) and bitmap strikes (decoded and composed into the BGRA run mask). One run mask per (run, scale, phase, mode, tint-or-not) is cached on the run and redrawn as a plain bitmap blit until invalidated.
+- The upright tier renders monochrome glyphs, COLR v0 layer glyphs (as stacked tinted masks) and bitmap strikes (decoded and composed into the BGRA run mask). How it draws depends on the context:
+  - CPU raster surface with direct pixel access: the run's untinted coverage (`RunCoverage`, cached on the run without the color in its key) is blended into the surface through a per-tint source table (see [masks.md](masks.md#cpu-blending)); a color change recomposes nothing. Typefaces with COLR or strikes, layers, opacity and other blend modes compose pre-tinted BGRA chunks drawn with `DrawBitmap`.
+  - Hardware GPU, grayscale: sprites from the glyph atlas, batched across runs ([gpu-atlas.md](gpu-atlas.md)).
+  - Software GPU, subpixel text and zoom gestures on GPUs: an A8 or RGBA run mask, cached on the run and drawn tinted; subpixel masks on hardware GPUs sit in the shared LCD run atlas and batch too.
+  - A zoom gesture (the scale changing three frames in a row) on a CPU surface rasterizes each frame into transient coverage when a cost model says that costs no more than 1.2x stretching the settled mask; otherwise it stretches the settled mask within a 1.2x scale band and rasterizes once on leaving it. Software GPUs always stretch.
 - The transformed tier renders monochrome glyphs and COLR v0 layer glyphs under any invertible affine transform and above the upright size ceiling, on every context: glyph masks rasterized unhinted under the transform's quantized linear part and a quarter-pixel phase in both axes. A raster surface blends the cached masks directly, a GPU context draws them from the typeface's atlas in one batched call. While the transform changes every frame, CPU and hardware GPU contexts rasterize each frame into transient buffers no cache keeps; software GL draws the last settled batch under the change of transform instead.
-- The blob tier renders everything else: gradient foregrounds, bitmap strikes and COLR v1-only glyphs under a free transform, and any draw the managed tiers decline.
+- The transformed tier applies font simulations (bold, oblique) like the upright tier; color glyphs are never simulated. Subpixel requests render grayscale under a transform.
+- The blob tier renders everything else: gradient foregrounds, bitmap strikes under a transform, degenerate transforms and any draw the managed tiers decline. COLR v1-only glyphs never reach it: direct runs are segmented as above.
 
 ## Record-time split for COLR v1 and drawings
 

@@ -9,8 +9,9 @@ Subpixel blending writes per-channel colors that only look right composited agai
 - the target is a display-bound surface (window framebuffer or swapchain; `DrawingContextImpl.CreateInfo.SurfaceIsDisplay`). Offscreen targets - `RenderTargetBitmap`, `WriteableBitmap`, headless windows, capture harnesses - render grayscale even for an explicit `SubpixelAntialias` request: their output is composed, resampled or read back with alpha, where per-channel coverage has no valid interpretation (the DirectWrite rule);
 - the surface declares horizontal RGB or BGR stripe geometry (`SKSurfaceProperties.PixelGeometry`, seeded from the render target; picture recording targets disable subpixel text explicitly);
 - the draw is not inside any save layer (the context counts every `SaveLayer`/`Restore` pair) - layer content gets composited again, which would double-blend fringes;
-- on GPU, the runtime blender compiled; on CPU, no tracked ambient opacity is active (the fixed two-pass payloads cannot fold opacity in; the GPU path folds it into the blender tint and stays eligible);
-- the run has no color tables (color glyphs render grayscale, matching platform behavior).
+- on GPU, the runtime blender compiled; on CPU, no tracked ambient opacity is active (the fixed CPU payloads cannot fold opacity in; the GPU path folds it into the blender tint and stays eligible);
+- the run has no color tables (color glyphs render grayscale, matching platform behavior);
+- the platform renders unspecified text subpixel: on macOS and iOS `Unspecified` resolves to grayscale, as CoreText draws there, and in the browser the WebGL target composes through a layer without pixel geometry, so subpixel text never engages.
 
 Every failed condition degrades to grayscale antialiasing, never to wrong blending.
 
@@ -24,18 +25,20 @@ Every failed condition degrades to grayscale antialiasing, never to wrong blendi
 
 ## GPU path: runtime blender
 
-The composed run mask is RGBA: the three coverage channels plus alpha = channel max. [LcdTextBlender](../../src/Skia/Avalonia.Skia/LcdTextBlender.cs) is an `SKRuntimeEffect` blender that computes, per channel, `dst + (tint - dst) * g(coverage)` where `g` is the analytic LCD-strength MaskGamma transfer (gamma 1.6, contrast 0.2 — calibrated against the DirectWrite-host blob, weaker than the grayscale correction by design) evaluated in-shader from `GammaShaderParameters`, exponent included as a uniform, so GPU output matches the CPU tables. The destination alpha uses the max coverage channel. Tint and ambient opacity are uniforms, so foreground animation never recomposes the mask. Compiled blenders are cached per tint with a small cap (`CacheCap = 64`); the shared effect is created once and never disposed. Measured cost is on par with the grayscale A8 path on native GL and about 2x on ANGLE's dst-read lowering, at zero steady-state allocations.
+The composed run mask is RGBA: the three coverage channels plus alpha = channel max. [LcdTextBlender](../../src/Skia/Avalonia.Skia/LcdTextBlender.cs) is an `SKRuntimeEffect` blender that computes, per channel, `dst + (tint - dst) * g(coverage)` where `g` is the analytic LCD-strength MaskGamma transfer (gamma 1.6, contrast 0.2, calibrated against the DirectWrite-host blob and weaker than the grayscale correction by design) evaluated in-shader from `GammaShaderParameters`, exponent included as a uniform, so GPU output matches the CPU tables. The destination alpha uses the max coverage channel. Tint and ambient opacity are uniforms, so foreground animation never recomposes the mask. Compiled blenders are cached per tint with a small cap (`CacheCap = 64`); the shared effect is created once and never disposed. Measured cost is on par with the grayscale A8 path on native GL and about 2x on ANGLE's dst-read lowering, at zero steady-state allocations.
 
-## CPU path: two passes
+On hardware GPUs the run masks are placed in the process-wide `LcdRunAtlas` (RGBA pages of whole-run masks) and the runs of a frame batch into one `DrawAtlas` with the blender per page and tint; entries that would overlap split the batch, because the blend reads the destination once per call. A run whose entry was evicted composes its mask again. Software GPUs draw each run's mask on its own. See [gpu-atlas.md](gpu-atlas.md#subpixel-text-on-gpus).
 
-CPU raster targets have no blender API, so the same per-channel lerp is decomposed algebraically into two portable bitmap draws using only core blend modes:
+## CPU path: one pass
+
+CPU raster targets have no blender API. The per-channel lerp decomposes algebraically into a multiply and an add using only core blend modes:
 
 ```
-pass 1: DrawBitmap(Multiply)  with per-channel 255 - g(coverage)     multiplies dst by (1 - g)
-pass 2: DrawBitmap(Plus)      with per-channel premul tint * g(cov)  adds tint * g
+multiply: dst * (255 - g(coverage))          per channel
+add:      premultiplied tint * g(coverage)   per channel, saturating
 ```
 
-`RunMaskComposer.ComposeLcd` bakes the gamma tables into both payloads at compose time, keyed by tint; the pair is cached as one run-mask entry (`LcdRunBitmaps`). The result is exact to rounding: a formula-equivalence test pins the composed output against a direct software per-channel blend within one level on white, black, gray and saturated backgrounds.
+The composer bakes the gamma tables into both payloads at compose time, keyed by tint (`LcdRunPayload`, cached as one run-mask entry). Where the context hands out the surface pixels (see [masks.md](masks.md#cpu-blending)), [LcdMaskBlitter](../../src/Avalonia.Base/Media/Fonts/Rasterization/LcdMaskBlitter.cs) applies both in one pass over the destination with the arithmetic of Skia's lowp Multiply and Plus blits, so the bytes equal the two bitmap draws. Otherwise the same payloads draw as two bitmaps with `BitmapBlendingMode.Multiply` and `Plus` (`LcdRunBitmaps`, created only then). A formula-equivalence test pins the output against a direct software per-channel blend within one level on white, black, gray and saturated backgrounds.
 
 ## Interaction with hinting
 

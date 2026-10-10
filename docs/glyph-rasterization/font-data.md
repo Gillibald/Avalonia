@@ -2,13 +2,13 @@
 
 The managed path reads many more font tables than the backend path did (outlines, COLR/CPAL, bitmap strikes, variation tables), which put font data handling on the hot path for both correctness and memory.
 
-## Zero-copy table access: SkiaFontData
+## Font file data: SfntFace
 
-`GlyphTypeface` eagerly loads around 20 tables per typeface. Fetching each through `SKTypeface.TryGetTableData` produces a fresh managed copy, which in practice retains most of the font file per typeface: a font picker binding all system families measured 800 MB of managed table copies for 242 families, dominated by glyf and gvar.
+`GlyphTypeface` eagerly loads around 20 tables per typeface, and the managed path reads the large ones (glyf, gvar, CFF, COLR, CBDT) on every cold glyph. Copying tables out of a platform typeface keeps most of the font file alive per typeface as managed memory: a font picker binding all system families once measured 800 MB of table copies for 242 families, dominated by glyf and gvar.
 
-[SkiaFontData](../../src/Skia/Avalonia.Skia/SkiaFontData.cs) removes the copies. It parses the sfnt table directory once over Skia's own memory-mapped view of the font file (`SKStreamAsset.GetMemoryBase`; TrueType collections resolve the member offset via `OpenStream` and its ttc index) and serves each table as a `MemoryManager<byte>` slice over the native mapping: zero managed bytes, OS-paged, shared with the `SKTypeface` itself. `SkiaTypeface` routes all table reads through it with thread-safe lazy initialization; a non-memory-backed stream degrades to one whole-file copy shared by every table, and unparseable directories fall back to the copying accessor. The shaper's GSUB/GPOS reads ride the same route. The same 242-family scenario measures 2.0 MB after the change.
+Font data is therefore read from the font file itself. [SfntFace](../../src/Avalonia.Base/Media/Fonts/SfntFace.cs) is a view over one face of an SFNT file: it resolves the `ttcf` header of TrueType collections, validates the face's table directory and serves each table as a slice of the file bytes, with no per-table copy. The bytes are shared, reference-counted file data (`SharedFontData`) used by every face of a collection and by synthetic clones (simulated and variation instances). Path-based sources, which is what the system font providers return (file path plus face index), are memory-mapped ([FontFileMemory](../../src/Avalonia.Base/Media/Fonts/FontFileMemory.cs)) and paged by the OS; platforms without memory-mapped files read the file once. Streams (embedded resources, `SkiaFontProvider` faces opened through `SKTypeface.OpenStream`) are read into one buffer per file. The shaper's GSUB/GPOS reads use the same views.
 
-Slice lifetime follows the chain slice -> `SkiaFontData` -> `SKStreamAsset`; the asset is kept alive for the typeface's lifetime and reclaimed by its finalizer.
+When the Skia backend needs a native typeface for a managed face (the native blob fallback), it is created from the same file bytes with `SKTypeface.FromData` over a pinned, zero-copy `SKData` whose release unpins the shared data, so the Skia typeface may outlive the `GlyphTypeface` safely.
 
 ## Font-wide metrics policy
 
@@ -26,7 +26,7 @@ Variation-aware machinery (gvar outlines, HVAR advances, MVAR metrics, a variati
 
 Because SkiaSharp exposes no API for the variation position of a matched `SKTypeface`, a managed typeface created from a platform match derives an implicit instance instead: explicit platform variation settings win when present; otherwise `wght` comes from the matched weight, `wdth` from the stretch's usWidthClass percentage and `ital` from the matched style, each applied only where it differs from the fvar default. Without this step every variable font would rasterize at its default instance regardless of the requested style. `opsz` is left untouched and slant-only italics stay with the platform matcher.
 
-One known approximation: glyf header ink boxes are default-instance values, not gvar-adjusted per instance; mask sizing absorbs the difference through aprons and phase margins.
+Ink boxes follow the instance: at a non-default variation point glyf boxes come from the gvar-deformed outline rather than the header box.
 
 ## Ink bounds
 

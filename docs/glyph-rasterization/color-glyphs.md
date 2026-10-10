@@ -23,6 +23,14 @@ A v1 glyph is a paint graph: solid and gradient fills (linear, radial, sweep), a
 
 COLR v1 composite nodes map onto the drawing layer API: the composite renders as an isolated source-over group with an isolated blend-mode layer around the source ([LayerOptions](../../src/Avalonia.Base/Media/LayerOptions.cs), `DrawingContext.PushLayer`), with `CompositeMode` mapped 1:1 onto `BitmapBlendingMode`. Isolation is what makes a `SrcIn` composite clip against its sibling instead of everything below the glyph, and group alpha blends inside the group before the composite applies. Backends implement layers through `IDrawingContextImplWithLayers` (Skia: `SaveLayer` with alpha, blend mode and effect paint); the render-data path records a layer opcode and can replay through effect and opacity pushes on backends without the interface.
 
+## Direct glyph run draws
+
+A `GlyphRun` drawn directly (not through text layout) never passes the record-time splitter. Managed runs with COLR v1-only glyphs are cut at those glyphs instead (`ColorGlyphSegments`, built once per run): the v1 glyphs draw from their drawings and the stretches between them draw as runs of their own through the mask tiers, so COLR v1 never falls back to the backend's text stack. A v1 glyph without a CPAL table draws as its outline.
+
+## Simulations
+
+Color glyphs are never simulated: synthetic bold or oblique applies to outline glyphs only, and color glyphs report their unsimulated bounds and outlines.
+
 ## Bounds
 
 Color ink routinely exceeds the base outline's bounding box (Segoe UI Emoji's heart exceeds it on all four sides), so run bounds use `GlyphTypeface.TryGetColorGlyphInkBounds`: the COLR v1 clip box when present (variation aware), else the cached drawing's bounds, else the union of v0 layer ink boxes. Under-reported bounds show up as clipped emoji under partial invalidation, which is why this is a dedicated code path rather than a fallback to outline boxes.
