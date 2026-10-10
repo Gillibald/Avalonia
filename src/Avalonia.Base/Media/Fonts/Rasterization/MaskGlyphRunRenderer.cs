@@ -242,6 +242,23 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;
             }
 
+            // A hardware GPU draws the colour content of a colour typeface's run from colour atlas
+            // pages, batched with the other runs of the frame, rather than a run mask per run.
+            bool? colorChurn = null;
+
+            if (alphaContext is null && mode != GlyphMaskMode.Subpixel && ColorGlyphRunSplitter.UseColorAtlas &&
+                (run.GlyphTypeface.ColorTable is not null || run.GlyphTypeface.BitmapSource is not null) &&
+                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } colorContext)
+            {
+                if (TryDrawUprightColor(colorContext, run, key, transform, (float)scaleX, (float)scaleY, originX,
+                        originY, Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B), out var churning))
+                {
+                    return true;
+                }
+
+                colorChurn = churning;
+            }
+
             var cache = run.RunMasks;
 
             // A raster surface that grants direct access draws outline text from the run's
@@ -286,7 +303,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // more than outline masks and fill the mask cache with sizes that never return, so a
             // run with colour glyphs stretches its settled mask on a hardware GPU too.
             if (colorGlyphs && zoomContext is { RasterTarget: GlyphRasterTarget.HardwareGpu } &&
-                run.UprightChurn.Record(key.ScaleQ, default, hit))
+                (colorChurn ?? run.UprightChurn.Record(key.ScaleQ, default, hit)))
             {
                 zooming = true;
             }

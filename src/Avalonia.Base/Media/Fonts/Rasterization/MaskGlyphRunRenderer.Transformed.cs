@@ -428,10 +428,16 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
-            var batches = GetBatches(context, typeface, atlas, settled, GetBucket(foregroundArgb));
+            var colorAtlas = GetColorAtlas(context, typeface, settled);
+
+            if (GetBatches(context, typeface, atlas, colorAtlas, settled, GetBucket(foregroundArgb)) is not { } batches)
+            {
+                return false;
+            }
+
             var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
 
-            DrawBatches(context, atlas, batches, placement, foregroundArgb, bilinear: true);
+            DrawBatches(context, atlas, colorAtlas, batches, placement, foregroundArgb, bilinear: true);
 
             return true;
         }
@@ -450,53 +456,89 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Draws a sprite set from the context's or the typeface's atlas, one backend call per
         /// batch, placed at the run's snapped origin pixel.
         /// </summary>
-        private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
+        private static bool DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb)
             => DrawFromAtlas(context, typeface, sprites, originX, originY, foregroundArgb, GetBucket(foregroundArgb));
 
         /// <summary>
-        /// Draws a sprite set from the context's or the typeface's atlas in a foreground whose
-        /// coverage correction <paramref name="bucket"/> the caller already knows.
+        /// Draws a sprite set from the context's or the typeface's atlases in a foreground whose
+        /// coverage correction <paramref name="bucket"/> the caller already knows. Returns
+        /// <c>false</c>, drawing nothing, when the set's colour content cannot draw from the colour
+        /// atlas (see <see cref="TransformedGlyphSprites.KeepsRunMask"/>).
         /// </summary>
-        private static void DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
+        private static bool DrawFromAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb, int bucket)
         {
             var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
-            var batches = GetBatches(context, typeface, atlas, sprites, bucket);
+            var colorAtlas = GetColorAtlas(context, typeface, sprites);
 
-            DrawBatches(context, atlas, batches, Matrix.CreateTranslation(originX, originY), foregroundArgb,
-                bilinear: false);
+            if (GetBatches(context, typeface, atlas, colorAtlas, sprites, bucket) is not { } batches)
+            {
+                return false;
+            }
+
+            DrawBatches(context, atlas, colorAtlas, batches, Matrix.CreateTranslation(originX, originY),
+                foregroundArgb, bilinear: false);
+
+            return true;
         }
 
-        private static GlyphAtlasBatch[] GetBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
-            GlyphMaskAtlas atlas, TransformedGlyphSprites sprites, int bucket)
+        /// <summary>
+        /// The atlas of a sprite set's colour content: the context's, else the typeface's own;
+        /// <c>null</c> for a set without colour sprites, so text without colour makes no colour atlas.
+        /// </summary>
+        private static GlyphMaskAtlas? GetColorAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
+            TransformedGlyphSprites sprites)
+            => sprites.HasColor ? context.ColorAtlas ?? typeface.ColorAtlas : null;
+
+        private static GlyphAtlasBatch[]? GetBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
+            GlyphMaskAtlas atlas, GlyphMaskAtlas? colorAtlas, TransformedGlyphSprites sprites, int bucket)
         {
-            if (sprites.TryGetBatches(atlas, bucket, out var batches))
+            // Only foreground sprites hold coverage corrected for the foreground's bucket.
+            if (!sprites.UsesForegroundBucket)
+            {
+                bucket = 0;
+            }
+
+            if (sprites.TryGetBatches(atlas, colorAtlas, bucket, out var batches))
             {
                 return batches;
             }
 
-            var timer = GlyphPhaseTimers.Start();
+            if (sprites.KeepsRunMask)
+            {
+                return null;
+            }
 
-            BuildAtlasBatches(context, typeface, atlas, sprites, bucket);
+            var timer = GlyphPhaseTimers.Start();
+            var built = BuildAtlasBatches(context, typeface, atlas, colorAtlas, sprites, bucket);
+
             GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasBatchBuild, timer);
 
-            return sprites.Batches!;
+            return built ? sprites.Batches! : null;
         }
 
         private static void DrawBatches(ITransformedGlyphContext context, GlyphMaskAtlas atlas,
-            GlyphAtlasBatch[] batches, in Matrix placement, uint foregroundArgb, bool bilinear)
+            GlyphMaskAtlas? colorAtlas, GlyphAtlasBatch[] batches, in Matrix placement, uint foregroundArgb,
+            bool bilinear)
         {
             var tick = atlas.Tick();
+            var colorTick = colorAtlas?.Tick() ?? tick;
 
             foreach (var batch in batches)
             {
                 if (batch.Page is { } page)
                 {
-                    page.LastUse = tick;
+                    page.LastUse = batch.Kind == TransformedSpriteKind.Color ? colorTick : tick;
                 }
 
-                var tint = batch.Kind == TransformedSpriteKind.PaletteLayer ? batch.Color : foregroundArgb;
+                // Colour content carries its own colour and draws untinted.
+                var tint = batch.Kind switch
+                {
+                    TransformedSpriteKind.PaletteLayer => batch.Color,
+                    TransformedSpriteKind.Color => uint.MaxValue,
+                    _ => foregroundArgb,
+                };
 
                 var timer = GlyphPhaseTimers.Start();
 
@@ -519,19 +561,25 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// uncorrected. On a GPU context the atlas is the masks' storage: a mask missing from it
         /// is rasterized into a transient buffer and copied in, and never enters the glyph mask
         /// cache. A mask too large for a page, or over the cache's entry bound, draws from its
-        /// own image.
+        /// own image. Colour sprites take their entries from <paramref name="colorAtlas"/>, made on
+        /// a miss; returns <c>false</c>, keeping no batches, when one cannot be made or placed, or
+        /// when two colour sprites of an upright set share ink (the run then keeps its run mask).
         /// </summary>
-        private static void BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
-            GlyphMaskAtlas atlas, TransformedGlyphSprites sprites, int bucket)
+        private static bool BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
+            GlyphMaskAtlas atlas, GlyphMaskAtlas? colorAtlas, TransformedGlyphSprites sprites, int bucket)
         {
             GlyphRasterDiagnostics.CountAtlasBatchBuild();
 
             var tick = atlas.Tick();
             var owner = context.MaskAtlas is null ? 0 : typeface.MaskOwnerId;
+            var colorOwner = context.ColorAtlas is null ? 0 : typeface.MaskOwnerId;
+            var colorTick = colorAtlas?.Tick() ?? tick;
             var count = sprites.Count;
             var builder = t_batchBuilder ??= new GlyphAtlasBatchBuilder();
             var scratch = t_scratch ??= new GlyphPathBuilder();
             const int maxEntryBytes = GlyphMaskCache.MaxEntryBytes;
+            ColorGlyphContent? content = null;
+            List<(GlyphAtlasPage, GlyphAtlasSprite)>? placedColor = null;
 
             builder.Begin(sprites.IsUpright);
 
@@ -540,6 +588,34 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var i = 0; i < count; i++)
                 {
                     var sprite = sprites.Sprites[i];
+
+                    if (sprite.Kind == TransformedSpriteKind.Color)
+                    {
+                        if (!TryPlaceColorSprite(typeface, colorAtlas!, colorOwner, colorTick, sprites, i, ref content,
+                                out var colorSlot))
+                        {
+                            sprites.KeepsRunMask = true;
+                            builder.Abandon();
+                            return false;
+                        }
+
+                        if (colorSlot.IsEmpty)
+                        {
+                            continue;
+                        }
+
+                        var placed = new GlyphAtlasSprite(colorSlot.X, colorSlot.Y, colorSlot.Width, colorSlot.Height,
+                            sprite.X, sprite.Y);
+
+                        if (sprites.IsUpright)
+                        {
+                            (placedColor ??= new List<(GlyphAtlasPage, GlyphAtlasSprite)>()).Add((colorSlot.Page!, placed));
+                        }
+
+                        builder.Add(colorSlot.Page!, TransformedSpriteKind.Color, 0, i, placed);
+                        continue;
+                    }
+
                     var key = sprites.GetGlyphKey(i);
                     var spriteBucket = sprite.Kind == TransformedSpriteKind.Foreground ? bucket : GlyphMaskAtlas.Uncorrected;
 
@@ -590,13 +666,51 @@ namespace Avalonia.Media.Fonts.Rasterization
                         new GlyphAtlasSprite(slot.X, slot.Y, slot.Width, slot.Height, sprite.X, sprite.Y));
                 }
 
-                sprites.SetBatches(atlas, bucket, builder.Build(context));
+                if (placedColor is not null && ColorSpritesShareInk(placedColor))
+                {
+                    sprites.KeepsRunMask = true;
+                    builder.Abandon();
+                    return false;
+                }
+
+                sprites.SetBatches(atlas, colorAtlas, bucket, builder.Build(context));
+
+                return true;
             }
             catch
             {
                 builder.Abandon();
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Finds colour sprite <paramref name="index"/>'s entry in <paramref name="colorAtlas"/>, or
+        /// makes and places it. Returns <c>false</c> when its pixels cannot be made, do not match
+        /// the sprite's placement, or do not fit a page.
+        /// </summary>
+        private static bool TryPlaceColorSprite(GlyphTypeface typeface, GlyphMaskAtlas colorAtlas, int owner,
+            long tick, TransformedGlyphSprites sprites, int index, ref ColorGlyphContent? content,
+            out GlyphAtlasSlot slot)
+        {
+            var entry = GetColorEntryKey(owner, typeface, sprites, index);
+
+            if (colorAtlas.TryGet(entry, tick, out slot))
+            {
+                return true;
+            }
+
+            ref readonly var sprite = ref sprites.Sprites[index];
+
+            content ??= new ColorGlyphContent(typeface, sprites.Key, sprites.EmboldenQ, sprites.Oblique);
+
+            if (content.BuildPixels(sprite) is not { } pixels || pixels.Width != sprite.Width ||
+                pixels.Height != sprite.Height)
+            {
+                return false;
+            }
+
+            return colorAtlas.TryAdd(entry, pixels, tick, out slot);
         }
 
         /// <summary>

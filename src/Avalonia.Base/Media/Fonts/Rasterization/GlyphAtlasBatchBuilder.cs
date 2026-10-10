@@ -8,7 +8,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     /// <remarks>
     /// A run whose glyphs live on two pages would otherwise turn into a batch at every page
-    /// change. A foreground sprite instead joins the latest batch of its page even when batches
+    /// change. A foreground or colour sprite instead joins the latest batch of its page even when batches
     /// of other pages were begun since, provided it overlaps no sprite of those batches: it is
     /// then drawn ahead of them, but no pixel sees its draws in another order. Overlapping
     /// sprites keep their order because the blend rounds to 8 bits after every draw, so one
@@ -73,7 +73,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var last = _groups.Count - 1;
             var target = -1;
 
-            if (kind == TransformedSpriteKind.Foreground)
+            if (kind is TransformedSpriteKind.Foreground or TransformedSpriteKind.Color)
             {
                 for (var g = last; g >= _firstOpen; g--)
                 {
@@ -123,7 +123,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (target < 0)
             {
                 // A layer begins a batch no later sprite may move ahead of.
-                if (kind != TransformedSpriteKind.Foreground)
+                if (kind is not (TransformedSpriteKind.Foreground or TransformedSpriteKind.Color))
                 {
                     _firstOpen = _groups.Count;
                 }
@@ -286,8 +286,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             return false;
         }
 
-        /// <summary>Whether two sprites both hold coverage at a pixel they cover.</summary>
-        private static bool SharesCoverage(GlyphAtlasPage firstPage, in GlyphAtlasSprite first,
+        /// <summary>
+        /// Whether two sprites both hold coverage at a pixel they cover; on a colour page a texel
+        /// holds coverage when its alpha is not zero.
+        /// </summary>
+        internal static bool SharesCoverage(GlyphAtlasPage firstPage, in GlyphAtlasSprite first,
             GlyphAtlasPage secondPage, in GlyphAtlasSprite second)
         {
             var left = Math.Max(first.X, second.X);
@@ -299,15 +302,23 @@ namespace Avalonia.Media.Fonts.Rasterization
             // hold both sprites' coverage.
             var firstPixels = firstPage.Pixels;
             var secondPixels = secondPage.Pixels;
+            var firstStep = firstPage.BytesPerPixel;
+            var secondStep = secondPage.BytesPerPixel;
+
+            // The alpha byte of an RGBA texel is its last.
+            var firstAlpha = firstStep - 1;
+            var secondAlpha = secondStep - 1;
 
             for (var y = top; y < bottom; y++)
             {
-                var firstRow = (first.SourceY + y - first.Y) * GlyphMaskAtlas.PageWidth + first.SourceX - first.X;
-                var secondRow = (second.SourceY + y - second.Y) * GlyphMaskAtlas.PageWidth + second.SourceX - second.X;
+                var firstRow = (first.SourceY + y - first.Y) * firstPage.RowBytes + (first.SourceX - first.X) * firstStep +
+                               firstAlpha;
+                var secondRow = (second.SourceY + y - second.Y) * secondPage.RowBytes +
+                                (second.SourceX - second.X) * secondStep + secondAlpha;
 
                 for (var x = left; x < right; x++)
                 {
-                    if (firstPixels[firstRow + x] != 0 && secondPixels[secondRow + x] != 0)
+                    if (firstPixels[firstRow + x * firstStep] != 0 && secondPixels[secondRow + x * secondStep] != 0)
                     {
                         return true;
                     }

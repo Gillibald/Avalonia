@@ -45,9 +45,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <see cref="Bucket"/>. A mask key is complete only within one typeface, so an atlas
     /// holding the masks of several typefaces tells them apart by owner: the
     /// <see cref="GlyphTypeface.MaskOwnerId"/> of the typeface the mask belongs to, or 0 in an
-    /// atlas of one typeface.
+    /// atlas of one typeface. In an atlas of colour pages <see cref="Bucket"/> names the kind of
+    /// entry (<see cref="GlyphMaskAtlas.ColorEntryBucket"/>) and <see cref="Color"/> the colour
+    /// baked into it, 0 when none is.
     /// </summary>
-    internal readonly record struct GlyphAtlasEntryKey(int Owner, GlyphMaskKey Key, int Bucket);
+    internal readonly record struct GlyphAtlasEntryKey(int Owner, GlyphMaskKey Key, int Bucket, uint Color = 0);
 
     /// <summary>The texel layout of a <see cref="GlyphMaskAtlas"/>'s pages.</summary>
     internal enum GlyphAtlasFormat : byte
@@ -213,6 +215,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The bucket of entries holding coverage as rasterized, without correction.</summary>
         public const int Uncorrected = -1;
+
+        /// <summary>The <see cref="GlyphAtlasEntryKey.Bucket"/> of a colour atlas entry of <paramref name="entry"/>.</summary>
+        public static int ColorEntryBucket(ColorAtlasEntry entry) => Uncorrected - (int)entry;
 
         private const int RowQuantum = 64;
 
@@ -383,10 +388,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// with <paramref name="tick"/>.
         /// </summary>
         public bool TryGet(int owner, in GlyphMaskKey key, int bucket, long tick, out GlyphAtlasSlot slot)
+            => TryGet(new GlyphAtlasEntryKey(owner, key, bucket), tick, out slot);
+
+        /// <summary>Looks up <paramref name="entry"/> and stamps its page with <paramref name="tick"/>.</summary>
+        public bool TryGet(in GlyphAtlasEntryKey entry, long tick, out GlyphAtlasSlot slot)
         {
             lock (_lock)
             {
-                if (!_slots.TryGetValue(new GlyphAtlasEntryKey(owner, key, bucket), out slot))
+                if (!_slots.TryGetValue(entry, out slot))
                 {
                     GlyphRasterDiagnostics.CountAtlasLookup(hit: false);
                     return false;
@@ -428,6 +437,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public bool TryAdd(int owner, in GlyphMaskKey key, int bucket, GlyphMask mask, long tick,
             out GlyphAtlasSlot slot)
+            => TryAdd(new GlyphAtlasEntryKey(owner, key, bucket), mask, tick, out slot);
+
+        /// <summary>
+        /// Places <paramref name="mask"/> under <paramref name="entry"/>, as
+        /// <see cref="TryAdd(int, in GlyphMaskKey, int, GlyphMask, long, out GlyphAtlasSlot)"/> does.
+        /// </summary>
+        public bool TryAdd(in GlyphAtlasEntryKey entry, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
         {
             if (!mask.IsEmpty && (!Fits(mask.Width, mask.Height) || mask.Channels != BytesPerPixel))
             {
@@ -435,7 +451,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            var entry = new GlyphAtlasEntryKey(owner, key, bucket);
+            var bucket = entry.Bucket;
 
             lock (_lock)
             {

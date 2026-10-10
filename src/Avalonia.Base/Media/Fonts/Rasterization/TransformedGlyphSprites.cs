@@ -17,6 +17,35 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>A COLR v0 layer in a palette colour, without the coverage correction.</summary>
         PaletteLayer,
+
+        /// <summary>
+        /// Premultiplied colour from a colour atlas page (see <see cref="ColorAtlasEntry"/>), drawn
+        /// untinted.
+        /// </summary>
+        Color,
+    }
+
+    /// <summary>
+    /// What a <see cref="TransformedSpriteKind.Color"/> sprite's colour atlas entry holds: the
+    /// glyph's share of a pre-tinted run mask, exactly as the run mask compose writes it onto
+    /// transparent.
+    /// </summary>
+    internal enum ColorAtlasEntry : byte
+    {
+        /// <summary>Not a colour atlas entry.</summary>
+        None,
+
+        /// <summary>A COLR v1 paint graph rasterized into a colour mask (<see cref="ColorGlyphMasks"/>).</summary>
+        PaintGraph,
+
+        /// <summary>A COLR v0 glyph's layers composed tinted, without the coverage correction.</summary>
+        Layers,
+
+        /// <summary>A bitmap strike's image, scaled to the run's size.</summary>
+        Strike,
+
+        /// <summary>An outline glyph of a colour typeface, tinted through the coverage correction.</summary>
+        Outline,
     }
 
     /// <summary>
@@ -35,8 +64,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         public int Width;
         public int Height;
 
-        /// <summary>The straight ARGB palette colour of a <see cref="TransformedSpriteKind.PaletteLayer"/>.</summary>
+        /// <summary>
+        /// The straight ARGB palette colour of a <see cref="TransformedSpriteKind.PaletteLayer"/>; for a
+        /// <see cref="TransformedSpriteKind.Color"/> sprite the colour its entry bakes in (the text
+        /// colour of a paint graph that uses the foreground, the premultiplied tint of tinted
+        /// entries), 0 when it bakes in none.
+        /// </summary>
         public uint Color;
+
+        /// <summary>The colour atlas entry of a <see cref="TransformedSpriteKind.Color"/> sprite.</summary>
+        public ColorAtlasEntry Entry;
     }
 
     /// <summary>
@@ -110,8 +147,30 @@ namespace Avalonia.Media.Fonts.Rasterization
             EmboldenQ = emboldenQ;
             Oblique = oblique;
             _sprites = sprites;
+
+            foreach (var sprite in sprites)
+            {
+                HasColor |= sprite.Kind == TransformedSpriteKind.Color;
+                UsesForegroundBucket |= sprite.Kind == TransformedSpriteKind.Foreground;
+            }
+
             GlyphRasterDiagnostics.CountSpriteSetBuild();
         }
+
+        /// <summary>Whether a sprite draws from a colour atlas page.</summary>
+        public bool HasColor { get; }
+
+        /// <summary>
+        /// Whether a sprite holds coverage corrected for the foreground's luminance bucket, so the
+        /// set's batches depend on the bucket.
+        /// </summary>
+        public bool UsesForegroundBucket { get; }
+
+        /// <summary>
+        /// Whether the run draws its run mask rather than these sprites: its colour content cannot
+        /// be drawn from the colour atlas with the run mask's pixels.
+        /// </summary>
+        public bool KeepsRunMask { get; internal set; }
 
         public RunMaskKey Key { get; }
 
@@ -217,11 +276,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The batches drawable from <paramref name="atlas"/> in a foreground of luminance
-        /// <paramref name="bucket"/>: built from it for that bucket, and none of their pages
-        /// evicted.
+        /// The batches drawable from <paramref name="atlas"/> and <paramref name="colorAtlas"/> in a
+        /// foreground of luminance <paramref name="bucket"/>: built from them for that bucket, and
+        /// none of their pages evicted.
         /// </summary>
-        public bool TryGetBatches(GlyphMaskAtlas atlas, int bucket, out GlyphAtlasBatch[] batches)
+        public bool TryGetBatches(GlyphMaskAtlas atlas, GlyphMaskAtlas? colorAtlas, int bucket,
+            out GlyphAtlasBatch[] batches)
         {
             batches = null!;
 
@@ -234,7 +294,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 ref readonly var slot = ref slots[i];
 
-                if (slot.Batches is null || slot.Bucket != bucket || slot.Atlas != atlas)
+                if (slot.Batches is null || slot.Bucket != bucket || slot.Atlas != atlas ||
+                    slot.ColorAtlas != colorAtlas)
                 {
                     continue;
                 }
@@ -260,7 +321,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Keeps the batches of <paramref name="bucket"/>, replacing those of the same bucket or
         /// of the bucket stored longest ago.
         /// </summary>
-        internal void SetBatches(GlyphMaskAtlas atlas, int bucket, GlyphAtlasBatch[] batches)
+        internal void SetBatches(GlyphMaskAtlas atlas, GlyphMaskAtlas? colorAtlas, int bucket,
+            GlyphAtlasBatch[] batches)
         {
             var slots = _bucketBatches ??= new BucketBatches[BucketSlots];
             var index = -1;
@@ -282,7 +344,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             DisposeBatches(slots[index].Batches);
 
-            slots[index] = new BucketBatches(bucket, atlas, batches);
+            slots[index] = new BucketBatches(bucket, atlas, colorAtlas, batches);
             _current = index;
             Owner?.Recharge();
         }
@@ -374,7 +436,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             DisposeFallbackImages();
         }
 
-        private readonly record struct BucketBatches(int Bucket, GlyphMaskAtlas? Atlas, GlyphAtlasBatch[]? Batches);
+        private readonly record struct BucketBatches(int Bucket, GlyphMaskAtlas? Atlas, GlyphMaskAtlas? ColorAtlas,
+            GlyphAtlasBatch[]? Batches);
     }
 
     /// <summary>

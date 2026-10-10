@@ -2556,6 +2556,7 @@ namespace Avalonia.Media
             Interlocked.Exchange(ref _glyphMaskCache, null)?.Release();
             Interlocked.Exchange(ref _colorMaskCache, null)?.Release();
             Interlocked.Exchange(ref _glyphMaskAtlas, null)?.Release();
+            Interlocked.Exchange(ref _colorAtlas, null)?.Release();
             Interlocked.Exchange(ref _trueTypeHinters, null)?.Release();
             Interlocked.Exchange(ref _glyphCache, null)?.Release();
             _verticalGridFit = null;
@@ -4200,11 +4201,13 @@ namespace Avalonia.Media
                 return;
             }
 
-            // The shared glyph atlas outlives the typeface, and masks of a disposed owner can
+            // The shared glyph atlases outlive the typeface, and masks of a disposed owner can
             // never be drawn again. A face created with simulations owns its masks through its
             // unsimulated view.
             Fonts.Rasterization.GlyphMaskAtlas.Shared.Retire(_maskOwnerId);
             Fonts.Rasterization.GlyphMaskAtlas.Shared.Retire(_unsimulatedTypeface?._maskOwnerId ?? 0);
+            Fonts.Rasterization.GlyphMaskAtlas.SharedColor.Retire(_maskOwnerId);
+            Fonts.Rasterization.GlyphMaskAtlas.SharedColor.Retire(_unsimulatedTypeface?._maskOwnerId ?? 0);
 
             // The typeface's own glyph caches give their bytes back to the glyph cache budget
             // now, not when the GC collects them. Payloads are unlinked, never disposed: runs
