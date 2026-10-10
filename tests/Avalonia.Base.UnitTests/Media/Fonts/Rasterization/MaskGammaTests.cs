@@ -47,6 +47,44 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             Assert.NotEqual(black[64], white[64]);
         }
 
+        /// <summary>
+        /// Effective alpha that DirectWrite's grayscale blend gives raw coverage, measured on
+        /// Windows 11 with the default rendering parameters (gamma 1.8, grayscale enhanced
+        /// contrast 1.0) for gray text at each bucket's luminance, averaged over grounds at
+        /// least 64 levels away.
+        /// </summary>
+        [Theory]
+        [InlineData(0, 64, 61)]
+        [InlineData(0, 128, 118)]
+        [InlineData(0, 191, 184)]
+        [InlineData(0, 239, 238)]
+        [InlineData(1, 64, 75)]
+        [InlineData(1, 128, 131)]
+        [InlineData(2, 128, 143)]
+        [InlineData(2, 191, 199)]
+        [InlineData(3, 64, 101)]
+        [InlineData(3, 128, 156)]
+        [InlineData(3, 239, 243)]
+        [InlineData(4, 64, 105)]
+        [InlineData(4, 128, 160)]
+        [InlineData(4, 191, 208)]
+        [InlineData(5, 64, 97)]
+        [InlineData(5, 128, 155)]
+        [InlineData(6, 64, 100)]
+        [InlineData(6, 128, 161)]
+        [InlineData(6, 191, 208)]
+        [InlineData(7, 32, 61)]
+        [InlineData(7, 64, 110)]
+        [InlineData(7, 128, 176)]
+        [InlineData(7, 191, 219)]
+        public void Grayscale_Tables_Follow_The_Measured_DirectWrite_Blend(int bucket, int coverage, int directWrite)
+        {
+            var value = MaskGamma.GetTable(bucket)[coverage];
+
+            Assert.True(System.Math.Abs(value - directWrite) <= 5,
+                $"bucket {bucket}, coverage {coverage}: table {value}, DirectWrite {directWrite}");
+        }
+
         [Fact]
         public void Premultiplied_Lookup_Matches_The_Straight_Color()
         {
