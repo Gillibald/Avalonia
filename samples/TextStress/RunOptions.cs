@@ -13,7 +13,10 @@ namespace TextStress
     {
         public string Scenario { get; private set; } = "code-scroll";
 
-        /// <summary>"managed" or "backend": the process-wide text rasterization mode.</summary>
+        /// <summary>
+        /// "managed" or "backend": the process-wide text rasterization mode; "default" leaves it
+        /// unset so the platform default applies.
+        /// </summary>
         public string Mode { get; private set; } = "managed";
 
         /// <summary>
@@ -119,9 +122,9 @@ namespace TextStress
                 }
             }
 
-            if (options.Mode is not ("managed" or "backend"))
+            if (options.Mode is not ("managed" or "backend" or "default"))
             {
-                throw new ArgumentException($"--mode must be managed or backend, not '{options.Mode}'.");
+                throw new ArgumentException($"--mode must be managed, backend or default, not '{options.Mode}'.");
             }
 
             return options;
@@ -150,7 +153,8 @@ namespace TextStress
 
         public const string Usage =
             "TextStress --scenario <code-scroll|list-fling|mixed-ui|sweep-runs|sweep-glyphs|sweep-states|simd-bench>\n" +
-            "  --mode managed|backend   text rasterization mode (default managed)\n" +
+            "  --mode managed|backend|default   text rasterization mode; default leaves it to the platform\n" +
+            "    (default managed)\n" +
             "  --render default|angle|wgl|software|vulkan   Win32 rendering mode (default: platform list);\n" +
             "    on Android egl|vulkan|software\n" +
             "  --refresh 60|120   Android: display refresh rate the window holds; a run fails (exit 3) if it\n" +

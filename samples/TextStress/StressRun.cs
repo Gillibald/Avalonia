@@ -35,15 +35,21 @@ namespace TextStress
         {
             var limitMb = options.GetInt("glyph-cache-mb", 0);
 
-            return new FontManagerOptions
+            var fontManagerOptions = new FontManagerOptions
             {
-                TextRasterizationMode = options.Mode == "backend"
-                    ? TextRasterizationMode.Backend
-                    : TextRasterizationMode.Managed,
-
                 // Unset keeps the platform default.
                 GlyphCacheLimitBytes = limitMb > 0 ? limitMb * 1024L * 1024 : null
             };
+
+            // "default" leaves the mode unset, so the platform picks it once it has chosen how it renders.
+            if (options.Mode != "default")
+            {
+                fontManagerOptions.TextRasterizationMode = options.Mode == "backend"
+                    ? TextRasterizationMode.Backend
+                    : TextRasterizationMode.Managed;
+            }
+
+            return fontManagerOptions;
         }
 
         /// <summary>Runs the scenario in <paramref name="topLevel"/>; returns the process exit code.</summary>

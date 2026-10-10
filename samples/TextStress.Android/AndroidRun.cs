@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
@@ -97,9 +98,14 @@ namespace TextStress.AndroidHost
             }
 
             Info(string.Format(CultureInfo.InvariantCulture,
-                "run scenario={0} mode={1} render={2} pass={3} client_size={4} render_scaling={5} density={6}",
+                "run scenario={0} mode={1} render={2} pass={3} client_size={4} render_scaling={5} density={6} " +
+                "resolved_mode={7} graphics={8}",
                 options.Scenario, options.Mode, options.Render, options.Pass, topLevel.ClientSize,
-                topLevel.RenderScaling, density));
+                topLevel.RenderScaling, density,
+                (AvaloniaLocator.Current.GetService<FontManagerOptions>() ?? new FontManagerOptions())
+                    .TextRasterizationMode,
+                AvaloniaLocator.Current.GetService<Avalonia.Platform.IPlatformGraphics>()?.GetType().Name
+                    ?? "software"));
 
             // The mode switch lands a few frames after the window asks for it.
             var rate = s_rate!;
