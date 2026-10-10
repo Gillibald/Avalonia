@@ -156,6 +156,25 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 return false;
             }
 
+            if (backwardCompatibility == 0)
+            {
+                // Under full interpretation the glyph's origin is its hinted left phantom
+                // point, which the program may move and which pre-rounds to a pixel when the
+                // left side bearing differs from xMin. The outline and its phantoms move so
+                // that point sits on the origin, the reference's final translation
+                // (TT_Load_Glyph). Natural-class results stay at the design origin, where
+                // the unhinted outline draws.
+                var origin = zone.CurX[zone.PointCount - 4];
+
+                if (origin != 0)
+                {
+                    for (var i = 0; i < zone.PointCount; i++)
+                    {
+                        zone.CurX[i] = unchecked(zone.CurX[i] - origin);
+                    }
+                }
+            }
+
             Zone = zone;
             return true;
         }
