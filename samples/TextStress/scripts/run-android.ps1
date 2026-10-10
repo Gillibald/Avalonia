@@ -46,6 +46,8 @@ param(
         'sweep-states' = '64,1000'
     },
     [System.Collections.IDictionary] $Variants = $null,
+    # The modes each job and variant runs in; the order alternates per pass.
+    [ValidateSet('managed', 'backend')] [string[]] $Modes = @('managed', 'backend'),
     [int] $Refresh = 60,
     [double] $CoolDownC = 38,
     [int] $CoolDownMaxSec = 300,
@@ -186,7 +188,7 @@ if (-not $NoWarmupRun) {
 }
 
 for ($pass = 1; $pass -le $Passes; $pass++) {
-    $modes = if ($pass % 2 -eq 1) { @('managed', 'backend') } else { @('backend', 'managed') }
+    $modes = if ($pass % 2 -eq 1) { $Modes } else { @($Modes)[($Modes.Count - 1)..0] }
 
     foreach ($render in $Renders) {
         $renderDir = Join-Path $OutDir $render
