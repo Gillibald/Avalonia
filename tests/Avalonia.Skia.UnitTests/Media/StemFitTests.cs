@@ -49,7 +49,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var snapped = GlyphMasks.Build(typeface, scratch,
                 new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale((float)size), 0, GlyphMaskMode.Antialiased,
-                    GridFit: true, StemSnap: true));
+                    GridFit: true, Strong: true));
             var unsnapped = GlyphMasks.Build(typeface, scratch,
                 new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale((float)size), 0, GlyphMaskMode.Antialiased));
 
@@ -76,7 +76,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var snapped = GlyphMasks.Build(typeface, scratch,
                     new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(13), 0, GlyphMaskMode.Antialiased,
-                        GridFit: true, StemSnap: true));
+                        GridFit: true, Strong: true));
                 var unsnapped = GlyphMasks.Build(typeface, scratch,
                     new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(13), 0, GlyphMaskMode.Antialiased));
 
@@ -139,7 +139,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var scratch = new GlyphPathBuilder();
             var mask = GlyphMasks.Build(typeface, scratch,
                 new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(size), 0, GlyphMaskMode.Antialiased,
-                    GridFit: true, StemSnap: true));
+                    GridFit: true, Strong: true));
 
             if (mask.IsEmpty)
             {

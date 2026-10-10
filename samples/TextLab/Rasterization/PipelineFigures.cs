@@ -434,7 +434,7 @@ namespace TextLab
 
             keyInfo = string.Join(Environment.NewLine,
                 Inv($"GlyphMaskKey: glyph {glyph}, scaleQ {scaleQ} ({scaleQ / GlyphMaskKey.ScaleQuantum:0.###} px/em)"),
-                $"phase 0 of {GlyphMaskKey.PhaseCount}, mode Antialiased, GridFit, no StemSnap",
+                $"phase 0 of {GlyphMaskKey.PhaseCount}, mode Antialiased, GridFit, not Strong",
                 $"mask {mask.Width}x{mask.Height} at ({mask.Left},{mask.Top}), pen-relative",
                 $"cache: {typeface.MaskCache.Count} masks resident, glyph cache limit {GlyphCacheBudget.Shared.LimitBytes / (1024 * 1024)} MB");
 

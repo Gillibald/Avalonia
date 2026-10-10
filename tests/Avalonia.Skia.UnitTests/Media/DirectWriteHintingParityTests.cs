@@ -124,7 +124,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 var glyph = typeface.CharacterToGlyphMap[Sample[i]];
                 var mask = GlyphMasks.Build(typeface, scratch,
-                    new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: true, StemSnap: stemSnap));
+                    new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Antialiased, GridFit: true, Strong: stemSnap));
 
                 if (mask.IsEmpty)
                 {

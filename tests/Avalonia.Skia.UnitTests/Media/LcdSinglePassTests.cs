@@ -320,10 +320,10 @@ namespace Avalonia.Skia.UnitTests.Media
             var gasp = run.GlyphTypeface.Gasp;
             var em = run.FontRenderingEmSize;
             var gridFit = !gasp.IsBelowHintingFloor(em);
-            var penSnap = gridFit && (gasp.WantsFullGridFit(em) ||
-                                      (gasp.WantsBytecodeGridFit(em) && run.GlyphTypeface.HasTrueTypeHinting));
+            var strong = gridFit && (gasp.WantsFullGridFit(em) ||
+                                     (gasp.WantsBytecodeGridFit(em) && run.GlyphTypeface.HasTrueTypeHinting));
 
-            if (penSnap)
+            if (RunMaskKey.SnapsPensUnder(strong, GlyphMaskMode.Subpixel))
             {
                 phase = 0;
             }
@@ -331,7 +331,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return new[]
             {
                 new RunMaskKey(GlyphMaskKey.QuantizeScale((float)em), phase, GlyphMaskMode.Subpixel,
-                    RunMaskComposer.MakeTint(255, 0, 0, 0), gridFit, penSnap),
+                    RunMaskComposer.MakeTint(255, 0, 0, 0), gridFit, strong),
             };
         }
 

@@ -99,7 +99,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
                     for (var glyph = 0; glyph < glyphs; glyph++)
                     {
                         yield return new GlyphMaskKey((ushort)(glyph * typeface.GlyphCount / glyphs), scaleQ, 0, mode,
-                            GridFit: true, StemSnap: strong);
+                            GridFit: true, Strong: strong);
                     }
                 }
             }

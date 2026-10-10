@@ -2117,13 +2117,14 @@ namespace Avalonia.Skia.UnitTests.Media
             var em = run.FontRenderingEmSize;
             var gasp = typeface.Gasp;
             var gridFit = !gasp.IsBelowHintingFloor(em);
-            var penSnap = gridFit && (gasp.WantsFullGridFit(em) ||
-                                      (gasp.WantsBytecodeGridFit(em) && typeface.HasTrueTypeHinting));
+            var strong = gridFit && (gasp.WantsFullGridFit(em) ||
+                                     (gasp.WantsBytecodeGridFit(em) && typeface.HasTrueTypeHinting));
+            var snapsPens = RunMaskKey.SnapsPensUnder(strong, GlyphMaskMode.Antialiased);
             var scaleQ = GlyphMaskKey.QuantizeScale((float)em);
 
             void Snap(float x, out int pixel, out byte phase)
             {
-                if (penSnap)
+                if (snapsPens)
                 {
                     pixel = (int)MathF.Round(x);
                     phase = 0;
@@ -2147,7 +2148,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Snap(originFraction + positions[i * 2], out var penX, out var phase);
 
                 var mask = GlyphMasks.Build(typeface, scratch, new GlyphMaskKey(run.GlyphIndices[i], scaleQ, phase,
-                    GlyphMaskMode.Antialiased, gridFit, penSnap));
+                    GlyphMaskMode.Antialiased, gridFit, strong));
 
                 masks.Add((mask, originX + penX, originY + (int)MathF.Round(positions[i * 2 + 1])));
             }

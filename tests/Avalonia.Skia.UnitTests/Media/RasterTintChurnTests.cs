@@ -465,11 +465,12 @@ namespace Avalonia.Skia.UnitTests.Media
             var gasp = run.GlyphTypeface.Gasp;
             var em = run.FontRenderingEmSize;
             var gridFit = !gasp.IsBelowHintingFloor(em);
-            var penSnap = gridFit && (gasp.WantsFullGridFit(em) ||
-                                      (gasp.WantsBytecodeGridFit(em) && run.GlyphTypeface.HasTrueTypeHinting));
+            var strong = gridFit && (gasp.WantsFullGridFit(em) ||
+                                     (gasp.WantsBytecodeGridFit(em) && run.GlyphTypeface.HasTrueTypeHinting));
 
-            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)em), penSnap ? (byte)0 : phase,
-                GlyphMaskMode.Antialiased, tint, gridFit, penSnap);
+            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)em),
+                RunMaskKey.SnapsPensUnder(strong, GlyphMaskMode.Antialiased) ? (byte)0 : phase,
+                GlyphMaskMode.Antialiased, tint, gridFit, strong);
 
             return run.RunMasks.TryGet(key, out var mask) ? mask.Parts[0].Handle : null;
         }

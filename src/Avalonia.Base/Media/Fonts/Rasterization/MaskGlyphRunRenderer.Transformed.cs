@@ -78,7 +78,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // Sprites carry no colour: every path tints at draw time.
             var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhaseX, mode, 0u,
-                GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: originPhaseY);
+                GridFit: false, Strong: false, Transform: linear, OriginPhaseY: originPhaseY);
 
             var state = run.TransformedSprites;
             var hit = state.TryGet(key, out var sprites);
@@ -674,7 +674,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 GlyphMaskKey.SnapPen(originFractionY + (x * m12 + y * m22), out var penY, out var phaseY);
 
                 var glyphKey = new GlyphMaskKey(indices[i], key.ScaleQ, phaseX, key.Mode, GridFit: false,
-                    StemSnap: false, EmboldenQ: embolden, Oblique: oblique, Transform: key.Transform, PhaseY: phaseY);
+                    Strong: false, EmboldenQ: embolden, Oblique: oblique, Transform: key.Transform, PhaseY: phaseY);
 
                 if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))
                 {

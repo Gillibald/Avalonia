@@ -15,7 +15,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// also carries its quantized linear part and a vertical origin phase; upright runs leave
     /// both at their defaults.
     /// </summary>
-    internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true, bool PenSnap = false,
+    internal readonly record struct RunMaskKey(ushort ScaleQ, byte OriginPhase, GlyphMaskMode Mode, uint Tint, bool GridFit = true, bool Strong = false,
         GlyphMaskTransform Transform = default, byte OriginPhaseY = 0)
     {
         /// <summary>
@@ -23,6 +23,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// zero alpha, which no premultiplied tint has.
         /// </summary>
         public const uint CoverageTint = 0x00FFFFFF;
+
+        /// <summary>
+        /// Whether the run's origin and every glyph pen round to whole pixels with phase zero
+        /// instead of taking quarter-pixel phases.
+        /// </summary>
+        public bool SnapsPens => SnapsPensUnder(Strong, Mode);
+
+        /// <summary>The pen policy of <see cref="SnapsPens"/>, for a key not built yet.</summary>
+        public static bool SnapsPensUnder(bool strong, GlyphMaskMode mode) => strong;
     }
 
     /// <summary>

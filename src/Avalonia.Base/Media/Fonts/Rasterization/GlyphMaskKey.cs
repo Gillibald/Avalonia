@@ -92,7 +92,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// transformed, so the masks of a face and of its simulated variants share one cache.
     /// </summary>
     internal readonly record struct GlyphMaskKey(
-        ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool StemSnap = false,
+        ushort Glyph, ushort ScaleQ, byte Phase, GlyphMaskMode Mode, bool GridFit = true, bool Strong = false,
         ushort EmboldenQ = 0, bool Oblique = false, GlyphMaskTransform Transform = default, byte PhaseY = 0)
     {
         /// <summary>Number of subpixel x-phase buckets.</summary>

@@ -333,7 +333,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 out _, out var phaseY);
 
             return new RunMaskKey(GlyphMaskKey.QuantizeScale((float)(run.FontRenderingEmSize * norm)), phaseX,
-                GlyphMaskMode.Antialiased, 0u, GridFit: false, PenSnap: false, Transform: linear, OriginPhaseY: phaseY);
+                GlyphMaskMode.Antialiased, 0u, GridFit: false, Strong: false, Transform: linear, OriginPhaseY: phaseY);
         }
 
         /// <summary>
