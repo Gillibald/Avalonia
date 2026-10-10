@@ -311,12 +311,15 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         [Theory]
         [InlineData((byte)TrueTypeRenderClass.Grayscale, false, 925736)]
         [InlineData((byte)TrueTypeRenderClass.Subpixel, false, 401448)]
-        [InlineData((byte)TrueTypeRenderClass.Aliased, false, 40)]
+        [InlineData((byte)TrueTypeRenderClass.Aliased, false, 35)]
+        [InlineData((byte)TrueTypeRenderClass.Aliased, true, 35 | (1 << 10))]
         [InlineData((byte)TrueTypeRenderClass.Grayscale, true, 925736 | (1 << 10))]
         public void GetInfo_Reports_The_Decided_Identity(byte renderClass, bool isVariation, int expected)
         {
-            // Selector: version | subpixel | positioned | symmetric | grayscale-CT | variation.
-            var prep = new TtAsm().PushW(1 | 8 | 64 | 1024 | 2048 | 4096).Op(TtAsm.GetInfo).Build();
+            // Selector: version | variation | legacy grayscale | subpixel | positioned |
+            // symmetric | grayscale-CT. Bi-level rendering runs the classic engine and answers
+            // v35 in monochrome: no grayscale bit, no ClearType bits.
+            var prep = new TtAsm().PushW(1 | 8 | 32 | 64 | 1024 | 2048 | 4096).Op(TtAsm.GetInfo).Build();
 
             var state = CreateState(
                 cvtProgram: prep,
