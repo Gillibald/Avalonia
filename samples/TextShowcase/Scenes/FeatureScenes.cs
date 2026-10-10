@@ -165,7 +165,7 @@ namespace TextShowcase.Scenes
         public override string Title => "Hinting with the font's own programs";
 
         public override string Caption =>
-            "Managed runs each font's TrueType bytecode (fpgm, prep, glyph programs, gasp). Backend maps the same TextHintingMode onto Skia's hinting.";
+            "Managed runs each font's TrueType bytecode (fpgm, prep, glyph programs, gasp) for every hinting mode. The backend renders with the platform's default hinting whatever the mode; on Windows that is always DirectWrite's.";
 
         public override Control Build(SceneContext context)
         {
