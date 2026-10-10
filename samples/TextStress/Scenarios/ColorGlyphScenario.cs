@@ -19,6 +19,8 @@ namespace TextStress.Scenarios
     /// <c>--motion fling</c> (list) scrolls the list like list-fling. <c>--draw glyphrun</c>
     /// (grid) draws each cell as a direct <see cref="GlyphRun"/> instead of a text block, the path
     /// that cuts colour glyphs out of the run on the render thread under managed rasterization.
+    /// <c>--rotate</c> (grid) turns every cell by that many degrees, so the emoji are drawn under a
+    /// static rotation.
     /// </summary>
     /// <remarks>
     /// The emoji come from the system's Segoe UI Emoji, or with <c>--font-file</c> from a font
@@ -47,6 +49,7 @@ namespace TextStress.Scenarios
         private readonly double _speed;
         private readonly string? _fontFile;
         private readonly bool _glyphRuns;
+        private readonly double _rotate;
         private GlyphTypeface? _emojiTypeface;
         private GlyphRunCell[] _runCells = Array.Empty<GlyphRunCell>();
         private Panel? _grid;
@@ -88,6 +91,12 @@ namespace TextStress.Scenarios
                 "glyphrun" when !_list => true,
                 var other => throw new ArgumentException($"--draw must be textblock, or glyphrun for the grid, not '{other}'.")
             };
+            _rotate = options.GetDouble("rotate", 0);
+
+            if (_rotate != 0 && _list)
+            {
+                throw new ArgumentException("--rotate applies to the grid only.");
+            }
         }
 
         public override string Name => "color-glyphs";
@@ -97,7 +106,8 @@ namespace TextStress.Scenarios
             (_list
                 ? FormattableString.Invariant($"rows={_rowCount};speed={_speed}")
                 : FormattableString.Invariant($"cells={_cellCount};changes={_changes}") +
-                  (_glyphRuns ? ";draw=glyphrun" : ";draw=textblock")) +
+                  (_glyphRuns ? ";draw=glyphrun" : ";draw=textblock") +
+                  (_rotate != 0 ? FormattableString.Invariant($";rotate={_rotate}") : "")) +
             ";font=" + (_fontFile is null ? "Segoe UI Emoji" : System.IO.Path.GetFileName(_fontFile)) +
             FormattableString.Invariant($";pool={_pool.Length}");
 
@@ -182,6 +192,7 @@ namespace TextStress.Scenarios
                 for (var i = 0; i < _runCells.Length; i++)
                 {
                     _runCells[i] = new GlyphRunCell(_emojiTypeface!, _size, _pool[i % _pool.Length]);
+                    Rotate(_runCells[i]);
                     grid.Children.Add(_runCells[i]);
                 }
 
@@ -200,10 +211,19 @@ namespace TextStress.Scenarios
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center
                 };
+                Rotate(_cells[i]);
                 grid.Children.Add(_cells[i]);
             }
 
             return grid;
+        }
+
+        private void Rotate(Control cell)
+        {
+            if (_rotate != 0)
+            {
+                cell.RenderTransform = new RotateTransform(_rotate);
+            }
         }
 
         private Control CreateList(FontFamily emojiFamily)
