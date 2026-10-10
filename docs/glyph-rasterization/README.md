@@ -6,7 +6,7 @@ The motivation is backend portability and control: text output becomes identical
 
 ## Switching it on
 
-The default depends on the platform. Managed rasterization is the default on Windows x64, macOS on Apple silicon (ARM64) and in the browser (WebAssembly), where it was measured and tuned against the backend; every other platform and architecture (Windows on ARM64, Linux, macOS on Intel, iOS, Android) defaults to `TextRasterizationMode.Backend` until it passes the same measurement. An explicitly set mode always wins, on any platform:
+The default depends on the platform. Managed rasterization is the default on Windows x64, macOS on Apple silicon (ARM64), in the browser (WebAssembly) and on Android ARM64 with GPU rendering (EGL or Vulkan), where it was measured and tuned against the backend; every other platform and architecture (Windows on ARM64, Linux, macOS on Intel, iOS, Android with software rendering or on other architectures) defaults to `TextRasterizationMode.Backend` until it passes the same measurement. Android with software rendering was measured: there the backend is faster. Android settles its default once it has chosen the rendering mode from `AndroidPlatformOptions.RenderingMode`, so a device whose EGL or Vulkan initialization fails and falls back to software gets `Backend` too. An explicitly set mode always wins, on any platform:
 
 ```csharp
 AppBuilder.Configure<App>()
@@ -82,4 +82,4 @@ samples/TextLab/Rasterization/             pipeline inspector, glyph explorer, d
 
 ## Status
 
-The managed path is the default on Windows x64, macOS on Apple silicon and in the browser; other platforms join the table as they are measured. `Backend` remains selectable everywhere for at least one release.
+The managed path is the default on Windows x64, macOS on Apple silicon, in the browser and on Android ARM64 with GPU rendering; other platforms join the table as they are measured. `Backend` remains selectable everywhere for at least one release.

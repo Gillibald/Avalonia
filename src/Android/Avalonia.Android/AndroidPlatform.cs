@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Avalonia.Android;
 using Avalonia.Android.Platform;
 using Avalonia.Android.Platform.Input;
@@ -8,6 +9,7 @@ using Avalonia.Android.Platform.Vulkan;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Media;
 using Avalonia.OpenGL.Egl;
 using Avalonia.Platform;
 using Avalonia.Rendering;
@@ -96,6 +98,14 @@ namespace Avalonia.Android
                 .Bind<IActivatableLifetime>().ToConstant(new AndroidActivatableLifetime());
 
             var graphics = InitializeGraphics(Options);
+
+            // The text rasterization default depends on whether frames compose on the GPU or on
+            // the CPU, which is known only now. Glyph runs read the default when they are
+            // created, and none exist before the platform finishes initializing.
+            TextRasterizationDefaults.PlatformDefault = TextRasterizationDefaults.ForPlatform(
+                TextRasterizationPlatform.Android, RuntimeInformation.ProcessArchitecture,
+                rendersInSoftware: graphics is null);
+
             if (graphics is not null)
             {
                 AvaloniaLocator.CurrentMutable.Bind<IPlatformGraphics>().ToConstant(graphics);

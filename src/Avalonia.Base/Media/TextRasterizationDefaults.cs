@@ -26,7 +26,9 @@ namespace Avalonia.Media
         /// <summary>
         /// Gets or sets the mode used when the application leaves
         /// <see cref="FontManagerOptions.TextRasterizationMode"/> unset (or registers no options).
-        /// Initialized from the running platform; test assemblies whose expectations were
+        /// Initialized from the running platform as if it renders on the GPU; a platform whose
+        /// default depends on the render path (Android) sets it again once it has chosen the path,
+        /// before the first glyph run is created. Test assemblies whose expectations were
         /// recorded against one stack pin it so they render the same on every host.
         /// </summary>
         public static TextRasterizationMode PlatformDefault { get; set; } =
@@ -43,7 +45,8 @@ namespace Avalonia.Media
         /// <summary>
         /// Managed rasterization is the default only where it was measured against the backend
         /// and its vector paths tuned for the hardware; everywhere else the backend's text stack
-        /// stays the default.
+        /// stays the default. <paramref name="rendersInSoftware"/> tells whether the platform
+        /// composes frames on the CPU instead of the GPU; only Android's default depends on it.
         /// </summary>
         public static TextRasterizationMode ForPlatform(TextRasterizationPlatform platform,
             Architecture architecture, bool rendersInSoftware = false)
@@ -54,6 +57,12 @@ namespace Avalonia.Media
                 // apps publish with; interpreter builds are slower than the backend but keep it.
                 (TextRasterizationPlatform.Browser, _) => TextRasterizationMode.Managed,
                 (TextRasterizationPlatform.MacOS, Architecture.Arm64) => TextRasterizationMode.Managed,
+                // Measured on ARM64 phones under Mono AOT: faster than the backend when EGL or
+                // Vulkan composes the frame, but slower on CPU surfaces, where the backend's
+                // software text path blits faster than the managed one.
+                (TextRasterizationPlatform.Android, Architecture.Arm64) => rendersInSoftware
+                    ? TextRasterizationMode.Backend
+                    : TextRasterizationMode.Managed,
                 _ => TextRasterizationMode.Backend,
             };
 
