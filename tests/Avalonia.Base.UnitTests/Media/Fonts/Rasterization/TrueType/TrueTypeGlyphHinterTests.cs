@@ -38,7 +38,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         private static TrueTypeGlyphHinter CreateHinter(
             GlyfTable glyfTable,
             Dictionary<int, int>? advances = null,
-            TrueTypeSizeState? state = null)
+            TrueTypeSizeState? state = null,
+            Dictionary<int, int>? leftSideBearings = null)
         {
             return new TrueTypeGlyphHinter(
                 state ?? CreateState(),
@@ -47,7 +48,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
                 activeCoords: null,
                 (int glyphIndex, out int lsb, out int advance) =>
                 {
-                    lsb = 0;
+                    lsb = leftSideBearings is not null && leftSideBearings.TryGetValue(glyphIndex, out var bearing)
+                        ? bearing
+                        : 0;
                     advance = advances is not null && advances.TryGetValue(glyphIndex, out var value) ? value : 600;
                     return true;
                 },
@@ -84,6 +87,39 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
             // composite program's fresh touch.
             Assert.Equal(0, zone.Tags[2] & TrueTypeZone.TouchY);
             Assert.NotEqual(0, zone.Tags[3] & TrueTypeZone.TouchY);
+        }
+
+        [Fact]
+        public void Full_Interpretation_Places_The_Outline_At_The_Hinted_Left_Phantom()
+        {
+            // The program moves pp1 one pixel right. The glyph's origin is its hinted pp1, so
+            // the reference translates the outline by -pp1.x after hinting (TT_Load_Glyph),
+            // one pixel left here, and pp1 lands on the origin.
+            var program = new TtAsm().Op(0x01).PushB(4, 64).Op(0x38).Build();
+            var hinter = CreateHinter(BuildGlyf(BuildSimpleSquare(128, program)));
+
+            Assert.True(hinter.TryHint(0, backwardCompatibility: 0));
+            Assert.Equal(-64, hinter.Zone!.CurX[0]);
+            Assert.Equal(0, hinter.Zone.CurX[1]);
+            Assert.Equal(0, hinter.Zone.CurX[4]);
+
+            // The natural class drops x moves and restores the phantoms, so nothing moves.
+            Assert.True(hinter.TryHint(0, backwardCompatibility: 4));
+            Assert.Equal(0, hinter.Zone!.CurX[0]);
+            Assert.Equal(64, hinter.Zone.CurX[1]);
+        }
+
+        [Fact]
+        public void Full_Interpretation_Places_The_Outline_At_The_Rounded_Left_Phantom()
+        {
+            // A left side bearing of -100 units puts pp1 50/64 px right of xMin; it rounds to
+            // a whole pixel before any instruction runs, and the outline then moves left by it.
+            var hinter = CreateHinter(BuildGlyf(BuildSimpleSquare(128, instructions: null)),
+                leftSideBearings: new Dictionary<int, int> { [0] = -100 });
+
+            Assert.True(hinter.TryHint(0, backwardCompatibility: 0));
+            Assert.Equal(-64, hinter.Zone!.CurX[0]);
+            Assert.Equal(0, hinter.Zone.CurX[1]);
         }
 
         [Theory]
