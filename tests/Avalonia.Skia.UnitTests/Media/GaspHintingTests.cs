@@ -15,10 +15,12 @@ namespace Avalonia.Skia.UnitTests.Media
     /// <summary>
     /// Gasp respect for Unspecified hinting: fonts whose gasp table requests classic grid
     /// fitting without any ClearType-aware flag at the rendered ppem (legacy fonts like
-    /// Courier New) escalate Unspecified to the full grid fit - integer pens and stem
-    /// snapping - the way DirectWrite picks GDI-classic rendering for them. ClearType-aware
-    /// ranges and fonts without a gasp table keep the natural Light treatment, and an
-    /// explicit hinting choice always wins over the table.
+    /// Courier New) escalate Unspecified to Strong, the way DirectWrite picks GDI-classic
+    /// rendering for them. ClearType-aware ranges and fonts without a gasp table keep the
+    /// natural Light treatment, and an explicit hinting choice always wins over the table.
+    /// The runs render bi-level, where Strong fits x on whole-pixel pens and so always draws
+    /// apart from Light; grayscale Strong differs from Light only where a font's own program
+    /// fits y differently.
     /// </summary>
     public class GaspHintingTests
     {
@@ -42,7 +44,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var typeface = CreateTypeface(LegacyGasp());
 
             // 24 px sits in the gridfit-only range (<= 36): Unspecified must render exactly
-            // like Strong - pens rounded, stems snapped - and not like Light.
+            // like Strong, and not like Light.
             var unspecified = Render(typeface, 24, 8.26, TextHintingMode.Unspecified);
             var strong = Render(typeface, 24, 8.26, TextHintingMode.Strong);
             var light = Render(typeface, 24, 8.26, TextHintingMode.Light);
@@ -80,9 +82,11 @@ namespace Avalonia.Skia.UnitTests.Media
             // stands behind the request: Tahoma's 9-16 range gets the Strong treatment.
             var typeface = CreateTypeface(TahomaGasp(), fontFile: "NotoMono-Regular.ttf");
 
-            var unspecified = Render(typeface, 13, 8.26, TextHintingMode.Unspecified);
-            var strong = Render(typeface, 13, 8.26, TextHintingMode.Strong);
-            var light = Render(typeface, 13, 8.26, TextHintingMode.Light);
+            // Half a pixel off the grid: a quarter phase can leave Noto Mono's bi-level ink on
+            // the same pixel centres as the whole-pixel pen.
+            var unspecified = Render(typeface, 13, 8.5, TextHintingMode.Unspecified);
+            var strong = Render(typeface, 13, 8.5, TextHintingMode.Strong);
+            var light = Render(typeface, 13, 8.5, TextHintingMode.Light);
 
             Assert.True(unspecified.AsSpan().SequenceEqual(strong),
                 "SYMMETRIC_GRIDFIT without DOGRAY must escalate when the font is instructed");
@@ -202,7 +206,11 @@ namespace Avalonia.Skia.UnitTests.Media
                    }))
             {
                 surface.Canvas.Clear(SKColors.White);
-                context.PushTextOptions(new TextOptions { TextHintingMode = hinting });
+                context.PushTextOptions(new TextOptions
+                {
+                    TextHintingMode = hinting,
+                    TextRenderingMode = TextRenderingMode.Alias,
+                });
                 context.DrawGlyphRun(Brushes.Black, run);
                 context.PopTextOptions();
             }

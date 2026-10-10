@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Media.Fonts.Rasterization.TrueType;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -254,6 +255,155 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
             Assert.False(lcd.IsEmpty);
             Assert.Equal(3, lcd.Channels);
             Assert.False(aliased.IsEmpty);
+        }
+
+        [Theory]
+        [InlineData((byte)GlyphMaskMode.Antialiased, 1)]
+        [InlineData((byte)GlyphMaskMode.Subpixel, 3)]
+        public void Strong_Takes_The_Full_Program_Y_And_Keeps_The_Unhinted_X(byte maskMode, int subpixelFactor)
+        {
+            var mode = (GlyphMaskMode)maskMode;
+            var (typeface, glyph) = CreateNotoWithProgram('H', ShiftBothAxesProgram());
+
+            var strong = BuildOutline(typeface, glyph, mode, strong: true);
+            var fullY = HintedOutline(typeface, glyph, mode, backwardCompatibility: 0, unhintedX: true, subpixelFactor);
+
+            // The fixture's y shift only runs under full interpretation, and its x shift
+            // there moves the outline, so both halves of the expectation are observable.
+            Assert.False(fullY.AsSpan().SequenceEqual(
+                HintedOutline(typeface, glyph, mode, backwardCompatibility: 4, unhintedX: true, subpixelFactor)));
+            Assert.False(fullY.AsSpan().SequenceEqual(
+                HintedOutline(typeface, glyph, mode, backwardCompatibility: 0, unhintedX: false, subpixelFactor)));
+
+            Assert.Equal(fullY, strong);
+
+            // The kept x is the scaled design outline, to the 26.6 quantization.
+            var unhinted = UnhintedOutline(typeface, glyph, subpixelFactor);
+
+            Assert.Equal(unhinted.Length, strong.Length);
+
+            for (var i = 0; i < strong.Length; i += 2)
+            {
+                Assert.True(Math.Abs(strong[i] - unhinted[i]) <= subpixelFactor / 64f + 1e-4f,
+                    $"point {i / 2}: x {strong[i]} vs unhinted {unhinted[i]}");
+            }
+        }
+
+        [Fact]
+        public void Aliased_Strong_Keeps_The_Programs_X_Fitting()
+        {
+            var (typeface, glyph) = CreateNotoWithProgram('H', ShiftBothAxesProgram());
+
+            var aliased = BuildOutline(typeface, glyph, GlyphMaskMode.Aliased, strong: true);
+            var full = HintedOutline(typeface, glyph, GlyphMaskMode.Aliased, backwardCompatibility: 0,
+                unhintedX: false, subpixelFactor: 1);
+
+            Assert.Equal(full, aliased);
+        }
+
+        /// <summary>
+        /// Moves point 0 by 40/64 px in x and point 1 by 20/64 px in y. Neither point is touched
+        /// first, so the natural class drops the y move (SHPIX moves only points already
+        /// touched in y there) and ignores the x move.
+        /// </summary>
+        private static byte[] ShiftBothAxesProgram() => new TtAsm()
+            .Op(0x01).PushB(0, 40).Op(0x38)
+            .Op(0x00).PushB(1, 20).Op(0x38)
+            .Build();
+
+        /// <summary>
+        /// Noto Mono with <paramref name="character"/>'s glyph program replaced in place by
+        /// <paramref name="program"/>, padded with CLEAR to the original length.
+        /// </summary>
+        private static (GlyphTypeface Typeface, ushort Glyph) CreateNotoWithProgram(char character, byte[] program)
+        {
+            var bytes = TestFontFiles.Load("NotoMono-Regular.ttf");
+            var glyph = SyntheticFont.FromBytes(bytes).CreateGlyphTypeface().CharacterToGlyphMap[character];
+            var font = SyntheticFont.FromBytes(bytes);
+            var longOffsets = BinaryPrimitives.ReadInt16BigEndian(font.GetTable("head").AsSpan(50)) != 0;
+            var loca = font.GetTable("loca");
+            var offset = longOffsets
+                ? (int)BinaryPrimitives.ReadUInt32BigEndian(loca.AsSpan(glyph * 4))
+                : BinaryPrimitives.ReadUInt16BigEndian(loca.AsSpan(glyph * 2)) * 2;
+
+            font.Mutate("glyf", glyf =>
+            {
+                var contours = BinaryPrimitives.ReadInt16BigEndian(glyf.AsSpan(offset));
+
+                Assert.True(contours > 0, "the fixture glyph must be simple");
+
+                var lengthAt = offset + 10 + contours * 2;
+                var length = BinaryPrimitives.ReadUInt16BigEndian(glyf.AsSpan(lengthAt));
+
+                Assert.True(length >= program.Length, "the fixture glyph's program is too short to replace");
+
+                var instructions = glyf.AsSpan(lengthAt + 2, length);
+
+                instructions.Fill(0x22);
+                program.CopyTo(instructions);
+            });
+
+            return (font.CreateGlyphTypeface(), glyph);
+        }
+
+        private static float[] BuildOutline(GlyphTypeface typeface, ushort glyph, GlyphMaskMode mode, bool strong)
+        {
+            using var scratch = new GlyphPathBuilder();
+
+            GlyphMasks.Build(typeface, scratch,
+                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(PixelsPerEm), 0, mode, GridFit: true, Strong: strong));
+
+            return scratch.Points.ToArray();
+        }
+
+        /// <summary>The glyph's own program result under the given class, optionally with every
+        /// outline point's x put back to its scaled original, emitted like the mask builder
+        /// emits it.</summary>
+        private static float[] HintedOutline(GlyphTypeface typeface, ushort glyph, GlyphMaskMode mode,
+            int backwardCompatibility, bool unhintedX, int subpixelFactor)
+        {
+            var hinter = typeface.GetTrueTypeHinter(GlyphMaskKey.QuantizeScale(PixelsPerEm), mode);
+
+            Assert.NotNull(hinter);
+
+            var rented = hinter!.Rent();
+
+            try
+            {
+                Assert.True(rented.TryHint(glyph, backwardCompatibility));
+
+                var zone = rented.Zone!;
+
+                if (unhintedX)
+                {
+                    for (var i = 0; i < zone.PointCount - 4; i++)
+                    {
+                        zone.CurX[i] = zone.OrgX[i];
+                    }
+                }
+
+                using var builder = new GlyphPathBuilder();
+
+                TrueTypeGlyphEmitter.Emit(zone, new Matrix(subpixelFactor, 0, 0, -1, 0, 0), builder);
+
+                return builder.Points.ToArray();
+            }
+            finally
+            {
+                hinter.Return(rented);
+            }
+        }
+
+        private static float[] UnhintedOutline(GlyphTypeface typeface, ushort glyph, int subpixelFactor)
+        {
+            var scale = PixelsPerEm / typeface.Metrics.DesignEmHeight;
+
+            using var builder = new GlyphPathBuilder();
+
+            Assert.True(typeface.TryBuildGlyphContours(glyph, new Matrix(scale * subpixelFactor, 0, 0, -scale, 0, 0),
+                builder));
+
+            return builder.Points.ToArray();
         }
     }
 }

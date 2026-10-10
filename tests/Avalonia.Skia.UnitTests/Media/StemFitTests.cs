@@ -8,59 +8,13 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// Horizontal stem snapping under Strong hinting: straight stems render as solid columns
-    /// with hard edges, while curves and diagonals — where snapping would distort — stay
-    /// byte-identical to the unsnapped build.
+    /// Horizontal stem snapping of the auto-hinter under bi-level Strong hinting, the one mode
+    /// that fits x on whole-pixel pens: close stem widths unify onto one pixel width, while
+    /// curves and diagonals, where snapping would distort, stay byte-identical to the
+    /// unsnapped build. Grayscale and subpixel Strong leave x natural.
     /// </summary>
     public class StemFitTests
     {
-        [Fact]
-        public void H_Stems_Render_Solid_Columns_Where_Unsnapped_Smears()
-        {
-            var typeface = LoadTypeface();
-            var glyph = typeface.CharacterToGlyphMap['H'];
-            var scratch = new GlyphPathBuilder();
-
-            // Find a body size where the stem edges land well off the grid, so the unsnapped
-            // build provably smears its flanks.
-            Assert.True(typeface.TryGetGlyphInkBounds(glyph, out var box));
-
-            var size = 0.0;
-            var probeRow = 0;
-
-            for (var candidate = 11.0; candidate <= 20.0 && size == 0; candidate += 0.5)
-            {
-                var unfit = GlyphMasks.Build(typeface, scratch,
-                    new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale((float)candidate), 0, GlyphMaskMode.Antialiased));
-
-                // Measure on a fixed device row just under the cap — well above the crossbar,
-                // whose own interpolated edge would contaminate a mask-relative middle row.
-                var capPx = (int)Math.Round(box.YMax * candidate / typeface.Metrics.DesignEmHeight);
-                var deviceRow = -(capPx - 2);
-
-                if (CountPartials(unfit, deviceRow - unfit.Top) >= 2)
-                {
-                    size = candidate;
-                    probeRow = deviceRow;
-                }
-            }
-
-            Assert.True(size > 0, "no size with smeared stem flanks found");
-
-            var snapped = GlyphMasks.Build(typeface, scratch,
-                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale((float)size), 0, GlyphMaskMode.Antialiased,
-                    GridFit: true, Strong: true));
-            var unsnapped = GlyphMasks.Build(typeface, scratch,
-                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale((float)size), 0, GlyphMaskMode.Antialiased));
-
-            var snappedPartials = CountPartials(snapped, probeRow - snapped.Top);
-            var unsnappedPartials = CountPartials(unsnapped, probeRow - unsnapped.Top);
-
-            Assert.True(unsnappedPartials >= 2, $"expected smeared flanks unsnapped, got {unsnappedPartials}");
-            Assert.True(snappedPartials == 0,
-                $"expected hard stem columns at {size}px, still {snappedPartials} partial cells");
-        }
-
         [Fact]
         public void Curves_And_Diagonals_Are_Untouched()
         {
@@ -75,10 +29,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 var glyph = typeface.CharacterToGlyphMap[reference];
 
                 var snapped = GlyphMasks.Build(typeface, scratch,
-                    new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(13), 0, GlyphMaskMode.Antialiased,
+                    new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(13), 0, GlyphMaskMode.Aliased,
                         GridFit: true, Strong: true));
                 var unsnapped = GlyphMasks.Build(typeface, scratch,
-                    new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(13), 0, GlyphMaskMode.Antialiased));
+                    new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(13), 0, GlyphMaskMode.Aliased));
 
                 // The stem-snap variant carries a wider apron; compare ink content at the
                 // shared offset — it must be identical, with the extra columns empty.
@@ -131,14 +85,14 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(failures.Count == 0, string.Join("; ", failures));
         }
 
-        /// <summary>Width in whole pixels of the glyph's left stem under Strong hinting,
+        /// <summary>Width in whole pixels of the glyph's left stem under bi-level Strong hinting,
         /// measured as the first hard run on a mid-body device row.</summary>
         private static int StemPixels(GlyphTypeface typeface, char reference, float size)
         {
             var glyph = typeface.CharacterToGlyphMap[reference];
             var scratch = new GlyphPathBuilder();
             var mask = GlyphMasks.Build(typeface, scratch,
-                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(size), 0, GlyphMaskMode.Antialiased,
+                new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(size), 0, GlyphMaskMode.Aliased,
                     GridFit: true, Strong: true));
 
             if (mask.IsEmpty)
@@ -205,23 +159,6 @@ namespace Avalonia.Skia.UnitTests.Media
             contours.LineTo(new Avalonia.Point(right, bottom));
             contours.LineTo(new Avalonia.Point(right, top));
             contours.EndFigure(true);
-        }
-
-        private static int CountPartials(GlyphMask mask, int row)
-        {
-            var partials = 0;
-
-            for (var x = 0; x < mask.Width; x++)
-            {
-                var coverage = mask.Alpha[row * mask.Width + x];
-
-                if (coverage is > 24 and < 232)
-                {
-                    partials++;
-                }
-            }
-
-            return partials;
         }
 
         private static GlyphTypeface LoadTypeface()

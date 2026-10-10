@@ -233,19 +233,19 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void Strong_Hinting_Renders_Identically_At_Fractional_Origins()
+        public void Strong_Hinting_Positions_At_Quarter_Pixel_Phases_Like_Light()
         {
             using var app = StartApp();
             using var surface = CreateSurface(out var info);
             var typeface = LoadTypeface();
 
-            // Two origins inside the same pixel: Strong must produce byte-identical output
-            // (every pen rounds), while the default quarter-phase positioning renders them
-            // differently — that per-instance variation is what reads as softness.
+            // Two origins inside the same pixel land in different quarter phases. Subpixel
+            // Strong keeps the unhinted x, so it positions like Light: a whole-pixel pen
+            // would move each glyph up to half a pixel off the slot the shaper gave it.
             var first = RenderAt(surface, info, typeface, 8.26, TextHintingMode.Strong);
             var second = RenderAt(surface, info, typeface, 8.49, TextHintingMode.Strong);
 
-            Assert.True(first.AsSpan().SequenceEqual(second), "Strong output varies with subpixel origin");
+            Assert.False(first.AsSpan().SequenceEqual(second), "Strong output must follow the subpixel origin");
 
             var lightFirst = RenderAt(surface, info, typeface, 8.26, TextHintingMode.Light);
             var lightSecond = RenderAt(surface, info, typeface, 8.49, TextHintingMode.Light);
