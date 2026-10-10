@@ -1684,7 +1684,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             if ((selector & 1) != 0)
             {
                 // The v40 engine identity: ClearType-era fonts take their modern branches.
-                result = 40;
+                // Bi-level text runs the classic engine on both axes, whose fonts expect the
+                // v35 answer that goes with it.
+                result = _renderClass == TrueTypeRenderClass.Aliased ? 35 : 40;
             }
 
             if ((selector & 8) != 0 && _isVariation)
@@ -1693,8 +1695,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             }
 
             // Rotated (bit 8), stretched (bit 9) and the legacy grayscale flag (bit 12)
-            // never apply: the mask tier is axis-aligned with one square ppem, and v40
-            // forces the legacy flag off outside monochrome rendering.
+            // never apply: the mask tier is axis-aligned with one square ppem, v40 forces
+            // the legacy flag off outside monochrome rendering, and monochrome is not
+            // grayscale.
 
             if (_renderClass != TrueTypeRenderClass.Aliased)
             {
