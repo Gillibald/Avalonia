@@ -126,6 +126,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
+            // A bi-level Strong glyph lands on a whole pixel after its fit moved the ink. The
+            // offset between the design and the fitted ink centres lets the pen centre the
+            // fitted ink on the glyph's slot, instead of adding the fit's shift to the pen's
+            // own rounding.
+            var penOffset = 0f;
+
+            if (fitsX && scratch.TryGetPointBounds(out var fittedLeft, out _, out var fittedRight, out _))
+            {
+                penOffset = (box.XMin + box.XMax) * scale * 0.5f - (fittedLeft + fittedRight) * 0.5f;
+            }
+
             var simulations = key.Simulations;
 
             if (GlyphSimulation.AffectsOutline(simulations))
@@ -170,7 +181,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphRasterizer.Rasterize(scratch, width, height,
                 -left + key.PhaseOffset, -top, key.Mode == GlyphMaskMode.Aliased, alpha);
 
-            return new GlyphMask(alpha, width, height, left, top);
+            return new GlyphMask(alpha, width, height, left, top) { PenOffset = penOffset };
         }
 
         /// <summary>

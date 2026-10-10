@@ -86,6 +86,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public bool IsEmpty => Alpha.Length == 0;
 
+        /// <summary>
+        /// How far a whole-pixel pen moves before it rounds, in device pixels: the design ink
+        /// centre minus the fitted ink centre of a bi-level Strong mask, whose x fitting moves
+        /// and resizes the ink inside the glyph's unchanged advance. Adding it before rounding
+        /// centres the fitted ink on the design ink at the glyph's position, within half a
+        /// pixel. Zero for every other mask.
+        /// </summary>
+        public float PenOffset { get; init; }
+
         /// <summary>Eviction weight: the pixel bytes plus a small fixed object overhead.</summary>
         public int ByteCost => Alpha.Length + 48;
 

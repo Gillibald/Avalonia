@@ -587,9 +587,6 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var relativeX = originFraction + positions[i * 2] * scaleX;
                     SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
 
-                    pens[i] = penX;
-                    pens[count + i] = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
-
                     var simulate = simulated && !typeface.IsColorGlyph(indices[i]);
                     var glyphKey = simulate
                         ? new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
@@ -597,6 +594,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     masks[i] = maskCache.GetOrBuild(glyphKey, state, s_buildCountedMask);
                     used += masks[i].Width * masks[i].Height;
+
+                    pens[i] = CentredPen(in key, relativeX, masks[i], penX);
+                    pens[count + i] = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
                 }
 
                 var built = transient
@@ -678,6 +678,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     continue;
                 }
+
+                penX = CentredPen(in key, relativeX, mask, penX);
 
                 laidOut[placed++] = new TransformedSprite
                 {
@@ -871,6 +873,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             GlyphMaskKey.SnapPen(relativeX, out penX, out phase);
         }
+
+        /// <summary>
+        /// The pen a glyph's mask draws at: under a pen-snapping key the whole-pixel pen that
+        /// centres the mask's fitted ink on the glyph's slot (<see cref="GlyphMask.PenOffset"/>),
+        /// otherwise the pen <see cref="SnapGlyphPen"/> chose. COLR layers and strike images
+        /// keep the base pen.
+        /// </summary>
+        private static int CentredPen(in RunMaskKey key, float relativeX, GlyphMask mask, int penX)
+            => key.SnapsPens && mask.PenOffset != 0f ? (int)MathF.Round(relativeX + mask.PenOffset) : penX;
 
         /// <summary>
         /// Resolves the requested rendering mode onto a mask mode. Alias and Antialias map
@@ -1155,7 +1166,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                     state, s_buildMask);
 
-                UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+                UnionMask(mask, CentredPen(in key, relativeX, mask, penX), penY,
+                    ref minX, ref minY, ref maxX, ref maxY);
             }
 
             if (minX >= maxX || minY >= maxY)
@@ -1187,7 +1199,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                             state, s_buildMask);
 
-                        RunMaskComposer.ComposeAlpha(mask, penX - chunkX, penY - minY, span, width, height);
+                        RunMaskComposer.ComposeAlpha(mask, CentredPen(in key, relativeX, mask, penX) - chunkX,
+                            penY - minY, span, width, height);
                     }
 
                     parts[created++] = new RunMaskPart(alphaContext.CreateAlphaMask(span, width, height),
@@ -1335,8 +1348,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
                 else
                 {
-                    UnionMask(GetMask(indices[i], glyphPhase, simulated && !typeface.IsColorGlyph(indices[i])),
-                        penX, penY, ref minX, ref minY, ref maxX, ref maxY);
+                    var mask = GetMask(indices[i], glyphPhase, simulated && !typeface.IsColorGlyph(indices[i]));
+
+                    UnionMask(mask, CentredPen(in key, relativeX, mask, penX), penY,
+                        ref minX, ref minY, ref maxX, ref maxY);
                 }
             }
 
@@ -1433,10 +1448,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                                 // Monochrome text takes the gamma/contrast coverage correction; the
                                 // color layers above must not — the transform is non-linear, so
                                 // abutting layers whose coverages sum to full would show seams.
-                                RunMaskComposer.ComposeTinted(
-                                    GetMask(indices[i], glyphPhase, simulated && !typeface.IsColorGlyph(indices[i])),
-                                    penX - chunkX, penY - minY, key.Tint, span, width, height, framebuffer.RowBytes,
-                                    MaskGamma.GetTableForPremulBgra(key.Tint));
+                                var mask = GetMask(indices[i], glyphPhase,
+                                    simulated && !typeface.IsColorGlyph(indices[i]));
+
+                                RunMaskComposer.ComposeTinted(mask,
+                                    CentredPen(in key, relativeX, mask, penX) - chunkX, penY - minY, key.Tint, span,
+                                    width, height, framebuffer.RowBytes, MaskGamma.GetTableForPremulBgra(key.Tint));
                             }
                         }
                     }
