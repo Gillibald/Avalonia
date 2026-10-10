@@ -9,6 +9,12 @@ namespace TextShowcase.Scenes
         {
             new SideBySideScene(),
             new ReferenceScene(),
+            new VariableFontsScene(),
+            new ColorGlyphsScene(),
+            new HintingScene(),
+            new SimulationsScene(),
+            new ScriptsScene(),
+            new LcdScene(),
         };
     }
 }
