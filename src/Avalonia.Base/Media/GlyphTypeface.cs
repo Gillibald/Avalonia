@@ -2953,6 +2953,13 @@ namespace Avalonia.Media
             return (IGlyphDrawing?)cache.GetOrBuildDrawing(entry, _buildColorDrawing ??= BuildColorDrawingEntry);
         }
 
+        /// <summary>
+        /// The colour drawing of <paramref name="glyphIndex"/> recorded once for replay, or
+        /// <c>null</c> when the glyph has no colour drawing.
+        /// </summary>
+        internal Fonts.ColorGlyphRecording? GetGlyphRecording(ushort glyphIndex, GlyphDrawingOptions? options)
+            => null;
+
         private GlyphTypeface UnsimulatedTypeface
         {
             get

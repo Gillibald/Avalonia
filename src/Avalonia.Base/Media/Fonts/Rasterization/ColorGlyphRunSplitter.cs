@@ -25,6 +25,12 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </remarks>
     internal static class ColorGlyphRunSplitter
     {
+        /// <summary>
+        /// Whether colour glyphs replay their cached recordings where the context supports
+        /// recordings; off draws every colour glyph from its live drawing. For A/B comparisons.
+        /// </summary>
+        internal static bool UseRecordings { get; set; } = true;
+
         public static bool IsManagedTextRasterization()
             => (AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode
                 ?? TextRasterizationDefaults.PlatformDefault) == TextRasterizationMode.Managed;
