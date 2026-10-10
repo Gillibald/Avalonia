@@ -16,7 +16,7 @@ namespace Avalonia.Skia.UnitTests.Media
     /// a glyph whose ink the hinter moved or resized horizontally hands the difference to the
     /// gaps beside it. Grayscale and subpixel Strong keep the unhinted x and quarter-pixel
     /// phases, which leaves the ink gaps as even as Light's; bi-level Strong keeps the font's
-    /// x fitting on whole-pixel pens.
+    /// x fitting on whole-pixel pens and centres the fitted ink on the glyph's shaper slot.
     /// Every measurement reads what the renderer drew: each glyph is rendered alone at its run
     /// position, with the other glyphs of the run swapped for spaces.
     /// </summary>
@@ -102,6 +102,63 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(first.AsSpan().SequenceEqual(second), "Aliased Strong output varies with subpixel origin");
         }
 
+        [Theory]
+        [MemberData(nameof(Fonts))]
+        public void Aliased_Strong_Centres_The_Fitted_Ink_On_The_Shaper_Slot(string fontFile)
+        {
+            using var app = StartApp();
+            var typeface = LoadFont(fontFile);
+            var scratch = new GlyphPathBuilder();
+            var failures = new List<string>();
+
+            for (var px = 9; px <= 16; px++)
+            {
+                var scale = px / (double)typeface.Metrics.DesignEmHeight;
+                var scaleQ = GlyphMaskKey.QuantizeScale(px);
+                var infos = CreateInfos(typeface, Sample, px, out var positions);
+
+                for (var k = 0; k < infos.Count; k++)
+                {
+                    var glyph = infos[k].GlyphIndex;
+
+                    Assert.True(typeface.TryGetGlyphInkBounds(glyph, out var box));
+
+                    // The fitted outline the bi-level mask is rasterized from stays in the
+                    // scratch builder; its x extent against the design box is how far the
+                    // fit moved the ink.
+                    var mask = GlyphMasks.Build(typeface, scratch,
+                        new GlyphMaskKey(glyph, scaleQ, 0, GlyphMaskMode.Aliased, GridFit: true, Strong: true));
+
+                    Assert.True(scratch.TryGetPointBounds(out var fittedLeft, out _, out var fittedRight, out _));
+
+                    var peaks = RenderIsolated(typeface, px, infos, k, TextHintingMode.Strong, TextRenderingMode.Alias);
+                    var drawnColumn = Array.FindIndex(peaks, p => p > 0.5f);
+                    var maskColumn = FirstInkColumn(mask);
+
+                    if (drawnColumn < 0 || maskColumn is null)
+                    {
+                        continue;
+                    }
+
+                    // The pen pixel the glyph was drawn at, and the fitted ink centre on it. The
+                    // run origin snaps to a whole pixel as a whole, which moves every glyph
+                    // alike, so the slot is measured from the snapped origin.
+                    var pen = drawnColumn - (mask.Left + maskColumn.Value);
+                    var drawnCentre = pen + (fittedLeft + fittedRight) / 2.0;
+                    var slotCentre = Math.Round(OriginX) + positions[k] + (box.XMin + box.XMax) * scale / 2;
+                    var error = drawnCentre - slotCentre;
+
+                    if (Math.Abs(error) > 0.5 + 1.0 / 64)
+                    {
+                        failures.Add(FormattableString.Invariant(
+                            $"{px}px '{Sample[k]}': fitted ink centre {error:+0.000;-0.000} px off its slot"));
+                    }
+                }
+            }
+
+            Assert.True(failures.Count == 0, $"{fontFile}: " + string.Join("; ", failures));
+        }
+
         /// <summary>
         /// Per neighbour pair at 9-16 px: the drawn ink gap minus the gap between the unhinted
         /// ink boxes at the shaper's fractional positions.
@@ -139,6 +196,22 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             return errors;
+        }
+
+        private static int? FirstInkColumn(GlyphMask mask)
+        {
+            for (var x = 0; x < mask.Width; x++)
+            {
+                for (var y = 0; y < mask.Height; y++)
+                {
+                    if (mask.Alpha[y * mask.Width + x] >= 128)
+                    {
+                        return x;
+                    }
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
