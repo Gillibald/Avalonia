@@ -50,7 +50,7 @@ Masks carry a transparent apron so filtering and warping never clip: `Apron = 1`
 
 Two cache levels exist, both allocation-free on hits:
 
-- [GlyphMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskCache.cs) hangs off each `GlyphTypeface` and holds per-glyph masks. Population is demand-driven and exact-fit; nothing is allocated per font glyph count. A mask above `MaxEntryBytes` (512 KB) is composed from a transient buffer and never cached.
+- [GlyphMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskCache.cs) hangs off each `GlyphTypeface` and holds per-glyph masks; a second instance keyed by `ColorGlyphMaskKey` (`GlyphTypeface.ColorMaskCache`) holds the colour masks of COLR v1 glyphs. Population is demand-driven and exact-fit; nothing is allocated per font glyph count. A mask above `MaxEntryBytes` (512 KB) is composed from a transient buffer and never cached.
 - [RunMaskCache](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) lives on each managed glyph run and holds what the run draws from: untinted run coverage on CPU surfaces, pre-tinted BGRA chunks, LCD payloads, A8 or RGBA run masks on GPU contexts. One primary slot plus 3 secondary slots (`SecondarySize`), keyed by [RunMaskKey](../../src/Avalonia.Base/Media/Fonts/Rasterization/RunMask.cs) (`ScaleQ`, origin phase, mode, tint when pre-tinted, `GridFit`, `PenSnap`, and for the transformed tier the quantized transform and vertical phase). A run being scrolled or repainted hits the primary slot; a run animating between a few states cycles the secondaries; only secondaries are evicted.
 - Hardware GPU text keeps its masks in the glyph atlas instead, plus a per-run sprite set per luminance bucket ([gpu-atlas.md](gpu-atlas.md)).
 
@@ -80,7 +80,8 @@ Atlas pages, run masks and sprite sets may be drawn by a frame in progress, so t
 - `ComposeAlpha` adds A8 coverage with saturation, the same clamp the rasterizer applies to accumulated winding, so composing non-overlapping glyphs is bit-identical to rasterizing all contours in one pass;
 - `ComposeTinted` produces premultiplied BGRA from coverage and a tint, optionally through a gamma table (the portable path every backend can draw);
 - `ComposeLcd` interleaves the three stripe channels into RGBA (alpha = channel max) with an optional BGR swap for panels with reversed stripe order;
-- `ComposeBitmap` copies decoded strike pixels (nearest-neighbor scaled, clipped) for bitmap glyph runs.
+- `ComposeBitmap` copies decoded strike pixels (nearest-neighbor scaled, clipped) for bitmap glyph runs;
+- `ComposeColor` blends a COLR v1 glyph's colour mask (premultiplied BGRA, see [color-glyphs.md](color-glyphs.md#colour-masks-managed-upright)) 1:1, source-over.
 
 Composition is chunked and exact: a composed run is byte-identical to composing each glyph alone and stitching.
 
