@@ -484,7 +484,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// The typeface for <paramref name="font"/> and a run of outline glyph, colour glyph,
         /// outline glyph, colour glyph (Segoe UI Emoji: four different emoji).
         /// </summary>
-        private static GlyphTypeface CreateTypeface(Font font, out ushort[] glyphs)
+        internal static GlyphTypeface CreateTypeface(Font font, out ushort[] glyphs)
         {
             GlyphTypeface typeface;
             ushort color;
@@ -530,13 +530,13 @@ namespace Avalonia.Skia.UnitTests.Media
             return typeface;
         }
 
-        private delegate byte[] ColrBuilder(ushort baseGlyph, ushort outlineGlyph, Rect ink, ushort paletteEntry);
+        internal delegate byte[] ColrBuilder(ushort baseGlyph, ushort outlineGlyph, Rect ink, ushort paletteEntry);
 
         /// <summary>
         /// Inter with a COLR v1 record for 'H' that paints the 'A' outline with the paint
         /// <paramref name="build"/> writes, over a red and blue palette.
         /// </summary>
-        private static GlyphTypeface CreateV1Typeface(ColrBuilder build, out ushort v1Glyph, ushort paletteEntry = 0)
+        internal static GlyphTypeface CreateV1Typeface(ColrBuilder build, out ushort v1Glyph, ushort paletteEntry = 0)
         {
             var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = baseFont.TryCreateGlyphTypeface();
@@ -560,7 +560,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return TestGlyphTypefaces.FromSKTypeface(skTypeface!);
         }
 
-        private static byte[] BuildColrV1Solid(ushort baseGlyph, ushort outlineGlyph, Rect ink, ushort paletteEntry)
+        internal static byte[] BuildColrV1Solid(ushort baseGlyph, ushort outlineGlyph, Rect ink, ushort paletteEntry)
         {
             var colr = BeginColrV1PaintGlyph(baseGlyph, outlineGlyph);
 
@@ -584,7 +584,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return colr.ToArray();
         }
 
-        private static byte[] BuildColrV1RadialGradient(ushort baseGlyph, ushort outlineGlyph, Rect ink,
+        internal static byte[] BuildColrV1RadialGradient(ushort baseGlyph, ushort outlineGlyph, Rect ink,
             ushort paletteEntry)
         {
             var colr = BeginColrV1PaintGlyph(baseGlyph, outlineGlyph);

@@ -74,8 +74,13 @@ namespace Avalonia.Skia
         /// whenever any typeface adds a glyph, which costs a context with updatable textures the
         /// written rectangle only, so contexts without them keep an atlas per typeface.
         /// </param>
+        /// <param name="colorAtlas">
+        /// The atlas of the context's colour glyph content, premultiplied RGBA pages;
+        /// <see cref="GlyphMaskAtlas.SharedColor"/> unless the caller keeps it apart, by the same
+        /// rule as <paramref name="maskAtlas"/>.
+        /// </param>
         public static void Register(GRContext context, ISkiaUpdatableTextureFeature? feature,
-            GlyphMaskAtlas? maskAtlas = null)
+            GlyphMaskAtlas? maskAtlas = null, GlyphMaskAtlas? colorAtlas = null)
         {
             if (feature is null)
             {
@@ -83,7 +88,8 @@ namespace Avalonia.Skia
                 return;
             }
 
-            s_registrations.AddOrUpdate(context, new Registration(feature, maskAtlas ?? GlyphMaskAtlas.Shared));
+            s_registrations.AddOrUpdate(context, new Registration(feature, maskAtlas ?? GlyphMaskAtlas.Shared,
+                colorAtlas ?? GlyphMaskAtlas.SharedColor));
         }
 
         /// <summary>The registration of <paramref name="context"/>, unless it has none or is lost.</summary>
@@ -94,18 +100,21 @@ namespace Avalonia.Skia
         // A disposed context has no handle left to ask; its owner abandons it first.
         public static bool IsLost(GRContext context) => context.Handle == IntPtr.Zero || context.IsAbandoned;
 
-        /// <summary>The updatable textures of one context and the atlas its glyph masks go to.</summary>
+        /// <summary>The updatable textures of one context and the atlases its glyph masks go to.</summary>
         internal sealed class Registration
         {
-            public Registration(ISkiaUpdatableTextureFeature feature, GlyphMaskAtlas maskAtlas)
+            public Registration(ISkiaUpdatableTextureFeature feature, GlyphMaskAtlas maskAtlas, GlyphMaskAtlas colorAtlas)
             {
                 Feature = feature;
                 MaskAtlas = maskAtlas;
+                ColorAtlas = colorAtlas;
             }
 
             public ISkiaUpdatableTextureFeature Feature { get; }
 
             public GlyphMaskAtlas MaskAtlas { get; }
+
+            public GlyphMaskAtlas ColorAtlas { get; }
         }
     }
 }

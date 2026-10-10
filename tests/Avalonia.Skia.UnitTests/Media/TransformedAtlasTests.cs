@@ -338,10 +338,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>
         /// A test GPU context registered as the backends register theirs. A context with
-        /// updatable textures gets <paramref name="maskAtlas"/>, or an atlas of its own, in place
-        /// of <see cref="GlyphMaskAtlas.Shared"/>, so tests running in parallel never share pages.
+        /// updatable textures gets <paramref name="maskAtlas"/> and <paramref name="colorAtlas"/>,
+        /// or atlases of its own, in place of <see cref="GlyphMaskAtlas.Shared"/> and
+        /// <see cref="GlyphMaskAtlas.SharedColor"/>, so tests running in parallel never share pages.
         /// </summary>
-        internal static GpuTestContext CreateGpu(GpuBackend backend, bool software, GlyphMaskAtlas? maskAtlas = null)
+        internal static GpuTestContext CreateGpu(GpuBackend backend, bool software, GlyphMaskAtlas? maskAtlas = null,
+            GlyphMaskAtlas? colorAtlas = null)
         {
             var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
@@ -355,12 +357,12 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext,
                     GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getProcAddress, gpu.GlMajorVersion),
-                    maskAtlas ?? new GlyphMaskAtlas());
+                    maskAtlas ?? new GlyphMaskAtlas(), colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba));
             }
             else if (gpu.UpdatableTextures is { } textures)
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext, textures,
-                    maskAtlas ?? new GlyphMaskAtlas());
+                    maskAtlas ?? new GlyphMaskAtlas(), colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba));
             }
 
             return gpu;

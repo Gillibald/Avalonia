@@ -253,6 +253,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static GlyphMaskAtlas Shared { get; } = new();
 
+        /// <summary>
+        /// The atlas of every typeface's colour glyph content on contexts that update part of a
+        /// page in place: premultiplied RGBA pages beside the coverage pages of <see cref="Shared"/>.
+        /// </summary>
+        public static GlyphMaskAtlas SharedColor { get; } = new(format: GlyphAtlasFormat.Rgba);
+
         /// <summary>Number of entries, including memoised no-ink glyphs.</summary>
         public int Count
         {

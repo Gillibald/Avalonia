@@ -43,6 +43,7 @@ namespace Avalonia.Skia
         private GRContext? _grContext;
         private readonly GlyphRasterTarget _glyphRasterTarget;
         private readonly GlyphMaskAtlas? _maskAtlas;
+        private readonly GlyphMaskAtlas? _colorAtlas;
         private readonly GlyphCacheFrame _glyphCacheFrame;
         public GRContext? GrContext => _grContext;
         private readonly ISkiaGpu? _gpu;
@@ -237,7 +238,10 @@ namespace Avalonia.Skia
 
             // Only a context that updates part of a page in place shares one atlas between
             // typefaces.
-            _maskAtlas = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext)?.MaskAtlas;
+            var registration = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext);
+
+            _maskAtlas = registration?.MaskAtlas;
+            _colorAtlas = registration?.ColorAtlas;
             _foldsTranslucentColors = _grContext is not null && SkiaVertexColorPrecision.IsExact(_grContext);
 
             if (createInfo.ScaleDrawingToDpi && !createInfo.Dpi.NearlyEquals(SkiaPlatform.DefaultDpi))
@@ -392,6 +396,8 @@ namespace Avalonia.Skia
         GlyphRasterTarget ITransformedGlyphContext.RasterTarget => _glyphRasterTarget;
 
         GlyphMaskAtlas? ITransformedGlyphContext.MaskAtlas => _maskAtlas;
+
+        GlyphMaskAtlas? ITransformedGlyphContext.ColorAtlas => _colorAtlas;
 
         // Ganesh tiles a raster image larger than the texture limit when drawing it, but a mask
         // that fits uploads as one cached texture and does not depend on that fallback.

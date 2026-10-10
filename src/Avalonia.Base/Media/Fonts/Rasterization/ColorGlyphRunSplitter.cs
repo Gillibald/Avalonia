@@ -39,6 +39,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static bool UseColorMasks { get; set; } = true;
 
+        /// <summary>
+        /// Whether hardware GPU contexts draw the colour glyph content of managed runs from colour
+        /// atlas pages, batched across runs; off draws upright runs from their run masks and cuts
+        /// transformed runs at their v1 glyphs. For A/B comparisons.
+        /// </summary>
+        internal static bool UseColorAtlas { get; set; } = true;
+
         public static bool IsManagedTextRasterization()
             => (AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode
                 ?? TextRasterizationDefaults.PlatformDefault) == TextRasterizationMode.Managed;

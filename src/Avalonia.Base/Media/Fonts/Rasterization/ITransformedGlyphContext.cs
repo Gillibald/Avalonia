@@ -45,6 +45,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphMaskAtlas? MaskAtlas { get; }
 
         /// <summary>
+        /// The atlas of premultiplied RGBA pages this context places the colour glyph content of
+        /// every typeface in, or <c>null</c> to place it in each typeface's own colour atlas;
+        /// shared under the same rule as <see cref="MaskAtlas"/>.
+        /// </summary>
+        GlyphMaskAtlas? ColorAtlas { get; }
+
+        /// <summary>
         /// Grants direct write access to the raster surface when a draw may bypass the backend:
         /// a CPU surface with no layer, no ambient opacity, no non-default blend mode and a
         /// rectangular clip, drawn at device scale. Returns <c>false</c> otherwise, and the

@@ -77,6 +77,7 @@ namespace Avalonia.Media
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>? _colorMaskCache;
         private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
+        private Fonts.Rasterization.GlyphMaskAtlas? _colorAtlas;
         private int _maskOwnerId;
         private static int s_lastMaskOwnerId;
         private Fonts.Rasterization.VerticalGridFit? _verticalGridFit;
@@ -2845,6 +2846,25 @@ namespace Avalonia.Media
             var created = new Fonts.Rasterization.GlyphMaskCache(CacheBudget);
 
             return Interlocked.CompareExchange(ref _glyphMaskCache, created, null) ?? created;
+        }
+
+        /// <summary>
+        /// The colour glyph content of this typeface on hardware GPU contexts that keep no shared
+        /// colour atlas: premultiplied RGBA pages the backend draws batched runs from, uploaded whole
+        /// per version. A simulated variant uses its unsimulated face's, since colour glyphs are never
+        /// simulated.
+        /// </summary>
+        internal Fonts.Rasterization.GlyphMaskAtlas ColorAtlas =>
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.ColorAtlas
+                : _colorAtlas ?? GetOrCreateColorAtlas();
+
+        private Fonts.Rasterization.GlyphMaskAtlas GetOrCreateColorAtlas()
+        {
+            var created = new Fonts.Rasterization.GlyphMaskAtlas(CacheBudget, perTypeface: true,
+                Fonts.Rasterization.GlyphAtlasFormat.Rgba);
+
+            return Interlocked.CompareExchange(ref _colorAtlas, created, null) ?? created;
         }
 
         private Fonts.Rasterization.GlyphMaskAtlas GetOrCreateGlyphMaskAtlas()
