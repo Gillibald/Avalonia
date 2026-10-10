@@ -126,6 +126,24 @@ namespace Avalonia.Skia.UnitTests.Media
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
+        public void A_Direct_Draw_Renders_The_V1_Paint_Of_A_Glyph_With_Both_Records(bool rotated)
+        {
+            using var scope = ColorGlyphV1SplitTests.CreateEnvironment();
+            var typeface = ColorGlyphV1SplitTests.CreateV0AndV1Typeface(out var glyph);
+            var transform = rotated ? s_rotation : Matrix.CreateTranslation(3, 2);
+
+            // The mask tiers would compose the red v0 layers; the glyph's v1 paint is blue.
+            var pixels = AssertDirectDrawMatchesDrawings(typeface, glyph, "AHB", transform, Brushes.Black,
+                draw => RenderOnRaster(transform, draw), expectRed: false);
+
+            var (red, blue) = ColorGlyphV1SplitTests.CountRedAndBlue(pixels);
+
+            Assert.True(blue > 8 && red <= 2, $"expected the blue v1 paint, found blue={blue} red={red}");
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
         public void A_V1_Only_Run_With_A_Gradient_Never_Reaches_The_Native_Blob(bool rotated)
         {
             using var scope = ColorGlyphV1SplitTests.CreateEnvironment();

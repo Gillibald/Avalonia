@@ -166,6 +166,111 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.False(ColorGlyphRunSplitter.TryDraw(context, run, Brushes.Black));
         }
 
+        [Fact]
+        public void Managed_Mode_Draws_The_V1_Paint_Of_A_Glyph_With_Both_Records()
+        {
+            using var scope = CreateEnvironment();
+            var typeface = CreateV0AndV1Typeface(out var glyph);
+
+            var run = CreateRun(typeface, new[] { glyph });
+
+            var info = new SKImageInfo(72, 56, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var contextImpl = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+            using var context = new PlatformDrawingContext(contextImpl, ownsImpl: false);
+
+            canvas.Clear(SKColors.White);
+
+            // A renderer that supports COLR v1 prefers the paint graph over the v0 layers of the
+            // same glyph, so the glyph leaves the run for its drawing in managed mode too.
+            Assert.True(ColorGlyphRunSplitter.TryDraw(context, run, Brushes.Black),
+                "managed mode kept a glyph with a v1 paint record in the run");
+
+            var (red, blue) = CountRedAndBlue(bitmap.GetPixelSpan());
+
+            Assert.True(blue > 8 && red <= 2, $"expected the blue v1 paint, found blue={blue} red={red}");
+        }
+
+        internal static (int red, int blue) CountRedAndBlue(ReadOnlySpan<byte> bgra)
+        {
+            var red = 0;
+            var blue = 0;
+
+            for (var i = 0; i < bgra.Length; i += 4)
+            {
+                if (bgra[i + 2] > 150 && bgra[i] < 100 && bgra[i + 1] < 100)
+                {
+                    red++;
+                }
+                else if (bgra[i] > 150 && bgra[i + 1] < 100 && bgra[i + 2] < 100)
+                {
+                    blue++;
+                }
+            }
+
+            return (red, blue);
+        }
+
+        /// <summary>
+        /// A glyph with both a COLR v0 layer record (one layer on palette entry 0, red) and a v1
+        /// paint record (PaintGlyph then PaintSolid on palette entry 1, blue), as Segoe UI Emoji
+        /// carries for every emoji.
+        /// </summary>
+        internal static GlyphTypeface CreateV0AndV1Typeface(out ushort glyph)
+        {
+            var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
+            var probe = baseFont.TryCreateGlyphTypeface();
+            Assert.NotNull(probe);
+
+            var baseGlyph = probe!.CharacterToGlyphMap['H'];
+            var outlineGlyph = probe.CharacterToGlyphMap['A'];
+
+            var colr = new BigEndianBuffer();
+
+            colr.UInt16(1);                                    // version
+            colr.UInt16(1);                                    // numBaseGlyphRecords
+            var baseRecordsOffsetPos = colr.ReserveOffset32();
+            var layerRecordsOffsetPos = colr.ReserveOffset32();
+            colr.UInt16(1);                                    // numLayerRecords
+            var baseListOffsetPos = colr.ReserveOffset32();
+            colr.UInt32(0);                                    // layerListOffset
+            colr.UInt32(0);                                    // clipListOffset
+            colr.UInt32(0);                                    // varIndexMapOffset
+            colr.UInt32(0);                                    // itemVariationStoreOffset
+
+            colr.PatchUInt32(baseRecordsOffsetPos, (uint)colr.Position);
+            colr.UInt16(baseGlyph).UInt16(0).UInt16(1);
+
+            colr.PatchUInt32(layerRecordsOffsetPos, (uint)colr.Position);
+            colr.UInt16(outlineGlyph).UInt16(0);
+
+            var baseListStart = colr.Position;
+            colr.PatchUInt32(baseListOffsetPos, (uint)baseListStart);
+            colr.UInt32(1);
+            colr.UInt16(baseGlyph);
+            var recordPaintOffsetPos = colr.ReserveOffset32();
+
+            colr.PatchUInt32(recordPaintOffsetPos, (uint)(colr.Position - baseListStart));
+            colr.UInt8(10);                                    // PaintGlyph
+            colr.UInt24(6);
+            colr.UInt16(outlineGlyph);
+
+            colr.UInt8(2);                                     // PaintSolid
+            colr.UInt16(1);
+            colr.F2Dot14(1.0);
+
+            var grafted = ColrTestFont.Graft(
+                baseFont, colr.ToArray(), ColrTestFont.Cpal(new[] { Colors.Red, Colors.Blue })).ToBytes();
+
+            using var skData = SKData.CreateCopy(grafted);
+            var skTypeface = SKTypeface.FromData(skData);
+            Assert.NotNull(skTypeface);
+
+            glyph = baseGlyph;
+            return TestGlyphTypefaces.FromSKTypeface(skTypeface!);
+        }
+
         internal static GlyphTypeface CreateV0Typeface(out ushort v0Glyph)
         {
             var baseFont = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
