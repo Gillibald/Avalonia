@@ -351,15 +351,24 @@ namespace Avalonia.Media.Fonts
         {
             var matchedKey = glyphTypeface.ToFontCollectionKey();
 
-            // The fallback search already found a font face that maps the codepoint. Synthesis
-            // (re-loading the stream with FontSimulations) is unsafe here: with .ttc collections
-            // the platform may resolve a different face from the same stream (e.g. asking for an
-            // oblique simulation of "Yu Gothic UI" returns "Yu Gothic Medium"). Accept the matched
-            // glyph typeface as-is and pre-cache it under the requested key so later
-            // GlyphTypeface lookups via the returned Typeface short-circuit through the cache.
-            if (matchedKey != requestedKey)
+            // The fallback search already found a font face that maps the codepoint. A style the
+            // face lacks is simulated on a clone of that same face (the clone keeps the face index
+            // of a .ttc), as for family matches; otherwise the matched glyph typeface is
+            // pre-cached under the requested key. Either way later GlyphTypeface lookups through
+            // the returned Typeface short-circuit through the cache.
+            if (matchedKey != requestedKey &&
+                !(_glyphTypefaceCache.TryGetValue(glyphTypeface.FamilyName, out var cached) &&
+                  cached.ContainsKey(requestedKey)))
             {
-                TryAddGlyphTypeface(glyphTypeface.FamilyName, requestedKey, glyphTypeface);
+                var simulations = GetFontSimulations(requestedKey.Style, requestedKey.Weight,
+                    glyphTypeface.Style, glyphTypeface.Weight);
+
+                if (simulations == FontSimulations.None ||
+                    !TryCreateSyntheticGlyphTypeface(glyphTypeface, requestedKey.Style, requestedKey.Weight,
+                        requestedKey.Stretch, out _))
+                {
+                    TryAddGlyphTypeface(glyphTypeface.FamilyName, requestedKey, glyphTypeface);
+                }
             }
 
             return new Typeface(
