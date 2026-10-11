@@ -39,6 +39,8 @@ namespace Avalonia.Android.Platform.Fonts
         private readonly List<string> _declaredNames = new();
         private readonly List<Family> _fallbackFamilies = new();
         private readonly List<FaceKey> _allFaces = new();
+        private readonly HashSet<FaceKey> _facesInUse = new();
+        private readonly HashSet<FaceKey> _ignoredFaces = new();
         private readonly Family? _defaultFamily;
         private readonly ConcurrentDictionary<FaceKey, FaceInfo> _faceInfos = new();
         private readonly ConcurrentDictionary<string, bool> _fileExists = new(StringComparer.Ordinal);
@@ -529,6 +531,15 @@ namespace Avalonia.Android.Platform.Fonts
                 {
                     _allFaces.Add(entry.Key);
                 }
+
+                if (family.Ignore)
+                {
+                    _ignoredFaces.Add(entry.Key);
+                }
+                else
+                {
+                    _facesInUse.Add(entry.Key);
+                }
             }
         }
 
@@ -835,8 +846,24 @@ namespace Avalonia.Android.Platform.Fonts
                 }
             }
 
+            // Legacy fonts stay on devices under the name of their successor in a family marked
+            // ignored; a lookup by that name resolves to the face in use.
+            foreach (var keys in index.Values)
+            {
+                if (keys.Count > 1)
+                {
+                    var inUse = keys.FindAll(IsInUse);
+
+                    inUse.AddRange(keys.FindAll(x => !IsInUse(x)));
+                    keys.Clear();
+                    keys.AddRange(inUse);
+                }
+            }
+
             return index;
         }
+
+        private bool IsInUse(FaceKey key) => !_ignoredFaces.Contains(key) || _facesInUse.Contains(key);
 
         private IEnumerable<FaceKey> GetIndexedFaces() => _allFaces;
 
