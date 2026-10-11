@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Written for the tests: a vendor-style configuration over the fixture fonts. Collections are
+    built by the tests: CJK.ttc holds Noto Sans JP, SC, JP, SC (faces 0-3 for ja, ko, zh-Hans,
+    zh-Hant as on Samsung devices), ArabicTriple.ttc three copies of Noto Sans Arabic, EmojiPair.ttc
+    two copies of the emoji font.
+-->
+<familyset version="23">
+    <!-- first font is default -->
+    <family name="sans-serif">
+        <font weight="400" style="normal">Inter-Regular.ttf
+          <axis tag="ital" stylevalue="0" />
+          <axis tag="wght" stylevalue="400" />
+        </font>
+        <font weight="700" style="normal">Inter-Regular.ttf
+          <axis tag="ital" stylevalue="0" />
+          <axis tag="wght" stylevalue="700" />
+        </font>
+        <font weight="400" style="italic">Inter-Regular.ttf
+          <axis tag="ital" stylevalue="1" />
+          <axis tag="wght" stylevalue="400" />
+        </font>
+    </family>
+
+    <!-- Aliases must come after the fonts they reference. -->
+    <alias name="sans-serif-medium" to="sans-serif" weight="500" />
+    <alias name="arial" to="sans-serif" />
+
+    <family name="serif">
+        <font weight="400" style="normal" postScriptName="NotoSans-Italic">NotoSans-Italic.ttf</font>
+        <font weight="700" style="normal">Inter-Bold.ttf</font>
+        <font weight="400" style="italic">NotoSans-Italic.ttf</font>
+    </family>
+    <alias name="serif-bold" to="serif" weight="700" />
+    <alias name="times new roman" to="serif" />
+
+    <family name="monospace">
+        <font weight="400" style="normal">NotoMono-Regular.ttf</font>
+    </family>
+
+    <!--
+    <family name="vendor-flip">
+        <font weight="400" style="normal">CommentedOut-Regular.ttf</font>
+    </family>
+    -->
+
+    <family name="vendor-ui" vendorAttribute="1">
+        <font weight="400" style="normal" postScriptName="Inter-Bold">
+            Inter-Bold.ttf
+	</font>
+        <vendor-element value="1" />
+    </family>
+
+    <family name="vendor-missing">
+        <font weight="400" style="normal">Missing-Regular.ttf</font>
+    </family>
+
+    <!-- fallback fonts -->
+    <family lang="und-Arab" variant="elegant">
+        <font weight="400" style="normal" index="0">ArabicTriple.ttc</font>
+    </family>
+    <family lang="und-Arab" variant="compact">
+        <font weight="400" style="normal" index="1">ArabicTriple.ttc</font>
+        <font weight="400" style="normal" index="2" fallbackFor="serif">ArabicTriple.ttc</font>
+    </family>
+    <family lang="und-Beng">
+        <font weight="400" style="normal">Missing-Bengali.ttf</font>
+    </family>
+    <family lang="und-Hebr">
+        <font weight="400" style="normal">NotoSansHebrew-Regular.ttf</font>
+    </family>
+    <family lang="und-Taml" variant="compact">
+        <font weight="400" style="normal">NotoSansTamil-Regular.ttf</font>
+    </family>
+    <family lang="zh-Hans">
+        <font weight="400" style="normal" index="2" postScriptName="NotoSansSC-Thin">
+             CJK.ttc
+        </font>
+    </family>
+    <family lang="zh-Hant,zh-Bopo">
+        <font weight="400" style="normal" index="3">
+             CJK.ttc
+        </font>
+    </family>
+    <family lang="ja">
+        <font weight="400" style="normal" index="0">
+             CJK.ttc
+        </font>
+    </family>
+    <family lang="ko">
+        <font weight="400" style="normal" index="1">
+             CJK.ttc
+        </font>
+    </family>
+    <family lang="und-Zsye" ignore="true">
+        <font weight="400" style="normal">EmojiPair.ttc</font>
+    </family>
+    <family lang="und-Zsye">
+        <font weight="400" style="normal" index="1">EmojiPair.ttc</font>
+    </family>
+</familyset>

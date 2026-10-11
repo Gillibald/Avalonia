@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Written for the tests: a vendor addition in the style of Samsung's fonts_additional.xml, which
+    repeats most of the main configuration and differs in a few families.
+-->
+<familyset version="23">
+    <family name="sans-serif">
+        <font weight="400" style="normal">NotoMono-Regular.ttf</font>
+    </family>
+    <alias name="arial" to="monospace" />
+    <family name="vendor-extra">
+        <font weight="400" style="normal">Inter-Regular.ttf</font>
+        <font weight="700" style="normal">Inter-Bold.ttf</font>
+    </family>
+    <alias name="vendor-extra-bold" to="vendor-extra" weight="700" />
+    <family lang="und-Hebr">
+        <font weight="400" style="normal">NotoMono-Regular.ttf</font>
+    </family>
+</familyset>

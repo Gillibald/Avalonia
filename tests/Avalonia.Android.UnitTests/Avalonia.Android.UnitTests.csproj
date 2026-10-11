@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Android font provider uses no Java binding, so its sources compile for plain .NET and
+       run here on the desktop over fixture configuration files and fonts. -->
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <Import Project="..\..\build\UnitTests.NetCore.targets" />
+  <Import Project="..\..\build\XUnit.props" />
+  <Import Project="..\..\build\SharedVersion.props" />
+  <Import Project="..\..\build\NullableEnable.props" />
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalonia.Base\Avalonia.Base.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\Android\Avalonia.Android\Platform\Fonts\*.cs" LinkBase="Provider" />
+    <Compile Include="..\Avalonia.Base.UnitTests\Media\Fonts\SystemFontProviderContractTests.cs" Link="SystemFontProviderContractTests.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\Inter-Regular.ttf" Link="Fonts\Inter-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\Inter-Bold.ttf" Link="Fonts\Inter-Bold.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\NotoSans-Italic.ttf" Link="Fonts\NotoSans-Italic.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" Link="Fonts\NotoMono-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\NotoSansArabic-Regular.ttf" Link="Fonts\NotoSansArabic-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\NotoSansHebrew-Regular.ttf" Link="Fonts\NotoSansHebrew-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\NotoSansTamil-Regular.ttf" Link="Fonts\NotoSansTamil-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\TwitterColorEmoji-SVGinOT.ttf" Link="Fonts\TwitterColorEmoji-SVGinOT.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.Skia.UnitTests\Fonts\NotoSansJP-Subset.ttf" Link="Fonts\NotoSansJP-Subset.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.Skia.UnitTests\Fonts\NotoSansSC-Subset.ttf" Link="Fonts\NotoSansSC-Subset.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

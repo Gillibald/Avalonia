@@ -62,6 +62,7 @@
       "src\\Windows\\Avalonia.Win32.Interoperability\\Avalonia.Win32.Interoperability.csproj",
       "src\\Windows\\Avalonia.Win32\\Avalonia.Win32.csproj",
       "tests\\Avalonia.Analyzers.Tests\\Avalonia.Analyzers.Tests.csproj",
+      "tests\\Avalonia.Android.UnitTests\\Avalonia.Android.UnitTests.csproj",
       "tests\\Avalonia.Base.UnitTests\\Avalonia.Base.UnitTests.csproj",
       "tests\\Avalonia.CoreText.UnitTests\\Avalonia.CoreText.UnitTests.csproj",
       "tests\\Avalonia.DirectWrite.UnitTests\\Avalonia.DirectWrite.UnitTests.csproj",
