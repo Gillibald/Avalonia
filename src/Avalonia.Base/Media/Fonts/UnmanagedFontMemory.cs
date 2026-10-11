@@ -153,6 +153,41 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
+        /// Allocates unmanaged memory of the specified length and lets the caller fill it directly,
+        /// for sources that can write into native memory without a managed buffer in between.
+        /// </summary>
+        /// <param name="length">The length of the font data in bytes.</param>
+        /// <param name="fill">Writes exactly <paramref name="length"/> bytes to the pointer; returns
+        /// <see langword="false"/> if the data could not be read completely.</param>
+        /// <returns>The filled memory, or <see langword="null"/> if <paramref name="fill"/> failed.</returns>
+        internal static UnmanagedFontMemory? TryCreate(int length, Func<IntPtr, int, bool> fill)
+        {
+            if (length <= 0)
+            {
+                return null;
+            }
+
+            var ptr = Marshal.AllocHGlobal(length);
+
+            try
+            {
+                if (fill(ptr, length))
+                {
+                    return new UnmanagedFontMemory(ptr, length);
+                }
+            }
+            catch
+            {
+                Marshal.FreeHGlobal(ptr);
+                throw;
+            }
+
+            Marshal.FreeHGlobal(ptr);
+
+            return null;
+        }
+
+        /// <summary>
         /// Loads font data from the specified stream into unmanaged memory.
         /// </summary>
         public static UnmanagedFontMemory LoadFromStream(Stream stream)

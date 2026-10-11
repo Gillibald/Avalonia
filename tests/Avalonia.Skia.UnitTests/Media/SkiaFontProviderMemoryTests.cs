@@ -1,7 +1,9 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
@@ -75,6 +77,75 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(allocated < data.Length / 4,
                     $"Opening a {data.Length} byte font allocated {allocated} managed bytes.");
             }
+        }
+
+        [Fact]
+        public void Every_System_Face_Should_Share_One_File_Data_Per_File()
+        {
+            using var provider = new SkiaFontProvider();
+
+            bool portHasMemoryBase;
+
+            using (var stream = SKTypeface.Default.OpenStream())
+            {
+                portHasMemoryBase = stream is not null && stream.GetMemoryBase() != IntPtr.Zero;
+            }
+
+            var faces = new List<SfntFace>();
+
+            try
+            {
+                foreach (var family in provider.GetFontFamilyNames())
+                {
+                    if (!provider.TryGetFamilyFaces(family, out var familyFaces))
+                    {
+                        continue;
+                    }
+
+                    foreach (var familyFace in familyFaces)
+                    {
+                        if (familyFace.TryOpenFontMemory(out var fontMemory))
+                        {
+                            faces.Add(Assert.IsType<SfntFace>(fontMemory));
+                        }
+                    }
+                }
+
+                Assert.NotEmpty(faces);
+
+                // Distinct data owners behind the faces, and a fingerprint of each owner's file.
+                var owners = new Dictionary<MemoryManager<byte>, string>();
+
+                foreach (var face in faces)
+                {
+                    Assert.True(face.TryGetFontFileData(out var data, out _));
+                    Assert.True(MemoryMarshal.TryGetMemoryManager(data, out MemoryManager<byte>? owner));
+
+                    if (!owners.ContainsKey(owner!))
+                    {
+                        owners.Add(owner!, Fingerprint(data.Span));
+                    }
+
+                    // Where the port exposes the file memory, nothing is copied.
+                    if (portHasMemoryBase)
+                    {
+                        Assert.IsType<SkiaStreamMemory>(owner);
+                    }
+                }
+
+                // No two owners hold the same file.
+                var duplicates = owners.Values.GroupBy(f => f).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+
+                Assert.Empty(duplicates);
+            }
+            finally
+            {
+                faces.ForEach(f => f.Dispose());
+            }
+
+            static string Fingerprint(ReadOnlySpan<byte> data) =>
+                data.Length + ":" + Convert.ToHexString(SHA256.HashData(data.Slice(0, Math.Min(data.Length, 65536)))) +
+                ":" + Convert.ToHexString(SHA256.HashData(data.Slice(Math.Max(0, data.Length - 65536))));
         }
 
         [Fact]
