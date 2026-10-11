@@ -170,6 +170,26 @@ namespace Avalonia.DirectWrite.UnitTests
 
             Assert.Equal(FontWeight.Bold, bold.Weight);
         }
+
+        [Win32Fact]
+        public void Should_Match_Physical_Face_When_Only_Simulated_Faces_Match()
+        {
+            using var provider = new DirectWriteFontProvider();
+
+            // Gabriola ships a single regular face, so DirectWrite answers bold and italic requests
+            // with simulated variants only. The descriptor is the physical face with its designed
+            // properties; the font system applies its own simulations on top.
+            Assert.True(provider.TryMatchFamily("Gabriola", FontStyle.Normal, FontWeight.Bold,
+                FontStretch.Normal, out var bold));
+            Assert.Equal("gabriola.ttf", Path.GetFileName(bold.FilePath), StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(FontWeight.Normal, bold.Weight);
+            Assert.Equal(FontStyle.Normal, bold.Style);
+
+            Assert.True(provider.TryMatchFamily("Gabriola", FontStyle.Italic, FontWeight.Normal,
+                FontStretch.Normal, out var italic));
+            Assert.Equal(bold.FilePath, italic.FilePath);
+            Assert.Equal(FontStyle.Normal, italic.Style);
+        }
     }
 
     public class DirectWriteProviderContractTests : SystemFontProviderContractTests
