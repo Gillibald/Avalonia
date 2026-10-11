@@ -438,8 +438,8 @@ namespace Avalonia.Android.Platform.Fonts
 
             var codepointInfo = new Codepoint((uint)codepoint);
             var script = codepointInfo.Script;
-            var isEmoji = codepointInfo.GraphemeBreakClass is GraphemeBreakClass.ExtendedPictographic
-                or GraphemeBreakClass.RegionalIndicator;
+            var isEmoji = HasEmojiPresentation(codepointInfo, codepoint);
+
             var language = new LanguageTag(culture.Name, Bcp47ScriptResolver.GetScriptSubtag(culture));
             var candidates = new List<(Family Family, int Rank)>();
 
@@ -489,6 +489,54 @@ namespace Avalonia.Android.Platform.Fonts
 
             return false;
         }
+
+        /// <summary>
+        /// Whether the codepoint is drawn as emoji by default, so emoji fonts come first. Symbols
+        /// that default to text presentation (U+2603 snowman, U+2764 heart) follow file order like
+        /// any other codepoint. Pictographs from U+1F100 up and regional indicators count as emoji
+        /// presentation, plus the default-emoji pictographs of the Basic Multilingual Plane.
+        /// </summary>
+        private static bool HasEmojiPresentation(Codepoint codepointInfo, int codepoint)
+        {
+            var breakClass = codepointInfo.GraphemeBreakClass;
+
+            if (breakClass == GraphemeBreakClass.RegionalIndicator)
+            {
+                return true;
+            }
+
+            if (breakClass != GraphemeBreakClass.ExtendedPictographic)
+            {
+                return false;
+            }
+
+            if (codepoint >= 0x1F100 || codepoint is 0x1F004 or 0x1F0CF)
+            {
+                return true;
+            }
+
+            foreach (var (start, end) in s_bmpEmojiPresentation)
+            {
+                if (codepoint >= start && codepoint <= end)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // The Emoji_Presentation=Yes ranges of the Basic Multilingual Plane (Unicode emoji-data).
+        private static readonly (int Start, int End)[] s_bmpEmojiPresentation =
+        {
+            (0x231A, 0x231B), (0x23E9, 0x23EC), (0x23F0, 0x23F0), (0x23F3, 0x23F3), (0x25FD, 0x25FE),
+            (0x2614, 0x2615), (0x2648, 0x2653), (0x267F, 0x267F), (0x2693, 0x2693), (0x26A1, 0x26A1),
+            (0x26AA, 0x26AB), (0x26BD, 0x26BE), (0x26C4, 0x26C5), (0x26CE, 0x26CE), (0x26D4, 0x26D4),
+            (0x26EA, 0x26EA), (0x26F2, 0x26F3), (0x26F5, 0x26F5), (0x26FA, 0x26FA), (0x26FD, 0x26FD),
+            (0x2705, 0x2705), (0x270A, 0x270B), (0x2728, 0x2728), (0x274C, 0x274C), (0x274E, 0x274E),
+            (0x2753, 0x2755), (0x2757, 0x2757), (0x2795, 0x2797), (0x27B0, 0x27B0), (0x27BF, 0x27BF),
+            (0x2B1B, 0x2B1C), (0x2B50, 0x2B50), (0x2B55, 0x2B55),
+        };
 
         private bool IsSerif(Family family) =>
             string.Equals(family.Name, SerifFamilyName, StringComparison.OrdinalIgnoreCase);
@@ -1048,7 +1096,12 @@ namespace Avalonia.Android.Platform.Fonts
                         continue;
                     }
 
-                    scripts.Add(PropertyValueAliasHelper.GetScript(tag.Script));
+                    // Emoji and symbol families hold no script of their own; they qualify only for
+                    // codepoints shared between scripts.
+                    if (tag.Script is not ("Zsye" or "Zsym"))
+                    {
+                        scripts.Add(PropertyValueAliasHelper.GetScript(tag.Script));
+                    }
                 }
 
                 _scripts = scripts.ToArray();
@@ -1081,7 +1134,10 @@ namespace Avalonia.Android.Platform.Fonts
 
                 foreach (var familyScript in _scripts)
                 {
-                    if (familyScript == script || (familyScript != Script.Unknown && codepoint.HasScriptExtension(familyScript)))
+                    // Variant subtags (Syre, Syrj, Syrn for Syriac) are no Unicode script codes;
+                    // such a family cannot be ruled out without its fonts.
+                    if (familyScript == Script.Unknown || familyScript == script ||
+                        codepoint.HasScriptExtension(familyScript))
                     {
                         return true;
                     }
