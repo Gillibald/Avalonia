@@ -58,11 +58,10 @@ namespace Avalonia.Android.Platform.Fonts
             _systemFonts = systemFonts;
 
             var seenFaces = new HashSet<FaceKey>();
-            var pathOverrides = CreatePathOverrides(platformFonts);
 
             foreach (var xmlFamily in main.Families)
             {
-                var family = new Family(xmlFamily, pathOverrides);
+                var family = new Family(xmlFamily);
 
                 AddFaces(family, seenFaces);
 
@@ -94,7 +93,7 @@ namespace Avalonia.Android.Platform.Fonts
                         continue;
                     }
 
-                    var family = new Family(xmlFamily, pathOverrides);
+                    var family = new Family(xmlFamily);
 
                     AddFaces(family, seenFaces);
 
@@ -105,8 +104,7 @@ namespace Avalonia.Android.Platform.Fonts
                 AddAliases(addition.Aliases);
             }
 
-            // Platform fonts the configuration does not name (updatable fonts on API 31+) are
-            // reachable by their real family names.
+            // Without a configuration, the platform's fonts are reachable by their real names.
             foreach (var font in platformFonts)
             {
                 var key = new FaceKey(font.Path, font.Index);
@@ -131,15 +129,19 @@ namespace Avalonia.Android.Platform.Fonts
 
         /// <summary>
         /// Builds the catalog from the first readable main configuration file and every readable
-        /// addition, layered with the platform's font list and character fallback where the
-        /// platform provides them (API 29 and later).
+        /// addition, layered with the platform's character fallback where the platform provides
+        /// it (API 29 and later). The platform's font list is read only when no configuration is
+        /// readable: enumerating makes the platform map every installed font file into the
+        /// process for the rest of its life.
         /// </summary>
         public static AndroidFontCatalog Create(AndroidFontConfiguration configuration,
             AndroidSystemFontSource? systemFonts)
         {
+            ReadConfiguration(configuration, out var main, out var additions);
+
             IReadOnlyList<AndroidSystemFont> platformFonts = Array.Empty<AndroidSystemFont>();
 
-            if (systemFonts != null)
+            if (systemFonts != null && main.Families.Count == 0)
             {
                 try
                 {
@@ -147,11 +149,9 @@ namespace Avalonia.Android.Platform.Fonts
                 }
                 catch (Exception)
                 {
-                    // The configuration still describes the system fonts.
+                    // Character fallback through the platform still works.
                 }
             }
-
-            ReadConfiguration(configuration, out var main, out var additions);
 
             return new AndroidFontCatalog(main, additions, systemFonts, platformFonts);
         }
@@ -183,34 +183,6 @@ namespace Avalonia.Android.Platform.Fonts
                     additions.Add(config);
                 }
             }
-        }
-
-        /// <summary>
-        /// Maps configured file names to the paths the platform reports for them, where those
-        /// differ: an updated font replaces the system file under the same name in its own
-        /// directory. A reported path that does not exist leaves the configured path in place.
-        /// </summary>
-        private static Dictionary<string, string> CreatePathOverrides(IReadOnlyList<AndroidSystemFont> platformFonts)
-        {
-            var overrides = new Dictionary<string, string>(StringComparer.Ordinal);
-
-            foreach (var font in platformFonts)
-            {
-                var fileName = Path.GetFileName(font.Path);
-
-                if (string.IsNullOrEmpty(fileName) || !File.Exists(font.Path))
-                {
-                    continue;
-                }
-
-                // Should both copies be listed, the updated one (outside the system image) wins.
-                if (!overrides.ContainsKey(fileName) || font.Path.StartsWith("/data/", StringComparison.Ordinal))
-                {
-                    overrides[fileName] = font.Path;
-                }
-            }
-
-            return overrides;
         }
 
         /// <summary>
@@ -996,9 +968,9 @@ namespace Avalonia.Android.Platform.Fonts
 
         private sealed class Entry
         {
-            public Entry(FontsXmlFont font, string path)
+            public Entry(FontsXmlFont font)
             {
-                Key = new FaceKey(path, font.Index);
+                Key = new FaceKey(font.Path, font.Index);
                 Weight = font.Weight;
                 IsItalic = font.IsItalic;
                 FallbackFor = font.FallbackFor;
@@ -1035,7 +1007,7 @@ namespace Avalonia.Android.Platform.Fonts
             private readonly Script[] _scripts;
             private readonly bool _isScriptOnly;
 
-            public Family(FontsXmlFamily family, IReadOnlyDictionary<string, string> pathOverrides)
+            public Family(FontsXmlFamily family)
             {
                 Name = family.Name;
                 Variant = family.Variant;
@@ -1045,10 +1017,7 @@ namespace Avalonia.Android.Platform.Fonts
 
                 for (var i = 0; i < entries.Length; i++)
                 {
-                    var font = family.Fonts[i];
-
-                    entries[i] = new Entry(font,
-                        pathOverrides.TryGetValue(font.FileName, out var path) ? path : font.Path);
+                    entries[i] = new Entry(family.Fonts[i]);
                     HasSerifSubstitutes |= string.Equals(entries[i].FallbackFor, SerifFamilyName,
                         StringComparison.OrdinalIgnoreCase);
                 }
