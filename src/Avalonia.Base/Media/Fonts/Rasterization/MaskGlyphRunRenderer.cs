@@ -242,13 +242,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;
             }
 
-            // A hardware GPU draws the colour content of a colour typeface's run from colour atlas
-            // pages, batched with the other runs of the frame, rather than a run mask per run.
+            // A hardware GPU with a shared colour atlas draws the colour content of a colour
+            // typeface's run from colour atlas pages, batched with the other runs of the frame,
+            // rather than a run mask per run. Elsewhere a placed glyph would upload a whole page.
             bool? colorChurn = null;
 
             if (alphaContext is null && mode != GlyphMaskMode.Subpixel && ColorGlyphRunSplitter.UseColorAtlas &&
                 (run.GlyphTypeface.ColorTable is not null || run.GlyphTypeface.BitmapSource is not null) &&
-                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } colorContext)
+                context is ITransformedGlyphContext
+                {
+                    RasterTarget: GlyphRasterTarget.HardwareGpu, ColorAtlas: not null,
+                } colorContext)
             {
                 if (TryDrawUprightColor(colorContext, run, key, transform, (float)scaleX, (float)scaleY, originX,
                         originY, Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B), out var churning))

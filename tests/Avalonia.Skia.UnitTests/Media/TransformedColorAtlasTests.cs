@@ -45,7 +45,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 yield return new object[] { GpuBackend.NativeGl, true, transform };
                 yield return new object[] { GpuBackend.Angle, true, transform };
                 yield return new object[] { GpuBackend.Vulkan, true, transform };
-                yield return new object[] { GpuBackend.NativeGl, false, transform };
             }
         }
 

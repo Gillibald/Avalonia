@@ -42,7 +42,6 @@ namespace Avalonia.Skia.UnitTests.Media
             yield return new object[] { GpuBackend.NativeGl, true };
             yield return new object[] { GpuBackend.Angle, true };
             yield return new object[] { GpuBackend.Vulkan, true };
-            yield return new object[] { GpuBackend.NativeGl, false };
         }
 
         public static IEnumerable<object[]> ContextsAndContent()
@@ -232,7 +231,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             typeface.CacheBudget = budget;
 
-            var atlas = updatable ? colorAtlas : typeface.ColorAtlas;
+            var atlas = colorAtlas;
             var runs = CreateRuns(typeface, glyphs);
 
             try
@@ -269,7 +268,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
 
             // The shared colour atlas, as the backends register it: disposal retires the
-            // typeface's entries there, and releases the typeface's own atlas elsewhere.
+            // typeface's entries there.
             using var gpu = CreateGpu(backend, updatable, GlyphMaskAtlas.SharedColor);
             using var scope = CreateEnvironment();
             var typeface = CreateTypeface(Content.SegoeUiEmoji, out var glyphs);
@@ -283,15 +282,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 Render(gpu, runs);
 
-                if (updatable)
-                {
-                    Assert.Contains(GlyphMaskAtlas.SharedColor.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
-                }
-                else
-                {
-                    Assert.True(typeface.ColorAtlas.AllocatedBytes > 0, "the typeface's colour atlas holds nothing");
-                    Assert.True(budget.BytesOf(GlyphCachePoolKind.Atlas) > 0);
-                }
+                Assert.Contains(GlyphMaskAtlas.SharedColor.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
             }
             finally
             {
@@ -404,7 +395,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         internal static GlyphMaskAtlas ColorAtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
-            => SkiaUpdatableTextures.Get(gpu.GrContext)?.ColorAtlas ?? typeface.ColorAtlas;
+            => SkiaUpdatableTextures.Get(gpu.GrContext)!.ColorAtlas;
 
         internal static IDisposable CreateEnvironment()
         {

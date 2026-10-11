@@ -20,13 +20,13 @@ Owner ids come from `GlyphTypeface.MaskOwnerId` (assigned once, never reused; si
 
 ### Shared or per typeface
 
-One process-wide atlas (`GlyphMaskAtlas.Shared`) serves every context whose `GRContext` has an updatable texture feature registered (see [architecture.md](architecture.md#seams-to-the-backend)): GL 3 / GLES 3 and later, WebGL 2, Vulkan. Those contexts upload only the rectangle a frame wrote, so a page written by every typeface costs little to keep current. Other contexts (Metal, older GL, WebGL 1) keep one atlas per typeface, because each new page version there becomes a new `SKImage` that Skia uploads whole (up to 2 MB). The colour atlas follows the same rule: `GlyphMaskAtlas.SharedColor` where the A8 atlas is shared, `GlyphTypeface.ColorAtlas` elsewhere.
+One process-wide atlas (`GlyphMaskAtlas.Shared`) serves every context whose `GRContext` has an updatable texture feature registered (see [architecture.md](architecture.md#seams-to-the-backend)): GL 3 / GLES 3 and later, WebGL 2, Vulkan. Those contexts upload only the rectangle a frame wrote, so a page written by every typeface costs little to keep current. Other contexts (Metal, older GL, WebGL 1) keep one atlas per typeface, because each new page version there becomes a new `SKImage` that Skia uploads whole (up to 2 MB). The colour atlas exists only on the first kind of context (`GlyphMaskAtlas.SharedColor`): a colour page is up to 8 MB, and re-uploading it whole whenever a glyph is placed would cost more than the run masks it replaces, so contexts without updatable textures keep drawing colour runs from run masks.
 
 ## Colour atlas pages
 
 An atlas of `GlyphAtlasFormat.Rgba` pages holds premultiplied colour, four bytes per texel in R, G, B, A order (the one byte order GL 3, GLES 3 and WebGL 2 upload without an extension, and Vulkan's mandatory `R8G8B8A8_UNORM`); masks arrive as BGRA and are swizzled when placed. Pages, shelves, gutters, dirty rectangles, eviction and budget charging are those of the A8 atlas, at four bytes per texel (a full page is 8 MB).
 
-On hardware GPU contexts an upright run of a colour typeface draws from colour pages instead of composing a run-mask texture per run. Each glyph's share of the pre-tinted run mask becomes an entry (`ColorAtlasEntry`), holding exactly the bytes the run-mask compose writes for that glyph onto transparent:
+On hardware GPU contexts with the shared colour atlas, an upright run of a colour typeface draws from colour pages instead of composing a run-mask texture per run. Each glyph's share of the pre-tinted run mask becomes an entry (`ColorAtlasEntry`), holding exactly the bytes the run-mask compose writes for that glyph onto transparent:
 
 | Entry | Pixels | Key beyond the glyph and scale |
 |---|---|---|

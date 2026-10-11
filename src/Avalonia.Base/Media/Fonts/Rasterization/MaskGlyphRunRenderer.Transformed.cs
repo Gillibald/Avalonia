@@ -170,13 +170,17 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether a run with COLR v1 glyphs drawn under <paramref name="transform"/> takes the
-        /// transformed tier: a hardware GPU with colour masks and the colour atlas on, and a
-        /// rotation, skew or anisotropic scale. Upright draws the upright tier declined (sizes
+        /// transformed tier: a hardware GPU with a shared colour atlas (see
+        /// <see cref="ITransformedGlyphContext.ColorAtlas"/>), colour masks and the colour atlas on,
+        /// and a rotation, skew or anisotropic scale. Upright draws the upright tier declined (sizes
         /// above its ceiling, a zoom without a settled mask) keep the vector replay.
         /// </summary>
         private static bool DrawsTransformedColorMasks(IDrawingContextImpl context, in Matrix transform)
             => ColorGlyphRunSplitter.UseColorMasks && ColorGlyphRunSplitter.UseColorAtlas &&
-               context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } &&
+               context is ITransformedGlyphContext
+               {
+                   RasterTarget: GlyphRasterTarget.HardwareGpu, ColorAtlas: not null,
+               } &&
                !(transform.M12 == 0 && transform.M21 == 0 && transform.M11 > 0 && transform.M22 > 0 &&
                  Math.Abs(transform.M11 - transform.M22) <= transform.M11 * 0.001);
 
@@ -463,7 +467,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
-            var colorAtlas = GetColorAtlas(context, typeface, settled);
+            var colorAtlas = GetColorAtlas(context, settled);
 
             if (GetBatches(context, typeface, atlas, colorAtlas, settled, GetBucket(foregroundArgb)) is not { } batches)
             {
@@ -505,7 +509,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             TransformedGlyphSprites sprites, int originX, int originY, uint foregroundArgb, int bucket)
         {
             var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
-            var colorAtlas = GetColorAtlas(context, typeface, sprites);
+            var colorAtlas = GetColorAtlas(context, sprites);
 
             if (GetBatches(context, typeface, atlas, colorAtlas, sprites, bucket) is not { } batches)
             {
@@ -519,12 +523,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The atlas of a sprite set's colour content: the context's, else the typeface's own;
-        /// <c>null</c> for a set without colour sprites, so text without colour makes no colour atlas.
+        /// The atlas of a sprite set's colour content, the context's; <c>null</c> for a set without
+        /// colour sprites. Only contexts with a shared colour atlas make colour sprites.
         /// </summary>
-        private static GlyphMaskAtlas? GetColorAtlas(ITransformedGlyphContext context, GlyphTypeface typeface,
-            TransformedGlyphSprites sprites)
-            => sprites.HasColor ? context.ColorAtlas ?? typeface.ColorAtlas : null;
+        private static GlyphMaskAtlas? GetColorAtlas(ITransformedGlyphContext context, TransformedGlyphSprites sprites)
+            => sprites.HasColor ? context.ColorAtlas : null;
 
         private static GlyphAtlasBatch[]? GetBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
             GlyphMaskAtlas atlas, GlyphMaskAtlas? colorAtlas, TransformedGlyphSprites sprites, int bucket)
@@ -607,7 +610,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var tick = atlas.Tick();
             var owner = context.MaskAtlas is null ? 0 : typeface.MaskOwnerId;
-            var colorOwner = context.ColorAtlas is null ? 0 : typeface.MaskOwnerId;
+            var colorOwner = typeface.MaskOwnerId;
             var colorTick = colorAtlas?.Tick() ?? tick;
             var count = sprites.Count;
             var builder = t_batchBuilder ??= new GlyphAtlasBatchBuilder();

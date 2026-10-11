@@ -46,8 +46,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// The atlas of premultiplied RGBA pages this context places the colour glyph content of
-        /// every typeface in, or <c>null</c> to place it in each typeface's own colour atlas;
-        /// shared under the same rule as <see cref="MaskAtlas"/>.
+        /// every typeface in, or <c>null</c> when it draws colour runs from run masks. Only a
+        /// context that updates part of a page in place has one: elsewhere every placed glyph
+        /// would upload a whole colour page.
         /// </summary>
         GlyphMaskAtlas? ColorAtlas { get; }
 
