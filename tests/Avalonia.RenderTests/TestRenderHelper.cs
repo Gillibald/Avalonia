@@ -16,6 +16,7 @@ using System.Reactive.Disposables;
 using System.Threading;
 using Avalonia.Platform.Surfaces;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Rendering.Composition;
 using Avalonia.Threading;
 using Avalonia.UnitTests;
@@ -36,6 +37,14 @@ static class TestRenderHelper
         AvaloniaLocator.CurrentMutable.Bind<IAssetLoader>().ToConstant(new StandardAssetLoader());
         AvaloniaLocator.CurrentMutable.Bind<ITextShaperImpl>().ToConstant(new HarfBuzzTextShaper());
         AvaloniaLocator.CurrentMutable.Bind<ICursorFactory>().ToConstant(new NullCursorFactory());
+
+        // System fonts arrive by registration, as UseSkia does it for applications: the Skia
+        // render subsystem's provider, so text without an explicit family has a default.
+        var fontManager = new FontManager();
+
+        fontManager.AddFontCollection(new SystemFontCollection(FontManager.SystemFontsKey, new SkiaFontProvider()));
+
+        AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(fontManager);
     }
 
     private sealed class NullCursorFactory : ICursorFactory
