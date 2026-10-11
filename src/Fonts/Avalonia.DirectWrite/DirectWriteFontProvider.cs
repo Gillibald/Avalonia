@@ -181,7 +181,7 @@ namespace Avalonia.Media.Fonts
         {
             match = null;
 
-            if (codepoint <= 0 || codepoint > 0x10FFFF || !TryGetSystemFonts(out _) ||
+            if (codepoint <= 0 || codepoint > 0x10FFFF || !TryGetSystemFonts(out var systemFonts) ||
                 _fontFallback is not { } fontFallback)
             {
                 return false;
@@ -214,9 +214,13 @@ namespace Avalonia.Media.Fonts
                 var textLength = analysisSource.SetCharacter(codepoint);
                 analysisSource.SetLocale(localeName ?? EnglishLocaleName);
 
+                // The base family is looked up in the base collection; without one MapCharacters
+                // ignores the family and answers with the system fallback even when the family
+                // covers the character.
                 fixed (char* baseFamilyNamePtr = familyName)
                 {
-                    hr = fontFallback.MapCharacters(analysisSource, 0, textLength, null, baseFamilyNamePtr,
+                    hr = fontFallback.MapCharacters(analysisSource, 0, textLength,
+                        (void*)systemFonts.GetNativeIntPtr(), baseFamilyNamePtr,
                         ToDWriteWeight(weight), ToDWriteStyle(style), ToDWriteStretch(stretch),
                         &mappedLength, &mappedFontPtr, &scale);
                 }
