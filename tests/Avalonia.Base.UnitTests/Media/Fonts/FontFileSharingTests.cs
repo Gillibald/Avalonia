@@ -1,0 +1,257 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia.Media.Fonts;
+using Xunit;
+
+namespace Avalonia.Base.UnitTests.Media.Fonts
+{
+    public class FontFileSharingTests
+    {
+        private static readonly OpenTypeTag s_nameTag = new('n', 'a', 'm', 'e');
+
+        [Fact]
+        public void Faces_Of_One_Collection_File_Share_One_File_Data()
+        {
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("collection.ttc", BuildEightFaceCollection());
+            var faces = new List<SfntFace>();
+
+            try
+            {
+                for (var i = 0; i < 8; i++)
+                {
+                    Assert.True(SfntFace.TryLoad(path, i, out var face));
+
+                    faces.Add(face);
+                }
+
+                AssertSameFileData(faces);
+            }
+            finally
+            {
+                DisposeAll(faces);
+            }
+        }
+
+        [Fact]
+        public void Releasing_The_Last_Face_Releases_The_File()
+        {
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("collection.ttc", BuildEightFaceCollection());
+
+            Assert.True(SfntFace.TryLoad(path, 0, out var first));
+            Assert.True(SfntFace.TryLoad(path, 1, out var second));
+
+            first.Dispose();
+
+            // The remaining face still reads the shared data.
+            Assert.True(second.TryGetTable(s_nameTag, out _));
+
+            second.Dispose();
+
+            // Nothing maps the file any more: it can be replaced, and a new load sees the new file.
+            File.Delete(path);
+
+            var replacement = fixture.Write("collection.ttc",
+                FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri));
+
+            Assert.True(SfntFace.TryLoad(replacement, 0, out var reloaded));
+
+            using (reloaded)
+            {
+                Assert.True(reloaded.TryGetFontFileData(out var data, out _));
+                Assert.Equal(new FileInfo(replacement).Length, data.Length);
+                Assert.False(SfntFace.TryLoad(replacement, 1, out _));
+            }
+        }
+
+        [Fact]
+        public void Paths_That_Differ_Only_By_Case_Share_One_File_Data()
+        {
+            Assert.SkipUnless(OperatingSystem.IsWindows() || OperatingSystem.IsMacOS(),
+                "Case-insensitive file systems only.");
+
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("Collection.ttc", BuildEightFaceCollection());
+            var faces = new List<SfntFace>();
+
+            try
+            {
+                Assert.True(SfntFace.TryLoad(path, 0, out var face));
+                faces.Add(face);
+
+                Assert.True(SfntFace.TryLoad(path.ToUpperInvariant(), 1, out face));
+                faces.Add(face);
+
+                Assert.True(SfntFace.TryLoad(path.ToLowerInvariant(), 2, out face));
+                faces.Add(face);
+
+                AssertSameFileData(faces);
+            }
+            finally
+            {
+                DisposeAll(faces);
+            }
+        }
+
+        [Fact]
+        public void Symlinked_Paths_Share_One_File_Data()
+        {
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("collection.ttc", BuildEightFaceCollection());
+            var link = Path.Combine(fixture.Directory, "link.ttc");
+
+            try
+            {
+                File.CreateSymbolicLink(link, path);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                // Windows needs developer mode or elevation for symbolic links.
+                Assert.Skip("Symbolic links cannot be created here: " + e.Message);
+            }
+
+            var faces = new List<SfntFace>();
+
+            try
+            {
+                Assert.True(SfntFace.TryLoad(path, 0, out var face));
+                faces.Add(face);
+
+                Assert.True(SfntFace.TryLoad(link, 1, out face));
+                faces.Add(face);
+
+                AssertSameFileData(faces);
+            }
+            finally
+            {
+                DisposeAll(faces);
+            }
+        }
+
+        [Fact]
+        public void Concurrent_Loads_Of_One_File_Share_One_File_Data()
+        {
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("collection.ttc", BuildEightFaceCollection());
+            var faces = new ConcurrentBag<SfntFace>();
+
+            try
+            {
+                Parallel.For(0, 64, new ParallelOptions { MaxDegreeOfParallelism = 16 }, i =>
+                {
+                    Assert.True(SfntFace.TryLoad(path, i % 8, out var face));
+
+                    faces.Add(face);
+                });
+
+                Assert.Equal(64, faces.Count);
+
+                AssertSameFileData(faces.ToList());
+            }
+            finally
+            {
+                DisposeAll(faces);
+            }
+        }
+
+        [Fact]
+        public void Every_Face_Of_A_Font_Set_Shares_One_File_Data_Per_File()
+        {
+            using var fixture = new FontFileFixture();
+
+            var files = new[]
+            {
+                fixture.Write("collection.ttc", BuildEightFaceCollection()),
+                fixture.Write("inter.ttf", FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri)),
+                fixture.Write("manrope.ttf", FontFileFixture.ReadAsset(FontFileFixture.ManropeLightUri)),
+                fixture.Write("notomono.ttf", FontFileFixture.ReadAsset(FontFileFixture.NotoMonoUri))
+            };
+
+            var faces = new List<SfntFace>();
+
+            try
+            {
+                // Each face is loaded twice, as a font picker and a text layout would do independently.
+                for (var pass = 0; pass < 2; pass++)
+                {
+                    for (var i = 0; i < 8; i++)
+                    {
+                        Assert.True(SfntFace.TryLoad(files[0], i, out var face));
+                        faces.Add(face);
+                    }
+
+                    for (var f = 1; f < files.Length; f++)
+                    {
+                        Assert.True(SfntFace.TryLoad(files[f], 0, out var face));
+                        faces.Add(face);
+                    }
+                }
+
+                var distinct = DistinctFileData(faces);
+
+                Assert.Equal(files.Length, distinct.Count);
+                Assert.Equal(files.Sum(f => new FileInfo(f).Length), distinct.Sum(d => (long)d.Length));
+            }
+            finally
+            {
+                DisposeAll(faces);
+            }
+        }
+
+        internal static byte[] BuildEightFaceCollection()
+        {
+            var regular = FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri);
+            var bold = FontFileFixture.ReadAsset(FontFileFixture.InterBoldUri);
+
+            return FontFileFixture.BuildCollection(regular, bold, regular, bold, regular, bold, regular, bold);
+        }
+
+        internal static void AssertSameFileData(IReadOnlyList<SfntFace> faces)
+        {
+            Assert.NotEmpty(faces);
+
+            Assert.True(faces[0].TryGetFontFileData(out var first, out _));
+
+            foreach (var face in faces)
+            {
+                Assert.True(face.TryGetFontFileData(out var data, out _));
+                Assert.True(first.Span == data.Span, "Faces of one file must share one file data.");
+            }
+        }
+
+        private static List<ReadOnlyMemory<byte>> DistinctFileData(IEnumerable<SfntFace> faces)
+        {
+            var distinct = new List<ReadOnlyMemory<byte>>();
+
+            foreach (var face in faces)
+            {
+                Assert.True(face.TryGetFontFileData(out var data, out _));
+
+                if (!distinct.Any(d => d.Span == data.Span))
+                {
+                    distinct.Add(data);
+                }
+            }
+
+            return distinct;
+        }
+
+        private static void DisposeAll(IEnumerable<SfntFace> faces)
+        {
+            foreach (var face in faces)
+            {
+                face.Dispose();
+            }
+        }
+    }
+}

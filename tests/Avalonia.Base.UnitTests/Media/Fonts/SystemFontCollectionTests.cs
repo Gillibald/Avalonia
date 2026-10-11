@@ -233,6 +233,98 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             }
         }
 
+        [Fact]
+        public void Typefaces_Of_One_Collection_File_Share_One_File_Data()
+        {
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("collection.ttc", FontFileFixture.BuildCollection(
+                FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri),
+                FontFileFixture.ReadAsset(FontFileFixture.InterBoldUri)));
+
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, new CollectionFileProvider(path));
+
+            try
+            {
+                Assert.True(collection.TryGetGlyphTypeface("Collection Sans", FontStyle.Normal, FontWeight.Normal,
+                    FontStretch.Normal, out var regular));
+                Assert.True(collection.TryGetGlyphTypeface("Collection Sans", FontStyle.Normal, FontWeight.Bold,
+                    FontStretch.Normal, out var bold));
+
+                Assert.NotSame(regular, bold);
+                Assert.Equal(FontSimulations.None, bold.FontSimulations);
+
+                var faces = new[]
+                {
+                    Assert.IsType<SfntFace>(regular.FontMemory),
+                    Assert.IsType<SfntFace>(bold.FontMemory)
+                };
+
+                Assert.Equal(0, faces[0].FaceIndex);
+                Assert.Equal(1, faces[1].FaceIndex);
+
+                FontFileSharingTests.AssertSameFileData(faces);
+            }
+            finally
+            {
+                ((IDisposable)collection).Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Serves the regular and bold faces of one two-face collection file by path.
+        /// </summary>
+        private sealed class CollectionFileProvider : ISystemFontProvider
+        {
+            private const string FamilyName = "Collection Sans";
+
+            private readonly string _path;
+
+            public CollectionFileProvider(string path) => _path = path;
+
+            public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
+            {
+                face = CreateFace(FontWeight.Normal);
+
+                return true;
+            }
+
+            public IReadOnlyList<string> GetFontFamilyNames() => new[] { FamilyName };
+
+            public bool TryMatchFamily(string familyName, FontStyle style, FontWeight weight, FontStretch stretch,
+                [NotNullWhen(true)] out SystemFontFace? match)
+            {
+                match = string.Equals(familyName, FamilyName, StringComparison.OrdinalIgnoreCase)
+                    ? CreateFace(weight >= FontWeight.SemiBold ? FontWeight.Bold : FontWeight.Normal)
+                    : null;
+
+                return match != null;
+            }
+
+            public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
+                string? familyName, CultureInfo? culture, [NotNullWhen(true)] out SystemFontFace? match)
+            {
+                match = null;
+
+                return false;
+            }
+
+            public bool TryGetFamilyFaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
+            {
+                faces = null;
+
+                return false;
+            }
+
+            public void Dispose()
+            {
+            }
+
+            private SystemFontFace CreateFace(FontWeight weight) =>
+                new(FamilyName, FontStyle.Normal, weight, FontStretch.Normal, _path,
+                    weight == FontWeight.Bold ? 1 : 0);
+        }
+
         internal class FakeSystemFontProvider : ISystemFontProvider
         {
             private byte[]? _fontData;
