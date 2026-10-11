@@ -4,6 +4,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia.Android;
 using Avalonia.Android.Platform;
+using Avalonia.Android.Platform.Fonts;
 using Avalonia.Android.Platform.Input;
 using Avalonia.Android.Platform.Vulkan;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -27,7 +28,11 @@ namespace Avalonia
                 .UseAndroidRuntimePlatformSubsystem()
                 .UseWindowingSubsystem(() => AndroidPlatform.Initialize(), "Android")
                 .UseHarfBuzz()
-                .UseSkia();
+                .UseSkia()
+                // Replaces the render subsystem's Skia-backed system fonts (last registration
+                // wins): the Android provider serves font files as shared memory mappings instead
+                // of a native copy per face. An app registering its own provider later still wins.
+                .WithSystemFontProvider(() => new AndroidFontProvider());
         }
     }
 
