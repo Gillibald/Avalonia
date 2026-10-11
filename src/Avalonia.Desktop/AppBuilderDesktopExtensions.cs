@@ -21,6 +21,10 @@ namespace Avalonia
             {
                 LoadWin32(builder);
                 LoadSkia(builder);
+                // Registered after Skia so it replaces Skia's system font collection: DirectWrite
+                // descriptors carry file paths, which the font system memory-maps instead of
+                // copying each face's font file.
+                LoadDirectWriteFonts(builder);
             }
             else if (OperatingSystem.IsMacOS())
             {
@@ -51,6 +55,9 @@ namespace Avalonia
 
         static void LoadSkia(AppBuilder builder)
              => builder.UseSkia();
+
+        static void LoadDirectWriteFonts(AppBuilder builder)
+             => builder.WithDirectWriteFonts();
 
         static void LoadHarfBuzz(AppBuilder builder)
              => builder.UseHarfBuzz();
