@@ -775,34 +775,37 @@ namespace Avalonia.Media.Fonts
 
                         foreach (var fontAsset in fontAssets)
                         {
-                            using var stream = assetLoader.Open(fontAsset);
+                            IReadOnlyList<SfntFace> faces;
 
-                            if (!SfntFace.TryLoad(stream, out var face))
+                            using (var stream = assetLoader.Open(fontAsset))
                             {
-                                continue;
+                                faces = SfntFace.LoadFaces(stream);
                             }
 
-                            if (GlyphTypeface.TryCreate(face) is not { } glyphTypeface)
+                            foreach (var face in faces)
                             {
-                                face.Dispose();
+                                if (GlyphTypeface.TryCreate(face) is not { } glyphTypeface)
+                                {
+                                    face.Dispose();
 
-                                continue;
-                            }
+                                    continue;
+                                }
 
-                            var key = glyphTypeface.ToFontCollectionKey();
+                                var key = glyphTypeface.ToFontCollectionKey();
 
-                            //Add TypographicFamilyName to the cache
-                            if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
-                            {
-                                if (TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, glyphTypeface))
+                                //Add TypographicFamilyName to the cache
+                                if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
+                                {
+                                    if (TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, glyphTypeface))
+                                    {
+                                        result = true;
+                                    }
+                                }
+
+                                if (TryAddGlyphTypeface(glyphTypeface.FamilyName, key, glyphTypeface))
                                 {
                                     result = true;
                                 }
-                            }
-
-                            if (TryAddGlyphTypeface(glyphTypeface.FamilyName, key, glyphTypeface))
-                            {
-                                result = true;
                             }
                         }
 
@@ -851,26 +854,31 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
-        /// Attempts to load the first face of the specified font file (memory-mapped where the
-        /// platform supports it) and add it to the collection.
+        /// Attempts to load every face of the specified font file (memory-mapped where the
+        /// platform supports it) and add them to the collection.
         /// </summary>
         /// <param name="path">The path of the font file.</param>
-        /// <returns><see langword="true"/> if the face was loaded and added; otherwise, <see langword="false"/>.</returns>
+        /// <returns><see langword="true"/> if at least one face was loaded and added; otherwise, <see langword="false"/>.</returns>
         private bool TryAddFontFile(string path)
         {
-            if (!SfntFace.TryLoad(path, 0, out var face))
+            var result = false;
+
+            foreach (var face in SfntFace.LoadFaces(path))
             {
-                return false;
+                if (GlyphTypeface.TryCreate(face) is not { } glyphTypeface)
+                {
+                    face.Dispose();
+
+                    continue;
+                }
+
+                if (TryAddGlyphTypeface(glyphTypeface))
+                {
+                    result = true;
+                }
             }
 
-            if (GlyphTypeface.TryCreate(face) is not { } glyphTypeface)
-            {
-                face.Dispose();
-
-                return false;
-            }
-
-            return TryAddGlyphTypeface(glyphTypeface);
+            return result;
         }
 
         /// <summary>
