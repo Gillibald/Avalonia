@@ -180,6 +180,19 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
+        public void Real_Family_Names_Prefer_Faces_Of_Families_In_Use()
+        {
+            // Both emoji faces carry the same name; the first belongs to a family marked ignored
+            // (a legacy font kept on the device but no longer used).
+            var catalog = Vendor();
+
+            Assert.Equal("EmojiPair.ttc#1", Describe(MatchFamily(catalog, "Twitter Color Emoji")));
+
+            Assert.True(catalog.TryGetFamilyFaces("Twitter Color Emoji", out var faces));
+            Assert.Equal(new[] { "EmojiPair.ttc#1", "EmojiPair.ttc#0" }, faces.Select(Describe));
+        }
+
+        [Fact]
         public void Real_Family_Names_Are_Not_Listed()
         {
             Assert.DoesNotContain("Inter", Vendor().GetFamilyNames());
