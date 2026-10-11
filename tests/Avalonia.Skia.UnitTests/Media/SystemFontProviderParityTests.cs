@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using Avalonia.Media;
@@ -28,6 +29,18 @@ namespace Avalonia.Skia.UnitTests.Media
             (FontStyle.Normal, FontWeight.Black, FontStretch.Normal),
             (FontStyle.Normal, FontWeight.Normal, FontStretch.Condensed),
         };
+
+        private static readonly int[] s_codepoints =
+        {
+            0x61, 0xE9, 0x3B1, 0x416, 0x531, 0x10D0, 0x5D0, 0x628, 0x710, 0x780, 0x915, 0x995, 0xB95, 0xE01,
+            0xE81, 0x1780, 0x1000, 0x1200, 0xF40, 0x1820, 0xA000, 0x4E2D, 0x9AA8, 0xAC00, 0x3042, 0x30A2,
+            0x1F600, 0x2764, 0x1F1E9, 0x2603, 0x1D400, 0xE000, 0x13A0, 0x1401, 0x1681, 0x16A0, 0x2801,
+            0x20000, 0x10330,
+        };
+
+        private static readonly string?[] s_cultures = { null, "ja-JP", "zh-CN", "zh-TW", "ko-KR" };
+
+        private static readonly string?[] s_fallbackFamilies = { null, "Segoe UI", "Arial", "Times New Roman", "Consolas" };
 
         [Win32Fact("Requires DirectWrite")]
         public void Every_Skia_Family_Should_Resolve_Through_DirectWrite()
@@ -108,6 +121,45 @@ namespace Avalonia.Skia.UnitTests.Media
                     else if (identities.Of(skiaFace) != identities.Of(directWriteFace))
                     {
                         mismatches.Add($"{request}: different faces");
+                    }
+                }
+            }
+
+            Assert.Empty(mismatches);
+        }
+
+        [Win32Fact("Requires DirectWrite")]
+        public void Character_Matches_Should_Resolve_To_The_Same_Face()
+        {
+            using var skia = new SkiaFontProvider();
+            using var directWrite = new DirectWriteFontProvider();
+            var identities = new FaceIdentities();
+            var mismatches = new List<string>();
+
+            foreach (var codepoint in s_codepoints)
+            {
+                foreach (var cultureName in s_cultures)
+                {
+                    var culture = cultureName is null ? null : CultureInfo.GetCultureInfo(cultureName);
+
+                    foreach (var familyName in s_fallbackFamilies)
+                    {
+                        foreach (var weight in new[] { FontWeight.Normal, FontWeight.Bold })
+                        {
+                            var skiaMatched = skia.TryMatchCharacter(codepoint, FontStyle.Normal, weight,
+                                FontStretch.Normal, familyName, culture, out var skiaFace);
+                            var directWriteMatched = directWrite.TryMatchCharacter(codepoint, FontStyle.Normal, weight,
+                                FontStretch.Normal, familyName, culture, out var directWriteFace);
+
+                            var skiaIdentity = skiaMatched ? identities.Of(skiaFace!) : "none";
+                            var directWriteIdentity = directWriteMatched ? identities.Of(directWriteFace!) : "none";
+
+                            if (skiaIdentity != directWriteIdentity)
+                            {
+                                mismatches.Add($"U+{codepoint:X4} {cultureName ?? "-"} {familyName ?? "-"} {(int)weight}: " +
+                                               $"Skia {skiaFace?.FamilyName ?? "none"}, DirectWrite {directWriteFace?.FamilyName ?? "none"}");
+                            }
+                        }
                     }
                 }
             }
