@@ -22,6 +22,7 @@
     <None Include="..\Avalonia.RenderTests\Assets\Inter-Regular.ttf" Link="Fonts\Inter-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Avalonia.RenderTests\Assets\Inter-Bold.ttf" Link="Fonts\Inter-Bold.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Avalonia.RenderTests\Assets\NotoSans-Italic.ttf" Link="Fonts\NotoSans-Italic.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\Avalonia.RenderTests\Assets\Manrope-Light.ttf" Link="Fonts\Manrope-Light.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" Link="Fonts\NotoMono-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Avalonia.RenderTests\Assets\NotoSansArabic-Regular.ttf" Link="Fonts\NotoSansArabic-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\Avalonia.RenderTests\Assets\NotoSansHebrew-Regular.ttf" Link="Fonts\NotoSansHebrew-Regular.ttf" CopyToOutputDirectory="PreserveNewest" />

@@ -103,6 +103,9 @@ namespace Avalonia.Android.Platform.Fonts
         /// Builds the catalog from the first readable main configuration file and every readable
         /// addition.
         /// </summary>
+        public static AndroidFontCatalog Create(AndroidFontConfiguration configuration,
+            AndroidSystemFontSource? systemFonts) => Create(configuration);
+
         public static AndroidFontCatalog Create(AndroidFontConfiguration configuration)
         {
             var main = FontsXmlConfig.Empty;
