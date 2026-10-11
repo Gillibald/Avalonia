@@ -272,6 +272,45 @@ namespace Avalonia.Android.UnitTests
             Assert.Equal("EmojiPair.ttc#1", Describe(MatchCharacter(catalog, 0x1F1E9, culture: "ja-JP")));
         }
 
+        private AndroidFontCatalog FromXml(string familySet)
+        {
+            var path = Path.Combine(_fixture.EtcDirectory, System.Guid.NewGuid().ToString("N") + ".xml");
+
+            File.WriteAllText(path, "<familyset version=\"23\">" + familySet + "</familyset>");
+
+            return AndroidFontCatalog.Create(new AndroidFontConfiguration(
+                new[] { new AndroidFontConfigurationFile(path, _fixture.FontDirectory) },
+                System.Array.Empty<AndroidFontConfigurationFile>()));
+        }
+
+        [Fact]
+        public void Text_Presentation_Symbols_Follow_File_Order()
+        {
+            var catalog = FromXml(
+                "<family name=\"sans-serif\"><font>NotoMono-Regular.ttf</font></family>" +
+                "<family><font>Inter-Bold.ttf</font></family>" +
+                "<family lang=\"und-Zsye\"><font index=\"1\">EmojiPair.ttc</font></family>");
+
+            // The heart defaults to text presentation; a text font listed first draws it.
+            Assert.Equal("Inter-Bold.ttf#0", Describe(MatchCharacter(catalog, 0x2764)));
+
+            // Emoji presentation codepoints prefer the emoji family wherever it is listed.
+            Assert.Equal("EmojiPair.ttc#1", Describe(MatchCharacter(catalog, 0x1F600)));
+            Assert.Equal("EmojiPair.ttc#1", Describe(MatchCharacter(catalog, 0x1F1E9)));
+        }
+
+        [Fact]
+        public void Families_Declared_For_Script_Variants_Are_Not_Skipped()
+        {
+            // Syre (Estrangela) is a variant subtag of the Syriac script, not a script of its own;
+            // a Hebrew font stands in for the Syriac one.
+            var catalog = FromXml(
+                "<family name=\"sans-serif\"><font>NotoMono-Regular.ttf</font></family>" +
+                "<family lang=\"und-Syre\"><font>NotoSansHebrew-Regular.ttf</font></family>");
+
+            Assert.Equal("NotoSansHebrew-Regular.ttf#0", Describe(MatchCharacter(catalog, 0x05D0)));
+        }
+
         [Fact]
         public void A_Requested_Family_That_Covers_The_Codepoint_Wins()
         {
