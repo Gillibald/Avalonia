@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -222,6 +223,115 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             FontFileCache.GetSnapshot()
                 .Where(e => e.Key is string path && path.Contains(fixture.DirectoryName, StringComparison.Ordinal))
                 .ToList();
+
+        [Fact]
+        public void Content_Keys_Of_Equal_Files_Are_Equal()
+        {
+            var first = BuildEightFaceCollection();
+            var second = (byte[])first.Clone();
+
+            Assert.True(FontContentKey.TryCreate(first, out var firstKey));
+            Assert.True(FontContentKey.TryCreate(second, out var secondKey));
+
+            Assert.Equal(firstKey, secondKey);
+            Assert.Equal(firstKey.GetHashCode(), secondKey.GetHashCode());
+            Assert.Equal(first.Length, firstKey.Length);
+
+            // Random-access reads produce the same key as the whole file in memory.
+            Assert.True(FontContentKey.TryCreate(second.Length, (offset, destination) =>
+            {
+                second.AsSpan((int)offset, destination.Length).CopyTo(destination);
+
+                return true;
+            }, out var readKey));
+
+            Assert.Equal(firstKey, readKey);
+        }
+
+        [Fact]
+        public void Content_Keys_Differ_When_A_Name_Table_Differs()
+        {
+            var font = FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri);
+            var changed = (byte[])font.Clone();
+
+            // The table directory stays equal; only the name table's content changes.
+            changed[GetTableOffset(changed, 0, "name") + 20] ^= 0xFF;
+
+            Assert.True(FontContentKey.TryCreate(font, out var key));
+            Assert.True(FontContentKey.TryCreate(changed, out var changedKey));
+
+            Assert.NotEqual(key, changedKey);
+
+            // A different face set over the same tables is a different file.
+            Assert.True(FontContentKey.TryCreate(FontFileFixture.BuildCollection(font), out var collectionKey));
+
+            Assert.NotEqual(key, collectionKey);
+        }
+
+        [Fact]
+        public void Content_Keys_Reject_Truncated_Files()
+        {
+            var font = BuildEightFaceCollection();
+
+            Assert.False(FontContentKey.TryCreate(font.AsSpan(0, 8), out _));
+            Assert.False(FontContentKey.TryCreate(font.AsSpan(0, 40), out _));
+        }
+
+        [Fact]
+        public void Content_Keyed_Data_Is_Shared_Until_The_Last_Release()
+        {
+            var font = BuildEightFaceCollection();
+
+            Assert.True(FontContentKey.TryCreate(font, out var key));
+
+            var created = 0;
+
+            (IDisposable Owner, ReadOnlyMemory<byte> Memory)? Create()
+            {
+                created++;
+
+                var memory = UnmanagedFontMemory.LoadFromStream(new MemoryStream(font));
+
+                return (memory, memory.Memory);
+            }
+
+            Assert.True(FontFileCache.TryGetOrCreate(key, Create, out var first));
+            Assert.True(FontFileCache.TryGetOrCreate(key, Create, out var second));
+
+            Assert.Same(first, second);
+            Assert.Equal(1, created);
+            Assert.Contains(FontFileCache.GetSnapshot(), e => e.Key is FontContentKey k && k.Equals(key));
+
+            first.Release();
+            second.Release();
+
+            Assert.DoesNotContain(FontFileCache.GetSnapshot(), e => e.Key is FontContentKey k && k.Equals(key));
+
+            Assert.True(FontFileCache.TryGetOrCreate(key, Create, out var third));
+
+            Assert.NotSame(first, third);
+            Assert.Equal(2, created);
+
+            third.Release();
+        }
+
+        private static int GetTableOffset(byte[] font, int directoryOffset, string tag)
+        {
+            var numTables = BinaryPrimitives.ReadUInt16BigEndian(font.AsSpan(directoryOffset + 4));
+            var tagValue = (uint)new OpenTypeTag(tag[0], tag[1], tag[2], tag[3]);
+
+            for (var i = 0; i < numTables; i++)
+            {
+                var record = directoryOffset + 12 + i * 16;
+
+                if (BinaryPrimitives.ReadUInt32BigEndian(font.AsSpan(record)) == tagValue)
+                {
+                    return (int)BinaryPrimitives.ReadUInt32BigEndian(font.AsSpan(record + 8));
+                }
+            }
+
+            throw new InvalidOperationException("No " + tag + " table.");
+        }
 
         internal static byte[] BuildEightFaceCollection()
         {

@@ -28,6 +28,8 @@ namespace Avalonia.Media.Fonts
 
         private static readonly ConcurrentDictionary<string, SharedFontData> s_pathEntries = new(s_pathComparer);
 
+        private static readonly ConcurrentDictionary<FontContentKey, SharedFontData> s_contentEntries = new();
+
         // Resolving symbolic links costs a file system call per lookup; distinct raw paths are few
         // (one per installed font file at most), so the resolved form is remembered.
         private static readonly ConcurrentDictionary<string, string> s_canonicalPaths = new(s_pathComparer);
@@ -53,13 +55,37 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
-        /// Gets the live entries: the key (canonical path), the owner type and the data length.
+        /// Gets the data of the font file with the specified content, creating it through the
+        /// factory when no live data has the key.
+        /// </summary>
+        /// <param name="key">The identity of the font file.</param>
+        /// <param name="factory">Creates the owner and memory of the file's bytes, or returns
+        /// <see langword="null"/> if they cannot be produced. It runs only on a miss, and more than
+        /// once only when concurrent requests for the same file race.</param>
+        /// <param name="data">The shared file data, if the operation succeeds. The caller owns one
+        /// reference and releases it through <see cref="SharedFontData.Release"/>.</param>
+        /// <returns><see langword="true"/> if live data was found or created; otherwise, <see langword="false"/>.</returns>
+        public static bool TryGetOrCreate(in FontContentKey key,
+            Func<(IDisposable Owner, ReadOnlyMemory<byte> Memory)?> factory,
+            [NotNullWhen(true)] out SharedFontData? data)
+        {
+            return TryGetOrCreate(s_contentEntries, key, _ => factory(), out data);
+        }
+
+        /// <summary>
+        /// Gets the live entries: the key (canonical path or <see cref="FontContentKey"/>), the
+        /// owner type and the data length.
         /// </summary>
         internal static IReadOnlyList<FontFileCacheEntry> GetSnapshot()
         {
             var entries = new List<FontFileCacheEntry>();
 
             foreach (var entry in s_pathEntries)
+            {
+                entries.Add(new FontFileCacheEntry(entry.Key, entry.Value.Owner.GetType(), entry.Value.Memory.Length));
+            }
+
+            foreach (var entry in s_contentEntries)
             {
                 entries.Add(new FontFileCacheEntry(entry.Key, entry.Value.Owner.GetType(), entry.Value.Memory.Length));
             }

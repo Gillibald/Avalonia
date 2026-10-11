@@ -5,7 +5,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.IO;
+using System.Threading;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
@@ -149,8 +149,10 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// A descriptor over a matched SKTypeface. Skia does not expose the font's file path, so
-        /// the font data is served through the override hatch: the typeface's underlying stream
-        /// (with its collection face index) is copied once and loaded through the managed loader.
+        /// the font data is served through the override hatch from the typeface's underlying
+        /// stream (with its collection face index). The stream's content identifies the file, so
+        /// all faces of one file share one data: the stream's own memory where Skia exposes it
+        /// (a view of the font file), otherwise a single native copy per file.
         /// </summary>
         private sealed class SkiaSystemFontFace : SystemFontFace
         {
@@ -169,10 +171,10 @@ namespace Avalonia.Skia
             }
 
             // Every match returns a new SKTypeface, and Skia does not guarantee one handle per
-            // font, so the handle cannot identify the font data. The PostScript name identifies
-            // the face within the installed fonts, and the collection index keeps faces of one
-            // collection file apart when they share a name. Resolved on first use because the
-            // index is only reported by opening the typeface's stream.
+            // font, so the handle cannot identify the font data. The content key of the
+            // typeface's stream identifies the font file, as it does for the shared file data,
+            // and the collection index selects the face within it. Resolved on first use because
+            // both are only known by opening the typeface's stream.
             internal override object? Identity
             {
                 get
@@ -189,16 +191,13 @@ namespace Avalonia.Skia
 
             private object? CreateIdentity()
             {
-                if (string.IsNullOrEmpty(PostScriptName))
-                {
-                    return null;
-                }
-
                 try
                 {
-                    using var asset = _skTypeface.OpenStream(out var ttcIndex);
+                    using var stream = _skTypeface.OpenStream(out var ttcIndex);
 
-                    return asset is null ? null : (PostScriptName, ttcIndex);
+                    return stream is not null && stream.Length > 0 && TryCreateContentKey(stream, out var key)
+                        ? (key, ttcIndex)
+                        : null;
                 }
                 catch (Exception)
                 {
@@ -210,24 +209,37 @@ namespace Avalonia.Skia
             {
                 fontMemory = null;
 
+                SKStreamAsset? stream = null;
+
                 try
                 {
-                    using var asset = _skTypeface.OpenStream(out var ttcIndex);
+                    stream = _skTypeface.OpenStream(out var ttcIndex);
 
-                    if (asset is null || asset.Length == 0)
+                    if (stream is null || stream.Length <= 0 || !TryCreateContentKey(stream, out var key))
                     {
                         return false;
                     }
 
-                    var buffer = new byte[asset.Length];
+                    // The factory takes over the stream opened for the key; only a lost race for the
+                    // same file makes it run again, with a stream of its own.
+                    var pending = stream;
 
-                    if (asset.Read(buffer, buffer.Length) != buffer.Length)
+                    var found = FontFileCache.TryGetOrCreate(key,
+                        () => CreateFontData(Interlocked.Exchange(ref pending, null) ?? _skTypeface.OpenStream()),
+                        out var data);
+
+                    // On a hit the cache already holds this file: the stream is not needed.
+                    stream = pending;
+
+                    if (!found)
                     {
                         return false;
                     }
 
-                    if (!SfntFace.TryLoad(new MemoryStream(buffer), ttcIndex, out var face))
+                    if (!SfntFace.TryCreate(data!, ttcIndex, out var face))
                     {
+                        data!.Release();
+
                         return false;
                     }
 
@@ -238,6 +250,60 @@ namespace Avalonia.Skia
                 catch (Exception)
                 {
                     return false;
+                }
+                finally
+                {
+                    stream?.Dispose();
+                }
+            }
+
+            private static unsafe bool TryCreateContentKey(SKStreamAsset stream, out FontContentKey key)
+            {
+                var memoryBase = stream.GetMemoryBase();
+
+                if (memoryBase != IntPtr.Zero)
+                {
+                    return FontContentKey.TryCreate(new ReadOnlySpan<byte>((void*)memoryBase, stream.Length), out key);
+                }
+
+                return FontContentKey.TryCreate(stream.Length, (offset, destination) =>
+                {
+                    if (offset > int.MaxValue || !stream.Seek((int)offset))
+                    {
+                        return false;
+                    }
+
+                    fixed (byte* buffer = destination)
+                    {
+                        return stream.Read((IntPtr)buffer, destination.Length) == destination.Length;
+                    }
+                }, out key);
+            }
+
+            private static (IDisposable Owner, ReadOnlyMemory<byte> Memory)? CreateFontData(SKStreamAsset? stream)
+            {
+                if (stream is null)
+                {
+                    return null;
+                }
+
+                if (SkiaStreamMemory.TryCreate(stream, out var streamMemory))
+                {
+                    return (streamMemory!, streamMemory!.Memory);
+                }
+
+                // Without a memory base the stream is read once, straight into native memory.
+                using (stream)
+                {
+                    if (!stream.Rewind())
+                    {
+                        return null;
+                    }
+
+                    var copy = UnmanagedFontMemory.TryCreate(stream.Length,
+                        (buffer, length) => stream.Read(buffer, length) == length);
+
+                    return copy is null ? null : (copy, copy.Memory);
                 }
             }
         }
