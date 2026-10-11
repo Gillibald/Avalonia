@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Threading;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
@@ -268,6 +271,112 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             finally
             {
                 ((IDisposable)collection).Dispose();
+            }
+        }
+
+        [Fact]
+        public void Typeface_Lost_To_A_Concurrent_First_Request_Should_Be_Disposed()
+        {
+            var provider = new BarrierSystemFontProvider(2);
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            var results = new GlyphTypeface?[2];
+
+            // Both requests miss the cache, wait for each other inside the provider, then race to
+            // publish their typeface.
+            var threads = Enumerable.Range(0, 2).Select(i => new Thread(() =>
+            {
+                collection.TryGetGlyphTypeface("Test Sans", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,
+                    out results[i]);
+            })).ToList();
+
+            threads.ForEach(t => t.Start());
+            threads.ForEach(t => t.Join());
+
+            Assert.NotNull(results[0]);
+            Assert.Same(results[0], results[1]);
+            Assert.Equal(2, provider.OpenedFaces.Count);
+
+            // Only the published typeface keeps its font data; the loser's was released.
+            var alive = provider.OpenedFaces.Where(f => f.TryGetTable(new OpenTypeTag('n', 'a', 'm', 'e'), out _));
+
+            Assert.Same(results[0]!.FontMemory, Assert.Single(alive));
+        }
+
+        /// <summary>
+        /// Holds every family match until the given number of requests arrived, and records the
+        /// faces it opens.
+        /// </summary>
+        private sealed class BarrierSystemFontProvider : ISystemFontProvider
+        {
+            private readonly Barrier _barrier;
+            private readonly byte[] _fontData = FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri);
+
+            public BarrierSystemFontProvider(int participants) => _barrier = new Barrier(participants);
+
+            public ConcurrentBag<SfntFace> OpenedFaces { get; } = new();
+
+            public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
+            {
+                face = null;
+
+                return false;
+            }
+
+            public IReadOnlyList<string> GetFontFamilyNames() => new[] { "Test Sans" };
+
+            public bool TryMatchFamily(string familyName, FontStyle style, FontWeight weight, FontStretch stretch,
+                [NotNullWhen(true)] out SystemFontFace? match)
+            {
+                _barrier.SignalAndWait(TimeSpan.FromSeconds(10));
+
+                match = new RecordingFontFace(this);
+
+                return true;
+            }
+
+            public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
+                string? familyName, CultureInfo? culture, [NotNullWhen(true)] out SystemFontFace? match)
+            {
+                match = null;
+
+                return false;
+            }
+
+            public bool TryGetFamilyFaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
+            {
+                faces = null;
+
+                return false;
+            }
+
+            public void Dispose() => _barrier.Dispose();
+
+            private sealed class RecordingFontFace : SystemFontFace
+            {
+                private readonly BarrierSystemFontProvider _owner;
+
+                public RecordingFontFace(BarrierSystemFontProvider owner)
+                    : base("Test Sans", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal)
+                {
+                    _owner = owner;
+                }
+
+                public override bool TryOpenFontMemory([NotNullWhen(true)] out IFontMemory? fontMemory)
+                {
+                    fontMemory = null;
+
+                    if (!SfntFace.TryLoad(new MemoryStream(_owner._fontData), out var face))
+                    {
+                        return false;
+                    }
+
+                    _owner.OpenedFaces.Add(face);
+
+                    fontMemory = face;
+
+                    return true;
+                }
             }
         }
 
