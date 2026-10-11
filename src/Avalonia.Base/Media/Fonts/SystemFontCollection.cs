@@ -289,10 +289,14 @@ namespace Avalonia.Media.Fonts
                 return glyphTypeface;
             }
 
-            added |= TryAddGlyphTypeface(root, root.ToFontCollectionKey());
-
+            // A face without an identity is loaded per request. Of concurrent first loads, only
+            // the one registered under the family names keeps its root: registering a loser's
+            // root under the root's own names would keep two typefaces of one face, and their font
+            // data, alive for the life of the collection.
             if (added)
             {
+                TryAddGlyphTypeface(root, root.ToFontCollectionKey());
+
                 _unsharedRoots.Add(root);
 
                 return glyphTypeface;
