@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Base.UnitTests.Media.Fonts;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Xunit;
 
@@ -60,6 +61,43 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal("Yu Gothic UI", glyphTypeface.FamilyName);
 
             glyphTypeface.Dispose();
+        }
+
+        [Win32Fact("Requires Windows fonts")]
+        public void Should_Report_Designed_Properties_Of_Simulated_Matches()
+        {
+            using var provider = new SkiaFontProvider();
+
+            // Gabriola has a regular face only; DirectWrite answers a bold request with a
+            // simulated bold variant of it, and Impact answers italic with a simulated oblique.
+            Assert.True(provider.TryMatchFamily("Gabriola", FontStyle.Normal, FontWeight.Bold,
+                FontStretch.Normal, out var gabriola));
+            Assert.True(provider.TryMatchFamily("Impact", FontStyle.Italic, FontWeight.Normal,
+                FontStretch.Normal, out var impact));
+
+            Assert.Equal(FontWeight.Normal, gabriola.Weight);
+            Assert.Equal(FontStyle.Normal, impact.Style);
+        }
+
+        [Win32Fact("Requires Windows fonts")]
+        public void Simulated_Matches_Should_Get_The_Collection_Simulation()
+        {
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, new SkiaFontProvider());
+
+            try
+            {
+                Assert.True(collection.TryGetGlyphTypeface("Gabriola", FontStyle.Normal, FontWeight.Bold,
+                    FontStretch.Normal, out var gabriola));
+                Assert.True(collection.TryGetGlyphTypeface("Impact", FontStyle.Italic, FontWeight.Normal,
+                    FontStretch.Normal, out var impact));
+
+                Assert.Equal(FontSimulations.Bold, gabriola.FontSimulations);
+                Assert.Equal(FontSimulations.Oblique, impact.FontSimulations);
+            }
+            finally
+            {
+                ((IDisposable)collection).Dispose();
+            }
         }
 
         [Win32Fact("Requires Windows fonts")]
