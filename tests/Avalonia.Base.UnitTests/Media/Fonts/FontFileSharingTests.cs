@@ -201,12 +201,27 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
                 Assert.Equal(files.Length, distinct.Count);
                 Assert.Equal(files.Sum(f => new FileInfo(f).Length), distinct.Sum(d => (long)d.Length));
+
+                // The cache holds one mapped entry per file, sized like the file.
+                var entries = GetCacheEntries(fixture);
+
+                Assert.Equal(files.Length, entries.Count);
+                Assert.All(entries, e => Assert.Equal(typeof(FontFileMemory), e.OwnerType));
+                Assert.Equal(files.Sum(f => new FileInfo(f).Length), entries.Sum(e => (long)e.Length));
             }
             finally
             {
                 DisposeAll(faces);
             }
+
+            // The cache keeps nothing alive on its own.
+            Assert.Empty(GetCacheEntries(fixture));
         }
+
+        private static List<FontFileCacheEntry> GetCacheEntries(FontFileFixture fixture) =>
+            FontFileCache.GetSnapshot()
+                .Where(e => e.Key is string path && path.Contains(fixture.DirectoryName, StringComparison.Ordinal))
+                .ToList();
 
         internal static byte[] BuildEightFaceCollection()
         {

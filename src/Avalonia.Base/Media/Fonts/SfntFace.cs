@@ -75,7 +75,8 @@ namespace Avalonia.Media.Fonts
         /// <summary>
         /// Attempts to load the specified face from the specified font file, preferring a
         /// memory-mapped view and falling back to reading the file into memory on platforms
-        /// without memory-mapped file support.
+        /// without memory-mapped file support. All faces loaded from one file share its data
+        /// through <see cref="FontFileCache"/> while any of them lives.
         /// </summary>
         /// <param name="path">The path of the font file.</param>
         /// <param name="faceIndex">The zero-based face index; must be zero for single-face files.</param>
@@ -85,21 +86,19 @@ namespace Avalonia.Media.Fonts
         {
             face = null;
 
-            if (FontFileMemory.TryOpen(path, out var mapped))
-            {
-                return TryCreateOwned(mapped!, mapped!.Memory, faceIndex, out face);
-            }
-
-            try
-            {
-                using var stream = File.OpenRead(path);
-
-                return TryLoad(stream, faceIndex, out face);
-            }
-            catch (Exception)
+            if (!FontFileCache.TryOpen(path, out var data))
             {
                 return false;
             }
+
+            if (TryCreate(data, faceIndex, out face))
+            {
+                return true;
+            }
+
+            data.Release();
+
+            return false;
         }
 
         private static bool TryCreateOwned(IDisposable owner, ReadOnlyMemory<byte> memory, int faceIndex,

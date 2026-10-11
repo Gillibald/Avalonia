@@ -12,6 +12,7 @@ namespace Avalonia.Media.Fonts
     internal sealed class SharedFontData
     {
         private readonly IDisposable _owner;
+        private readonly Action<SharedFontData>? _released;
         private int _refCount;
 
         /// <summary>
@@ -19,9 +20,11 @@ namespace Avalonia.Media.Fonts
         /// </summary>
         /// <param name="owner">The object owning the font file bytes; disposed when the last reference is released.</param>
         /// <param name="memory">The font file bytes.</param>
-        public SharedFontData(IDisposable owner, ReadOnlyMemory<byte> memory)
+        /// <param name="released">Invoked once when the last reference is released, before the owner is disposed.</param>
+        public SharedFontData(IDisposable owner, ReadOnlyMemory<byte> memory, Action<SharedFontData>? released = null)
         {
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+            _released = released;
             Memory = memory;
             _refCount = 1;
         }
@@ -32,9 +35,27 @@ namespace Avalonia.Media.Fonts
         public ReadOnlyMemory<byte> Memory { get; }
 
         /// <summary>
+        /// Gets the object owning the font file bytes.
+        /// </summary>
+        public IDisposable Owner => _owner;
+
+        /// <summary>
         /// Adds a reference. Throws if the data has already been released.
         /// </summary>
         public void AddRef()
+        {
+            if (!TryAddRef())
+            {
+                throw new ObjectDisposedException(nameof(SharedFontData));
+            }
+        }
+
+        /// <summary>
+        /// Adds a reference unless the last one has already been released. A cache that hands out
+        /// data it does not own a reference to uses this to tell a live entry from a dying one.
+        /// </summary>
+        /// <returns><see langword="true"/> if a reference was added; otherwise, <see langword="false"/>.</returns>
+        public bool TryAddRef()
         {
             while (true)
             {
@@ -42,12 +63,12 @@ namespace Avalonia.Media.Fonts
 
                 if (current <= 0)
                 {
-                    throw new ObjectDisposedException(nameof(SharedFontData));
+                    return false;
                 }
 
                 if (Interlocked.CompareExchange(ref _refCount, current + 1, current) == current)
                 {
-                    return;
+                    return true;
                 }
             }
         }
@@ -59,6 +80,7 @@ namespace Avalonia.Media.Fonts
         {
             if (Interlocked.Decrement(ref _refCount) == 0)
             {
+                _released?.Invoke(this);
                 _owner.Dispose();
             }
         }
