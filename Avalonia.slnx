@@ -137,6 +137,7 @@
     <File Path="build/UnitTests.NetCore.targets" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="tests/Avalonia.Android.UnitTests/Avalonia.Android.UnitTests.csproj" />
     <Project Path="tests/Avalonia.Base.UnitTests/Avalonia.Base.UnitTests.csproj" />
     <Project Path="tests/Avalonia.CoreText.UnitTests/Avalonia.CoreText.UnitTests.csproj" />
     <Project Path="tests/Avalonia.DirectWrite.UnitTests/Avalonia.DirectWrite.UnitTests.csproj" />

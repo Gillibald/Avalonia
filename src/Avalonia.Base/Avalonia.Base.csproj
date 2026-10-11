@@ -24,6 +24,7 @@
   </ItemGroup>
 
   <ItemGroup Label="InternalsVisibleTo">
+    <InternalsVisibleTo Include="Avalonia.Android.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Base.UnitTests, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Desktop, PublicKey=$(AvaloniaPublicKey)" />
     <InternalsVisibleTo Include="Avalonia.Benchmarks, PublicKey=$(AvaloniaPublicKey)" />

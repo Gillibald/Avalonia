@@ -277,6 +277,7 @@ partial class Build : NukeBuild
         .DependsOn(Compile)
         .Executes(() =>
         {
+            RunCoreTest("Avalonia.Android.UnitTests");
             RunCoreTest("Avalonia.Base.UnitTests");
             RunCoreTest("Avalonia.Controls.UnitTests");
             RunCoreTest("Avalonia.CoreText.UnitTests");
