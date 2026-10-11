@@ -157,18 +157,13 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
-            //Add to cache with the provider's family name first
-            TryAddGlyphTypeface(face.FamilyName, key, glyphTypeface);
-
-            // Then the requested family name
-            if (familyName != face.FamilyName)
-                TryAddGlyphTypeface(familyName, key, glyphTypeface);
-
-            //Add to cache
-            if (!TryAddGlyphTypeface(glyphTypeface))
+            // The requested entry decides between concurrent first requests for it: only the
+            // winner publishes its typeface. A loser is referenced by no entry, so it is disposed
+            // here or its font data would stay alive for the rest of the process.
+            if (!TryAddGlyphTypeface(familyName, key, glyphTypeface))
             {
-                // Another thread may have added an entry for this key while we were creating the glyph typeface.
-                // Re-check the cache and yield the existing glyph typeface if present.
+                glyphTypeface.Dispose();
+
                 if (_glyphTypefaceCache.TryGetValue(familyName, out var existingMap) && existingMap.TryGetValue(key, out var existingTypeface) && existingTypeface != null)
                 {
                     glyphTypeface = existingTypeface;
@@ -176,8 +171,18 @@ namespace Avalonia.Media.Fonts
                     return true;
                 }
 
+                glyphTypeface = null;
+
                 return false;
             }
+
+            // Then the provider's family name
+            if (familyName != face.FamilyName)
+                TryAddGlyphTypeface(face.FamilyName, key, glyphTypeface);
+
+            // And the typeface's own names. Entries another typeface of the same face already
+            // holds stay as they are; the requested entry refers to this one.
+            TryAddGlyphTypeface(glyphTypeface);
 
             //Requested glyph typeface should be in cache now
             return TryGetGlyphTypeface(familyName, key, allowNearestMatch: false, out glyphTypeface);
