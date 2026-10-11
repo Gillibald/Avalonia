@@ -153,9 +153,14 @@ namespace Avalonia.Media.Fonts.Tables
 
         public static bool TryLoad(GlyphTypeface fontFace, out OS2Table os2Table)
         {
+            return TryLoad(fontFace.FontMemory, out os2Table);
+        }
+
+        public static bool TryLoad(IFontMemory fontMemory, out OS2Table os2Table)
+        {
             os2Table = default;
             
-            if (!fontFace.FontMemory.TryGetTable(Tag, out var table))
+            if (!fontMemory.TryGetTable(Tag, out var table))
             {
                 return false;
             }
