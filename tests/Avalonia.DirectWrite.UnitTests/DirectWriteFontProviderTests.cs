@@ -144,6 +144,24 @@ namespace Avalonia.DirectWrite.UnitTests
         }
 
         [Win32Fact]
+        public void Should_Prefer_Requested_Family_When_It_Covers_The_Character()
+        {
+            using var provider = new DirectWriteFontProvider();
+
+            // The font system asks for a covering family at another weight through the character
+            // match (biased by that family), so the family must win over the platform fallback.
+            Assert.True(provider.TryMatchCharacter('a', FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,
+                "Arial", null, out var regular));
+            Assert.Equal("Arial", regular.FamilyName);
+            Assert.Equal(FontWeight.Normal, regular.Weight);
+
+            Assert.True(provider.TryMatchCharacter('a', FontStyle.Normal, FontWeight.Bold, FontStretch.Normal,
+                "Arial", null, out var bold));
+            Assert.Equal("Arial", bold.FamilyName);
+            Assert.Equal(FontWeight.Bold, bold.Weight);
+        }
+
+        [Win32Fact]
         public void Should_Get_Family_Faces_With_Designed_Properties()
         {
             using var provider = new DirectWriteFontProvider();
