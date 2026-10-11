@@ -14,9 +14,11 @@ namespace Avalonia.Media.Fonts.Tables.Cmap
         internal const string TableName = "cmap";
         internal static OpenTypeTag Tag { get; } = OpenTypeTag.Parse(TableName);
 
-        public static CharacterToGlyphMap Load(GlyphTypeface glyphTypeface)
+        public static CharacterToGlyphMap Load(GlyphTypeface glyphTypeface) => Load(glyphTypeface.FontMemory);
+
+        public static CharacterToGlyphMap Load(IFontMemory fontMemory)
         {
-            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var table))
+            if (!fontMemory.TryGetTable(Tag, out var table))
             {
                 throw new InvalidOperationException("No cmap table found.");
             }
