@@ -178,15 +178,89 @@ namespace Avalonia.Media.Fonts
             using var list = MicroComRuntime.CreateProxyFor<IDWriteFontList>((IntPtr)listPtr, true);
 
             var fontCount = list.FontCount;
+            IDWriteFont? firstSimulated = null;
 
-            // The list is ordered by match quality but may lead with algorithmically simulated
-            // entries; descriptors carry designed properties only, so prefer the first physical
-            // face and let the font system's simulation policy decide.
+            try
+            {
+                // The list is ordered by match quality but may lead with algorithmically simulated
+                // entries; descriptors carry designed properties only, so prefer the first physical
+                // face and let the font system's simulation policy decide.
+                for (var i = 0u; i < fontCount; i++)
+                {
+                    void* fontPtr = null;
+
+                    if (list.GetFont(i, &fontPtr) != 0)
+                    {
+                        continue;
+                    }
+
+                    var font = MicroComRuntime.CreateProxyFor<IDWriteFont>((IntPtr)fontPtr, true);
+
+                    if (font.Simulations != DWriteNative.FontSimulationsNone)
+                    {
+                        if (firstSimulated is null)
+                        {
+                            firstSimulated = font;
+                        }
+                        else
+                        {
+                            font.Dispose();
+                        }
+
+                        continue;
+                    }
+
+                    using (font)
+                    {
+                        if (CreateFontFace(font, canonicalName) is { } face)
+                        {
+                            match = face;
+
+                            return true;
+                        }
+                    }
+                }
+
+                // A request the family has no face for (bold or italic of a single-face family)
+                // lists only simulated variants. They are synthesized from a physical face of the
+                // same family, which is the match.
+                if (firstSimulated != null &&
+                    FindPhysicalFont(family, firstSimulated, canonicalName) is { } physical)
+                {
+                    match = physical;
+
+                    return true;
+                }
+
+                return false;
+            }
+            finally
+            {
+                firstSimulated?.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Finds the physical face a simulated font is synthesized from: the family's
+        /// non-simulated font over the same file and face index, nearest in stretch and weight
+        /// when several named instances of a variable font share that face.
+        /// </summary>
+        private SystemFontFace? FindPhysicalFont(IDWriteFontFamily family, IDWriteFont simulated, string familyName)
+        {
+            if (GetFaceLocation(simulated, out var faceIndex) is not { } filePath)
+            {
+                return null;
+            }
+
+            var fontCount = family.FontCount;
+            SystemFontFace? best = null;
+            var bestDistance = int.MaxValue;
+
             for (var i = 0u; i < fontCount; i++)
             {
                 void* fontPtr = null;
 
-                if (list.GetFont(i, &fontPtr) != 0)
+                if (family.GetFont(i, &fontPtr) != 0)
                 {
                     continue;
                 }
@@ -198,15 +272,21 @@ namespace Avalonia.Media.Fonts
                     continue;
                 }
 
-                if (CreateFontFace(font, canonicalName) is { } face)
-                {
-                    match = face;
+                var distance = Math.Abs(font.Stretch - simulated.Stretch) * 1000 + Math.Abs(font.Weight - simulated.Weight);
 
-                    return true;
+                if (distance >= bestDistance ||
+                    CreateFontFace(font, familyName) is not { } face ||
+                    face.FaceIndex != faceIndex ||
+                    !string.Equals(face.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
                 }
+
+                best = face;
+                bestDistance = distance;
             }
 
-            return false;
+            return best;
         }
 
         public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
@@ -383,16 +463,7 @@ namespace Avalonia.Media.Fonts
                 }
             }
 
-            void* facePtr = null;
-
-            if (font.CreateFontFace(&facePtr) != 0)
-            {
-                return null;
-            }
-
-            using var face = MicroComRuntime.CreateProxyFor<IDWriteFontFace>((IntPtr)facePtr, true);
-
-            if (GetFilePath(face) is not { } filePath)
+            if (GetFaceLocation(font, out var faceIndex) is not { } filePath)
             {
                 return null;
             }
@@ -403,7 +474,25 @@ namespace Avalonia.Media.Fonts
                 ToFontWeight(font.Weight),
                 ToFontStretch(font.Stretch),
                 filePath,
-                (int)face.Index);
+                faceIndex);
+        }
+
+        private static string? GetFaceLocation(IDWriteFont font, out int faceIndex)
+        {
+            faceIndex = 0;
+
+            void* facePtr = null;
+
+            if (font.CreateFontFace(&facePtr) != 0)
+            {
+                return null;
+            }
+
+            using var face = MicroComRuntime.CreateProxyFor<IDWriteFontFace>((IntPtr)facePtr, true);
+
+            faceIndex = (int)face.Index;
+
+            return GetFilePath(face);
         }
 
         private static string? GetFilePath(IDWriteFontFace face)
