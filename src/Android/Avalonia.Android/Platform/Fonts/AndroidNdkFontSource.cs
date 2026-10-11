@@ -28,13 +28,7 @@ namespace Avalonia.Android.Platform.Fonts
         {
         }
 
-        /// <summary>
-        /// Creates the source on API 29 and later; earlier releases have no NDK font API.
-        /// </summary>
-        public static AndroidSystemFontSource? TryCreate()
-        {
-            return OperatingSystem.IsAndroidVersionAtLeast(29) ? new AndroidNdkFontSource() : null;
-        }
+        public static AndroidNdkFontSource Create() => new();
 
         public override IReadOnlyList<AndroidSystemFont> GetFonts()
         {
