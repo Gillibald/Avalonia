@@ -179,6 +179,19 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void A_Transformed_V1_Run_Replays_Vectors_On_A_Context_Without_Updatable_Textures()
+        {
+            using var gpu = ColorAtlasTests.CreateGpu(GpuBackend.NativeGl, false);
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var typeface = ColorGlyphMaskTests.CreateTypeface(ColorGlyphMaskTests.Font.V1Radial, out var glyphs);
+            using var run = CreateGlyphRun(typeface, glyphs);
+
+            var counts = Measure(() => RenderOnGpu(gpu, MatrixOf(Transform.Rotated17), run), out _);
+
+            Assert.Equal(new Counts(0, 2, 0), counts with { Placements = 0 });
+        }
+
+        [Fact]
         public void A_Transformed_V1_Run_Replays_Vectors_With_The_Colour_Atlas_Off()
         {
             using var gpu = ColorAtlasTests.CreateGpu(GpuBackend.NativeGl, true);

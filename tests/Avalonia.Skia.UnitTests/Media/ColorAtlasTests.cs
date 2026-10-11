@@ -304,6 +304,58 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
         }
 
+        public static IEnumerable<object[]> ContextsWithoutUpdatableTextures()
+        {
+            foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Vulkan })
+            {
+                foreach (var content in new[] { Content.V1Radial, Content.V0, Content.SegoeUiEmoji })
+                {
+                    yield return new object[] { backend, content };
+                }
+            }
+        }
+
+        /// <summary>
+        /// A context that cannot update part of a page in place would upload a whole colour page,
+        /// up to 8 MB, whenever a glyph is placed, so it keeps drawing colour runs from run masks
+        /// and makes no colour atlas pages.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(ContextsWithoutUpdatableTextures))]
+        public void A_Context_Without_Updatable_Textures_Draws_Colour_Runs_From_Run_Masks(GpuBackend backend,
+            Content content)
+        {
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+
+            using var gpu = CreateGpu(backend, false);
+            using var scope = CreateEnvironment();
+            var typeface = CreateTypeface(content, out var glyphs);
+
+            typeface.CacheBudget = budget;
+
+            var runs = CreateRuns(typeface, glyphs);
+
+            try
+            {
+                byte[] runMasks;
+
+                using (SwitchColorAtlasOff())
+                {
+                    runMasks = Render(gpu, runs);
+                }
+
+                var counts = Measure(() => Render(gpu, runs), out var pixels);
+
+                Assert.Equal(0, counts.AtlasDraws);
+                Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
+                TransformedAtlasTests.AssertEqual(runMasks, pixels, $"{content} on {backend}");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
         internal static IDisposable SwitchColorAtlasOff() => new ColorAtlasSwitch();
 
         private sealed class ColorAtlasSwitch : IDisposable
