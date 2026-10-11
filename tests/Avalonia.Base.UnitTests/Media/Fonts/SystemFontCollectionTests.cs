@@ -126,6 +126,39 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
+        public void Character_Match_Should_Simulate_Styles_The_Matched_Face_Lacks()
+        {
+            var provider = new FakeSystemFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            // The fake places Basic Latin in its only face, Inter Regular.
+            Assert.True(collection.TryMatchCharacter('A', FontStyle.Italic, FontWeight.Bold, FontStretch.Normal,
+                null, null, out var match));
+
+            Assert.Equal(FontStyle.Italic, match.Style);
+            Assert.Equal(FontWeight.Bold, match.Weight);
+
+            // Drawing the match resolves its typeface through the collection: the regular face with
+            // bold and oblique simulation, over the same font data.
+            Assert.True(collection.TryGetGlyphTypeface("Inter", match.Style, match.Weight, match.Stretch,
+                out var simulated));
+            Assert.Equal(FontSimulations.Bold | FontSimulations.Oblique, simulated.FontSimulations);
+
+            Assert.True(collection.TryMatchCharacter('A', FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,
+                null, null, out var regularMatch));
+            Assert.True(collection.TryGetGlyphTypeface("Inter", regularMatch.Style, regularMatch.Weight,
+                regularMatch.Stretch, out var regular));
+            Assert.Equal(FontSimulations.None, regular.FontSimulations);
+
+            Assert.NotSame(regular, simulated);
+            FontFileSharingTests.AssertSameFileData(new[]
+            {
+                Assert.IsType<SfntFace>(regular.FontMemory),
+                Assert.IsType<SfntFace>(simulated.FontMemory)
+            });
+        }
+
+        [Fact]
         public void Should_Match_Character_Through_Provider()
         {
             var provider = new FakeSystemFontProvider();

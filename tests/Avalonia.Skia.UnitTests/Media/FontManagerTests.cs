@@ -539,8 +539,8 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Fact("Windows specific font")]
         public void Should_Get_Regular_Font_After_Matching_Italic_Font()
         {
-            // The Skia render interface is required: the test inspects the SKTypeface instances
-            // behind the matched glyph typefaces.
+            // The Skia render interface is required: the test builds glyph outlines of the matched
+            // glyph typefaces.
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider())))
             {
@@ -562,10 +562,55 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     Assert.Equal(FontStyle.Normal, regularTypeface.Style);
 
-                    // The oblique match is a simulated view of the face and may share its render typeface,
-                    // but it is never handed out for the regular request.
-                    Assert.NotSame(italicTypeface.GlyphTypeface, regularTypeface.GlyphTypeface);
+                    // Yu Gothic UI has no italic face: the italic request gets its regular face with
+                    // oblique simulation, the regular request the regular face itself.
+                    var italic = italicTypeface.GlyphTypeface;
+                    var regular = regularTypeface.GlyphTypeface;
+
+                    Assert.Equal(FontSimulations.Oblique, italic.FontSimulations);
+                    Assert.Equal(FontSimulations.None, regular.FontSimulations);
+                    Assert.Equal(FontStyle.Normal, regular.Style);
+
+                    var italicFace = Assert.IsType<SfntFace>(italic.FontMemory);
+                    var regularFace = Assert.IsType<SfntFace>(regular.FontMemory);
+
+                    Assert.Equal(regularFace.FaceIndex, italicFace.FaceIndex);
+                    Assert.True(italicFace.TryGetFontFileData(out var italicData, out _));
+                    Assert.True(regularFace.TryGetFontFileData(out var regularData, out _));
+                    Assert.True(italicData.Span == regularData.Span);
                 }
+            }
+        }
+
+        [Win32Fact("Windows specific font")]
+        public void Oblique_Simulation_Should_Slant_Glyph_Outlines()
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+                renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider())))
+            {
+                using (AvaloniaLocator.EnterScope())
+                {
+                    Assert.True(FontManager.Current.TryMatchCharacter('こ', FontStyle.Italic, FontWeight.Normal, FontStretch.Normal, null, null, out var italicTypeface));
+                    Assert.True(FontManager.Current.TryMatchCharacter('こ', FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, null, null, out var regularTypeface));
+
+                    var italic = GetOutlineBounds(italicTypeface.GlyphTypeface, 'こ');
+                    var regular = GetOutlineBounds(regularTypeface.GlyphTypeface, 'こ');
+
+                    // A slant keeps the ink's height and moves its upper part right in proportion
+                    // to the height above the baseline, so the ink widens by a share of its height.
+                    Assert.Equal(regular.Height, italic.Height, 1);
+                    Assert.True(italic.Width > regular.Width + 0.1 * regular.Height,
+                        $"Oblique ink {italic} is not slanted against upright ink {regular}.");
+                }
+            }
+
+            static Rect GetOutlineBounds(GlyphTypeface glyphTypeface, char character)
+            {
+                Assert.True(glyphTypeface.CharacterToGlyphMap.TryGetGlyph(character, out var glyph));
+
+                var glyphRun = new GlyphRun(glyphTypeface, 100, new[] { character }.AsMemory(), new[] { glyph });
+
+                return new PlatformRenderInterface().BuildGlyphRunGeometry(glyphRun).Bounds;
             }
         }
 
