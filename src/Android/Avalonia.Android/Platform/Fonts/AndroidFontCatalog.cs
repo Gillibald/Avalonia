@@ -44,14 +44,23 @@ namespace Avalonia.Android.Platform.Fonts
         private readonly ConcurrentDictionary<string, bool> _fileExists = new(StringComparer.Ordinal);
         private readonly Lazy<IReadOnlyList<string>> _familyNames;
         private readonly Lazy<Dictionary<string, List<FaceKey>>> _realNames;
+        private readonly AndroidSystemFontSource? _systemFonts;
+        private readonly ConcurrentDictionary<string, string> _languageTags = new(StringComparer.Ordinal);
 
-        private AndroidFontCatalog(FontsXmlConfig main, IReadOnlyList<FontsXmlConfig> additions)
+        // Without a readable configuration, the families the platform resolves by name.
+        private static readonly string[] s_platformGenericFamilies = { "sans-serif", "serif", "monospace" };
+
+        private AndroidFontCatalog(FontsXmlConfig main, IReadOnlyList<FontsXmlConfig> additions,
+            AndroidSystemFontSource? systemFonts, IReadOnlyList<AndroidSystemFont> platformFonts)
         {
+            _systemFonts = systemFonts;
+
             var seenFaces = new HashSet<FaceKey>();
+            var pathOverrides = CreatePathOverrides(platformFonts);
 
             foreach (var xmlFamily in main.Families)
             {
-                var family = new Family(xmlFamily);
+                var family = new Family(xmlFamily, pathOverrides);
 
                 AddFaces(family, seenFaces);
 
@@ -83,7 +92,7 @@ namespace Avalonia.Android.Platform.Fonts
                         continue;
                     }
 
-                    var family = new Family(xmlFamily);
+                    var family = new Family(xmlFamily, pathOverrides);
 
                     AddFaces(family, seenFaces);
 
@@ -94,21 +103,63 @@ namespace Avalonia.Android.Platform.Fonts
                 AddAliases(addition.Aliases);
             }
 
+            // Platform fonts the configuration does not name (updatable fonts on API 31+) are
+            // reachable by their real family names.
+            foreach (var font in platformFonts)
+            {
+                var key = new FaceKey(font.Path, font.Index);
+
+                if (seenFaces.Add(key))
+                {
+                    _allFaces.Add(key);
+                }
+            }
+
+            IsPlatformOnly = main.Families.Count == 0 && systemFonts != null;
+
             _familyNames = new Lazy<IReadOnlyList<string>>(CreateFamilyNames, LazyThreadSafetyMode.ExecutionAndPublication);
             _realNames = new Lazy<Dictionary<string, List<FaceKey>>>(CreateRealNameIndex,
                 LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
         /// <summary>
+        /// Whether no configuration file was readable and the platform's fonts form the model.
+        /// </summary>
+        public bool IsPlatformOnly { get; }
+
+        /// <summary>
         /// Builds the catalog from the first readable main configuration file and every readable
-        /// addition.
+        /// addition, layered with the platform's font list and character fallback where the
+        /// platform provides them (API 29 and later).
         /// </summary>
         public static AndroidFontCatalog Create(AndroidFontConfiguration configuration,
-            AndroidSystemFontSource? systemFonts) => Create(configuration);
-
-        public static AndroidFontCatalog Create(AndroidFontConfiguration configuration)
+            AndroidSystemFontSource? systemFonts)
         {
-            var main = FontsXmlConfig.Empty;
+            IReadOnlyList<AndroidSystemFont> platformFonts = Array.Empty<AndroidSystemFont>();
+
+            if (systemFonts != null)
+            {
+                try
+                {
+                    platformFonts = systemFonts.GetFonts();
+                }
+                catch (Exception)
+                {
+                    // The configuration still describes the system fonts.
+                }
+            }
+
+            ReadConfiguration(configuration, out var main, out var additions);
+
+            return new AndroidFontCatalog(main, additions, systemFonts, platformFonts);
+        }
+
+        public static AndroidFontCatalog Create(AndroidFontConfiguration configuration) => Create(configuration, null);
+
+        private static void ReadConfiguration(AndroidFontConfiguration configuration, out FontsXmlConfig main,
+            out List<FontsXmlConfig> additions)
+        {
+            main = FontsXmlConfig.Empty;
 
             foreach (var file in configuration.MainFiles)
             {
@@ -121,7 +172,7 @@ namespace Avalonia.Android.Platform.Fonts
                 }
             }
 
-            var additions = new List<FontsXmlConfig>();
+            additions = new List<FontsXmlConfig>();
 
             foreach (var file in configuration.AdditionFiles)
             {
@@ -130,8 +181,34 @@ namespace Avalonia.Android.Platform.Fonts
                     additions.Add(config);
                 }
             }
+        }
 
-            return new AndroidFontCatalog(main, additions);
+        /// <summary>
+        /// Maps configured file names to the paths the platform reports for them, where those
+        /// differ: an updated font replaces the system file under the same name in its own
+        /// directory. A reported path that does not exist leaves the configured path in place.
+        /// </summary>
+        private static Dictionary<string, string> CreatePathOverrides(IReadOnlyList<AndroidSystemFont> platformFonts)
+        {
+            var overrides = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var font in platformFonts)
+            {
+                var fileName = Path.GetFileName(font.Path);
+
+                if (string.IsNullOrEmpty(fileName) || !File.Exists(font.Path))
+                {
+                    continue;
+                }
+
+                // Should both copies be listed, the updated one (outside the system image) wins.
+                if (!overrides.ContainsKey(fileName) || font.Path.StartsWith("/data/", StringComparison.Ordinal))
+                {
+                    overrides[fileName] = font.Path;
+                }
+            }
+
+            return overrides;
         }
 
         /// <summary>
@@ -145,6 +222,11 @@ namespace Avalonia.Android.Platform.Fonts
         public bool TryGetDefaultFace([NotNullWhen(true)] out SystemFontFace? face)
         {
             face = null;
+
+            if (IsPlatformOnly)
+            {
+                return TryMatchPlatformFamily(s_platformGenericFamilies[0], 400, false, out face);
+            }
 
             return _defaultFamily is { } family &&
                    TrySelectEntry(family, null, 400, false, out var entry) &&
@@ -169,7 +251,96 @@ namespace Avalonia.Android.Platform.Fonts
                        TryCreateFace(family.Name!, entry, out match);
             }
 
+            if (IsPlatformGenericFamily(familyName))
+            {
+                return TryMatchPlatformFamily(familyName, (int)weight, italic, out match);
+            }
+
             return TryMatchRealFamily(familyName, (int)weight, italic, out match);
+        }
+
+        private bool IsPlatformGenericFamily(string familyName) =>
+            IsPlatformOnly && Array.Exists(s_platformGenericFamilies,
+                x => string.Equals(x, familyName, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Resolves a generic family through the platform's matcher, which picks the face for a
+        /// basic Latin letter at the requested style.
+        /// </summary>
+        private bool TryMatchPlatformFamily(string familyName, int weight, bool italic,
+            [NotNullWhen(true)] out SystemFontFace? match)
+        {
+            match = null;
+
+            if (!TryMatchPlatform(familyName.ToLowerInvariant(), 'a', weight, italic, string.Empty, out var key) ||
+                !TryGetFaceInfo(key, out var info))
+            {
+                return false;
+            }
+
+            match = new SystemFontFace(familyName.ToLowerInvariant(), info.Style, info.Weight, info.Stretch, key.Path,
+                key.Index, info.PostScriptName);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Asks the platform which face it uses for the codepoint and accepts the answer only when
+        /// the face exists and covers the codepoint: the platform answers with its default face
+        /// when nothing covers it.
+        /// </summary>
+        private bool TryMatchPlatform(string familyName, int codepoint, int weight, bool italic, string languageTags,
+            out FaceKey key)
+        {
+            key = default;
+
+            if (_systemFonts is null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!_systemFonts.TryMatch(familyName, codepoint, weight, italic, languageTags, out var font))
+                {
+                    return false;
+                }
+
+                key = new FaceKey(font.Path, font.Index);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            return FileExists(key.Path) && Covers(key, codepoint);
+        }
+
+        /// <summary>
+        /// The culture as language tags for the platform's matcher, with the script subtag made
+        /// explicit (ja-Jpan-JP, zh-Hant-TW), since the matcher steers Han by script.
+        /// </summary>
+        private string GetLanguageTags(CultureInfo culture)
+        {
+            var name = culture.Name;
+
+            if (string.IsNullOrEmpty(name))
+            {
+                return string.Empty;
+            }
+
+            return _languageTags.GetOrAdd(name, static (n, c) =>
+            {
+                var script = Bcp47ScriptResolver.GetScriptSubtag(c);
+                var parts = n.Split('-');
+
+                if (script is null || parts.Length > 1 && parts[1].Length == 4)
+                {
+                    return n;
+                }
+
+                return parts.Length == 1 ? n + "-" + script : parts[0] + "-" + script + n.Substring(parts[0].Length);
+            }, culture);
         }
 
         public bool TryGetFamilyFaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
@@ -183,7 +354,14 @@ namespace Avalonia.Android.Platform.Fonts
 
             var result = new List<SystemFontFace>();
 
-            if (TryResolveFamily(familyName, out var family, out var aliasWeight))
+            if (IsPlatformGenericFamily(familyName))
+            {
+                if (TryMatchPlatformFamily(familyName, 400, false, out var face))
+                {
+                    result.Add(face);
+                }
+            }
+            else if (TryResolveFamily(familyName, out var family, out var aliasWeight))
             {
                 var seen = new HashSet<FaceKey>();
 
@@ -229,6 +407,9 @@ namespace Avalonia.Android.Platform.Fonts
             var italic = style != FontStyle.Normal;
             var requestedWeight = (int)weight;
             Family? requested = null;
+            string? platformFamily = null;
+
+            culture ??= CultureInfo.CurrentUICulture;
 
             if (!string.IsNullOrEmpty(familyName))
             {
@@ -239,6 +420,12 @@ namespace Avalonia.Android.Platform.Fonts
                     {
                         return true;
                     }
+
+                    platformFamily = requested.Name;
+                }
+                else if (IsPlatformGenericFamily(familyName))
+                {
+                    platformFamily = familyName.ToLowerInvariant();
                 }
                 else if (TryMatchRealFamily(familyName, requestedWeight, italic, out var realMatch) &&
                          Covers(new FaceKey(realMatch.FilePath!, realMatch.FaceIndex), codepoint))
@@ -249,6 +436,16 @@ namespace Avalonia.Android.Platform.Fonts
                 }
             }
 
+            // The platform's own fallback (API 29+) knows the installed fonts best, including
+            // updated ones; its answer is verified, and the configuration walk remains for the rest.
+            if (_systemFonts != null &&
+                TryMatchPlatform(platformFamily ?? s_platformGenericFamilies[0], codepoint, requestedWeight, italic,
+                    GetLanguageTags(culture), out var platformKey) &&
+                TryCreateRealFace(platformKey, out match))
+            {
+                return true;
+            }
+
             if (_defaultFamily is { } defaultFamily && !ReferenceEquals(defaultFamily, requested) &&
                 TrySelectEntry(defaultFamily, null, requestedWeight, italic, out var defaultEntry) &&
                 Covers(defaultEntry.Key, codepoint) && TryCreateFace(defaultFamily.Name!, defaultEntry, out match))
@@ -257,7 +454,7 @@ namespace Avalonia.Android.Platform.Fonts
             }
 
             return TryMatchFallback(codepoint, requestedWeight, italic,
-                requested is not null && IsSerif(requested), culture ?? CultureInfo.CurrentUICulture, out match);
+                requested is not null && IsSerif(requested), culture, out match);
         }
 
         private bool TryMatchFallback(int codepoint, int weight, bool italic, bool serif, CultureInfo culture,
@@ -373,6 +570,32 @@ namespace Avalonia.Android.Platform.Fonts
         private IReadOnlyList<string> CreateFamilyNames()
         {
             var names = new List<string>();
+
+            if (IsPlatformOnly)
+            {
+                foreach (var genericFamily in s_platformGenericFamilies)
+                {
+                    if (TryMatchPlatformFamily(genericFamily, 400, false, out _))
+                    {
+                        names.Add(genericFamily);
+                    }
+                }
+
+                // Without configured names, the real family names are the only ones there are.
+                var realNames = _realNames.Value;
+                var seen = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var key in _allFaces)
+                {
+                    if (TryGetFaceInfo(key, out var info) && realNames.ContainsKey(info.FamilyName) &&
+                        seen.Add(info.FamilyName))
+                    {
+                        names.Add(info.FamilyName);
+                    }
+                }
+
+                return names;
+            }
 
             foreach (var name in _declaredNames)
             {
@@ -746,9 +969,9 @@ namespace Avalonia.Android.Platform.Fonts
 
         private sealed class Entry
         {
-            public Entry(FontsXmlFont font)
+            public Entry(FontsXmlFont font, string path)
             {
-                Key = new FaceKey(font.Path, font.Index);
+                Key = new FaceKey(path, font.Index);
                 Weight = font.Weight;
                 IsItalic = font.IsItalic;
                 FallbackFor = font.FallbackFor;
@@ -785,7 +1008,7 @@ namespace Avalonia.Android.Platform.Fonts
             private readonly Script[] _scripts;
             private readonly bool _isScriptOnly;
 
-            public Family(FontsXmlFamily family)
+            public Family(FontsXmlFamily family, IReadOnlyDictionary<string, string> pathOverrides)
             {
                 Name = family.Name;
                 Variant = family.Variant;
@@ -795,7 +1018,10 @@ namespace Avalonia.Android.Platform.Fonts
 
                 for (var i = 0; i < entries.Length; i++)
                 {
-                    entries[i] = new Entry(family.Fonts[i]);
+                    var font = family.Fonts[i];
+
+                    entries[i] = new Entry(font,
+                        pathOverrides.TryGetValue(font.FileName, out var path) ? path : font.Path);
                     HasSerifSubstitutes |= string.Equals(entries[i].FallbackFor, SerifFamilyName,
                         StringComparison.OrdinalIgnoreCase);
                 }
