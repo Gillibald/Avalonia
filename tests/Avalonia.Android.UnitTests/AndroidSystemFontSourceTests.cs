@@ -55,38 +55,51 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
-        public void Platform_Paths_Replace_Configuration_Paths_By_File_Name()
+        public void With_A_Configuration_The_Platform_Fonts_Are_Not_Enumerated()
         {
+            // Enumerating makes the platform map every installed font file into the process for
+            // good, so it is reserved for devices without a readable configuration.
+            var source = new FakeSystemFontSource { Fonts = { new AndroidSystemFont(_fixture.FontPath("Inter-Regular.ttf"), 0, 400, false, null, Array.Empty<FontsXmlAxis>()) } };
+            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
+
+            catalog.GetFamilyNames();
+            catalog.TryGetDefaultFace(out _);
+            catalog.TryMatchFamily("Segoe UI", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _);
+            MatchCharacter(catalog, 0x05D0);
+
+            Assert.Equal(0, source.EnumerationCount);
+        }
+
+        [Fact]
+        public void Platform_Fallback_Answers_Keep_Their_Own_Paths()
+        {
+            // Updated fonts live in their own directories below /data/fonts/files.
             var updated = UpdatedFont("NotoSansHebrew-Regular.ttf", "NotoSansHebrew-Regular.ttf");
-            var source = new FakeSystemFontSource { Fonts = { new AndroidSystemFont(updated, 0, 400, false, "und-Hebr", Array.Empty<FontsXmlAxis>()) } };
+            var source = new FakeSystemFontSource
+            {
+                Match = (_, codepoint, _, _, _) =>
+                    codepoint == 0x05D0 ? new AndroidSystemFont(updated, 0, 400, false, "und-Hebr", Array.Empty<FontsXmlAxis>()) : null,
+            };
             var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
 
-            Assert.Equal(updated, MatchCharacter(catalog, 0x05D0)?.FilePath);
+            var match = MatchCharacter(catalog, 0x05D0);
+
+            Assert.Equal(updated, match?.FilePath);
+            Assert.Equal("Noto Sans Hebrew", match?.FamilyName);
         }
 
         [Fact]
-        public void Platform_Paths_That_Do_Not_Exist_Keep_The_Configuration_Path()
-        {
-            var missing = Path.Combine(_fixture.Root, "data", "missing", "NotoSansHebrew-Regular.ttf");
-            var source = new FakeSystemFontSource { Fonts = { new AndroidSystemFont(missing, 0, 400, false, null, Array.Empty<FontsXmlAxis>()) } };
-            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
-
-            Assert.Equal(_fixture.FontPath("NotoSansHebrew-Regular.ttf"), MatchCharacter(catalog, 0x05D0)?.FilePath);
-        }
-
-        [Fact]
-        public void Platform_Fonts_Missing_From_The_Configuration_Resolve_By_Real_Name()
+        public void Without_A_Configuration_Platform_Fonts_Resolve_By_Real_Name()
         {
             var updated = UpdatedFont("Manrope-Light.ttf", "Manrope-Light.ttf");
             var source = new FakeSystemFontSource { Fonts = { new AndroidSystemFont(updated, 0, 300, false, null, Array.Empty<FontsXmlAxis>()) } };
-            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
+            var catalog = AndroidFontCatalog.Create(NoConfiguration(), source);
 
             Assert.True(catalog.TryMatchFamily("Manrope", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out var match));
             Assert.Equal(updated, match.FilePath);
             Assert.Equal("Manrope", match.FamilyName);
-            Assert.DoesNotContain("Manrope", catalog.GetFamilyNames());
+            Assert.Equal(1, source.EnumerationCount);
         }
-
         [Fact]
         public void Platform_Fallback_Answers_Character_Matches()
         {
@@ -239,7 +252,14 @@ namespace Avalonia.Android.UnitTests
 
             public List<(string Family, int Codepoint, int Weight, bool Italic, string Locales)> Calls { get; } = new();
 
-            public override IReadOnlyList<AndroidSystemFont> GetFonts() => Fonts;
+            public int EnumerationCount { get; private set; }
+
+            public override IReadOnlyList<AndroidSystemFont> GetFonts()
+            {
+                EnumerationCount++;
+
+                return Fonts;
+            }
 
             public override bool TryMatch(string familyName, int codepoint, int weight, bool italic, string languageTags,
                 [NotNullWhen(true)] out AndroidSystemFont? font)
