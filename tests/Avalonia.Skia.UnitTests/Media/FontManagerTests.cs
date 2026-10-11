@@ -523,7 +523,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     Assert.Equal(FontStyle.Normal, regularTypeface.Style);
 
-                    Assert.NotEqual(((SkiaTypeface)italicTypeface.GlyphTypeface.PlatformTypeface).SKTypeface, ((SkiaTypeface)regularTypeface.GlyphTypeface.PlatformTypeface).SKTypeface);
+                    // Yu Gothic UI has no italic face: DirectWrite answers the italic request with a
+                    // simulated oblique variant of the regular face, whose designed properties are
+                    // regular. Both requests therefore resolve to the regular face.
+                    Assert.Equal(FontStyle.Normal, regularTypeface.GlyphTypeface.Style);
+                    Assert.Same(italicTypeface.GlyphTypeface, regularTypeface.GlyphTypeface);
                 }
             }
         }

@@ -930,6 +930,36 @@ namespace Avalonia.Media
             return supportedFeatures;
         }
 
+        /// <summary>
+        /// Reads the designed style, weight and stretch of a face from its OS/2, head and post
+        /// tables, the same way a glyph typeface over the face derives them.
+        /// </summary>
+        /// <returns><see langword="false"/> if the face has neither an OS/2 nor a head table.</returns>
+        internal static bool TryGetDesignedProperties(IFontMemory fontMemory, out FontStyle style,
+            out FontWeight weight, out FontStretch stretch)
+        {
+            var hasOs2Table = OS2Table.TryLoad(fontMemory, out var os2Table);
+
+            HeadTable.TryLoad(fontMemory, out var headTable);
+
+            if (!hasOs2Table && headTable is null)
+            {
+                style = FontStyle.Normal;
+                weight = FontWeight.Normal;
+                stretch = FontStretch.Normal;
+
+                return false;
+            }
+
+            var postTable = PostTable.Load(fontMemory);
+
+            style = GetFontStyle(hasOs2Table ? os2Table : null, headTable, postTable);
+            weight = GetFontWeight(hasOs2Table ? os2Table : null, headTable);
+            stretch = GetFontStretch(hasOs2Table ? os2Table : null);
+
+            return true;
+        }
+
         private static FontStyle GetFontStyle(OS2Table? oS2Table, HeadTable? headTable, PostTable postTable)
         {
             bool isItalic = false;

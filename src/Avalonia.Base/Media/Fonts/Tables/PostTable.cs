@@ -22,7 +22,12 @@ namespace Avalonia.Media.Fonts.Tables
 
         public static PostTable Load(GlyphTypeface glyphTypeface)
         {
-            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var table))
+            return Load(glyphTypeface.FontMemory);
+        }
+
+        public static PostTable Load(IFontMemory fontMemory)
+        {
+            if (!fontMemory.TryGetTable(Tag, out var table))
             {
                 return default;
             }

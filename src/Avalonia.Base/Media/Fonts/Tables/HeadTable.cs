@@ -68,9 +68,14 @@ namespace Avalonia.Media.Fonts.Tables
 
         public static bool TryLoad(GlyphTypeface glyphTypeface, [NotNullWhen(true)] out HeadTable? headTable)
         {
+            return TryLoad(glyphTypeface.FontMemory, out headTable);
+        }
+
+        public static bool TryLoad(IFontMemory fontMemory, [NotNullWhen(true)] out HeadTable? headTable)
+        {
             headTable = null;
 
-            if (!glyphTypeface.FontMemory.TryGetTable(Tag, out var table))
+            if (!fontMemory.TryGetTable(Tag, out var table))
             {
                 return false;
             }

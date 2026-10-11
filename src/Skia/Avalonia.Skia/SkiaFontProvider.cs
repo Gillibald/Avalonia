@@ -63,7 +63,7 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            match = new SkiaSystemFontFace(skTypeface);
+            match = SkiaSystemFontFace.Create(skTypeface);
 
             return true;
         }
@@ -91,7 +91,7 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            match = new SkiaSystemFontFace(skTypeface);
+            match = SkiaSystemFontFace.Create(skTypeface);
 
             return true;
         }
@@ -118,7 +118,7 @@ namespace Avalonia.Skia
             {
                 if (styleSet.CreateTypeface(i) is { } skTypeface)
                 {
-                    result.Add(new SkiaSystemFontFace(skTypeface));
+                    result.Add(SkiaSystemFontFace.Create(skTypeface));
                 }
             }
 
@@ -158,13 +158,72 @@ namespace Avalonia.Skia
         {
             private readonly SKTypeface _skTypeface;
 
-            public SkiaSystemFontFace(SKTypeface skTypeface)
-                : base(skTypeface.FamilyName,
-                    skTypeface.FontStyle.Slant.ToAvalonia(),
-                    (FontWeight)skTypeface.FontWeight,
-                    (FontStretch)skTypeface.FontWidth)
+            private SkiaSystemFontFace(SKTypeface skTypeface, FontStyle style, FontWeight weight, FontStretch stretch)
+                : base(skTypeface.FamilyName, style, weight, stretch)
             {
                 _skTypeface = skTypeface;
+            }
+
+            /// <summary>
+            /// Creates a descriptor reporting the face's designed properties. Skia's style is that
+            /// of the typeface it matched, which on DirectWrite is a simulated bold or oblique
+            /// variant when the family lacks the requested face; the collection applies its own
+            /// simulation on top of the designed properties, so they are read from the font's
+            /// tables, as the glyph typeface over the face reads them.
+            /// </summary>
+            public static SkiaSystemFontFace Create(SKTypeface skTypeface)
+            {
+                try
+                {
+                    if (TryGetDesignedProperties(skTypeface, out var style, out var weight, out var stretch))
+                    {
+                        return new SkiaSystemFontFace(skTypeface, style, weight, stretch);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Damaged tables: fall back to the properties Skia reports.
+                }
+
+                // Fonts without SFNT tables (Type 1 fonts listed by fontconfig).
+                return new SkiaSystemFontFace(skTypeface, skTypeface.FontStyle.Slant.ToAvalonia(),
+                    (FontWeight)skTypeface.FontWeight, (FontStretch)skTypeface.FontWidth);
+            }
+
+            private static bool TryGetDesignedProperties(SKTypeface skTypeface, out FontStyle style,
+                out FontWeight weight, out FontStretch stretch)
+            {
+                // Read from the stream's memory where Skia exposes it. Skia's own table access
+                // creates a FreeType face for the typeface on FreeType-based font managers, which
+                // keeps a mapping of the whole file alive for as long as the font manager caches
+                // the typeface, that is, for the rest of the process.
+                var stream = skTypeface.OpenStream(out var ttcIndex);
+
+                if (stream is not null && SkiaStreamMemory.TryCreate(stream, out var streamMemory))
+                {
+                    var data = new SharedFontData(streamMemory!, streamMemory!.Memory);
+
+                    if (!SfntFace.TryCreate(data, ttcIndex, out var face))
+                    {
+                        data.Release();
+
+                        style = FontStyle.Normal;
+                        weight = FontWeight.Normal;
+                        stretch = FontStretch.Normal;
+
+                        return false;
+                    }
+
+                    using (face)
+                    {
+                        return GlyphTypeface.TryGetDesignedProperties(face, out style, out weight, out stretch);
+                    }
+                }
+
+                stream?.Dispose();
+
+                return GlyphTypeface.TryGetDesignedProperties(new SkiaTypefaceTables(skTypeface), out style,
+                    out weight, out stretch);
             }
 
             public override bool TryOpenFontMemory([NotNullWhen(true)] out IFontMemory? fontMemory)
@@ -240,6 +299,73 @@ namespace Avalonia.Skia
                         return stream.Read((IntPtr)buffer, destination.Length) == destination.Length;
                     }
                 }, out key);
+            }
+
+            /// <summary>
+            /// Serves the leading part of a few tables of a typeface, enough for the designed
+            /// properties, without opening the font data.
+            /// </summary>
+            private sealed class SkiaTypefaceTables : IFontMemory
+            {
+                // OS/2 is read whole (about 100 bytes); of head and post only the fixed headers
+                // that hold the style fields are needed, while a post table can carry kilobytes of
+                // glyph names.
+                private static readonly OpenTypeTag s_os2Tag = OpenTypeTag.Parse("OS/2");
+                private static readonly OpenTypeTag s_headTag = OpenTypeTag.Parse("head");
+                private static readonly OpenTypeTag s_postTag = OpenTypeTag.Parse("post");
+
+                private readonly SKTypeface _skTypeface;
+
+                public SkiaTypefaceTables(SKTypeface skTypeface) => _skTypeface = skTypeface;
+
+                public unsafe bool TryGetTable(OpenTypeTag tag, out ReadOnlyMemory<byte> table)
+                {
+                    table = default;
+
+                    int limit;
+
+                    if (tag == s_os2Tag)
+                    {
+                        limit = 256;
+                    }
+                    else if (tag == s_headTag)
+                    {
+                        limit = 54;
+                    }
+                    else if (tag == s_postTag)
+                    {
+                        limit = 32;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+
+                    var length = Math.Min(_skTypeface.GetTableSize(tag), limit);
+
+                    if (length <= 0)
+                    {
+                        return false;
+                    }
+
+                    var buffer = new byte[length];
+
+                    fixed (byte* data = buffer)
+                    {
+                        if (!_skTypeface.TryGetTableData(tag, 0, length, (IntPtr)data))
+                        {
+                            return false;
+                        }
+                    }
+
+                    table = buffer;
+
+                    return true;
+                }
+
+                public void Dispose()
+                {
+                }
             }
 
             private static (IDisposable Owner, ReadOnlyMemory<byte> Memory)? CreateFontData(SKStreamAsset? stream)
