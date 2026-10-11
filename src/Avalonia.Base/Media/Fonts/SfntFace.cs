@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
@@ -100,6 +101,74 @@ namespace Avalonia.Media.Fonts
             data.Release();
 
             return false;
+        }
+
+        /// <summary>
+        /// Loads every face of the font data in the specified stream; a single-face file yields
+        /// one face. The faces share one copy of the data.
+        /// </summary>
+        /// <param name="stream">A readable stream positioned at the beginning of the font data.</param>
+        /// <returns>The loaded faces; empty if the data is not a loadable font.</returns>
+        public static IReadOnlyList<SfntFace> LoadFaces(Stream stream)
+        {
+            UnmanagedFontMemory memory;
+
+            try
+            {
+                memory = UnmanagedFontMemory.LoadFromStream(stream);
+            }
+            catch (Exception)
+            {
+                return Array.Empty<SfntFace>();
+            }
+
+            return LoadFaces(new SharedFontData(memory, memory.Memory));
+        }
+
+        /// <summary>
+        /// Loads every face of the specified font file; a single-face file yields one face. The
+        /// faces share the file's data through <see cref="FontFileCache"/>.
+        /// </summary>
+        /// <param name="path">The path of the font file.</param>
+        /// <returns>The loaded faces; empty if the file is not a loadable font.</returns>
+        public static IReadOnlyList<SfntFace> LoadFaces(string path)
+        {
+            return FontFileCache.TryOpen(path, out var data) ? LoadFaces(data) : Array.Empty<SfntFace>();
+        }
+
+        private static IReadOnlyList<SfntFace> LoadFaces(SharedFontData data)
+        {
+            var faces = new List<SfntFace>();
+
+            try
+            {
+                var span = data.Memory.Span;
+                // A damaged header cannot claim more faces than it has room for offsets.
+                var faceCount = span.Length >= 12 && BinaryPrimitives.ReadUInt32BigEndian(span) == TtcfTag
+                    ? Math.Min(BinaryPrimitives.ReadUInt32BigEndian(span.Slice(8, 4)), (uint)(span.Length - 12) / 4)
+                    : 1;
+
+                for (var i = 0; i < faceCount; i++)
+                {
+                    // Each face holds its own reference; the caller's is released below.
+                    data.AddRef();
+
+                    if (TryCreate(data, i, out var face))
+                    {
+                        faces.Add(face);
+                    }
+                    else
+                    {
+                        data.Release();
+                    }
+                }
+            }
+            finally
+            {
+                data.Release();
+            }
+
+            return faces;
         }
 
         private static bool TryCreateOwned(IDisposable owner, ReadOnlyMemory<byte> memory, int faceIndex,
