@@ -192,7 +192,7 @@ namespace Avalonia.Skia
                     using var stream = _skTypeface.OpenStream(out var ttcIndex);
 
                     return stream is not null && stream.Length > 0 && TryCreateContentKey(stream, out var key)
-                        ? (key, ttcIndex)
+                        ? (key, GetFaceIndex(ttcIndex))
                         : null;
                 }
                 catch (Exception)
@@ -222,7 +222,8 @@ namespace Avalonia.Skia
                     // Damaged tables: fall back to the properties Skia reports.
                 }
 
-                // Fonts without SFNT tables (Type 1 fonts listed by fontconfig).
+                // Named instances of variable fonts, and fonts without SFNT tables (Type 1 fonts
+                // listed by fontconfig).
                 return new SkiaSystemFontFace(skTypeface, skTypeface.FontStyle.Slant.ToAvalonia(),
                     (FontWeight)skTypeface.FontWeight, (FontStretch)skTypeface.FontWidth);
             }
@@ -236,11 +237,24 @@ namespace Avalonia.Skia
                 // the typeface, that is, for the rest of the process.
                 var stream = skTypeface.OpenStream(out var ttcIndex);
 
+                // A named instance reports the properties of its own position, which select the
+                // instance the collection moves the face's root to.
+                if (ttcIndex >> 16 != 0)
+                {
+                    stream?.Dispose();
+
+                    style = FontStyle.Normal;
+                    weight = FontWeight.Normal;
+                    stretch = FontStretch.Normal;
+
+                    return false;
+                }
+
                 if (stream is not null && SkiaStreamMemory.TryCreate(stream, out var streamMemory))
                 {
                     var data = new SharedFontData(streamMemory!, streamMemory!.Memory);
 
-                    if (!SfntFace.TryCreate(data, ttcIndex, out var face))
+                    if (!SfntFace.TryCreate(data, GetFaceIndex(ttcIndex), out var face))
                     {
                         data.Release();
 
@@ -294,7 +308,7 @@ namespace Avalonia.Skia
                         return false;
                     }
 
-                    if (!SfntFace.TryCreate(data!, ttcIndex, out var face))
+                    if (!SfntFace.TryCreate(data!, GetFaceIndex(ttcIndex), out var face))
                     {
                         data!.Release();
 
@@ -314,6 +328,14 @@ namespace Avalonia.Skia
                     stream?.Dispose();
                 }
             }
+
+            /// <summary>
+            /// Gets the face of a font collection a stream index selects. FreeType-based ports
+            /// list each named instance of a variable font as a typeface of its own and report the
+            /// instance number in the high 16 bits; the font data is that of the face, which the
+            /// collection moves to the instance the descriptor's properties select.
+            /// </summary>
+            private static int GetFaceIndex(int ttcIndex) => ttcIndex & 0xFFFF;
 
             private static unsafe bool TryCreateContentKey(SKStreamAsset stream, out FontContentKey key)
             {
