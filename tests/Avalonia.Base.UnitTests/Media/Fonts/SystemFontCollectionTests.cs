@@ -82,6 +82,35 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
+        public void Unknown_Family_Should_Not_Be_Listed()
+        {
+            // A picker over the collection binds to every listed family; a listed name that does
+            // not resolve fails to create its typeface.
+            var provider = new FakeSystemFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.False(collection.TryGetGlyphTypeface("Unknown", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.DoesNotContain(collection, x => x.Name == "Unknown");
+            Assert.Equal(new[] { "Test Sans" }, collection.Select(x => x.Name));
+        }
+
+        [Fact]
+        public void Family_Found_After_A_Miss_Should_Be_Listed()
+        {
+            var provider = new FakeSystemFontProvider { MatchFromCall = 2 };
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.False(collection.TryGetGlyphTypeface("Late Sans", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+            Assert.True(collection.TryGetGlyphTypeface("Late Sans", FontStyle.Normal, FontWeight.Bold,
+                FontStretch.Normal, out _));
+
+            Assert.Contains(collection, x => x.Name == "Late Sans");
+        }
+
+        [Fact]
         public void Default_Font_Family_Should_Be_Pinned()
         {
             var provider = new FakeSystemFontProvider();
@@ -479,6 +508,11 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
             public bool IsDisposed { get; private set; }
 
+            /// <summary>
+            /// From this call on, "Late Sans" resolves as well (0: never).
+            /// </summary>
+            public int MatchFromCall { get; set; }
+
             public bool TryGetDefaultFontFace([NotNullWhen(true)] out SystemFontFace? face)
             {
                 face = new StreamSystemFontFace(GetFontData(), ".Test UI", FontStyle.Normal, FontWeight.Normal,
@@ -501,7 +535,10 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
                 match = null;
 
-                if (!string.Equals(familyName, "Test Sans", StringComparison.OrdinalIgnoreCase))
+                var isLate = string.Equals(familyName, "Late Sans", StringComparison.OrdinalIgnoreCase) &&
+                             MatchFromCall > 0 && TryMatchFamilyCount >= MatchFromCall;
+
+                if (!isLate && !string.Equals(familyName, "Test Sans", StringComparison.OrdinalIgnoreCase))
                 {
                     return false;
                 }
