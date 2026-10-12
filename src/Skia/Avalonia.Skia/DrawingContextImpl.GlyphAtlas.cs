@@ -550,8 +550,15 @@ namespace Avalonia.Skia
         /// versions. SkiaSharp offers no partial upload of its own: drawing the rectangle into a
         /// page surface instead makes Skia create and fill a texture for every rectangle, 40-60 us
         /// of render-thread time each. The array stays the source of truth: a texture that no
-        /// longer fits its page (the page grew, another context draws it, the context was lost)
-        /// is dropped and the page uploaded whole again.
+        /// longer fits its page (the page outgrew it, another context draws it, the context was
+        /// lost) is dropped and the page uploaded whole again.
+        /// </para>
+        /// <para>
+        /// A colour page's texture has the rows of the largest page from the start, the ones the
+        /// page does not use yet clear, so the page grows within it. Colour entries take four bytes
+        /// a texel and fill a page in few glyphs, and a texture made anew at every growth uploaded
+        /// several megabytes each time. A coverage page's texture has the page's rows only: it
+        /// grows rarely and cheaply, and text alone keeps its GPU memory at what it uses.
         /// </para>
         /// <para>
         /// The upload takes effect before the draws recorded earlier in the frame, which Skia
@@ -582,11 +589,11 @@ namespace Avalonia.Skia
                 _context = context;
                 _texture = texture;
                 _page = new WeakReference<GlyphAtlasPage>(page);
-                Height = page.Height;
+                Height = TextureHeight(page);
                 Image = new GlyphPageImage(texture.Image, texture);
             }
 
-            /// <summary>The page rows the texture holds.</summary>
+            /// <summary>The rows the texture has; the page uses its first <see cref="GlyphAtlasPage.Height"/>.</summary>
             public int Height { get; }
 
             /// <summary>The page version the texture holds.</summary>
@@ -598,7 +605,14 @@ namespace Avalonia.Skia
             /// <summary>Whether this texture can stand for <paramref name="page"/> on <paramref name="context"/>.</summary>
             public bool CanDraw(GlyphAtlasPage page, GRContext? context) =>
                 !_released && ReferenceEquals(context, _context) && !SkiaUpdatableTextures.IsLost(_context) &&
-                Height == page.Height;
+                Height >= page.Height;
+
+            /// <summary>
+            /// The rows of the texture made for <paramref name="page"/>: the largest page's for a
+            /// colour page, the page's own for a coverage page.
+            /// </summary>
+            private static int TextureHeight(GlyphAtlasPage page) =>
+                page.BytesPerPixel == 4 ? GlyphMaskAtlas.MaxPageHeight : page.Height;
 
             /// <summary>Makes a texture of the whole page, or returns <c>null</c> when the backend or Skia refuse it.</summary>
             public static GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
@@ -611,10 +625,26 @@ namespace Avalonia.Skia
 
                 page.TakeWritten(out _);
 
-                var bytes = page.Pixels.AsSpan(0, page.RowBytes * page.Height);
+                var height = TextureHeight(page);
+                var used = page.RowBytes * page.Height;
+                var length = page.RowBytes * height;
+                var bytes = page.Pixels.AsSpan(0, used);
+
+                // The rows past the page's go up clear, so the texture draws as the page's array at
+                // every height; a texture's initial contents are undefined on every backend. The
+                // staging array is made once per texture and left to the collector: a pooled one
+                // would keep the largest page's bytes for the life of the process.
+                if (length > used)
+                {
+                    var padded = new byte[length];
+
+                    bytes.CopyTo(padded);
+                    bytes = padded;
+                }
+
                 var texture = page.BytesPerPixel == 4
-                    ? textures.TryCreateRgba8(GlyphMaskAtlas.PageWidth, page.Height, bytes, page.RowBytes)
-                    : textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, page.Height, bytes, page.RowBytes);
+                    ? textures.TryCreateRgba8(GlyphMaskAtlas.PageWidth, height, bytes, page.RowBytes)
+                    : textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, height, bytes, page.RowBytes);
 
                 if (texture is null)
                 {
@@ -625,7 +655,7 @@ namespace Avalonia.Skia
 
                 (t_textures ??= new List<GlyphPageTexture>()).Add(created);
                 t_pageImagesCreated++;
-                t_pageImageBytes += bytes.Length;
+                t_pageImageBytes += length;
 
                 return created;
             }
