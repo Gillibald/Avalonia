@@ -12,43 +12,46 @@ namespace Avalonia.Skia
     /// </summary>
     internal sealed class SkiaBitmapGlyphDecoder : IBitmapGlyphDecoder
     {
-        public bool TryDecode(ReadOnlyMemory<byte> encoded, out DecodedGlyphBitmap bitmap)
+        public unsafe bool TryDecode(ReadOnlyMemory<byte> encoded, out DecodedGlyphBitmap bitmap)
         {
             bitmap = default;
 
             try
             {
-                using var data = SKData.CreateCopy(encoded.Span);
-                using var decoded = SKBitmap.Decode(data);
+                // The codec reads the payload where the font keeps it and writes the texels straight
+                // into the array the composer reads: the array is the decode's only allocation.
+                using var pin = encoded.Pin();
+                using var data = SKData.Create((IntPtr)pin.Pointer, encoded.Length, null);
+                using var codec = SKCodec.Create(data);
 
-                if (decoded is null || decoded.Width <= 0 || decoded.Height <= 0)
+                if (codec is null)
                 {
                     return false;
                 }
 
-                var info = new SKImageInfo(decoded.Width, decoded.Height,
-                    SKColorType.Bgra8888, SKAlphaType.Premul);
+                var size = codec.Info;
+
+                if (size.Width <= 0 || size.Height <= 0)
+                {
+                    return false;
+                }
+
+                var info = new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
                 var pixels = new byte[info.BytesSize];
+                SKCodecResult result;
 
-                using var pixmap = decoded.PeekPixels();
+                fixed (byte* target = pixels)
+                {
+                    result = codec.GetPixels(info, (IntPtr)target, info.RowBytes, default);
+                }
 
-                if (pixmap is null)
+                // An incomplete image keeps the rows the codec could decode, as a bitmap decode does.
+                if (result is not (SKCodecResult.Success or SKCodecResult.IncompleteInput))
                 {
                     return false;
                 }
 
-                unsafe
-                {
-                    fixed (byte* target = pixels)
-                    {
-                        if (!pixmap.ReadPixels(info, (IntPtr)target, info.RowBytes, 0, 0))
-                        {
-                            return false;
-                        }
-                    }
-                }
-
-                bitmap = new DecodedGlyphBitmap(pixels, decoded.Width, decoded.Height);
+                bitmap = new DecodedGlyphBitmap(pixels, size.Width, size.Height);
                 return true;
             }
             catch (Exception)
