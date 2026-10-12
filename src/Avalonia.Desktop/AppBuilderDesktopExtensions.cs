@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia.Logging;
 
 namespace Avalonia
@@ -63,7 +64,14 @@ namespace Avalonia
              => builder.WithDirectWriteFonts();
 
         static void LoadFontconfigFonts(AppBuilder builder)
-             => builder.WithFontconfigFonts();
+        {
+            // Without libfontconfig (minimal containers, Skia's dependency-free native build) the
+            // fontconfig provider finds no fonts, while Skia's registration still finds them.
+            if (NativeLibrary.TryLoad("libfontconfig.so.1", typeof(AppBuilderDesktopExtensions).Assembly, null, out _))
+            {
+                builder.WithFontconfigFonts();
+            }
+        }
 
         static void LoadHarfBuzz(AppBuilder builder)
              => builder.UseHarfBuzz();
