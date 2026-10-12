@@ -28,6 +28,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Outline and colour glyph geometry of one typeface (<see cref="GlyphCache"/>).</summary>
         Outlines,
+
+        /// <summary>
+        /// Decoded strike images of one typeface's sbix or CBDT table
+        /// (<see cref="Tables.Bitmaps.DecodedBitmapCache"/>).
+        /// </summary>
+        BitmapImages,
     }
 
     /// <summary>A glyph cache whose entries the <see cref="GlyphCacheBudget"/> it is registered with may evict.</summary>
@@ -1061,7 +1067,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets => 1,
                 GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas => 2,
-                GlyphCachePoolKind.Masks or GlyphCachePoolKind.Hinters => 3,
+                GlyphCachePoolKind.Masks or GlyphCachePoolKind.Hinters or GlyphCachePoolKind.BitmapImages => 3,
                 _ => 4,
             };
             _owner = new WeakReference<object>(owner);
@@ -1074,7 +1080,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// The order in which kinds give up entries of equal age, cheapest to rebuild first: run
         /// masks and sprite sets compose again from cached masks, atlas pages upload again from
-        /// cached masks, masks and hinters rasterize again, outlines parse and hint again.
+        /// cached masks, masks and hinters rasterize again and strike images decode again, outlines
+        /// parse and hint again.
         /// </summary>
         public int Priority { get; }
 

@@ -4316,6 +4316,8 @@ namespace Avalonia.Media
             if (_sourceTypeface is null)
             {
                 _hvglTable?.Dispose();
+                _cbdtTable?.ReleaseDecoded();
+                _sbixTable?.ReleaseDecoded();
             }
 
             if (_sourceTypeface is null && !ReferenceEquals(_fontMemory, platformTypeface))

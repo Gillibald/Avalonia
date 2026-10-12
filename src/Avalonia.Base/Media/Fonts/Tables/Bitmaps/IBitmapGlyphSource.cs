@@ -23,7 +23,8 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
     /// <summary>
     /// The format-independent surface the managed pipeline consumes for bitmap strikes,
     /// implemented by CBDT/CBLC and sbix. Decoding memoises per (glyph, strike) inside the
-    /// implementation, so placement lookups after the first are cheap.
+    /// implementation while the glyph cache budget keeps the image, so placement lookups after
+    /// the first are cheap.
     /// </summary>
     internal interface IBitmapGlyphSource
     {

@@ -1,8 +1,6 @@
 using System;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.Threading;
 using Avalonia.Media.Fonts.Rasterization;
 
 namespace Avalonia.Media.Fonts.Tables.Bitmaps
@@ -20,7 +18,6 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
     internal sealed class SbixTable : IBitmapGlyphSource
     {
         private const int MaxStrikes = 64;
-        private const int DecodedBudgetBytes = 4 * 1024 * 1024;
         private const uint PngTag = 0x706E6720;    // 'png '
         private const uint JpgTag = 0x6A706720;    // 'jpg '
         private const uint TiffTag = 0x74696666;   // 'tiff'
@@ -31,15 +28,18 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
         private readonly ReadOnlyMemory<byte> _data;
         private readonly int _glyphCount;
         private readonly (uint Offset, ushort Ppem)[] _strikes;
-        private ConcurrentDictionary<uint, BitmapGlyphPlacement>? _decoded;
-        private int _decodedBytes;
+        private readonly DecodedBitmapCache _decoded;
 
-        private SbixTable(ReadOnlyMemory<byte> data, int glyphCount, (uint, ushort)[] strikes)
+        private SbixTable(ReadOnlyMemory<byte> data, int glyphCount, (uint, ushort)[] strikes, GlyphTypeface owner)
         {
             _data = data;
             _glyphCount = glyphCount;
             _strikes = strikes;
+            _decoded = new DecodedBitmapCache(owner);
         }
+
+        /// <summary>Drops the decoded images of a typeface that draws no more.</summary>
+        public void ReleaseDecoded() => _decoded.Release();
 
         public static bool TryLoad(GlyphTypeface glyphTypeface, [NotNullWhen(true)] out SbixTable? table)
         {
@@ -88,7 +88,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             }
 
             Array.Resize(ref strikes, count);
-            table = new SbixTable(data, glyphCount, strikes);
+            table = new SbixTable(data, glyphCount, strikes, glyphTypeface);
             return true;
         }
 
@@ -141,10 +141,9 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
                 return false;
             }
 
-            var cache = _decoded ??= new();
-            var key = (uint)strike.Index << 16 | glyphIndex;
+            var key = DecodedBitmapCache.Key(strike.Index, glyphIndex);
 
-            if (cache.TryGetValue(key, out placement))
+            if (_decoded.TryGet(key, out placement))
             {
                 return true;
             }
@@ -159,13 +158,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             // y-up; normalize to the pipeline's pen-relative y-down top-left.
             placement = new BitmapGlyphPlacement(decoded, originX, -(originY + decoded.Height));
 
-            if (Interlocked.Add(ref _decodedBytes, decoded.Bgra.Length) > DecodedBudgetBytes)
-            {
-                cache.Clear();
-                Interlocked.Exchange(ref _decodedBytes, decoded.Bgra.Length);
-            }
-
-            cache.TryAdd(key, placement);
+            _decoded.Add(key, placement);
             return true;
         }
 

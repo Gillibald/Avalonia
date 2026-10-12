@@ -64,13 +64,19 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
         private readonly ReadOnlyMemory<byte> _cblc;
         private readonly ReadOnlyMemory<byte> _cbdt;
         private readonly StrikeRecord[] _strikes;
+        private readonly DecodedBitmapCache _decoded;
 
-        private CbdtTable(ReadOnlyMemory<byte> cblc, ReadOnlyMemory<byte> cbdt, StrikeRecord[] strikes)
+        private CbdtTable(ReadOnlyMemory<byte> cblc, ReadOnlyMemory<byte> cbdt, StrikeRecord[] strikes,
+            GlyphTypeface owner)
         {
             _cblc = cblc;
             _cbdt = cbdt;
             _strikes = strikes;
+            _decoded = new DecodedBitmapCache(owner);
         }
+
+        /// <summary>Drops the decoded images of a typeface that draws no more.</summary>
+        public void ReleaseDecoded() => _decoded.Release();
 
         public int StrikeCount => _strikes.Length;
 
@@ -131,7 +137,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             }
 
             Array.Resize(ref strikes, count);
-            table = new CbdtTable(cblc, cbdt, strikes);
+            table = new CbdtTable(cblc, cbdt, strikes, glyphTypeface);
             return true;
         }
 
@@ -259,16 +265,10 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             return false;
         }
 
-        private System.Collections.Concurrent.ConcurrentDictionary<uint, Rasterization.DecodedGlyphBitmap>? _decoded;
-        private int _decodedBytes;
-
-        private const int DecodedBudgetBytes = 4 * 1024 * 1024;
-
         /// <summary>
-        /// Decoded-pixel access with per-table memoisation, so compose misses do not re-decode
-        /// (the F3 rule: pay the decode once per glyph and strike). The budget is enforced by a
-        /// full flush — emoji working sets are small and repopulate in one compose; a finer
-        /// eviction ring is not worth its weight here yet.
+        /// Decoded-pixel access through the table's <see cref="DecodedBitmapCache"/>, so compose
+        /// misses do not re-decode (the F3 rule: pay the decode once per glyph and strike while the
+        /// glyph cache budget keeps the image).
         /// </summary>
         public bool TryGetDecodedGlyph(in BitmapStrike strike, ushort glyphIndex,
             Rasterization.IBitmapGlyphDecoder decoder,
@@ -281,11 +281,11 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
                 return false;
             }
 
-            var cache = _decoded ??= new();
-            var key = (uint)strike.Index << 16 | glyphIndex;
+            var key = DecodedBitmapCache.Key(strike.Index, glyphIndex);
 
-            if (cache.TryGetValue(key, out decoded))
+            if (_decoded.TryGet(key, out var cached))
             {
+                decoded = cached.Bitmap;
                 return true;
             }
 
@@ -294,13 +294,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
                 return false;
             }
 
-            if (System.Threading.Interlocked.Add(ref _decodedBytes, decoded.Bgra.Length) > DecodedBudgetBytes)
-            {
-                cache.Clear();
-                System.Threading.Interlocked.Exchange(ref _decodedBytes, decoded.Bgra.Length);
-            }
-
-            cache.TryAdd(key, decoded);
+            _decoded.Add(key, new BitmapGlyphPlacement(decoded, metrics.BearingX, -metrics.BearingY));
             return true;
         }
 
