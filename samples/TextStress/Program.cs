@@ -42,6 +42,7 @@ namespace TextStress
                 .UsePlatformDetect()
                 .WithInterFont()
                 .With(StressRun.CreateFontManagerOptions(options))
+                .AfterSetup(_ => Measurement.BitmapDecodeCounter.Install())
                 .LogToTrace();
 
             if (options.Render != "default")

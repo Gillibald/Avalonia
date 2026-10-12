@@ -321,6 +321,8 @@ namespace TextStress.Measurement
             target.TierMask = Interlocked.Read(ref TextTierDiagnostics.MaskTierDraws);
             target.TierTransformed = Interlocked.Read(ref TextTierDiagnostics.TransformedMaskTierDraws);
             target.TierBlob = Interlocked.Read(ref TextTierDiagnostics.BlobTierDraws);
+            target.Decodes = Interlocked.Read(ref BitmapDecodeCounter.Decodes);
+            target.DecodeTicks = Interlocked.Read(ref BitmapDecodeCounter.DecodeTicks);
         }
 
         private static void FillDeltas(FrameSample sample, FrameSample before, FrameSample after)
@@ -346,6 +348,8 @@ namespace TextStress.Measurement
             sample.TierMask = after.TierMask - before.TierMask;
             sample.TierTransformed = after.TierTransformed - before.TierTransformed;
             sample.TierBlob = after.TierBlob - before.TierBlob;
+            sample.Decodes = after.Decodes - before.Decodes;
+            sample.DecodeTicks = after.DecodeTicks - before.DecodeTicks;
         }
 
         /// <summary>The glyph cache budget's limits and the bytes each pool kind holds, in MB.</summary>
