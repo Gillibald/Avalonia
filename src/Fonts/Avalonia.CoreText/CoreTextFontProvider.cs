@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using Avalonia.Media.Fonts.Tables.Hvgl;
 using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts
@@ -300,9 +301,9 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
-        /// Whether the font system can draw the face: it carries TrueType, CFF or CFF2 outlines or
-        /// sbix or CBDT bitmaps. Answers are kept per file and face, which never change while the
-        /// process runs.
+        /// Whether the font system can draw the face: it carries TrueType, CFF or CFF2 outlines,
+        /// sbix or CBDT bitmaps, or hvgl outlines where the system has the renderer for them.
+        /// Answers are kept per file and face, which never change while the process runs.
         /// </summary>
         private static bool IsDrawable(SystemFontFace face)
         {
@@ -327,6 +328,8 @@ namespace Avalonia.Media.Fonts
                             break;
                         }
                     }
+
+                    drawable |= HvglTable.IsSupported && fontMemory.TryGetTable(HvglTable.Tag, out _);
                 }
             }
 
