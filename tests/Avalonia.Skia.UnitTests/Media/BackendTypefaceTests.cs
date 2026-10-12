@@ -77,6 +77,35 @@ namespace Avalonia.Skia.UnitTests.Media
             glyphTypeface.Dispose();
         }
 
+        [Fact]
+        public void A_Face_With_Hvgl_Outlines_Draws_In_Backend_Mode()
+        {
+            // PingFang UI, the Chinese system font, has its glyphs only in an hvgl table, which
+            // the font system draws through the system's renderer.
+            const string path = "/System/Library/PrivateFrameworks/FontServices.framework/Resources/Reserved/PingFangUI.ttc";
+
+            Assert.SkipUnless(OperatingSystem.IsMacOSVersionAtLeast(15, 4) && File.Exists(path),
+                "PingFang UI with the system's hvgl renderer needs macOS 15.4 or later.");
+
+            using var scope = CreateEnvironment();
+
+            Assert.True(SfntFace.TryLoad(path, 0, out var face));
+
+            var glyphTypeface = new GlyphTypeface(face);
+
+            Assert.Equal(GlyphOutlineType.Hvgl, glyphTypeface.OutlineType);
+
+            // The face as stored (the variable font's default) and one of its named instances.
+            foreach (var typeface in new[] { glyphTypeface, glyphTypeface.WithVariations(FontVariationSettings.Parse("wght=700")) })
+            {
+                using var glyphRun = CreateRun(typeface, "中文字体");
+
+                Assert.True(CountInk(glyphRun) > 0, $"no ink at {typeface.VariationPosition}");
+            }
+
+            glyphTypeface.Dispose();
+        }
+
         private static string? FindPingFang()
         {
             const string assets = "/System/Library/AssetsV2";

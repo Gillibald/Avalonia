@@ -13,6 +13,7 @@ using Avalonia.Media.Fonts.Tables.Cff;
 using Avalonia.Media.Fonts.Tables.Cmap;
 using Avalonia.Media.Fonts.Tables.Colr;
 using Avalonia.Media.Fonts.Tables.Glyf;
+using Avalonia.Media.Fonts.Tables.Hvgl;
 using Avalonia.Media.Fonts.Tables.Metrics;
 using Avalonia.Media.Fonts.Tables.Name;
 using Avalonia.Media.Fonts.Tables.Variation;
@@ -68,6 +69,7 @@ namespace Avalonia.Media
         // _cffTable; loaded only when glyf is absent and the font has a CFF2 table. Its blends read the
         // clone's active variation coords, like gvar.
         private readonly Cff2Table? _cff2Table;
+        private readonly HvglTable? _hvglTable;
 
         // Unified per-glyph cache: cheap ink boxes (CFF / CFF2; glyf reads its header instead) plus the
         // lazily-built outline geometry whose retained memory is capped by the GlyphCache budget with
@@ -563,6 +565,13 @@ namespace Avalonia.Media
                 }
             }
 
+            // Hierarchical Variable Font outlines (Apple's system fonts), drawn by the system's
+            // renderer; only when the font has no other outline table.
+            if (_glyfTable is null && _cff2Table is null && _cffTable is null)
+            {
+                HvglTable.TryLoad(this, _fvarTable?.Axes.Length ?? 0, out _hvglTable);
+            }
+
             static CultureInfo GetCulture(int lcid)
             {
                 if (lcid == ushort.MaxValue)
@@ -629,6 +638,7 @@ namespace Avalonia.Media
             _sbixTable = source._sbixTable;
             _cffTable = source._cffTable;
             _cff2Table = source._cff2Table;
+            _hvglTable = source._hvglTable;
             _fvarTable = source._fvarTable;
             _avarTable = source._avarTable;
             _gvarTable = source._gvarTable;
@@ -737,6 +747,7 @@ namespace Avalonia.Media
             _cbdtTable = source._cbdtTable;
             _cffTable = source._cffTable;
             _cff2Table = source._cff2Table;
+            _hvglTable = source._hvglTable;
             _fvarTable = source._fvarTable;
             _sbixTable = source._sbixTable;
             _avarTable = source._avarTable;
@@ -2193,7 +2204,7 @@ namespace Avalonia.Media
             // Read every glyph's ink box from whichever outline table the font has (glyf header box /
             // CFF / CFF2) in one pass. A font with no outline table, or one whose boxes cannot be
             // read, falls back to hmtx/vmtx bearings with a zero box.
-            if (_glyfTable != null || _cffTable != null || _cff2Table != null)
+            if (_glyfTable != null || HasComputedGlyphBounds)
             {
                 Span<GlyphBounds> bounds = glyphIndices.Length <= 256
                     ? stackalloc GlyphBounds[glyphIndices.Length]
@@ -2269,7 +2280,7 @@ namespace Avalonia.Media
         /// a cheap header read worth no retention.
         /// </summary>
         private bool RetainsGlyphBounds =>
-            _cffTable is not null || _cff2Table is not null ||
+            HasComputedGlyphBounds ||
             (_glyfTable is not null && _gvarTable is not null && _activeCoords is not null);
 
         /// <summary>
@@ -2399,10 +2410,10 @@ namespace Avalonia.Media
             {
                 found = TryGetGlyfBounds(glyph, out box);
             }
-            else if (_cffTable is not null || _cff2Table is not null)
+            else if (HasComputedGlyphBounds)
             {
-                // CFF / CFF2 have no stored bbox; the unified cache memoises the interpreted box.
-                found = TryGetCffBounds(glyph, out box);
+                // CFF / CFF2 / hvgl have no stored bbox; the unified cache memoises the computed box.
+                found = TryGetComputedBounds(glyph, out box);
             }
             else
             {
@@ -2443,11 +2454,11 @@ namespace Avalonia.Media
                     _glyfTable.GetGlyphBounds(glyphIndices, bounds);
                 }
             }
-            else if (_cffTable is not null || _cff2Table is not null)
+            else if (HasComputedGlyphBounds)
             {
                 for (int i = 0; i < glyphIndices.Length; i++)
                 {
-                    bounds[i] = TryGetCffBounds(glyphIndices[i], out var box) ? box : default;
+                    bounds[i] = TryGetComputedBounds(glyphIndices[i], out var box) ? box : default;
                 }
             }
             else
@@ -2472,7 +2483,7 @@ namespace Avalonia.Media
         /// of a glyph's geometry keeps its bounds (the entry is retained), so the metrics path stays
         /// cheap even under outline-cache pressure.
         /// </remarks>
-        private bool TryGetCffBounds(ushort glyph, out GlyphBounds box)
+        private bool TryGetComputedBounds(ushort glyph, out GlyphBounds box)
         {
             if (glyph >= GlyphCount)
             {
@@ -2485,19 +2496,32 @@ namespace Avalonia.Media
 
             if (!entry.HasBounds)
             {
-                entry.SetBoundsOnce(ComputeCffGlyphBounds(glyph));
+                entry.SetBoundsOnce(ComputeGlyphBounds(glyph));
             }
 
             box = entry.Bounds;
             return true;
         }
 
-        /// <summary>Interprets one CFF / CFF2 charstring into its control-point box (the cold path).</summary>
-        private GlyphBounds ComputeCffGlyphBounds(ushort glyph)
+        /// <summary>
+        /// Whether glyph boxes come from drawing the outline (CFF / CFF2 charstrings, hvgl parts),
+        /// as these formats store no box.
+        /// </summary>
+        private bool HasComputedGlyphBounds =>
+            _cffTable is not null || _cff2Table is not null || _hvglTable is not null;
+
+        /// <summary>Draws one CFF / CFF2 / hvgl outline into its control-point box (the cold path).</summary>
+        private GlyphBounds ComputeGlyphBounds(ushort glyph)
         {
             if (_cffTable is not null)
             {
                 return _cffTable.TryGetGlyphBounds(glyph, out var box) ? box : default;
+            }
+
+            if (_hvglTable is not null)
+            {
+                // A null _activeCoords is the default instance, at which every axis is 0.
+                return _hvglTable.TryGetGlyphBounds(glyph, _activeCoords, out var hvglBox) ? hvglBox : default;
             }
 
             // CFF2 ink bounds vary with the variation point; the default instance evaluates the blends
@@ -2900,7 +2924,8 @@ namespace Avalonia.Media
         /// </summary>
         /// <remarks>
         /// <see cref="GetGlyphOutline(ushort)"/> produces geometry for <see cref="GlyphOutlineType.TrueType"/>,
-        /// <see cref="GlyphOutlineType.Cff"/> and <see cref="GlyphOutlineType.Cff2"/> fonts; for
+        /// <see cref="GlyphOutlineType.Cff"/>, <see cref="GlyphOutlineType.Cff2"/> and
+        /// <see cref="GlyphOutlineType.Hvgl"/> fonts; for
         /// <see cref="GlyphOutlineType.None"/> (bitmap-strike or SVG-only fonts) it returns <c>null</c>.
         /// Lets callers — e.g. a backend that drives a glyph run from outlines — decide up front whether
         /// outlines are available without probing individual glyphs.
@@ -2909,6 +2934,7 @@ namespace Avalonia.Media
             _glyfTable is not null ? GlyphOutlineType.TrueType
             : _cff2Table is not null ? GlyphOutlineType.Cff2
             : _cffTable is not null ? GlyphOutlineType.Cff
+            : _hvglTable is not null ? GlyphOutlineType.Hvgl
             : GlyphOutlineType.None;
 
         /// <summary>
@@ -3366,7 +3392,7 @@ namespace Avalonia.Media
                 return null;
             }
 
-            if (_glyfTable is null && _cffTable is null && _cff2Table is null)
+            if (_glyfTable is null && !HasComputedGlyphBounds)
             {
                 return null;
             }
@@ -3515,12 +3541,12 @@ namespace Avalonia.Media
                     emboldenStrength);
             }
 
-            if (_cff2Table is null && _cffTable is null)
+            if (!HasComputedGlyphBounds)
             {
                 return false;
             }
 
-            // Charstrings emit curves rather than points, so a bold outline is collected whole and
+            // Charstrings and hvgl parts emit curves rather than points, so a bold outline is collected whole and
             // emboldened before the transform applies, the way glyf points are.
             var emboldening = emboldenStrength > 0 ? new EmboldeningGeometryContext() : null;
             IGeometryContext target = (IGeometryContext?)emboldening ?? sink;
@@ -3536,6 +3562,10 @@ namespace Avalonia.Media
                 ReadOnlySpan<float> activeCoords = _activeCoords is not null ? _activeCoords : zeroCoords;
 
                 built = _cff2Table.TryBuildGlyphGeometry(glyphIndex, targetTransform, target, activeCoords);
+            }
+            else if (_hvglTable is not null)
+            {
+                built = _hvglTable.TryBuildGlyphGeometry(glyphIndex, targetTransform, target, _activeCoords);
             }
             else
             {
@@ -3746,24 +3776,23 @@ namespace Avalonia.Media
             // Linear fvar normalization into [-1, 1] anchored at the default value.
             // The two halves of the axis (below and above default) are normalized
             // independently — this is what makes the design "default" land at 0
-            // regardless of where min and max sit.
+            // regardless of where min and max sit. The division runs in 16.16 fixed
+            // point and truncates, as CoreText's does: fvar values are 16.16, and on a
+            // steep avar segment the truncation decides which grid step the result
+            // rounds to.
             float normalizedValue;
             if (userValue == axis.DefaultValue)
             {
                 normalizedValue = 0f;
             }
-            else if (userValue < axis.DefaultValue)
-            {
-                var range = axis.DefaultValue - axis.MinimumValue;
-                normalizedValue = range > 0f
-                    ? (userValue - axis.DefaultValue) / range
-                    : 0f;
-            }
             else
             {
-                var range = axis.MaximumValue - axis.DefaultValue;
+                var range = userValue < axis.DefaultValue
+                    ? axis.DefaultValue - axis.MinimumValue
+                    : axis.MaximumValue - axis.DefaultValue;
+
                 normalizedValue = range > 0f
-                    ? (userValue - axis.DefaultValue) / range
+                    ? FixedDivide(userValue - axis.DefaultValue, range)
                     : 0f;
             }
 
@@ -3779,6 +3808,15 @@ namespace Avalonia.Media
             // per-source variation-clone cache under animation: a swept axis lands on
             // at most 32769 distinct positions instead of one per float progress value.
             return MathF.Round(normalizedValue * 16384f) / 16384f;
+
+            // numerator / denominator in 16.16 fixed point, truncated toward zero.
+            static float FixedDivide(float numerator, float denominator)
+            {
+                var a = (long)Math.Round(numerator * 65536.0);
+                var b = (long)Math.Round(denominator * 65536.0);
+
+                return b == 0 ? 0f : (float)(a * 65536 / b / 65536.0);
+            }
         }
 
         /// <summary>
@@ -4273,7 +4311,13 @@ namespace Avalonia.Media
                 platformTypeface?.Dispose();
             }
 
-            // Variation clones share the source's font memory.
+            // Variation clones share the source's font memory and tables. The hvgl renderer pins
+            // the font memory, so it closes before the memory goes.
+            if (_sourceTypeface is null)
+            {
+                _hvglTable?.Dispose();
+            }
+
             if (_sourceTypeface is null && !ReferenceEquals(_fontMemory, platformTypeface))
             {
                 _fontMemory.Dispose();

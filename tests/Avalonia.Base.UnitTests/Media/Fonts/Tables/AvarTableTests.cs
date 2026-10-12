@@ -3,6 +3,7 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables.Variation;
 using Avalonia.Platform;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
@@ -76,6 +77,77 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Tables
             // Midpoint between (0.4 → 0.36) and (0.6 → 0.54) should be (0.5 → 0.45) under
             // linear interpolation.
             Assert.Equal(0.45f, avar.Remap(axisIndex: 1, 0.5f), tolerance);
+        }
+
+        [Fact]
+        public void Remap_Scans_Maps_With_Repeated_End_Entries()
+        {
+            // PingFang UI's weight maps repeat the -1 and +1 inputs: the identity entry the spec
+            // requires plus the design's own value. CoreText resolves an exact -1 to the second
+            // entry and an exact +1 to the first, which is what the segment scan yields.
+            var avar = LoadAvar(Map(
+                (-1, -1), (-1, -0.98), (-0.5, -0.482), (0, 0), (0.5, 0.29), (1, 0.736), (1, 1)));
+
+            const float tolerance = 1e-3f;
+
+            Assert.Equal(-0.98f, avar.Remap(axisIndex: 1, -1f), tolerance);
+            Assert.Equal(0.736f, avar.Remap(axisIndex: 1, 1f), tolerance);
+
+            // Out-of-range input still lands on the same ends.
+            Assert.Equal(-0.98f, avar.Remap(axisIndex: 1, -2f), tolerance);
+            Assert.Equal(0.736f, avar.Remap(axisIndex: 1, 5f), tolerance);
+        }
+
+        [Fact]
+        public void Remap_Scans_Maps_With_Entries_Out_Of_Order_In_Table_Order()
+        {
+            // PingFang UI Display's weight map, whose entries around 0 are out of order. CoreText
+            // scans the entries as stored: weight 400 (-0.2481) maps to -0.2264 and weight 500
+            // (0.0025) to 0.0008, measured from the outlines it draws.
+            var avar = LoadAvar(Map(
+                (-1, -1), (-1, -0.98), (-0.75, -0.8199), (-0.5, -0.482), (-0.25, -0.228), (0, -0.024),
+                (-0.0024, 0), (0, 0), (0.25, 0.08), (0.5, 0.29), (0.75, 0.546), (1, 0.736), (1, 1)));
+
+            const float tolerance = 1e-3f;
+
+            Assert.Equal(-0.2264f, avar.Remap(axisIndex: 1, -0.2481f), tolerance);
+            Assert.Equal(0.0008f, avar.Remap(axisIndex: 1, 0.0025f), tolerance);
+            Assert.Equal(0.2913f, avar.Remap(axisIndex: 1, 0.5012f), tolerance);
+            Assert.Equal(-0.98f, avar.Remap(axisIndex: 1, -1f), tolerance);
+        }
+
+        [Fact]
+        public void Remap_Keeps_The_Ends_Of_Maps_That_Omit_Them()
+        {
+            var avar = LoadAvar(Map((-0.5, -0.4), (0, 0), (0.5, 0.6)));
+
+            Assert.Equal(-1f, avar.Remap(axisIndex: 1, -1f));
+            Assert.Equal(1f, avar.Remap(axisIndex: 1, 1f));
+        }
+
+        private static (double From, double To)[] Map(params (double From, double To)[] entries) => entries;
+
+        /// <summary>
+        /// Inter Variable (opsz, wght) with an avar whose opsz map is the identity and whose wght
+        /// map is <paramref name="weightMap"/>.
+        /// </summary>
+        private static AvarTable LoadAvar((double From, double To)[] weightMap)
+        {
+            var buffer = new BigEndianBuffer()
+                .UInt16(1).UInt16(0).UInt16(0).UInt16(2)
+                .UInt16(3).F2Dot14(-1).F2Dot14(-1).F2Dot14(0).F2Dot14(0).F2Dot14(1).F2Dot14(1)
+                .UInt16(weightMap.Length);
+
+            foreach (var (from, to) in weightMap)
+            {
+                buffer.F2Dot14(from).F2Dot14(to);
+            }
+
+            var typeface = SyntheticFont.FromAsset(InterVariableAsset).Replace("avar", buffer.ToArray()).CreateGlyphTypeface();
+
+            Assert.True(AvarTable.TryLoad(typeface, out var avar));
+
+            return avar!;
         }
 
         [Fact]

@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using Avalonia.Base.UnitTests.Media.Fonts;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.Media.Fonts.Tables.Hvgl;
 using Avalonia.Platform;
 using Xunit;
 
@@ -159,8 +160,8 @@ namespace Avalonia.CoreText.UnitTests
             using var provider = new CoreTextFontProvider();
 
             // macOS 26 answers Chinese text with PingFang UI, whose glyphs exist only in Apple's
-            // hvgl table, which neither rasterizer reads; the match must be a face the text can
-            // be drawn with.
+            // hvgl table, drawn only where the system has an hvgl renderer; the match must be a
+            // face the text can be drawn with.
             foreach (var culture in new[] { "zh-Hans", "zh-Hant", "zh-HK", "ja-JP", "ko-KR", "en-US" })
             {
                 Assert.True(provider.TryMatchCharacter(0x4E2D, FontStyle.Normal, FontWeight.Normal,
@@ -174,6 +175,25 @@ namespace Avalonia.CoreText.UnitTests
                 Assert.NotEqual(0, glyphTypeface.CharacterToGlyphMap[0x4E2D]);
 
                 glyphTypeface.Dispose();
+            }
+        }
+
+        [MacOSFact]
+        public void Han_Fallback_Should_Keep_The_Hvgl_Face_CoreText_Matched()
+        {
+            Assert.SkipUnless(HvglTable.IsSupported, "The system has no hvgl renderer (macOS 15.4 or later).");
+
+            using var provider = new CoreTextFontProvider();
+
+            // The system answers Chinese text with PingFang UI, whose glyphs are hvgl outlines the
+            // font system draws through the system's renderer; the public PingFang faces exist
+            // only where the font asset was downloaded, and never on iOS.
+            foreach (var culture in new[] { "zh-Hans", "zh-Hant", "zh-HK" })
+            {
+                Assert.True(provider.TryMatchCharacter(0x4E2D, FontStyle.Normal, FontWeight.Normal,
+                    FontStretch.Normal, null, CultureInfo.GetCultureInfo(culture), out var match), culture);
+
+                Assert.StartsWith(".PingFangUI", match.PostScriptName);
             }
         }
 
