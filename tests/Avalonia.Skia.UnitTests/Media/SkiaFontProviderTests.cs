@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Base.UnitTests.Media.Fonts;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
+using SkiaSharp;
 using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media
@@ -136,6 +138,71 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(provider.TryGetDefaultFontFace(out var defaultFace));
             Assert.True(provider.TryGetFamilyFaces(defaultFace.FamilyName, out var faces));
             Assert.NotEmpty(faces);
+        }
+
+        [Fact]
+        public void Every_Family_Face_With_OpenType_Data_Should_Open()
+        {
+            using var provider = new SkiaFontProvider();
+
+            var failures = new List<string>();
+
+            foreach (var family in provider.GetFontFamilyNames())
+            {
+                // Skia's own faces of the family whose data the managed loader can read; fonts
+                // without OpenType tables (Type 1 fonts listed by fontconfig) do not count.
+                var expected = 0;
+
+                using (var styleSet = SKFontManager.Default.GetFontStyles(family))
+                {
+                    for (var i = 0; i < styleSet.Count; i++)
+                    {
+                        using var typeface = styleSet.CreateTypeface(i);
+                        using var stream = typeface?.OpenStream();
+
+                        if (stream is not null && IsOpenTypeData(stream))
+                        {
+                            expected++;
+                        }
+                    }
+                }
+
+                var opened = 0;
+
+                if (provider.TryGetFamilyFaces(family, out var faces))
+                {
+                    foreach (var face in faces)
+                    {
+                        if (face.TryOpenFontMemory(out var fontMemory))
+                        {
+                            opened++;
+                            fontMemory.Dispose();
+                        }
+                    }
+                }
+
+                if (opened < expected)
+                {
+                    failures.Add($"{family}: {opened} of {expected} faces opened");
+                }
+            }
+
+            Assert.Empty(failures);
+
+            static bool IsOpenTypeData(SKStreamAsset stream)
+            {
+                var header = new byte[4];
+
+                if (stream.Read(header, 4) != 4)
+                {
+                    return false;
+                }
+
+                var tag = (uint)(header[0] << 24 | header[1] << 16 | header[2] << 8 | header[3]);
+
+                // TrueType, CFF (OTTO), Apple TrueType (true) and collections (ttcf).
+                return tag is 0x00010000 or 0x4F54544F or 0x74727565 or 0x74746366;
+            }
         }
     }
 
