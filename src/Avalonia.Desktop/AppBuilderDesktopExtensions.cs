@@ -31,6 +31,9 @@ namespace Avalonia
             {
                 LoadAvaloniaNative(builder);
                 LoadSkia(builder);
+                // Registered after Skia so it replaces Skia's system font collection: CoreText
+                // descriptors carry file paths, which the font system memory-maps itself.
+                LoadCoreTextFonts(builder);
             }
             else if (OperatingSystem.IsLinux())
             {
@@ -59,6 +62,9 @@ namespace Avalonia
 
         static void LoadSkia(AppBuilder builder)
              => builder.UseSkia();
+
+        static void LoadCoreTextFonts(AppBuilder builder)
+             => builder.WithCoreTextFonts();
 
         static void LoadDirectWriteFonts(AppBuilder builder)
              => builder.WithDirectWriteFonts();
