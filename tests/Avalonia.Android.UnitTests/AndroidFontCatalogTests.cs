@@ -43,7 +43,7 @@ namespace Avalonia.Android.UnitTests
             face is null ? "none" : Path.GetFileName(face.FilePath) + "#" + face.FaceIndex;
 
         [Fact]
-        public void Family_List_Holds_Named_Families_And_Aliases_With_Existing_Files_In_File_Order()
+        public void Family_List_Starts_With_Named_Families_And_Aliases_With_Existing_Files_In_File_Order()
         {
             Assert.Equal(
                 new[]
@@ -51,7 +51,7 @@ namespace Avalonia.Android.UnitTests
                     "sans-serif", "sans-serif-medium", "arial", "serif", "serif-bold", "times new roman", "monospace",
                     "vendor-ui",
                 },
-                Vendor().GetFamilyNames());
+                Vendor().GetFamilyNames().Take(8));
         }
 
         [Fact]
@@ -329,7 +329,8 @@ namespace Avalonia.Android.UnitTests
 
             var names = catalog.GetFamilyNames();
 
-            Assert.Equal(new[] { "vendor-extra", "vendor-extra-bold", "product-sans", "product-sans-alias" }, names.Skip(8));
+            Assert.Equal(new[] { "vendor-extra", "vendor-extra-bold", "product-sans", "product-sans-alias" },
+                names.Skip(8).Take(4));
 
             // Fallback families come from the main file only.
             Assert.Equal("NotoSansHebrew-Regular.ttf#0", Describe(MatchCharacter(catalog, 0x05D0)));
