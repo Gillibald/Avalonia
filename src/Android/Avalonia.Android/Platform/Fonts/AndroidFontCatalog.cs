@@ -347,11 +347,14 @@ namespace Avalonia.Android.Platform.Fonts
             }
             else if (TryResolveFamily(familyName, out var family, out var aliasWeight))
             {
-                var seen = new HashSet<FaceKey>();
+                // A static face is listed once; each instance entry of a variable face is a face.
+                var seen = new HashSet<(FaceKey, int, bool)>();
 
                 foreach (var entry in GetCandidates(family, aliasWeight))
                 {
-                    if (seen.Add(entry.Key) && TryCreateFace(family.Name!, entry, out var face))
+                    var listed = entry.Axes.Count > 0 ? (entry.Key, entry.Weight, entry.IsItalic) : (entry.Key, 0, false);
+
+                    if (seen.Add(listed) && TryCreateFace(family.Name!, entry, out var face))
                     {
                         result.Add(face);
                     }
@@ -780,9 +783,21 @@ namespace Avalonia.Android.Platform.Fonts
 
         private bool TryCreateFace(string familyName, Entry entry, [NotNullWhen(true)] out SystemFontFace? face)
         {
-            // Designed properties come from the font's tables: entries of a variable font list the
-            // instances the platform renders, while the face loads with its default instance and
-            // the font system simulates the requested style on top of it.
+            // An entry of a variable font lists an instance the platform renders: it reports the
+            // entry's style with its axis values, and the font system moves the face there.
+            if (entry.Axes.Count > 0 && GetAxisValues(entry.Axes) is { } axisValues)
+            {
+                var stretch = axisValues.TryGetValue(s_wdthTag, out var wdth)
+                    ? GlyphTypeface.GetFontStretch(wdth)
+                    : TryGetFaceInfo(entry.Key, out var instanceInfo) ? instanceInfo.Stretch : FontStretch.Normal;
+
+                face = new SystemFontFace(familyName, entry.IsItalic ? FontStyle.Italic : FontStyle.Normal,
+                    (FontWeight)entry.Weight, stretch, entry.Key.Path, entry.Key.Index, axisValues: axisValues);
+
+                return true;
+            }
+
+            // Designed properties of a static face come from the font's tables.
             if (TryGetFaceInfo(entry.Key, out var info))
             {
                 face = new SystemFontFace(familyName, info.Style, info.Weight, info.Stretch, entry.Key.Path,
@@ -795,6 +810,26 @@ namespace Avalonia.Android.Platform.Fonts
                 (FontWeight)entry.Weight, FontStretch.Normal, entry.Key.Path, entry.Key.Index);
 
             return true;
+        }
+
+        private static readonly OpenTypeTag s_wdthTag = OpenTypeTag.Parse("wdth");
+
+        private static Dictionary<OpenTypeTag, float>? GetAxisValues(IReadOnlyList<FontsXmlAxis> axes)
+        {
+            var values = new Dictionary<OpenTypeTag, float>(axes.Count);
+
+            foreach (var axis in axes)
+            {
+                // Tags are four characters; a malformed one leaves the entry static.
+                if (axis.Tag.Length != 4)
+                {
+                    return null;
+                }
+
+                values[OpenTypeTag.Parse(axis.Tag)] = axis.Value;
+            }
+
+            return values;
         }
 
         private bool TryMatchRealFamily(string familyName, int weight, bool italic,
@@ -1171,9 +1206,16 @@ namespace Avalonia.Android.Platform.Fonts
                 Weight = font.Weight;
                 IsItalic = font.IsItalic;
                 FallbackFor = font.FallbackFor;
+                Axes = font.Axes;
             }
 
             public FaceKey Key { get; }
+
+            /// <summary>
+            /// The position of a variable font's instance this entry lists; empty for a static
+            /// entry.
+            /// </summary>
+            public IReadOnlyList<FontsXmlAxis> Axes { get; }
 
             public int Weight { get; }
 
