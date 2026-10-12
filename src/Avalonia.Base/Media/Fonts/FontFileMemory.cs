@@ -37,18 +37,28 @@ namespace Avalonia.Media.Fonts
         {
             memory = null;
 
+            FileStream? stream = null;
+
             try
             {
-                var info = new FileInfo(path);
+                // The length comes from the opened file: FileInfo reads the file's attributes, which
+                // throws on some platforms for files this process can read (iOS simulator).
+                stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
 
-                if (!info.Exists || info.Length == 0 || info.Length > int.MaxValue)
+                var fileLength = stream.Length;
+
+                if (fileLength == 0 || fileLength > int.MaxValue)
                 {
                     return false;
                 }
 
-                var length = (int)info.Length;
+                var length = (int)fileLength;
 
-                var file = MemoryMappedFile.CreateFromFile(path, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+                var file = MemoryMappedFile.CreateFromFile(stream, null, 0, MemoryMappedFileAccess.Read,
+                    HandleInheritability.None, false);
+
+                // The mapping owns the file's handle from here on and closes it with the mapping.
+                stream = null;
 
                 try
                 {
@@ -83,6 +93,10 @@ namespace Avalonia.Media.Fonts
                 // IO errors and PlatformNotSupportedException (no memory-mapped files) — the caller
                 // falls back to a stream-based load.
                 return false;
+            }
+            finally
+            {
+                stream?.Dispose();
             }
         }
 
