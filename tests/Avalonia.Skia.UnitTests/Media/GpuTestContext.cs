@@ -3,6 +3,10 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Metal;
+using Avalonia.Platform;
+using Avalonia.Reactive;
+using Avalonia.Skia.Metal;
 using Avalonia.Skia.Vulkan;
 using Avalonia.Vulkan;
 using SkiaSharp;
@@ -61,6 +65,23 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 vulkan.Dispose();
                 deviceLock.Dispose();
+            };
+        }
+
+        private GpuTestContext(SkiaMetalGpu metal, Action cleanup)
+        {
+            GrContext = metal.GrContext;
+            UpdatableTextures = (ISkiaUpdatableTextureFeature?)metal.TryGetFeature(typeof(ISkiaUpdatableTextureFeature));
+
+            BackendMaskAtlas = SkiaUpdatableTextures.Get(GrContext)?.MaskAtlas;
+
+            // Like the GL contexts, the context starts unregistered; tests register it with an
+            // atlas of their own.
+            SkiaUpdatableTextures.Register(GrContext, null);
+            _cleanup = () =>
+            {
+                metal.Dispose();
+                cleanup();
             };
         }
 
@@ -223,20 +244,47 @@ namespace Avalonia.Skia.UnitTests.Media
 
             reason = "Metal context creation failed";
 
-            var grContext = GRContext.CreateMetal(new GRMtlBackendContext { DeviceHandle = device, QueueHandle = queue });
-
-            if (grContext is null)
+            void Release()
             {
                 objc_msgSend(queue, sel_registerName("release"));
                 objc_msgSend(device, sel_registerName("release"));
-                return null;
             }
 
-            return new GpuTestContext(grContext, () =>
+            try
             {
-                objc_msgSend(queue, sel_registerName("release"));
-                objc_msgSend(device, sel_registerName("release"));
-            });
+                // The Metal backend's own GPU object, so the context carries what it registers.
+                return new GpuTestContext(new SkiaMetalGpu(new TestMetalDevice(device, queue), null), Release);
+            }
+            catch (Exception e)
+            {
+                reason = e.Message;
+                Release();
+                return null;
+            }
+        }
+
+        /// <summary>The system default Metal device and a queue of it, as Avalonia.Native supplies them.</summary>
+        private sealed class TestMetalDevice : IMetalDevice
+        {
+            public TestMetalDevice(IntPtr device, IntPtr commandQueue)
+            {
+                Device = device;
+                CommandQueue = commandQueue;
+            }
+
+            public IntPtr Device { get; }
+
+            public IntPtr CommandQueue { get; }
+
+            public bool IsLost => false;
+
+            public IDisposable EnsureCurrent() => Disposable.Empty;
+
+            public object? TryGetFeature(Type featureType) => null;
+
+            public void Dispose()
+            {
+            }
         }
 
         [DllImport("/System/Library/Frameworks/Metal.framework/Metal")]

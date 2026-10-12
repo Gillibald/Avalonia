@@ -144,6 +144,17 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void The_Metal_Backend_Updates_Textures_In_Place_And_Shares_One_Glyph_Atlas()
+        {
+            using var gpu = GpuTestContext.TryCreate(GpuBackend.Metal, out var reason);
+
+            Assert.SkipWhen(gpu is null, $"No usable Metal context: {reason}");
+
+            Assert.NotNull(gpu!.UpdatableTextures);
+            Assert.Same(GlyphMaskAtlas.Shared, gpu.BackendMaskAtlas);
+        }
+
+        [Fact]
         public void The_Vulkan_Backend_Updates_Textures_In_Place_And_Shares_One_Glyph_Atlas()
         {
             using var gpu = GpuTestContext.TryCreate(GpuBackend.Vulkan, out var reason);
@@ -158,6 +169,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             yield return new object[] { GpuBackend.NativeGl };
             yield return new object[] { GpuBackend.Angle };
+            yield return new object[] { GpuBackend.Metal };
             yield return new object[] { GpuBackend.Vulkan };
         }
 
