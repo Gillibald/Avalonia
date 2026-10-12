@@ -12,6 +12,7 @@ internal class SkiaMetalGpu : ISkiaGpu
     private GRContext? _context;
     private readonly IMetalDevice _device;
     private readonly SkiaMetalExternalObjectsFeature? _externalObjects;
+    private readonly MetalUpdatableTextureFeature? _updatableTextures;
 
     internal GRContext GrContext => _context ?? throw new ObjectDisposedException(nameof(SkiaMetalGpu));
 
@@ -27,12 +28,15 @@ internal class SkiaMetalGpu : ISkiaGpu
             _externalObjects = new SkiaMetalExternalObjectsFeature(this, externalObjects);
         if (maxResourceBytes.HasValue)
             _context.SetResourceCacheLimit(maxResourceBytes.Value);
+        _updatableTextures = MetalUpdatableTextureFeature.TryCreate(_context, device.Device);
+        SkiaUpdatableTextures.Register(_context, _updatableTextures);
     }
 
     public void Dispose()
     {
         _context?.Dispose();
         _context = null;
+        _updatableTextures?.Dispose();
     }
 
     public object? TryGetFeature(Type featureType)
@@ -41,6 +45,8 @@ internal class SkiaMetalGpu : ISkiaGpu
             return _device.TryGetFeature(featureType);
         if (featureType == typeof(IExternalObjectsRenderInterfaceContextFeature))
             return _externalObjects;
+        if (featureType == typeof(ISkiaUpdatableTextureFeature))
+            return _updatableTextures;
         return null;
     }
 
