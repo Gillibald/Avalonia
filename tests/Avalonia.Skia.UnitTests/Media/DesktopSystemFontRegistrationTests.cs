@@ -1,8 +1,10 @@
 using System;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia.Media;
 using Avalonia.LinuxFramebuffer;
 using Avalonia.Media.Fonts;
+using Avalonia.Platform;
 using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media
@@ -55,6 +57,40 @@ namespace Avalonia.Skia.UnitTests.Media
             LinuxFramebufferPlatform.Initialize(builder, null!, null);
 
             Assert.True(ResolvesFromMappedFontFile(builder, "sans-serif"));
+        }
+
+        [Fact]
+        public void WithFontconfigFonts_Should_Register_The_Fontconfig_Provider_On_Every_System()
+        {
+            // An explicit opt-in registers fontconfig even where libfontconfig is missing: only
+            // the platform defaults fall back to the collection registered before.
+            var builder = AppBuilder.Configure<Application>().UseSkia().WithFontconfigFonts();
+
+            Assert.IsType<FontconfigFontProvider>(GetRegisteredProvider(builder));
+        }
+
+        private static ISystemFontProvider GetRegisteredProvider(AppBuilder builder)
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            var fontManager = new FontManager();
+
+            AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(fontManager);
+
+            try
+            {
+                builder.AfterSetupCallback(builder);
+
+                var collection = Assert.IsType<SystemFontCollection>(fontManager.SystemFonts);
+
+                return (ISystemFontProvider)typeof(SystemFontCollection)
+                    .GetField("_provider", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(collection)!;
+            }
+            finally
+            {
+                ((IDisposable)fontManager).Dispose();
+            }
         }
 
         private static bool ResolvesFromMappedFontFile(AppBuilder builder, string familyName = "Segoe UI")
