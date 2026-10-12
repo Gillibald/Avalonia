@@ -4,6 +4,7 @@ using Avalonia.Base.UnitTests.Media.Fonts.Tables;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media
@@ -177,6 +178,30 @@ namespace Avalonia.Base.UnitTests.Media
 
             Assert.True(a.TryGetCoordinate(s_wghtTag, out var wght));
             Assert.Equal(MathF.Round(wght * 16384f) / 16384f, wght);
+        }
+
+        [Theory]
+        [InlineData(303, -9535)]
+        [InlineData(378, -2162)]
+        public void CreateNormalizedPosition_Normalizes_In_Fixed_Point_Before_Avar(double weight, int expectedSteps)
+        {
+            // CoreText divides in 16.16 fixed point, truncating, before the avar map and rounds
+            // the mapped value to the F2Dot14 grid; on a steep segment the truncation decides
+            // the step. wght 303 is -21189.97/65536 linearly, -21189/65536 truncated; the
+            // segment from (-0.5, -0.9) to (0, 0) maps that to -9535.31/16384 where the exact
+            // input gives -9535.75.
+            var avar = new BigEndianBuffer()
+                .UInt16(1).UInt16(0).UInt16(0).UInt16(2)
+                .UInt16(3).F2Dot14(-1).F2Dot14(-1).F2Dot14(0).F2Dot14(0).F2Dot14(1).F2Dot14(1)
+                .UInt16(4).F2Dot14(-1).F2Dot14(-1).F2Dot14(-0.5).F2Dot14(-0.9).F2Dot14(0).F2Dot14(0).F2Dot14(1).F2Dot14(1)
+                .ToArray();
+
+            var typeface = SyntheticFont.FromAsset(InterVariableAsset).Replace("avar", avar).CreateGlyphTypeface();
+
+            var position = typeface.CreateNormalizedPosition(Settings((s_wghtTag, weight)));
+
+            Assert.True(position.TryGetCoordinate(s_wghtTag, out var wght));
+            Assert.Equal(expectedSteps, (int)MathF.Round(wght * 16384f));
         }
 
         [Fact]
