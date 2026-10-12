@@ -48,7 +48,7 @@ namespace Avalonia.Android.Platform.Fonts
 
         public string? Name { get; }
 
-        /// <summary>Language tags from the comma-separated <c>lang</c> attribute.</summary>
+        /// <summary>Language tags from the <c>lang</c> attribute (separated by commas or spaces).</summary>
         public IReadOnlyList<string> Languages { get; }
 
         public FontsXmlVariant Variant { get; }
