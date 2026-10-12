@@ -126,8 +126,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 TransformedAtlasTests.AssertEqual(expected, cold, "rows in translucent colours");
                 TransformedAtlasTests.AssertEqual(expected, warm, "warm rows in translucent colours");
-                Assert.Equal(1, coldDraws);
-                Assert.Equal(1, warmDraws);
+
+                // Translucent colours fold into one draw only where vertex colours are exact;
+                // elsewhere each colour draws apart, and the last row once more above the first.
+                var draws = SkiaVertexColorPrecision.IsExact(gpu.GrContext) ? 1 : 4;
+
+                Assert.Equal(draws, coldDraws);
+                Assert.Equal(draws, warmDraws);
             }
             finally
             {
