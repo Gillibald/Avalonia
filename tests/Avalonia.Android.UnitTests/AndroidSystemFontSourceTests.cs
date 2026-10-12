@@ -119,6 +119,20 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
+        public void Character_Fallback_For_An_Unknown_Family_Does_Not_Enumerate_The_Platform_Fonts()
+        {
+            // Text without a system family asks with the font manager's placeholder name ($Default),
+            // so character fallback for unknown names must not read the platform font list.
+            var updated = UpdatedFont("Manrope-Light.ttf", "Manrope-Light.ttf");
+            var source = new FakeSystemFontSource { Fonts = { new AndroidSystemFont(updated, 0, 300, false, null, Array.Empty<FontsXmlAxis>()) } };
+            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
+
+            Assert.Equal("Inter-Regular.ttf#0", Describe(MatchCharacter(catalog, 'a', "$Default")));
+            Assert.Equal("NotoSansHebrew-Regular.ttf#0", Describe(MatchCharacter(catalog, 0x05D0, "Manrope")));
+            Assert.Equal(0, source.EnumerationCount);
+        }
+
+        [Fact]
         public void A_Failing_Platform_Font_List_Is_Not_Read_Again()
         {
             var source = new FakeSystemFontSource { FailEnumeration = true };
