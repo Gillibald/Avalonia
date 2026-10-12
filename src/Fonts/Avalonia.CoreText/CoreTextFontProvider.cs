@@ -166,7 +166,7 @@ namespace Avalonia.Media.Fonts
 
                 if (matched == IntPtr.Zero)
                 {
-                    return false;
+                    return TryMatchDefaultFamily(familyName, out match);
                 }
 
                 try
@@ -178,7 +178,7 @@ namespace Avalonia.Media.Fonts
                         match = null;
                     }
 
-                    return match != null;
+                    return match != null || TryMatchDefaultFamily(familyName, out match);
                 }
                 finally
                 {
@@ -189,6 +189,25 @@ namespace Avalonia.Media.Fonts
             {
                 CTNative.CFRelease(descriptor);
             }
+        }
+
+        /// <summary>
+        /// Serves the system UI font's own family, a hidden one matching does not find by name, with
+        /// the default face; the font system simulates the weight and style the face lacks.
+        /// </summary>
+        private bool TryMatchDefaultFamily(string familyName, [NotNullWhen(true)] out SystemFontFace? match)
+        {
+            if (TryGetDefaultFontFace(out var face) &&
+                string.Equals(face.FamilyName, familyName, StringComparison.OrdinalIgnoreCase))
+            {
+                match = face;
+
+                return true;
+            }
+
+            match = null;
+
+            return false;
         }
 
         public bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
