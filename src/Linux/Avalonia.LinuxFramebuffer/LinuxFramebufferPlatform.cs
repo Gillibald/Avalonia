@@ -82,6 +82,9 @@ namespace Avalonia.LinuxFramebuffer
             builder
                 .UseStandardRuntimePlatformSubsystem()
                 .UseSkia()
+                // Replaces Skia's system font collection: fontconfig descriptors carry file paths,
+                // which the font system memory-maps itself.
+                .WithFontconfigFonts()
                 .UseWindowingSubsystem(platform.Initialize, "fbdev");
             return new LinuxFramebufferLifetime(platform._fb, inputBackend);
         }
