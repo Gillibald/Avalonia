@@ -22,11 +22,12 @@ namespace Avalonia.Android.Platform.Fonts
     /// through the shared, memory-mapped font file data.
     /// </summary>
     /// <remarks>
-    /// Matching follows the platform's rules: the nearest entry of a family by weight steps, with
-    /// a slant mismatch costing two steps and file order breaking ties; character fallback tries
-    /// the requested family, the default family, then the fallback families ordered by emoji
-    /// preference, language match and variant (compact before elegant), and accepts a face only
-    /// when its character map covers the codepoint. The model is immutable after construction;
+    /// A family's entry is chosen in the order Avalonia's font collections match faces on every
+    /// platform (the CSS font matching order): the requested slant first, then the weight, with
+    /// file order breaking ties. Character fallback follows the platform: the requested family,
+    /// the default family, then the fallback families ordered by emoji preference, language match
+    /// and variant (compact before elegant), accepting a face only when its character map covers
+    /// the codepoint. The model is immutable after construction;
     /// the caches are concurrent, so the catalog is safe for concurrent use.
     /// </remarks>
     internal sealed class AndroidFontCatalog
@@ -706,9 +707,9 @@ namespace Avalonia.Android.Platform.Fonts
 
             foreach (var entry in GetCandidates(family, aliasWeight, fallbackFor))
             {
-                var score = GetDistance(entry.Weight, entry.IsItalic, weight, italic);
+                var score = GetMatchRank(entry.Weight, entry.IsItalic, weight, italic);
 
-                // Strictly lower only: the entry listed first wins a tie, as on the platform.
+                // Strictly lower only: the entry listed first wins a tie.
                 if (score < bestScore)
                 {
                     bestScore = score;
@@ -720,11 +721,36 @@ namespace Avalonia.Android.Platform.Fonts
         }
 
         /// <summary>
-        /// The platform's style distance: whole weight steps of 100 between the two weights, plus
-        /// two steps when the slant differs.
+        /// The rank of a face for a requested style in the font collections' matching order, lower
+        /// first: any face with the requested slant before every other face; then, for a weight
+        /// above 500, heavier weights ascending before lighter ones descending; below 400, lighter
+        /// weights descending before heavier ones ascending; from 400 to 500, the weights up to
+        /// 500 ascending, then lighter ones descending, then those above 500 ascending.
         /// </summary>
-        private static int GetDistance(int weight, bool italic, int requestedWeight, bool requestedItalic) =>
-            Math.Abs(weight / 100 - requestedWeight / 100) + (italic != requestedItalic ? 2 : 0);
+        private static int GetMatchRank(int weight, bool italic, int requestedWeight, bool requestedItalic)
+        {
+            const int Group = 1_000;
+
+            var slant = italic == requestedItalic ? 0 : 3 * Group;
+            var difference = weight - requestedWeight;
+
+            if (requestedWeight > 500)
+            {
+                return slant + (difference >= 0 ? difference : Group - difference);
+            }
+
+            if (requestedWeight < 400)
+            {
+                return slant + (difference <= 0 ? -difference : Group + difference);
+            }
+
+            if (difference >= 0 && weight <= 500)
+            {
+                return slant + difference;
+            }
+
+            return slant + (difference < 0 ? Group - difference : 2 * Group + difference);
+        }
 
         private bool TryCreateFace(string familyName, Entry entry, [NotNullWhen(true)] out SystemFontFace? face)
         {
@@ -765,7 +791,7 @@ namespace Avalonia.Android.Platform.Fonts
                     continue;
                 }
 
-                var score = GetDistance((int)info.Weight, info.Style != FontStyle.Normal, weight, italic);
+                var score = GetMatchRank((int)info.Weight, info.Style != FontStyle.Normal, weight, italic);
 
                 if (score < bestScore)
                 {
