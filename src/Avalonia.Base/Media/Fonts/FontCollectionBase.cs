@@ -1871,7 +1871,7 @@ namespace Avalonia.Media.Fonts
                         return true;
                     }
 
-                    return false;
+                    return existing is null && TryReplaceMiss(glyphTypefaces);
                 }
 
                 return TryAddAndPublish(glyphTypefaces);
@@ -1889,10 +1889,24 @@ namespace Avalonia.Media.Fonts
                     return true;
                 }
 
-                return false;
+                return existingAfter is null && TryReplaceMiss(dict);
             }
 
             return TryAddAndPublish(dict);
+
+            // A typeface found after a cached miss for its key (the provider answered another
+            // style with this face) takes the miss's place, or the key would stay unresolvable.
+            bool TryReplaceMiss(ConcurrentDictionary<FontCollectionKey, GlyphTypeface?> typefaces)
+            {
+                if (!typefaces.TryUpdate(key, glyphTypeface, null))
+                {
+                    return false;
+                }
+
+                AddFontFamily(new FontFamily(Key + "#" + familyName));
+
+                return true;
+            }
 
             // A family is listed with its first typeface. Cached misses (null entries) are never
             // listed: a listed family that does not resolve fails wherever it is bound.
