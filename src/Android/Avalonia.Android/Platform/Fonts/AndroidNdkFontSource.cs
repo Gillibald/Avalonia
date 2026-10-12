@@ -176,8 +176,12 @@ namespace Avalonia.Android.Platform.Fonts
                 axes[i] = new FontsXmlAxis(name, AFont_getAxisValue(font, (uint)i));
             }
 
+            // Android 10 inverts the presence check in AFont_getLocale and dereferences an empty
+            // locale, which crashes for fonts without one.
+            var locale = OperatingSystem.IsAndroidVersionAtLeast(30) ? Marshal.PtrToStringUTF8(AFont_getLocale(font)) : null;
+
             return new AndroidSystemFont(path, (int)AFont_getCollectionIndex(font), AFont_getWeight(font),
-                AFont_isItalic(font) != 0, Marshal.PtrToStringUTF8(AFont_getLocale(font)), axes);
+                AFont_isItalic(font) != 0, locale, axes);
         }
 
         [LibraryImport(LibAndroid)]
