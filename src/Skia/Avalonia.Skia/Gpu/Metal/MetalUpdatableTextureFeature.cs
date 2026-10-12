@@ -12,8 +12,9 @@ namespace Avalonia.Skia.Metal;
 /// <remarks>
 /// <para>
 /// The textures live in memory the CPU writes directly: shared storage where the device has
-/// unified memory (Apple silicon), managed storage otherwise (Intel Macs with a discrete GPU),
-/// whose CPU copy Metal brings to the GPU before the next command buffer reads it. A region copy
+/// unified memory (Apple silicon) or the platform has no managed storage (iOS and tvOS, whose
+/// simulator device reports no unified memory), managed storage otherwise (Intel Macs with a
+/// discrete GPU), whose CPU copy Metal brings to the GPU before the next command buffer reads it. A region copy
 /// runs on the CPU at once, before Skia commits the command buffer it is recording, so draws of
 /// the texture recorded earlier in the frame see the new texels; command buffers already in
 /// flight only sample texels an update leaves as they were.
@@ -66,7 +67,7 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
     /// otherwise, on platforms that have managed storage.
     /// </summary>
     internal static nuint SelectStorageMode(bool unifiedMemory, bool managedStorageAvailable)
-        => unifiedMemory ? StorageModeShared : StorageModeManaged;
+        => unifiedMemory || !managedStorageAvailable ? StorageModeShared : StorageModeManaged;
 
     /// <summary>Makes the feature for <paramref name="context"/> on <paramref name="device"/>.</summary>
     /// <returns>The feature, or <c>null</c> when the device is not available.</returns>
