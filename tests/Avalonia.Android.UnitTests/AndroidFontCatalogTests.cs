@@ -85,7 +85,7 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
-        public void Nearest_Entry_Follows_The_Platform_Weight_And_Slant_Distance()
+        public void Nearest_Entry_Follows_The_Font_Matching_Order_Of_The_Font_Collections()
         {
             var catalog = Vendor();
 
@@ -94,18 +94,38 @@ namespace Avalonia.Android.UnitTests
             Assert.Equal("Inter-Bold.ttf#0", Describe(MatchFamily(catalog, "serif", weight: FontWeight.SemiBold)));
             Assert.Equal("NotoSans-Italic.ttf#0", Describe(MatchFamily(catalog, "serif", FontStyle.Italic)));
 
-            // A slant mismatch costs two weight steps: bold upright beats regular italic.
-            Assert.Equal("Inter-Bold.ttf#0", Describe(MatchFamily(catalog, "serif", FontStyle.Italic, FontWeight.Bold)));
+            // The slant is matched before the weight: regular italic beats bold upright.
+            Assert.Equal("NotoSans-Italic.ttf#0", Describe(MatchFamily(catalog, "serif", FontStyle.Italic, FontWeight.Bold)));
+        }
+
+        [Theory]
+        [InlineData(FontWeight.Thin, "Roboto-Thin.ttf")]
+        [InlineData(FontWeight.ExtraLight, "Roboto-Thin.ttf")]
+        [InlineData(FontWeight.Light, "Roboto-Light.ttf")]
+        [InlineData(FontWeight.Normal, "Roboto-Regular.ttf")]
+        [InlineData((FontWeight)450, "Roboto-Medium.ttf")]
+        [InlineData(FontWeight.Medium, "Roboto-Medium.ttf")]
+        [InlineData((FontWeight)550, "Roboto-Bold.ttf")]
+        [InlineData(FontWeight.SemiBold, "Roboto-Bold.ttf")]
+        [InlineData(FontWeight.Bold, "Roboto-Bold.ttf")]
+        [InlineData(FontWeight.ExtraBold, "Roboto-Black.ttf")]
+        [InlineData(FontWeight.Black, "Roboto-Black.ttf")]
+        [InlineData(FontWeight.ExtraBlack, "Roboto-Black.ttf")]
+        public void Weights_Without_An_Entry_Resolve_In_The_Font_Matching_Order_Of_The_Font_Collections(
+            FontWeight weight, string expected)
+        {
+            // Above 500 heavier weights come first, below 400 lighter ones, and between 400 and
+            // 500 the weights up to 500 before the lighter ones, as everywhere else in Avalonia.
+            var catalog = AndroidFontCatalog.Create(_fixture.AospConfiguration());
+
+            Assert.Equal(expected + "#0", Describe(MatchFamily(catalog, "sans-serif", weight: weight)));
         }
 
         [Fact]
-        public void Equal_Distances_Resolve_To_The_Entry_Listed_First()
+        public void Weighted_Aliases_Of_The_Aosp_Configuration_Resolve_To_Their_Weight()
         {
             var catalog = AndroidFontCatalog.Create(_fixture.AospConfiguration());
 
-            // 800 is one step from both 700 and 900; the AOSP file lists the 900 weights first.
-            Assert.Equal("Roboto-Black.ttf#0", Describe(MatchFamily(catalog, "sans-serif", weight: FontWeight.ExtraBold)));
-            Assert.Equal("Roboto-Bold.ttf#0", Describe(MatchFamily(catalog, "sans-serif", weight: FontWeight.Bold)));
             Assert.Equal("Roboto-Medium.ttf#0", Describe(MatchFamily(catalog, "sans-serif-medium")));
             Assert.Equal("Roboto-Thin.ttf#0", Describe(MatchFamily(catalog, "sans-serif-thin")));
             Assert.Equal("RobotoCondensed-Light.ttf#0", Describe(MatchFamily(catalog, "sans-serif-condensed-light")));
@@ -210,6 +230,7 @@ namespace Avalonia.Android.UnitTests
             Assert.Equal("Inter", inter.FamilyName);
             Assert.Equal("Inter-Regular.ttf#0", Describe(inter));
             Assert.Equal("Inter-Bold.ttf#0", Describe(MatchFamily(catalog, "inter", weight: FontWeight.Bold)));
+            Assert.Equal("Inter-Bold.ttf#0", Describe(MatchFamily(catalog, "inter", weight: (FontWeight)550)));
 
             Assert.Equal("CJK.ttc#0", Describe(MatchFamily(catalog, "Noto Sans JP")));
             Assert.Equal("CJK.ttc#2", Describe(MatchFamily(catalog, "Noto Sans SC")));
