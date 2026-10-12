@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
@@ -81,11 +82,18 @@ namespace Avalonia.LinuxFramebuffer
             var platform = new LinuxFramebufferPlatform(outputBackend);
             builder
                 .UseStandardRuntimePlatformSubsystem()
-                .UseSkia()
-                // Replaces Skia's system font collection: fontconfig descriptors carry file paths,
-                // which the font system memory-maps itself.
-                .WithFontconfigFonts()
-                .UseWindowingSubsystem(platform.Initialize, "fbdev");
+                .UseSkia();
+
+            // Replaces Skia's system font collection: fontconfig descriptors carry file paths,
+            // which the font system memory-maps itself. Without libfontconfig (devices on Skia's
+            // dependency-free native build) the fontconfig provider finds no fonts, while Skia's
+            // registration still finds them.
+            if (NativeLibrary.TryLoad("libfontconfig.so.1", typeof(LinuxFramebufferPlatform).Assembly, null, out _))
+            {
+                builder.WithFontconfigFonts();
+            }
+
+            builder.UseWindowingSubsystem(platform.Initialize, "fbdev");
             return new LinuxFramebufferLifetime(platform._fb, inputBackend);
         }
     }
