@@ -83,7 +83,8 @@ namespace Avalonia.Android.UnitTests
         public void The_First_Name_Only_The_Platform_Knows_Enumerates_The_Platform_Fonts_Once()
         {
             // Updated fonts outside the configuration (Google Sans under /data/fonts/files) are
-            // reachable by name only through the platform's font list.
+            // reachable by name only through the platform's font list; the platform's matcher
+            // answers unknown names with its default face.
             var updated = UpdatedFont("Manrope-Light.ttf", "Manrope-Light.ttf");
             var source = new FakeSystemFontSource
             {
@@ -92,6 +93,7 @@ namespace Avalonia.Android.UnitTests
                     new AndroidSystemFont(_fixture.FontPath("Inter-Regular.ttf"), 0, 400, false, null, Array.Empty<FontsXmlAxis>()),
                     new AndroidSystemFont(updated, 0, 300, false, null, Array.Empty<FontsXmlAxis>()),
                 },
+                Match = (_, _, _, _, _) => DefaultPlatformFace(),
             };
             var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
 
@@ -116,6 +118,40 @@ namespace Avalonia.Android.UnitTests
             // Reading the names of the platform's fonts leaves none of them mapped.
             Assert.DoesNotContain(FontFileCache.GetSnapshot(),
                 x => x.Key is string path && path.StartsWith(_fixture.Root, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private AndroidSystemFont DefaultPlatformFace() =>
+            new(_fixture.FontPath("Inter-Regular.ttf"), 0, 400, false, null, Array.Empty<FontsXmlAxis>());
+
+        [Fact]
+        public void A_Name_The_Platform_Matcher_Resolves_Is_Not_Enumerated()
+        {
+            // A family the platform knows by name answers with its own face; only names it answers
+            // with the default face need the font list.
+            var updated = UpdatedFont("Manrope-Light.ttf", "Manrope-Light.ttf");
+            var source = new FakeSystemFontSource
+            {
+                Fonts = { new AndroidSystemFont(updated, 0, 300, false, null, Array.Empty<FontsXmlAxis>()) },
+                Match = (family, _, _, _, _) => family is "Manrope" or "manrope-ui"
+                    ? new AndroidSystemFont(updated, 0, 300, false, null, Array.Empty<FontsXmlAxis>())
+                    : DefaultPlatformFace(),
+            };
+            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
+
+            // By the font's real name.
+            Assert.True(catalog.TryMatchFamily("Manrope", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out var match));
+            Assert.Equal(updated, match.FilePath);
+            Assert.Equal("Manrope", match.FamilyName);
+
+            // By a platform family name that is not the font's real name.
+            Assert.True(catalog.TryGetFamilyFaces("manrope-ui", out var faces));
+            Assert.Equal(updated, Assert.Single(faces).FilePath);
+
+            Assert.Equal(0, source.EnumerationCount);
+
+            // A name the matcher answers with the default face still reads the list.
+            Assert.False(catalog.TryMatchFamily("Segoe UI", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
+            Assert.Equal(1, source.EnumerationCount);
         }
 
         [Fact]
