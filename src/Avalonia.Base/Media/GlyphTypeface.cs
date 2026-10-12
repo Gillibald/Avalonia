@@ -3746,24 +3746,23 @@ namespace Avalonia.Media
             // Linear fvar normalization into [-1, 1] anchored at the default value.
             // The two halves of the axis (below and above default) are normalized
             // independently — this is what makes the design "default" land at 0
-            // regardless of where min and max sit.
+            // regardless of where min and max sit. The division runs in 16.16 fixed
+            // point and truncates, as CoreText's does: fvar values are 16.16, and on a
+            // steep avar segment the truncation decides which grid step the result
+            // rounds to.
             float normalizedValue;
             if (userValue == axis.DefaultValue)
             {
                 normalizedValue = 0f;
             }
-            else if (userValue < axis.DefaultValue)
-            {
-                var range = axis.DefaultValue - axis.MinimumValue;
-                normalizedValue = range > 0f
-                    ? (userValue - axis.DefaultValue) / range
-                    : 0f;
-            }
             else
             {
-                var range = axis.MaximumValue - axis.DefaultValue;
+                var range = userValue < axis.DefaultValue
+                    ? axis.DefaultValue - axis.MinimumValue
+                    : axis.MaximumValue - axis.DefaultValue;
+
                 normalizedValue = range > 0f
-                    ? (userValue - axis.DefaultValue) / range
+                    ? FixedDivide(userValue - axis.DefaultValue, range)
                     : 0f;
             }
 
@@ -3779,6 +3778,15 @@ namespace Avalonia.Media
             // per-source variation-clone cache under animation: a swept axis lands on
             // at most 32769 distinct positions instead of one per float progress value.
             return MathF.Round(normalizedValue * 16384f) / 16384f;
+
+            // numerator / denominator in 16.16 fixed point, truncated toward zero.
+            static float FixedDivide(float numerator, float denominator)
+            {
+                var a = (long)Math.Round(numerator * 65536.0);
+                var b = (long)Math.Round(denominator * 65536.0);
+
+                return b == 0 ? 0f : (float)(a * 65536 / b / 65536.0);
+            }
         }
 
         /// <summary>
