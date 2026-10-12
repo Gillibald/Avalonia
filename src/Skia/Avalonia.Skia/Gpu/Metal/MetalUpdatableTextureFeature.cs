@@ -58,8 +58,15 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
     {
         _context = context;
         _device = device;
-        _storageMode = unifiedMemory ? StorageModeShared : StorageModeManaged;
+        _storageMode = SelectStorageMode(unifiedMemory, OperatingSystem.IsMacOS() || OperatingSystem.IsMacCatalyst());
     }
+
+    /// <summary>
+    /// The storage mode of the textures: shared where the device has unified memory, managed
+    /// otherwise, on platforms that have managed storage.
+    /// </summary>
+    internal static nuint SelectStorageMode(bool unifiedMemory, bool managedStorageAvailable)
+        => unifiedMemory ? StorageModeShared : StorageModeManaged;
 
     /// <summary>Makes the feature for <paramref name="context"/> on <paramref name="device"/>.</summary>
     /// <returns>The feature, or <c>null</c> when the device is not available.</returns>
