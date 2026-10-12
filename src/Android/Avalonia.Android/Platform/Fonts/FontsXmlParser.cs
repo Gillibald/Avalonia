@@ -30,6 +30,8 @@ namespace Avalonia.Android.Platform.Fonts
             IgnoreProcessingInstructions = true,
         };
 
+        private static readonly char[] s_languageSeparators = { ',', ' ', '\t', '\r', '\n' };
+
         /// <summary>
         /// Parses a configuration whose font file names resolve against the specified directory.
         /// </summary>
@@ -228,7 +230,8 @@ namespace Avalonia.Android.Platform.Fonts
                 return Array.Empty<string>();
             }
 
-            return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            // Android 9 separates the languages with a space, later releases with a comma.
+            return value.Split(s_languageSeparators, StringSplitOptions.RemoveEmptyEntries);
         }
 
         private static int ParseInt(string? value, int defaultValue) =>
