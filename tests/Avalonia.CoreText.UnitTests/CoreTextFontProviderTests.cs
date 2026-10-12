@@ -284,6 +284,15 @@ namespace Avalonia.CoreText.UnitTests
         }
     }
 
+    public class CoreTextFontProviderMemoryTests
+    {
+        [MacOSFact]
+        public void Every_System_Face_Should_Map_Its_Font_File_Once()
+        {
+            SystemFontMemoryGuard.AssertOneMappedDataPerFile(() => new CoreTextFontProvider());
+        }
+    }
+
     public class CoreTextProviderContractTests : SystemFontProviderContractTests
     {
         protected override bool IsSupported => OperatingSystem.IsMacOS();
