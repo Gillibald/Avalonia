@@ -1185,24 +1185,12 @@ namespace Avalonia.Media.Fonts
                     return false;
                 }
 
-                return glyphTypefaces.TryAdd(key, glyphTypeface);
+                return TryAddAndPublish(glyphTypefaces);
             }
 
             // Family doesn't exist yet. Create a new dictionary instance and try to install it.
-            var newDict = new ConcurrentDictionary<FontCollectionKey, GlyphTypeface?>();
-
-            // GetOrAdd will return the instance that ended up in the dictionary. If it's our
-            // newDict instance then we won the race to add the family and should publish it.
-            var dict = _glyphTypefaceCache.GetOrAdd(familyName, newDict);
-
-            if (ReferenceEquals(dict, newDict))
-            {
-                // We successfully installed the dictionary; publish the FontFamily once.
-                var fontFamily = new FontFamily(Key + "#" + familyName);
-
-                // Add the font family to the sorted array
-                AddFontFamily(fontFamily);
-            }
+            var dict = _glyphTypefaceCache.GetOrAdd(familyName,
+                new ConcurrentDictionary<FontCollectionKey, GlyphTypeface?>());
 
             // Add or compare the glyphTypeface in the resulting dictionary.
             if (dict.TryGetValue(key, out var existingAfter))
@@ -1215,7 +1203,24 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
-            return dict.TryAdd(key, glyphTypeface);
+            return TryAddAndPublish(dict);
+
+            // A family is listed with its first typeface. Cached misses (null entries) are never
+            // listed: a listed family that does not resolve fails wherever it is bound.
+            bool TryAddAndPublish(ConcurrentDictionary<FontCollectionKey, GlyphTypeface?> typefaces)
+            {
+                if (!typefaces.TryAdd(key, glyphTypeface))
+                {
+                    return false;
+                }
+
+                if (glyphTypeface != null)
+                {
+                    AddFontFamily(new FontFamily(Key + "#" + familyName));
+                }
+
+                return true;
+            }
         }
 
         /// <summary>
