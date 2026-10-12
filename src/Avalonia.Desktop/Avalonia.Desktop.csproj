@@ -10,6 +10,7 @@
     <ProjectReference Include="../../packages/Avalonia/Avalonia.csproj" />
     <ProjectReference Include="../Avalonia.X11/Avalonia.X11.csproj" />
     <ProjectReference Include="..\HarfBuzz\Avalonia.HarfBuzz\Avalonia.HarfBuzz.csproj" />
+    <ProjectReference Include="..\Fonts\Avalonia.CoreText\Avalonia.CoreText.csproj" />
     <ProjectReference Include="..\Fonts\Avalonia.DirectWrite\Avalonia.DirectWrite.csproj" />
     <ProjectReference Include="..\Fonts\Avalonia.Fontconfig\Avalonia.Fontconfig.csproj" />
   </ItemGroup>
