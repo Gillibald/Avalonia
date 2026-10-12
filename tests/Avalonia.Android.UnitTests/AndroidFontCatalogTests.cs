@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Android.Platform.Fonts;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Xunit;
 
@@ -188,21 +189,33 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
-        public void Entries_Of_One_Variable_Face_Report_Its_Default_Instance()
+        public void Entries_Of_A_Variable_Face_Carry_Their_Axis_Values()
         {
             var catalog = Vendor();
 
-            // Every sans-serif entry is an instance of one face; the collection simulates the rest.
+            // Every sans-serif entry is an instance of one face at the position its axes give; the
+            // collection moves the face there.
             var bold = MatchFamily(catalog, "sans-serif", weight: FontWeight.Bold);
             var italic = MatchFamily(catalog, "sans-serif", FontStyle.Italic);
 
             Assert.Equal("Inter-Regular.ttf#0", Describe(bold));
-            Assert.Equal(FontWeight.Normal, bold.Weight);
+            Assert.Equal(FontWeight.Bold, bold.Weight);
+            Assert.Equal(FontStyle.Normal, bold.Style);
+            Assert.Equal(700f, bold.AxisValues![OpenTypeTag.Parse("wght")]);
+            Assert.Equal(0f, bold.AxisValues[OpenTypeTag.Parse("ital")]);
+
             Assert.Equal("Inter-Regular.ttf#0", Describe(italic));
-            Assert.Equal(FontStyle.Normal, italic.Style);
+            Assert.Equal(FontWeight.Normal, italic.Weight);
+            Assert.Equal(FontStyle.Italic, italic.Style);
+            Assert.Equal(1f, italic.AxisValues![OpenTypeTag.Parse("ital")]);
 
             Assert.True(catalog.TryGetFamilyFaces("sans-serif", out var faces));
-            Assert.Equal("Inter-Regular.ttf#0", Describe(Assert.Single(faces)));
+            Assert.Equal(new[] { (400, false), (700, false), (400, true) },
+                faces.Select(x => ((int)x.Weight, x.Style == FontStyle.Italic)));
+            Assert.All(faces, x => Assert.NotNull(x.AxisValues));
+
+            // Entries without axes keep the designed properties of their face.
+            Assert.Null(MatchFamily(catalog, "serif").AxisValues);
         }
 
         [Fact]
