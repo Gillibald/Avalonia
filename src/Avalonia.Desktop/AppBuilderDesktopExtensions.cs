@@ -35,6 +35,9 @@ namespace Avalonia
             {
                 LoadX11(builder);
                 LoadSkia(builder);
+                // Registered after Skia so it replaces Skia's system font collection: fontconfig
+                // descriptors carry file paths, which the font system memory-maps itself.
+                LoadFontconfigFonts(builder);
             }
             else
             {
@@ -58,6 +61,9 @@ namespace Avalonia
 
         static void LoadDirectWriteFonts(AppBuilder builder)
              => builder.WithDirectWriteFonts();
+
+        static void LoadFontconfigFonts(AppBuilder builder)
+             => builder.WithFontconfigFonts();
 
         static void LoadHarfBuzz(AppBuilder builder)
              => builder.UseHarfBuzz();

@@ -54,6 +54,14 @@ namespace Avalonia.Media.Fonts
             public IntPtr Value;
         }
 
+        /// <summary>
+        /// Whether libfontconfig can be loaded in this process.
+        /// </summary>
+        public static bool IsAvailable()
+        {
+            return NativeLibrary.TryLoad(FontconfigLibrary, typeof(FcNative).Assembly, null, out _);
+        }
+
         [LibraryImport(FontconfigLibrary)]
         public static partial IntPtr FcInitLoadConfigAndFonts();
 
