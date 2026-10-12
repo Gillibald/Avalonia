@@ -203,7 +203,7 @@ namespace Avalonia.Skia
                 {
                     var data = new SharedFontData(streamMemory!, streamMemory!.Memory);
 
-                    if (!SfntFace.TryCreate(data, ttcIndex, out var face))
+                    if (!SfntFace.TryCreate(data, GetFaceIndex(ttcIndex), out var face))
                     {
                         data.Release();
 
@@ -257,7 +257,7 @@ namespace Avalonia.Skia
                         return false;
                     }
 
-                    if (!SfntFace.TryCreate(data!, ttcIndex, out var face))
+                    if (!SfntFace.TryCreate(data!, GetFaceIndex(ttcIndex), out var face))
                     {
                         data!.Release();
 
@@ -277,6 +277,15 @@ namespace Avalonia.Skia
                     stream?.Dispose();
                 }
             }
+
+            /// <summary>
+            /// Gets the face of a font collection a stream index selects. FreeType-based ports
+            /// list each named instance of a variable font as a typeface of its own and report the
+            /// instance number in the high 16 bits; the face loads at its default position, so its
+            /// designed properties are those of that position and the font system simulates the
+            /// instance's weight or slant.
+            /// </summary>
+            private static int GetFaceIndex(int ttcIndex) => ttcIndex & 0xFFFF;
 
             private static unsafe bool TryCreateContentKey(SKStreamAsset stream, out FontContentKey key)
             {
