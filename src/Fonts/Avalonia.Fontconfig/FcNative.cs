@@ -25,6 +25,8 @@ namespace Avalonia.Media.Fonts
         public const string Lang = "lang";
         public const string PostScriptName = "postscriptname";
         public const string Variable = "variable";
+        public const string Embolden = "embolden";
+        public const string Matrix = "matrix";
 
         public const int FcMatchPattern = 0;
 
@@ -81,6 +83,9 @@ namespace Avalonia.Media.Fonts
 
         [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
         public static partial FcResult FcPatternGetBool(IntPtr pattern, string @object, int n, out int value);
+
+        [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
+        public static partial FcResult FcPatternGetMatrix(IntPtr pattern, string @object, int n, out IntPtr matrix);
 
         [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
         public static partial FcResult FcPatternGetCharSet(IntPtr pattern, string @object, int n, out IntPtr charSet);

@@ -40,6 +40,10 @@ namespace Avalonia.Media.Fonts
         // without a readable fvar table.
         private readonly ConcurrentDictionary<(string File, int Index), VariableFace?> _variableFaces = new();
 
+        // Designed properties of static faces whose matched patterns carry a synthesized style,
+        // read once per face.
+        private readonly ConcurrentDictionary<(string File, int Index), DesignedStyle?> _designedStyles = new();
+
         /// <summary>
         /// Initializes fontconfig lazily on first use: constructing (and registering) the provider
         /// does no native work, and a missing libfontconfig turns every query into a miss instead
@@ -545,6 +549,21 @@ namespace Avalonia.Media.Fonts
                     }
                 }
             }
+            else if (instance < 0 && !isVariable &&
+                     (FcNative.GetBool(pattern, FcNative.Embolden) == true ||
+                      FcNative.FcPatternGetMatrix(pattern, FcNative.Matrix, 0, out _) == FcNative.FcResult.Match))
+            {
+                // A matched pattern carries the style the configuration synthesizes for a static
+                // face that lacks it (90-synthetic.conf assigns bold with embolden and oblique with
+                // a slant matrix). The font system simulates from the descriptor's properties, so
+                // the face reports what its file says.
+                if (GetDesignedStyle(file!, index) is { } designed)
+                {
+                    style = designed.Style;
+                    fontWeight = designed.Weight;
+                    stretch = designed.Stretch;
+                }
+            }
 
             var postScriptName = FcNative.GetString(pattern, FcNative.PostScriptName, 0);
 
@@ -721,6 +740,48 @@ namespace Avalonia.Media.Fonts
 
             public IReadOnlyDictionary<OpenTypeTag, float>[] NamedInstances { get; }
         }
+
+        private DesignedStyle? GetDesignedStyle(string file, int index)
+            => _designedStyles.GetOrAdd((file, index), static key => ReadDesignedStyle(key.File, key.Index));
+
+        private static DesignedStyle? ReadDesignedStyle(string file, int index)
+        {
+            // The descriptor opens the file through the managed loader; only its name is unused.
+            var face = new SystemFontFace(string.Empty, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,
+                file, index);
+
+            if (!face.TryOpenFontMemory(out var fontMemory))
+            {
+                return null;
+            }
+
+            GlyphTypeface? glyphTypeface = null;
+
+            try
+            {
+                glyphTypeface = new GlyphTypeface(fontMemory);
+
+                return new DesignedStyle(glyphTypeface.Style, glyphTypeface.Weight, glyphTypeface.Stretch);
+            }
+            catch (Exception)
+            {
+                // Required tables missing or damaged: the properties fontconfig reports stay.
+                return null;
+            }
+            finally
+            {
+                if (glyphTypeface is not null)
+                {
+                    glyphTypeface.Dispose();
+                }
+                else
+                {
+                    fontMemory.Dispose();
+                }
+            }
+        }
+
+        private sealed record DesignedStyle(FontStyle Style, FontWeight Weight, FontStretch Stretch);
 
         private sealed class LangCache
         {
