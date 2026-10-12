@@ -10,7 +10,7 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// Which system font collection the desktop builder chains register on Windows and Linux, observed
+    /// Which system font collection the desktop builder chains register on Windows, macOS and Linux, observed
     /// through the font data of a resolved typeface: path-based providers serve memory-mapped
     /// font files, the Skia provider a copy of each face's file.
     /// </summary>
@@ -57,6 +57,22 @@ namespace Avalonia.Skia.UnitTests.Media
             LinuxFramebufferPlatform.Initialize(builder, null!, null);
 
             Assert.True(ResolvesFromMappedFontFile(builder, "sans-serif"));
+        }
+
+        [MacOSFact("Requires macOS")]
+        public void UsePlatformDetect_On_MacOS_Should_Serve_System_Fonts_From_Mapped_Font_Files()
+        {
+            var builder = AppBuilder.Configure<Application>().UsePlatformDetect();
+
+            Assert.True(ResolvesFromMappedFontFile(builder, "Helvetica"));
+        }
+
+        [MacOSFact("Requires macOS")]
+        public void Manual_Native_Skia_Chain_Should_Keep_The_Skia_System_Font_Provider()
+        {
+            var builder = AppBuilder.Configure<Application>().UseAvaloniaNative().UseSkia().UseHarfBuzz();
+
+            Assert.False(ResolvesFromMappedFontFile(builder, "Helvetica"));
         }
 
         [Fact]
