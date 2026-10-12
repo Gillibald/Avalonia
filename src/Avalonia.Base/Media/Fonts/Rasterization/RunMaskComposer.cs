@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Runtime.CompilerServices;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -245,9 +246,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Draws a decoded strike bitmap into a premultiplied BGRA run buffer, source-over,
-        /// scaled to the destination rectangle by nearest-neighbor sampling (strike-exact draws
-        /// are 1:1; scaled draws happen when no strike matches the requested ppem — bilinear is
-        /// a follow-up if the visual review asks for it).
+        /// scaled to the destination rectangle: copied at the strike's own size, otherwise filtered
+        /// by <see cref="BitmapGlyphScaler"/> (area average when smaller, bilinear when larger).
         /// </summary>
         public static void ComposeBitmap(in DecodedGlyphBitmap source, int destX, int destY,
             int destWidth, int destHeight, Span<byte> destination, int bufferWidth, int bufferHeight,
@@ -258,6 +258,36 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
+            if (destWidth == source.Width && destHeight == source.Height)
+            {
+                ComposeBgra(source.Bgra, source.Width, destX, destY, destWidth, destHeight, destination, bufferWidth,
+                    bufferHeight, destStride);
+                return;
+            }
+
+            // Another size than the strike's: scaled with filtering first, then composed like the strike.
+            var length = destWidth * destHeight * 4;
+            var scaled = ArrayPool<byte>.Shared.Rent(length);
+
+            try
+            {
+                BitmapGlyphScaler.Scale(source, destWidth, destHeight, scaled.AsSpan(0, length));
+                ComposeBgra(scaled, destWidth, destX, destY, destWidth, destHeight, destination, bufferWidth,
+                    bufferHeight, destStride);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(scaled);
+            }
+        }
+
+        /// <summary>
+        /// Composes premultiplied BGRA texels, rows <paramref name="sourceWidth"/> texels apart, source-over at
+        /// (<paramref name="destX"/>, <paramref name="destY"/>), clipped to the buffer.
+        /// </summary>
+        private static void ComposeBgra(byte[] source, int sourceWidth, int destX, int destY, int width, int height,
+            Span<byte> destination, int bufferWidth, int bufferHeight, int destStride)
+        {
             if (destStride == 0)
             {
                 destStride = bufferWidth * 4;
@@ -265,19 +295,17 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var x0 = Math.Max(destX, 0);
             var y0 = Math.Max(destY, 0);
-            var x1 = Math.Min(destX + destWidth, bufferWidth);
-            var y1 = Math.Min(destY + destHeight, bufferHeight);
+            var x1 = Math.Min(destX + width, bufferWidth);
+            var y1 = Math.Min(destY + height, bufferHeight);
 
             for (var y = y0; y < y1; y++)
             {
-                var srcY = (y - destY) * source.Height / destHeight;
-                var srcRow = source.Bgra.AsSpan(srcY * source.Width * 4);
+                var srcRow = source.AsSpan((y - destY) * sourceWidth * 4);
                 var dst = destination.Slice(y * destStride + x0 * 4, (x1 - x0) * 4);
 
                 for (var x = x0; x < x1; x++)
                 {
-                    var srcX = (x - destX) * source.Width / destWidth;
-                    var s = srcRow.Slice(srcX * 4, 4);
+                    var s = srcRow.Slice((x - destX) * 4, 4);
                     var sa = s[3];
 
                     if (sa == 0)
