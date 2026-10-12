@@ -1,5 +1,7 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Avalonia.Base.UnitTests.Media.Fonts;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
@@ -167,6 +169,56 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(provider.TryGetDefaultFontFace(out var defaultFace));
             Assert.True(provider.TryGetFamilyFaces(defaultFace.FamilyName, out var faces));
             Assert.NotEmpty(faces);
+        }
+
+        [Fact]
+        public void Family_Faces_Should_List_Each_Position_Of_A_File_Face_Once()
+        {
+            using var provider = new SkiaFontProvider();
+
+            var duplicates = new List<string>();
+
+            foreach (var family in provider.GetFontFamilyNames())
+            {
+                if (!provider.TryGetFamilyFaces(family, out var faces))
+                {
+                    continue;
+                }
+
+                // Held open together, faces of one file share one data owner. A named instance of
+                // a variable font reports its own position's properties, so it is a face of its own.
+                var opened = new List<IFontMemory>();
+                var seen = new HashSet<(MemoryManager<byte>, int, FontWeight, FontStyle, FontStretch)>();
+
+                try
+                {
+                    foreach (var face in faces)
+                    {
+                        if (!face.TryOpenFontMemory(out var fontMemory))
+                        {
+                            continue;
+                        }
+
+                        opened.Add(fontMemory);
+
+                        var sfntFace = Assert.IsType<SfntFace>(fontMemory);
+
+                        Assert.True(sfntFace.TryGetFontFileData(out var data, out _));
+                        Assert.True(MemoryMarshal.TryGetMemoryManager(data, out MemoryManager<byte>? owner));
+
+                        if (!seen.Add((owner!, sfntFace.FaceIndex, face.Weight, face.Style, face.Stretch)))
+                        {
+                            duplicates.Add($"{family}: face {sfntFace.FaceIndex} listed again as {(int)face.Weight} {face.Style} {face.Stretch}");
+                        }
+                    }
+                }
+                finally
+                {
+                    opened.ForEach(x => x.Dispose());
+                }
+            }
+
+            Assert.Empty(duplicates);
         }
 
         [Fact]
