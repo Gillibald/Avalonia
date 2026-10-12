@@ -356,7 +356,7 @@ namespace Avalonia.Android.Platform.Fonts
                     }
                 }
             }
-            else if (TryGetRealFaces(familyName, out var keys))
+            else if (TryGetRealFaces(familyName, true, out var keys))
             {
                 foreach (var key in keys)
                 {
@@ -410,7 +410,7 @@ namespace Avalonia.Android.Platform.Fonts
                 {
                     platformFamily = familyName.ToLowerInvariant();
                 }
-                else if (TryMatchRealFamily(familyName, requestedWeight, italic, out var realMatch) &&
+                else if (TryMatchRealFamily(familyName, requestedWeight, italic, out var realMatch, enumerate: false) &&
                          Covers(new FaceKey(realMatch.FilePath!, realMatch.FaceIndex), codepoint))
                 {
                     match = realMatch;
@@ -797,11 +797,11 @@ namespace Avalonia.Android.Platform.Fonts
         }
 
         private bool TryMatchRealFamily(string familyName, int weight, bool italic,
-            [NotNullWhen(true)] out SystemFontFace? match)
+            [NotNullWhen(true)] out SystemFontFace? match, bool enumerate = true)
         {
             match = null;
 
-            if (!TryGetRealFaces(familyName, out var keys))
+            if (!TryGetRealFaces(familyName, enumerate, out var keys))
             {
                 return false;
             }
@@ -845,11 +845,21 @@ namespace Avalonia.Android.Platform.Fonts
 
         /// <summary>
         /// The faces carrying a real family name: those of the configuration first, then the
-        /// platform's fonts outside it, which are enumerated on the first name the configuration's
-        /// fonts do not carry.
+        /// platform's fonts outside it. Those are enumerated on the first family request for a
+        /// name the configuration's fonts do not carry; character fallback only uses them once
+        /// enumerated, since it receives placeholder names such as <c>$Default</c> for most text.
         /// </summary>
-        private bool TryGetRealFaces(string familyName, [NotNullWhen(true)] out List<FaceKey>? keys) =>
-            _realNames.Value.TryGetValue(familyName, out keys) || _platformNames.Value.TryGetValue(familyName, out keys);
+        private bool TryGetRealFaces(string familyName, bool enumerate, [NotNullWhen(true)] out List<FaceKey>? keys)
+        {
+            if (_realNames.Value.TryGetValue(familyName, out keys))
+            {
+                return true;
+            }
+
+            keys = null;
+
+            return (enumerate || _platformNames.IsValueCreated) && _platformNames.Value.TryGetValue(familyName, out keys);
+        }
 
         /// <summary>
         /// Indexes the platform's fonts the configuration does not name (updated fonts such as
