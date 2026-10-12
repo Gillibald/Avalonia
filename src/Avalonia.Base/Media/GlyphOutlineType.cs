@@ -20,6 +20,12 @@ namespace Avalonia.Media
         Cff,
 
         /// <summary>Variable PostScript outlines (the <c>CFF2</c> table).</summary>
-        Cff2
+        Cff2,
+
+        /// <summary>
+        /// Hierarchical Variable Font outlines (the <c>hvgl</c> table of Apple's system fonts), drawn
+        /// by the system's renderer where it exists (macOS 15.4, iOS 18.4 or later).
+        /// </summary>
+        Hvgl
     }
 }
