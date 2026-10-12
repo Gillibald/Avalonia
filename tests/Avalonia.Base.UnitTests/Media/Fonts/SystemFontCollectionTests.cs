@@ -104,6 +104,21 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
+        public void Unknown_Family_Should_Not_Be_Listed()
+        {
+            // A picker over the collection binds to every listed family; a listed name that does
+            // not resolve fails to create its typeface.
+            var provider = new FakeSystemFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.False(collection.TryGetGlyphTypeface("Unknown", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.DoesNotContain(collection, x => x.Name == "Unknown");
+            Assert.Equal(new[] { "Test Sans" }, collection.Select(x => x.Name));
+        }
+
+        [Fact]
         public void Default_Font_Family_Should_Be_Pinned()
         {
             var provider = new FakeSystemFontProvider();
