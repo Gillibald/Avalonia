@@ -86,21 +86,33 @@ namespace Avalonia.Media.Fonts.Tables.Variation
             // Spec-mandated clamp: the table's domain is exactly [-1, 1]. Anything outside
             // that range is clamped before lookup. fvar normalization already guarantees the
             // range, but a malformed coord (or a future caller passing arbitrary values)
-            // should not extrapolate off the end of the segment list.
+            // should not extrapolate off the end of the segment list. An end the map has an
+            // entry for goes through the scan, which resolves a repeated end (PingFang UI's
+            // weight maps list -1 and +1 twice) the way CoreText does.
             if (normalizedCoordinate <= -1f)
             {
-                return -1f;
-            }
+                if (map[0].From > -1f)
+                {
+                    return -1f;
+                }
 
-            if (normalizedCoordinate >= 1f)
+                normalizedCoordinate = -1f;
+            }
+            else if (normalizedCoordinate >= 1f)
             {
-                return 1f;
+                if (map[map.Length - 1].From < 1f)
+                {
+                    return 1f;
+                }
+
+                normalizedCoordinate = 1f;
             }
 
-            // Segment maps are sorted ascending by fromCoordinate. Find the surrounding
-            // entries and linearly interpolate. The axis count is small (typically 3..15
-            // entries) so a linear scan is faster than a binary search and avoids the
-            // overhead of computing midpoints.
+            // Find the first entry at or above the coordinate and interpolate from the entry
+            // before it, in table order. The spec requires ascending fromCoordinates; maps that
+            // break it (PingFang UI Display) are scanned as stored, which matches CoreText. The
+            // axis count is small (typically 3..15 entries) so a linear scan is faster than a
+            // binary search and avoids the overhead of computing midpoints.
             for (var i = 1; i < map.Length; i++)
             {
                 var hi = map[i];
@@ -235,30 +247,17 @@ namespace Avalonia.Media.Fonts.Tables.Variation
                     }
 
                     var entries = ImmutableArray.CreateBuilder<SegmentMapEntry>(positionMapCount);
-                    var monotonic = true;
-                    var previousFrom = float.NegativeInfinity;
 
+                    // Entries stay in table order, ascending or not: Remap scans them as stored.
                     for (var j = 0; j < positionMapCount; j++)
                     {
                         var from = reader.ReadF2dot14();
                         var to = reader.ReadF2dot14();
 
-                        // Remap's interpolation scan assumes ascending fromCoordinates; a
-                        // descending entry would make it return values from the wrong segment.
-                        // Equal fromCoordinates (degenerate segments) are tolerated — Remap
-                        // already handles those explicitly.
-                        if (from < previousFrom)
-                        {
-                            monotonic = false;
-                        }
-
-                        previousFrom = from;
                         entries.Add(new SegmentMapEntry(from, to));
                     }
 
-                    // A non-monotonic axis degrades to identity (empty map). Keep the entries
-                    // consumed above either way so the reader stays aligned for the next axis.
-                    mapsBuilder.Add(monotonic ? entries.MoveToImmutable() : ImmutableArray<SegmentMapEntry>.Empty);
+                    mapsBuilder.Add(entries.MoveToImmutable());
                 }
             }
             catch
