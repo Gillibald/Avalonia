@@ -188,9 +188,11 @@ namespace Avalonia.Android.Platform.Fonts
 
         /// <summary>
         /// Gets the configured family names and aliases that have at least one existing font
-        /// file, each family followed by its aliases. Real family names of the font files resolve
-        /// through <see cref="TryMatchFamily"/> but are not listed: the configuration names are
-        /// the ones Android exposes to applications.
+        /// file, each family followed by its aliases, then the real family names of the faces in
+        /// use that no configured name or alias already lists, in configuration order. Generic
+        /// names and aliases stay listed, since they are the names Android exposes to
+        /// applications; other names of a face (localized names, the legacy family name of a
+        /// single weight) resolve without being listed.
         /// </summary>
         public IReadOnlyList<string> GetFamilyNames() => _familyNames.Value;
 
@@ -614,17 +616,7 @@ namespace Avalonia.Android.Platform.Fonts
                 }
 
                 // Without configured names, the real family names are the only ones there are.
-                var realNames = _realNames.Value;
-                var seen = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
-
-                foreach (var key in _allFaces)
-                {
-                    if (TryGetFaceInfo(key, out var info) && realNames.ContainsKey(info.FamilyName) &&
-                        seen.Add(info.FamilyName))
-                    {
-                        names.Add(info.FamilyName);
-                    }
-                }
+                AddRealFamilyNames(names, inUseOnly: false);
 
                 return names;
             }
@@ -647,7 +639,34 @@ namespace Avalonia.Android.Platform.Fonts
                 }
             }
 
+            AddRealFamilyNames(names, inUseOnly: true);
+
             return names;
+        }
+
+        /// <summary>
+        /// Appends the family name each face reports, once per name and only when the name
+        /// resolves; faces only families marked ignored hold are skipped when
+        /// <paramref name="inUseOnly"/> is set. Reads every face's name table on the first call.
+        /// </summary>
+        private void AddRealFamilyNames(List<string> names, bool inUseOnly)
+        {
+            var realNames = _realNames.Value;
+            var seen = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var key in _allFaces)
+            {
+                if (inUseOnly && !_facesInUse.Contains(key))
+                {
+                    continue;
+                }
+
+                if (TryGetFaceInfo(key, out var info) && realNames.ContainsKey(info.FamilyName) &&
+                    seen.Add(info.FamilyName))
+                {
+                    names.Add(info.FamilyName);
+                }
+            }
         }
 
         private bool HasExistingEntry(Family family)
