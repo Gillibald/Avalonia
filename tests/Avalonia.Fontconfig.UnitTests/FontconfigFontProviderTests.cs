@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using Avalonia.Base.UnitTests.Media.Fonts;
@@ -121,6 +122,97 @@ namespace Avalonia.Fontconfig.UnitTests
 
             // Designed weight of the matched face, not a simulation.
             Assert.Equal(FontWeight.Bold, bold.Weight);
+        }
+
+        [LinuxFact]
+        public void Matches_Should_Report_Whether_The_Face_They_Load_Is_Bold_Or_Slanted()
+        {
+            using var provider = new FontconfigFontProvider();
+
+            var mismatches = new List<string>();
+
+            foreach (var family in provider.GetFontFamilyNames())
+            {
+                foreach (var (style, weight) in s_requests)
+                {
+                    if (provider.TryMatchFamily(family, style, weight, FontStretch.Normal, out var match))
+                    {
+                        CheckDesignedStyle(match, $"family {family} {style} {weight}", mismatches);
+                    }
+
+                    if (provider.TryMatchCharacter('a', style, weight, FontStretch.Normal, family, null, out match))
+                    {
+                        CheckDesignedStyle(match, $"character in {family} {style} {weight}", mismatches);
+                    }
+                }
+            }
+
+            Assert.Empty(mismatches);
+        }
+
+        [LinuxFact]
+        public void Family_Faces_Should_Report_Whether_The_Face_They_Load_Is_Bold_Or_Slanted()
+        {
+            using var provider = new FontconfigFontProvider();
+
+            var mismatches = new List<string>();
+
+            foreach (var family in provider.GetFontFamilyNames())
+            {
+                if (!provider.TryGetFamilyFaces(family, out var faces))
+                {
+                    continue;
+                }
+
+                foreach (var face in faces)
+                {
+                    CheckDesignedStyle(face, $"face of {family}", mismatches);
+                }
+            }
+
+            Assert.Empty(mismatches);
+        }
+
+        private static readonly (FontStyle Style, FontWeight Weight)[] s_requests =
+        {
+            (FontStyle.Normal, FontWeight.Normal),
+            (FontStyle.Normal, FontWeight.Bold),
+            (FontStyle.Italic, FontWeight.Normal),
+            (FontStyle.Italic, FontWeight.Bold),
+        };
+
+        /// <summary>
+        /// The font system simulates bold and oblique from the properties a descriptor reports, so
+        /// they must be those of the face the descriptor loads: a descriptor reporting bold for a
+        /// regular face leaves the text regular.
+        /// </summary>
+        private static void CheckDesignedStyle(SystemFontFace face, string request, List<string> mismatches)
+        {
+            if (!face.TryOpenFontMemory(out var fontMemory))
+            {
+                // Fonts without SFNT tables (Type 1) do not load through the managed loader.
+                return;
+            }
+
+            var glyphTypeface = new GlyphTypeface(fontMemory);
+
+            try
+            {
+                var reportedBold = face.Weight >= FontWeight.SemiBold;
+                var loadedBold = glyphTypeface.Weight >= FontWeight.SemiBold;
+                var reportedSlanted = face.Style != FontStyle.Normal;
+                var loadedSlanted = glyphTypeface.Style != FontStyle.Normal;
+
+                if (reportedBold != loadedBold || reportedSlanted != loadedSlanted)
+                {
+                    mismatches.Add($"{request}: reported {(int)face.Weight} {face.Style}, " +
+                        $"{face.FilePath}#{face.FaceIndex} is {(int)glyphTypeface.Weight} {glyphTypeface.Style}");
+                }
+            }
+            finally
+            {
+                glyphTypeface.Dispose();
+            }
         }
     }
 
