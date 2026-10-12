@@ -258,6 +258,15 @@ namespace Avalonia.Fontconfig.UnitTests
         }
     }
 
+    public class FontconfigFontProviderMemoryTests
+    {
+        [LinuxFact]
+        public void Every_System_Face_Should_Map_Its_Font_File_Once()
+        {
+            SystemFontMemoryGuard.AssertOneMappedDataPerFile(() => new FontconfigFontProvider());
+        }
+    }
+
     public class FcMappingTests
     {
         [Theory]

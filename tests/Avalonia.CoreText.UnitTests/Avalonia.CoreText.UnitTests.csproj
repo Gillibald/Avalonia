@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Avalonia.Base.UnitTests\Media\Fonts\SystemFontProviderContractTests.cs" Link="SystemFontProviderContractTests.cs" />
+    <Compile Include="..\Avalonia.Base.UnitTests\Media\Fonts\SystemFontMemoryGuard.cs" Link="SystemFontMemoryGuard.cs" />
     <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\Inter-Regular.ttf" LogicalName="Inter-Regular.ttf" />
     <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\NotoMono-Regular.ttf" LogicalName="NotoMono-Regular.ttf" />
     <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\AdobeVFPrototype-Subset.otf" LogicalName="AdobeVFPrototype-Subset.otf" />

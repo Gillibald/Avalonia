@@ -210,6 +210,15 @@ namespace Avalonia.DirectWrite.UnitTests
         }
     }
 
+    public class DirectWriteFontProviderMemoryTests
+    {
+        [Win32Fact]
+        public void Every_System_Face_Should_Map_Its_Font_File_Once()
+        {
+            SystemFontMemoryGuard.AssertOneMappedDataPerFile(() => new DirectWriteFontProvider());
+        }
+    }
+
     public class DirectWriteProviderContractTests : SystemFontProviderContractTests
     {
         protected override bool IsSupported => OperatingSystem.IsWindows();
