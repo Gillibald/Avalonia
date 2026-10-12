@@ -24,7 +24,7 @@ namespace Avalonia.Skia.Metal;
 /// context gives up the references of the images Skia never released.
 /// </para>
 /// </remarks>
-internal sealed unsafe class MetalUpdatableTextureFeature : ISkiaUpdatableTextureFeature, IDisposable
+internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatableTextureFeature, IDisposable
 {
     private const string ObjCLibrary = "/usr/lib/libobjc.A.dylib";
 
@@ -198,11 +198,11 @@ internal sealed unsafe class MetalUpdatableTextureFeature : ISkiaUpdatableTextur
     private static void Release(IntPtr handle) =>
         ((delegate* unmanaged<IntPtr, IntPtr, void>)s_msgSend)(handle, s_releaseSelector);
 
-    [DllImport(ObjCLibrary)]
-    private static extern IntPtr objc_getClass(string name);
+    [LibraryImport(ObjCLibrary, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr objc_getClass(string name);
 
-    [DllImport(ObjCLibrary)]
-    private static extern IntPtr sel_registerName(string name);
+    [LibraryImport(ObjCLibrary, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial IntPtr sel_registerName(string name);
 
     /// <summary>A region of a texture: origin x, y, z and size width, height, depth.</summary>
     [StructLayout(LayoutKind.Sequential)]
