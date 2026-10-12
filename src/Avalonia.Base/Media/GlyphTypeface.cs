@@ -1226,6 +1226,39 @@ namespace Avalonia.Media
             }
         }
 
+        /// <summary>
+        /// Whether one of the languages the font declares in its <c>meta</c> table (<c>dlng</c> or
+        /// <c>slng</c>) is written in the script <paramref name="scriptSubtag"/> (an ISO 15924 subtag
+        /// such as <c>"Jpan"</c> or <c>"Hant"</c>); a declared <c>"Hani"</c> covers every Han writing
+        /// system.
+        /// </summary>
+        /// <returns><c>null</c> when the font declares no languages.</returns>
+        internal bool? DeclaresWritingSystem(string scriptSubtag)
+        {
+            if (_designLanguages.Length == 0 && _supportedLanguages.Length == 0)
+            {
+                return null;
+            }
+
+            return Declares(_designLanguages, scriptSubtag) || Declares(_supportedLanguages, scriptSubtag);
+
+            static bool Declares(string[] tags, string scriptSubtag)
+            {
+                foreach (var tag in tags)
+                {
+                    var subtag = Fonts.Bcp47ScriptResolver.GetScriptSubtagOfTag(tag);
+
+                    if (subtag == scriptSubtag ||
+                        (subtag == "Hani" && scriptSubtag is "Hans" or "Hant" or "Jpan" or "Kore"))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
+
         private static bool IsBcp47PrefixMatch(string tag, string cultureName)
         {
             // Either side may be the narrower one — match if one is a subtag-prefix of the other.

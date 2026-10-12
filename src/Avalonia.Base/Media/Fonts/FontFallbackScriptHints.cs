@@ -126,6 +126,73 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
+        /// How <paramref name="candidate"/> relates to the writing system a fallback request for
+        /// <paramref name="codepoint"/> in <paramref name="culture"/> asks for. Han text is asked
+        /// for in the culture's writing system (Japanese, Korean, Simplified or Traditional
+        /// Chinese), Hangul in Korean and kana in Japanese; a face matches when it declares that
+        /// writing system, in its <c>meta</c> table or, without one, through its OS/2 code pages.
+        /// Text in any other script asks for a face that supports the script.
+        /// </summary>
+        public static WritingSystemMatch MatchWritingSystem(GlyphTypeface candidate, Codepoint codepoint, CultureInfo? culture)
+        {
+            var script = codepoint.Script;
+
+            var subtag = script switch
+            {
+                Script.Hangul => "Kore",
+                Script.Hiragana or Script.Katakana or Script.KatakanaOrHiragana => "Jpan",
+                Script.Han => GetHanWritingSystem(culture),
+                _ => null,
+            };
+
+            if (subtag is null)
+            {
+                return candidate.SupportsScript(RefineWithCulture(codepoint, culture))
+                    ? WritingSystemMatch.Match
+                    : WritingSystemMatch.Mismatch;
+            }
+
+            if (candidate.DeclaresWritingSystem(subtag) is { } declared)
+            {
+                return declared ? WritingSystemMatch.Match : WritingSystemMatch.Mismatch;
+            }
+
+            const FontCodePageCoverage hanCodePages = FontCodePageCoverage.JapaneseJis |
+                                                      FontCodePageCoverage.KoreanWansung |
+                                                      FontCodePageCoverage.KoreanJohab |
+                                                      FontCodePageCoverage.ChineseSimplified |
+                                                      FontCodePageCoverage.ChineseTraditional;
+
+            var coverage = candidate.CodePageCoverage & hanCodePages;
+
+            if (coverage == FontCodePageCoverage.None)
+            {
+                return WritingSystemMatch.Unknown;
+            }
+
+            var requested = subtag switch
+            {
+                "Jpan" => FontCodePageCoverage.JapaneseJis,
+                "Kore" => FontCodePageCoverage.KoreanWansung | FontCodePageCoverage.KoreanJohab,
+                "Hans" => FontCodePageCoverage.ChineseSimplified,
+                _ => FontCodePageCoverage.ChineseTraditional,
+            };
+
+            return (coverage & requested) != 0 ? WritingSystemMatch.Match : WritingSystemMatch.Mismatch;
+        }
+
+        /// <summary>The Han writing system <paramref name="culture"/> writes in, if it has one.</summary>
+        private static string? GetHanWritingSystem(CultureInfo? culture)
+            => Bcp47ScriptResolver.GetScriptSubtag(culture) switch
+            {
+                "Jpan" => "Jpan",
+                "Kore" => "Kore",
+                "Hans" => "Hans",
+                "Hant" => "Hant",
+                _ => null,
+            };
+
+        /// <summary>
         /// Returns a representative codepoint for the script that can be used to probe a
         /// candidate font's character-to-glyph map. Returns 0 for scripts without a probe
         /// (in which case the script is considered locale-insensitive).
@@ -245,5 +312,18 @@ namespace Avalonia.Media.Fonts
                 default: primary = default; secondary = default; return false;
             }
         }
+    }
+
+    /// <summary>How a face relates to the writing system a fallback request asks for.</summary>
+    internal enum WritingSystemMatch
+    {
+        /// <summary>The face declares no writing system the request could be compared with.</summary>
+        Unknown,
+
+        /// <summary>The face declares or supports the requested writing system.</summary>
+        Match,
+
+        /// <summary>The face declares only other writing systems, or lacks the requested script.</summary>
+        Mismatch,
     }
 }

@@ -164,7 +164,11 @@ namespace Avalonia.Media.Fonts
             }
 
             // --- Tier C: deterministic cache sweep (non last-resort), culture-scored ---
-            if (TryMatchInCache(codepoint, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: false, out var bestGt, out var bestFamilyName))
+            // Only faces for the requested writing system answer here: a loaded face that merely maps
+            // the codepoint (a Korean face for Japanese Han) waits until the platform, which places
+            // text by language, had its turn.
+            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: false,
+                    writingSystemOnly: true, out var bestGt, out var bestFamilyName))
             {
                 // The sweep returns the nearest cached key for the winning family. A codepoint the
                 // bucket family can't cover (e.g. the Simplified-only 华 when the bucket is a JP font)
@@ -214,8 +218,19 @@ namespace Avalonia.Media.Fonts
                 }
             }
 
+            // --- Coverage sweep: a loaded face for another writing system still beats no glyph ---
+            // Not recorded as the bucket's family, so a later request asks the platform again.
+            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: false,
+                    writingSystemOnly: false, out var coveringGt, out var coveringFamilyName))
+            {
+                coveringGt = PreferExactKey(coveringGt, key, codepoint, culture, shapingScript);
+                match = BuildTypefaceWithSynthesis(coveringGt, coveringFamilyName, key);
+                return true;
+            }
+
             // --- Tier E: last-resort cache sweep ---
-            if (TryMatchInCache(codepoint, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: true, out var lrGt, out var lrFamilyName))
+            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: true,
+                    writingSystemOnly: false, out var lrGt, out var lrFamilyName))
             {
                 match = BuildTypefaceWithSynthesis(lrGt, lrFamilyName, key);
                 return true;
@@ -225,7 +240,7 @@ namespace Avalonia.Media.Fonts
         }
 
         private bool TryMatchInCache(
-            int codepoint,
+            Codepoint codepoint,
             FontCollectionKey key,
             string? skipFamilyName,
             CultureInfo? culture,
@@ -233,6 +248,7 @@ namespace Avalonia.Media.Fonts
             Script refinedScript,
             Script shapingScript,
             bool isLastResort,
+            bool writingSystemOnly,
             [NotNullWhen(true)] out GlyphTypeface? bestGlyphTypeface,
             [NotNullWhen(true)] out string? bestFamilyName)
         {
@@ -257,7 +273,13 @@ namespace Avalonia.Media.Fonts
                     continue;
                 }
 
-                if (!TryGetCoveringMatch(glyphTypefaces, key, codepoint, isLastResort, shapingScript, out var candidate))
+                if (!TryGetCoveringMatch(glyphTypefaces, key, (int)codepoint.Value, isLastResort, shapingScript, out var candidate))
+                {
+                    continue;
+                }
+
+                if (writingSystemOnly &&
+                    FontFallbackScriptHints.MatchWritingSystem(candidate, codepoint, culture) == WritingSystemMatch.Mismatch)
                 {
                     continue;
                 }

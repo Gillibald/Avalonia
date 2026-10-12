@@ -29,11 +29,30 @@ namespace Avalonia.Media.Fonts
                 return null;
             }
 
-            var name = culture.Name;
+            return GetScriptSubtagOfTag(culture.Name);
+        }
 
+        /// <summary>
+        /// Resolves the ISO 15924 script subtag of a BCP-47 tag (<c>"ja"</c>, <c>"zh-Hant"</c>), or
+        /// of a tag that is a script subtag alone (<c>"Hani"</c>), as the OpenType <c>meta</c> table's
+        /// language lists allow.
+        /// </summary>
+        public static string? GetScriptSubtagOfTag(string? name)
+        {
             if (string.IsNullOrEmpty(name))
             {
                 return null;
+            }
+
+            if (name.Length == 4 && IsAllAsciiLetters(name.AsSpan()))
+            {
+                return string.Create(4, name, static (buffer, tag) =>
+                {
+                    buffer[0] = char.ToUpperInvariant(tag[0]);
+                    buffer[1] = char.ToLowerInvariant(tag[1]);
+                    buffer[2] = char.ToLowerInvariant(tag[2]);
+                    buffer[3] = char.ToLowerInvariant(tag[3]);
+                });
             }
 
             // 1. Explicit script subtag wins (BCP-47 second subtag, four letters).
