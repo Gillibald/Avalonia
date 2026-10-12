@@ -230,23 +230,28 @@ namespace Avalonia.Skia.UnitTests.Media
 
             foreach (var family in provider.GetFontFamilyNames())
             {
-                // Skia's own faces of the family whose data the managed loader can read; fonts
-                // without OpenType tables (Type 1 fonts listed by fontconfig) do not count.
-                var expected = 0;
+                // The distinct file faces of Skia's own typefaces of the family whose data the
+                // managed loader can read; fonts without OpenType tables (Type 1 fonts listed by
+                // fontconfig) do not count, and simulated variants of one face count once.
+                var fileFaces = new HashSet<(long, string, int)>();
 
                 using (var styleSet = SKFontManager.Default.GetFontStyles(family))
                 {
                     for (var i = 0; i < styleSet.Count; i++)
                     {
                         using var typeface = styleSet.CreateTypeface(i);
-                        using var stream = typeface?.OpenStream();
 
-                        if (stream is not null && IsOpenTypeData(stream))
+                        var ttcIndex = 0;
+                        using var stream = typeface?.OpenStream(out ttcIndex);
+
+                        if (stream is not null && IsOpenTypeData(stream, out var head))
                         {
-                            expected++;
+                            fileFaces.Add((stream.Length, head, ttcIndex));
                         }
                     }
                 }
+
+                var expected = fileFaces.Count;
 
                 var opened = 0;
 
@@ -270,14 +275,18 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.Empty(failures);
 
-            static bool IsOpenTypeData(SKStreamAsset stream)
+            static bool IsOpenTypeData(SKStreamAsset stream, out string head)
             {
-                var header = new byte[4];
+                var header = new byte[(int)Math.Min(stream.Length, 4096)];
 
-                if (stream.Read(header, 4) != 4)
+                head = string.Empty;
+
+                if (header.Length < 4 || stream.Read(header, header.Length) != header.Length)
                 {
                     return false;
                 }
+
+                head = Convert.ToHexString(header);
 
                 var tag = (uint)(header[0] << 24 | header[1] << 16 | header[2] << 8 | header[3]);
 
