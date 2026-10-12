@@ -306,6 +306,64 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        /// <summary>
+        /// A colour page that grows keeps its texture: the context uploads only what the atlas
+        /// wrote, not the whole page again, and the rows the page does not use yet read as clear.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(UpdatableTextureContexts))]
+        public void A_Growing_Colour_Page_Keeps_Its_Texture_And_Uploads_Only_What_Was_Written(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+
+            Assert.SkipWhen(SkiaUpdatableTextures.Get(gpu.GrContext) is null, $"{backend} has no updatable textures");
+
+            var atlas = new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba);
+            var random = new Random(31);
+            GlyphAtlasSlot slot = default;
+            var key = 0;
+
+            void Add()
+            {
+                Assert.True(atlas.TryAdd(new GlyphMaskKey((ushort)key++, 200, 0, GlyphMaskMode.Antialiased),
+                    GlyphMaskAtlasTests.CreateColorMask(random, 48, 48), atlas.Tick(), out slot));
+            }
+
+            Add();
+
+            var page = slot.Page!;
+            var image = PageImage(gpu, page);
+            var created = DrawingContextImpl.PageImagesCreatedOnThread;
+            var heightBefore = page.Height;
+            var bytes = DrawingContextImpl.PageImageBytesOnThread;
+            var grew = false;
+
+            while (!grew && key < 2000)
+            {
+                Add();
+
+                Assert.Same(page, slot.Page);
+
+                grew = page.Height > heightBefore;
+
+                // A replaced texture's image is disposed: compare references only.
+                Assert.True(ReferenceEquals(image, PageImage(gpu, page)),
+                    $"the page texture was replaced at {page.Height} rows");
+            }
+
+            Assert.True(grew, "the page did not grow");
+            Assert.Equal(created, DrawingContextImpl.PageImagesCreatedOnThread);
+            Assert.True(DrawingContextImpl.PageImageBytesOnThread - bytes < (long)page.RowBytes * heightBefore,
+                "the page was uploaded whole again");
+
+            var drawn = ReadRgbaImage(gpu, image, GlyphMaskAtlas.PageWidth, image.Height);
+
+            Assert.Equal(page.Pixels.AsSpan(0, page.RowBytes * page.Height).ToArray(),
+                drawn.AsSpan(0, page.RowBytes * page.Height).ToArray());
+            Assert.True(drawn.AsSpan(page.RowBytes * page.Height).IndexOfAnyExcept((byte)0) < 0,
+                "rows beyond the page are not clear");
+        }
+
         private static SKImage PageImage(GpuTestContext gpu, GlyphAtlasPage page)
         {
             using var surface = SKSurface.Create(gpu.GrContext, false,
