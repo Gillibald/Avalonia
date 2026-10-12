@@ -114,12 +114,27 @@ namespace Avalonia.Skia
 
             var result = new List<SystemFontFace>(styleSet.Count);
 
+            // Skia lists simulated variants (DirectWrite) and the named instances of a variable font
+            // (FreeType ports) as typefaces of their own, while their descriptors load the same
+            // face of the same file with the same designed properties: each face is listed once,
+            // by its first typeface.
+            var listed = new HashSet<(FontContentKey, int)>();
+
             for (var i = 0; i < styleSet.Count; i++)
             {
-                if (styleSet.CreateTypeface(i) is { } skTypeface)
+                if (styleSet.CreateTypeface(i) is not { } skTypeface)
                 {
-                    result.Add(SkiaSystemFontFace.Create(skTypeface));
+                    continue;
                 }
+
+                if (SkiaSystemFontFace.TryGetFileFace(skTypeface, out var fileFace) && !listed.Add(fileFace))
+                {
+                    skTypeface.Dispose();
+
+                    continue;
+                }
+
+                result.Add(SkiaSystemFontFace.Create(skTypeface));
             }
 
             if (result.Count == 0)
@@ -286,6 +301,33 @@ namespace Avalonia.Skia
             /// instance's weight or slant.
             /// </summary>
             private static int GetFaceIndex(int ttcIndex) => ttcIndex & 0xFFFF;
+
+            /// <summary>
+            /// Identifies the face of a font file a typeface loads: the content key of its stream
+            /// and the collection face index.
+            /// </summary>
+            public static bool TryGetFileFace(SKTypeface skTypeface, out (FontContentKey Key, int Index) fileFace)
+            {
+                fileFace = default;
+
+                try
+                {
+                    using var stream = skTypeface.OpenStream(out var ttcIndex);
+
+                    if (stream is null || stream.Length <= 0 || !TryCreateContentKey(stream, out var key))
+                    {
+                        return false;
+                    }
+
+                    fileFace = (key, GetFaceIndex(ttcIndex));
+
+                    return true;
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
 
             private static unsafe bool TryCreateContentKey(SKStreamAsset stream, out FontContentKey key)
             {
