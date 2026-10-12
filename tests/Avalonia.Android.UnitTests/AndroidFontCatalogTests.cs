@@ -256,9 +256,53 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
-        public void Real_Family_Names_Are_Not_Listed()
+        public void Real_Family_Names_Of_Faces_In_Use_Are_Listed_Once_After_The_Configured_Names()
         {
-            Assert.DoesNotContain("Inter", Vendor().GetFamilyNames());
+            var names = Vendor().GetFamilyNames();
+
+            Assert.Equal(
+                new[]
+                {
+                    "sans-serif", "sans-serif-medium", "arial", "serif", "serif-bold", "times new roman", "monospace",
+                    "vendor-ui", "Inter", "Noto Sans", "Noto Mono", "Noto Sans Arabic", "Noto Sans Hebrew",
+                    "Noto Sans Tamil", "Noto Sans SC", "Noto Sans JP", "Twitter Color Emoji",
+                },
+                names);
+        }
+
+        [Fact]
+        public void Real_Family_Names_Equal_To_A_Configured_Name_Are_Listed_Once()
+        {
+            var catalog = FromXml(
+                "<family name=\"sans-serif\"><font>NotoMono-Regular.ttf</font></family>" +
+                "<alias name=\"noto mono\" to=\"sans-serif\" />" +
+                "<family name=\"inter\"><font>Inter-Regular.ttf</font></family>");
+
+            Assert.Equal(new[] { "sans-serif", "noto mono", "inter" }, catalog.GetFamilyNames());
+        }
+
+        [Fact]
+        public void Real_Family_Names_Of_Ignored_Faces_Resolve_But_Are_Not_Listed()
+        {
+            var catalog = FromXml(
+                "<family name=\"sans-serif\"><font>NotoMono-Regular.ttf</font></family>" +
+                "<family lang=\"und-Taml\" ignore=\"true\"><font>NotoSansTamil-Regular.ttf</font></family>");
+
+            Assert.Equal(new[] { "sans-serif", "Noto Mono" }, catalog.GetFamilyNames());
+            Assert.Equal("NotoSansTamil-Regular.ttf#0", Describe(MatchFamily(catalog, "Noto Sans Tamil")));
+        }
+
+        [Fact]
+        public void Listed_Real_Family_Names_Resolve_To_Their_Faces()
+        {
+            var catalog = Vendor();
+
+            foreach (var name in catalog.GetFamilyNames())
+            {
+                Assert.True(catalog.TryGetFamilyFaces(name, out var faces), name);
+                Assert.NotEmpty(faces);
+                Assert.True(catalog.TryMatchFamily(name, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _), name);
+            }
         }
 
         [Fact]
