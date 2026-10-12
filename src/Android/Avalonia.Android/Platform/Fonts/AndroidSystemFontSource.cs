@@ -13,6 +13,10 @@ namespace Avalonia.Android.Platform.Fonts
         /// <summary>
         /// Gets every installed font face.
         /// </summary>
+        /// <remarks>
+        /// From API 31 the platform loads every font it lists and keeps it mapped for the life of
+        /// the process, so the list is read only for names nothing else resolves.
+        /// </remarks>
         public abstract IReadOnlyList<AndroidSystemFont> GetFonts();
 
         /// <summary>

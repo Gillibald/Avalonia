@@ -47,6 +47,8 @@ namespace Avalonia.Android.Platform.Fonts
         private readonly ConcurrentDictionary<string, bool> _fileExists = new(StringComparer.Ordinal);
         private readonly Lazy<IReadOnlyList<string>> _familyNames;
         private readonly Lazy<Dictionary<string, List<FaceKey>>> _realNames;
+        private readonly Lazy<Dictionary<string, List<FaceKey>>> _platformNames;
+        private readonly HashSet<FaceKey> _configuredFaces;
         private readonly AndroidSystemFontSource? _systemFonts;
         private readonly ConcurrentDictionary<string, string> _languageTags = new(StringComparer.Ordinal);
 
@@ -118,8 +120,11 @@ namespace Avalonia.Android.Platform.Fonts
 
             IsPlatformOnly = main.Families.Count == 0 && systemFonts != null;
 
+            _configuredFaces = seenFaces;
             _familyNames = new Lazy<IReadOnlyList<string>>(CreateFamilyNames, LazyThreadSafetyMode.ExecutionAndPublication);
-            _realNames = new Lazy<Dictionary<string, List<FaceKey>>>(CreateRealNameIndex,
+            _realNames = new Lazy<Dictionary<string, List<FaceKey>>>(() => CreateNameIndex(_allFaces),
+                LazyThreadSafetyMode.ExecutionAndPublication);
+            _platformNames = new Lazy<Dictionary<string, List<FaceKey>>>(CreatePlatformNameIndex,
                 LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
@@ -131,9 +136,10 @@ namespace Avalonia.Android.Platform.Fonts
         /// <summary>
         /// Builds the catalog from the first readable main configuration file and every readable
         /// addition, layered with the platform's character fallback where the platform provides
-        /// it (API 29 and later). The platform's font list is read only when no configuration is
-        /// readable: enumerating makes the platform map every installed font file into the
-        /// process for the rest of its life.
+        /// it (API 29 and later). The platform's font list is read up front only when no
+        /// configuration is readable, and otherwise on the first family name neither the
+        /// configuration nor its fonts resolve: enumerating makes the platform map every installed
+        /// font file into the process for the rest of its life.
         /// </summary>
         public static AndroidFontCatalog Create(AndroidFontConfiguration configuration,
             AndroidSystemFontSource? systemFonts)
@@ -350,7 +356,7 @@ namespace Avalonia.Android.Platform.Fonts
                     }
                 }
             }
-            else if (_realNames.Value.TryGetValue(familyName, out var keys))
+            else if (TryGetRealFaces(familyName, out var keys))
             {
                 foreach (var key in keys)
                 {
@@ -795,7 +801,7 @@ namespace Avalonia.Android.Platform.Fonts
         {
             match = null;
 
-            if (!_realNames.Value.TryGetValue(familyName, out var keys))
+            if (!TryGetRealFaces(familyName, out var keys))
             {
                 return false;
             }
@@ -838,17 +844,59 @@ namespace Avalonia.Android.Platform.Fonts
         }
 
         /// <summary>
-        /// Indexes every face the configuration names by the family names in its name table. Runs
-        /// once, on the first request for a name the configuration does not declare; the faces of
-        /// one file are read while they share a single mapping of it.
+        /// The faces carrying a real family name: those of the configuration first, then the
+        /// platform's fonts outside it, which are enumerated on the first name the configuration's
+        /// fonts do not carry.
         /// </summary>
-        private Dictionary<string, List<FaceKey>> CreateRealNameIndex()
+        private bool TryGetRealFaces(string familyName, [NotNullWhen(true)] out List<FaceKey>? keys) =>
+            _realNames.Value.TryGetValue(familyName, out keys) || _platformNames.Value.TryGetValue(familyName, out keys);
+
+        /// <summary>
+        /// Indexes the platform's fonts the configuration does not name (updated fonts such as
+        /// Google Sans under <c>/data/fonts/files</c>) by their real family names. The platform
+        /// list is read once; a failure leaves the index empty.
+        /// </summary>
+        private Dictionary<string, List<FaceKey>> CreatePlatformNameIndex()
+        {
+            if (_systemFonts is null || IsPlatformOnly)
+            {
+                return new Dictionary<string, List<FaceKey>>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            var faces = new List<FaceKey>();
+            var seen = new HashSet<FaceKey>(_configuredFaces);
+
+            try
+            {
+                foreach (var font in _systemFonts.GetFonts())
+                {
+                    var key = new FaceKey(font.Path, font.Index);
+
+                    if (seen.Add(key))
+                    {
+                        faces.Add(key);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                faces.Clear();
+            }
+
+            return CreateNameIndex(faces);
+        }
+
+        /// <summary>
+        /// Indexes faces by the family names in their name tables; the faces of one file are read
+        /// while they share a single mapping of it, which is released afterwards.
+        /// </summary>
+        private Dictionary<string, List<FaceKey>> CreateNameIndex(IEnumerable<FaceKey> faces)
         {
             var index = new Dictionary<string, List<FaceKey>>(StringComparer.OrdinalIgnoreCase);
             var byPath = new Dictionary<string, List<int>>(StringComparer.Ordinal);
             var paths = new List<string>();
 
-            foreach (var key in GetIndexedFaces())
+            foreach (var key in faces)
             {
                 if (!byPath.TryGetValue(key.Path, out var indices))
                 {
@@ -929,8 +977,6 @@ namespace Avalonia.Android.Platform.Fonts
         }
 
         private bool IsInUse(FaceKey key) => !_ignoredFaces.Contains(key) || _facesInUse.Contains(key);
-
-        private IEnumerable<FaceKey> GetIndexedFaces() => _allFaces;
 
         private bool TryGetFaceInfo(FaceKey key, [NotNullWhen(true)] out FaceInfo? info)
         {
