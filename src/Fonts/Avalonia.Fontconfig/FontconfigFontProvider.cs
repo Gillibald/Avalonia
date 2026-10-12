@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
@@ -29,6 +30,9 @@ namespace Avalonia.Media.Fonts
         private static bool s_hasBindingQuery = true;
 
         private readonly object _lock = new();
+
+        // Designed properties of the faces whose patterns do not report them, read once per face.
+        private readonly ConcurrentDictionary<(string File, int Index), DesignedStyle?> _designedStyles = new();
         private IntPtr _config;
         private bool _initialized;
         private bool _disposed;
@@ -179,6 +183,7 @@ namespace Avalonia.Media.Fonts
                 FcNative.FcObjectSetAdd(objectSet, FcNative.File);
                 FcNative.FcObjectSetAdd(objectSet, FcNative.Index);
                 FcNative.FcObjectSetAdd(objectSet, FcNative.PostScriptName);
+                FcNative.FcObjectSetAdd(objectSet, FcNative.Variable);
 
                 var fontSet = FcNative.FcFontList(config, pattern, objectSet);
 
@@ -436,7 +441,7 @@ namespace Avalonia.Media.Fonts
             return false;
         }
 
-        private static SystemFontFace? CreateFontFace(IntPtr pattern)
+        private SystemFontFace? CreateFontFace(IntPtr pattern)
         {
             var file = FcNative.GetString(pattern, FcNative.File, 0);
             var family = FcNative.GetString(pattern, FcNative.Family, 0);
@@ -452,19 +457,78 @@ namespace Avalonia.Media.Fonts
 
             // Named instances of variable fonts carry the instance number in the upper bits of the
             // index; mask it off so default instances are loaded until variation support lands.
-            var index = (FcNative.GetInteger(pattern, FcNative.Index) ?? 0) & 0xFFFF;
+            var rawIndex = FcNative.GetInteger(pattern, FcNative.Index) ?? 0;
+            var index = rawIndex & 0xFFFF;
+
+            var style = FcMapping.SlantToFontStyle(slant);
+            var fontWeight = (FontWeight)FcMapping.WeightToOpenType(weight);
+            var stretch = FcMapping.WidthToFontStretch(width);
+
+            // The font system simulates bold and oblique from the descriptor's properties, so they
+            // must be those of the face it loads. A matched pattern carries the style the
+            // configuration synthesizes (90-synthetic.conf assigns bold with embolden and oblique
+            // with a slant matrix), and the patterns of a variable font report a named instance or
+            // the requested position while the face loads at its default position: the designed
+            // properties of those faces are read from the face itself.
+            if (rawIndex >> 16 != 0 ||
+                FcNative.GetBool(pattern, FcNative.Variable) == true ||
+                FcNative.GetBool(pattern, FcNative.Embolden) == true ||
+                FcNative.FcPatternGetMatrix(pattern, FcNative.Matrix, 0, out _) == FcNative.FcResult.Match)
+            {
+                if (GetDesignedStyle(file!, index) is { } designed)
+                {
+                    style = designed.Style;
+                    fontWeight = designed.Weight;
+                    stretch = designed.Stretch;
+                }
+            }
 
             var postScriptName = FcNative.GetString(pattern, FcNative.PostScriptName, 0);
 
-            return new SystemFontFace(
-                family!,
-                FcMapping.SlantToFontStyle(slant),
-                (FontWeight)FcMapping.WeightToOpenType(weight),
-                FcMapping.WidthToFontStretch(width),
-                file!,
-                index,
-                postScriptName);
+            return new SystemFontFace(family!, style, fontWeight, stretch, file!, index, postScriptName);
         }
+
+        private DesignedStyle? GetDesignedStyle(string file, int index)
+            => _designedStyles.GetOrAdd((file, index), static key => ReadDesignedStyle(key.File, key.Index));
+
+        private static DesignedStyle? ReadDesignedStyle(string file, int index)
+        {
+            // The descriptor opens the file through the managed loader; only its name is unused.
+            var face = new SystemFontFace(string.Empty, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,
+                file, index);
+
+            if (!face.TryOpenFontMemory(out var fontMemory))
+            {
+                return null;
+            }
+
+            GlyphTypeface? glyphTypeface = null;
+
+            try
+            {
+                glyphTypeface = new GlyphTypeface(fontMemory);
+
+                return new DesignedStyle(glyphTypeface.Style, glyphTypeface.Weight, glyphTypeface.Stretch);
+            }
+            catch (Exception)
+            {
+                // Required tables missing or damaged: the properties fontconfig reports stay.
+                return null;
+            }
+            finally
+            {
+                if (glyphTypeface is not null)
+                {
+                    glyphTypeface.Dispose();
+                }
+                else
+                {
+                    fontMemory.Dispose();
+                }
+            }
+        }
+
+        private sealed record DesignedStyle(FontStyle Style, FontWeight Weight, FontStretch Stretch);
 
         private sealed class LangCache
         {

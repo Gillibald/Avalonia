@@ -24,6 +24,9 @@ namespace Avalonia.Media.Fonts
         public const string Charset = "charset";
         public const string Lang = "lang";
         public const string PostScriptName = "postscriptname";
+        public const string Variable = "variable";
+        public const string Embolden = "embolden";
+        public const string Matrix = "matrix";
 
         public const int FcMatchPattern = 0;
 
@@ -77,6 +80,12 @@ namespace Avalonia.Media.Fonts
 
         [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
         public static partial FcResult FcPatternGetInteger(IntPtr pattern, string @object, int n, out int value);
+
+        [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
+        public static partial FcResult FcPatternGetBool(IntPtr pattern, string @object, int n, out int value);
+
+        [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
+        public static partial FcResult FcPatternGetMatrix(IntPtr pattern, string @object, int n, out IntPtr matrix);
 
         [LibraryImport(FontconfigLibrary, StringMarshalling = StringMarshalling.Utf8)]
         public static partial FcResult FcPatternGetCharSet(IntPtr pattern, string @object, int n, out IntPtr charSet);
@@ -167,6 +176,19 @@ namespace Avalonia.Media.Fonts
             }
 
             return value;
+        }
+
+        /// <summary>
+        /// Reads the first boolean value of a pattern element, or <see langword="null"/> when absent.
+        /// </summary>
+        public static bool? GetBool(IntPtr pattern, string @object)
+        {
+            if (FcPatternGetBool(pattern, @object, 0, out var value) != FcResult.Match)
+            {
+                return null;
+            }
+
+            return value != 0;
         }
 
         /// <summary>
