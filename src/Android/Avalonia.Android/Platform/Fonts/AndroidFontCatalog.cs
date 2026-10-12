@@ -49,6 +49,7 @@ namespace Avalonia.Android.Platform.Fonts
         private readonly Lazy<Dictionary<string, List<FaceKey>>> _realNames;
         private readonly Lazy<Dictionary<string, List<FaceKey>>> _platformNames;
         private readonly HashSet<FaceKey> _configuredFaces;
+        private readonly ConcurrentDictionary<string, List<FaceKey>> _matchedNames = new(StringComparer.OrdinalIgnoreCase);
         private readonly AndroidSystemFontSource? _systemFonts;
         private readonly ConcurrentDictionary<string, string> _languageTags = new(StringComparer.Ordinal);
 
@@ -844,10 +845,12 @@ namespace Avalonia.Android.Platform.Fonts
         }
 
         /// <summary>
-        /// The faces carrying a real family name: those of the configuration first, then the
-        /// platform's fonts outside it. Those are enumerated on the first family request for a
-        /// name the configuration's fonts do not carry; character fallback only uses them once
-        /// enumerated, since it receives placeholder names such as <c>$Default</c> for most text.
+        /// The faces carrying a real family name: those of the configuration first, then a face
+        /// the platform's matcher resolves the name to, then the platform's fonts outside the
+        /// configuration. The font list is read only on a family request the matcher answers with
+        /// its default face, since reading it makes the platform map every installed font; character
+        /// fallback, which receives placeholder names such as <c>$Default</c> for most text, uses
+        /// only answers already found.
         /// </summary>
         private bool TryGetRealFaces(string familyName, bool enumerate, [NotNullWhen(true)] out List<FaceKey>? keys)
         {
@@ -856,9 +859,54 @@ namespace Avalonia.Android.Platform.Fonts
                 return true;
             }
 
-            keys = null;
+            if (_matchedNames.TryGetValue(familyName, out keys))
+            {
+                return true;
+            }
 
-            return (enumerate || _platformNames.IsValueCreated) && _platformNames.Value.TryGetValue(familyName, out keys);
+            if (_platformNames.IsValueCreated)
+            {
+                return _platformNames.Value.TryGetValue(familyName, out keys);
+            }
+
+            if (!enumerate)
+            {
+                return false;
+            }
+
+            if (TryMatchPlatformName(familyName, out var key))
+            {
+                keys = _matchedNames.GetOrAdd(familyName, new List<FaceKey> { key });
+
+                return true;
+            }
+
+            return _platformNames.Value.TryGetValue(familyName, out keys);
+        }
+
+        /// <summary>
+        /// Asks the platform's matcher for a family name. The matcher answers names it does not know
+        /// with its default face, so an answer counts only when it carries the requested name or
+        /// differs from the default face (a platform family such as an updated font's family).
+        /// </summary>
+        private bool TryMatchPlatformName(string familyName, out FaceKey key)
+        {
+            key = default;
+
+            if (_systemFonts is null || IsPlatformOnly ||
+                !TryMatchPlatform(familyName, 'a', 400, false, string.Empty, out key) ||
+                !TryGetFaceInfo(key, out var info))
+            {
+                return false;
+            }
+
+            if (Array.Exists(info.Names, x => string.Equals(x, familyName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            return !TryMatchPlatform(s_platformGenericFamilies[0], 'a', 400, false, string.Empty, out var defaultKey) ||
+                   defaultKey != key;
         }
 
         /// <summary>
