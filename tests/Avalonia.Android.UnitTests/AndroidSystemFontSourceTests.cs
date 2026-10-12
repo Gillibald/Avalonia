@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Android.Platform.Fonts;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Xunit;
 
@@ -55,19 +56,78 @@ namespace Avalonia.Android.UnitTests
         }
 
         [Fact]
-        public void With_A_Configuration_The_Platform_Fonts_Are_Not_Enumerated()
+        public void With_A_Configuration_Known_Names_Do_Not_Enumerate_The_Platform_Fonts()
         {
             // Enumerating makes the platform map every installed font file into the process for
-            // good, so it is reserved for devices without a readable configuration.
+            // good, so names the configuration resolves never trigger it.
             var source = new FakeSystemFontSource { Fonts = { new AndroidSystemFont(_fixture.FontPath("Inter-Regular.ttf"), 0, 400, false, null, Array.Empty<FontsXmlAxis>()) } };
             var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
 
             catalog.GetFamilyNames();
             catalog.TryGetDefaultFace(out _);
-            catalog.TryMatchFamily("Segoe UI", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _);
+
+            foreach (var name in new[] { "sans-serif", "arial", "Inter", "Noto Sans JP" })
+            {
+                Assert.True(catalog.TryMatchFamily(name, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
+                Assert.True(catalog.TryGetFamilyFaces(name, out _));
+            }
+
             MatchCharacter(catalog, 0x05D0);
+            MatchCharacter(catalog, 'a', "monospace");
+            MatchCharacter(catalog, 0x05D0, "Noto Sans Hebrew");
 
             Assert.Equal(0, source.EnumerationCount);
+        }
+
+        [Fact]
+        public void The_First_Name_Only_The_Platform_Knows_Enumerates_The_Platform_Fonts_Once()
+        {
+            // Updated fonts outside the configuration (Google Sans under /data/fonts/files) are
+            // reachable by name only through the platform's font list.
+            var updated = UpdatedFont("Manrope-Light.ttf", "Manrope-Light.ttf");
+            var source = new FakeSystemFontSource
+            {
+                Fonts =
+                {
+                    new AndroidSystemFont(_fixture.FontPath("Inter-Regular.ttf"), 0, 400, false, null, Array.Empty<FontsXmlAxis>()),
+                    new AndroidSystemFont(updated, 0, 300, false, null, Array.Empty<FontsXmlAxis>()),
+                },
+            };
+            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
+
+            Assert.True(catalog.TryMatchFamily("Manrope", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out var match));
+            Assert.Equal(updated, match.FilePath);
+            Assert.Equal("Manrope", match.FamilyName);
+            Assert.Equal(1, source.EnumerationCount);
+
+            Assert.False(catalog.TryMatchFamily("Segoe UI", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
+            Assert.True(catalog.TryGetFamilyFaces("manrope", out var faces));
+            Assert.Equal(updated, Assert.Single(faces).FilePath);
+            Assert.Equal(updated, MatchCharacter(catalog, 'a', "Manrope")?.FilePath);
+            Assert.Equal(1, source.EnumerationCount);
+
+            // Fonts the configuration also names keep resolving to the configured faces.
+            Assert.Equal("Inter-Regular.ttf#0", Describe(catalog.TryMatchFamily("Inter", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out var inter) ? inter : null));
+
+            // Only the configuration's names are listed.
+            Assert.DoesNotContain("Manrope", catalog.GetFamilyNames());
+
+            // Reading the names of the platform's fonts leaves none of them mapped.
+            Assert.DoesNotContain(FontFileCache.GetSnapshot(),
+                x => x.Key is string path && path.StartsWith(_fixture.Root, StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
+        public void A_Failing_Platform_Font_List_Is_Not_Read_Again()
+        {
+            var source = new FakeSystemFontSource { FailEnumeration = true };
+            var catalog = AndroidFontCatalog.Create(_fixture.VendorConfiguration(), source);
+
+            Assert.False(catalog.TryMatchFamily("Manrope", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
+            Assert.False(catalog.TryMatchFamily("Segoe UI", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
+            Assert.Equal(1, source.EnumerationCount);
+            Assert.True(catalog.TryMatchFamily("sans-serif", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, out _));
         }
 
         [Fact]
@@ -254,9 +314,16 @@ namespace Avalonia.Android.UnitTests
 
             public int EnumerationCount { get; private set; }
 
+            public bool FailEnumeration { get; set; }
+
             public override IReadOnlyList<AndroidSystemFont> GetFonts()
             {
                 EnumerationCount++;
+
+                if (FailEnumeration)
+                {
+                    throw new InvalidOperationException("The platform font list is unavailable.");
+                }
 
                 return Fonts;
             }
