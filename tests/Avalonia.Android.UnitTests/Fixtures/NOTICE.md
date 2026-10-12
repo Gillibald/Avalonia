@@ -1,6 +1,19 @@
 # Fixture notices
 
-`aosp-api30-fonts.xml` is the unmodified `/system/etc/fonts.xml` of the Android 11 (API 30) emulator system image from the Android Open Source Project (`frameworks/base/data/fonts/fonts.xml`).
+The `aosp-api*.xml` files are unmodified font configuration files from the Android Open Source Project (`frameworks/base/data/fonts/fonts.xml` and, for API 35, `font_fallback.xml`):
+
+| File | Source |
+|---|---|
+| `aosp-api24-fonts.xml` | tag `android-7.0.0_r1` |
+| `aosp-api26-fonts.xml` | tag `android-8.0.0_r1` |
+| `aosp-api28-fonts.xml` | tag `android-9.0.0_r1` |
+| `aosp-api29-fonts.xml` | tag `android-10.0.0_r1` |
+| `aosp-api30-fonts.xml` | `/system/etc/fonts.xml` of the Android 11 emulator system image, identical to tag `android-11.0.0_r1` |
+| `aosp-api31-fonts.xml` | tag `android-12.0.0_r1` |
+| `aosp-api33-fonts.xml` | tag `android-13.0.0_r1` |
+| `aosp-api34-fonts.xml` | tag `android-14.0.0_r1` |
+| `aosp-api35-fonts.xml`, `aosp-api35-font_fallback.xml` | tag `android-15.0.0_r1` |
+| `aosp-api36-fonts.xml` | tag `android-16.0.0_r1` |
 
 Copyright (C) The Android Open Source Project
 

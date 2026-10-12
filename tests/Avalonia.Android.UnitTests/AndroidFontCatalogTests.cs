@@ -125,6 +125,48 @@ namespace Avalonia.Android.UnitTests
             Assert.Equal("Roboto-Regular.ttf#0", Describe(face));
         }
 
+        [Theory]
+        [InlineData("aosp-api24-fonts.xml", 29, "Roboto-Regular.ttf", "Roboto-Medium.ttf")]
+        [InlineData("aosp-api26-fonts.xml", 29, "Roboto-Regular.ttf", "Roboto-Medium.ttf")]
+        [InlineData("aosp-api28-fonts.xml", 30, "Roboto-Regular.ttf", "Roboto-Medium.ttf")]
+        [InlineData("aosp-api29-fonts.xml", 33, "Roboto-Regular.ttf", "Roboto-Medium.ttf")]
+        [InlineData("aosp-api30-fonts.xml", 33, "Roboto-Regular.ttf", "Roboto-Medium.ttf")]
+        [InlineData("aosp-api31-fonts.xml", 33, "RobotoStatic-Regular.ttf", "Roboto-Regular.ttf")]
+        [InlineData("aosp-api33-fonts.xml", 33, "RobotoStatic-Regular.ttf", "Roboto-Regular.ttf")]
+        [InlineData("aosp-api34-fonts.xml", 33, "Roboto-Regular.ttf", "Roboto-Regular.ttf")]
+        [InlineData("aosp-api35-fonts.xml", 34, "Roboto-Regular.ttf", "Roboto-Regular.ttf")]
+        [InlineData("aosp-api35-font_fallback.xml", 34, "Roboto-Regular.ttf", "Roboto-Regular.ttf")]
+        [InlineData("aosp-api36-fonts.xml", 34, "Roboto-Regular.ttf", "Roboto-Regular.ttf")]
+        public void Aosp_Configurations_Of_Every_Release_Form_A_Catalog(string fileName, int listedNames,
+            string defaultFile, string mediumFile)
+        {
+            var catalog = AndroidFontCatalog.Create(_fixture.AospConfiguration(fileName));
+            var names = catalog.GetFamilyNames();
+
+            // Named families and the aliases of them.
+            Assert.Equal(listedNames, names.Count);
+            Assert.Equal(new[] { "sans-serif", "sans-serif-thin", "sans-serif-light" }, names.Take(3));
+            Assert.Contains("monospace", names);
+            Assert.Contains("serif", names);
+
+            Assert.True(catalog.TryGetDefaultFace(out var face));
+            Assert.Equal(defaultFile + "#0", Describe(face));
+            Assert.Equal(mediumFile + "#0", Describe(MatchFamily(catalog, "sans-serif-medium")));
+        }
+
+        [Fact]
+        public void Languages_Separated_By_Spaces_Steer_Han_Fallback()
+        {
+            // Android 9 lists the languages of a family separated by a space.
+            var catalog = FromXml(
+                "<family name=\"sans-serif\"><font>NotoMono-Regular.ttf</font></family>" +
+                "<family lang=\"zh-Hans\"><font index=\"2\">CJK.ttc</font></family>" +
+                "<family lang=\"zh-Hant zh-Bopo\"><font index=\"3\">CJK.ttc</font></family>");
+
+            Assert.Equal("CJK.ttc#3", Describe(MatchCharacter(catalog, 0x4E2D, culture: "zh-TW")));
+            Assert.Equal("CJK.ttc#2", Describe(MatchCharacter(catalog, 0x4E2D, culture: "zh-CN")));
+        }
+
         [Fact]
         public void Entries_Of_One_Variable_Face_Report_Its_Default_Instance()
         {

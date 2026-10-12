@@ -51,6 +51,55 @@ namespace Avalonia.Android.UnitTests
             Assert.Equal(Path.Combine(FontDirectory, "Roboto-Thin.ttf"), sansSerif.Fonts[0].Path);
         }
 
+        [Theory]
+        [InlineData("aosp-api24-fonts.xml", 85, 21, 141, 8, 0, "NotoColorEmoji.ttf", "zh-Hant")]
+        [InlineData("aosp-api26-fonts.xml", 116, 21, 179, 8, 0, "NotoColorEmoji.ttf", "zh-Hant")]
+        [InlineData("aosp-api28-fonts.xml", 141, 22, 245, 8, 0, "NotoColorEmoji.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api29-fonts.xml", 142, 24, 263, 9, 0, "NotoColorEmoji.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api30-fonts.xml", 148, 24, 277, 9, 0, "NotoColorEmoji.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api31-fonts.xml", 157, 24, 366, 9, 0, "NotoColorEmoji.ttf,NotoColorEmojiFlags.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api33-fonts.xml", 158, 24, 367, 9, 1, "NotoColorEmojiLegacy.ttf,NotoColorEmoji.ttf,NotoColorEmojiFlags.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api34-fonts.xml", 158, 24, 367, 9, 1, "NotoColorEmojiLegacy.ttf,NotoColorEmoji.ttf,NotoColorEmojiFlags.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api35-fonts.xml", 160, 24, 387, 10, 1, "NotoColorEmojiLegacy.ttf,NotoColorEmoji.ttf,NotoColorEmojiFlags.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api35-font_fallback.xml", 159, 24, 219, 10, 0, "NotoColorEmoji.ttf,NotoColorEmojiFlags.ttf", "zh-Hant,zh-Bopo")]
+        [InlineData("aosp-api36-fonts.xml", 160, 24, 419, 10, 1, "NotoColorEmojiLegacy.ttf,NotoColorEmoji.ttf,NotoColorEmojiFlags.ttf", "zh-Hant,zh-Bopo")]
+        public void Aosp_Configurations_Of_Every_Release_Parse(string fileName, int families, int aliases, int fonts,
+            int namedFamilies, int ignoredFamilies, string emojiFiles, string traditionalChineseLanguages)
+        {
+            var config = ParseFixture(fileName);
+
+            Assert.Equal(families, config.Families.Count);
+            Assert.Equal(aliases, config.Aliases.Count);
+            Assert.Equal(fonts, config.Families.Sum(x => x.Fonts.Count));
+            Assert.Equal(namedFamilies, config.Families.Count(x => x.Name != null));
+            Assert.Equal(ignoredFamilies, config.Families.Count(x => x.Ignore));
+            Assert.Equal("sans-serif", config.Families[0].Name);
+
+            // Every alias targets a named family declared before it.
+            Assert.All(config.Aliases, x => Assert.Contains(config.Families, f => f.Name == x.To));
+
+            Assert.Equal(emojiFiles.Split(','),
+                config.Families.Where(x => x.Languages.Contains("und-Zsye")).Select(x => x.Fonts[0].FileName));
+
+            // Han fallback: the first family of each language is a face of the CJK collection.
+            Assert.Equal(0, config.Families.First(x => x.Languages.SequenceEqual(new[] { "ja" })).Fonts[0].Index);
+            Assert.Equal(1, config.Families.First(x => x.Languages.SequenceEqual(new[] { "ko" })).Fonts[0].Index);
+            Assert.Equal(2, config.Families.First(x => x.Languages.SequenceEqual(new[] { "zh-Hans" })).Fonts[0].Index);
+            Assert.Equal(traditionalChineseLanguages.Split(','),
+                Assert.Single(config.Families, x => x.Languages.Contains("zh-Hant")).Languages);
+        }
+
+        [Fact]
+        public void Language_Lists_Separated_By_Spaces_Are_Split()
+        {
+            // Android 9 separates the languages of a family with a space, later releases with a comma.
+            var config = ParseText("<familyset><family lang=\"zh-Hant zh-Bopo\"><font>A.ttc</font></family>" +
+                                   "<family lang=\" ja ,  ko \"><font>B.ttc</font></family></familyset>");
+
+            Assert.Equal(new[] { "zh-Hant", "zh-Bopo" }, config.Families[0].Languages);
+            Assert.Equal(new[] { "ja", "ko" }, config.Families[1].Languages);
+        }
+
         [Fact]
         public void Aosp_Configuration_Reads_Alias_Targets_And_Weights()
         {

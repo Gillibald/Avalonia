@@ -45,13 +45,9 @@ namespace Avalonia.Android.UnitTests
 
             File.Copy(Fixtures.GetFontPath("NotoMono-Regular.ttf"), Path.Combine(ProductDirectory, "ProductSans-Regular.ttf"));
 
-            foreach (var xml in new[]
-                     {
-                         "vendor-fonts.xml", "vendor-additional-fonts.xml", "product-customization.xml",
-                         "aosp-api30-fonts.xml",
-                     })
+            foreach (var xml in Directory.GetFiles(Fixtures.GetPath(string.Empty), "*.xml"))
             {
-                File.Copy(Fixtures.GetPath(xml), Path.Combine(EtcDirectory, xml));
+                File.Copy(xml, Path.Combine(EtcDirectory, Path.GetFileName(xml)));
             }
         }
 
@@ -90,16 +86,16 @@ namespace Avalonia.Android.UnitTests
         }
 
         /// <summary>
-        /// The AOSP API 30 configuration over empty placeholder files for every font it names, for
-        /// tests of the model that do not read font data.
+        /// An AOSP configuration (API 30 unless specified) over empty placeholder files for every
+        /// font it names, for tests of the model that do not read font data.
         /// </summary>
-        public AndroidFontConfiguration AospConfiguration()
+        public AndroidFontConfiguration AospConfiguration(string fileName = "aosp-api30-fonts.xml")
         {
-            var directory = Path.Combine(Root, "aosp", "fonts");
+            var directory = Path.Combine(Root, "aosp", Path.GetFileNameWithoutExtension(fileName));
 
             Directory.CreateDirectory(directory);
 
-            var path = Path.Combine(EtcDirectory, "aosp-api30-fonts.xml");
+            var path = Path.Combine(EtcDirectory, fileName);
 
             if (FontsXmlParser.TryParseFile(path, directory, out var config))
             {
