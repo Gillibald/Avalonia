@@ -37,6 +37,9 @@ namespace Avalonia.Media.Fonts
 
         private static readonly ConcurrentDictionary<(string Path, int FaceIndex), bool> s_drawable = new();
 
+        private static readonly ConcurrentDictionary<(string Path, int FaceIndex),
+            (FontWeight Weight, FontStyle Style, FontStretch Stretch)?> s_designedFaceProperties = new();
+
         /// <summary>
         /// Initializes CoreText lazily on first use: constructing (and registering) the provider
         /// does no native work, and a missing framework turns every query into a miss instead of
@@ -746,7 +749,46 @@ namespace Avalonia.Media.Fonts
                 SfntNameReader.TryResolveFaceIndex(filePath!, postScriptName, out faceIndex);
             }
 
+            // A face reports what its file says, which the font system keys, matches and simulates
+            // by; CoreText's traits disagree for many system faces, and the face of a variable font
+            // loads at its default position whatever instance the descriptor describes.
+            if (TryGetDesignedFaceProperties(filePath!, faceIndex, out var designed))
+            {
+                (weight, style, stretch) = designed;
+            }
+
             return new SystemFontFace(familyName!, style, weight, stretch, filePath!, faceIndex, postScriptName);
+        }
+
+        /// <summary>
+        /// The weight, style and stretch the font system reads from a face's file, as its glyph
+        /// typeface reports them (a variable font reports its default instance). Kept per file and
+        /// face, which never change while the process runs; <see langword="false"/> for unreadable files.
+        /// </summary>
+        private static bool TryGetDesignedFaceProperties(string filePath, int faceIndex,
+            out (FontWeight Weight, FontStyle Style, FontStretch Stretch) properties)
+        {
+            var key = (filePath, faceIndex);
+
+            if (!s_designedFaceProperties.TryGetValue(key, out var cached))
+            {
+                cached = null;
+
+                if (SfntFace.TryLoad(filePath, faceIndex, out var face))
+                {
+                    var glyphTypeface = new GlyphTypeface(face);
+
+                    cached = (glyphTypeface.Weight, glyphTypeface.Style, glyphTypeface.Stretch);
+
+                    glyphTypeface.Dispose();
+                }
+
+                cached = s_designedFaceProperties.GetOrAdd(key, cached);
+            }
+
+            properties = cached.GetValueOrDefault();
+
+            return cached.HasValue;
         }
 
         private static bool IsFontCollection(string filePath)
