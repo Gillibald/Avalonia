@@ -11,10 +11,11 @@ namespace Avalonia.Skia.UnitTests.Media
     /// A GPU draws a frame of a run whose transform keeps changing sharp, as a static frame at
     /// that transform, while the frame's rasterization budget affords it, and stretches an
     /// earlier raster otherwise. The runs of a frame share one budget, and a frame draws sharp
-    /// only when the moving text of the frame before it fit the budget as a whole. A frame past
-    /// the budget stretches every run for a while, or until the motion stops, rather than
-    /// switching between sharp and stretched frames, and the frame after that while tries again.
-    /// Costs and budgets are injected, so every decision here is independent of the machine.
+    /// only when the text that moved, or was about to move, in the frame before it was estimated
+    /// at less than twice the budget. A frame that runs out of budget stretches every run for a
+    /// while, or until the motion stops, rather than switching between sharp and stretched
+    /// frames, and the frame after that while tries again. Costs and budgets are injected, so
+    /// every decision here is independent of the machine.
     /// </summary>
     public class MotionRasterBudgetTests
     {
@@ -199,25 +200,39 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [MemberData(nameof(Targets))]
-        public void A_Scene_Far_Past_The_Budget_Is_Tried_Again_Only_After_Several_Holds(Target target)
+        [MemberData(nameof(Motions))]
+        public void A_Scene_Estimated_Past_Twice_The_Budget_Stretches_From_Its_First_Moving_Frame(Target target,
+            Motion motion)
         {
-            // Three runs and room for one: every frame shows the scene at more than twice the
-            // budget, so after the first moving frame only the first frame after every
-            // ProbeHolds-th hold tries it again, drawing the run within the budget sharp.
+            // Three runs and room for one. The frames before the motion is recognized draw the
+            // runs under changing transforms and show the scene at more than twice the budget, so
+            // the first moving frame stretches every run instead of trying the budget.
             using var output = new FrameTarget(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var budget = new InjectedBudget(budget: 1.2 * s_runCost, glyphCost: GlyphCost);
             using var runs = new Runs(typeface, 3);
 
             const int moving = TransformChurnGuard.Threshold;
-            const int probe = moving + MotionRasterBudget.ProbeHolds * (MotionRasterBudget.HoldFrames + 1);
-            const int frames = probe + 4;
+            var stretched = Animate(output, runs.All, 10, motion, (_, _) => true);
+
+            Assert.All(stretched, frames => Assert.Equal(Range(moving, 10), frames));
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Scene_Estimated_Past_Twice_The_Budget_Is_Never_Tried(Target target)
+        {
+            // The same scene keeps stretching every run through what would be several holds.
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 1.2 * s_runCost, glyphCost: GlyphCost);
+            using var runs = new Runs(typeface, 3);
+
+            const int moving = TransformChurnGuard.Threshold;
+            const int frames = moving + 3 * (MotionRasterBudget.HoldFrames + 1) + 4;
             var stretched = Animate(output, runs.All, frames, Motion.Rotation, (_, _) => true);
 
-            Assert.Equal(Range(moving + 1, frames).FindAll(frame => frame != probe), stretched[0]);
-            Assert.Equal(Range(moving, frames), stretched[1]);
-            Assert.Equal(Range(moving, frames), stretched[2]);
+            Assert.All(stretched, run => Assert.Equal(Range(moving, frames), run));
         }
 
         [Theory]
