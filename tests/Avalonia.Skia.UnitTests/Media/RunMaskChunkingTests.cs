@@ -208,9 +208,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 set => _inner.Transform = value;
             }
 
-            public bool PrefersAlphaMasks => _prefersAlphaMasks;
-
-            public int MaxRunMaskSize => _maxRunMaskSize;
+            public GlyphTargetSurface TargetSurface => ((IGlyphTargetContext)_inner).TargetSurface with
+            {
+                PrefersAlphaMasks = _prefersAlphaMasks, MaxRunMaskSize = _maxRunMaskSize,
+            };
 
             public bool TryGetLcdGeometry(out LcdMaskGeometry geometry)
             {

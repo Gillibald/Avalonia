@@ -25,7 +25,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
         {
-            var transform = context.Transform;
+            var surface = GlyphTargetSurface.Of(context);
+            var transform = surface.ToDevice(context.Transform);
             var determinant = transform.M11 * transform.M22 - transform.M12 * transform.M21;
 
             if (determinant == 0 || !double.IsFinite(determinant))
@@ -49,7 +50,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var colorGlyphs = HasColrV1Glyph(run);
 
-            if (colorGlyphs && !DrawsTransformedColorMasks(context, transform))
+            if (colorGlyphs && !DrawsTransformedColorMasks(context, surface, transform))
             {
                 return false;
             }
@@ -119,7 +120,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return false;
                 }
 
-                if (transformedContext.RasterTarget != GlyphRasterTarget.SoftwareGpu)
+                if (surface.RasterTarget != GlyphRasterTarget.SoftwareGpu)
                 {
                     return TryDrawTransient(transformedContext, run, key, transform, originX, originY, alpha,
                         solid.Color);
@@ -154,11 +155,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (transformedContext is null)
             {
-                DrawPerGlyph(context, sprites, EnsureMasks(typeface, sprites), originX, originY, tint);
+                DrawPerGlyph(context, surface, sprites, EnsureMasks(typeface, sprites), originX, originY, tint);
             }
-            else if (transformedContext.RasterTarget == GlyphRasterTarget.Raster)
+            else if (surface.RasterTarget == GlyphRasterTarget.Raster)
             {
-                DrawOnRaster(context, transformedContext, typeface, sprites, originX, originY, tint);
+                DrawOnRaster(context, transformedContext, surface, typeface, sprites, originX, originY, tint);
             }
             else if (!DrawFromAtlas(transformedContext, typeface, sprites, originX, originY, ToArgb(alpha, solid.Color)))
             {
@@ -175,12 +176,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// and a rotation, skew or anisotropic scale. Upright draws the upright tier declined (sizes
         /// above its ceiling, a zoom without a settled mask) keep the vector replay.
         /// </summary>
-        private static bool DrawsTransformedColorMasks(IDrawingContextImpl context, in Matrix transform)
+        private static bool DrawsTransformedColorMasks(IDrawingContextImpl context, in GlyphTargetSurface surface,
+            in Matrix transform)
             => ColorGlyphRunSplitter.UseColorMasks && ColorGlyphRunSplitter.UseColorAtlas &&
-               context is ITransformedGlyphContext
-               {
-                   RasterTarget: GlyphRasterTarget.HardwareGpu, ColorAtlas: not null,
-               } &&
+               surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+               context is ITransformedGlyphContext { ColorAtlas: not null } &&
                !(transform.M12 == 0 && transform.M21 == 0 && transform.M11 > 0 && transform.M22 > 0 &&
                  Math.Abs(transform.M11 - transform.M22) <= transform.M11 * 0.001);
 
@@ -291,13 +291,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// through the backend otherwise. Either way no run-sized bitmap is involved.
         /// </summary>
         private static void DrawOnRaster(IDrawingContextImpl context, ITransformedGlyphContext rasterContext,
-            GlyphTypeface typeface, TransformedGlyphSprites sprites, int originX, int originY, uint tint)
+            in GlyphTargetSurface surface, GlyphTypeface typeface, TransformedGlyphSprites sprites, int originX, int originY, uint tint)
         {
             var masks = EnsureMasks(typeface, sprites);
 
             if (!rasterContext.TryGetBlitTarget(out var target))
             {
-                DrawPerGlyph(context, sprites, masks, originX, originY, tint);
+                DrawPerGlyph(context, surface, sprites, masks, originX, originY, tint);
                 return;
             }
 
@@ -363,8 +363,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// backend can clip, layer and fade like any other draw. The bitmaps are made once per
         /// tint and held by the sprite set; sprites showing the same mask share one.
         /// </summary>
-        private static void DrawPerGlyph(IDrawingContextImpl context, TransformedGlyphSprites sprites,
-            GlyphMask[] masks, int originX, int originY, uint tint)
+        private static void DrawPerGlyph(IDrawingContextImpl context, in GlyphTargetSurface surface,
+            TransformedGlyphSprites sprites, GlyphMask[] masks, int originX, int originY, uint tint)
         {
             if (sprites.FallbackImages is not { } images || sprites.FallbackTint != tint)
             {
@@ -375,7 +375,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var oldTransform = context.Transform;
 
             // The sprites are in device pixels.
-            context.Transform = Matrix.Identity;
+            context.Transform = surface.DevicePixels;
 
             for (var i = 0; i < laidOut.Length; i++)
             {
@@ -488,7 +488,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static bool TryDrawSettledStretched(IDrawingContextImpl context, ManagedGlyphRunImpl run, Color color)
             => context is ITransformedGlyphContext transformedContext &&
-               TryDrawStretched(transformedContext, run.GlyphTypeface, run.TransformedSprites, context.Transform,
+               TryDrawStretched(transformedContext, run.GlyphTypeface, run.TransformedSprites,
+                   GlyphTargetSurface.Of(context).ToDevice(context.Transform),
                    ToArgb(color.A, color));
 
         /// <summary>

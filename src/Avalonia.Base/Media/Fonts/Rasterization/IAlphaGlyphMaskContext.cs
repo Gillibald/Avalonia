@@ -16,25 +16,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// to a quarter of the BGRA floor. A drawing context that does not implement this keeps the
     /// portable pre-tinted bitmap path.
     /// </summary>
-    internal interface IAlphaGlyphMaskContext
+    internal interface IAlphaGlyphMaskContext : IGlyphTargetContext
     {
-        /// <summary>
-        /// Whether this context actually benefits from alpha masks. On a GPU-backed Skia
-        /// canvas, modulating an A8 texture by paint color is the native mechanism; on the CPU
-        /// raster pipeline the same draw measured ~6x slower than a pre-tinted BGRA blit, so
-        /// software contexts keep the portable floor.
-        /// </summary>
-        bool PrefersAlphaMasks { get; }
-
-        /// <summary>
-        /// The largest width or height, in device pixels, of one realized run mask on this
-        /// context. A GPU context reports its maximum texture dimension; a raster context has
-        /// no texture to fit and reports <see cref="int.MaxValue"/>, leaving only the
-        /// renderer's memory bound. Contexts without this interface get
-        /// <see cref="MaskGlyphRunRenderer.DefaultMaxRunMaskSize"/>.
-        /// </summary>
-        int MaxRunMaskSize { get; }
-
         /// <summary>
         /// Realizes an immutable alpha mask (row-major, stride equal to <paramref name="width"/>).
         /// The handle is owned by the caller's cache — disposed on eviction, drawn via

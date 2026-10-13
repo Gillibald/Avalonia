@@ -19,7 +19,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// The run-mask dimension bound for contexts that do not report their own through
-        /// <see cref="IAlphaGlyphMaskContext.MaxRunMaskSize"/>: the OpenGL ES 3.0 guaranteed
+        /// <see cref="GlyphTargetSurface.MaxRunMaskSize"/>: the OpenGL ES 3.0 guaranteed
         /// minimum of GL_MAX_TEXTURE_SIZE, safe on any backend that uploads masks as textures.
         /// </summary>
         internal const int DefaultMaxRunMaskSize = 2048;
@@ -55,7 +55,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             IBrush? foreground, TextRenderingMode textRenderingMode,
             TextHintingMode textHintingMode = TextHintingMode.Unspecified)
         {
-            var transform = context.Transform;
+            // Every size, snapping and subpixel decision is made in device pixels.
+            var surface = GlyphTargetSurface.Of(context);
+            var transform = surface.ToDevice(context.Transform);
 
             if (transform.M12 != 0 || transform.M21 != 0)
             {
@@ -105,10 +107,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             // Backend fast path: untinted alpha masks, tinted per draw — color leaves the cache
             // identity, so a foreground animation reuses one mask. Typefaces with intrinsic
             // color (COLR layers, bitmap strikes) stay on the pre-tinted BGRA floor, and so do
-            // contexts that report no benefit (CPU raster: see PrefersAlphaMasks).
+            // contexts that report no benefit (CPU raster: see GlyphTargetSurface.PrefersAlphaMasks).
             var alphaContext = run.GlyphTypeface.ColorTable is null &&
-                run.GlyphTypeface.BitmapSource is null &&
-                context is IAlphaGlyphMaskContext { PrefersAlphaMasks: true } preferring
+                run.GlyphTypeface.BitmapSource is null && surface.PrefersAlphaMasks &&
+                context is IAlphaGlyphMaskContext preferring
                     ? preferring
                     : null;
 
@@ -124,9 +126,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             // A run drawn from the atlas again under the inputs of its last atlas draw, at an origin
             // of the same pen phase, resolves to the same key and sprite set, however far it moved.
             if (alphaContext is not null && run.UprightDecision is { } decision &&
-                decision.Matches(scaleX, scaleY, mode, textHintingMode, alphaContext.MaxRunMaskSize,
+                decision.Matches(scaleX, scaleY, mode, textHintingMode, surface.MaxRunMaskSize,
                     run.TransformedSprites.Version) &&
-                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } repeatContext)
+                surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                context is ITransformedGlyphContext repeatContext)
             {
                 int snappedX;
                 byte snappedPhase;
@@ -161,7 +164,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            if (!FitsRunMaskBounds(context, run.Bounds, scaleX, scaleY, BytesPerPixel(mode, alphaContext),
+            if (!FitsRunMaskBounds(surface, run.Bounds, scaleX, scaleY, BytesPerPixel(mode, alphaContext),
                     out var maxSize))
             {
                 return false;
@@ -229,7 +232,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             // gesture, whose scale changes every frame, keeps run masks too: laid out as sprites,
             // every frame's glyph masks would fill the atlas and push static text out of it.
             if (alphaContext is not null && mode != GlyphMaskMode.Subpixel &&
-                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.HardwareGpu } atlasContext &&
+                surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                context is ITransformedGlyphContext atlasContext &&
                 !run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _)))
             {
                 var argb = ToArgb(alpha, solid.Color);
@@ -237,7 +241,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     originX, originY, argb);
 
                 (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
-                    alphaContext.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
+                    surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
 
                 return true;
             }
@@ -249,10 +253,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (alphaContext is null && mode != GlyphMaskMode.Subpixel && ColorGlyphRunSplitter.UseColorAtlas &&
                 (run.GlyphTypeface.ColorTable is not null || run.GlyphTypeface.BitmapSource is not null) &&
-                context is ITransformedGlyphContext
-                {
-                    RasterTarget: GlyphRasterTarget.HardwareGpu, ColorAtlas: not null,
-                } colorContext)
+                surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                context is ITransformedGlyphContext { ColorAtlas: not null } colorContext)
             {
                 if (TryDrawUprightColor(colorContext, run, key, transform, (float)scaleX, (float)scaleY, originX,
                         originY, Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B), out var churning))
@@ -274,7 +276,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var coverageKey = key with { Tint = RunMaskKey.CoverageTint };
             var blendsCoverage = alphaContext is null && mode != GlyphMaskMode.Subpixel &&
                 run.GlyphTypeface.ColorTable is null && run.GlyphTypeface.BitmapSource is null &&
-                context is ITransformedGlyphContext { RasterTarget: GlyphRasterTarget.Raster } coverageContext &&
+                surface.RasterTarget == GlyphRasterTarget.Raster && context is ITransformedGlyphContext coverageContext &&
                 coverageContext.TryGetBlitTarget(out blitTarget);
             var hit = cache.TryGet(blendsCoverage ? coverageKey : key, out var runMask);
 
@@ -299,14 +301,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             // when the gesture starts stretching. A hardware GPU keeps rasterizing, which is as
             // fast there and stays sharp.
             var zoomContext = context as ITransformedGlyphContext;
-            var zooming = zoomContext is { RasterTarget: not GlyphRasterTarget.HardwareGpu } &&
-                (zoomContext.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
+            var zooming = zoomContext is not null && surface.RasterTarget != GlyphRasterTarget.HardwareGpu &&
+                (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
                 run.UprightChurn.Record(key.ScaleQ, default, hit);
 
             // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
             // more than outline masks and fill the mask cache with sizes that never return, so a
             // run with colour glyphs stretches its settled mask on a hardware GPU too.
-            if (colorGlyphs && zoomContext is { RasterTarget: GlyphRasterTarget.HardwareGpu } &&
+            if (colorGlyphs && zoomContext is not null && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
                 (colorChurn ?? run.UprightChurn.Record(key.ScaleQ, default, hit)))
             {
                 zooming = true;
@@ -331,11 +333,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (zooming &&
                 run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
                 settled.Transform.TryInvert(out var inverse) &&
-                (zoomContext!.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
+                (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
                 (cache.TryGet(settled.Key, out var settledMask) ||
                  blendsCoverage && TryComposeSettled(run, settled, maxSize, out settledMask)))
             {
-                DrawStretchedRunMask(context, zoomContext, settledMask, settled, inverse * transform, mode,
+                DrawStretchedRunMask(context, zoomContext!, surface, settledMask, settled, inverse * transform, mode,
                     alphaContext, alpha, solid.Color);
 
                 return true;
@@ -415,10 +417,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;
             }
 
-            // The mask is already in device pixels; draw it under an identity transform so the
-            // canvas transform is not applied twice.
+            // The mask is already in device pixels; draw it 1:1 on the device grid.
             var oldTransform = context.Transform;
-            context.Transform = Matrix.Identity;
+            context.Transform = surface.DevicePixels;
 
             // Parts cover disjoint columns of the composed union, so every destination pixel is
             // blended exactly once, with the value a single mask would hold there.
@@ -793,13 +794,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// from its frame's transform to the current one, with bilinear sampling.
         /// </summary>
         private static void DrawStretchedRunMask(IDrawingContextImpl context, ITransformedGlyphContext stretchContext,
-            RunMask runMask, in SettledRunMask settled, in Matrix delta, GlyphMaskMode mode,
+            in GlyphTargetSurface surface, RunMask runMask, in SettledRunMask settled, in Matrix delta, GlyphMaskMode mode,
             IAlphaGlyphMaskContext? alphaContext, byte alpha, Color color)
         {
             var oldTransform = context.Transform;
             var straightTint = ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 
-            context.Transform = Matrix.Identity;
+            context.Transform = surface.DevicePixels;
 
             foreach (var part in runMask.Parts)
             {
@@ -837,12 +838,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// exceed the scaled ink bounds by more than <see cref="RunMaskMargin"/>, so gating on
         /// Bounds keeps Compose from ever producing an oversized mask.
         /// </summary>
-        private static bool FitsRunMaskBounds(IDrawingContextImpl context, Rect bounds,
+        private static bool FitsRunMaskBounds(in GlyphTargetSurface surface, Rect bounds,
             double scaleX, double scaleY, int bytesPerPixel, out int maxSize)
         {
-            maxSize = context is IAlphaGlyphMaskContext bounded
-                ? bounded.MaxRunMaskSize
-                : DefaultMaxRunMaskSize;
+            maxSize = surface.MaxRunMaskSize;
 
             var width = bounds.Width * scaleX + RunMaskMargin;
             var height = bounds.Height * scaleY + RunMaskMargin;

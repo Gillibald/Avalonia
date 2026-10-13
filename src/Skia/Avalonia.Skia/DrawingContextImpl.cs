@@ -392,35 +392,41 @@ namespace Avalonia.Skia
             }
         }
 
-        bool IAlphaGlyphMaskContext.PrefersAlphaMasks => GrContext is not null;
-
-        /// <inheritdoc cref="ITransformedGlyphContext.RasterTarget"/>
+        /// <inheritdoc cref="GlyphTargetSurface.RasterTarget"/>
         internal GlyphRasterTarget GlyphRasterTarget => _glyphRasterTarget;
-
-        GlyphRasterTarget ITransformedGlyphContext.RasterTarget => _glyphRasterTarget;
 
         GlyphMaskAtlas? ITransformedGlyphContext.MaskAtlas => _maskAtlas;
 
         GlyphMaskAtlas? ITransformedGlyphContext.ColorAtlas => _colorAtlas;
 
-        // Ganesh tiles a raster image larger than the texture limit when drawing it, but a mask
-        // that fits uploads as one cached texture and does not depend on that fallback.
-        // Read once per context: every text run asks, and the context answers through a native call.
-        int IAlphaGlyphMaskContext.MaxRunMaskSize => _maxRunMaskSize ??= GrContext?.MaxTextureSize ?? int.MaxValue;
+        // Described once per context: every text run asks, and the maximum texture size is a
+        // native call.
+        GlyphTargetSurface IGlyphTargetContext.TargetSurface => _targetSurface ??= DescribeTargetSurface();
 
-        private int? _maxRunMaskSize;
+        private GlyphTargetSurface? _targetSurface;
+
+        private GlyphTargetSurface DescribeTargetSurface()
+            => new(
+                _postTransform is { } post ? new Vector(post.M11, post.M22) : new Vector(1, 1),
+                _glyphRasterTarget,
+                PrefersAlphaMasks: GrContext is not null,
+                // Ganesh tiles a raster image larger than the texture limit when drawing it, but a
+                // mask that fits uploads as one cached texture and does not depend on that fallback.
+                MaxRunMaskSize: GrContext?.MaxTextureSize ?? int.MaxValue,
+                PixelGeometry: _disableSubpixelTextRendering ? null : _lcdMaskGeometry);
 
         bool IAlphaGlyphMaskContext.TryGetLcdGeometry(out LcdMaskGeometry geometry)
         {
-            geometry = _lcdMaskGeometry ?? LcdMaskGeometry.RgbHorizontal;
+            var surfaceGeometry = ((IGlyphTargetContext)this).TargetSurface.PixelGeometry;
 
-            // Eligible only on a surface that declares horizontal stripes, outside every
-            // composited layer, on targets that permit subpixel text at all. Inside a layer
-            // the backdrop is transparent, and per-channel coverage would bake fringes. A GPU
-            // context additionally needs the per-channel blender to have compiled; the CPU
-            // per-channel blit takes no ambient opacity, so those draws degrade to grayscale
-            // instead of blending wrong.
-            return _lcdMaskGeometry.HasValue && !_disableSubpixelTextRendering && _saveLayerDepth == 0 &&
+            geometry = surfaceGeometry ?? LcdMaskGeometry.RgbHorizontal;
+
+            // Eligible only on a surface that shows subpixel text, outside every composited
+            // layer. Inside a layer the backdrop is transparent, and per-channel coverage would
+            // bake fringes. A GPU context additionally needs the per-channel blender to have
+            // compiled; the CPU per-channel blit takes no ambient opacity, so those draws degrade
+            // to grayscale instead of blending wrong.
+            return surfaceGeometry.HasValue && _saveLayerDepth == 0 &&
                    (GrContext is not null ? LcdTextBlender.IsSupported : _currentOpacity >= 1);
         }
 
@@ -1472,6 +1478,19 @@ namespace Avalonia.Skia
             }
         }
 
+        /// <summary>The canvas matrix of a transform: the transform followed by the DPI scale.</summary>
+        private SKMatrix44 ToCanvasMatrix(in Matrix transform)
+            => (_postTransform is { } post ? transform * post : transform).ToSKMatrix44();
+
+        /// <summary>
+        /// Sets the canvas matrix to <paramref name="device"/>, a map to device pixels, for draws
+        /// placed on the device grid. Reading the transform back gives it without the DPI scale.
+        /// </summary>
+        private void SetDeviceTransform(in Matrix device)
+        {
+            _currentTransform = _postTransform.HasValue ? device * _inversePostTransform : device;
+            Canvas.SetMatrix(device.ToSKMatrix44());
+        }
         public object? GetFeature(Type t)
         {
             if (t == typeof(ISkiaSharpApiLeaseFeature))

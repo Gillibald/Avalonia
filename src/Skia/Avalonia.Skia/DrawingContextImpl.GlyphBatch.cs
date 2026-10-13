@@ -93,9 +93,8 @@ namespace Avalonia.Skia
         private bool TryAppendToGlyphBatch(GlyphAtlasPage page, SkiaGlyphAtlasBatch backend, in Matrix transform,
             SKColor color, object? disjointRun)
         {
-            // Sprites are placed in device pixels; a hidden DPI transform would scale the
-            // offsets differently from the run's own placement.
-            if (!BatchesGlyphAtlasDraws || _grContext is null || _postTransform.HasValue ||
+            // Sprites are placed in device pixels: only a whole-pixel translation keeps them 1:1.
+            if (!BatchesGlyphAtlasDraws || _grContext is null ||
                 transform.M11 != 1 || transform.M12 != 0 || transform.M21 != 0 || transform.M22 != 1 ||
                 transform.M31 != Math.Round(transform.M31) || transform.M32 != Math.Round(transform.M32) ||
                 Math.Abs(transform.M31) > 1 << 24 || Math.Abs(transform.M32) > 1 << 24)
@@ -218,9 +217,9 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            var transform = Transform;
+            var transform = DeviceTransform;
 
-            if (_postTransform.HasValue || transform.ContainsPerspective())
+            if (transform.ContainsPerspective())
             {
                 return false;
             }
@@ -288,7 +287,8 @@ namespace Avalonia.Skia
 
             // Every batch sets the matrix it draws under, so the context's transform is restored
             // once after the last instead of after each.
-            var transform = Transform;
+            var transform = _currentTransform;
+            var matrix = transform is null ? Canvas.TotalMatrix44 : default;
 
             for (var i = 0; i < _pendingBatchCount; i++)
             {
@@ -296,7 +296,7 @@ namespace Avalonia.Skia
                 _pendingBatches[i] = null!;
             }
 
-            Transform = transform;
+            SetCanvasTransform(transform, matrix);
             _pendingBatchCount = 0;
             _pendingRunCount = 0;
         }
@@ -307,12 +307,13 @@ namespace Avalonia.Skia
             var pending = _pendingBatches!;
             var index = Array.IndexOf(pending, batch, 0, _pendingBatchCount);
 
-            var transform = Transform;
+            var transform = _currentTransform;
+            var matrix = transform is null ? Canvas.TotalMatrix44 : default;
 
             _pendingRunCount -= batch.RunCount;
             CountFlush(reason);
             DrawPendingBatch(batch, reason);
-            Transform = transform;
+            SetCanvasTransform(transform, matrix);
 
             Array.Copy(pending, index + 1, pending, index, _pendingBatchCount - index - 1);
             pending[--_pendingBatchCount] = null!;
@@ -377,13 +378,13 @@ namespace Avalonia.Skia
 
             if (fromVertices)
             {
-                Transform = Matrix.CreateTranslation(first.X, first.Y);
+                SetDeviceTransform(Matrix.CreateTranslation(first.X, first.Y));
             }
             else if (count == 1)
             {
                 // A single run draws its own arrays under its placement, exactly as an unbatched
                 // draw would.
-                Transform = Matrix.CreateTranslation(first.X, first.Y);
+                SetDeviceTransform(Matrix.CreateTranslation(first.X, first.Y));
             }
             else
             {
@@ -418,7 +419,7 @@ namespace Avalonia.Skia
                     offset += runSources.Length;
                 }
 
-                Transform = Matrix.Identity;
+                SetDeviceTransform(Matrix.Identity);
             }
 
             GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawSetup, setupTimer);

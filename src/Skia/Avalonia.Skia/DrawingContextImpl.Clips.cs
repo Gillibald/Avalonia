@@ -25,7 +25,7 @@ namespace Avalonia.Skia
         /// leaves the pending glyph batches alone and rows of text that each clip to their
         /// bounds draw in one atlas call.
         /// </summary>
-        private bool DefersClips => _grContext is not null && BatchesGlyphAtlasDraws && !_postTransform.HasValue;
+        private bool DefersClips => _grContext is not null && BatchesGlyphAtlasDraws;
 
         /// <summary>
         /// Records a pixel-aligned rectangle clip without applying it to the canvas. Returns
@@ -40,7 +40,7 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            var level = CreateRectClipLevel(clip, transform);
+            var level = CreateRectClipLevel(clip, ToDevice(transform));
 
             if (level.Kind != GlyphRunClipKind.PixelAlignedRect)
             {
@@ -74,17 +74,23 @@ namespace Avalonia.Skia
         /// </remarks>
         private bool TryDeferShapeClip(RoundedRect clip)
         {
-            if (!DefersClips || CanvasTransform() is not { } transform || transform.M12 != 0 || transform.M21 != 0 ||
-                transform.ContainsPerspective())
+            if (!DefersClips || CanvasTransform() is not { } transform)
             {
                 return false;
             }
 
-            var device = clip.Rect.TransformToAABB(transform);
+            var toDevice = ToDevice(transform);
+
+            if (toDevice.M12 != 0 || toDevice.M21 != 0 || toDevice.ContainsPerspective())
+            {
+                return false;
+            }
+
+            var device = clip.Rect.TransformToAABB(toDevice);
             var radiusX = Math.Max(Math.Max(clip.RadiiTopLeft.X, clip.RadiiTopRight.X),
-                Math.Max(clip.RadiiBottomRight.X, clip.RadiiBottomLeft.X)) * Math.Abs(transform.M11);
+                Math.Max(clip.RadiiBottomRight.X, clip.RadiiBottomLeft.X)) * Math.Abs(toDevice.M11);
             var radiusY = Math.Max(Math.Max(clip.RadiiTopLeft.Y, clip.RadiiTopRight.Y),
-                Math.Max(clip.RadiiBottomRight.Y, clip.RadiiBottomLeft.Y)) * Math.Abs(transform.M22);
+                Math.Max(clip.RadiiBottomRight.Y, clip.RadiiBottomLeft.Y)) * Math.Abs(toDevice.M22);
 
             // Also rejects NaN.
             if (!(Math.Abs(device.Left) <= 1 << 24 && Math.Abs(device.Top) <= 1 << 24 &&
@@ -282,10 +288,14 @@ namespace Avalonia.Skia
             SKRoundRectCache.Shared.Return(roundRect);
         }
 
+        /// <summary>
+        /// Sets the transform, or with <c>null</c> the canvas matrix <paramref name="matrix"/> read back
+        /// earlier, which already includes the DPI scale.
+        /// </summary>
         private void SetCanvasTransform(Matrix? transform, in SKMatrix44 matrix)
         {
             _currentTransform = transform;
-            Canvas.SetMatrix(transform is { } value ? value.ToSKMatrix44() : matrix);
+            Canvas.SetMatrix(transform is { } value ? ToCanvasMatrix(value) : matrix);
         }
 
         /// <summary>Pops the innermost clip, rectangle, rounded rectangle, region or geometry.</summary>
@@ -504,7 +514,18 @@ namespace Avalonia.Skia
         }
 
         /// <summary>The transform from local to device coordinates, including the hidden DPI scale.</summary>
-        private Matrix DeviceTransform => _postTransform is { } post ? Transform * post : Transform;
+        private Matrix DeviceTransform => ToDevice(Transform);
+
+        /// <summary>The map to device pixels of local coordinates under <paramref name="transform"/>.</summary>
+        private Matrix ToDevice(in Matrix transform) => _postTransform is { } post ? transform * post : transform;
+
+        /// <summary>
+        /// Whether the canvas draws 1:1 on the device grid, as it does under
+        /// <see cref="Avalonia.Media.Fonts.Rasterization.GlyphTargetSurface.DevicePixels"/>. Compared in
+        /// the canvas's single precision, where that transform followed by the DPI scale is exactly
+        /// the identity.
+        /// </summary>
+        private bool DrawsInDevicePixels => DeviceTransform.ToSKMatrix().IsIdentity;
 
         private static bool TrySnapToPixels(Rect device, out SKRect snapped)
         {

@@ -42,7 +42,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 scratch.BeginDraw(run.GlyphTypeface, key);
 
-                if (context.RasterTarget == GlyphRasterTarget.Raster && context.TryGetBlitTarget(out var target))
+                if (context.TargetSurface.RasterTarget == GlyphRasterTarget.Raster &&
+                    context.TryGetBlitTarget(out var target))
                 {
                     BlendTransient(target, run.GlyphTypeface, path, scratch, glyphs, originX, originY,
                         RunMaskComposer.MakeTint(alpha, color.R, color.G, color.B));

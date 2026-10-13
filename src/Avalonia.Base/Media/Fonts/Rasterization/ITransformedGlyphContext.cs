@@ -32,11 +32,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <summary>
     /// The backend services the transformed text tier draws through.
     /// </summary>
-    internal interface ITransformedGlyphContext
+    internal interface ITransformedGlyphContext : IGlyphTargetContext
     {
-        /// <summary>What rasterizes this context's output.</summary>
-        GlyphRasterTarget RasterTarget { get; }
-
         /// <summary>
         /// The atlas this context places the glyph masks of every typeface in, or <c>null</c> to
         /// place them in each typeface's own atlas. A shared page changes whenever any typeface
@@ -55,8 +52,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Grants direct write access to the raster surface when a draw may bypass the backend:
         /// a CPU surface with no layer, no ambient opacity, no non-default blend mode and a
-        /// rectangular clip, drawn at device scale. Returns <c>false</c> otherwise, and the
-        /// caller draws through the backend.
+        /// rectangular clip. The caller writes device pixels, whatever the transform. Returns
+        /// <c>false</c> otherwise, and the caller draws through the backend.
         /// </summary>
         bool TryGetBlitTarget(out GlyphBlitTarget target);
 
@@ -98,7 +95,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Draws sprites of a transient image in one call, each from its source rectangle at its
-        /// position mapped through <paramref name="transform"/>, sampled nearest and modulated
+        /// position mapped through <paramref name="transform"/> (to device pixels), sampled nearest and modulated
         /// like <see cref="DrawAtlasBatch"/>. The sprites are read during the call only.
         /// </summary>
         void DrawTransientSprites(IDisposable image, ReadOnlySpan<GlyphAtlasSprite> sprites, in Matrix transform,

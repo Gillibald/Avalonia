@@ -652,7 +652,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 // A raster canvas reports no alpha-mask preference (the CPU pipeline draws
                 // color-modulated A8 ~6x slower than pre-tinted BGRA), so the renderer keeps
                 // per-color tinted variants here; only GPU contexts take the untinted path.
-                Assert.False(alphaContext.PrefersAlphaMasks);
+                Assert.False(alphaContext.TargetSurface.PrefersAlphaMasks);
 
                 context.DrawGlyphRun(Brushes.Black, run);
                 context.DrawGlyphRun(Brushes.Red, run);

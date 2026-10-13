@@ -5,8 +5,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
     /// Draws one bitmap strike glyph, choosing the strike where it is drawn: text records its colour
-    /// glyphs without knowing the device scale, and only the transform the draw replays under tells
-    /// the device pixels per em. The strike is the smallest at or above that size, as on the managed
+    /// glyphs without knowing the device scale, and only the transform the draw replays under, with the
+    /// scale its target applies after it (<see cref="GlyphTargetSurface"/>), tells the device pixels
+    /// per em. The strike is the smallest at or above that size, as on the managed
     /// mask path, and its image comes from the typeface's recording for the size
     /// (<see cref="GlyphTypeface.GetBitmapGlyphRecording"/>), so render data that holds this
     /// operation stays valid when the scale changes and draws at an unchanged scale reuse one
@@ -56,9 +57,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var impl = context.PlatformImpl;
             var transform = impl.Transform;
-            var upright = transform.M12 == 0 && transform.M21 == 0 && transform.M11 > 0 && transform.M22 > 0 &&
-                          Math.Abs(transform.M11 - transform.M22) <= transform.M11 * 0.001;
-            var deviceScale = upright ? transform.M11 : Math.Sqrt(Math.Abs(transform.GetDeterminant()));
+            var surface = GlyphTargetSurface.Of(impl);
+            var device = surface.ToDevice(transform);
+            var upright = device.M12 == 0 && device.M21 == 0 && device.M11 > 0 && device.M22 > 0 &&
+                          Math.Abs(device.M11 - device.M22) <= device.M11 * 0.001;
+            var deviceScale = upright ? device.M11 : Math.Sqrt(Math.Abs(device.GetDeterminant()));
             var pixelsPerEm = _emSize * deviceScale;
 
             if (!(pixelsPerEm > 0) || double.IsInfinity(pixelsPerEm))
@@ -90,9 +93,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     if (copies)
                     {
-                        var pen = _pen.Transform(transform);
+                        var pen = _pen.Transform(device);
 
-                        impl.Transform = Matrix.CreateTranslation(Math.Round(pen.X), Math.Round(pen.Y));
+                        impl.Transform = Matrix.CreateTranslation(Math.Round(pen.X), Math.Round(pen.Y)) *
+                                         surface.DevicePixels;
                     }
                     else
                     {

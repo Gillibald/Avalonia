@@ -33,12 +33,12 @@ namespace Avalonia.Skia
         /// <summary>
         /// Places a subpixel run mask in the atlas when this context draws from it: a hardware
         /// GPU, where a draw that reads the destination costs far more than the pixels it
-        /// shades, drawing at device scale. Returns <c>null</c> otherwise, or when the mask does
-        /// not fit a page, and the caller makes the mask an image of its own.
+        /// shades. Returns <c>null</c> otherwise, or when the mask does not fit a page, and the
+        /// caller makes the mask an image of its own.
         /// </summary>
         private LcdAtlasEntry? TryPlaceLcdMask(ReadOnlySpan<byte> rgba, int width, int height)
         {
-            if (!UsesLcdRunAtlas || _glyphRasterTarget != GlyphRasterTarget.HardwareGpu || _postTransform.HasValue)
+            if (!UsesLcdRunAtlas || _glyphRasterTarget != GlyphRasterTarget.HardwareGpu)
             {
                 return null;
             }
@@ -84,9 +84,8 @@ namespace Avalonia.Skia
         /// </remarks>
         private bool TryAppendToLcdBatch(LcdAtlasEntry entry, int x, int y, uint tint)
         {
-            // Entries are placed in device pixels; a transform or a hidden DPI scale would move
-            // them differently from the run's own placement.
-            if (!BatchesGlyphAtlasDraws || _grContext is null || _postTransform.HasValue || !Transform.IsIdentity)
+            // Entries are placed in device pixels, so the draw they join must be 1:1 on the device grid.
+            if (!BatchesGlyphAtlasDraws || _grContext is null || !DrawsInDevicePixels)
             {
                 return false;
             }
@@ -213,11 +212,12 @@ namespace Avalonia.Skia
             Array.Copy(arrays.Sources, sources, _lcdBatchCount);
             Array.Copy(arrays.Placements, placements, _lcdBatchCount);
 
-            var oldTransform = Transform;
+            var transform = _currentTransform;
+            var matrix = transform is null ? Canvas.TotalMatrix44 : default;
 
-            Transform = Matrix.Identity;
+            SetDeviceTransform(Matrix.Identity);
             Canvas.DrawAtlas(image, sources, placements, s_nearest, paint);
-            Transform = oldTransform;
+            SetCanvasTransform(transform, matrix);
 
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();

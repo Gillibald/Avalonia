@@ -226,9 +226,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
             public Matrix Transform { get; set; } = Matrix.Identity;
 
-            public bool PrefersAlphaMasks => _inner is null;
-
             public int MaxRunMaskSize { get; set; }
+
+            public GlyphTargetSurface TargetSurface => GlyphTargetSurface.Default with
+            {
+                PrefersAlphaMasks = _inner is null, MaxRunMaskSize = MaxRunMaskSize,
+            };
 
             public bool TryGetLcdGeometry(out LcdMaskGeometry geometry)
             {

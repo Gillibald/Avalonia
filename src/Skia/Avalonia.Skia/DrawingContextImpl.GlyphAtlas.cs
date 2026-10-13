@@ -50,10 +50,8 @@ namespace Avalonia.Skia
 
             // Writing the surface directly is only equivalent to drawing through the canvas
             // when the canvas would write the same pixels 1:1: no layer or opacity between the
-            // draw and the surface, source-over blending, device coordinates equal to canvas
-            // coordinates, and a clip that is exactly its bounds.
+            // draw and the surface, source-over blending, and a clip that is exactly its bounds.
             if (_grContext is not null || Surface is null || _saveLayerDepth != 0 || _currentOpacity != 1 ||
-                _postTransform.HasValue ||
                 RenderOptions.BitmapBlendingMode is not (BitmapBlendingMode.Unspecified or BitmapBlendingMode.SourceOver))
             {
                 return false;
@@ -205,13 +203,14 @@ namespace Avalonia.Skia
 
             paint.Color = color;
 
-            var oldTransform = Transform;
+            var saved = _currentTransform;
+            var savedMatrix = saved is null ? Canvas.TotalMatrix44 : default;
 
-            Transform = transform;
+            SetDeviceTransform(transform);
             t_atlasDraws += DrawAtlasSprites(image, backend.Sources, backend.Placements,
                 bilinear ? s_bilinear : s_nearest, paint);
             t_atlasGeometry += backend.Sources.Length;
-            Transform = oldTransform;
+            SetCanvasTransform(saved, savedMatrix);
 
             SKPaintCache.Shared.ReturnReset(paint);
         }
@@ -237,9 +236,10 @@ namespace Avalonia.Skia
             paint.Color = new SKColor((byte)(tintArgb >> 16), (byte)(tintArgb >> 8), (byte)tintArgb,
                 (byte)((tintArgb >> 24) * _currentOpacity));
 
-            var oldTransform = Transform;
+            var saved = _currentTransform;
+            var savedMatrix = saved is null ? Canvas.TotalMatrix44 : default;
 
-            Transform = transform;
+            SetDeviceTransform(transform);
 
             for (var start = 0; start < sprites.Length; start += MaxSpritesPerAtlasDraw)
             {
@@ -262,7 +262,7 @@ namespace Avalonia.Skia
             }
 
             t_atlasGeometry += sprites.Length;
-            Transform = oldTransform;
+            SetCanvasTransform(saved, savedMatrix);
 
             SKPaintCache.Shared.ReturnReset(paint);
         }
