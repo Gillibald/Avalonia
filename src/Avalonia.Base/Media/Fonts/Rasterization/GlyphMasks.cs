@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Diagnostics;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -45,6 +46,20 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return BuildTransformed(typeface, scratch, key);
             }
 
+            var start = Stopwatch.GetTimestamp();
+            var mask = BuildUpright(typeface, scratch, key);
+
+            // Stripe masks rasterize three samples per pixel, a cost no moving text pays.
+            if (!mask.IsEmpty && key.Mode != GlyphMaskMode.Subpixel)
+            {
+                typeface.MaskCache.RasterCost.Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
+            }
+
+            return mask;
+        }
+
+        private static GlyphMask BuildUpright(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
+        {
             var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
 
             if (!typeface.TryGetUnsimulatedGlyphInkBounds(key.Glyph, out var box) ||
@@ -309,6 +324,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
             int left, int top, int width, int height, Span<byte> destination, int stride)
+        {
+            var start = Stopwatch.GetTimestamp();
+
+            if (!RasterizeTransformedCore(typeface, scratch, key, left, top, width, height, destination, stride))
+            {
+                return false;
+            }
+
+            typeface.MaskCache.RasterCost.Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
+
+            return true;
+        }
+
+        private static bool RasterizeTransformedCore(GlyphTypeface typeface, GlyphPathBuilder scratch,
+            in GlyphMaskKey key, int left, int top, int width, int height, Span<byte> destination, int stride)
         {
             GlyphRasterDiagnostics.CountGlyphRasterization();
             scratch.Reset();

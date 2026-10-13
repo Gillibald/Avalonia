@@ -103,18 +103,26 @@ namespace Avalonia.Media.Fonts.Rasterization
             // The transform changes every frame, so masks rasterized now would never be drawn
             // again. A CPU surface rasterizes the frame anyway, into transient buffers that no
             // cache keeps: there that is as fast as drawing a cached batch under the change of
-            // transform, or faster, and stays sharp. A GPU draws the last settled batch under the
-            // change of transform instead, one bilinear atlas draw, where rasterizing every glyph
-            // mask on the CPU each frame takes longer than the backend's whole frame on a
-            // high-density display or a phone. Rotation costs that draw only the bilinear
-            // softening, so it stretches for as long as it lasts; a zoom magnifies or shrinks a
-            // raster made for another size, so once it leaves the stretch band one frame
-            // rasterizes at its transform and settles there. A frame whose sprites are cached
-            // draws them, and the first frame that repeats its transform rasterizes and caches
-            // again, at the final transform.
-            if (transformedContext is not null &&
+            // transform, or faster, and stays sharp. A GPU does the same while the frame's
+            // rasterization budget affords it (see MotionRasterBudget); otherwise it draws the
+            // last settled batch under the change of transform, one bilinear atlas draw, where
+            // rasterizing every glyph mask on the CPU each frame takes longer than the backend's
+            // whole frame on a high-density display or a phone. Rotation costs that draw only the
+            // bilinear softening, so it stretches for as long as it lasts; a zoom magnifies or
+            // shrinks a raster made for another size, so once it leaves the stretch band one
+            // frame rasterizes at its transform and settles there. A frame whose sprites are
+            // cached draws them, and the first frame that repeats its transform rasterizes and
+            // caches again, at the final transform.
+            var churning = transformedContext is not null &&
                 run.TransformChurn.Record(transform.M11, transform.M12, transform.M21, transform.M22, hit,
-                    holdOnCacheHit: true) && !hit)
+                    holdOnCacheHit: true);
+            var crossingStart = 0L;
+
+            if (!churning)
+            {
+                MotionRasterBudget.EndMotion(run);
+            }
+            else if (!hit)
             {
                 // Colour masks made for one frame of an animation would never be drawn again.
                 if (colorGlyphs)
@@ -126,15 +134,29 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (surface.RasterTarget == GlyphRasterTarget.Raster)
                 {
-                    return TryDrawTransient(transformedContext, run, key, transform, originX, originY, alpha,
+                    return TryDrawTransient(transformedContext!, run, key, transform, originX, originY, alpha,
                         solid.Color);
                 }
 
+                if (MotionRasterBudget.PrefersSharp(run, pixelsPerEm, cached: false))
+                {
+                    var start = MotionRasterBudget.Start();
+                    var drawn = TryDrawTransient(transformedContext!, run, key, transform, originX, originY, alpha,
+                        solid.Color);
+
+                    MotionRasterBudget.Charge(run, pixelsPerEm, start, sharp: true);
+
+                    return drawn;
+                }
+
                 if (IsWithinStretchBand(state, transform) &&
-                    TryDrawStretched(transformedContext, typeface, state, transform, ToArgb(alpha, solid.Color)))
+                    TryDrawStretched(transformedContext!, typeface, state, transform, ToArgb(alpha, solid.Color)))
                 {
                     return true;
                 }
+
+                // Past the band: this frame rasterizes and settles, on the frame's budget.
+                crossingStart = MotionRasterBudget.Start();
             }
 
             if (!hit)
@@ -151,6 +173,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 state.Add(built);
                 sprites = built;
+            }
+
+            if (crossingStart != 0)
+            {
+                MotionRasterBudget.Charge(run, pixelsPerEm, crossingStart, sharp: false);
             }
 
             state.Settle(sprites, transform, originX, originY);

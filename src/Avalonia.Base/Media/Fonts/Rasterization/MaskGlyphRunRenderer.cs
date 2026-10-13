@@ -244,9 +244,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             // sums overlapping coverage before correcting it. Software GPUs keep the run mask:
             // they gain least from fewer draw calls, and llvmpipe shades the run mask's
             // correction filter a level apart from the atlas modulation at some pixels. A zoom
-            // gesture, whose scale changes every frame, adds nothing to the atlas: laid out as
-            // sprites, every frame's glyph masks would fill it and push static text out of it.
+            // gesture, whose scale changes every frame, lays its frames out as sprites only while
+            // the frame's rasterization budget affords them (see MotionRasterBudget): each frame's
+            // glyph masks enter the atlas, so a zoom drawn sharp throughout would fill it and
+            // push static text out of it.
             var atlasZooming = false;
+
+            // A software GPU zoom frame that the budget affords composes a run mask at its scale
+            // (below) and settles there, sharp, instead of stretching.
+            var sharpZoom = false;
 
             if (alphaContext is not null && mode != GlyphMaskMode.Subpixel &&
                 surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
@@ -256,11 +262,21 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // the raster the zoom's next frames stretch.
                 var spritesCached = run.TransformedSprites.TryGet(key, out _);
 
-                atlasZooming = run.UprightChurn.Record(scaleX, 0, 0, scaleY, spritesCached, holdOnCacheHit: true) &&
-                    !spritesCached;
+                var churning = run.UprightChurn.Record(scaleX, 0, 0, scaleY, spritesCached, holdOnCacheHit: true);
 
-                if (!atlasZooming)
+                atlasZooming = churning && !spritesCached;
+
+                // A zoom frame the budget affords draws as a static frame at its scale would.
+                var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm, cached: false);
+
+                if (!atlasZooming || sharpAtlasZoom)
                 {
+                    if (!churning)
+                    {
+                        MotionRasterBudget.EndMotion(run);
+                    }
+
+                    var start = sharpAtlasZoom ? MotionRasterBudget.Start() : 0;
                     var argb = ToArgb(alpha, solid.Color);
                     var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
                         originX, originY, argb);
@@ -270,6 +286,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     // The sprites are now the last static frame; a zoom starting here stretches them.
                     run.SettledUpright = null;
+
+                    if (sharpAtlasZoom)
+                    {
+                        MotionRasterBudget.Charge(run, pixelsPerEm, start, sharp: true);
+                    }
 
                     return true;
                 }
@@ -345,12 +366,32 @@ namespace Avalonia.Media.Fonts.Rasterization
             // mask again at each new scale, which for CJK text on a phone takes two to three times
             // Skia's whole frame. Its static frames draw atlas sprites, which stretch the same way
             // (above); past the band one frame composes a run mask at its scale and settles there.
+            // While the frame's rasterization budget affords it, a hardware GPU draws a zoom frame
+            // from sprites at its scale instead (above), and a software GPU composes a run mask at
+            // its scale and settles there; both sharp.
             var zoomContext = context as ITransformedGlyphContext;
             var zooming = zoomContext is not null &&
                 (surface.RasterTarget == GlyphRasterTarget.HardwareGpu
                     ? atlasZooming
                     : (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
                       run.UprightChurn.Record(scaleX, 0, 0, scaleY, hit));
+
+            if (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu && !colorGlyphs)
+            {
+                if (zooming)
+                {
+                    sharpZoom = MotionRasterBudget.PrefersSharp(run, pixelsPerEm, cached: hit);
+                }
+                else
+                {
+                    MotionRasterBudget.EndMotion(run);
+                }
+            }
+
+            // A zoom frame that composes a run mask, sharp or past the band, uses up the frame's budget.
+            var zoomRasterStart = zooming && !hit && surface.RasterTarget != GlyphRasterTarget.Raster
+                ? MotionRasterBudget.Start()
+                : 0;
 
             // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
             // more than outline masks and fill the mask cache with sizes that never return, so a
@@ -377,7 +418,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return true;
             }
 
-            if (zooming &&
+            if (zooming && !sharpZoom &&
                 run.SettledUpright is { } settled && settled.Key.Mode == key.Mode && settled.Key.Tint == key.Tint &&
                 settled.Transform.TryInvert(out var inverse) &&
                 (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
@@ -452,6 +493,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 cache.Add(key, composed);
                 runMask = composed;
+            }
+
+            if (zoomRasterStart != 0)
+            {
+                MotionRasterBudget.Charge(run, pixelsPerEm, zoomRasterStart, sharp: sharpZoom);
             }
 
             run.SettledUpright = new SettledRunMask(key, transform, originX, originY);

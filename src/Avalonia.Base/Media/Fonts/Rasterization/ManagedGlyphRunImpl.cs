@@ -214,6 +214,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal UprightRasterCost LastUprightRaster;
 
+        /// <summary>
+        /// Whether the run's last draw on a GPU was a frame of a transform that keeps changing
+        /// (see <see cref="MotionRasterBudget"/>).
+        /// </summary>
+        internal bool MovesOnGpu;
+
         /// <summary>Whether the run holds a COLR v1 glyph; <c>null</c> until first asked.</summary>
         internal bool? HasColrV1Glyph;
 

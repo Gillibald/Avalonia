@@ -330,5 +330,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             : base(budget)
         {
         }
+
+        /// <summary>What rasterizing one of the typeface's glyph masks costs, learned from its builds.</summary>
+        public GlyphRasterCost RasterCost { get; } = new();
     }
 }
