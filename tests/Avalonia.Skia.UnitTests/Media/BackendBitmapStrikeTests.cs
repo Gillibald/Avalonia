@@ -308,7 +308,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// Inter with a CBLC/CBDT pair of two strikes, 20 and 40 ppem, each holding one full-em
         /// image (format 17, top on the em line) for the glyph of 'H'.
         /// </summary>
-        private static GlyphTypeface CreateTwoStrikeTypeface(out ushort glyph)
+        internal static GlyphTypeface CreateTwoStrikeTypeface(out ushort glyph)
         {
             var font = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
             var probe = font.TryCreateGlyphTypeface();
