@@ -80,6 +80,8 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
 
         public int StrikeCount => _strikes.Length;
 
+        public BitmapStrike GetStrike(int index) => new(index, _strikes[index].PpemX, _strikes[index].PpemY);
+
         public static bool TryLoad(GlyphTypeface glyphTypeface, [NotNullWhen(true)] out CbdtTable? table)
         {
             table = null;
@@ -249,6 +251,19 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             }
 
             return false;
+        }
+
+        /// <summary>CBDT metrics describe the image, so the bounds need no decoding.</summary>
+        public bool TryGetImageBounds(in BitmapStrike strike, ushort glyphIndex, out PixelRect bounds)
+        {
+            if (!TryGetGlyphImage(strike, glyphIndex, out var image))
+            {
+                bounds = default;
+                return false;
+            }
+
+            bounds = new PixelRect(image.BearingX, -image.BearingY, image.Width, image.Height);
+            return true;
         }
 
         /// <summary>Whether any strike carries an image for the glyph (no decoding).</summary>

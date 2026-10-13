@@ -13,20 +13,21 @@ namespace Avalonia.Media.Fonts
     /// (<see cref="GlyphPayloadKind.CompositeOutline"/> never appears in a key; the constructor is
     /// private and the factories cannot produce it). <see cref="PaletteIndex"/> is expected to be
     /// normalized (an index the font defines, or 0) before keying, so undefined palettes share the
-    /// default palette's entry; it is 0 for palette-independent representations. A bitmap-strike
-    /// representation (<see cref="GlyphPayloadKind.Bitmap"/>, future) adds its pixel size here as a
-    /// further field rather than as another map.
+    /// default palette's entry; it is 0 for palette-independent representations. A bitmap glyph's
+    /// recording depends on the device size it was filtered to instead, which
+    /// <see cref="PixelsPerEmQ"/> carries.
     /// </remarks>
     internal readonly record struct GlyphCacheKey
     {
         private GlyphCacheKey(ushort glyphIndex, GlyphPayloadKind kind, ushort paletteIndex,
-            uint foreground = 0, bool hasForeground = false)
+            uint foreground = 0, bool hasForeground = false, ushort pixelsPerEmQ = 0)
         {
             GlyphIndex = glyphIndex;
             Kind = kind;
             PaletteIndex = paletteIndex;
             Foreground = foreground;
             HasForeground = hasForeground;
+            PixelsPerEmQ = pixelsPerEmQ;
         }
 
         /// <summary>The glyph id.</summary>
@@ -47,6 +48,13 @@ namespace Avalonia.Media.Fonts
         /// <summary>Whether <see cref="Foreground"/> is part of the key.</summary>
         public bool HasForeground { get; }
 
+        /// <summary>
+        /// For the recording of a bitmap glyph, the device pixels per em its strike image is filtered
+        /// to, on the <see cref="Rasterization.GlyphMaskKey.ScaleQuantum"/> grid; 0 for every other
+        /// payload.
+        /// </summary>
+        public ushort PixelsPerEmQ { get; }
+
         /// <summary>The key of a glyph's outline payload (composites are keyed as outlines).</summary>
         public static GlyphCacheKey Outline(ushort glyph)
             => new(glyph, GlyphPayloadKind.Outline, 0);
@@ -63,5 +71,12 @@ namespace Avalonia.Media.Fonts
             => foreground is { } color
                 ? new(glyph, GlyphPayloadKind.ColorRecording, palette, color.ToUInt32(), true)
                 : new(glyph, GlyphPayloadKind.ColorRecording, palette);
+
+        /// <summary>
+        /// The key of a bitmap glyph's recording at <paramref name="pixelsPerEmQ"/> device pixels per
+        /// em (quantized, never 0).
+        /// </summary>
+        public static GlyphCacheKey BitmapRecording(ushort glyph, ushort pixelsPerEmQ)
+            => new(glyph, GlyphPayloadKind.ColorRecording, 0, pixelsPerEmQ: pixelsPerEmQ);
     }
 }

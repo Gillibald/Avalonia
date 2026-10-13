@@ -30,7 +30,21 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
     {
         BitmapStrike SelectStrike(float pixelsPerEm);
 
+        /// <summary>The number of colour strikes; indices run from 0 to one less.</summary>
+        int StrikeCount { get; }
+
+        /// <summary>The strike at <paramref name="index"/>.</summary>
+        BitmapStrike GetStrike(int index);
+
         bool HasGlyphImage(ushort glyphIndex);
+
+        /// <summary>
+        /// The pen-relative, y-down rectangle in strike pixels that the glyph's image covers in
+        /// <paramref name="strike"/>, read from the strike's metrics or the image header without
+        /// decoding; <c>false</c> when the strike has no image for the glyph or its size is only
+        /// known after decoding.
+        /// </summary>
+        bool TryGetImageBounds(in BitmapStrike strike, ushort glyphIndex, out PixelRect bounds);
 
         bool TryGetPlacement(in BitmapStrike strike, ushort glyphIndex, IBitmapGlyphDecoder decoder,
             out BitmapGlyphPlacement placement);

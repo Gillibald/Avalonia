@@ -3070,6 +3070,129 @@ namespace Avalonia.Media
                 cache.GetRecordingEntry(glyphIndex, palette, foreground), build);
         }
 
+        /// <summary>
+        /// Whether <see cref="GetGlyphDrawing(ushort, GlyphDrawingOptions?)"/> hands out a drawing for
+        /// <paramref name="glyphIndex"/>, answered from the tables without building a drawing or
+        /// decoding a strike image. A strike image counts while a decoder is registered, so an image
+        /// that then fails to decode draws nothing.
+        /// </summary>
+        internal bool HasGlyphDrawing(ushort glyphIndex) => HasColrDrawing(glyphIndex) || IsBitmapGlyph(glyphIndex);
+
+        /// <summary>
+        /// Whether the colour drawing of <paramref name="glyphIndex"/> is a strike image: no COLR
+        /// drawing, a strike that carries an image for the glyph and a registered decoder. Answered
+        /// without decoding.
+        /// </summary>
+        internal bool IsBitmapGlyph(ushort glyphIndex)
+            => glyphIndex < GlyphCount && !HasColrDrawing(glyphIndex) &&
+               (BitmapSource?.HasGlyphImage(glyphIndex) ?? false) &&
+               AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is not null;
+
+        // The probe GetGlyphDrawing runs before it builds a COLR drawing; a v1 record wins over v0
+        // layers, and COLR wins over strike images.
+        private bool HasColrDrawing(ushort glyphIndex)
+            => glyphIndex < GlyphCount && _colrTable is not null && _cpalTable is not null &&
+               ((_colrTable.HasV1Data && _colrTable.TryGetBaseGlyphV1Record(glyphIndex, out _)) ||
+                _colrTable.HasColorLayers(glyphIndex));
+
+        /// <summary>
+        /// The recording of bitmap glyph <paramref name="glyphIndex"/> (see <see cref="IsBitmapGlyph"/>)
+        /// for <paramref name="pixelsPerEmQ"/> device pixels per em on the
+        /// <see cref="Fonts.Rasterization.GlyphMaskKey.ScaleQuantum"/> grid, or <c>null</c> when no
+        /// strike image decodes. It draws the image of the smallest strike at or above that size,
+        /// filtered to it, in whole pixels of that size relative to the pen, so a draw that places the
+        /// pen on a device pixel copies its texels. Draws at the same size share one recording.
+        /// </summary>
+        internal Fonts.ColorGlyphRecording? GetBitmapGlyphRecording(ushort glyphIndex, ushort pixelsPerEmQ)
+        {
+            if (glyphIndex >= GlyphCount || pixelsPerEmQ == 0)
+            {
+                return null;
+            }
+
+            if (FontSimulations != FontSimulations.None)
+            {
+                return UnsimulatedTypeface.GetBitmapGlyphRecording(glyphIndex, pixelsPerEmQ);
+            }
+
+            var cache = _glyphCache ?? GetOrCreateGlyphCache();
+
+            return (Fonts.ColorGlyphRecording?)cache.GetOrBuildDrawing(
+                cache.GetBitmapRecordingEntry(glyphIndex, pixelsPerEmQ),
+                _buildBitmapRecording ??= BuildBitmapRecordingEntry);
+        }
+
+        private Func<GlyphCacheEntry, BuiltGeometry>? _buildBitmapRecording;
+
+        /// <summary>
+        /// Builds a bitmap glyph's recording payload: the strike image placed and sized the way the
+        /// managed mask path composes it at the same size, scaled with
+        /// <see cref="Fonts.Rasterization.BitmapGlyphScaler"/> unless the strike has that size. The
+        /// recording holds the only copy of the scaled texels, so they are charged to the entry.
+        /// </summary>
+        private unsafe BuiltGeometry BuildBitmapRecordingEntry(GlyphCacheEntry entry)
+        {
+            var empty = new BuiltGeometry(null, 0, GlyphPayloadKind.ColorRecording, Array.Empty<ushort>(), default,
+                hasBounds: false);
+
+            if (BitmapSource is not { } source ||
+                AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is not { } decoder)
+            {
+                return empty;
+            }
+
+            var pixelsPerEm = entry.Key.PixelsPerEmQ / Fonts.Rasterization.GlyphMaskKey.ScaleQuantum;
+            var strike = source.SelectStrike(pixelsPerEm);
+
+            if (!source.TryGetPlacement(strike, entry.Glyph, decoder, out var placement))
+            {
+                return empty;
+            }
+
+            var image = placement.Bitmap;
+            var strikeScale = pixelsPerEm / strike.PpemY;
+            var width = Math.Max(1, (int)MathF.Round(image.Width * strikeScale));
+            var height = Math.Max(1, (int)MathF.Round(image.Height * strikeScale));
+            var left = (int)MathF.Round(placement.Left * strikeScale);
+            var top = (int)MathF.Round(placement.Top * strikeScale);
+            var texels = image.Bgra;
+
+            if (width != image.Width || height != image.Height)
+            {
+                texels = new byte[width * height * 4];
+                Fonts.Rasterization.BitmapGlyphScaler.Scale(image, width, height, texels);
+            }
+
+            Imaging.Bitmap bitmap;
+
+            fixed (byte* pixels = texels)
+            {
+                // The Bitmap constructor copies, so the pinned array may go out of scope.
+                bitmap = new Imaging.Bitmap(PixelFormat.Bgra8888, AlphaFormat.Premul, (nint)pixels,
+                    new PixelSize(width, height), new Vector(96, 96), width * 4);
+            }
+
+            Rendering.Composition.DrawingRecording recording;
+
+            try
+            {
+                recording = Rendering.Composition.DrawingRecording.Create(context =>
+                    context.DrawImage(bitmap, new Rect(0, 0, width, height), new Rect(left, top, width, height)));
+            }
+            finally
+            {
+                // The recording holds its own bitmap reference.
+                bitmap.Dispose();
+            }
+
+            var stream = recording.Stream!;
+            var cost = RecordingBaseCost + stream.OpcodeLength + stream.ResourceCount * RecordingResourceCost +
+                       width * height * 4;
+
+            return new BuiltGeometry(new Fonts.ColorGlyphRecording(recording, usesForeground: false), cost,
+                GlyphPayloadKind.ColorRecording, Array.Empty<ushort>(), default, hasBounds: false);
+        }
+
         private Func<GlyphCacheEntry, BuiltGeometry>? _buildColorRecording;
 
         // A recording's own bytes: its opcodes plus the brushes, outline and bitmap references it

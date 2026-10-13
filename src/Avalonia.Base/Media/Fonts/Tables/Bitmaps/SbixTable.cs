@@ -22,6 +22,8 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
         private const uint JpgTag = 0x6A706720;    // 'jpg '
         private const uint TiffTag = 0x74696666;   // 'tiff'
         private const uint DupeTag = 0x64757065;   // 'dupe'
+        private const ulong PngSignature = 0x89504E470D0A1A0A;
+        private const uint IhdrType = 0x49484452;  // 'IHDR'
 
         internal static OpenTypeTag Tag { get; } = OpenTypeTag.Parse("sbix");
 
@@ -116,6 +118,50 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             var selected = (byte)Math.Min(_strikes[index].Ppem, byte.MaxValue);
 
             return new BitmapStrike(index, selected, selected);
+        }
+
+        public int StrikeCount => _strikes.Length;
+
+        public BitmapStrike GetStrike(int index)
+        {
+            var ppem = (byte)Math.Min(_strikes[index].Ppem, byte.MaxValue);
+
+            return new BitmapStrike(index, ppem, ppem);
+        }
+
+        /// <summary>
+        /// The size of a PNG record comes from its IHDR chunk; JPEG and TIFF records report no
+        /// bounds before decoding.
+        /// </summary>
+        public bool TryGetImageBounds(in BitmapStrike strike, ushort glyphIndex, out PixelRect bounds)
+        {
+            bounds = default;
+
+            if ((uint)strike.Index >= (uint)_strikes.Length ||
+                !TryGetRecord(strike.Index, glyphIndex, 0, out var image, out var originX, out var originY))
+            {
+                return false;
+            }
+
+            // The signature (8), then the IHDR chunk's length (4) and type (4), width (4), height (4).
+            var span = image.Span;
+
+            if (span.Length < 24 || BinaryPrimitives.ReadUInt64BigEndian(span) != PngSignature ||
+                BinaryPrimitives.ReadUInt32BigEndian(span.Slice(12)) != IhdrType)
+            {
+                return false;
+            }
+
+            var width = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(16));
+            var height = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(20));
+
+            if (width == 0 || height == 0 || width > short.MaxValue || height > short.MaxValue)
+            {
+                return false;
+            }
+
+            bounds = new PixelRect(originX, -(originY + (int)height), (int)width, (int)height);
+            return true;
         }
 
         public bool HasGlyphImage(ushort glyphIndex)

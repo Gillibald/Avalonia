@@ -127,6 +127,14 @@ namespace Avalonia.Media.Fonts
             => _entries.GetOrAdd(GlyphCacheKey.Recording(glyph, palette, foreground), s_createEntry, false);
 
         /// <summary>
+        /// Gets (creating if absent) the recording entry of bitmap glyph <paramref name="glyph"/>
+        /// filtered to <paramref name="pixelsPerEmQ"/>. Built with <see cref="GetOrBuildDrawing"/>;
+        /// dropped whole on eviction. Lock-free.
+        /// </summary>
+        public GlyphCacheEntry GetBitmapRecordingEntry(ushort glyph, ushort pixelsPerEmQ)
+            => _entries.GetOrAdd(GlyphCacheKey.BitmapRecording(glyph, pixelsPerEmQ), s_createEntry, false);
+
+        /// <summary>
         /// Returns the built outline geometry for <paramref name="entry"/>, building it with
         /// <paramref name="build"/> on a miss (charging its cost and evicting to budget). A built hit is
         /// lock-free; a malformed glyph caches as a built <c>null</c>.

@@ -91,8 +91,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             for (var i = 0; i < infos.Count; i++)
             {
-                if (IsSplitGlyph(infos[i].GlyphIndex) &&
-                    typeface.GetGlyphDrawing(infos[i].GlyphIndex) is not null)
+                if (IsSplitGlyph(infos[i].GlyphIndex) && typeface.HasGlyphDrawing(infos[i].GlyphIndex))
                 {
                     hasSplitGlyph = true;
                     break;
@@ -120,8 +119,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (i < infos.Count)
                 {
                     info = infos[i];
-                    splitHere = IsSplitGlyph(info.GlyphIndex) &&
-                        typeface.GetGlyphDrawing(info.GlyphIndex) is not null;
+                    splitHere = IsSplitGlyph(info.GlyphIndex) && typeface.HasGlyphDrawing(info.GlyphIndex);
                 }
 
                 if (i < infos.Count && !splitHere)
@@ -199,10 +197,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether <paramref name="glyph"/> draws through its colour drawing rather than as an
-        /// outline: a colour glyph whose drawing resolves.
+        /// outline: a colour glyph that has a drawing. Decodes nothing.
         /// </summary>
         internal static bool IsDrawnAsColor(GlyphTypeface typeface, ushort glyph)
-            => typeface.IsColorGlyph(glyph) && typeface.GetGlyphDrawing(glyph) is not null;
+            => typeface.IsColorGlyph(glyph) && typeface.HasGlyphDrawing(glyph);
 
         /// <summary>
         /// Draws only the colour glyphs of <paramref name="run"/> through their drawings, at the
@@ -264,6 +262,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             GlyphRasterDiagnostics.CountColorGlyphVectorDraw();
 
+            // A strike image is chosen for the device size, which only the context the glyph is
+            // drawn on knows: render data replays the operation under the device transform, and a
+            // platform context draws it at once under its current one.
+            if (context is RenderDataDrawingContext or PlatformDrawingContext && typeface.IsBitmapGlyph(glyph))
+            {
+                context.Custom(new BitmapGlyphDrawOperation(typeface, glyph,
+                    scale * typeface.Metrics.DesignEmHeight, pen));
+                return;
+            }
+
             // The two contexts that take recordings replay the glyph's cached recording: the same
             // calls the live drawing makes, without building and walking its paint graph per draw.
             // The lease keeps the cache from disposing the recording during the replay; render
@@ -283,8 +291,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            // Fetched with the run's foreground so sentinel palette entries resolve to it.
-            var drawing = typeface.GetGlyphDrawing(glyph, drawingOptions)!;
+            // Fetched with the run's foreground so sentinel palette entries resolve to it. A strike
+            // image that does not decode has no drawing.
+            if (typeface.GetGlyphDrawing(glyph, drawingOptions) is not { } drawing)
+            {
+                return;
+            }
 
             using (context.PushTransform(transform))
             {
