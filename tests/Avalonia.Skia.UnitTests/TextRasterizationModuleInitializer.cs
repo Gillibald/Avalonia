@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 
 namespace Avalonia.Skia.UnitTests
 {
@@ -17,6 +18,11 @@ namespace Avalonia.Skia.UnitTests
             // Unspecified text renders subpixel on display surfaces in the recorded expectations;
             // macOS and iOS hosts would otherwise render it grayscale.
             TextRasterizationDefaults.UnspecifiedRendersSubpixel = true;
+
+            // A GPU draws a moving run sharp while the frame's rasterization budget affords it,
+            // which depends on how fast the machine rasterizes. The expectations here record
+            // the stretched frames of an exhausted budget; tests of the budget inject their own.
+            MotionRasterBudget.BudgetOverride = 0;
         }
     }
 }
