@@ -29,7 +29,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <see cref="HoldFrames"/> frames, or until the motion stops or pauses: a scene near the
     /// budget does not alternate between sharp and stretched lines, and the frame after the hold
     /// tries again, which also lets a scene first estimated on code still compiling become sharp
-    /// once it runs warm.
+    /// once it runs warm. Each try that runs out of budget again doubles the hold, up to
+    /// <see cref="MaxHoldFrames"/>, so a scene whose sharp frames do not fit, though its estimate
+    /// does, rarely costs a frame over budget; a try that fits, a stop or a pause starts over.
     /// </para>
     /// </remarks>
     internal static class MotionRasterBudget
@@ -47,6 +49,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// second at 60 Hz.
         /// </summary>
         internal const int HoldFrames = 30;
+
+        /// <summary>The longest hold after repeated tries that ran out of budget, 8 s at 60 Hz.</summary>
+        internal const int MaxHoldFrames = 16 * HoldFrames;
 
         /// <summary>
         /// What a run costs beyond its glyphs, in glyphs: laying out its masks and handing them to
@@ -73,6 +78,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         [ThreadStatic]
         private static long t_lastMotionFrame;
+
+        [ThreadStatic]
+        private static int t_hold;
+
+        [ThreadStatic]
+        private static bool t_tried;
+
+        [ThreadStatic]
+        private static bool t_ranOut;
 
         /// <summary>
         /// Replaces <see cref="FrameBudgetMicroseconds"/>, for tests; <c>null</c> keeps it.
@@ -106,7 +120,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // A motion more than two frames after the last one follows a pause, which ends a hold.
             if (frame - t_lastMotionFrame > 2)
             {
-                t_holdUntil = 0;
+                EndHold();
             }
 
             t_lastMotionFrame = frame;
@@ -118,10 +132,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (t_spent + estimate < Budget)
             {
+                t_tried = true;
                 return true;
             }
 
-            t_holdUntil = frame + 1 + HoldFrames;
+            t_hold = t_hold == 0 ? HoldFrames : Math.Min(2 * t_hold, MaxHoldFrames);
+            t_holdUntil = frame + 1 + t_hold;
+            t_ranOut = true;
 
             return false;
         }
@@ -144,8 +161,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (run.MovesOnGpu)
             {
                 run.MovesOnGpu = false;
-                t_holdUntil = 0;
+                EndHold();
             }
+        }
+
+        private static void EndHold()
+        {
+            t_holdUntil = 0;
+            t_hold = 0;
         }
 
         /// <summary>A timestamp for <see cref="Charge"/>, taken before a motion frame rasterizes.</summary>
@@ -173,7 +196,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Starts a new budget when the thread draws a frame other than the last one it drew
         /// moving text in, keeping that frame's estimate as the previous one, and returns the
-        /// frame. Drawing outside a frame decides every draw on its own.
+        /// frame. A last frame that tried and did not run out of budget ends the doubling of the
+        /// hold. Drawing outside a frame decides every draw on its own.
         /// </summary>
         private static long BeginFrame()
         {
@@ -181,6 +205,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (frame != t_frame || frame == 0)
             {
+                if (t_tried && !t_ranOut)
+                {
+                    t_hold = 0;
+                }
+
+                t_tried = false;
+                t_ranOut = false;
                 t_previousEstimate = t_estimate;
                 t_frame = frame;
                 t_spent = 0;
