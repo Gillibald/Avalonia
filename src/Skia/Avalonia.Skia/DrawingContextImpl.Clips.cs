@@ -513,14 +513,22 @@ namespace Avalonia.Skia
             }
         }
 
-        /// <summary>The transform from local to device coordinates, including the hidden DPI scale.</summary>
+        /// <summary>
+        /// The transform from local to device coordinates, including the hidden DPI scale and the
+        /// scale recorded content is shown at.
+        /// </summary>
         private Matrix DeviceTransform => ToDevice(Transform);
 
         /// <summary>The map to device pixels of local coordinates under <paramref name="transform"/>.</summary>
-        private Matrix ToDevice(in Matrix transform) => _postTransform is { } post ? transform * post : transform;
+        private Matrix ToDevice(in Matrix transform)
+        {
+            var device = _postTransform is { } post ? transform * post : transform;
+
+            return _playbackScale is { } playback ? device * playback : device;
+        }
 
         /// <summary>
-        /// Whether the canvas draws 1:1 on the device grid, as it does under
+        /// Whether the current transform places draws 1:1 on the device grid, as it does under
         /// <see cref="Avalonia.Media.Fonts.Rasterization.GlyphTargetSurface.DevicePixels"/>. Compared in
         /// the canvas's single precision, where that transform followed by the DPI scale is exactly
         /// the identity.

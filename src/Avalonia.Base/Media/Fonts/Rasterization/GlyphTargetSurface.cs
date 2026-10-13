@@ -12,7 +12,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// The scale the target applies after <see cref="IDrawingContextImpl.Transform"/>: (1, 1) on
     /// window and compositor targets, which carry their render scaling in the transform; the DPI
     /// scale on targets that scale their drawing to their DPI, such as a render target bitmap or
-    /// the intermediate surface of a tile brush.
+    /// the intermediate surface of a tile brush; on a picture recorded in DIPs, such as a scene
+    /// brush's, the scale the picture is drawn at on the device.
     /// </param>
     /// <param name="RasterTarget">What rasterizes the target's pixels.</param>
     /// <param name="PrefersAlphaMasks">

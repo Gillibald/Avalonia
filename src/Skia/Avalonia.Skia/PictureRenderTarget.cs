@@ -26,7 +26,14 @@ internal class PictureRenderTarget : IDisposable
         return rv;
     }
     
-    public IDrawingContextImpl CreateDrawingContext(Size size, bool scaleToDpi = true)
+    /// <summary>Begins recording a picture of <paramref name="size"/>.</summary>
+    /// <param name="size">The size of the picture, in DIPs.</param>
+    /// <param name="scaleToDpi">Whether the picture is recorded in pixels at the target's DPI.</param>
+    /// <param name="playbackScale">
+    /// The scale the picture is shown at on the device, which text recorded into it rasterizes at
+    /// (<see cref="DrawingContextImpl.CreateInfo.PlaybackScale"/>).
+    /// </param>
+    public IDrawingContextImpl CreateDrawingContext(Size size, bool scaleToDpi = true, Vector? playbackScale = null)
     {
         if (scaleToDpi)
             size *= (_dpi / 96);
@@ -41,6 +48,7 @@ internal class PictureRenderTarget : IDisposable
         {
             Canvas = canvas,
             ScaleDrawingToDpi = scaleToDpi,
+            PlaybackScale = playbackScale,
             Dpi = _dpi,
             DisableSubpixelTextRendering = true,
             GrContext = _grContext,

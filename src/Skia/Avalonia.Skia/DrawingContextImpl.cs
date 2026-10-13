@@ -34,6 +34,8 @@ namespace Avalonia.Skia
         private readonly Stack<TextOptions> _textOptionsStack = new();
         private readonly Matrix? _postTransform;
         private readonly Matrix _inversePostTransform = Matrix.Identity;
+        private readonly Matrix? _playbackScale;
+        private readonly Matrix _inversePlaybackScale = Matrix.Identity;
         private double _currentOpacity = 1.0f;
         private readonly bool _disableSubpixelTextRendering;
         private readonly bool _surfaceIsDisplay;
@@ -75,7 +77,15 @@ namespace Avalonia.Skia
             /// Makes DPI to be applied as a hidden matrix transform
             /// </summary>
             public bool ScaleDrawingToDpi;
-            
+
+            /// <summary>
+            /// The scale the canvas's content is shown at on the device, after the DPI scale, when
+            /// the canvas records content that is drawn later under a scale, as the picture of a
+            /// scene brush is. The canvas is not scaled; text rasterizes at this scale and places
+            /// its device-pixel draws on that grid. <c>null</c> for content shown at its own scale.
+            /// </summary>
+            public Vector? PlaybackScale;
+
             /// <summary>
             /// Dpi for intermediate surfaces
             /// </summary>
@@ -255,6 +265,12 @@ namespace Avalonia.Skia
                         SkiaPlatform.DefaultDpi.Y / createInfo.Dpi.Y);
             }
 
+            if (createInfo.PlaybackScale is { } playback && playback != new Vector(1, 1))
+            {
+                _playbackScale = Matrix.CreateScale(playback.X, playback.Y);
+                _inversePlaybackScale = Matrix.CreateScale(1 / playback.X, 1 / playback.Y);
+            }
+
             Transform = Matrix.Identity;
 
             var options = AvaloniaLocator.Current.GetService<SkiaOptions>();
@@ -407,7 +423,7 @@ namespace Avalonia.Skia
 
         private GlyphTargetSurface DescribeTargetSurface()
             => new(
-                _postTransform is { } post ? new Vector(post.M11, post.M22) : new Vector(1, 1),
+                new Vector(ToDevice(Matrix.Identity).M11, ToDevice(Matrix.Identity).M22),
                 _glyphRasterTarget,
                 PrefersAlphaMasks: GrContext is not null,
                 // Ganesh tiles a raster image larger than the texture limit when drawing it, but a
@@ -1483,13 +1499,16 @@ namespace Avalonia.Skia
             => (_postTransform is { } post ? transform * post : transform).ToSKMatrix44();
 
         /// <summary>
-        /// Sets the canvas matrix to <paramref name="device"/>, a map to device pixels, for draws
-        /// placed on the device grid. Reading the transform back gives it without the DPI scale.
+        /// Sets the canvas matrix for <paramref name="device"/>, a map to device pixels, for draws
+        /// placed on the device grid: the matrix itself, or without the playback scale on a canvas
+        /// whose content is shown scaled. Reading the transform back gives it without the DPI scale.
         /// </summary>
         private void SetDeviceTransform(in Matrix device)
         {
-            _currentTransform = _postTransform.HasValue ? device * _inversePostTransform : device;
-            Canvas.SetMatrix(device.ToSKMatrix44());
+            var canvas = _playbackScale.HasValue ? device * _inversePlaybackScale : device;
+
+            _currentTransform = _postTransform.HasValue ? canvas * _inversePostTransform : canvas;
+            Canvas.SetMatrix(canvas.ToSKMatrix44());
         }
         public object? GetFeature(Type t)
         {
@@ -1882,16 +1901,6 @@ namespace Avalonia.Skia
                                          Matrix.CreateTranslation(alignmentTranslate);
             }
             
-            // Pre-rasterize the tile into SKPicture
-            using var pictureTarget = new PictureRenderTarget(_gpu, _grContext, _intermediateSurfaceDpi);
-            using (var ctx = pictureTarget.CreateDrawingContext(tileSize, false))
-            {
-                ctx.PushRenderOptions(RenderOptions);
-                content.Render(ctx, contentRenderTransform);
-                ctx.PopRenderOptions();
-            }
-            using var tile = pictureTarget.GetPicture();
-            
             // If there is no BrushTransform and destinationRect is at (0,0) we don't need any transforms
             Matrix shaderTransform = Matrix.Identity;
 
@@ -1910,7 +1919,20 @@ namespace Avalonia.Skia
                 var offset = Matrix.CreateTranslation(transformOrigin);
                 shaderTransform *= (-offset) * content.Transform.Value * (offset);
             }
-            
+
+            // Pre-rasterize the tile into SKPicture. The picture is recorded in DIPs and shown
+            // under the shader transform, the paint's transform and the DPI scale; text in it
+            // rasterizes at that scale instead of being enlarged with the picture.
+            using var pictureTarget = new PictureRenderTarget(_gpu, _grContext, _intermediateSurfaceDpi);
+            using (var ctx = pictureTarget.CreateDrawingContext(tileSize, false,
+                       GetPlaybackScale(shaderTransform * DeviceTransform)))
+            {
+                ctx.PushRenderOptions(RenderOptions);
+                content.Render(ctx, contentRenderTransform);
+                ctx.PopRenderOptions();
+            }
+            using var tile = pictureTarget.GetPicture();
+
             // Create shader
             var (tileX, tileY) = GetTileModes(content.Brush.TileMode);
             using(var shader = tile.ToShader(tileX, tileY, shaderTransform.ToSKMatrix(), 
@@ -1918,6 +1940,34 @@ namespace Avalonia.Skia
             {
                 paintWrapper.Paint.Shader = shader;
             }
+        }
+
+        /// <summary>
+        /// The scale a picture drawn under <paramref name="toDevice"/> is shown at, for the text
+        /// recorded into it: the larger axis scale, so that no axis enlarges the rasterized text.
+        /// <c>null</c> for a scale of one, and under perspective, where Skia rasterizes the picture
+        /// at scale one.
+        /// </summary>
+        /// <remarks>
+        /// The axis scales are the lengths of the matrix's axes, which do not change under a
+        /// rotation; Skia sizes the image it rasterizes a picture shader's tile into the same way.
+        /// </remarks>
+        private static Vector? GetPlaybackScale(in Matrix toDevice)
+        {
+            if (toDevice.ContainsPerspective())
+            {
+                return null;
+            }
+
+            var scale = Math.Max(Math.Sqrt(toDevice.M11 * toDevice.M11 + toDevice.M12 * toDevice.M12),
+                Math.Sqrt(toDevice.M21 * toDevice.M21 + toDevice.M22 * toDevice.M22));
+
+            if (!double.IsFinite(scale) || scale <= 0 || MathUtilities.AreClose(scale, 1))
+            {
+                return null;
+            }
+
+            return new Vector(scale, scale);
         }
 
         (SKShaderTileMode x, SKShaderTileMode y) GetTileModes(TileMode mode)
