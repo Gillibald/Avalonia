@@ -107,6 +107,77 @@ namespace Avalonia.Skia.UnitTests.Media
             AssertEqual(expected, actual, $"{target} {content} at {dpi} dpi");
         }
 
+        public static IEnumerable<object[]> HardwareGpus()
+        {
+            yield return new object[] { GpuBackend.NativeGl };
+            yield return new object[] { GpuBackend.Angle };
+            yield return new object[] { GpuBackend.Metal };
+            yield return new object[] { GpuBackend.Vulkan };
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareGpus))]
+        public void Runs_On_A_Dpi_Scaled_Target_Batch_As_At_96_Dpi_Under_The_Same_Scale(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = CreateEnvironment(TextRasterizationMode.Managed);
+
+            var typeface = LoadInter();
+            var runs = new List<GlyphRun>();
+
+            for (var i = 0; i < 6; i++)
+            {
+                var line = Text.Substring(0, 10 + i);
+                var glyphs = new ushort[line.Length];
+
+                for (var j = 0; j < line.Length; j++)
+                {
+                    glyphs[j] = typeface.CharacterToGlyphMap[line[j]];
+                }
+
+                runs.Add(CreateRun(typeface, glyphs, 9, new Point(4.3, 11.6 + i * 12)));
+            }
+
+            try
+            {
+                // Each run clips to its row, as a text block's bounds do; the rows lie on whole device
+                // pixels, so the clips need not reach the canvas and the runs still draw in one call.
+                void Draw(DrawingContext context)
+                {
+                    for (var i = 0; i < runs.Count; i++)
+                    {
+                        using (context.PushClip(new Rect(0, 2 + i * 12, 190, 12)))
+                        {
+                            context.DrawGlyphRun(Brushes.Black, runs[i]);
+                        }
+                    }
+                }
+
+                // The second frame of each is warm: every glyph is in the atlas already.
+                Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
+
+                var draws = DrawingContextImpl.AtlasDrawsOnThread;
+                var expected = Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
+                var expectedDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+
+                Render(Target.NativeGl, gpu, 192, Matrix.Identity, Draw);
+
+                draws = DrawingContextImpl.AtlasDrawsOnThread;
+                var actual = Render(Target.NativeGl, gpu, 192, Matrix.Identity, Draw);
+                var actualDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+
+                Assert.Equal(1, expectedDraws);
+                Assert.Equal(expectedDraws, actualDraws);
+                AssertEqual(expected, actual, $"{backend} batched runs at 192 dpi");
+            }
+            finally
+            {
+                foreach (var run in runs)
+                {
+                    run.Dispose();
+                }
+            }
+        }
         [Fact]
         public void The_Transform_Read_After_Popping_A_Clip_Excludes_The_Dpi_Scale()
         {
@@ -172,6 +243,9 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static GlyphRun CreateRun(GlyphTypeface typeface, ushort[] glyphs, double emSize)
+            => CreateRun(typeface, glyphs, emSize, s_origin);
+
+        private static GlyphRun CreateRun(GlyphTypeface typeface, ushort[] glyphs, double emSize, Point origin)
         {
             var scale = emSize / typeface.Metrics.DesignEmHeight;
             var infos = new List<GlyphInfo>();
@@ -182,7 +256,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 infos.Add(new GlyphInfo(glyphs[i], i, metrics.AdvanceWidth * scale));
             }
 
-            return new GlyphRun(typeface, emSize, default, infos, s_origin);
+            return new GlyphRun(typeface, emSize, default, infos, origin);
         }
 
         /// <summary>
