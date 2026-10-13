@@ -166,6 +166,8 @@ namespace TextStress
             "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 32)\n" +
             "  --phase-timers   record the render thread's glyph phase timers (us_/n_ columns)\n" +
             "  --glyph-cache-mb N   FontManagerOptions.GlyphCacheLimitBytes in MB (default: platform default)\n" +
+            "  --motion-budget-us N   time a GPU frame may spend rasterizing moving text sharp, in us; 0 always\n" +
+            "    stretches (default: built-in)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +

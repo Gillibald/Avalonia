@@ -25,6 +25,14 @@ namespace TextStress
             {
                 Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = options.PendingBatches;
             }
+
+            // A negative value keeps the built-in budget.
+            var motionBudget = options.GetDouble("motion-budget-us", -1);
+
+            if (motionBudget >= 0)
+            {
+                Avalonia.Media.Fonts.Rasterization.MotionRasterBudget.BudgetOverride = motionBudget;
+            }
         }
 
         /// <summary>
