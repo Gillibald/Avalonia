@@ -33,6 +33,23 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _redrawRequested;
         private bool _fullRedrawRequested;
         private bool _disposed;
+
+        /// <summary>
+        /// Render passes since the last frame that drew text stretched from another transform's
+        /// raster; -1 while no such text is left on screen.
+        /// </summary>
+        private int _ticksSinceUnsettledText = -1;
+
+        /// <summary>
+        /// The render passes to wait after a frame that drew stretched text before drawing the
+        /// whole target once more. Text whose transform changes every frame draws stretched from
+        /// an earlier raster and sharp on its first draw under an unchanged transform, but this
+        /// target draws only what changed: once the motion stops, nothing would draw that frame.
+        /// Waiting a few passes keeps a frame or two missed by a running animation or gesture from
+        /// rasterizing every glyph mid-motion; a longer wait would show the soft text longer.
+        /// </summary>
+        internal const int SettleDelay = 3;
+
         private readonly HashSet<ServerCompositionVisual> _attachedVisuals = new();
         public IDirtyRectTracker DirtyRects { get; }
 
@@ -181,10 +198,15 @@ namespace Avalonia.Rendering.Composition.Server
                 return;
             }
 
-            if (DirtyRects.IsEmpty && !_redrawRequested && !_updateRequested)
+            // The frame that draws text left stretched by a motion that has stopped draws the whole
+            // target, whether or not other content changed in the meantime.
+            var settleFrame = _ticksSinceUnsettledText >= 0 && ++_ticksSinceUnsettledText >= SettleDelay;
+
+            if (DirtyRects.IsEmpty && !_redrawRequested && !_updateRequested && !settleFrame)
                 return;
 
-            _redrawRequested |= !DirtyRects.IsEmpty;
+            _redrawRequested |= !DirtyRects.IsEmpty || settleFrame;
+            _fullRedrawRequested |= settleFrame;
 
             if (!_redrawRequested)
                 return;
@@ -223,6 +245,8 @@ namespace Avalonia.Rendering.Composition.Server
                 return;
             }
             
+            var unsettledDraws = MaskGlyphRunRenderer.UnsettledDraws;
+
             using (renderTargetContext)
             using (var renderTiming = Diagnostic.BeginCompositorRenderPass())
             {
@@ -284,6 +308,15 @@ namespace Avalonia.Rendering.Composition.Server
                 RenderedVisuals = 0;
                 VisitedVisuals = 0;
 
+                // Any frame that stretches text starts the wait for the settle frame again, except
+                // the settle frame itself: text it still stretches does not settle by being drawn
+                // again (a run drawn under two transforms in one frame never repeats its transform
+                // from one draw to the next), so it asks for no further frame.
+                if (MaskGlyphRunRenderer.UnsettledDraws != unsettledDraws)
+                    _ticksSinceUnsettledText = settleFrame ? -1 : 0;
+                else if (fullRedraw)
+                    _ticksSinceUnsettledText = -1;
+
                 _redrawRequested = false;
                 DirtyRects.Initialize(renderBounds);
             }
@@ -313,6 +346,12 @@ namespace Avalonia.Rendering.Composition.Server
         }
         
         public void RequestUpdate() => _updateRequested = true;
+
+        /// <summary>
+        /// Whether this target waits to draw text left stretched by a motion once more, so the
+        /// render loop must keep ticking.
+        /// </summary>
+        internal bool IsSettling => _ticksSinceUnsettledText >= 0 && Root != null && !_disposed;
 
         public void Dispose()
         {

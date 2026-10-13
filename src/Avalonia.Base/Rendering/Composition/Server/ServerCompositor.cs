@@ -285,6 +285,11 @@ namespace Avalonia.Rendering.Composition.Server
             foreach (var target in _activeTargets)
                 if (target.IsWaitingForReadyRenderTarget && !target.IsWaitingForRenderLoopWakeup)
                     return true;
+
+            // Request a tick while a target waits to draw text left stretched by a motion that stopped
+            foreach (var target in _activeTargets)
+                if (target.IsSettling)
+                    return true;
             
             // Otherwise there is no need to waste CPU cycles, tell the timer to pause
             return false;

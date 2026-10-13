@@ -119,6 +119,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // Colour masks made for one frame of an animation would never be drawn again.
                 if (colorGlyphs)
                 {
+                    t_unsettledDraws++;
+
                     return false;
                 }
 
@@ -501,6 +503,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
 
+            t_unsettledDraws++;
             DrawBatches(context, atlas, colorAtlas, batches, placement, foregroundArgb, bilinear: true);
 
             return true;

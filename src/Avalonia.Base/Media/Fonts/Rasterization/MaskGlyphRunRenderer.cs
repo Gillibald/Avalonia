@@ -42,6 +42,19 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static GlyphPathBuilder? t_scratch;
 
+        [ThreadStatic]
+        private static int t_unsettledDraws;
+
+        /// <summary>
+        /// The draws made on this thread that showed a run other than a draw under a held
+        /// transform shows it: a bilinear stretch of an earlier raster, or colour glyphs replayed
+        /// as vectors, while the run's transform changes from draw to draw. Such a run draws sharp
+        /// on its first draw under an unchanged transform, so a renderer that draws only what
+        /// changed must draw it once more after the motion stops (see
+        /// <c>ServerCompositionTarget</c>).
+        /// </summary>
+        internal static int UnsettledDraws => t_unsettledDraws;
+
         private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder), GlyphMask> s_buildMask =
             static (key, state) => GlyphMasks.Build(state.Item1, state.Item2, key);
 
@@ -381,6 +394,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             // them as vectors until the scale holds still.
             if (colorGlyphs && zooming && !hit)
             {
+                t_unsettledDraws++;
+
                 return false;
             }
 
@@ -834,6 +849,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var oldTransform = context.Transform;
             var straightTint = ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 
+            t_unsettledDraws++;
             context.Transform = surface.DevicePixels;
 
             foreach (var part in runMask.Parts)

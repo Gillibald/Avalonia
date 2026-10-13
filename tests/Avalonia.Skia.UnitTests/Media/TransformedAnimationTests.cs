@@ -218,6 +218,70 @@ namespace Avalonia.Skia.UnitTests.Media
                 $"animated frames allocated {perFrame} bytes each");
         }
 
+        public static IEnumerable<object[]> Motions()
+        {
+            foreach (var target in Enum.GetValues<Target>())
+            {
+                yield return new object[] { target, false };
+                yield return new object[] { target, true };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Motions))]
+        public void Only_Frames_That_Stretch_Count_As_Unsettled_Draws(Target target, bool zoom)
+        {
+            // A renderer that draws only what changed draws the run once more after a frame that
+            // counted, so the frame that holds the transform, and a CPU surface rasterizing an
+            // animated frame exactly as a static frame, must not count.
+            using var output = TestTarget.Create(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
+
+            var rasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+
+            // A CPU surface stretches an upright zoom only where rasterizing costs more.
+            MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6;
+
+            try
+            {
+                Matrix At(int frame) => zoom
+                    ? Matrix.CreateScale(1 + 0.02 * frame, 1 + 0.02 * frame) * Matrix.CreateTranslation(10.25, 12.5)
+                    : Rotation(5 + frame * 1.7);
+
+                var context = output.Context;
+                var counted = new List<int>();
+
+                for (var frame = 0; frame < 10; frame++)
+                {
+                    var before = MaskGlyphRunRenderer.UnsettledDraws;
+
+                    context.Transform = At(Math.Min(frame, 7));
+                    context.DrawGlyphRun(Brushes.Black, run);
+                    context.FlushGlyphBatch();
+
+                    if (MaskGlyphRunRenderer.UnsettledDraws != before)
+                    {
+                        counted.Add(frame);
+                    }
+                }
+
+                var stretches = target != Target.Raster || zoom;
+                var expected = new List<int>();
+
+                for (var frame = TransformChurnGuard.Threshold; stretches && frame < 8; frame++)
+                {
+                    expected.Add(frame);
+                }
+
+                Assert.Equal(expected, counted);
+            }
+            finally
+            {
+                MaskGlyphRunRenderer.ZoomRasterPixelCost = rasterPixelCost;
+            }
+        }
+
         public static IEnumerable<object[]> Obstacles()
         {
             yield return new object[] { "opacity" };
