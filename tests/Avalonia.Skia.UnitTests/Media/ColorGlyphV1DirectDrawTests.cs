@@ -39,6 +39,9 @@ namespace Avalonia.Skia.UnitTests.Media
         public void A_Direct_Draw_Renders_V1_Glyphs_Through_Their_Drawings_On_A_Raster_Context(
             string pattern, bool rotated)
         {
+            // Compared with the drawings drawn as vectors byte for byte, which the transformed colour
+            // masks of a raster surface only approximate (see TransformedColorAtlasTests).
+            using var masksOff = rotated ? ColorGlyphMaskTests.SwitchColorMasksOff() : null;
             using var scope = ColorGlyphV1SplitTests.CreateEnvironment();
             var typeface = ColorGlyphV1SplitTests.CreateV1Typeface(out var v1Glyph);
             var transform = rotated ? s_rotation : Matrix.CreateTranslation(3, 2);
@@ -134,6 +137,9 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(true)]
         public void A_Direct_Draw_Renders_The_V1_Paint_Of_A_Glyph_With_Both_Records(bool rotated)
         {
+            // Compared with the drawings drawn as vectors byte for byte, which the transformed colour
+            // masks of a raster surface only approximate (see TransformedColorAtlasTests).
+            using var masksOff = rotated ? ColorGlyphMaskTests.SwitchColorMasksOff() : null;
             using var scope = ColorGlyphV1SplitTests.CreateEnvironment();
             var typeface = ColorGlyphV1SplitTests.CreateV0AndV1Typeface(out var glyph);
             var transform = rotated ? s_rotation : Matrix.CreateTranslation(3, 2);

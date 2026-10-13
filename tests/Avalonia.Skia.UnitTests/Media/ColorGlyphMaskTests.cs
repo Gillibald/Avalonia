@@ -46,7 +46,6 @@ namespace Avalonia.Skia.UnitTests.Media
 
         public enum Declined
         {
-            Rotated,
             Oversized,
             TransparentForeground,
         }
@@ -211,7 +210,6 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
-        [InlineData(Declined.Rotated)]
         [InlineData(Declined.Oversized)]
         [InlineData(Declined.TransparentForeground)]
         public void Draws_The_Upright_Tier_Declines_Replay_Vectors_Without_Colour_Masks(Declined declined)
@@ -223,7 +221,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 : s_text;
             var transform = declined switch
             {
-                Declined.Rotated => Matrix.CreateRotation(Math.PI * 17 / 180) * Matrix.CreateTranslation(30, -20),
                 Declined.Oversized => Matrix.CreateScale(6, 6) * Matrix.CreateTranslation(-60, -340),
                 _ => Matrix.Identity,
             };

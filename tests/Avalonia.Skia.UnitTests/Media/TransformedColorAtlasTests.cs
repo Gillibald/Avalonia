@@ -13,11 +13,11 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// COLR v1 glyphs drawn under a static rotation, skew or anisotropic scale on hardware GPUs:
-    /// each paint graph is rasterized once under the quantized transform into a colour atlas entry
-    /// and drawn as a sprite of the transformed tier, instead of replaying its vector fills every
-    /// frame. Animated transforms, raster surfaces and the colour atlas switched off keep the
-    /// vector replay.
+    /// COLR v1 glyphs drawn under a static rotation, skew or anisotropic scale: each paint graph is
+    /// rasterized once under the quantized transform, on hardware GPUs into a colour atlas entry
+    /// drawn as a sprite of the transformed tier, on raster surfaces into a cached colour mask
+    /// blended into the surface, instead of replaying its vector fills every frame. Animated
+    /// transforms and, on GPUs, the colour atlas switched off keep the vector replay.
     /// </summary>
     public class TransformedColorAtlasTests
     {
@@ -254,6 +254,11 @@ namespace Avalonia.Skia.UnitTests.Media
         /// replace, on the same surface kind, under the transforms that keep pens and the linear
         /// part on their quantization grids.
         /// </summary>
+        /// <remarks>
+        /// Measured on Windows x64: solid fills match exactly, single gradients differ by at most 1
+        /// level (mean 0.05-0.10), Segoe UI Emoji by at most 5 (mean 0.065-0.076), the values of the
+        /// GPU draw above, so the same bounds hold.
+        /// </remarks>
         [Theory]
         [MemberData(nameof(BoundCases))]
         public void Transformed_Colour_Masks_On_A_Raster_Surface_Stay_Within_A_Measured_Bound_Of_The_Vector_Replay(

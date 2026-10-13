@@ -166,6 +166,46 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// The colour mask of <paramref name="key"/> for a raster surface, which keeps no atlas:
+        /// cached in the typeface's colour mask cache and charged to the glyph cache budget like
+        /// the upright masks, transformed keys included. Returns <c>null</c> when the glyph has no
+        /// recording or no render interface is available.
+        /// </summary>
+        public static GlyphMask? TryGetCachedMask(GlyphTypeface typeface, in ColorGlyphMaskKey key)
+        {
+            var cache = typeface.ColorMaskCache;
+
+            if (cache.TryGet(key, out var cached))
+            {
+                return cached;
+            }
+
+            if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is not { } renderInterface)
+            {
+                return null;
+            }
+
+            var recording = key.HasForeground
+                ? typeface.GetGlyphRecording(key.Glyph,
+                    new GlyphDrawingOptions { Foreground = Color.FromUInt32(key.Foreground) })
+                : typeface.GetGlyphRecording(key.Glyph, null);
+
+            if (recording is null || !recording.TryAcquire())
+            {
+                return null;
+            }
+
+            try
+            {
+                return cache.GetOrBuild(key, (typeface, recording, renderInterface), s_build);
+            }
+            finally
+            {
+                recording.Release();
+            }
+        }
+
+        /// <summary>
         /// The device rectangle a glyph's mask covers relative to its snapped pen: the scaled ink
         /// box (the COLR v1 clip box, else the drawing's bounds), under a transformed key the
         /// bounds of its corners mapped through the key's linear part, shifted by the phases and

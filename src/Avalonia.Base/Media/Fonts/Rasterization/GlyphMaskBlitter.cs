@@ -156,6 +156,83 @@ namespace Avalonia.Media.Fonts.Rasterization
             => BlendCore<RoundedOver>(target, coverage, width, height, width, x, y, tintBgra, table);
 
         /// <summary>
+        /// Draws a premultiplied BGRA colour mask with its top-left at (<paramref name="x"/>,
+        /// <paramref name="y"/>) in device pixels, source-over and clipped to the target's clip,
+        /// with the arithmetic of drawing it 1:1 through the backend's bitmap blit
+        /// (<see cref="GlyphBlitTarget.Arithmetic"/>).
+        /// </summary>
+        public static void BlendColor(in GlyphBlitTarget target, GlyphMask mask, int x, int y)
+        {
+            switch (target.Arithmetic)
+            {
+                case GlyphBlitArithmetic.Sprite:
+                    BlendColor<SpriteBlitOver>(target, mask, x, y);
+                    break;
+                case GlyphBlitArithmetic.Rounded:
+                    BlendColor<RoundedOver>(target, mask, x, y);
+                    break;
+                default:
+                    BlendColor<PipelineBlitOver>(target, mask, x, y);
+                    break;
+            }
+        }
+
+        private static unsafe void BlendColor<TBlit>(in GlyphBlitTarget target, GlyphMask mask, int x, int y)
+            where TBlit : struct, ISourceOver
+        {
+            if (mask.IsEmpty)
+            {
+                return;
+            }
+
+            var clip = target.Clip;
+            var left = Math.Max(x, clip.X);
+            var top = Math.Max(y, clip.Y);
+            var right = Math.Min(x + mask.Width, clip.Right);
+            var bottom = Math.Min(y + mask.Height, clip.Bottom);
+
+            if (left >= right || top >= bottom)
+            {
+                return;
+            }
+
+            // Channel offsets of red and blue in the destination; the mask is B, G, R, A.
+            var red = target.IsRgba ? 0 : 2;
+            var blue = 2 - red;
+            var source = mask.Alpha;
+
+            for (var row = top; row < bottom; row++)
+            {
+                var sourceRow = ((row - y) * mask.Width + (left - x)) * 4;
+                var destination = (byte*)target.Pixels + (long)row * target.RowBytes + left * 4;
+
+                for (var column = left; column < right; column++, sourceRow += 4, destination += 4)
+                {
+                    var alpha = source[sourceRow + 3];
+
+                    if (alpha == 0)
+                    {
+                        continue;
+                    }
+
+                    if (alpha == 255)
+                    {
+                        destination[blue] = source[sourceRow];
+                        destination[1] = source[sourceRow + 1];
+                        destination[red] = source[sourceRow + 2];
+                        destination[3] = 255;
+                        continue;
+                    }
+
+                    destination[blue] = (byte)(source[sourceRow] + TBlit.Scale(destination[blue], alpha));
+                    destination[1] = (byte)(source[sourceRow + 1] + TBlit.Scale(destination[1], alpha));
+                    destination[red] = (byte)(source[sourceRow + 2] + TBlit.Scale(destination[red], alpha));
+                    destination[3] = (byte)(alpha + TBlit.Scale(destination[3], alpha));
+                }
+            }
+        }
+
+        /// <summary>
         /// Blends a run's coverage in the tint <paramref name="tintBgra"/> with its top-left at
         /// (<paramref name="x"/>, <paramref name="y"/>) in device pixels, clipped to the target's
         /// clip: byte for byte what composing the run's pre-tinted mask through

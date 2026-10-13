@@ -172,16 +172,18 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether a run with COLR v1 glyphs drawn under <paramref name="transform"/> takes the
-        /// transformed tier: a hardware GPU with a shared colour atlas (see
-        /// <see cref="ITransformedGlyphContext.ColorAtlas"/>), colour masks and the colour atlas on,
-        /// and a rotation, skew or anisotropic scale. Upright draws the upright tier declined (sizes
-        /// above its ceiling, a zoom without a settled mask) keep the vector replay.
+        /// transformed tier: colour masks on, a rotation, skew or anisotropic scale, and either a
+        /// raster surface, which blends the cached colour masks into its pixels, or a hardware GPU
+        /// with a shared colour atlas (see <see cref="ITransformedGlyphContext.ColorAtlas"/>) and
+        /// the colour atlas on. Upright draws the upright tier declined (sizes above its ceiling, a
+        /// zoom without a settled mask) keep the vector replay.
         /// </summary>
         private static bool DrawsTransformedColorMasks(IDrawingContextImpl context, in GlyphTargetSurface surface,
             in Matrix transform)
-            => ColorGlyphRunSplitter.UseColorMasks && ColorGlyphRunSplitter.UseColorAtlas &&
-               surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
-               context is ITransformedGlyphContext { ColorAtlas: not null } &&
+            => ColorGlyphRunSplitter.UseColorMasks &&
+               (surface.RasterTarget == GlyphRasterTarget.Raster && context is ITransformedGlyphContext ||
+                ColorGlyphRunSplitter.UseColorAtlas && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                context is ITransformedGlyphContext { ColorAtlas: not null }) &&
                !(transform.M12 == 0 && transform.M21 == 0 && transform.M11 > 0 && transform.M22 > 0 &&
                  Math.Abs(transform.M11 - transform.M22) <= transform.M11 * 0.001);
 
@@ -317,6 +319,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     case TransformedSpriteKind.ForegroundLayer:
                         GlyphMaskBlitter.Blend(target, masks[i], originX + sprite.X, originY + sprite.Y, tint, null);
                         break;
+                    case TransformedSpriteKind.Color:
+                        GlyphMaskBlitter.BlendColor(target, masks[i], originX + sprite.X, originY + sprite.Y);
+                        break;
                     default:
                         GlyphMaskBlitter.Blend(target, masks[i], originX + sprite.X, originY + sprite.Y,
                             ToPremulTint(sprite.Color), null);
@@ -347,6 +352,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             for (var i = 0; i < masks.Length; i++)
             {
+                if (laidOut[i].Kind == TransformedSpriteKind.Color)
+                {
+                    // A paint graph's colour mask, keyed as its colour atlas entry would be.
+                    masks[i] = ColorGlyphMasks.TryGetCachedMask(typeface, new ColorGlyphMaskKey(laidOut[i].Glyph,
+                        sprites.Key.ScaleQ, laidOut[i].PhaseX, Foreground: laidOut[i].Color,
+                        HasForeground: laidOut[i].Color != 0, Transform: sprites.Key.Transform,
+                        PhaseY: laidOut[i].PhaseY)) ?? GlyphMask.Empty;
+                    continue;
+                }
+
                 var key = sprites.GetGlyphKey(i);
 
                 masks[i] = laidOut[i].Width * laidOut[i].Height <= GlyphMaskCache.MaxEntryBytes
@@ -435,6 +450,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var span = new Span<byte>((void*)framebuffer.Address, framebuffer.RowBytes * mask.Height);
 
                     span.Clear();
+
+                    if (kind == TransformedSpriteKind.Color)
+                    {
+                        RunMaskComposer.ComposeColor(mask, -mask.Left, -mask.Top, span, mask.Width, mask.Height,
+                            framebuffer.RowBytes);
+                        continue;
+                    }
+
                     RunMaskComposer.ComposeTinted(mask, -mask.Left, -mask.Top, spriteTint, span, mask.Width,
                         mask.Height, framebuffer.RowBytes, kind == TransformedSpriteKind.Foreground ? table : null);
                 }
