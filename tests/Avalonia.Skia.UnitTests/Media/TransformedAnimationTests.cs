@@ -39,18 +39,18 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        /// <summary>The contexts that rasterize animated frames: CPU surfaces and hardware GPUs.</summary>
+        /// <summary>The contexts that rasterize animated frames: CPU surfaces.</summary>
         public static IEnumerable<object[]> RasterizingTargets()
         {
             yield return new object[] { Target.Raster };
-            yield return new object[] { Target.HardwareGl };
-            yield return new object[] { Target.HardwareAngle };
         }
 
-        /// <summary>The contexts that stretch the settled batch while animating: software GPUs.</summary>
+        /// <summary>The contexts that stretch the settled batch while animating: GPUs.</summary>
         public static IEnumerable<object[]> StretchingTargets()
         {
             yield return new object[] { Target.SoftwareGl };
+            yield return new object[] { Target.HardwareGl };
+            yield return new object[] { Target.HardwareAngle };
         }
 
         public static IEnumerable<object[]> RasterizedAnimations()
@@ -574,7 +574,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                StretchesWithinTheBand(band);
+                StretchesWithinTheBand(Target.Raster, band);
             }
             finally
             {
@@ -582,9 +582,21 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        private static void StretchesWithinTheBand(double band)
+        [Theory]
+        [InlineData(Target.HardwareGl)]
+        [InlineData(Target.HardwareAngle)]
+        public void An_Upright_Zoom_On_A_Hardware_Gpu_Stretches_Within_The_Band(Target target)
         {
-            using var output = TestTarget.Create(Target.Raster);
+            // A zoom frame that rasterizes rebuilds every glyph mask at the frame's scale, while a
+            // stretch on a GPU is one textured draw per run. The sprites of the last static frame,
+            // or the last settled run mask, stretch while the zoom since they settled stays within
+            // the band either way; past it, one frame rasterizes at its scale and settles.
+            StretchesWithinTheBand(target, MaskGlyphRunRenderer.MaxStretchScale);
+        }
+
+        private static void StretchesWithinTheBand(Target target, double band)
+        {
+            using var output = TestTarget.Create(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
 
@@ -621,6 +633,7 @@ namespace Avalonia.Skia.UnitTests.Media
             for (var frame = 0; frame < scales.Count; frame++)
             {
                 var previous = run.SettledUpright;
+                var previousSprites = run.TransformedSprites.Settled;
                 var glyphMasks = typeface.MaskCache.Count;
 
                 context.Transform = Zoom(scales[frame]);
@@ -635,7 +648,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     continue;
                 }
 
-                if (Equals(previous, run.SettledUpright))
+                if (Equals(previous, run.SettledUpright) && ReferenceEquals(previousSprites, run.TransformedSprites.Settled))
                 {
                     // A stretched frame rasterizes nothing.
                     Assert.Equal(glyphMasks, typeface.MaskCache.Count);
@@ -650,7 +663,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.Transform = Zoom(scales[frame]);
                 context.DrawGlyphRun(Brushes.Black, fresh);
 
-                TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"frame {frame}");
+                TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"{target} frame {frame}");
             }
 
             Assert.Equal(expected, crossings);
