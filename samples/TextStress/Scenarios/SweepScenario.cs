@@ -40,6 +40,7 @@ namespace TextStress.Scenarios
         private readonly string _stateKind;
         private readonly int _zoomSteps;
         private readonly double _zoomStep;
+        private readonly string _zoomFont;
         private SweepCanvas? _canvas;
         private double _scaling = 1;
 
@@ -50,6 +51,7 @@ namespace TextStress.Scenarios
             _stateKind = options.GetString("kind", "mixed").ToLowerInvariant();
             _zoomSteps = options.GetInt("zoom", 0);
             _zoomStep = options.GetDouble("zoom-step", 0.01);
+            _zoomFont = options.GetString("zoom-font", "cjk").ToLowerInvariant();
         }
 
         public override string Name => _kind switch
@@ -71,7 +73,7 @@ namespace TextStress.Scenarios
             SweepKind.Runs => FormattableString.Invariant($"size={LatinSize};cell={LatinCellWidth}x{LatinCellHeight}"),
             SweepKind.Glyphs => _zoomSteps > 0
                 ? FormattableString.Invariant(
-                    $"size={CjkSize};instances=n;font={CjkFamilyName};zoom={_zoomSteps};zoom-step={_zoomStep}")
+                    $"size={CjkSize};instances=n;font={CjkFamilyName};zoom={_zoomSteps};zoom-step={_zoomStep};zoom-font={_zoomFont}")
                 : FormattableString.Invariant($"size={CjkSize};instances={CjkInstances};font={CjkFamilyName}"),
             _ => FormattableString.Invariant($"size={LatinSize};runs={_stateRuns};kind={_stateKind}")
         };
@@ -99,6 +101,14 @@ namespace TextStress.Scenarios
                     // A zoom draws each distinct glyph once, as a paragraph that grows past the
                     // canvas, instead of a screen filled with repeats.
                     var distinct = Math.Max(1, n);
+
+                    if (_zoomSteps > 0 && _zoomFont == "inter")
+                    {
+                        _canvas = new SweepCanvas(BuildInterParagraph(distinct, width), new[] { black },
+                            Array.Empty<StateChange>(), "mixed");
+                        break;
+                    }
+
                     var runs = BuildCjkRuns(distinct, _zoomSteps > 0 ? distinct : CjkInstances, width, height);
                     _canvas = new SweepCanvas(runs, new[] { black }, Array.Empty<StateChange>(), "mixed");
                     break;
@@ -169,6 +179,47 @@ namespace TextStress.Scenarios
                 var run = new GlyphRun(glyphTypeface, LatinSize, word.AsMemory(), glyphs,
                     new Point(x, Math.Round(y + ascent)));
                 runs.Add(new PlacedRun(run, new Rect(x, y, LatinCellWidth - 2, LatinCellHeight)));
+            }
+
+            return runs;
+        }
+
+        /// <summary>
+        /// A paragraph of Inter at the CJK size: lines of up to 72 characters of generated words
+        /// until <paramref name="glyphs"/> glyphs, one run per line.
+        /// </summary>
+        private List<PlacedRun> BuildInterParagraph(int glyphs, double width)
+        {
+            var glyphTypeface = Track(new Typeface("fonts:Inter#Inter"));
+            CjkFamilyName = glyphTypeface.FamilyName;
+            var generator = new TextGenerator(Options.Seed);
+            var lineHeight = Math.Ceiling(CjkSize * 1.3);
+            var ascent = -glyphTypeface.Metrics.Ascent * CjkSize / glyphTypeface.Metrics.DesignEmHeight;
+            var runs = new List<PlacedRun>();
+            var total = 0;
+
+            for (var line = 0; total < glyphs; line++)
+            {
+                var text = new System.Text.StringBuilder();
+
+                while (text.Length < 72)
+                {
+                    text.Append(generator.Word(3, 9)).Append(' ');
+                }
+
+                var count = Math.Min(Math.Min(72, text.Length), glyphs - total);
+                var chars = text.ToString(0, count);
+                var ids = new ushort[count];
+
+                for (var g = 0; g < count; g++)
+                {
+                    ids[g] = glyphTypeface.CharacterToGlyphMap.GetGlyph(chars[g]);
+                }
+
+                var y = 4 + line * lineHeight;
+                var run = new GlyphRun(glyphTypeface, CjkSize, chars.AsMemory(), ids, new Point(4, Math.Round(y + ascent)));
+                runs.Add(new PlacedRun(run, new Rect(4, y, width - 8, lineHeight)));
+                total += count;
             }
 
             return runs;
