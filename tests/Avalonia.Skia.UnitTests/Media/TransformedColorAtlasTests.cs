@@ -206,6 +206,119 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        public static IEnumerable<object[]> RasterTransforms()
+        {
+            yield return new object[] { Transform.Rotated17 };
+            yield return new object[] { Transform.Skewed };
+        }
+
+        [Theory]
+        [MemberData(nameof(RasterTransforms))]
+        public void A_Static_Transformed_V1_Run_On_A_Raster_Surface_Draws_From_Colour_Masks_Rasterized_Once(
+            Transform transform)
+        {
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var typeface = ColorGlyphMaskTests.CreateTypeface(ColorGlyphMaskTests.Font.SegoeUiEmoji, out var glyphs);
+            using var run = CreateGlyphRun(typeface, glyphs);
+            var matrix = MatrixOf(transform);
+
+            var first = Measure(() => RenderOnRaster(matrix, run), out var firstPixels);
+
+            Assert.Equal(0, first.VectorDraws);
+            Assert.True(first.Rasterizations > 0, "no colour mask was rasterized");
+            Assert.True(CountColored(firstPixels) > 20, "the colour glyphs were not drawn");
+
+            var second = Measure(() => RenderOnRaster(matrix, run), out var secondPixels);
+
+            Assert.Equal(new Counts(0, 0, 0), second);
+            TransformedAtlasTests.AssertEqual(firstPixels, secondPixels, "second frame");
+        }
+
+        [Fact]
+        public void A_Transformed_Run_Mixing_Outline_And_Colour_Glyphs_On_A_Raster_Surface_Draws_Both_From_Masks()
+        {
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var typeface = ColorGlyphMaskTests.CreateTypeface(ColorGlyphMaskTests.Font.V1Radial, out var glyphs);
+            using var run = CreateGlyphRun(typeface, glyphs);
+            var matrix = MatrixOf(Transform.Rotated17);
+
+            var counts = Measure(() => RenderOnRaster(matrix, run), out var pixels);
+
+            Assert.Equal(0, counts.VectorDraws);
+            Assert.True(counts.Rasterizations > 0, "no colour mask was rasterized");
+            Assert.True(CountColored(pixels) > 20, "the colour glyphs were not drawn");
+        }
+
+        /// <summary>
+        /// Transformed colour masks blended into a raster surface against the vector replay they
+        /// replace, on the same surface kind, under the transforms that keep pens and the linear
+        /// part on their quantization grids.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(BoundCases))]
+        public void Transformed_Colour_Masks_On_A_Raster_Surface_Stay_Within_A_Measured_Bound_Of_The_Vector_Replay(
+            ColorGlyphMaskTests.Font font, Transform transform)
+        {
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var typeface = ColorGlyphMaskTests.CreateTypeface(font, out var glyphs);
+            var colorGlyphs = glyphs.Where(g => ColorGlyphRunSplitter.IsV1Glyph(typeface, typeface.ColorTable!, g))
+                .ToArray();
+            using var run = CreateGlyphRun(typeface, colorGlyphs);
+            var matrix = MatrixOf(transform);
+
+            byte[] vectors;
+
+            using (ColorGlyphMaskTests.SwitchColorMasksOff())
+            {
+                vectors = RenderOnRaster(matrix, run);
+            }
+
+            var masked = Measure(() => RenderOnRaster(matrix, run), out var maskedPixels);
+
+            Assert.True(masked.Rasterizations > 0, "the run did not draw from colour masks");
+            Assert.True(CountColored(vectors) > 20, "the vector replay drew no colour");
+
+            var (max, mean, inked) = Difference(vectors, maskedPixels);
+            var maxBound = font == ColorGlyphMaskTests.Font.SegoeUiEmoji ? 8 : 2;
+            var meanBound = font == ColorGlyphMaskTests.Font.SegoeUiEmoji ? 0.15 : 0.2;
+
+            Assert.True(inked > 100, $"only {inked} pixels were inked");
+            Assert.True(max <= maxBound, $"largest channel difference {max} levels (bound {maxBound}), mean {mean:F3}");
+            Assert.True(mean <= meanBound,
+                $"mean channel difference {mean:F3} levels over {inked} pixels (bound {meanBound}), max {max}");
+        }
+
+        [Fact]
+        public void Transformed_Colour_Masks_Of_A_Raster_Surface_Are_Charged_To_The_Budget()
+        {
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var typeface = ColorGlyphMaskTests.CreateTypeface(ColorGlyphMaskTests.Font.V1Radial, out var glyphs);
+            using var run = CreateGlyphRun(typeface, glyphs);
+            var before = typeface.ColorMaskCache.TotalCost;
+
+            RenderOnRaster(MatrixOf(Transform.Rotated17), run);
+
+            Assert.True(typeface.ColorMaskCache.TotalCost > before, "no transformed colour mask was cached");
+        }
+
+        [Fact]
+        public void An_Animating_Rotation_On_A_Raster_Surface_Replays_Vectors_Without_Rasterizing()
+        {
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var typeface = ColorGlyphMaskTests.CreateTypeface(ColorGlyphMaskTests.Font.V1Radial, out var glyphs);
+            using var run = CreateGlyphRun(typeface, glyphs);
+
+            var frames = Enumerable.Range(0, 8)
+                .Select(frame => Measure(() => RenderOnRaster(Rotation(10 + frame * 3), run), out _))
+                .ToList();
+
+            Assert.All(frames.Skip(TransformChurnGuard.Threshold), c =>
+            {
+                Assert.Equal(0, c.Rasterizations);
+                Assert.Equal(2, c.VectorDraws);
+            });
+        }
+
         private readonly record struct Counts(long Rasterizations, long VectorDraws, long Placements);
 
         private static Counts Measure(Func<byte[]> render, out byte[] pixels)
