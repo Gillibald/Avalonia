@@ -103,6 +103,26 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static double Budget => BudgetOverride ?? FrameBudgetMicroseconds;
 
+        /// <summary>Replaces the frame interval, in microseconds, for tests and benchmarks.</summary>
+        internal static double? FrameIntervalOverride { get; set; }
+
+        /// <summary>Replaces the time frames spend outside text, in microseconds, for tests.</summary>
+        internal static double? NonTextOverride { get; set; }
+
+        /// <summary>What the frame keeps free besides its other work, in microseconds.</summary>
+        internal const double SafetyMarginMicroseconds = 1000;
+
+        /// <summary>The interval between frames, in microseconds.</summary>
+        internal static double FrameIntervalMicroseconds => FrameIntervalOverride ?? 1e6 / 120;
+
+        /// <summary>The smoothed time recent frames spent outside text, in microseconds.</summary>
+        internal static double NonTextMicroseconds => 0;
+
+        /// <summary>Records a frame's render time and the text work in it.</summary>
+        internal static void RecordFrame(double renderMicroseconds, double textMicroseconds)
+        {
+        }
+
         /// <summary>
         /// Whether this motion frame of <paramref name="run"/> at <paramref name="pixelsPerEm"/>
         /// rasterizes sharp. <paramref name="missShare"/> is the share of its glyph masks the sharp

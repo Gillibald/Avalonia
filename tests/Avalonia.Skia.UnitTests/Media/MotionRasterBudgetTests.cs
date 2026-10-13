@@ -15,8 +15,9 @@ namespace Avalonia.Skia.UnitTests.Media
     /// at less than twice the budget. A frame that runs out of budget stretches every run for a
     /// while, or until the motion stops, rather than switching between sharp and stretched
     /// frames, and the frame after that while tries again; a try that runs out of budget again
-    /// doubles the next hold. Costs and budgets are injected, so every decision here is
-    /// independent of the machine.
+    /// doubles the next hold. The budget is what the frame interval leaves after the time the
+    /// frame spends outside text and a safety margin, up to a cap. Costs, budgets, intervals and
+    /// the time outside text are injected, so every decision here is independent of the machine.
     /// </summary>
     public class MotionRasterBudgetTests
     {
@@ -293,6 +294,80 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [MemberData(nameof(Motions))]
+        public void A_Frame_With_Little_Headroom_Stretches_Text_That_Fits_The_Cap(Target target, Motion motion)
+        {
+            // The frame spends nearly all of its interval outside text: what is left after the
+            // safety margin cannot take the run, though the cap could many times over.
+            const double nonText = 5000;
+            const double headroom = 10;
+
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 100 * s_runCost, glyphCost: GlyphCost,
+                interval: nonText + MotionRasterBudget.SafetyMarginMicroseconds + headroom, nonText: nonText);
+            using var runs = new Runs(typeface, 1);
+
+            const int moving = TransformChurnGuard.Threshold;
+            var stretched = Animate(output, runs.All, 10, motion, (_, _) => true);
+
+            Assert.Equal(Range(moving, 10), stretched[0]);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Frame_That_Spends_Little_Outside_Text_Gets_The_Whole_Cap(Target target)
+        {
+            // An otherwise idle frame at 120 Hz: three runs that need nearly the whole cap draw
+            // sharp in every frame.
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 3.2 * s_runCost, glyphCost: GlyphCost,
+                interval: 1e6 / 120, nonText: 300);
+            using var runs = new Runs(typeface, 3);
+
+            var stretched = Animate(output, runs.All, 10, Motion.Rotation, (_, _) => true);
+
+            Assert.All(stretched, frames => Assert.Empty(frames));
+        }
+
+        [Fact]
+        public void The_Time_Outside_Text_Is_Smoothed_Over_Recent_Frames()
+        {
+            // Frames of 5 ms with 1 ms of text: 4 ms outside text, whatever came before, and
+            // moved only part of the way by one slow frame.
+            for (var frame = 0; frame < 60; frame++)
+            {
+                MotionRasterBudget.RecordFrame(renderMicroseconds: 5000, textMicroseconds: 1000);
+            }
+
+            Assert.InRange(MotionRasterBudget.NonTextMicroseconds, 3990, 4010);
+
+            MotionRasterBudget.RecordFrame(renderMicroseconds: 13000, textMicroseconds: 1000);
+
+            Assert.InRange(MotionRasterBudget.NonTextMicroseconds, 4500, 7000);
+        }
+
+        [Fact]
+        public void The_Frame_Interval_Is_A_120_Hz_Frame_Unless_Injected()
+        {
+            var previous = MotionRasterBudget.FrameIntervalOverride;
+
+            try
+            {
+                MotionRasterBudget.FrameIntervalOverride = null;
+                Assert.Equal(1e6 / 120, MotionRasterBudget.FrameIntervalMicroseconds, 3);
+
+                MotionRasterBudget.FrameIntervalOverride = 16667;
+                Assert.Equal(16667, MotionRasterBudget.FrameIntervalMicroseconds, 3);
+            }
+            finally
+            {
+                MotionRasterBudget.FrameIntervalOverride = previous;
+            }
+        }
+
+        [Theory]
         [MemberData(nameof(Targets))]
         public void Motion_After_A_Stop_Is_Weighed_Anew(Target target)
         {
@@ -431,21 +506,31 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>Sets the frame budget and the cost per glyph for the scope.</summary>
+        /// <summary>
+        /// Sets the budget's cap, the cost per glyph, the frame interval and the time a frame spends
+        /// outside text for the scope; the time outside text is none unless given.
+        /// </summary>
         private sealed class InjectedBudget : IDisposable
         {
             private readonly double? _budget = MotionRasterBudget.BudgetOverride;
             private readonly double? _glyphCost = MotionRasterBudget.GlyphCostOverride;
+            private readonly double? _interval = MotionRasterBudget.FrameIntervalOverride;
+            private readonly double? _nonText = MotionRasterBudget.NonTextOverride;
 
-            public InjectedBudget(double budget, double glyphCost)
+            public InjectedBudget(double budget, double glyphCost, double? interval = null, double nonText = 0)
             {
                 MotionRasterBudget.BudgetOverride = budget;
                 MotionRasterBudget.GlyphCostOverride = glyphCost;
+                MotionRasterBudget.FrameIntervalOverride = interval;
+                MotionRasterBudget.NonTextOverride = nonText;
             }
 
             public void Dispose()
             {
                 MotionRasterBudget.BudgetOverride = _budget;
                 MotionRasterBudget.GlyphCostOverride = _glyphCost;
+                MotionRasterBudget.FrameIntervalOverride = _interval;
+                MotionRasterBudget.NonTextOverride = _nonText;
             }
         }
 
