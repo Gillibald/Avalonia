@@ -33,6 +33,7 @@ namespace Avalonia.Skia
         private readonly Stack<RenderOptions> _renderOptionsStack = new();
         private readonly Stack<TextOptions> _textOptionsStack = new();
         private readonly Matrix? _postTransform;
+        private readonly Matrix _inversePostTransform = Matrix.Identity;
         private double _currentOpacity = 1.0f;
         private readonly bool _disableSubpixelTextRendering;
         private readonly bool _surfaceIsDisplay;
@@ -249,6 +250,9 @@ namespace Avalonia.Skia
                 _postTransform =
                     Matrix.CreateScale(createInfo.Dpi.X / SkiaPlatform.DefaultDpi.X,
                         createInfo.Dpi.Y / SkiaPlatform.DefaultDpi.Y);
+                _inversePostTransform =
+                    Matrix.CreateScale(SkiaPlatform.DefaultDpi.X / createInfo.Dpi.X,
+                        SkiaPlatform.DefaultDpi.Y / createInfo.Dpi.Y);
             }
 
             Transform = Matrix.Identity;
@@ -1439,7 +1443,14 @@ namespace Avalonia.Skia
         {
             // There is a Canvas.TotalMatrix (non 4x4 overload), but internally it still uses 4x4 matrix.
             // We want to avoid SKMatrix4x4 -> SKMatrix -> Matrix conversion by directly going SKMatrix4x4 -> Matrix.
-            get { return _currentTransform ??= Canvas.TotalMatrix44.ToAvaloniaMatrix(); }
+            // After a restore only the canvas knows the transform, and the canvas matrix includes
+            // the DPI scale the setter appends.
+            get
+            {
+                return _currentTransform ??= _postTransform.HasValue
+                    ? Canvas.TotalMatrix44.ToAvaloniaMatrix() * _inversePostTransform
+                    : Canvas.TotalMatrix44.ToAvaloniaMatrix();
+            }
             set
             {
                 CheckLease();
