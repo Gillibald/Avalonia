@@ -14,8 +14,9 @@ namespace Avalonia.Skia.UnitTests.Media
     /// only when the text that moved, or was about to move, in the frame before it was estimated
     /// at less than twice the budget. A frame that runs out of budget stretches every run for a
     /// while, or until the motion stops, rather than switching between sharp and stretched
-    /// frames, and the frame after that while tries again. Costs and budgets are injected, so
-    /// every decision here is independent of the machine.
+    /// frames, and the frame after that while tries again; a try that runs out of budget again
+    /// doubles the next hold. Costs and budgets are injected, so every decision here is
+    /// independent of the machine.
     /// </summary>
     public class MotionRasterBudgetTests
     {
@@ -237,25 +238,58 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void A_Scene_Near_The_Budget_Is_Tried_Again_After_Each_Hold(Target target)
+        public void A_Scene_That_Keeps_Running_Out_Of_Budget_Is_Tried_Again_After_Doubling_Holds(Target target)
         {
-            // Three runs and room for two: the first frame after each hold tries the scene again,
-            // drawing the runs within the budget sharp, and holds again.
+            // Three runs and room for two: every try runs out of budget on the third run, so each
+            // hold lasts twice as long as the one before.
             using var output = new FrameTarget(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
             using var runs = new Runs(typeface, 3);
 
             const int moving = TransformChurnGuard.Threshold;
-            const int period = MotionRasterBudget.HoldFrames + 1;
-            const int frames = moving + 2 * period + 4;
+            const int hold = MotionRasterBudget.HoldFrames;
+            var tried = new[] { moving, moving + hold + 1, moving + hold + 1 + 2 * hold + 1 };
+            var frames = tried[2] + 4;
             var stretched = Animate(output, runs.All, frames, Motion.Rotation, (_, _) => true);
-            var tried = new[] { moving, moving + period, moving + 2 * period };
             var expected = Range(moving, frames).FindAll(frame => Array.IndexOf(tried, frame) < 0);
 
             Assert.Equal(expected, stretched[0]);
             Assert.Equal(expected, stretched[1]);
             Assert.Equal(Range(moving, frames), stretched[2]);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Try_That_Fits_The_Budget_Ends_The_Doubling(Target target)
+        {
+            // The first try runs out of budget; the third run then leaves, the try after the hold
+            // fits, and when the third run comes back and the budget runs out again the hold is
+            // the first one's length again.
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
+            using var runs = new Runs(typeface, 3);
+
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+            const int back = moving + hold + 7;
+            const int frames = back + hold + 5;
+            var stretched = Animate(output, runs.All, frames, Motion.Rotation,
+                (run, frame) => run != 1 || frame <= moving || frame >= back);
+
+            // The first run is sharp on the first try, after the first hold, until the third run
+            // comes back, and on the try after the second hold.
+            var sharp = new List<int> { moving, back + hold + 1 };
+
+            for (var frame = moving + hold + 1; frame <= back; frame++)
+            {
+                sharp.Add(frame);
+            }
+
+            Assert.Equal(Range(moving, frames).FindAll(frame => !sharp.Contains(frame)), stretched[0]);
+            Assert.Equal(Range(moving, frames).FindAll(frame => frame < moving + hold + 1 || frame >= back),
+                stretched[2]);
         }
 
         [Theory]
