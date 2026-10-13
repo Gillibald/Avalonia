@@ -595,6 +595,101 @@ namespace Avalonia.Skia.UnitTests.Media
             StretchesWithinTheBand(target, MaskGlyphRunRenderer.MaxStretchScale);
         }
 
+        public enum ZoomMotion
+        {
+            /// <summary>A slow zoom whose scale steps by less than a mask scale quantum on some frames.</summary>
+            Slow,
+
+            /// <summary>Up by 1% per frame, then back to exactly the first frame's scale, twice.</summary>
+            Sawtooth,
+
+            /// <summary>Up by 1% per frame, holding one frame's scale for a second frame now and then.</summary>
+            Holding,
+        }
+
+        public static IEnumerable<object[]> HardwareZoomMotions()
+        {
+            foreach (var target in new[] { Target.HardwareGl, Target.HardwareAngle })
+            {
+                foreach (var motion in Enum.GetValues<ZoomMotion>())
+                {
+                    yield return new object[] { target, motion, false };
+                    yield return new object[] { target, motion, true };
+                }
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareZoomMotions))]
+        public void A_Zoom_On_A_Hardware_Gpu_Rasterizes_Only_On_Frames_That_Leave_The_Band_Or_Hold(Target target,
+            ZoomMotion motion, bool rotated)
+        {
+            // Once the guard engages, a zoom frame rasterizes when it leaves the band around the
+            // last raster or repeats the previous frame's transform, and on no frame after it:
+            // the next frame stretches the new raster. A frame whose raster is cached draws it
+            // and becomes the anchor without rasterizing.
+            const double band = MaskGlyphRunRenderer.MaxStretchScale;
+
+            using var output = TestTarget.Create(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
+
+            var scales = new List<double>();
+
+            for (var frame = 0; frame < 120; frame++)
+            {
+                scales.Add(motion switch
+                {
+                    ZoomMotion.Slow => 1 + 0.0086 * frame,
+                    ZoomMotion.Sawtooth => 1 + 0.01 * (frame % 50),
+                    _ => 1 + 0.01 * (frame - frame / 25),
+                });
+            }
+
+            var expected = new List<int>();
+            var cached = new HashSet<double>();
+            var anchor = 0.0;
+
+            for (var frame = 0; frame < scales.Count; frame++)
+            {
+                var scale = scales[frame];
+
+                if (cached.Contains(scale))
+                {
+                    anchor = scale;
+                }
+                else if (frame < TransformChurnGuard.Threshold || scale == scales[frame - 1] ||
+                         scale / anchor > band || scale / anchor < 1 / band)
+                {
+                    expected.Add(frame);
+                    cached.Add(scale);
+                    anchor = scale;
+                }
+            }
+
+            var context = output.Context;
+            var rasterizing = new List<int>();
+
+            for (var frame = 0; frame < scales.Count; frame++)
+            {
+                var scale = scales[frame];
+                var before = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+
+                context.Transform = rotated
+                    ? ZoomRotation(scale)
+                    : Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5);
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.FlushGlyphBatch();
+
+                if (GlyphRasterDiagnostics.GlyphRasterizationsOnThread != before)
+                {
+                    rasterizing.Add(frame);
+                }
+            }
+
+            Assert.Equal(expected, rasterizing);
+        }
+
         private static void StretchesWithinTheBand(Target target, double band)
         {
             using var output = TestTarget.Create(target);
