@@ -611,6 +611,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         private int _changes;
 
         /// <summary>
+        /// Whether the last recorded draw changed the transform, or followed changes the guard
+        /// still counts: the run moves, or may be about to.
+        /// </summary>
+        public bool Changing => _changes > 0;
+
+        /// <summary>
         /// Records a draw of the run under the device transform whose linear part is
         /// [<paramref name="m11"/> <paramref name="m12"/>; <paramref name="m21"/> <paramref name="m22"/>]
         /// and returns whether the run is animating, so its masks should not be rasterized for

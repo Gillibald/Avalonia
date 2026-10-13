@@ -267,13 +267,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                 atlasZooming = churning && !spritesCached;
 
                 // A zoom frame the budget affords draws as a static frame at its scale would.
-                var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm, cached: false);
+                // Its glyph masks may be cached from an earlier pass over the scale: the share
+                // that recent sprite builds had to rasterize weighs the estimate.
+                var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm,
+                    run.GlyphTypeface.MaskCache.RecentMissShare);
 
                 if (!atlasZooming || sharpAtlasZoom)
                 {
                     if (!churning)
                     {
-                        MotionRasterBudget.EndMotion(run);
+                        MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
+                            run.GlyphTypeface.MaskCache.RecentMissShare);
                     }
 
                     var start = sharpAtlasZoom ? MotionRasterBudget.Start() : 0;
@@ -289,7 +293,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     if (sharpAtlasZoom)
                     {
-                        MotionRasterBudget.Charge(run, pixelsPerEm, start, sharp: true);
+                        MotionRasterBudget.Charge(run, start);
                     }
 
                     return true;
@@ -380,11 +384,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 if (zooming)
                 {
-                    sharpZoom = MotionRasterBudget.PrefersSharp(run, pixelsPerEm, cached: hit);
+                    sharpZoom = MotionRasterBudget.PrefersSharp(run, pixelsPerEm, hit ? 0 : 1);
                 }
                 else
                 {
-                    MotionRasterBudget.EndMotion(run);
+                    MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing, 1);
                 }
             }
 
@@ -497,7 +501,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (zoomRasterStart != 0)
             {
-                MotionRasterBudget.Charge(run, pixelsPerEm, zoomRasterStart, sharp: sharpZoom);
+                MotionRasterBudget.Charge(run, zoomRasterStart);
             }
 
             run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
@@ -764,7 +768,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Lays an upright run's grid-fitted glyph masks out relative to its snapped origin
-        /// pixel, with the pens and phases the run mask compose uses.
+        /// pixel, with the pens and phases the run mask compose uses, and records in the
+        /// typeface's mask cache how many of the mask pixels it had to rasterize.
         /// </summary>
         private static TransformedGlyphSprites BuildUprightSprites(ManagedGlyphRunImpl run, in RunMaskKey key,
             float scaleX, float scaleY)
@@ -781,6 +786,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             var state = (typeface, scratch);
             var laidOut = new TransformedSprite[count];
             var placed = 0;
+            long used = 0;
+
+            t_rasterizedPixels = 0;
 
             for (var i = 0; i < count; i++)
             {
@@ -789,13 +797,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode,
-                    key.GridFit, key.Strong, embolden, oblique), state, s_buildMask);
+                    key.GridFit, key.Strong, embolden, oblique), state, s_buildCountedMask);
 
                 if (mask.IsEmpty)
                 {
                     continue;
                 }
 
+                used += mask.Width * mask.Height;
                 penX = CentredPen(in key, relativeX, mask, penX);
 
                 laidOut[placed++] = new TransformedSprite
@@ -809,6 +818,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                     Height = mask.Height,
                 };
             }
+
+            maskCache.RecordUse(used, t_rasterizedPixels);
 
             if (placed != count)
             {

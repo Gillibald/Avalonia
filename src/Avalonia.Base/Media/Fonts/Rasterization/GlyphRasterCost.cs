@@ -25,13 +25,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The size whose cost per glyph the average holds.</summary>
         internal const double ReferencePixelsPerEm = 16;
 
-        // A sample weighs a 32nd: the average follows a typeface from its first, unoptimized
-        // rasterizations to tiered code within a frame or two of text.
-        private const double SampleWeight = 1.0 / 32;
-
-        // A sample far above the average (a collection or a preemption during one glyph) counts as
-        // this many times the average.
-        private const double MaxSampleRatio = 8;
+        // A faster sample weighs an eighth and a slower one a 64th, capped at four times the
+        // average. The first rasterizations of a process run on code that is still compiling and
+        // take several times as long, and a collection or preemption can stall any one glyph;
+        // nothing makes a glyph faster than its code allows. So the average settles near the
+        // warm cost within a paragraph of glyphs and stays there through occasional stalls.
+        private const double FasterWeight = 1.0 / 8;
+        private const double SlowerWeight = 1.0 / 64;
+        private const double MaxSampleRatio = 4;
 
         private static readonly double s_microsecondsPerTick = 1e6 / Stopwatch.Frequency;
 
@@ -58,7 +59,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             var average = _microseconds;
 
             _microseconds = average > 0
-                ? average + (Math.Min(sample, average * MaxSampleRatio) - average) * SampleWeight
+                ? sample < average
+                    ? average + (sample - average) * FasterWeight
+                    : average + (Math.Min(sample, average * MaxSampleRatio) - average) * SlowerWeight
                 : Math.Max(sample, double.Epsilon);
         }
 

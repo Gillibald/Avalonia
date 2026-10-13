@@ -120,7 +120,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!churning)
             {
-                MotionRasterBudget.EndMotion(run);
+                MotionRasterBudget.NotMoving(run, pixelsPerEm,
+                    transformedContext is not null && run.TransformChurn.Changing, 1);
             }
             else if (!hit)
             {
@@ -138,13 +139,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                         solid.Color);
                 }
 
-                if (MotionRasterBudget.PrefersSharp(run, pixelsPerEm, cached: false))
+                if (MotionRasterBudget.PrefersSharp(run, pixelsPerEm, 1))
                 {
                     var start = MotionRasterBudget.Start();
                     var drawn = TryDrawTransient(transformedContext!, run, key, transform, originX, originY, alpha,
                         solid.Color);
 
-                    MotionRasterBudget.Charge(run, pixelsPerEm, start, sharp: true);
+                    MotionRasterBudget.Charge(run, start);
 
                     return drawn;
                 }
@@ -177,7 +178,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (crossingStart != 0)
             {
-                MotionRasterBudget.Charge(run, pixelsPerEm, crossingStart, sharp: false);
+                MotionRasterBudget.Charge(run, crossingStart);
             }
 
             state.Settle(sprites, transform, originX, originY);
