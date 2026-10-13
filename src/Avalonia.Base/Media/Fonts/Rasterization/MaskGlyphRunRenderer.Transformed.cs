@@ -113,7 +113,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             // draws them, and the first frame that repeats its transform rasterizes and caches
             // again, at the final transform.
             if (transformedContext is not null &&
-                run.TransformChurn.Record(key.ScaleQ, linear, hit, holdOnCacheHit: true) && !hit)
+                run.TransformChurn.Record(transform.M11, transform.M12, transform.M21, transform.M22, hit,
+                    holdOnCacheHit: true) && !hit)
             {
                 // Colour masks made for one frame of an animation would never be drawn again.
                 if (colorGlyphs)

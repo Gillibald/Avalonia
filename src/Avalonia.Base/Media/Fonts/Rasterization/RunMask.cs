@@ -588,11 +588,15 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// Three consecutive changes mark the run as animating: a one-off relayout or zoom step,
     /// and a run drawn under two alternating transforms (a reflection, a second view), keep
     /// rasterizing, while an animation is recognized by its third frame, so at most three
-    /// frames of its masks enter the caches. A repeated transform resets the count, which makes
-    /// the first draw after the transform holds still rasterize again. A cache hit resets it
-    /// too, unless the caller holds the count on hits: then an animation passing through a
-    /// cached transform keeps counting as animating once it moves on, instead of rasterizing
-    /// its next frames while the count builds up again.
+    /// frames of its masks enter the caches. A change is any change of the linear part, even
+    /// one too small to change the mask key: a slow zoom or rotation whose key repeats on some
+    /// frames is still moving. A repeated transform makes the first draw after the transform
+    /// holds rasterize again; an animation that moves on right after that one frame counts as
+    /// animating again at once, so it stretches the new raster instead of rasterizing two more
+    /// frames while the count builds up, and a second repeated frame resets the count. A cache
+    /// hit resets it too, unless the caller holds the count on hits: then an animation passing
+    /// through a cached transform keeps counting as animating once it moves on, instead of
+    /// rasterizing its next frames while the count builds up again.
     /// </remarks>
     internal sealed class TransformChurnGuard
     {
@@ -600,24 +604,32 @@ namespace Avalonia.Media.Fonts.Rasterization
         public const int Threshold = 3;
 
         private bool _hasLast;
-        private ushort _lastScaleQ;
-        private GlyphMaskTransform _lastTransform;
+        private double _lastM11;
+        private double _lastM12;
+        private double _lastM21;
+        private double _lastM22;
         private int _changes;
 
         /// <summary>
-        /// Records a draw of the run and returns whether the run is animating, so its masks
-        /// should not be rasterized for this frame. With <paramref name="holdOnCacheHit"/>, a
-        /// changed transform that hits the cache leaves the count as it is instead of
-        /// resetting it.
+        /// Records a draw of the run under the device transform whose linear part is
+        /// [<paramref name="m11"/> <paramref name="m12"/>; <paramref name="m21"/> <paramref name="m22"/>]
+        /// and returns whether the run is animating, so its masks should not be rasterized for
+        /// this frame. With <paramref name="holdOnCacheHit"/>, a changed transform that hits the
+        /// cache leaves the count as it is instead of resetting it.
         /// </summary>
-        public bool Record(ushort scaleQ, GlyphMaskTransform transform, bool cacheHit, bool holdOnCacheHit = false)
+        public bool Record(double m11, double m12, double m21, double m22, bool cacheHit, bool holdOnCacheHit = false)
         {
-            var changed = _hasLast && (scaleQ != _lastScaleQ || transform != _lastTransform);
+            var changed = _hasLast && (m11 != _lastM11 || m12 != _lastM12 || m21 != _lastM21 || m22 != _lastM22);
 
-            _changes = !changed ? 0 : !cacheHit ? _changes + 1 : holdOnCacheHit ? _changes : 0;
+            _changes = !changed ? _changes >= Threshold ? Threshold - 1 : 0
+                : !cacheHit ? Math.Min(_changes + 1, Threshold)
+                : holdOnCacheHit ? _changes
+                : 0;
             _hasLast = true;
-            _lastScaleQ = scaleQ;
-            _lastTransform = transform;
+            _lastM11 = m11;
+            _lastM12 = m12;
+            _lastM21 = m21;
+            _lastM22 = m22;
 
             return _changes >= Threshold;
         }

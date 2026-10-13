@@ -30,7 +30,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             var state = run.TransformedSprites;
             var cached = state.TryGet(key, out var sprites);
 
-            churning = run.UprightChurn.Record(key.ScaleQ, default, cached);
+            // Cached sprites draw sharp even while a zoom passes through their scale, and become
+            // the raster the zoom's next frames stretch.
+            churning = run.UprightChurn.Record(transform.M11, 0, 0, transform.M22, cached, holdOnCacheHit: true) &&
+                !cached;
 
             // A zoom would place every frame's scale in the atlas once and never draw it again; the
             // last static frame's sprites stretch instead while the zoom stays within the band.

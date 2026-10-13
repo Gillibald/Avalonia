@@ -144,9 +144,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     GlyphMaskKey.SnapPen(deviceX, out snappedX, out snappedPhase);
                 }
 
-                if (snappedPhase == decision.Key.OriginPhase &&
-                    !run.UprightChurn.Record(decision.Key.ScaleQ, default, true))
+                if (snappedPhase == decision.Key.OriginPhase)
                 {
+                    // A cached sprite set draws sharp even while a zoom passes through its scale.
+                    run.UprightChurn.Record(scaleX, 0, 0, scaleY, cacheHit: true, holdOnCacheHit: true);
+
                     var snappedY = (int)Math.Round(deviceY);
                     var argb = ToArgb(alpha, solid.Color);
 
@@ -237,7 +239,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
                 context is ITransformedGlyphContext atlasContext)
             {
-                atlasZooming = run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _));
+                // Cached sprites draw sharp even while a zoom passes through their scale, and become
+                // the raster the zoom's next frames stretch.
+                var spritesCached = run.TransformedSprites.TryGet(key, out _);
+
+                atlasZooming = run.UprightChurn.Record(scaleX, 0, 0, scaleY, spritesCached, holdOnCacheHit: true) &&
+                    !spritesCached;
 
                 if (!atlasZooming)
                 {
@@ -330,13 +337,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                 (surface.RasterTarget == GlyphRasterTarget.HardwareGpu
                     ? atlasZooming
                     : (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
-                      run.UprightChurn.Record(key.ScaleQ, default, hit));
+                      run.UprightChurn.Record(scaleX, 0, 0, scaleY, hit));
 
             // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
             // more than outline masks and fill the mask cache with sizes that never return, so a
             // run with colour glyphs stretches its settled mask on a hardware GPU too.
             if (colorGlyphs && zoomContext is not null && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
-                (colorChurn ?? run.UprightChurn.Record(key.ScaleQ, default, hit)))
+                (colorChurn ?? run.UprightChurn.Record(scaleX, 0, 0, scaleY, hit)))
             {
                 zooming = true;
             }
