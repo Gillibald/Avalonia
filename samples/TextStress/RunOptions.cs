@@ -168,6 +168,7 @@ namespace TextStress
             "  --glyph-cache-mb N   FontManagerOptions.GlyphCacheLimitBytes in MB (default: platform default)\n" +
             "  --motion-budget-us N   time a GPU frame may spend rasterizing moving text sharp, in us; 0 always\n" +
             "    stretches (default: built-in)\n" +
+            "  --motion-interval-us N   frame interval the motion budget assumes, in us (default: 120 Hz)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
@@ -177,7 +178,8 @@ namespace TextStress
             "    sweep-glyphs --zoom S --zoom-step d (each distinct glyph once, scaled 1 + d * (frame % S))\n" +
             "      --zoom-font cjk|inter|segoe --size px (paragraph fonts) --motion zoom|rotate|zoom-rotate\n" +
             "      --rotate-step deg (rotate: degrees per frame; zoom-rotate zooms under a fixed 15 degrees);\n" +
-            "    mixed-ui --cards --decor --changes --motion none|zoom|rotate (render transform every frame);\n" +
+            "    mixed-ui --cards --text-cards (cards with text, default all) --decor --changes\n" +
+            "      --motion none|zoom|rotate (render transform every frame);\n" +
             "    sweep-states --runs --kind mixed|rect|clip|opacity|color;\n" +
             "    color-glyphs --layout grid|list --motion static|churn|fling --draw textblock|glyphrun --cells\n" +
             "      --size --changes --rows --font-file path (default: the system Segoe UI Emoji);\n" +

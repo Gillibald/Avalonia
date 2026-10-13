@@ -33,6 +33,13 @@ namespace TextStress
             {
                 Avalonia.Media.Fonts.Rasterization.MotionRasterBudget.BudgetOverride = motionBudget;
             }
+
+            var motionInterval = options.GetDouble("motion-interval-us", -1);
+
+            if (motionInterval > 0)
+            {
+                Avalonia.Media.Fonts.Rasterization.MotionRasterBudget.FrameIntervalOverride = motionInterval;
+            }
         }
 
         /// <summary>

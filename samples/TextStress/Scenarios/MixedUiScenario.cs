@@ -22,6 +22,7 @@ namespace TextStress.Scenarios
     internal sealed class MixedUiScenario : Scenario
     {
         private readonly int _cardCount;
+        private readonly int _textCards;
         private readonly int _decor;
         private readonly double _changes;
         private readonly string _motion;
@@ -31,6 +32,7 @@ namespace TextStress.Scenarios
         public MixedUiScenario(RunOptions options) : base(options)
         {
             _cardCount = options.GetInt("cards", 48);
+            _textCards = Math.Clamp(options.GetInt("text-cards", _cardCount), 0, _cardCount);
             _decor = Math.Clamp(options.GetInt("decor", 3), 0, 3);
             _changes = Math.Clamp(options.GetDouble("changes", 0.25), 0, 1);
             _motion = options.GetString("motion", "none").ToLowerInvariant();
@@ -44,7 +46,7 @@ namespace TextStress.Scenarios
         public override string Name => "mixed-ui";
 
         public override string Describe() =>
-            FormattableString.Invariant($"cards={_cardCount};decor={_decor};changes={_changes};motion={_motion}");
+            FormattableString.Invariant($"cards={_cardCount};text-cards={_textCards};decor={_decor};changes={_changes};motion={_motion}");
 
         public override Control CreateView(int n, double scaling)
         {
@@ -65,7 +67,7 @@ namespace TextStress.Scenarios
 
             for (var i = 0; i < _cards.Length; i++)
             {
-                _cards[i] = new Card(i, _decor, family, generator, images[i % images.Length]);
+                _cards[i] = new Card(i, _decor, family, generator, images[i % images.Length], i < _textCards);
                 grid.Children.Add(_cards[i].Root);
             }
 
@@ -129,12 +131,14 @@ namespace TextStress.Scenarios
         private sealed class Card
         {
             private readonly int _index;
+            private readonly bool _withText;
             private readonly TextBlock _value;
             private readonly TextBlock _footer;
             private readonly Border? _bar;
 
-            public Card(int index, int decor, FontFamily family, TextGenerator generator, Bitmap image)
+            public Card(int index, int decor, FontFamily family, TextGenerator generator, Bitmap image, bool withText)
             {
+                _withText = withText;
                 _index = index;
 
                 var panel = new StackPanel { Spacing = 3, Margin = new Thickness(8) };
@@ -146,7 +150,7 @@ namespace TextStress.Scenarios
 
                 panel.Children.Add(new TextBlock
                 {
-                    Text = generator.Sentence(1, 3),
+                    Text = withText ? generator.Sentence(1, 3) : null,
                     FontFamily = family,
                     FontWeight = FontWeight.SemiBold,
                     FontSize = 13,
@@ -158,7 +162,7 @@ namespace TextStress.Scenarios
 
                 panel.Children.Add(new TextBlock
                 {
-                    Text = generator.Sentence(4, 9, capitalize: false),
+                    Text = withText ? generator.Sentence(4, 9, capitalize: false) : null,
                     FontFamily = family,
                     FontSize = 11,
                     TextWrapping = TextWrapping.Wrap,
@@ -242,8 +246,11 @@ namespace TextStress.Scenarios
             public void Update(int frame)
             {
                 var value = (_index * 7919 + frame * 31) % 100000;
-                _value.Text = value.ToString("N0", CultureInfo.InvariantCulture);
-                _footer.Text = FormattableString.Invariant($"#{_index} frame {frame}");
+                if (_withText)
+                {
+                    _value.Text = value.ToString("N0", CultureInfo.InvariantCulture);
+                    _footer.Text = FormattableString.Invariant($"#{_index} frame {frame}");
+                }
 
                 if (_bar is not null)
                 {
