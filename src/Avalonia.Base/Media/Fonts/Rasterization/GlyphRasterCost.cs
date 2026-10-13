@@ -38,6 +38,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private double _microseconds;
 
+        [ThreadStatic]
+        private static long t_ticks;
+
+        /// <summary>
+        /// The <see cref="Stopwatch"/> ticks the calling thread spent rasterizing glyph masks, a
+        /// running total; a frame takes the difference around itself.
+        /// </summary>
+        internal static long TicksOnThread => t_ticks;
+
         /// <summary>
         /// The estimated time to rasterize one glyph mask at <paramref name="pixelsPerEm"/>, in
         /// microseconds.
@@ -57,6 +66,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var sample = ticks * s_microsecondsPerTick / SizeFactor(pixelsPerEm);
             var average = _microseconds;
+
+            t_ticks += ticks;
 
             _microseconds = average > 0
                 ? sample < average

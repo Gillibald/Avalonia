@@ -12,7 +12,12 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <para>
     /// Every run the thread draws in one frame shares a budget, which the time actually spent
     /// rasterizing motion frames, band crossings included, uses up. A moving run draws sharp while
-    /// its estimate fits what is left; once the budget is spent the remaining runs stretch.
+    /// its estimate fits what is left; once the budget is spent the remaining runs stretch. The
+    /// budget is what the frame interval leaves after the time recent frames spent outside text
+    /// and <see cref="SafetyMarginMicroseconds"/>, at most <see cref="FrameBudgetMicroseconds"/>:
+    /// moving text in an otherwise idle frame gets the whole cap, and a busy frame keeps its
+    /// interval by stretching. The interval is a 120 Hz frame, the shortest common one, since the
+    /// render timers do not tell theirs.
     /// </para>
     /// <para>
     /// A run is estimated at the glyphs whose masks it has to rasterize (all of them for transient
@@ -37,7 +42,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal static class MotionRasterBudget
     {
         /// <summary>
-        /// The time a frame may spend rasterizing motion frames sharp, in microseconds: about a
+        /// The most time a frame may spend rasterizing motion frames sharp, in microseconds: about a
         /// third of a 120 Hz frame. A page of a few hundred Latin glyphs rotating or zooming takes
         /// 1-3 ms a frame on a desktop once the rasterizer is compiled, so it stays sharp, while a
         /// screen of CJK text or a dashboard of thousands of glyphs, 7-20 ms, stretches.
@@ -101,7 +106,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static double? GlyphCostOverride { get; set; }
 
-        private static double Budget => BudgetOverride ?? FrameBudgetMicroseconds;
+        [ThreadStatic]
+        private static double t_budget;
+
+        [ThreadStatic]
+        private static double t_nonText;
+
+        private static double Cap => BudgetOverride ?? FrameBudgetMicroseconds;
 
         /// <summary>Replaces the frame interval, in microseconds, for tests and benchmarks.</summary>
         internal static double? FrameIntervalOverride { get; set; }
@@ -109,18 +120,49 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Replaces the time frames spend outside text, in microseconds, for tests.</summary>
         internal static double? NonTextOverride { get; set; }
 
-        /// <summary>What the frame keeps free besides its other work, in microseconds.</summary>
+        /// <summary>
+        /// What a frame keeps free besides its other work, in microseconds: about the spread of the
+        /// time frames of a busy desktop scene spend outside text, between their median and their
+        /// 95th percentile.
+        /// </summary>
         internal const double SafetyMarginMicroseconds = 1000;
 
         /// <summary>The interval between frames, in microseconds.</summary>
         internal static double FrameIntervalMicroseconds => FrameIntervalOverride ?? 1e6 / 120;
 
-        /// <summary>The smoothed time recent frames spent outside text, in microseconds.</summary>
-        internal static double NonTextMicroseconds => 0;
+        /// <summary>
+        /// The time recent frames of the thread that drew moving text spent outside text, in
+        /// microseconds, each frame weighing a quarter.
+        /// </summary>
+        internal static double NonTextMicroseconds => NonTextOverride ?? t_nonText;
 
-        /// <summary>Records a frame's render time and the text work in it.</summary>
+        /// <summary>
+        /// Records that a frame took <paramref name="renderMicroseconds"/> to render, of which
+        /// <paramref name="textMicroseconds"/> went to rasterizing text.
+        /// </summary>
         internal static void RecordFrame(double renderMicroseconds, double textMicroseconds)
         {
+            var sample = Math.Max(0, renderMicroseconds - textMicroseconds);
+
+            t_nonText = t_nonText > 0 ? t_nonText + (sample - t_nonText) / 4 : sample;
+        }
+
+        /// <summary>
+        /// Records a frame the render thread finished: it took <paramref name="elapsedTicks"/>, of
+        /// which <paramref name="rasterTicks"/> rasterized glyph masks (<see cref="Stopwatch"/>
+        /// ticks). Only frames that drew moving text, or text about to move, count.
+        /// </summary>
+        public static void FrameRendered(long elapsedTicks, long rasterTicks)
+        {
+            var frame = GlyphCacheBudget.Shared.CurrentThreadFrame;
+
+            if (frame == 0 || frame != t_frame)
+            {
+                return;
+            }
+
+            RecordFrame(elapsedTicks * s_microsecondsPerTick,
+                Math.Max(t_spent, rasterTicks * s_microsecondsPerTick));
         }
 
         /// <summary>
@@ -145,12 +187,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             t_lastMotionFrame = frame;
 
-            if (frame < t_holdUntil || t_previousEstimate >= 2 * Budget)
+            if (frame < t_holdUntil || t_previousEstimate >= 2 * t_budget)
             {
                 return false;
             }
 
-            if (t_spent + estimate < Budget)
+            if (t_spent + estimate < t_budget)
             {
                 t_tried = true;
                 return true;
@@ -233,6 +275,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 t_tried = false;
                 t_ranOut = false;
                 t_previousEstimate = t_estimate;
+                t_budget = Math.Clamp(FrameIntervalMicroseconds - NonTextMicroseconds - SafetyMarginMicroseconds, 0,
+                    Math.Max(0, Cap));
                 t_frame = frame;
                 t_spent = 0;
                 t_estimate = 0;

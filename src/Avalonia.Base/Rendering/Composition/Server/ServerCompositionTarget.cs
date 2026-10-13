@@ -246,6 +246,8 @@ namespace Avalonia.Rendering.Composition.Server
             }
             
             var unsettledDraws = MaskGlyphRunRenderer.UnsettledDraws;
+            var renderStart = Stopwatch.GetTimestamp();
+            var rasterStart = GlyphRasterCost.TicksOnThread;
 
             using (renderTargetContext)
             using (var renderTiming = Diagnostic.BeginCompositorRenderPass())
@@ -320,6 +322,10 @@ namespace Avalonia.Rendering.Composition.Server
                 _redrawRequested = false;
                 DirtyRects.Initialize(renderBounds);
             }
+
+            // The time this frame spent outside text sizes the motion budget of the next ones.
+            MotionRasterBudget.FrameRendered(Stopwatch.GetTimestamp() - renderStart,
+                GlyphRasterCost.TicksOnThread - rasterStart);
         }
 
         void RenderRootToContextWithClip(IDrawingContextImpl context, ServerCompositionVisual root)
