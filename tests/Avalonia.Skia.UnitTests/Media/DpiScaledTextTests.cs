@@ -16,7 +16,8 @@ namespace Avalonia.Skia.UnitTests.Media
     /// Targets that scale their drawing to their DPI (a render target bitmap, the intermediate
     /// surfaces of tile and visual brushes) apply the DPI scale after the context's transform.
     /// Text that rasterizes at the device size must see that scale: drawn at 144 or 192 dpi it
-    /// gives the pixels a 96 dpi target gives under the same scale in its transform.
+    /// gives the pixels a 96 dpi target gives under the same scale in its transform. The picture
+    /// a scene brush records its content into is drawn scaled the same way.
     /// </summary>
     public class DpiScaledTextTests
     {
@@ -178,6 +179,245 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
         }
+        public enum SceneBrushKind
+        {
+            Visual,
+            Drawing,
+        }
+
+        public enum BrushScale
+        {
+            /// <summary>The brush fills a rectangle under a scaled transform.</summary>
+            Transform,
+
+            /// <summary>The brush's own transform scales its tile.</summary>
+            BrushTransform,
+        }
+
+        public static IEnumerable<object[]> SceneBrushCases()
+        {
+            var targets = new[] { Target.Raster, Target.NativeGl, Target.Angle, Target.Metal, Target.Vulkan };
+
+            foreach (var target in targets)
+            {
+                foreach (var kind in Enum.GetValues<SceneBrushKind>())
+                {
+                    foreach (var scale in new[] { 2.0, 1.5 })
+                    {
+                        foreach (var content in new[] { Content.Outline, Content.Colr, Content.Bitmap })
+                        {
+                            yield return new object[] { target, kind, content, BrushScale.Transform, scale };
+                        }
+
+                        yield return new object[] { target, kind, Content.Outline, BrushScale.BrushTransform, scale };
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// A scene brush keeps its content as a picture drawn under the scale of the draw that
+        /// paints with it. Text in that picture rasterizes at the scale it is shown at: a tile whose
+        /// origin and size are whole device pixels shows the pixels of the same text drawn directly.
+        /// The targets are transparent, where painting the tile copies its pixels.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(SceneBrushCases))]
+        public void Text_In_A_Scene_Brush_Equals_Text_Drawn_Directly_At_The_Scale_It_Is_Shown(Target target,
+            SceneBrushKind kind, Content content, BrushScale placement, double scale)
+        {
+            using var gpu = CreateGpu(target);
+            using var scope = CreateEnvironment(TextRasterizationMode.Managed);
+            using var run = CreateRun(content);
+
+            var tile = new Rect(0, 0, Math.Floor(Width / scale), Math.Floor(Height / scale));
+
+            Assert.Equal(Math.Round(tile.Width * scale), tile.Width * scale);
+            Assert.Equal(Math.Round(tile.Height * scale), tile.Height * scale);
+
+            var expected = Render(target, gpu, 96, Matrix.CreateScale(scale, scale), context =>
+            {
+                using (context.PushClip(tile))
+                {
+                    context.DrawGlyphRun(s_brush, run);
+                }
+            });
+
+            TileBrush brush = kind == SceneBrushKind.Visual
+                ? new VisualBrush(new DelegateVisual(context => context.DrawGlyphRun(s_brush, run), tile.Size))
+                : new DrawingBrush(new GlyphRunDrawing { GlyphRun = run, Foreground = s_brush });
+
+            brush.Stretch = Stretch.None;
+            brush.AlignmentX = AlignmentX.Left;
+            brush.AlignmentY = AlignmentY.Top;
+            brush.TileMode = TileMode.None;
+            brush.SourceRect = new RelativeRect(tile, RelativeUnit.Absolute);
+            brush.DestinationRect = new RelativeRect(tile, RelativeUnit.Absolute);
+
+            byte[] actual;
+
+            if (placement == BrushScale.Transform)
+            {
+                actual = Render(target, gpu, 96, Matrix.CreateScale(scale, scale),
+                    context => context.FillRectangle(brush, tile));
+            }
+            else
+            {
+                brush.Transform = new MatrixTransform(Matrix.CreateScale(scale, scale));
+                brush.TransformOrigin = RelativePoint.TopLeft;
+
+                actual = Render(target, gpu, 96, Matrix.Identity,
+                    context => context.FillRectangle(brush, new Rect(0, 0, tile.Width * scale, tile.Height * scale)));
+            }
+
+            Assert.True(CountInked(expected) > 100, "the reference drew nothing");
+            AssertEqual(expected, actual, $"{target} {kind} brush {content} {placement} at {scale}x");
+        }
+
+        public static IEnumerable<object[]> FractionalOriginCases()
+        {
+            foreach (var target in new[] { Target.Raster, Target.NativeGl, Target.Angle, Target.Metal, Target.Vulkan })
+            {
+                // Offsets in DIPs: at 2x the tile origin lies 0.2 and 0.8 device pixels off the grid.
+                yield return new object[] { target, 0.1 };
+                yield return new object[] { target, 0.4 };
+            }
+        }
+
+        /// <summary>
+        /// Skia draws a picture shader's tile from an image it rasterizes the picture into, sampled
+        /// to the nearest pixel, so a tile whose origin is off the device grid lands on the nearest
+        /// whole pixel, text and all. The text stays as sharp as text drawn directly at that pixel.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(FractionalOriginCases))]
+        public void Text_In_A_Scene_Brush_Off_The_Device_Grid_Equals_Text_Drawn_At_The_Nearest_Whole_Pixel(
+            Target target, double offset)
+        {
+            const double scale = 2;
+
+            using var gpu = CreateGpu(target);
+            using var scope = CreateEnvironment(TextRasterizationMode.Managed);
+            using var run = CreateRun(Content.Outline);
+
+            var tile = new Rect(0, 0, 190, 70);
+            var snapped = Math.Round(offset * scale) / scale;
+
+            var expected = Render(target, gpu, 96, Matrix.CreateScale(scale, scale), context =>
+            {
+                using (context.PushTransform(Matrix.CreateTranslation(snapped, snapped)))
+                using (context.PushClip(tile))
+                {
+                    context.DrawGlyphRun(s_brush, run);
+                }
+            });
+
+            var brush = new DrawingBrush(new GlyphRunDrawing { GlyphRun = run, Foreground = s_brush })
+            {
+                Stretch = Stretch.None,
+                AlignmentX = AlignmentX.Left,
+                AlignmentY = AlignmentY.Top,
+                TileMode = TileMode.None,
+                SourceRect = new RelativeRect(tile, RelativeUnit.Absolute),
+                DestinationRect = new RelativeRect(tile.Translate(new Vector(offset, offset)), RelativeUnit.Absolute),
+            };
+
+            var actual = Render(target, gpu, 96, Matrix.CreateScale(scale, scale),
+                context => context.FillRectangle(brush, new Rect(0, 0, Width / scale, Height / scale)));
+
+            Assert.True(CountInked(expected) > 100, "the reference drew nothing");
+            AssertEqual(expected, actual, $"{target} brush tile at {offset}");
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareGpus))]
+        public void Runs_In_A_Scene_Brush_Batch_As_Runs_Drawn_Directly_At_The_Scale_It_Is_Shown(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = CreateEnvironment(TextRasterizationMode.Managed);
+
+            var typeface = LoadInter();
+            var runs = new List<GlyphRun>();
+
+            for (var i = 0; i < 6; i++)
+            {
+                var line = Text.Substring(0, 10 + i);
+                var glyphs = new ushort[line.Length];
+
+                for (var j = 0; j < line.Length; j++)
+                {
+                    glyphs[j] = typeface.CharacterToGlyphMap[line[j]];
+                }
+
+                runs.Add(CreateRun(typeface, glyphs, 9, new Point(4.3, 11.6 + i * 12)));
+            }
+
+            try
+            {
+                void Draw(DrawingContext context)
+                {
+                    for (var i = 0; i < runs.Count; i++)
+                    {
+                        using (context.PushClip(new Rect(0, 2 + i * 12, 190, 12)))
+                        {
+                            context.DrawGlyphRun(Brushes.Black, runs[i]);
+                        }
+                    }
+                }
+
+                var tile = new Rect(0, 0, 200, 80);
+                var brush = new VisualBrush(new DelegateVisual(Draw, tile.Size))
+                {
+                    Stretch = Stretch.None,
+                    AlignmentX = AlignmentX.Left,
+                    AlignmentY = AlignmentY.Top,
+                    TileMode = TileMode.None,
+                    SourceRect = new RelativeRect(tile, RelativeUnit.Absolute),
+                    DestinationRect = new RelativeRect(tile, RelativeUnit.Absolute),
+                };
+
+                // The second frame of each is warm: every glyph is in the atlas already. The brush's
+                // runs are counted as they are recorded into its picture.
+                Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
+
+                var draws = DrawingContextImpl.AtlasDrawsOnThread;
+                var expected = Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
+                var expectedDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+
+                Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), context => context.FillRectangle(brush, tile));
+
+                draws = DrawingContextImpl.AtlasDrawsOnThread;
+                var actual = Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2),
+                    context => context.FillRectangle(brush, tile));
+                var actualDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+
+                Assert.Equal(1, expectedDraws);
+                Assert.Equal(expectedDraws, actualDraws);
+                AssertEqual(expected, actual, $"{backend} batched runs in a scene brush at 2x");
+            }
+            finally
+            {
+                foreach (var run in runs)
+                {
+                    run.Dispose();
+                }
+            }
+        }
+
+        /// <summary>A visual of a fixed size that draws what a delegate draws.</summary>
+        private sealed class DelegateVisual : Visual
+        {
+            private readonly Action<DrawingContext> _draw;
+
+            public DelegateVisual(Action<DrawingContext> draw, Size size)
+            {
+                _draw = draw;
+                Bounds = new Rect(size);
+            }
+
+            public override void Render(DrawingContext context) => _draw(context);
+        }
+
         [Fact]
         public void The_Transform_Read_After_Popping_A_Clip_Excludes_The_Dpi_Scale()
         {
