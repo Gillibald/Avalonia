@@ -34,7 +34,8 @@ public class CompositorTestServices : IDisposable
         _app.Dispose();
     }
 
-    public CompositorTestServices(Size? size = null, IPlatformRenderInterface? renderInterface = null)
+    public CompositorTestServices(Size? size = null, IPlatformRenderInterface? renderInterface = null,
+        IPlatformGraphics? graphics = null, IPlatformRenderSurface? surface = null)
     {
         var services = TestServices.MockPlatformRenderInterface;
         if (renderInterface != null)
@@ -46,9 +47,9 @@ public class CompositorTestServices : IDisposable
             var renderLoop = RenderLoop.FromTimer(Timer);
             AvaloniaLocator.CurrentMutable.Bind<IRenderLoop>().ToConstant(renderLoop);
 
-            Compositor = new Compositor(renderLoop, null,
+            Compositor = new Compositor(renderLoop, graphics,
                 true, new DispatcherCompositorScheduler(), true, Dispatcher.UIThread);
-            var impl = new TopLevelImpl(Compositor, size ?? new Size(1000, 1000));
+            var impl = new TopLevelImpl(Compositor, size ?? new Size(1000, 1000), surface);
             TopLevel = new EmbeddableControlRoot(impl)
             {
                 Template = new FuncControlTemplate((parent, scope) =>
@@ -161,10 +162,11 @@ public class CompositorTestServices : IDisposable
     {
         private readonly Compositor _compositor;
 
-        public TopLevelImpl(Compositor compositor, Size clientSize)
+        public TopLevelImpl(Compositor compositor, Size clientSize, IPlatformRenderSurface? surface = null)
         {
             ClientSize = clientSize;
             _compositor = compositor;
+            Surfaces = [surface ?? new DummyFramebufferSurface()];
         }
 
         public void Dispose()
@@ -176,7 +178,7 @@ public class CompositorTestServices : IDisposable
         public IPlatformHandle? Handle => null;
         public Size ClientSize { get; set; }
         public double RenderScaling => 1;
-        public IPlatformRenderSurface[] Surfaces { get; } = [new DummyFramebufferSurface()];
+        public IPlatformRenderSurface[] Surfaces { get; }
         public Action<RawInputEventArgs>? Input { get; set; }
         public Action<Rect>? Paint { get; set; }
         public Action<Size, WindowResizeReason>? Resized { get; set; }
