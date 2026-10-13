@@ -229,21 +229,43 @@ namespace Avalonia.Media.Fonts.Rasterization
             // sums overlapping coverage before correcting it. Software GPUs keep the run mask:
             // they gain least from fewer draw calls, and llvmpipe shades the run mask's
             // correction filter a level apart from the atlas modulation at some pixels. A zoom
-            // gesture, whose scale changes every frame, keeps run masks too: laid out as sprites,
-            // every frame's glyph masks would fill the atlas and push static text out of it.
+            // gesture, whose scale changes every frame, adds nothing to the atlas: laid out as
+            // sprites, every frame's glyph masks would fill it and push static text out of it.
+            var atlasZooming = false;
+
             if (alphaContext is not null && mode != GlyphMaskMode.Subpixel &&
                 surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
-                context is ITransformedGlyphContext atlasContext &&
-                !run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _)))
+                context is ITransformedGlyphContext atlasContext)
             {
-                var argb = ToArgb(alpha, solid.Color);
-                var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
-                    originX, originY, argb);
+                atlasZooming = run.UprightChurn.Record(key.ScaleQ, default, run.TransformedSprites.TryGet(key, out _));
 
-                (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
-                    surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
+                if (!atlasZooming)
+                {
+                    var argb = ToArgb(alpha, solid.Color);
+                    var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
+                        originX, originY, argb);
 
-                return true;
+                    (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
+                        surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
+
+                    // The sprites are now the last static frame; a zoom starting here stretches them.
+                    run.SettledUpright = null;
+
+                    return true;
+                }
+
+                // A zoom frame stretches the sprites of the last static frame while it stays within
+                // the band around them; once a zoom frame has settled a run mask, that mask is
+                // the newer one and stretches instead (below).
+                var spriteState = run.TransformedSprites;
+
+                if (run.SettledUpright is null &&
+                    spriteState.Settled is { IsDisposed: false, IsUpright: true, HasColor: false } settledSprites &&
+                    settledSprites.Key.Mode == key.Mode && IsWithinStretchBand(spriteState, transform) &&
+                    TryDrawStretched(atlasContext, run.GlyphTypeface, spriteState, transform, ToArgb(alpha, solid.Color)))
+                {
+                    return true;
+                }
             }
 
             // A hardware GPU with a shared colour atlas draws the colour content of a colour
@@ -298,12 +320,17 @@ namespace Avalonia.Media.Fonts.Rasterization
             // stretches in, and rasterizes once, settling there, on leaving it: further out a
             // stretch would soften the text noticeably. Its subpixel masks have no single bitmap
             // to stretch, and a static frame drawn from coverage composes its pre-tinted mask
-            // when the gesture starts stretching. A hardware GPU keeps rasterizing, which is as
-            // fast there and stays sharp.
+            // when the gesture starts stretching. A hardware GPU stretches within the band as well:
+            // there a stretch is one textured draw per run, while rasterizing builds every glyph
+            // mask again at each new scale, which for CJK text on a phone takes two to three times
+            // Skia's whole frame. Its static frames draw atlas sprites, which stretch the same way
+            // (above); past the band one frame composes a run mask at its scale and settles there.
             var zoomContext = context as ITransformedGlyphContext;
-            var zooming = zoomContext is not null && surface.RasterTarget != GlyphRasterTarget.HardwareGpu &&
-                (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
-                run.UprightChurn.Record(key.ScaleQ, default, hit);
+            var zooming = zoomContext is not null &&
+                (surface.RasterTarget == GlyphRasterTarget.HardwareGpu
+                    ? atlasZooming
+                    : (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
+                      run.UprightChurn.Record(key.ScaleQ, default, hit));
 
             // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
             // more than outline masks and fill the mask cache with sizes that never return, so a

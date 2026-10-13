@@ -8,8 +8,8 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// An upright zoom gesture on a hardware GPU rasterizes the run at every frame's scale, and
-    /// past the upright size limit it does so through the transformed tier.
+    /// An upright zoom gesture on a hardware GPU draws every frame, past the upright size limit
+    /// through the transformed tier.
     /// </summary>
     public class UprightZoomTests
     {

@@ -101,11 +101,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             var transformedContext = context as ITransformedGlyphContext;
 
             // The transform changes every frame, so masks rasterized now would never be drawn
-            // again. A CPU surface or a hardware GPU rasterizes the frame anyway, into transient
-            // buffers that no cache keeps: there that is as fast as drawing a cached batch under
-            // the change of transform, or faster, and stays sharp. A software GPU draws the last
-            // settled batch under the change of transform instead, one bilinear atlas draw that
-            // costs a fraction of rasterizing there. Rotation costs that draw only the bilinear
+            // again. A CPU surface rasterizes the frame anyway, into transient buffers that no
+            // cache keeps: there that is as fast as drawing a cached batch under the change of
+            // transform, or faster, and stays sharp. A GPU draws the last settled batch under the
+            // change of transform instead, one bilinear atlas draw, where rasterizing every glyph
+            // mask on the CPU each frame takes longer than the backend's whole frame on a
+            // high-density display or a phone. Rotation costs that draw only the bilinear
             // softening, so it stretches for as long as it lasts; a zoom magnifies or shrinks a
             // raster made for another size, so once it leaves the stretch band one frame
             // rasterizes at its transform and settles there. A frame whose sprites are cached
@@ -120,7 +121,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return false;
                 }
 
-                if (surface.RasterTarget != GlyphRasterTarget.SoftwareGpu)
+                if (surface.RasterTarget == GlyphRasterTarget.Raster)
                 {
                     return TryDrawTransient(transformedContext, run, key, transform, originX, originY, alpha,
                         solid.Color);

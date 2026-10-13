@@ -114,7 +114,7 @@ Software GPUs (llvmpipe, lavapipe, SwiftShader, WARP), subpixel runs and zoom ge
 
 ### Transformed text
 
-Glyph masks are rasterized unhinted under the device transform's linear part, quantized to a 1/4096 grid, with a quarter-pixel phase in both axes. Static transformed text draws from the atlas on GPUs and blends straight into raster surfaces on CPUs. While a run's transform changes every frame (three consecutive changes), CPU and hardware GPU contexts re-rasterize into per-thread transient buffers that no cache keeps; software GPUs stretch the last settled batch within a 1.2x scale band. See [pipeline.md](pipeline.md).
+Glyph masks are rasterized unhinted under the device transform's linear part, quantized to a 1/4096 grid, with a quarter-pixel phase in both axes. Static transformed text draws from the atlas on GPUs and blends straight into raster surfaces on CPUs. While a run's transform changes every frame (three consecutive changes), CPU contexts re-rasterize into per-thread transient buffers that no cache keeps; GPU contexts stretch the last settled batch within a 1.2x scale band. See [pipeline.md](pipeline.md).
 
 ## Seams to the backend
 

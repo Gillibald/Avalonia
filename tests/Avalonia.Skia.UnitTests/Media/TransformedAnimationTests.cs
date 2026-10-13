@@ -8,14 +8,15 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// A transform that changes every frame. CPU surfaces and hardware GPUs rasterize every
-    /// animated frame into transient buffers, drawing exactly what a static frame at that
-    /// transform draws while caching nothing; software GPUs draw the batch of the last static
-    /// frame under the change of transform. Upright zoom gestures stretch the last static run
-    /// mask on software GPUs; on CPU surfaces they rasterize every frame from coverage no cache
-    /// keeps when that costs no more than stretching, and stretch within a 1.2x band around the
-    /// last rasterized frame otherwise. The first frame that repeats its transform rasterizes
-    /// and caches again, at that transform.
+    /// A transform that changes every frame. CPU surfaces rasterize every animated frame into
+    /// transient buffers, drawing exactly what a static frame at that transform draws while
+    /// caching nothing; GPUs draw the batch of the last static frame under the change of
+    /// transform, within a 1.2x scale band. Upright zoom gestures stretch the last static run
+    /// mask without bound on software GPUs, and the last static sprites or settled run mask
+    /// within the band on hardware GPUs; on CPU surfaces they rasterize every frame from coverage
+    /// no cache keeps when that costs no more than stretching, and stretch within the band
+    /// otherwise. The first frame that repeats its transform rasterizes and caches again, at
+    /// that transform.
     /// </summary>
     public class TransformedAnimationTests
     {
@@ -815,8 +816,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             if (rasterizing)
             {
-                // A hardware GPU keeps rasterizing every scale, a CPU surface every time the zoom
-                // leaves the stretch band.
+                // A hardware GPU and a CPU surface rasterize every time the zoom leaves the
+                // stretch band.
                 Assert.True(typeface.MaskCache.Count > glyphMasks);
                 return;
             }

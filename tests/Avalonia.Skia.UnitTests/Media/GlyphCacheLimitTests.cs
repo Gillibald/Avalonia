@@ -52,13 +52,15 @@ namespace Avalonia.Skia.UnitTests.Media
                 new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             var runs = CreateParagraph(typeface, 10, 28);
 
-            // One frame per scale, as a zoom gesture draws.
+            // Two frames per scale, as a zoom that holds at every step draws: a held scale
+            // rasterizes its glyph masks, where a zoom moving every frame stretches the last
+            // settled raster instead.
             void Sweep()
             {
-                for (var step = 0; step < 120; step++)
+                for (var step = 0; step < 240; step++)
                 {
                     using var context = TransformedAtlasTests.CreateContext(gpu, surface);
-                    var scale = 1 + step * 0.01;
+                    var scale = 1 + step / 2 * 0.01;
 
                     context.Transform = Matrix.CreateScale(scale, scale);
 
