@@ -41,6 +41,9 @@ namespace TextStress.Scenarios
         private readonly int _zoomSteps;
         private readonly double _zoomStep;
         private readonly string _zoomFont;
+        private readonly string _motion;
+        private readonly double _rotateStep;
+        private readonly double _paragraphSize;
         private SweepCanvas? _canvas;
         private double _scaling = 1;
 
@@ -52,6 +55,14 @@ namespace TextStress.Scenarios
             _zoomSteps = options.GetInt("zoom", 0);
             _zoomStep = options.GetDouble("zoom-step", 0.01);
             _zoomFont = options.GetString("zoom-font", "cjk").ToLowerInvariant();
+            _motion = options.GetString("motion", "zoom").ToLowerInvariant();
+            _rotateStep = options.GetDouble("rotate-step", 1);
+            _paragraphSize = options.GetDouble("size", CjkSize);
+
+            if (_motion is not ("zoom" or "rotate" or "zoom-rotate"))
+            {
+                throw new ArgumentException($"--motion must be zoom, rotate or zoom-rotate, not '{_motion}'.");
+            }
         }
 
         public override string Name => _kind switch
@@ -73,7 +84,7 @@ namespace TextStress.Scenarios
             SweepKind.Runs => FormattableString.Invariant($"size={LatinSize};cell={LatinCellWidth}x{LatinCellHeight}"),
             SweepKind.Glyphs => _zoomSteps > 0
                 ? FormattableString.Invariant(
-                    $"size={CjkSize};instances=n;font={CjkFamilyName};zoom={_zoomSteps};zoom-step={_zoomStep};zoom-font={_zoomFont}")
+                    $"size={(_zoomFont == "cjk" ? CjkSize : _paragraphSize)};instances=n;font={CjkFamilyName};zoom={_zoomSteps};zoom-step={_zoomStep};zoom-font={_zoomFont};motion={_motion};rotate-step={_rotateStep}")
                 : FormattableString.Invariant($"size={CjkSize};instances={CjkInstances};font={CjkFamilyName}"),
             _ => FormattableString.Invariant($"size={LatinSize};runs={_stateRuns};kind={_stateKind}")
         };
@@ -102,9 +113,13 @@ namespace TextStress.Scenarios
                     // canvas, instead of a screen filled with repeats.
                     var distinct = Math.Max(1, n);
 
-                    if (_zoomSteps > 0 && _zoomFont == "inter")
+                    if (_zoomSteps > 0 && _zoomFont is "inter" or "segoe")
                     {
-                        _canvas = new SweepCanvas(BuildInterParagraph(distinct, width), new[] { black },
+                        var face = _zoomFont == "inter"
+                            ? new Typeface("fonts:Inter#Inter")
+                            : new Typeface("Segoe UI");
+
+                        _canvas = new SweepCanvas(BuildParagraph(face, distinct, width), new[] { black },
                             Array.Empty<StateChange>(), "mixed");
                         break;
                     }
@@ -146,8 +161,14 @@ namespace TextStress.Scenarios
             if (_canvas is not null)
             {
                 // A zoom changes the scale every frame; a sawtooth from 1 upwards revisits each
-                // scale once per cycle of the steps.
-                _canvas.Scale = _zoomSteps > 0 ? 1 + _zoomStep * (frame % _zoomSteps) : 1;
+                // scale once per cycle of the steps. A rotation turns by a fixed step per frame;
+                // a zoom-rotation zooms the same sawtooth under a fixed 15 degree rotation.
+                var zooms = _zoomSteps > 0 && _motion != "rotate";
+                _canvas.Scale = zooms ? 1 + _zoomStep * (frame % _zoomSteps) : 1;
+                _canvas.Angle = _zoomSteps <= 0 ? 0
+                    : _motion == "rotate" ? _rotateStep * frame
+                    : _motion == "zoom-rotate" ? 15
+                    : 0;
                 _canvas.Shift = frame % 2 == 0 ? 0 : 1 / _scaling;
             }
         }
@@ -185,16 +206,18 @@ namespace TextStress.Scenarios
         }
 
         /// <summary>
-        /// A paragraph of Inter at the CJK size: lines of up to 72 characters of generated words
-        /// until <paramref name="glyphs"/> glyphs, one run per line.
+        /// A paragraph of <paramref name="face"/> at <c>--size</c> (the CJK size by default): lines
+        /// of up to 72 characters of generated words until <paramref name="glyphs"/> glyphs, one
+        /// run per line.
         /// </summary>
-        private List<PlacedRun> BuildInterParagraph(int glyphs, double width)
+        private List<PlacedRun> BuildParagraph(Typeface face, int glyphs, double width)
         {
-            var glyphTypeface = Track(new Typeface("fonts:Inter#Inter"));
+            var glyphTypeface = Track(face);
             CjkFamilyName = glyphTypeface.FamilyName;
             var generator = new TextGenerator(Options.Seed);
-            var lineHeight = Math.Ceiling(CjkSize * 1.3);
-            var ascent = -glyphTypeface.Metrics.Ascent * CjkSize / glyphTypeface.Metrics.DesignEmHeight;
+            var size = _paragraphSize;
+            var lineHeight = Math.Ceiling(size * 1.3);
+            var ascent = -glyphTypeface.Metrics.Ascent * size / glyphTypeface.Metrics.DesignEmHeight;
             var runs = new List<PlacedRun>();
             var total = 0;
 
@@ -217,7 +240,7 @@ namespace TextStress.Scenarios
                 }
 
                 var y = 4 + line * lineHeight;
-                var run = new GlyphRun(glyphTypeface, CjkSize, chars.AsMemory(), ids, new Point(4, Math.Round(y + ascent)));
+                var run = new GlyphRun(glyphTypeface, size, chars.AsMemory(), ids, new Point(4, Math.Round(y + ascent)));
                 runs.Add(new PlacedRun(run, new Rect(4, y, width - 8, lineHeight)));
                 total += count;
             }
@@ -311,6 +334,7 @@ namespace TextStress.Scenarios
         private readonly string _kind;
         private double _shift;
         private double _scale = 1;
+        private double _angle;
 
         public SweepCanvas(List<PlacedRun> runs, IImmutableSolidColorBrush[] brushes, StateChange[] states, string kind)
         {
@@ -344,11 +368,28 @@ namespace TextStress.Scenarios
             }
         }
 
+        /// <summary>Rotation of the drawn runs in degrees, about the centre of the top half.</summary>
+        public double Angle
+        {
+            get => _angle;
+            set
+            {
+                _angle = value;
+                InvalidateVisual();
+            }
+        }
+
         public override void Render(DrawingContext context)
         {
             context.FillRectangle(Brushes.White, new Rect(Bounds.Size));
 
-            using var shift = context.PushTransform(Matrix.CreateScale(_scale, _scale) *
+            var rotation = _angle == 0
+                ? Matrix.Identity
+                : Matrix.CreateTranslation(-Bounds.Width / 2, -Bounds.Height / 4) *
+                  Matrix.CreateRotation(Math.PI * _angle / 180) *
+                  Matrix.CreateTranslation(Bounds.Width / 2, Bounds.Height / 4);
+
+            using var shift = context.PushTransform(Matrix.CreateScale(_scale, _scale) * rotation *
                                                     Matrix.CreateTranslation(0, _shift));
             var brush = _brushes[0];
             var brushIndex = 0;

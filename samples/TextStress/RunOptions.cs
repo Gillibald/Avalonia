@@ -172,8 +172,10 @@ namespace TextStress
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +
             "  scenario parameters: code-scroll --size --colors --speed --fractional;\n" +
             "    list-fling --rows --speed --faces all|1 --colors 4|1 --motion fling|static --script latin|cjk;\n" +
-            "    sweep-glyphs --zoom S --zoom-step d (each distinct glyph once, scaled 1 + d * (frame % S));\n" +
-            "    mixed-ui --cards --decor --changes;\n" +
+            "    sweep-glyphs --zoom S --zoom-step d (each distinct glyph once, scaled 1 + d * (frame % S))\n" +
+            "      --zoom-font cjk|inter|segoe --size px (paragraph fonts) --motion zoom|rotate|zoom-rotate\n" +
+            "      --rotate-step deg (rotate: degrees per frame; zoom-rotate zooms under a fixed 15 degrees);\n" +
+            "    mixed-ui --cards --decor --changes --motion none|zoom|rotate (render transform every frame);\n" +
             "    sweep-states --runs --kind mixed|rect|clip|opacity|color;\n" +
             "    color-glyphs --layout grid|list --motion static|churn|fling --draw textblock|glyphrun --cells\n" +
             "      --size --changes --rows --font-file path (default: the system Segoe UI Emoji);\n" +

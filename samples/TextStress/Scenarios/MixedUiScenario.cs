@@ -15,26 +15,36 @@ namespace TextStress.Scenarios
     /// opacity, images and shadows. <c>--decor</c> sets how much non-text drawing sits between
     /// the text runs (0 text only, 1 fills and borders, 2 plus rounded clips and opacity, 3 plus
     /// images and shadows); <c>--changes</c> is the share of cards whose texts and bars change
-    /// per frame.
+    /// per frame. <c>--motion zoom</c> or <c>rotate</c> animates the whole dashboard's render
+    /// transform every frame: a zoom sawtooth from 1 to 1.6 over 60 frames, or a turn of one
+    /// degree per frame.
     /// </summary>
     internal sealed class MixedUiScenario : Scenario
     {
         private readonly int _cardCount;
         private readonly int _decor;
         private readonly double _changes;
+        private readonly string _motion;
         private Card[] _cards = Array.Empty<Card>();
+        private Control? _root;
 
         public MixedUiScenario(RunOptions options) : base(options)
         {
             _cardCount = options.GetInt("cards", 48);
             _decor = Math.Clamp(options.GetInt("decor", 3), 0, 3);
             _changes = Math.Clamp(options.GetDouble("changes", 0.25), 0, 1);
+            _motion = options.GetString("motion", "none").ToLowerInvariant();
+
+            if (_motion is not ("none" or "zoom" or "rotate"))
+            {
+                throw new ArgumentException($"--motion must be none, zoom or rotate, not '{_motion}'.");
+            }
         }
 
         public override string Name => "mixed-ui";
 
         public override string Describe() =>
-            FormattableString.Invariant($"cards={_cardCount};decor={_decor};changes={_changes}");
+            FormattableString.Invariant($"cards={_cardCount};decor={_decor};changes={_changes};motion={_motion}");
 
         public override Control CreateView(int n, double scaling)
         {
@@ -59,11 +69,20 @@ namespace TextStress.Scenarios
                 grid.Children.Add(_cards[i].Root);
             }
 
+            _root = grid;
+
             return grid;
         }
 
         public override void Apply(int frame)
         {
+            if (_root is not null && _motion != "none")
+            {
+                _root.RenderTransform = _motion == "zoom"
+                    ? new ScaleTransform(1 + 0.01 * (frame % 60), 1 + 0.01 * (frame % 60))
+                    : new RotateTransform(frame % 360);
+            }
+
             if (_changes <= 0)
             {
                 return;

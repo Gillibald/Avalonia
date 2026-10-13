@@ -9,7 +9,8 @@ namespace TextStress.Measurement
     /// <summary>
     /// The render thread's cumulative text counters: why glyph batches were drawn, how many runs
     /// they held, atlas page images and their bytes, glyph rasterizations and cache lookups, and
-    /// the clips batched runs were drawn under.
+    /// the clips batched runs were drawn under, and the draws that stretched an earlier raster
+    /// (or replayed colour glyphs as vectors) while a run's transform kept changing.
     /// The runner reads them at both ends of a render pass and writes the differences.
     /// </summary>
     internal static class RenderCounters
@@ -40,7 +41,7 @@ namespace TextStress.Measurement
             {
                 "batched_runs", "batches_drawn", "page_images_replaced", "page_upload_bytes", "page_texture_updates",
                 "glyph_rasterizations", "mask_hits", "mask_misses", "sprite_set_builds", "atlas_batch_builds",
-                "atlas_hits", "atlas_misses", "atlas_placements"
+                "atlas_hits", "atlas_misses", "atlas_placements", "unsettled_draws"
             });
 
             foreach (var kind in s_clipKinds)
@@ -82,6 +83,7 @@ namespace TextStress.Measurement
             values[i++] = GlyphRasterDiagnostics.AtlasHitsOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasMissesOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
+            values[i++] = MaskGlyphRunRenderer.UnsettledDraws;
 
             foreach (var kind in s_clipKinds)
             {
