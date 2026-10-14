@@ -1576,9 +1576,9 @@ namespace Avalonia.Skia.UnitTests.Media
             GpuBackend backend, bool software)
         {
             // Frames between band crossings stretch the last settled sprites and add nothing to
-            // the atlas; a crossing lays its glyphs out once, unhinted, at its scale, so the atlas
-            // grows by at most one mask per distinct glyph and pen phase per crossing. The first
-            // frame that holds still draws from the atlas again, grid-fitted.
+            // the atlas; a crossing lays its glyphs out once, unhinted, at its grid scale, so the
+            // atlas grows by at most one mask per distinct glyph and pen phase per crossing. The
+            // first frame that holds still draws from the atlas again, grid-fitted.
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var runs = CreateParagraph(typeface, 5, 13, new Point(6.3, 4));
@@ -1599,11 +1599,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 static double Scale(int frame) => 1 + frame * 0.04;
 
-                var anchor = Scale(TransformChurnGuard.Threshold - 1);
+                var scales = Enumerable.Range(0, 30).Select(Scale).ToList();
+                var crossingFrames = TransformedAtlasTests.GridCrossingFrames(scales, runs[0], 0);
                 var entries = 0;
                 var crossings = 0;
 
-                for (var frame = 0; frame < 30; frame++)
+                for (var frame = 0; frame < scales.Count; frame++)
                 {
                     context.Transform = Matrix.CreateScale(Scale(frame), Scale(frame));
                     DrawAll(context, runs, Brushes.Black);
@@ -1613,9 +1614,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     if (frame >= TransformChurnGuard.Threshold)
                     {
-                        if (Scale(frame) / anchor > MaskGlyphRunRenderer.MaxStretchScale)
+                        if (crossingFrames.Contains(frame))
                         {
-                            anchor = Scale(frame);
                             crossings++;
 
                             Assert.True(count > entries, $"crossing frame {frame} added no sprites");
@@ -1759,9 +1759,9 @@ namespace Avalonia.Skia.UnitTests.Media
         public void An_Upright_Zoom_Jumping_Back_To_A_Crossing_Scale_Draws_Its_Sprites_In_One_Batch(GpuBackend backend,
             bool software)
         {
-            // A zoom that jumps back to the scale of an earlier band crossing finds that crossing's
-            // sprites cached: it rasterizes nothing and draws every run of the frame from the atlas
-            // in one batched draw.
+            // A zoom that jumps back to the grid scale of an earlier band crossing finds that
+            // crossing's sprites cached: it rasterizes nothing, stretches nothing and draws every
+            // run of the frame from the atlas in one batched draw.
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var runs = CreateParagraph(typeface, 5, 13, new Point(6.3, 4));
@@ -1775,30 +1775,24 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 static double Scale(int step) => 1 + step * 0.04;
 
-                var anchor = Scale(TransformChurnGuard.Threshold - 1);
-                var crossing = -1;
+                var scales = Enumerable.Range(0, 16).Select(Scale).ToList();
+                var crossings = TransformedAtlasTests.GridCrossingFrames(scales, runs[0], 0);
 
-                for (var step = 0; step < 16; step++)
+                Assert.True(crossings.Count >= 2, "the zoom crossed the band fewer than twice");
+
+                for (var step = 0; step < scales.Count; step++)
                 {
-                    if (step >= TransformChurnGuard.Threshold && crossing < 0 &&
-                        Scale(step) / anchor > MaskGlyphRunRenderer.MaxStretchScale)
-                    {
-                        crossing = step;
-                    }
-
                     context.Transform = Matrix.CreateScale(Scale(step), Scale(step));
                     DrawAll(context, runs, Brushes.Black);
                     context.FlushGlyphBatch();
                 }
 
-                Assert.True(crossing > 0 && Scale(15) / Scale(crossing) > MaskGlyphRunRenderer.MaxStretchScale,
-                    "the zoom does not leave the band around its first crossing");
-
+                var grid = MaskGlyphRunRenderer.CrossingScale(Scale(crossings[0]), 1);
                 var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
                 var batches = DrawingContextImpl.BatchesDrawnOnThread;
                 var stretched = MaskGlyphRunRenderer.StretchedDraws;
 
-                context.Transform = Matrix.CreateScale(Scale(crossing), Scale(crossing));
+                context.Transform = Matrix.CreateScale(grid, grid);
                 DrawAll(context, runs, Brushes.Black);
                 context.FlushGlyphBatch();
 

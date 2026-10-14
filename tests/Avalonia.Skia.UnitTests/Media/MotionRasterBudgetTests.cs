@@ -671,14 +671,15 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
-        /// Whether a stretching run's zoom at <paramref name="frame"/> leaves the band around the
-        /// scale it last rasterized at: the last frame before the motion was recognized, or the
-        /// last crossing. A software GPU stretches an upright zoom without bound.
+        /// Whether a stretching run's zoom-rotation at <paramref name="frame"/> leaves the band
+        /// around the scale it last rasterized at, the last frame before the motion was recognized
+        /// or the last crossing, and draws that frame sharp.
         /// </summary>
         private static bool CrossesBand(Target target, Motion motion, int frame)
         {
-            if (motion == Motion.Rotation || frame < TransformChurnGuard.Threshold ||
-                motion == Motion.Zoom && target == Target.SoftwareGl)
+            // A software GPU stretches an upright zoom without bound, and a hardware GPU stretches
+            // the sprites of its grid crossings to every frame.
+            if (motion == Motion.Rotation || frame < TransformChurnGuard.Threshold || motion == Motion.Zoom)
             {
                 return false;
             }

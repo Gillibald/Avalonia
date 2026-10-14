@@ -318,6 +318,72 @@ namespace Avalonia.Skia.UnitTests.Media
             Color.FromArgb(0xFF, 0xF0, 0xE0, 0x30),
         };
 
+        /// <summary>
+        /// The frames of an upright zoom of <paramref name="run"/> through <paramref name="scales"/>,
+        /// translated by <paramref name="translateX"/>, on a hardware GPU whose motion budget
+        /// affords nothing, that lay out a band crossing. The frames before the motion is
+        /// recognized are static, and the last of them serves while the zoom stays within the band
+        /// around it; after that each frame draws the crossing at the grid scale at or above its
+        /// own, laid out on that grid scale's first use. A frame whose own sprite key is that of a
+        /// crossing already laid out draws it and settles there.
+        /// </summary>
+        internal static List<int> GridCrossingFrames(IReadOnlyList<double> scales, ManagedGlyphRunImpl run,
+            double translateX)
+        {
+            var frames = new List<int>();
+            var laidOut = new Dictionary<(ushort, byte), double>();
+            var anchor = scales[TransformChurnGuard.Threshold - 1];
+            var onGrid = false;
+
+            for (var frame = TransformChurnGuard.Threshold; frame < scales.Count; frame++)
+            {
+                if (GridCrossingStep(scales[frame], ref anchor, ref onGrid, laidOut, run, translateX))
+                {
+                    frames.Add(frame);
+                }
+            }
+
+            return frames;
+        }
+
+        /// <summary>
+        /// One moving frame of <see cref="GridCrossingFrames"/>: updates the anchor and returns
+        /// whether the frame lays out a crossing.
+        /// </summary>
+        internal static bool GridCrossingStep(double scale, ref double anchor, ref bool onGrid,
+            Dictionary<(ushort, byte), double> laidOut, ManagedGlyphRunImpl run, double translateX)
+        {
+            if (laidOut.TryGetValue(UprightKey(run, scale, translateX), out var cached))
+            {
+                anchor = cached;
+                onGrid = true;
+                return false;
+            }
+
+            var grid = MaskGlyphRunRenderer.CrossingScale(scale, 1);
+            var ratio = scale / anchor;
+
+            if (onGrid
+                    ? grid == anchor
+                    : ratio <= MaskGlyphRunRenderer.MaxStretchScale && ratio >= 1 / MaskGlyphRunRenderer.MaxStretchScale)
+            {
+                return false;
+            }
+
+            onGrid = true;
+            anchor = grid;
+
+            return laidOut.TryAdd(UprightKey(run, grid, translateX), grid);
+        }
+
+        /// <summary>The scale and pen phase of an unhinted upright sprite set of <paramref name="run"/>.</summary>
+        private static (ushort, byte) UprightKey(ManagedGlyphRunImpl run, double scale, double translateX)
+        {
+            GlyphMaskKey.SnapPen((float)(run.BaselineOrigin.X * scale + translateX), out _, out var phase);
+
+            return (GlyphMaskKey.QuantizeScale((float)(run.FontRenderingEmSize * scale)), phase);
+        }
+
         internal static RunMaskKey SpriteKey(ManagedGlyphRunImpl run, Matrix transform)
         {
             var norm = Math.Sqrt(Math.Abs(transform.M11 * transform.M22 - transform.M12 * transform.M21));

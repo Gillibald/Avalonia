@@ -316,23 +316,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm,
                     run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
 
-                // A zoom frame the budget cannot afford stretches the sprites the zoom last settled
-                // on, those of the last static frame or of its last band crossing, while it stays
-                // within the band around them.
-                var spriteState = run.TransformedSprites;
-
-                if (atlasZooming && !sharpAtlasZoom &&
-                    spriteState.Settled is { IsDisposed: false, IsUpright: true, HasColor: false } settledSprites &&
-                    settledSprites.Key.Mode == key.Mode && IsWithinStretchBand(spriteState, transform) &&
-                    TryDrawStretched(atlasContext, run.GlyphTypeface, spriteState, transform, ToArgb(alpha, solid.Color)))
+                if (atlasZooming && !sharpAtlasZoom)
                 {
-                    return true;
+                    return DrawZoomFrame(atlasContext, surface, run, key, transform, scaleX, ToArgb(alpha, solid.Color),
+                        pixelsPerEm);
                 }
 
-                // Past the band, one frame lays its unhinted sprites out at its scale and settles
-                // there, on the frame's budget, as transformed text does: a crossing draws from the
-                // atlas batched with the other runs, the frames after it stretch batches, and a
-                // zoom that comes back to the scale finds the sprites cached.
                 if (!churning)
                 {
                     MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
@@ -346,7 +335,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var start = atlasZooming ? MotionRasterBudget.Start() : 0;
                 var argb = ToArgb(alpha, solid.Color);
                 var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
-                    originX, originY, argb, crossing: atlasZooming && !sharpAtlasZoom);
+                    originX, originY, argb);
 
                 if (key == staticKey)
                 {
@@ -857,14 +846,86 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Draws a zoom frame of a moving upright run on a hardware GPU that the motion budget does
+        /// not afford sharp, from the sprites of a band crossing stretched to the frame. Crossings
+        /// lie on a fixed grid of scales, powers of <see cref="MaxStretchScale"/> from the
+        /// surface's own scale, and a frame draws the crossing at or above its scale, so each
+        /// stretch shrinks the sprites by no more than the band, and every pass over a scale,
+        /// in any gesture, draws the same crossing, laying it out only the first time (on the
+        /// frame's budget). The sprites of the gesture's last static frame stand in for a
+        /// crossing while the zoom stays within the band around them.
+        /// </summary>
+        private static bool DrawZoomFrame(ITransformedGlyphContext context, in GlyphTargetSurface surface,
+            ManagedGlyphRunImpl run, in RunMaskKey key, in Matrix transform, double scale, uint foregroundArgb,
+            double pixelsPerEm)
+        {
+            var state = run.TransformedSprites;
+            var grid = CrossingScale(scale, surface.ToDevice(Matrix.Identity).M11);
+
+            if (run.FontRenderingEmSize * grid > MaxPixelsPerEm)
+            {
+                grid = scale;
+            }
+
+            if (state.Settled is { IsDisposed: false, IsUpright: true, HasColor: false } settled &&
+                settled.Key.Mode == key.Mode &&
+                (settled.IsCrossing
+                    ? Math.Abs(state.SettledTransform.M11 - grid) <= grid * 1e-9
+                    : IsWithinStretchBand(state, transform)) &&
+                TryDrawStretched(context, run.GlyphTypeface, state, transform, foregroundArgb))
+            {
+                return true;
+            }
+
+            var gridTransform = new Matrix(grid, 0, 0, grid, transform.M31, transform.M32);
+
+            GlyphMaskKey.SnapPen((float)(run.BaselineOrigin.X * grid + transform.M31), out var originX,
+                out var originPhase);
+
+            var originY = (int)Math.Round(run.BaselineOrigin.Y * grid + transform.M32);
+            var gridKey = key with
+            {
+                ScaleQ = GlyphMaskKey.QuantizeScale((float)(run.FontRenderingEmSize * grid)),
+                OriginPhase = originPhase,
+            };
+
+            if (!state.TryGet(gridKey, out var sprites))
+            {
+                var start = MotionRasterBudget.Start();
+                var timer = GlyphPhaseTimers.Start();
+
+                sprites = BuildUprightSprites(run, gridKey, (float)grid, (float)grid);
+                state.AddCrossing(sprites);
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
+                MotionRasterBudget.Charge(run, start);
+            }
+
+            state.Settle(sprites, gridTransform, originX, originY);
+            run.SettledUpright = null;
+
+            return TryDrawStretched(context, run.GlyphTypeface, state, transform, foregroundArgb);
+        }
+
+        /// <summary>
+        /// The band crossing scale at or above <paramref name="scale"/>: the smallest power of
+        /// <see cref="MaxStretchScale"/> times <paramref name="reference"/>, the scale of the
+        /// surface itself, that is not below it.
+        /// </summary>
+        internal static double CrossingScale(double scale, double reference)
+        {
+            var steps = Math.Ceiling(Math.Log(scale / reference) / Math.Log(MaxStretchScale) - 1e-9);
+
+            return reference * Math.Pow(MaxStretchScale, steps);
+        }
+
+        /// <summary>
         /// Draws an upright run from the typeface's atlas through its cached sprite set, laying
-        /// the set out on first use, as the set of a zoom's band crossing when
-        /// <paramref name="crossing"/>, and returns the set.
+        /// the set out on first use, and returns the set.
         /// </summary>
         private static TransformedGlyphSprites DrawUprightFromAtlas(ITransformedGlyphContext context,
             ManagedGlyphRunImpl run,
             in RunMaskKey key, in Matrix transform, float scaleX, float scaleY, int originX, int originY,
-            uint foregroundArgb, bool crossing = false)
+            uint foregroundArgb)
         {
             var state = run.TransformedSprites;
 
@@ -873,15 +934,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var timer = GlyphPhaseTimers.Start();
 
                 sprites = BuildUprightSprites(run, key, scaleX, scaleY);
-
-                if (crossing)
-                {
-                    state.AddCrossing(sprites);
-                }
-                else
-                {
-                    state.Add(sprites);
-                }
+                state.Add(sprites);
 
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
             }
