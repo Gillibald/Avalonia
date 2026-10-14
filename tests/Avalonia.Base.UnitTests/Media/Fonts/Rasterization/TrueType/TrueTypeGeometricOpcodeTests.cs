@@ -261,6 +261,22 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Iup_Rounds_The_Interpolation_Scale()
+        {
+            // Touched ends 7/64 px apart over 200 font units, the untouched point halfway. The
+            // 16.16 scale 7/200 rounds to 2294 (FT_DivFix), and 100 units at that scale land
+            // on 4/64 (FT_MulFix); a truncated scale of 2293 would leave the point at 3/64.
+            var zone = BuildZone((0, 0, 0, 0), (3, 0, 100, 0), (7, 0, 200, 0));
+
+            zone.Tags[0] |= TrueTypeZone.TouchX;
+            zone.Tags[2] |= TrueTypeZone.TouchX;
+
+            RunGlyph(new TtAsm().Op(0x31), zone);
+
+            Assert.Equal(4, zone.CurX[1]);
+        }
+
+        [Fact]
         public void Iup_Tracks_The_Compat_Axis_Bits()
         {
             var zone = BuildZone((0, 0, 0, 0));
