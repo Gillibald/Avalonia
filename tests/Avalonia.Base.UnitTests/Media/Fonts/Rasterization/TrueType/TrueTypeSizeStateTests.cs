@@ -59,6 +59,18 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
         }
 
         [Fact]
+        public void Scale_Rounds_The_Division_Like_FreeType()
+        {
+            // FreeType derives the scale with FT_DivFix, which rounds: 983 * 65536 / 1000 is
+            // 64421.888, so the factor is 64422. The difference only shows for unit counts that
+            // do not divide 26.6 sizes evenly, such as 1000.
+            var state = CreateState(unitsPerEm: 1000, pixelsPerEm26Dot6: 983);
+
+            Assert.True(state.IsValid);
+            Assert.Equal(64422, state.Scale);
+        }
+
+        [Fact]
         public void Prep_Results_Become_The_Size_Snapshot()
         {
             var prep = new TtAsm()
