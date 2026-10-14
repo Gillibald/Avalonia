@@ -70,6 +70,24 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         }
 
         /// <summary>
+        /// (a &lt;&lt; 16) / b rounded to nearest with symmetric signs, the FT_DivFix contract: the
+        /// 16.16 ratio of two values. A zero divisor yields 0x7FFFFFFF with the dividend's sign,
+        /// and ratios beyond the 32-bit range saturate.
+        /// </summary>
+        public static int DivFix(int a, int b)
+        {
+            var sign = 1L;
+            long la = a, lb = b;
+
+            if (la < 0) { la = -la; sign = -sign; }
+            if (lb < 0) { lb = -lb; sign = -sign; }
+
+            var value = lb > 0 ? Math.Min(((la << 16) + (lb >> 1)) / lb, 0x7FFFFFFFL) : 0x7FFFFFFFL;
+
+            return (int)(sign > 0 ? value : -value);
+        }
+
+        /// <summary>
         /// a * scale for a 16.16 scale factor with FT_MulFix rounding (nearest, symmetric
         /// signs). Converts font units to 26.6 pixels when the scale maps them so.
         /// </summary>

@@ -3063,7 +3063,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             }
             else
             {
-                var scale = 0L;
+                var scale = 0;
                 var scaleValid = false;
 
                 for (var i = p1; i <= p2; i++)
@@ -3083,12 +3083,10 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                         if (!scaleValid)
                         {
                             scaleValid = true;
-                            scale = Math.Clamp(
-                                ((long)(cur2 - cur1) << 16) / (orus2 - orus1),
-                                int.MinValue, int.MaxValue);
+                            scale = F26Dot6.DivFix(unchecked(cur2 - cur1), unchecked(orus2 - orus1));
                         }
 
-                        x = unchecked(cur1 + F26Dot6.MulFix(orus[i] - orus1, (int)scale));
+                        x = unchecked(cur1 + F26Dot6.MulFix(orus[i] - orus1, scale));
                     }
 
                     cur[i] = x;
