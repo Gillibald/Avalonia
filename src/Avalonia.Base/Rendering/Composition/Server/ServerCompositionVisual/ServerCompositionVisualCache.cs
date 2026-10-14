@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Platform;
 using Avalonia.Utilities;
 
@@ -16,6 +17,10 @@ internal class ServerCompositionVisualCache
     private double _scaleX, _scaleY;
     private Vector _drawAtOffset;
     private bool _needToFinalizeFrame = true;
+
+    // Whether the layer holds text drawn stretched from an earlier raster, which the target's settle
+    // frame draws sharp by rendering the layer again. Only a render of the whole layer clears it.
+    private bool _holdsStretchedText;
 
     public IDirtyRectCollector DirtyRectCollector { get; private set; } = null!;
     public bool IsDirty => !_dirtyRectTracker.IsEmpty;
@@ -171,6 +176,11 @@ internal class ServerCompositionVisualCache
             _needsFullReRender = true;
         }
 
+        // The target draws the whole frame once text stops moving, but the layer renders only what
+        // changed inside it, so text it left stretched has to be rendered again on that frame.
+        if (_holdsStretchedText && TargetVisual.Root is { IsDrawingSettleFrame: true })
+            _needsFullReRender = true;
+
         var fullFrameRect = new LtrbRect(0, 0,
             _layer.PixelSize.Width, _layer.PixelSize.Height);
 
@@ -193,6 +203,8 @@ internal class ServerCompositionVisualCache
         // Render to layer if needed
         if (!_dirtyRectTracker.IsEmpty)
         {
+            var unsettledDraws = MaskGlyphRunRenderer.UnsettledDraws;
+
             using var ctx = _layer.CreateDrawingContext();
             using (_needsFullReRender ? null : _dirtyRectTracker.BeginDraw(ctx))
             {
@@ -200,6 +212,9 @@ internal class ServerCompositionVisualCache
                 ctx.Transform = Matrix.CreateTranslation(_drawAtOffset) * Matrix.CreateScale(_scaleX, _scaleY);
                 rv = TargetVisual.Render(ctx, _dirtyRectTracker.CombinedRect, _dirtyRectTracker, renderingToBitmapCache: true);
             }
+
+            var stretched = MaskGlyphRunRenderer.UnsettledDraws != unsettledDraws;
+            _holdsStretchedText = stretched || (_holdsStretchedText && !_needsFullReRender);
         }
         _needsFullReRender = false;
         

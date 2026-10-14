@@ -249,6 +249,8 @@ namespace Avalonia.Rendering.Composition.Server
             var renderStart = Stopwatch.GetTimestamp();
             var rasterStart = GlyphRasterCost.TicksOnThread;
 
+            IsDrawingSettleFrame = settleFrame;
+
             using (renderTargetContext)
             using (var renderTiming = Diagnostic.BeginCompositorRenderPass())
             {
@@ -323,6 +325,8 @@ namespace Avalonia.Rendering.Composition.Server
                 DirtyRects.Initialize(renderBounds);
             }
 
+            IsDrawingSettleFrame = false;
+
             // The time this frame spent outside text sizes the motion budget of the next ones.
             MotionRasterBudget.FrameRendered(Stopwatch.GetTimestamp() - renderStart,
                 GlyphRasterCost.TicksOnThread - rasterStart);
@@ -358,6 +362,12 @@ namespace Avalonia.Rendering.Composition.Server
         /// render loop must keep ticking.
         /// </summary>
         internal bool IsSettling => _ticksSinceUnsettledText >= 0 && Root != null && !_disposed;
+
+        /// <summary>
+        /// Whether the pass in progress is the frame that draws the whole target again after text
+        /// stopped stretching, which bitmap caches holding stretched text render again for.
+        /// </summary>
+        internal bool IsDrawingSettleFrame { get; private set; }
 
         public void Dispose()
         {
