@@ -249,7 +249,9 @@ namespace Avalonia.Skia.UnitTests.Media
         public void A_Scene_That_Keeps_Running_Out_Of_Budget_Is_Tried_Again_After_Doubling_Holds(Target target)
         {
             // Three runs and room for two: every try runs out of budget on the third run, so each
-            // hold lasts twice as long as the one before.
+            // hold lasts twice as long as the one before. The frame before each retry estimates
+            // the scene at half its cost, under the budget, as a scene whose estimate fits but
+            // whose frames do not.
             using var output = new FrameTarget(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
@@ -259,7 +261,8 @@ namespace Avalonia.Skia.UnitTests.Media
             const int hold = MotionRasterBudget.HoldFrames;
             var tried = new[] { moving, moving + hold + 1, moving + hold + 1 + 2 * hold + 1 };
             var frames = tried[2] + 4;
-            var stretched = Animate(output, runs.All, frames, Motion.Rotation, (_, _) => true);
+            var stretched = Animate(output, runs.All, frames, Motion.Rotation, (_, _) => true,
+                glyphCost: frame => Array.IndexOf(tried, frame + 1) > 0 ? GlyphCost / 2 : GlyphCost);
             var expected = Range(moving, frames).FindAll(frame => Array.IndexOf(tried, frame) < 0);
 
             Assert.Equal(expected, stretched[0]);
@@ -285,6 +288,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // scale every 20 frames, which the frames before the motion was recognized left
             // cached: the frames that pass through cached scales still move, so every try runs
             // out of budget on the third run and each hold lasts twice as long as the one before.
+            // The frame before each retry estimates the scene at half its cost, under the budget.
             const int period = 20;
             const int moving = TransformChurnGuard.Threshold;
             const int hold = MotionRasterBudget.HoldFrames;
@@ -306,6 +310,8 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 var scale = 1 + 0.01 * (frame % period);
                 var before = MotionRasterBudget.TriedFrames;
+
+                MotionRasterBudget.GlyphCostOverride = expected.IndexOf(frame + 1) > 0 ? GlyphCost / 2 : GlyphCost;
 
                 output.Frame(context =>
                 {
@@ -374,6 +380,46 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
+        public void A_Scene_Whose_Tries_Run_Out_Of_Budget_Is_Not_Tried_Again_While_Estimated_Past_The_Budget(
+            Target target)
+        {
+            // Three runs and room for two: the scene is estimated under twice the budget, so its
+            // first moving frame tries and runs out. Until the hold ends, a further try needs the
+            // estimate to fit the budget itself, which this scene's never does.
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
+            using var runs = new Runs(typeface, 3);
+
+            const int moving = TransformChurnGuard.Threshold;
+            var frames = moving + 4 * MotionRasterBudget.HoldFrames;
+            var tried = new List<int>();
+
+            for (var frame = 0; frame < frames; frame++)
+            {
+                var before = MotionRasterBudget.TriedFrames;
+                var current = frame;
+
+                output.Frame(context =>
+                {
+                    for (var i = 0; i < runs.All.Length; i++)
+                    {
+                        context.Transform = At(Motion.Rotation, current, 40 * i);
+                        context.DrawGlyphRun(Brushes.Black, runs.All[i]);
+                    }
+                });
+
+                if (MotionRasterBudget.TriedFrames != before)
+                {
+                    tried.Add(frame);
+                }
+            }
+
+            Assert.Equal(new[] { moving }, tried);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
         public void A_Try_That_Fits_The_Budget_Ends_The_Doubling(Target target)
         {
             // The first try runs out of budget; the third run then leaves, the try after the hold
@@ -389,10 +435,12 @@ namespace Avalonia.Skia.UnitTests.Media
             const int back = moving + hold + 7;
             const int frames = back + hold + 5;
             var stretched = Animate(output, runs.All, frames, Motion.Rotation,
-                (run, frame) => run != 1 || frame <= moving || frame >= back);
+                (run, frame) => run != 1 || frame <= moving || frame >= back,
+                glyphCost: frame => frame == back + hold ? GlyphCost / 2 : GlyphCost);
 
             // The first run is sharp on the first try, after the first hold, until the third run
-            // comes back, and on the try after the second hold.
+            // comes back, and on the try after the second hold, which the frame before it, at half
+            // the cost, estimated under the budget.
             var sharp = new List<int> { moving, back + hold + 1 };
 
             for (var frame = moving + hold + 1; frame <= back; frame++)
@@ -518,10 +566,11 @@ namespace Avalonia.Skia.UnitTests.Media
         /// <summary>
         /// Draws <paramref name="frames"/> frames of <paramref name="runs"/>, run i 40 px further
         /// down per index and only where <paramref name="drawn"/> says so, at the transform of the
-        /// frame's <paramref name="step"/>; returns per run the frames it stretched in.
+        /// frame's <paramref name="step"/>, with the frame's <paramref name="glyphCost"/> when
+        /// given; returns per run the frames it stretched in.
         /// </summary>
         private static List<int>[] Animate(FrameTarget output, ManagedGlyphRunImpl[] runs, int frames, Motion motion,
-            Func<int, int, bool> drawn, Func<int, int>? step = null)
+            Func<int, int, bool> drawn, Func<int, int>? step = null, Func<int, double>? glyphCost = null)
         {
             var stretched = new List<int>[runs.Length];
 
@@ -534,6 +583,11 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 var at = step?.Invoke(frame) ?? frame;
                 var current = frame;
+
+                if (glyphCost is not null)
+                {
+                    MotionRasterBudget.GlyphCostOverride = glyphCost(frame);
+                }
 
                 output.Frame(context =>
                 {
