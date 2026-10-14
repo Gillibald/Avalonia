@@ -36,6 +36,8 @@ namespace Avalonia.Skia.UnitTests.Media
             SoftwareGl,
             HardwareGl,
             HardwareAngle,
+            SoftwareMetal,
+            HardwareMetal,
         }
 
         public enum Motion
@@ -158,6 +160,76 @@ namespace Avalonia.Skia.UnitTests.Media
             harness.AssertIdle();
         }
 
+        [Theory]
+        [MemberData(nameof(Motions))]
+        public void Text_Moving_Inside_A_Bitmap_Cache_Is_Drawn_Sharp_After_The_Motion_Stops(Target target, Motion motion)
+        {
+            // A bitmap cache renders again only what changed inside it, so the frame that draws the
+            // whole target once the motion stops has to render the cached text again too.
+            using var environment = new Environment(target);
+
+            var final = At(motion, MotionFrames - 1);
+            var expected = environment.RenderStaticCached(final, moveCache: false);
+
+            using var run = environment.CreateRun();
+            using var harness = environment.CreateHarness();
+
+            var text = harness.AddCachedRun(run, out _);
+            var stretched = MaskGlyphRunRenderer.UnsettledDraws;
+
+            for (var frame = 0; frame < MotionFrames; frame++)
+            {
+                text.RenderTransform = new MatrixTransform(At(motion, frame));
+                harness.Services.RunJobs();
+            }
+
+            // The cache renders into an offscreen surface, where an upright zoom stretches on every
+            // target here; a rotation there draws sharp in every frame.
+            if (motion == Motion.Zoom)
+            {
+                Assert.NotEqual(stretched, MaskGlyphRunRenderer.UnsettledDraws);
+            }
+
+            var rendered = harness.Renders;
+
+            harness.TickUntilIdle();
+
+            Assert.InRange(harness.Renders - rendered, 0, 1);
+            TransformedAtlasTests.AssertEqual(expected, harness.Read(), $"{target} {motion}");
+            harness.AssertIdle();
+        }
+
+        [Theory]
+        [MemberData(nameof(Motions))]
+        public void Text_Inside_A_Bitmap_Cache_Moved_By_The_Cache_Never_Stretches(Target target, Motion motion)
+        {
+            // The cache renders its content in its own coordinates and the motion only places the
+            // cached bitmap, so the text inside never draws under a changing transform.
+            using var environment = new Environment(target);
+
+            var final = At(motion, MotionFrames - 1);
+            var expected = environment.RenderStaticCached(final, moveCache: true);
+
+            using var run = environment.CreateRun();
+            using var harness = environment.CreateHarness();
+
+            harness.AddCachedRun(run, out var cache);
+
+            var stretched = MaskGlyphRunRenderer.UnsettledDraws;
+
+            for (var frame = 0; frame < MotionFrames; frame++)
+            {
+                cache.RenderTransform = new MatrixTransform(At(motion, frame));
+                harness.Services.RunJobs();
+            }
+
+            harness.TickUntilIdle();
+
+            Assert.Equal(stretched, MaskGlyphRunRenderer.UnsettledDraws);
+            TransformedAtlasTests.AssertEqual(expected, harness.Read(), $"{target} {motion}");
+            harness.AssertIdle();
+        }
+
         /// <summary>The typeface and, on GPU targets, the GPU context every harness of a test shares.</summary>
         private sealed class Environment : IDisposable
         {
@@ -178,8 +250,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 if (target != Target.Raster)
                 {
                     _gpu = TransformedAtlasTests.CreateGpu(
-                        target == Target.HardwareAngle ? GpuBackend.Angle : GpuBackend.NativeGl,
-                        software: target == Target.SoftwareGl);
+                        target switch
+                        {
+                            Target.HardwareAngle => GpuBackend.Angle,
+                            Target.SoftwareMetal or Target.HardwareMetal => GpuBackend.Metal,
+                            _ => GpuBackend.NativeGl,
+                        },
+                        software: target is Target.SoftwareGl or Target.SoftwareMetal);
                 }
             }
 
@@ -208,6 +285,35 @@ namespace Avalonia.Skia.UnitTests.Media
                     harness.AddBorder().Background = new ImmutableSolidColorBrush(color);
                 }
 
+                harness.Services.RunJobs();
+
+                var rendered = harness.Renders;
+
+                harness.TickUntilIdle();
+
+                Assert.Equal(rendered, harness.Renders);
+                harness.AssertIdle();
+
+                var pixels = harness.Read();
+
+                Assert.Contains(pixels, b => b != 0);
+
+                return pixels;
+            }
+
+            /// <summary>
+            /// Renders a run inside a bitmap cache, drawn once under <paramref name="transform"/>,
+            /// which applies to the cache when <paramref name="moveCache"/> and to the run inside it
+            /// otherwise, and checks that the scene then stops rendering.
+            /// </summary>
+            public byte[] RenderStaticCached(Matrix transform, bool moveCache)
+            {
+                using var run = CreateRun();
+                using var harness = CreateHarness();
+
+                var text = harness.AddCachedRun(run, out var cache);
+
+                (moveCache ? (Visual)cache : text).RenderTransform = new MatrixTransform(transform);
                 harness.Services.RunJobs();
 
                 var rendered = harness.Renders;
@@ -279,6 +385,22 @@ namespace Avalonia.Skia.UnitTests.Media
                 var control = new RunControl(run) { RenderTransformOrigin = RelativePoint.TopLeft };
 
                 _canvas.Children.Add(control);
+
+                return control;
+            }
+
+            /// <summary>Adds a run inside a panel whose content draws through a bitmap cache.</summary>
+            public RunControl AddCachedRun(ManagedGlyphRunImpl run, out Panel cache)
+            {
+                var control = new RunControl(run) { RenderTransformOrigin = RelativePoint.TopLeft };
+
+                cache = new Panel
+                {
+                    Width = Width, Height = TextHeight, CacheMode = new BitmapCache(),
+                    RenderTransformOrigin = RelativePoint.TopLeft
+                };
+                cache.Children.Add(control);
+                _canvas.Children.Add(cache);
 
                 return control;
             }
