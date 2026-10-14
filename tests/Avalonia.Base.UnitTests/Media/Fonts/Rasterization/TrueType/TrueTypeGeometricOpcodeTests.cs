@@ -301,6 +301,24 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
             Assert.Equal(60, zone.CurX[1]);
         }
 
+        [Theory]
+        [InlineData(171, -214, 10227, -12799, 12799, 10227)]
+        [InlineData(5, 4, 12793, 10235, -10235, 12793)]
+        public void Vectors_From_A_Line_Truncate_To_The_Unit_Like_FreeType(
+            int dx, int dy, int parallelX, int parallelY, int perpendicularX, int perpendicularY)
+        {
+            // The unit vector is the 16.16 FT_Vector_NormLen result divided by 4 toward zero,
+            // so (171, -214) gives 10227 where the exact 10227.7 would round to 10228. The
+            // expected values are FreeType 2.13.2's GPV after SPVTL on the same line.
+            var zone = BuildZone((0, 0, 0, 0), (dx, dy, dx, dy));
+
+            var parallel = RunGlyph(new TtAsm().PushB(1, 0).Op(0x06).Op(0x0C), zone);
+            Assert.Equal(new[] { parallelX, parallelY }, parallel.Stack.ToArray());
+
+            var perpendicular = RunGlyph(new TtAsm().PushB(1, 0).Op(0x07).Op(0x0C), zone);
+            Assert.Equal(new[] { perpendicularX, perpendicularY }, perpendicular.Stack.ToArray());
+        }
+
         [Fact]
         public void Vectors_From_A_Line_Normalize_And_Rotate()
         {
