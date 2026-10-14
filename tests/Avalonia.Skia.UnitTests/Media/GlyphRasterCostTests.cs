@@ -51,5 +51,70 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.InRange(cost.PerGlyph(Size), Warm * 0.9, Warm * 1.1);
         }
+
+        [Fact]
+        public void An_Unhinted_Cost_Reports_The_Grid_Fitted_Cost_Until_It_Has_Samples_Of_Its_Own()
+        {
+            // Motion frames rasterize unhinted, which costs less than the grid-fitted builds of
+            // static text: before the first unhinted build, their cost is estimated from above.
+            var gridFitted = new GlyphRasterCost();
+            var unhinted = new GlyphRasterCost(gridFitted);
+
+            for (var i = 0; i < 100; i++)
+            {
+                gridFitted.Record(Size, Ticks(Cold));
+            }
+
+            Assert.Equal(gridFitted.PerGlyph(Size), unhinted.PerGlyph(Size));
+
+            unhinted.Record(Size, Ticks(Warm));
+
+            Assert.InRange(unhinted.PerGlyph(Size), Warm * 0.9, Warm * 1.1);
+            Assert.InRange(gridFitted.PerGlyph(Size), Cold * 0.9, Cold * 1.1);
+        }
+
+        [Fact]
+        public void A_Typeface_Learns_The_Cost_Of_Grid_Fitted_And_Unhinted_Masks_Apart()
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            var scratch = new GlyphPathBuilder();
+            var gridFitted = typeface.MaskCache.RasterCost;
+            var unhinted = typeface.MaskCache.UnhintedRasterCost;
+            ushort scaleQ = 0;
+
+            void Build(bool gridFit)
+            {
+                // A new size per build, so every build rasterizes.
+                scaleQ++;
+
+                foreach (var c in "Hamburgefonstiv")
+                {
+                    GlyphMasks.Build(typeface, scratch, new GlyphMaskKey(typeface.CharacterToGlyphMap[c],
+                        (ushort)(GlyphMaskKey.ScaleQuantum * 14 + scaleQ), 0, GlyphMaskMode.Antialiased, gridFit));
+                }
+            }
+
+            Build(gridFit: true);
+
+            var gridFittedCost = gridFitted.PerGlyph(Size);
+
+            for (var i = 0; i < 4; i++)
+            {
+                Build(gridFit: false);
+            }
+
+            Assert.Equal(gridFittedCost, gridFitted.PerGlyph(Size));
+
+            var unhintedCost = unhinted.PerGlyph(Size);
+
+            for (var i = 0; i < 4; i++)
+            {
+                Build(gridFit: true);
+            }
+
+            Assert.Equal(unhintedCost, unhinted.PerGlyph(Size));
+            Assert.NotEqual(gridFittedCost, gridFitted.PerGlyph(Size));
+        }
     }
 }

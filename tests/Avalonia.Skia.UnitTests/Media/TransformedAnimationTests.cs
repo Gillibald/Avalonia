@@ -655,7 +655,8 @@ namespace Avalonia.Skia.UnitTests.Media
             // A zoom frame that rasterizes rebuilds every glyph mask at the frame's scale, while a
             // stretch on a GPU is one textured draw per run. The sprites of the last static frame,
             // or the last settled run mask, stretch while the zoom since they settled stays within
-            // the band either way; past it, one frame rasterizes at its scale and settles.
+            // the band either way; past it, one frame rasterizes its glyphs unhinted at its scale
+            // and settles.
             StretchesWithinTheBand(target, MaskGlyphRunRenderer.MaxStretchScale);
         }
 
@@ -690,8 +691,12 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // Once the guard engages, a zoom frame rasterizes when it leaves the band around the
             // last raster or repeats the previous frame's transform, and on no frame after it:
-            // the next frame stretches the new raster. A frame whose raster is cached draws it
-            // and becomes the anchor without rasterizing.
+            // the next frame stretches the new raster. A rotated frame whose sprites are cached
+            // draws them and becomes the anchor without rasterizing. Moving upright text draws its
+            // glyphs unhinted, so the grid-fitted rasters of static frames are never drawn for it,
+            // and with the budget exhausted its rasters are the run masks of the frames that left
+            // the band: a frame within the band stretches, one past it draws a cached run mask of
+            // its scale. Rotated text is unhinted whether it moves or not.
             const double band = MaskGlyphRunRenderer.MaxStretchScale;
 
             using var output = TestTarget.Create(target);
@@ -712,21 +717,29 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var expected = new List<int>();
             var cached = new HashSet<double>();
+            var staticCached = new HashSet<double>();
             var anchor = 0.0;
 
             for (var frame = 0; frame < scales.Count; frame++)
             {
                 var scale = scales[frame];
+                var moving = frame >= TransformChurnGuard.Threshold && scale != scales[frame - 1];
+                var withinBand = scale / anchor <= band && scale / anchor >= 1 / band;
+                var rasters = rotated || moving ? cached : staticCached;
 
-                if (cached.Contains(scale))
+                if (moving && !rotated && withinBand)
                 {
-                    anchor = scale;
+                    continue;
                 }
-                else if (frame < TransformChurnGuard.Threshold || scale == scales[frame - 1] ||
-                         scale / anchor > band || scale / anchor < 1 / band)
+
+                if (!rasters.Contains(scale) && (!moving || !withinBand))
                 {
                     expected.Add(frame);
-                    cached.Add(scale);
+                    rasters.Add(scale);
+                }
+
+                if (!moving || rasters.Contains(scale))
+                {
                     anchor = scale;
                 }
             }
@@ -752,6 +765,16 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             Assert.Equal(expected, rasterizing);
+        }
+
+        /// <summary>Draws <paramref name="run"/> as text drawn with <see cref="TextHintingMode.None"/>.</summary>
+        private static void DrawUnhinted(DrawingContextImpl context, ManagedGlyphRunImpl run)
+        {
+            var options = context.TextOptions;
+
+            context.TextOptions = options with { TextHintingMode = TextHintingMode.None };
+            context.DrawGlyphRun(Brushes.Black, run);
+            context.TextOptions = options;
         }
 
         private static void StretchesWithinTheBand(Target target, double band)
@@ -817,11 +840,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 crossings.Add(frame);
 
-                // The frame that settles draws exactly what a run drawn once at its scale draws.
+                // The frame that settles draws exactly what a run drawn once at its scale without
+                // hinting draws.
                 using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
 
                 context.Transform = Zoom(scales[frame]);
-                context.DrawGlyphRun(Brushes.Black, fresh);
+                DrawUnhinted(context, fresh);
 
                 TransformedAtlasTests.AssertEqual(output.ReadAndClear(), drawn, $"{target} frame {frame}");
             }
@@ -834,8 +858,8 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // Latin glyph masks are cheap to rasterize, so a zoom over a paragraph rasterizes
             // every frame rather than stretching: each frame draws what runs drawn once at its
-            // scale draw, without caching a run mask per scale, and a pass over scales whose
-            // glyph masks are cached allocates nothing.
+            // scale without hinting draw, without caching a run mask per scale, and a pass over
+            // scales whose glyph masks are cached allocates nothing.
             using var output = TestTarget.Create(Target.Raster);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
 
@@ -902,7 +926,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                         foreach (var run in reference)
                         {
-                            context.DrawGlyphRun(Brushes.Black, run);
+                            DrawUnhinted(context, run);
                             run.Dispose();
                         }
 

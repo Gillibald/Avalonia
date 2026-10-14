@@ -93,6 +93,59 @@ namespace Avalonia.Skia.UnitTests.Media
             harness.AssertIdle();
         }
 
+        public static IEnumerable<object[]> ZoomTargets()
+            => Enum.GetValues<Target>().Select(target => new object[] { target });
+
+        [Theory]
+        [MemberData(nameof(ZoomTargets))]
+        public void Text_Left_Alone_After_Sharp_Unhinted_Zoom_Frames_Is_Drawn_Grid_Fitted(Target target)
+        {
+            // Every zoom frame rasterizes its glyphs unhinted, sharp but not what a static frame
+            // draws, so the motion still ends with one frame that draws the text grid-fitted.
+            using var environment = new Environment(target);
+
+            var final = At(Motion.Zoom, MotionFrames - 1);
+            var expected = environment.RenderStatic(final, null);
+            var budget = MotionRasterBudget.BudgetOverride;
+            var glyphCost = MotionRasterBudget.GlyphCostOverride;
+            var zoomRasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+
+            MotionRasterBudget.BudgetOverride = 1e9;
+            MotionRasterBudget.GlyphCostOverride = 1;
+            MaskGlyphRunRenderer.ZoomRasterPixelCost = 0;
+
+            try
+            {
+                using var run = environment.CreateRun();
+                using var harness = environment.CreateHarness();
+
+                var text = harness.AddRun(run);
+                var stretched = MaskGlyphRunRenderer.StretchedDraws;
+
+                for (var frame = 0; frame < MotionFrames; frame++)
+                {
+                    text.RenderTransform = new MatrixTransform(At(Motion.Zoom, frame));
+                    harness.Services.RunJobs();
+                }
+
+                Assert.Equal(stretched, MaskGlyphRunRenderer.StretchedDraws);
+
+                var rendered = harness.Renders;
+
+                harness.TickUntilIdle();
+
+                Assert.Equal(rendered + 1, harness.Renders);
+                TransformedAtlasTests.AssertEqual(expected, harness.Read(), target.ToString());
+                harness.AssertIdle();
+            }
+            finally
+            {
+                MotionRasterBudget.BudgetOverride = budget;
+                MotionRasterBudget.GlyphCostOverride = glyphCost;
+                MaskGlyphRunRenderer.ZoomRasterPixelCost = zoomRasterPixelCost;
+            }
+        }
+
         [Theory]
         [MemberData(nameof(GpuMotions))]
         public void Text_Stopped_While_Other_Content_Keeps_Changing_Is_Drawn_Sharp(Target target, Motion motion)

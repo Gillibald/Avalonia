@@ -55,6 +55,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static int UnsettledDraws => t_unsettledDraws;
 
+        /// <summary>
+        /// The draws of <see cref="UnsettledDraws"/> that stretched an earlier raster or replayed
+        /// colour glyphs as vectors, rather than rasterizing the frame.
+        /// </summary>
+        internal static int StretchedDraws => t_unsettledDraws;
+
         private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder), GlyphMask> s_buildMask =
             static (key, state) => GlyphMasks.Build(state.Item1, state.Item2, key);
 

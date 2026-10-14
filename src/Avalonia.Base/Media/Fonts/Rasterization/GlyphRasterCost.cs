@@ -38,6 +38,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private double _microseconds;
 
+        /// <param name="seed">Not used yet.</param>
+        public GlyphRasterCost(GlyphRasterCost? seed = null)
+        {
+        }
+
         [ThreadStatic]
         private static long t_ticks;
 

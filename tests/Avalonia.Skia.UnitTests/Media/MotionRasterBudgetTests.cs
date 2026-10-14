@@ -75,7 +75,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Motions))]
-        public void Motion_The_Budget_Affords_Draws_Every_Frame_Like_A_Static_Draw(Target target, Motion motion)
+        public void Motion_The_Budget_Affords_Draws_Every_Moving_Frame_Like_A_Static_Unhinted_Draw(Target target, Motion motion)
         {
             using var output = new FrameTarget(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -84,22 +84,28 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var frame = 0; frame < 16; frame++)
             {
-                var unsettled = MaskGlyphRunRenderer.UnsettledDraws;
+                var unsettled = MaskGlyphRunRenderer.StretchedDraws;
                 var drawn = output.Frame(context =>
                 {
                     context.Transform = At(motion, frame);
                     context.DrawGlyphRun(Brushes.Black, animated);
                 });
 
-                // A sharp frame is what a static frame at the transform draws, so nothing needs
-                // to be drawn again when the motion stops.
-                Assert.True(unsettled == MaskGlyphRunRenderer.UnsettledDraws, $"{target} {motion} frame {frame} stretched");
+                // A sharp frame is what a static frame at the transform draws without hinting, once
+                // the motion is recognized: a moving run's glyphs keep their shapes from one scale
+                // to the next. The frames before draw as static frames.
+                Assert.True(unsettled == MaskGlyphRunRenderer.StretchedDraws, $"{target} {motion} frame {frame} stretched");
 
                 using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
 
                 var expected = output.Frame(context =>
                 {
                     context.Transform = At(motion, frame);
+                    if (frame >= TransformChurnGuard.Threshold)
+                    {
+                        context.TextOptions = context.TextOptions with { TextHintingMode = TextHintingMode.None };
+                    }
+
                     context.DrawGlyphRun(Brushes.Black, fresh);
                 });
 
@@ -122,7 +128,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var frame = 0; frame < 16; frame++)
             {
-                var before = MaskGlyphRunRenderer.UnsettledDraws;
+                var before = MaskGlyphRunRenderer.StretchedDraws;
 
                 output.Frame(context =>
                 {
@@ -130,7 +136,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.DrawGlyphRun(Brushes.Black, animated);
                 });
 
-                if (MaskGlyphRunRenderer.UnsettledDraws != before)
+                if (MaskGlyphRunRenderer.StretchedDraws != before)
                 {
                     stretched.Add(frame);
                 }
@@ -493,12 +499,12 @@ namespace Avalonia.Skia.UnitTests.Media
                             continue;
                         }
 
-                        var before = MaskGlyphRunRenderer.UnsettledDraws;
+                        var before = MaskGlyphRunRenderer.StretchedDraws;
 
                         context.Transform = At(motion, at, 40 * i);
                         context.DrawGlyphRun(Brushes.Black, runs[i]);
 
-                        if (MaskGlyphRunRenderer.UnsettledDraws != before)
+                        if (MaskGlyphRunRenderer.StretchedDraws != before)
                         {
                             stretched[i].Add(current);
                         }
