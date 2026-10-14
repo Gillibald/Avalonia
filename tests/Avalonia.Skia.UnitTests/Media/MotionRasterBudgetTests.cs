@@ -36,6 +36,8 @@ namespace Avalonia.Skia.UnitTests.Media
             SoftwareGl,
             HardwareGl,
             HardwareAngle,
+            SoftwareMetal,
+            HardwareMetal,
         }
 
         public enum Motion
@@ -799,8 +801,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
             public FrameTarget(Target target)
             {
-                _gpu = TransformedAtlasTests.CreateGpu(target == Target.HardwareAngle ? GpuBackend.Angle : GpuBackend.NativeGl,
-                    software: target == Target.SoftwareGl);
+                _gpu = TransformedAtlasTests.CreateGpu(
+                    target switch
+                    {
+                        Target.HardwareAngle => GpuBackend.Angle,
+                        Target.SoftwareMetal or Target.HardwareMetal => GpuBackend.Metal,
+                        _ => GpuBackend.NativeGl,
+                    },
+                    software: target is Target.SoftwareGl or Target.SoftwareMetal);
 
                 var surface = SKSurface.Create(_gpu.GrContext, true,
                     new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
