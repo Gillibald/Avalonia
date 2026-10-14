@@ -182,6 +182,7 @@ namespace TextStress
             "      --zoom-font cjk|inter|segoe --size px (paragraph fonts) --motion zoom|rotate|zoom-rotate\n" +
             "      --rotate-step deg (rotate: degrees per frame; zoom-rotate zooms under a fixed 15 degrees);\n" +
             "    mixed-ui --cards --text-cards (cards with text, default all) --decor --changes\n" +
+            "      --zoom-period N (frames before a zoom returns to scale 1, 1 % a frame; default 60)\n" +
             "      --motion none|zoom|rotate (render transform every frame);\n" +
             "    sweep-states --runs --kind mixed|rect|clip|opacity|color;\n" +
             "    color-glyphs --layout grid|list --motion static|churn|fling --draw textblock|glyphrun --cells\n" +

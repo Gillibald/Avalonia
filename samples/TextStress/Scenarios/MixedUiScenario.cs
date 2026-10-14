@@ -26,6 +26,7 @@ namespace TextStress.Scenarios
         private readonly int _decor;
         private readonly double _changes;
         private readonly string _motion;
+        private readonly int _zoomPeriod;
         private Card[] _cards = Array.Empty<Card>();
         private Control? _root;
 
@@ -36,6 +37,7 @@ namespace TextStress.Scenarios
             _decor = Math.Clamp(options.GetInt("decor", 3), 0, 3);
             _changes = Math.Clamp(options.GetDouble("changes", 0.25), 0, 1);
             _motion = options.GetString("motion", "none").ToLowerInvariant();
+            _zoomPeriod = Math.Max(1, options.GetInt("zoom-period", 60));
 
             if (_motion is not ("none" or "zoom" or "rotate"))
             {
@@ -46,7 +48,7 @@ namespace TextStress.Scenarios
         public override string Name => "mixed-ui";
 
         public override string Describe() =>
-            FormattableString.Invariant($"cards={_cardCount};text-cards={_textCards};decor={_decor};changes={_changes};motion={_motion}");
+            FormattableString.Invariant($"cards={_cardCount};text-cards={_textCards};decor={_decor};changes={_changes};motion={_motion};zoom-period={_zoomPeriod}");
 
         public override Control CreateView(int n, double scaling)
         {
@@ -81,7 +83,7 @@ namespace TextStress.Scenarios
             if (_root is not null && _motion != "none")
             {
                 _root.RenderTransform = _motion == "zoom"
-                    ? new ScaleTransform(1 + 0.01 * (frame % 60), 1 + 0.01 * (frame % 60))
+                    ? new ScaleTransform(1 + 0.01 * (frame % _zoomPeriod), 1 + 0.01 * (frame % _zoomPeriod))
                     : new RotateTransform(frame % 360);
             }
 
