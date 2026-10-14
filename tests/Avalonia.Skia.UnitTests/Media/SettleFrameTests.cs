@@ -334,22 +334,33 @@ namespace Avalonia.Skia.UnitTests.Media
                 Target = target;
                 _scope = WideRunMaskTests.CreateEnvironment(out var typeface);
                 Typeface = typeface;
+
+                // The GPU context comes first: an unavailable one skips the test from here, and
+                // the scope is all there is to undo by then.
+                if (target != Target.Raster)
+                {
+                    try
+                    {
+                        _gpu = TransformedAtlasTests.CreateGpu(
+                            target switch
+                            {
+                                Target.HardwareAngle => GpuBackend.Angle,
+                                Target.SoftwareMetal or Target.HardwareMetal => GpuBackend.Metal,
+                                _ => GpuBackend.NativeGl,
+                            },
+                            software: target is Target.SoftwareGl or Target.SoftwareMetal);
+                    }
+                    catch
+                    {
+                        _scope.Dispose();
+                        throw;
+                    }
+                }
+
                 _zoomRasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
 
                 // A CPU surface stretches an upright zoom only where rasterizing costs more.
                 MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6;
-
-                if (target != Target.Raster)
-                {
-                    _gpu = TransformedAtlasTests.CreateGpu(
-                        target switch
-                        {
-                            Target.HardwareAngle => GpuBackend.Angle,
-                            Target.SoftwareMetal or Target.HardwareMetal => GpuBackend.Metal,
-                            _ => GpuBackend.NativeGl,
-                        },
-                        software: target is Target.SoftwareGl or Target.SoftwareMetal);
-                }
             }
 
             public Target Target { get; }
