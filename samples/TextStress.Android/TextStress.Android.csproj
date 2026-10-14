@@ -20,6 +20,7 @@
   <ItemGroup>
     <Compile Include="..\TextStress\RunOptions.cs" Link="Shared\RunOptions.cs" />
     <Compile Include="..\TextStress\StressRun.cs" Link="Shared\StressRun.cs" />
+    <Compile Include="..\TextStress\SetupLabel.cs" Link="Shared\SetupLabel.cs" />
     <Compile Include="..\TextStress\Measurement\*.cs" Link="Shared\Measurement\%(Filename)%(Extension)" />
     <Compile Include="..\TextStress\Scenarios\*.cs" Link="Shared\Scenarios\%(Filename)%(Extension)" />
   </ItemGroup>
@@ -56,5 +57,7 @@
     <ProjectReference Include="..\..\src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
     <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
   </ItemGroup>
+
+  <Import Project="..\TextStress\BuildInfo.targets" />
 
 </Project>

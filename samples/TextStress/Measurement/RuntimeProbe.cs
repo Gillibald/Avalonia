@@ -49,7 +49,7 @@ namespace TextStress.Measurement
         }
 
         /// <summary>Mono defines <c>Mono.RuntimeStructs</c>; CoreCLR and NativeAOT do not.</summary>
-        private static string Flavor()
+        internal static string Flavor()
         {
             if (Type.GetType("Mono.RuntimeStructs") is not null)
             {

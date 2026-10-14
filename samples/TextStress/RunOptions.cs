@@ -170,6 +170,9 @@ namespace TextStress
             "    stretches (default: built-in)\n" +
             "  --motion-interval-us N   frame interval the motion budget assumes, in us (default: 120 Hz)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
+            "  --label text   campaign label shown in the title and overlay, such as base or tip\n" +
+            "    (default: --tag)\n" +
+            "  --overlay on|off   draw the setup label over the content (default on; the title always has it)\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +

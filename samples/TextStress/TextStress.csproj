@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
   </ItemGroup>
 
+  <Import Project="BuildInfo.targets" />
   <Import Project="..\..\build\SampleApp.props" />
   <Import Project="..\..\build\ReferenceCoreLibraries.props" />
   <Import Project="..\..\build\BuildTargets.targets" />

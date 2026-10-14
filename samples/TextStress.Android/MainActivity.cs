@@ -96,6 +96,9 @@ namespace TextStress.AndroidHost
                 AndroidRun.Info("probe " + key + "=" + value);
             }
 
+            // The theme has no action bar, so the title shows in the recent apps list; the overlay
+            // shows the label on screen.
+            SetupLabel.HostTitle = title => RunOnUiThread(() => Title = title);
             StressRun.ConfigureProcess(options);
             ((TextStressApplication)Application!).Start(options);
 

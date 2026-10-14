@@ -1,0 +1,49 @@
+<Project>
+
+  <!-- The commit and branch a TextStress binary was built from, as assembly metadata, so the setup
+       label and the result header say which build ran. A machine without git or a source tree
+       outside a repository records nothing, and the label shows "unknown". -->
+  <Target Name="TextStressBuildInfo" BeforeTargets="GetAssemblyAttributes">
+    <PropertyGroup>
+      <_TextStressRepo>$(MSBuildThisFileDirectory)..\..</_TextStressRepo>
+    </PropertyGroup>
+
+    <Exec Command="git rev-parse --short=10 HEAD" WorkingDirectory="$(_TextStressRepo)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" EchoOff="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_TextStressCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="_TextStressCommitExit" />
+    </Exec>
+
+    <Exec Command="git rev-parse --abbrev-ref HEAD" WorkingDirectory="$(_TextStressRepo)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" EchoOff="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_TextStressBranch" />
+      <Output TaskParameter="ExitCode" PropertyName="_TextStressBranchExit" />
+    </Exec>
+
+    <!-- Uncommitted changes to the code a run measures; untracked files do not count. -->
+    <Exec Command="git status --porcelain --untracked-files=no -- src samples/TextStress samples/TextStress.Android"
+          WorkingDirectory="$(_TextStressRepo)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true" EchoOff="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_TextStressStatus" />
+      <Output TaskParameter="ExitCode" PropertyName="_TextStressStatusExit" />
+    </Exec>
+
+    <PropertyGroup>
+      <_TextStressDirty Condition="'$(_TextStressStatusExit)' == '0'">$(_TextStressStatus.Trim().Length)</_TextStressDirty>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <AssemblyMetadata Include="TextStress.Commit" Value="$(_TextStressCommit)"
+                        Condition="'$(_TextStressCommitExit)' == '0'" />
+      <AssemblyMetadata Include="TextStress.Branch" Value="$(_TextStressBranch)"
+                        Condition="'$(_TextStressBranchExit)' == '0'" />
+      <AssemblyMetadata Include="TextStress.Dirty" Value="true"
+                        Condition="'$(_TextStressDirty)' != '' and '$(_TextStressDirty)' != '0'" />
+      <AssemblyMetadata Include="TextStress.Dirty" Value="false" Condition="'$(_TextStressDirty)' == '0'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

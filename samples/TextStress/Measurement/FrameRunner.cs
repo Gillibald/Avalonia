@@ -143,8 +143,9 @@ namespace TextStress.Measurement
                         {
                             recent.Sort();
                             window.Title = string.Format(CultureInfo.InvariantCulture,
-                                "TextStress {0} {1} | render p50 {2:F2} ms p95 {3:F2} ms | {4:F0} fps",
-                                _scenario.Name, _options.Mode, recent[30], recent[57], 60 / watch.Elapsed.TotalSeconds);
+                                "render p50 {0:F2} ms p95 {1:F2} ms | {2:F0} fps | {3}",
+                                recent[30], recent[57], 60 / watch.Elapsed.TotalSeconds,
+                                SetupLabel.Current?.Title ?? "TextStress " + _scenario.Name);
                             recent.Clear();
                             watch.Restart();
                         }
@@ -413,6 +414,9 @@ namespace TextStress.Measurement
             }
 
             yield return ("tag", _options.Tag);
+            yield return ("label", _options.GetString("label", ""));
+            yield return ("build", SetupLabel.Build);
+            yield return ("setup", SetupLabel.Current?.Title ?? "");
             yield return ("date_utc", DateTime.UtcNow.ToString("u", CultureInfo.InvariantCulture));
             yield return ("os", System.Runtime.InteropServices.RuntimeInformation.OSDescription);
             yield return ("arch", System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString());
