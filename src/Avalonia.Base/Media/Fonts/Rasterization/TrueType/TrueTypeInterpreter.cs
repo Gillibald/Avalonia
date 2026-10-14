@@ -1368,11 +1368,16 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 return !Fail(TrueTypeError.BadArgument);
             }
 
-            // Math.Sqrt is IEEE-correctly-rounded, so this stays bit-deterministic.
-            var length = Math.Sqrt((double)x * x + (double)y * y);
+            // The 16.16 unit vector divided by 4 toward zero, as the reference does: diagonal
+            // vectors come out up to a unit short of the rounded direction, and fonts that
+            // read them back with GPV/GFV depend on those exact values.
+            var vx = unchecked((int)x);
+            var vy = unchecked((int)y);
 
-            unitX = (short)Math.Floor(x * 16384.0 / length + 0.5);
-            unitY = (short)Math.Floor(y * 16384.0 / length + 0.5);
+            F26Dot6.NormalizeVector(ref vx, ref vy);
+
+            unitX = (short)(vx / 4);
+            unitY = (short)(vy / 4);
             return true;
         }
 

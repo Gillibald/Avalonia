@@ -8,6 +8,7 @@
 // repository root for the full license text and the required credit.
 
 using System;
+using System.Numerics;
 
 namespace Avalonia.Media.Fonts.Rasterization.TrueType
 {
@@ -85,6 +86,89 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             var value = lb > 0 ? Math.Min(((la << 16) + (lb >> 1)) / lb, 0x7FFFFFFFL) : 0x7FFFFFFFL;
 
             return (int)(sign > 0 ? value : -value);
+        }
+
+        /// <summary>
+        /// Scales (x, y) to a 16.16 unit vector the way FT_Vector_NormLen does: prenormalise by
+        /// a power of two, then Newton iterations on the reciprocal length from a linear
+        /// estimate, all in wrapping 32-bit integer arithmetic. The result can sit a few
+        /// 16.16 units off the exact direction, which the TrueType vector instructions
+        /// inherit. An axis-aligned input yields an exact 0x10000 component; (0, 0) is left
+        /// unchanged.
+        /// </summary>
+        public static void NormalizeVector(ref int x, ref int y)
+        {
+            var signX = 1;
+            var signY = 1;
+            var ux = (uint)x;
+            var uy = (uint)y;
+
+            if (x < 0) { ux = unchecked((uint)-x); signX = -1; }
+            if (y < 0) { uy = unchecked((uint)-y); signY = -1; }
+
+            if (ux == 0)
+            {
+                if (uy > 0)
+                {
+                    y = signY * 0x10000;
+                }
+
+                return;
+            }
+
+            if (uy == 0)
+            {
+                x = signX * 0x10000;
+                return;
+            }
+
+            // Prenormalise so the estimated length lands between 2/3 and 4/3 in 16.16.
+            var length = ux > uy ? ux + (uy >> 1) : uy + (ux >> 1);
+            var shift = BitOperations.LeadingZeroCount(length);
+
+            shift -= 15 + (length >= (0xAAAAAAAAu >> shift) ? 1 : 0);
+
+            if (shift > 0)
+            {
+                ux <<= shift;
+                uy <<= shift;
+
+                // Tiny vectors need the estimate again at the new magnitude.
+                length = ux > uy ? ux + (uy >> 1) : uy + (ux >> 1);
+            }
+            else
+            {
+                ux >>= -shift;
+                uy >>= -shift;
+                length >>= -shift;
+            }
+
+            // Lower linear approximation of the reciprocal length minus one.
+            var b = unchecked(0x10000 - (int)length);
+            var sx = (int)ux;
+            var sy = (int)uy;
+            uint u, v;
+            int z;
+
+            unchecked
+            {
+                do
+                {
+                    u = (uint)(sx + ((sx * b) >> 16));
+                    v = (uint)(sy + ((sy * b) >> 16));
+
+                    // The squared length approaches 2^32; as a signed value it is the
+                    // difference from 2^32 even when the sum wraps.
+                    z = -(int)(u * u + v * v) / 0x200;
+                    z = z * ((0x10000 + b) >> 8) / 0x10000;
+
+                    b += z;
+                }
+                while (z > 0);
+            }
+
+            x = signX < 0 ? -(int)u : (int)u;
+            y = signY < 0 ? -(int)v : (int)v;
         }
 
         /// <summary>
