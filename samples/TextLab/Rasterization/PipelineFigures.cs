@@ -64,7 +64,7 @@ namespace TextLab
 
                 strokeKnots = StemFit.CollectStrokeKnots(unhinted, zones.From, 0.75f,
                     typeface.StemWidths.HorizontalStrokeWidths, designToPixels, strokeFrom, strokeTo);
-                hinted.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(hinted, scaleQ,
+                hinted.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(hinted, glyph, scaleQ,
                     typeface.StemWidths.HorizontalStrokeWidths));
             }
 
@@ -624,7 +624,7 @@ namespace TextLab
 
                 if (gridFit)
                 {
-                    contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, scaleQ,
+                    contours.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(contours, glyph, scaleQ,
                         typeface.StemWidths.HorizontalStrokeWidths));
                 }
             }

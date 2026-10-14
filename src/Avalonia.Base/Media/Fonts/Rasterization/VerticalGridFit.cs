@@ -75,6 +75,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// glyphs keep whatever zones remain and degrade toward identity. Zones come from the
     /// default instance — variation instances reuse them, an accepted v1 approximation.
     /// Warps cache per scale bucket, so a mask build costs one dictionary hit.
+    /// Ideographs (see <see cref="IdeographicGlyphs"/>) take their own fit (see
+    /// <see cref="IdeographFit"/>), within the em box measured from reference ideographs. Their
+    /// horizontal strokes sit closer than a pixel apart at text sizes, so the Latin zones that
+    /// cross them and the per-stroke snapping, which rounds each stroke to whole rows on its own,
+    /// would close the gaps between neighbouring strokes and fill their counters.
     /// </remarks>
     internal sealed class VerticalGridFit
     {
@@ -96,12 +101,22 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly float _descender;
         private readonly float _roundOvershoot;
         private readonly float _ascenderOvershoot;
+        private readonly IdeographicGlyphs _ideographs;
+        private readonly float _ideographTop;
+        private readonly float _ideographBottom;
         private const int MaxCachedWarps = 512;
+
+        /// <summary>
+        /// Characters whose ink spans the ideographic em box, as flat tops and bottoms: Han, then
+        /// Kana and Hangul for fonts without Han.
+        /// </summary>
+        private const string IdeographReferences = "他们你來們到和地对對就席我時あいうかきくアイウカキク가나다라마바";
 
         private readonly ConcurrentDictionary<ushort, AxisWarp> _warps = new();
 
         private VerticalGridFit(float designEmHeight, float xHeight, float capHeight,
-            float ascender, float descender, float roundOvershoot, float ascenderOvershoot)
+            float ascender, float descender, float roundOvershoot, float ascenderOvershoot,
+            IdeographicGlyphs ideographs, float ideographTop, float ideographBottom)
         {
             _designEmHeight = designEmHeight;
             _xHeight = xHeight;
@@ -110,6 +125,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             _descender = descender;
             _roundOvershoot = roundOvershoot;
             _ascenderOvershoot = ascenderOvershoot;
+            _ideographs = ideographs;
+            _ideographTop = ideographTop;
+            _ideographBottom = ideographBottom;
         }
 
         public static VerticalGridFit Create(GlyphTypeface typeface)
@@ -156,8 +174,52 @@ namespace Avalonia.Media.Fonts.Rasterization
                 ascenderOvershoot = fTop - ascender;
             }
 
+            var ideographs = IdeographicGlyphs.Create(typeface);
+            float ideographTop = 0, ideographBottom = 0;
+
+            if (ideographs.Any)
+            {
+                MeasureIdeographBox(typeface, out ideographTop, out ideographBottom);
+            }
+
             return new VerticalGridFit(designEmHeight,
-                xHeight, capHeight, ascender, descender, overshoot, ascenderOvershoot);
+                xHeight, capHeight, ascender, descender, overshoot, ascenderOvershoot,
+                ideographs, ideographTop, ideographBottom);
+        }
+
+        /// <summary>
+        /// The median top and bottom of the reference ideographs the font has, in design units;
+        /// both zero when it has none.
+        /// </summary>
+        private static void MeasureIdeographBox(GlyphTypeface typeface, out float top, out float bottom)
+        {
+            Span<float> tops = stackalloc float[IdeographReferences.Length];
+            Span<float> bottoms = stackalloc float[IdeographReferences.Length];
+            var count = 0;
+
+            foreach (var reference in IdeographReferences)
+            {
+                if (typeface.CharacterToGlyphMap.TryGetGlyph(reference, out var glyph) && glyph != 0 &&
+                    typeface.TryGetUnsimulatedGlyphInkBounds(glyph, out var box) && box.YMax > box.YMin)
+                {
+                    tops[count] = box.YMax;
+                    bottoms[count] = box.YMin;
+                    count++;
+                }
+            }
+
+            if (count == 0)
+            {
+                top = bottom = 0;
+                return;
+            }
+
+            tops = tops.Slice(0, count);
+            bottoms = bottoms.Slice(0, count);
+            tops.Sort();
+            bottoms.Sort();
+            top = tops[count / 2];
+            bottom = bottoms[count / 2];
         }
 
         /// <summary>The number of zone warps kept, one per quantized mask scale asked for.</summary>
@@ -191,9 +253,21 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// strokes crisp and thickness-true, so interpolation only ever stretches the empty
         /// counter space between features instead of the strokes themselves.
         /// </summary>
-        public AxisWarp GetGlyphWarp(GlyphPathBuilder contours, ushort scaleQ,
+        public AxisWarp GetGlyphWarp(GlyphPathBuilder contours, ushort glyph, ushort scaleQ,
             ReadOnlySpan<float> strokeStandards)
         {
+            if (_ideographs.Contains(glyph))
+            {
+                if (_ideographTop <= _ideographBottom)
+                {
+                    return AxisWarp.Identity;
+                }
+
+                var designToDevice = scaleQ / (GlyphMaskKey.ScaleQuantum * _designEmHeight);
+
+                return IdeographFit.Build(contours, -_ideographTop * designToDevice, -_ideographBottom * designToDevice);
+            }
+
             var zones = GetWarp(scaleQ);
 
             if (zones.IsIdentity)

@@ -130,7 +130,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // opts a draw out (outlines scaled only), keyed separately in the cache.
                 if (key.GridFit && applyAutoWarps)
                 {
-                    scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.ScaleQ,
+                    scratch.ApplyVerticalWarp(typeface.GridFit.GetGlyphWarp(scratch, key.Glyph, key.ScaleQ,
                         typeface.StemWidths.HorizontalStrokeWidths));
                 }
 
