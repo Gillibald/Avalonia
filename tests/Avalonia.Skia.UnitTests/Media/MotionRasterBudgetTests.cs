@@ -419,6 +419,62 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [InlineData(Target.HardwareGl)]
+        [InlineData(Target.HardwareAngle)]
+        public void Sharp_Frames_Of_A_Gesture_Never_Evict_Its_Band_Crossings(Target target)
+        {
+            // The zoom stretches and crosses the band while the budget affords nothing, then the
+            // budget affords every frame and six sharp frames lay out sprite sets of their own,
+            // more than a run keeps for its other scales. A jump back to the crossing's scale
+            // still finds the crossing's sprites and lays out nothing.
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 0, glyphCost: GlyphCost);
+            using var runs = new Runs(typeface, 1);
+
+            static Matrix Zoom(double scale) => Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5);
+
+            // The sprite sets the frame laid out; its glyph masks may come from the mask cache.
+            long Draw(double scale)
+            {
+                var before = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+
+                output.Frame(context =>
+                {
+                    context.Transform = Zoom(scale);
+                    context.DrawGlyphRun(Brushes.Black, runs.All[0]);
+                });
+
+                return GlyphRasterDiagnostics.SpriteSetBuildsOnThread - before;
+            }
+
+            var crossing = 0.0;
+
+            for (var frame = 0; frame < 12; frame++)
+            {
+                var scale = 1 + 0.04 * frame;
+
+                if (Draw(scale) > 0 && frame >= TransformChurnGuard.Threshold && crossing == 0)
+                {
+                    crossing = scale;
+                }
+            }
+
+            Assert.True(crossing > 0, "the zoom never crossed the band");
+
+            MotionRasterBudget.BudgetOverride = 1e9;
+
+            for (var frame = 12; frame < 18; frame++)
+            {
+                Assert.True(Draw(1 + 0.04 * frame) > 0, $"frame {frame} did not draw sharp");
+            }
+
+            MotionRasterBudget.BudgetOverride = 0;
+
+            Assert.Equal(0, Draw(crossing));
+        }
+
+        [Theory]
         [MemberData(nameof(Targets))]
         public void A_Try_That_Fits_The_Budget_Ends_The_Doubling(Target target)
         {
