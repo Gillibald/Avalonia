@@ -39,9 +39,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// once it runs warm. Each try that runs out of budget again doubles the hold, up to
     /// <see cref="MaxHoldFrames"/>, so a scene whose sharp frames do not fit, though its estimate
     /// does, rarely costs a frame over budget; a try that fits, a stop or a pause starts over.
-    /// A failed try that cost no less per glyph than the failed try before it shows the scene does
-    /// not fit, rather than code still compiling: until the hold resets, a try then also needs
-    /// the scene estimated within the budget rather than twice it.
+    /// A failed try that cost per glyph no more than <see cref="WarmingDrop"/> less than the
+    /// failed try before it shows the scene does not fit, rather than code still compiling: until
+    /// the hold resets, a try then also needs the scene estimated within the budget rather than
+    /// twice it.
     /// A stop is a draw that repeats the run's transform, a pause more than two frames without
     /// moving text. Frames a moving run draws from a raster it has cached, such as a zoom jumping
     /// back to its start or reversing through scales it drew before, keep the motion going.
@@ -115,10 +116,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// How much less per glyph a failed try must cost than the failed try before it to count as
-        /// code still warming up, which keeps retrying under twice the budget: more than the noise
-        /// of a warm scene's timing, far less than the several-fold drop of code that compiled.
+        /// code still warming up, which keeps retrying under twice the budget: more than a warm
+        /// scene's cost per glyph varies from try to try, far less than the several-fold drop of
+        /// code that compiled between them.
         /// </summary>
-        internal const double WarmingDrop = 0.02;
+        internal const double WarmingDrop = 0.25;
 
         /// <summary>
         /// The frames of the calling thread in which a moving run tried the budget and drew sharp,
