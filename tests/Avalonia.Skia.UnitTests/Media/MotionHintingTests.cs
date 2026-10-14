@@ -146,6 +146,78 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Font_Hinted_At_Whole_Pixels_Per_Em_Moves_At_The_Exact_Size_And_Settles_At_The_Rounded_One(
+            Target target)
+        {
+            // Noto Mono sets head.flags bit 3, so its static grid-fitted glyphs are hinted and drawn
+            // at the rounded ppem. A moving frame draws unhinted glyphs, which keep the exact
+            // fractional size; the first held frame draws the static grid-fitted run again.
+            using var output = new Frames(target);
+            using var scope = WholePixelHintingTests.CreateEnvironment(forcesIntegerPpem: true, out var typeface);
+            using var referenceScope = WholePixelHintingTests.CreateEnvironment(forcesIntegerPpem: true,
+                out var referenceTypeface);
+            using var budget = new AffordingBudget();
+            using var animated = WideRunMaskTests.CreateRun(typeface, Text, WholePixelEmSize, s_origin);
+
+            Assert.True(typeface.HintsAtWholePixelsPerEm);
+
+            const int moving = 12;
+
+            for (var frame = 0; frame < moving; frame++)
+            {
+                var drawn = output.Frame(context =>
+                {
+                    context.Transform = FractionalZoom(frame);
+                    context.TextOptions = context.TextOptions with { TextHintingMode = TextHintingMode.Light };
+                    context.DrawGlyphRun(Brushes.Black, animated);
+                });
+
+                if (frame < TransformChurnGuard.Threshold)
+                {
+                    continue;
+                }
+
+                var hinted = Reference(output, referenceTypeface, WholePixelEmSize, FractionalZoom(frame),
+                    TextHintingMode.Light);
+                var unhinted = Reference(output, referenceTypeface, WholePixelEmSize, FractionalZoom(frame),
+                    TextHintingMode.None);
+
+                Assert.False(hinted.AsSpan().SequenceEqual(unhinted), $"frame {frame}: grid fitting changes nothing");
+                TransformedAtlasTests.AssertEqual(unhinted, drawn, $"{target} frame {frame}");
+            }
+
+            var expected = Reference(output, referenceTypeface, WholePixelEmSize, FractionalZoom(moving - 1),
+                TextHintingMode.Light);
+
+            for (var held = 0; held < 2; held++)
+            {
+                var drawn = output.Frame(context =>
+                {
+                    context.Transform = FractionalZoom(moving - 1);
+                    context.TextOptions = context.TextOptions with { TextHintingMode = TextHintingMode.Light };
+                    context.DrawGlyphRun(Brushes.Black, animated);
+                });
+
+                TransformedAtlasTests.AssertEqual(expected, drawn, $"{target} held frame {held}");
+            }
+        }
+
+        /// <summary>
+        /// The em size of the whole-pixel font's run: each frame of <see cref="FractionalZoom"/>
+        /// puts it between whole pixels per em.
+        /// </summary>
+        private const double WholePixelEmSize = 14.375;
+
+        /// <summary>A zoom by 1.3 % a frame, from 14.375 px per em to 16.43 px over twelve frames.</summary>
+        private static Matrix FractionalZoom(int frame)
+        {
+            var scale = 1 + 0.013 * frame;
+
+            return Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5);
+        }
+
         /// <summary>
         /// Whether <paramref name="typeface"/>'s mask cache holds a grid-fitted mask of a glyph of
         /// <paramref name="run"/> at <paramref name="pixelsPerEm"/>, at any pen phase.
@@ -176,8 +248,16 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>A run of <paramref name="typeface"/> drawn once under <paramref name="transform"/>.</summary>
         private static byte[] Reference(Frames output, GlyphTypeface typeface, Matrix transform, TextHintingMode hinting)
+            => Reference(output, typeface, EmSize, transform, hinting);
+
+        /// <summary>
+        /// A run of <paramref name="typeface"/> at <paramref name="emSize"/> drawn once under
+        /// <paramref name="transform"/>.
+        /// </summary>
+        private static byte[] Reference(Frames output, GlyphTypeface typeface, double emSize, Matrix transform,
+            TextHintingMode hinting)
         {
-            using var run = WideRunMaskTests.CreateRun(typeface, Text, EmSize, s_origin);
+            using var run = WideRunMaskTests.CreateRun(typeface, Text, emSize, s_origin);
 
             return output.Frame(context =>
             {

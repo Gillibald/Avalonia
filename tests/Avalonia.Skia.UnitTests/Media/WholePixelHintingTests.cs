@@ -92,7 +92,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return pixels;
         }
 
-        private static IDisposable CreateEnvironment(bool forcesIntegerPpem, out GlyphTypeface typeface)
+        internal static IDisposable CreateEnvironment(bool forcesIntegerPpem, out GlyphTypeface typeface)
         {
             var scope = AvaloniaLocator.EnterScope();
 
