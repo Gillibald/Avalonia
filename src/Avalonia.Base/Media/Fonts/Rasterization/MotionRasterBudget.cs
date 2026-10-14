@@ -39,7 +39,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// once it runs warm. Each try that runs out of budget again doubles the hold, up to
     /// <see cref="MaxHoldFrames"/>, so a scene whose sharp frames do not fit, though its estimate
     /// does, rarely costs a frame over budget; a try that fits, a stop or a pause starts over.
-    /// Until then a try also needs the scene estimated within the budget rather than twice it.
+    /// A failed try that cost no less per glyph than the failed try before it shows the scene does
+    /// not fit, rather than code still compiling: until the hold resets, a try then also needs
+    /// the scene estimated within the budget rather than twice it.
     /// A stop is a draw that repeats the run's transform, a pause more than two frames without
     /// moving text. Frames a moving run draws from a raster it has cached, such as a zoom jumping
     /// back to its start or reversing through scales it drew before, keep the motion going.
@@ -101,6 +103,22 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         [ThreadStatic]
         private static int t_triedFrames;
+
+        [ThreadStatic]
+        private static long t_chargedGlyphs;
+
+        [ThreadStatic]
+        private static double t_failedCostPerGlyph;
+
+        [ThreadStatic]
+        private static bool t_strict;
+
+        /// <summary>
+        /// How much less per glyph a failed try must cost than the failed try before it to count as
+        /// code still warming up, which keeps retrying under twice the budget: more than the noise
+        /// of a warm scene's timing, far less than the several-fold drop of code that compiled.
+        /// </summary>
+        internal const double WarmingDrop = 0.02;
 
         /// <summary>
         /// The frames of the calling thread in which a moving run tried the budget and drew sharp,
@@ -195,10 +213,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             t_estimate += estimate;
             Continue(frame);
 
-            // After a try ran out, the scene must be estimated within the budget itself, not twice
-            // it, to try again before the hold resets: an estimate that fit twice the budget
-            // already proved too low once.
-            if (frame < t_holdUntil || t_previousEstimate >= (t_hold > 0 ? 1 : 2) * t_budget)
+            if (frame < t_holdUntil || t_previousEstimate >= (t_strict ? 1 : 2) * t_budget)
             {
                 return false;
             }
@@ -288,6 +303,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             t_holdUntil = 0;
             t_hold = 0;
+            t_failedCostPerGlyph = 0;
+            t_strict = false;
         }
 
         /// <summary>A timestamp for <see cref="Charge"/>, taken before a motion frame rasterizes.</summary>
@@ -304,6 +321,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             BeginFrame();
 
             t_spent += GlyphCostOverride is { } cost ? run.GlyphCount * cost : elapsed;
+            t_chargedGlyphs += run.GlyphCount;
         }
 
         private static double Estimate(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare)
@@ -327,6 +345,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (t_tried && !t_ranOut)
                 {
                     t_hold = 0;
+                    t_failedCostPerGlyph = 0;
+                    t_strict = false;
+                }
+                else if (t_tried && t_chargedGlyphs > 0)
+                {
+                    // A failed try: compare what it cost per glyph with the failed try before it.
+                    var cost = t_spent / t_chargedGlyphs;
+
+                    t_strict = t_failedCostPerGlyph > 0 && cost > (1 - WarmingDrop) * t_failedCostPerGlyph;
+                    t_failedCostPerGlyph = cost;
                 }
 
                 t_tried = false;
@@ -336,6 +364,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     Math.Max(0, Cap));
                 t_frame = frame;
                 t_spent = 0;
+                t_chargedGlyphs = 0;
                 t_estimate = 0;
             }
 
