@@ -19,6 +19,7 @@ namespace Avalonia.Skia.UnitTests.Media
     /// frame spends outside text and a safety margin, up to a cap. Costs, budgets, intervals and
     /// the time outside text are injected, so every decision here is independent of the machine.
     /// </summary>
+    [Collection(MotionBudgetCollection.Name)]
     public class MotionRasterBudgetTests
     {
         private const string Text = "Hamburgefonstiv 0123456789";

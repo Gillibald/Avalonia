@@ -15,6 +15,7 @@ namespace Avalonia.Skia.UnitTests.Media
     /// for a static frame at its scale; its first frame under a held transform draws what a static
     /// frame draws, grid-fitted.
     /// </summary>
+    [Collection(MotionBudgetCollection.Name)]
     public class MotionHintingTests
     {
         private const string Text = "Hamburgefonstiv 0123456789";

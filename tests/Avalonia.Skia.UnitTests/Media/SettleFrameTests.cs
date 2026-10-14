@@ -22,6 +22,7 @@ namespace Avalonia.Skia.UnitTests.Media
     /// changed, so when the motion stops it renders the stretched text once more by itself, and
     /// then stops rendering.
     /// </summary>
+    [Collection(MotionBudgetCollection.Name)]
     public class SettleFrameTests
     {
         private const string Text = "Hamburgefonstiv 0123456789";
@@ -108,10 +109,13 @@ namespace Avalonia.Skia.UnitTests.Media
             var expected = environment.RenderStatic(final, null);
             var budget = MotionRasterBudget.BudgetOverride;
             var glyphCost = MotionRasterBudget.GlyphCostOverride;
+            var nonText = MotionRasterBudget.NonTextOverride;
             var zoomRasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
 
+            // The frames' own render times would leave a cold GPU context no headroom.
             MotionRasterBudget.BudgetOverride = 1e9;
             MotionRasterBudget.GlyphCostOverride = 1;
+            MotionRasterBudget.NonTextOverride = 0;
             MaskGlyphRunRenderer.ZoomRasterPixelCost = 0;
 
             try
@@ -142,6 +146,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 MotionRasterBudget.BudgetOverride = budget;
                 MotionRasterBudget.GlyphCostOverride = glyphCost;
+                MotionRasterBudget.NonTextOverride = nonText;
                 MaskGlyphRunRenderer.ZoomRasterPixelCost = zoomRasterPixelCost;
             }
         }

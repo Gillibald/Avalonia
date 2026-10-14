@@ -18,6 +18,7 @@ namespace Avalonia.Skia.UnitTests.Media
     /// otherwise. The first frame that repeats its transform rasterizes and caches again, at
     /// that transform.
     /// </summary>
+    [Collection(MotionBudgetCollection.Name)]
     public class TransformedAnimationTests
     {
         private const string Text = "Hamburgefonstiv 0123456789";
