@@ -97,9 +97,11 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 return new TrueTypeSizeState(null, TrueTypeError.BadArgument);
             }
 
-            // 16.16 factor taking font units to 26.6 pixels, and the integer ppem the
-            // range-sensitive instructions (MPPEM, DELTA, SCANCTRL) compare against.
-            var scale = (int)(((long)pixelsPerEm26Dot6 << 16) / unitsPerEm);
+            // 16.16 factor taking font units to 26.6 pixels, rounded like FT_DivFix so unit
+            // counts that do not divide the size evenly (1000) scale exactly as the reference
+            // does, and the integer ppem the range-sensitive instructions (MPPEM, DELTA,
+            // SCANCTRL) compare against.
+            var scale = (int)((((long)pixelsPerEm26Dot6 << 16) + unitsPerEm / 2) / unitsPerEm);
             var ppem = (pixelsPerEm26Dot6 + 32) >> 6;
 
             // 26.6 points at the Windows 96 dpi convention (72 points per 96 pixels); fonts
