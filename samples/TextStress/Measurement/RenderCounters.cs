@@ -41,7 +41,7 @@ namespace TextStress.Measurement
             {
                 "batched_runs", "batches_drawn", "page_images_replaced", "page_upload_bytes", "page_texture_updates",
                 "glyph_rasterizations", "mask_hits", "mask_misses", "sprite_set_builds", "atlas_batch_builds",
-                "atlas_hits", "atlas_misses", "atlas_placements", "unsettled_draws"
+                "atlas_hits", "atlas_misses", "atlas_placements", "unsettled_draws", "stretched_draws"
             });
 
             foreach (var kind in s_clipKinds)
@@ -84,6 +84,7 @@ namespace TextStress.Measurement
             values[i++] = GlyphRasterDiagnostics.AtlasMissesOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
             values[i++] = MaskGlyphRunRenderer.UnsettledDraws;
+            values[i++] = MaskGlyphRunRenderer.StretchedDraws;
 
             foreach (var kind in s_clipKinds)
             {
