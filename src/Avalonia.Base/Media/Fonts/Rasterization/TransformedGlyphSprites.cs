@@ -462,6 +462,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         private TransformedGlyphSprites?[]? _secondary;
         private long[]? _secondaryUse;
         private int _nextEvict;
+        private List<TransformedGlyphSprites?>? _crossings;
+        private List<long>? _crossingUse;
+        private bool _tracked;
         private int _ownerThread;
         private bool _disposed;
 
@@ -483,6 +486,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (_secondary is { } secondary)
                 {
                     foreach (var entry in secondary)
+                    {
+                        if (entry is not null)
+                        {
+                            count++;
+                        }
+                    }
+                }
+
+                if (_crossings is { } crossings)
+                {
+                    foreach (var entry in crossings)
                     {
                         if (entry is not null)
                         {
@@ -534,6 +548,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
                 }
 
+                if (_crossings is { } crossings)
+                {
+                    foreach (var entry in crossings)
+                    {
+                        cost += entry?.ByteCost ?? 0;
+                    }
+                }
+
                 return cost;
             }
         }
@@ -566,6 +588,19 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
+            if (_crossings is { } crossings)
+            {
+                for (var i = 0; i < crossings.Count; i++)
+                {
+                    if (crossings[i] is { } entry && entry.Key == key)
+                    {
+                        _crossingUse![i] = _budget.Frame;
+                        sprites = entry;
+                        return true;
+                    }
+                }
+            }
+
             sprites = null!;
             return false;
         }
@@ -587,7 +622,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 _secondary = new TransformedGlyphSprites?[SecondarySize];
                 _secondaryUse = new long[SecondarySize];
-                _budget.SpriteSets.Track(this);
+                Track();
             }
 
             ref var slot = ref _secondary[_nextEvict];
@@ -596,6 +631,46 @@ namespace Avalonia.Media.Fonts.Rasterization
             _secondaryUse![_nextEvict] = _budget.Frame;
             _nextEvict = (_nextEvict + 1) % SecondarySize;
             Recharge();
+        }
+
+        /// <summary>
+        /// Adds the sprite set of a zoom's band crossing. Crossing sets stay out of the ring the
+        /// other sets rotate through, so the sets a gesture's sharp frames lay out never push
+        /// them out and a zoom that passes the crossing scale again finds them; like the ring's
+        /// sets, the budget evicts them by age.
+        /// </summary>
+        public void AddCrossing(TransformedGlyphSprites sprites)
+        {
+            Version++;
+            sprites.Owner = this;
+            _ownerThread = Environment.CurrentManagedThreadId;
+
+            var crossings = _crossings ??= new List<TransformedGlyphSprites?>();
+            var use = _crossingUse ??= new List<long>();
+            var slot = crossings.IndexOf(null);
+
+            if (slot < 0)
+            {
+                crossings.Add(sprites);
+                use.Add(_budget.Frame);
+            }
+            else
+            {
+                crossings[slot] = sprites;
+                use[slot] = _budget.Frame;
+            }
+
+            Track();
+            Recharge();
+        }
+
+        private void Track()
+        {
+            if (!_tracked)
+            {
+                _tracked = true;
+                _budget.SpriteSets.Track(this);
+            }
         }
 
         /// <summary>Charges the change in the bytes the cached sets hold since the last charge.</summary>
@@ -611,6 +686,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (_secondary is { } secondary)
             {
                 foreach (var entry in secondary)
+                {
+                    bytes += ChargedBytes(entry);
+                }
+            }
+
+            if (_crossings is { } crossings)
+            {
+                foreach (var entry in crossings)
                 {
                     bytes += ChargedBytes(entry);
                 }
@@ -634,21 +717,32 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal bool IsOwnedByCurrentThread =>
             _ownerThread == Environment.CurrentManagedThreadId || GlyphCacheBudget.IsQuiescentTrim;
 
-        internal int SecondaryCount => _secondary?.Length ?? 0;
+        /// <summary>The evictable slots: the ring's, then the crossings'.</summary>
+        internal int SecondaryCount => RingSize + (_crossings?.Count ?? 0);
+
+        private int RingSize => _secondary?.Length ?? 0;
 
         /// <summary>
-        /// The frame secondary slot <paramref name="index"/> was last used in;
+        /// The frame evictable slot <paramref name="index"/> was last used in;
         /// <see cref="long.MaxValue"/> when it is empty or holds the settled set.
         /// </summary>
         internal long SecondaryLastUse(int index)
-            => _secondary![index] is { } sprites && !ReferenceEquals(sprites, Settled)
-                ? _secondaryUse![index]
-                : long.MaxValue;
+        {
+            var ring = index < RingSize;
+            var sprites = ring ? _secondary![index] : _crossings![index - RingSize];
 
-        /// <summary>Evicts secondary slot <paramref name="index"/>; returns the bytes freed.</summary>
+            return sprites is not null && !ReferenceEquals(sprites, Settled)
+                ? ring ? _secondaryUse![index] : _crossingUse![index - RingSize]
+                : long.MaxValue;
+        }
+
+        /// <summary>Evicts evictable slot <paramref name="index"/>; returns the bytes freed.</summary>
         internal long EvictSecondary(int index)
         {
-            if (_secondary![index] is not { } sprites || ReferenceEquals(sprites, Settled))
+            var ring = index < RingSize;
+            var sprites = ring ? _secondary![index] : _crossings![index - RingSize];
+
+            if (sprites is null || ReferenceEquals(sprites, Settled))
             {
                 return 0;
             }
@@ -656,7 +750,16 @@ namespace Avalonia.Media.Fonts.Rasterization
             var before = _charged;
 
             Version++;
-            _secondary[index] = null;
+
+            if (ring)
+            {
+                _secondary![index] = null;
+            }
+            else
+            {
+                _crossings![index - RingSize] = null;
+            }
+
             sprites.Dispose();
             Recharge();
 
@@ -672,7 +775,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             // Leaves the pool first, so no trim evicts a set this disposes.
-            if (_secondary is not null)
+            if (_tracked)
             {
                 _budget.SpriteSets.Untrack(this);
             }
@@ -689,6 +792,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     secondary[i]?.Dispose();
                     secondary[i] = null;
+                }
+            }
+
+            if (_crossings is { } crossings)
+            {
+                for (var i = 0; i < crossings.Count; i++)
+                {
+                    crossings[i]?.Dispose();
+                    crossings[i] = null;
                 }
             }
 

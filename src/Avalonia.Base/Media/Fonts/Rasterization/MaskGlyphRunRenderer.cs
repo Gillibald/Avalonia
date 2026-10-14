@@ -346,7 +346,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var start = atlasZooming ? MotionRasterBudget.Start() : 0;
                 var argb = ToArgb(alpha, solid.Color);
                 var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
-                    originX, originY, argb);
+                    originX, originY, argb, crossing: atlasZooming && !sharpAtlasZoom);
 
                 if (key == staticKey)
                 {
@@ -858,12 +858,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Draws an upright run from the typeface's atlas through its cached sprite set, laying
-        /// the set out on first use, and returns the set.
+        /// the set out on first use, as the set of a zoom's band crossing when
+        /// <paramref name="crossing"/>, and returns the set.
         /// </summary>
         private static TransformedGlyphSprites DrawUprightFromAtlas(ITransformedGlyphContext context,
             ManagedGlyphRunImpl run,
             in RunMaskKey key, in Matrix transform, float scaleX, float scaleY, int originX, int originY,
-            uint foregroundArgb)
+            uint foregroundArgb, bool crossing = false)
         {
             var state = run.TransformedSprites;
 
@@ -872,7 +873,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var timer = GlyphPhaseTimers.Start();
 
                 sprites = BuildUprightSprites(run, key, scaleX, scaleY);
-                state.Add(sprites);
+
+                if (crossing)
+                {
+                    state.AddCrossing(sprites);
+                }
+                else
+                {
+                    state.Add(sprites);
+                }
+
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
             }
 

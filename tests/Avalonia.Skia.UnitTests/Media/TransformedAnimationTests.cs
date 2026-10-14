@@ -692,12 +692,11 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // Once the guard engages, a zoom frame rasterizes when it leaves the band around the
             // last raster or repeats the previous frame's transform, and on no frame after it:
-            // the next frame stretches the new raster. A rotated frame whose sprites are cached
-            // draws them and becomes the anchor without rasterizing. Moving upright text draws its
-            // glyphs unhinted, so the grid-fitted rasters of static frames are never drawn for it,
-            // and with the budget exhausted its rasters are the run masks of the frames that left
-            // the band: a frame within the band stretches, one past it draws a cached run mask of
-            // its scale. Rotated text is unhinted whether it moves or not.
+            // the next frame stretches the new raster. A frame whose sprites are cached draws them
+            // and becomes the anchor without rasterizing; the sprite sets of band crossings stay
+            // cached for the gesture. Moving upright text draws its glyphs unhinted, so the
+            // grid-fitted rasters of static frames are never drawn for it; rotated text is unhinted
+            // whether it moves or not.
             const double band = MaskGlyphRunRenderer.MaxStretchScale;
 
             using var output = TestTarget.Create(target);
@@ -727,11 +726,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 var moving = frame >= TransformChurnGuard.Threshold && scale != scales[frame - 1];
                 var withinBand = scale / anchor <= band && scale / anchor >= 1 / band;
                 var rasters = rotated || moving ? cached : staticCached;
-
-                if (moving && !rotated && withinBand)
-                {
-                    continue;
-                }
 
                 if (!rasters.Contains(scale) && (!moving || !withinBand))
                 {
