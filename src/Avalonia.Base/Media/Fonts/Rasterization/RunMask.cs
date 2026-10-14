@@ -24,6 +24,22 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public const uint CoverageTint = 0x00FFFFFF;
 
+        // Zero unless it differs from ScaleQ, so a key built without it equals the key the
+        // renderer builds for every font that draws at the exact size.
+        private readonly ushort _glyphScaleQ;
+
+        /// <summary>
+        /// The scale bucket the run's grid-fitted glyph masks are built at: <see cref="ScaleQ"/>,
+        /// or the rounded ppem for a font whose hinting programs run at whole pixel sizes (see
+        /// <see cref="GlyphTypeface.GetHintedScaleQ"/>). Glyph positions always follow
+        /// <see cref="ScaleQ"/>; only the glyph images come from this size.
+        /// </summary>
+        public ushort GlyphScaleQ
+        {
+            get => _glyphScaleQ != 0 ? _glyphScaleQ : ScaleQ;
+            init => _glyphScaleQ = value == ScaleQ ? (ushort)0 : value;
+        }
+
         /// <summary>
         /// Whether the run's origin and every glyph pen round to whole pixels with phase zero
         /// instead of taking quarter-pixel phases: bi-level Strong text only, whose masks keep

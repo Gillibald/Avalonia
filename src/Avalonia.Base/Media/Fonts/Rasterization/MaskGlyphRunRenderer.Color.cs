@@ -168,7 +168,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     mask = new GlyphMaskKey(sprite.Glyph, key.ScaleQ, 0, GlyphMaskMode.Antialiased, GridFit: false);
                     break;
                 case ColorAtlasEntry.Layers:
-                    mask = new GlyphMaskKey(sprite.Glyph, key.ScaleQ, sprite.PhaseX, key.Mode, key.GridFit, key.Strong);
+                    mask = new GlyphMaskKey(sprite.Glyph, key.GlyphScaleQ, sprite.PhaseX, key.Mode, key.GridFit, key.Strong);
                     break;
                 default:
                     mask = ColorGlyphContent.OutlineKey(typeface, key, sprites.EmboldenQ, sprites.Oblique, sprite.Glyph,
@@ -268,8 +268,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             public static GlyphMaskKey OutlineKey(GlyphTypeface typeface, in RunMaskKey key, ushort embolden,
                 bool oblique, ushort glyph, byte phase)
                 => (embolden != 0 || oblique) && !typeface.IsColorGlyph(glyph)
-                    ? new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
-                    : new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.Strong);
+                    ? new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
+                    : new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong);
 
             private bool IsV1(ushort glyph)
                 => _v1Colr is not null && ColorGlyphRunSplitter.IsV1Glyph(_typeface, _v1Colr, glyph);
@@ -425,7 +425,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // Colour layers are never simulated.
             private GlyphMask GetLayerMask(ushort glyph, byte phase)
-                => GetMask(new GlyphMaskKey(glyph, _key.ScaleQ, phase, _key.Mode, _key.GridFit, _key.Strong));
+                => GetMask(new GlyphMaskKey(glyph, _key.GlyphScaleQ, phase, _key.Mode, _key.GridFit, _key.Strong));
 
             /// <summary>
             /// The premultiplied tint of a v0 layer: the palette colour, or for the 0xFFFF sentinel

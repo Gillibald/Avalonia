@@ -235,7 +235,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             var originY = (int)Math.Round(deviceY);
 
 
-            var key = new RunMaskKey(GlyphMaskKey.QuantizeScale((float)pixelsPerEm), originPhase, mode, tint, gridFit, strong);
+            var scaleQ = GlyphMaskKey.QuantizeScale((float)pixelsPerEm);
+            var key = new RunMaskKey(scaleQ, originPhase, mode, tint, gridFit, strong)
+            {
+                GlyphScaleQ = gridFit ? run.GlyphTypeface.GetHintedScaleQ(scaleQ) : scaleQ
+            };
 
             // A hardware GPU draws grayscale glyph masks from the typeface's atlas, as it draws
             // transformed text: no run-sized mask, coverage stored corrected for the colour's
@@ -710,8 +714,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     var simulate = simulated && !typeface.IsColorGlyph(indices[i]);
                     var glyphKey = simulate
-                        ? new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
-                        : new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong);
+                        ? new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
+                        : new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong);
 
                     masks[i] = maskCache.GetOrBuild(glyphKey, state, s_buildCountedMask);
                     used += masks[i].Width * masks[i].Height;
@@ -796,7 +800,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode,
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode,
                     key.GridFit, key.Strong, embolden, oblique), state, s_buildCountedMask);
 
                 if (mask.IsEmpty)
@@ -1075,7 +1079,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                     state, s_buildMask);
 
                 UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
@@ -1115,7 +1119,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                             state, s_buildMask);
 
                         RunMaskComposer.ComposeLcd(mask, penX - chunkX, penY - minY,
@@ -1202,7 +1206,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                     state, s_buildMask);
 
                 UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
@@ -1234,7 +1238,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                             state, s_buildMask);
 
                         RunMaskComposer.ComposeLcd(mask, penX - chunkX, penY - minY,
@@ -1290,7 +1294,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
+                var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                     state, s_buildMask);
 
                 UnionMask(mask, CentredPen(in key, relativeX, mask, penX), penY,
@@ -1323,7 +1327,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
-                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.ScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
+                        var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
                             state, s_buildMask);
 
                         RunMaskComposer.ComposeAlpha(mask, CentredPen(in key, relativeX, mask, penX) - chunkX,
@@ -1423,8 +1427,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             GlyphMask GetMask(ushort glyph, byte phase, bool simulate)
                 => maskCache.GetOrBuild(simulate
-                    ? new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
-                    : new GlyphMaskKey(glyph, key.ScaleQ, phase, key.Mode, key.GridFit, key.Strong), state, s_buildMask);
+                    ? new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
+                    : new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong), state, s_buildMask);
 
             // Two passes over the same (glyph → v0 layers) expansion: the first unions the
             // placements, the second composes. The second pass refetches every mask through the

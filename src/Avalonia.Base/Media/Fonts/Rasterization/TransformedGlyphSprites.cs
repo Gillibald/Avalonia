@@ -271,7 +271,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             ref readonly var sprite = ref _sprites[index];
             var simulated = sprite.Kind == TransformedSpriteKind.Foreground;
 
-            return new GlyphMaskKey(sprite.Glyph, Key.ScaleQ, sprite.PhaseX, Key.Mode, Key.GridFit, Key.Strong,
+            return new GlyphMaskKey(sprite.Glyph, Key.GlyphScaleQ, sprite.PhaseX, Key.Mode, Key.GridFit, Key.Strong,
                 EmboldenQ: simulated ? EmboldenQ : (ushort)0, Oblique: simulated && Oblique, Transform: Key.Transform,
                 PhaseY: sprite.PhaseY);
         }

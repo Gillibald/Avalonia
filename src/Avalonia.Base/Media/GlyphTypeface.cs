@@ -55,6 +55,7 @@ namespace Avalonia.Media
         private readonly VerticalMetricsTable? _vmTable;
 
         private readonly GlyfTable? _glyfTable;
+        private readonly bool _forcesIntegerPpem;
         private readonly ColrTable? _colrTable;
         private readonly CpalTable? _cpalTable;
         private readonly Fonts.Tables.Bitmaps.CbdtTable? _cbdtTable;
@@ -407,6 +408,8 @@ namespace Avalonia.Media
 
             if (headTable is not null)
             {
+                _forcesIntegerPpem = (headTable.Flags & HeadFlags.ForcePpemToInteger) != 0;
+
                 // Load glyf table once and cache for reuse by GetGlyphOutline
                 GlyfTable.TryLoad(this, headTable, maxpTable, out _glyfTable);
 
@@ -632,6 +635,7 @@ namespace Avalonia.Media
             _hmTable = source._hmTable;
             _vmTable = source._vmTable;
             _glyfTable = source._glyfTable;
+            _forcesIntegerPpem = source._forcesIntegerPpem;
             _colrTable = source._colrTable;
             _cpalTable = source._cpalTable;
             _cbdtTable = source._cbdtTable;
@@ -742,6 +746,7 @@ namespace Avalonia.Media
             _hmTable = source._hmTable;
             _vmTable = source._vmTable;
             _glyfTable = source._glyfTable;
+            _forcesIntegerPpem = source._forcesIntegerPpem;
             _colrTable = source._colrTable;
             _cpalTable = source._cpalTable;
             _cbdtTable = source._cbdtTable;
@@ -2744,6 +2749,39 @@ namespace Avalonia.Media
         /// </summary>
         internal bool HasTrueTypeHinting => _glyfTable is not null && ProgramTables.HasHintingMachinery;
 
+        /// <summary>
+        /// Whether the font's hinting programs run at whole pixel sizes only: head.flags bit 3
+        /// ("force ppem to integer values") on a font with bytecode hinting. Its programs are
+        /// written for whole sizes, and FreeType (tt_size_reset) and DirectWrite hint and draw it
+        /// at the rounded ppem, so its grid-fitted glyphs change shape only where the rounded
+        /// size changes instead of restructuring between fractional sizes inside one ppem.
+        /// </summary>
+        internal bool HintsAtWholePixelsPerEm => _forcesIntegerPpem && HasTrueTypeHinting;
+
+        /// <summary>
+        /// The scale bucket a grid-fitted upright glyph mask for <paramref name="scaleQ"/> is
+        /// hinted and rasterized at: the rounded ppem for a font that
+        /// <see cref="HintsAtWholePixelsPerEm"/>, so every fractional size of one rounded ppem
+        /// shares one mask, otherwise <paramref name="scaleQ"/> itself. Layout and glyph positions
+        /// never use the result, only the glyph image does. Unhinted and transformed masks keep
+        /// the exact size.
+        /// </summary>
+        internal ushort GetHintedScaleQ(ushort scaleQ)
+            => HintsAtWholePixelsPerEm ? RoundToWholePixelsPerEm(scaleQ) : scaleQ;
+
+        /// <summary>
+        /// The scale bucket of the ppem <paramref name="scaleQ"/> rounds to, half up as FreeType
+        /// rounds a 26.6 size to its integer ppem, and at least one pixel.
+        /// </summary>
+        internal static ushort RoundToWholePixelsPerEm(ushort scaleQ)
+        {
+            const int quantum = (int)Fonts.Rasterization.GlyphMaskKey.ScaleQuantum;
+
+            var ppem = Math.Max(1, (scaleQ + quantum / 2) / quantum);
+
+            return (ushort)Math.Min(ppem * quantum, ushort.MaxValue / quantum * quantum);
+        }
+
         // Populated on the render thread like the other per-size caches.
         private Fonts.Rasterization.TrueType.TrueTypeHinterCache? _trueTypeHinters;
 
@@ -2771,6 +2809,13 @@ namespace Avalonia.Media
             if (!HasTrueTypeHinting)
             {
                 return null;
+            }
+
+            // A whole-ppem font's size state is the rounded size's: its scale, control values
+            // and outline follow the ppem its programs see, so 15.375 px hints exactly as 15 px.
+            if (_forcesIntegerPpem)
+            {
+                scaleQ = RoundToWholePixelsPerEm(scaleQ);
             }
 
             var hinters = _trueTypeHinters ?? GetOrCreateTrueTypeHinters();
