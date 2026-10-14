@@ -20,7 +20,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var typeface = LoadSystemFont("arial.ttf", 0);
             var glyph = typeface.CharacterToGlyphMap['e'];
-            var hinter = typeface.GetTrueTypeHinter(GlyphMaskKey.QuantizeScale(22), GlyphMaskMode.Antialiased);
+            var hinter = typeface.GetTrueTypeHinter(GlyphMaskKey.QuantizeScale(22), GlyphMaskMode.Antialiased, strong: true);
 
             Assert.NotNull(hinter);
 

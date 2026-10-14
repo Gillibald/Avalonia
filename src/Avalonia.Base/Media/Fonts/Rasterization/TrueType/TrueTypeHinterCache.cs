@@ -3,9 +3,10 @@ using System.Collections.Generic;
 namespace Avalonia.Media.Fonts.Rasterization.TrueType
 {
     /// <summary>
-    /// The bytecode hinters of one typeface, one per (quantized size, mask mode): the render
-    /// class feeds GETINFO, which prep may branch on, so the size state is per mode. Entries
-    /// memoise failures as <c>null</c>, so a broken prep costs one attempt.
+    /// The bytecode hinters of one typeface, one per (quantized size, render class): the render
+    /// class feeds GETINFO (engine version and rendering bits), which prep may branch on, so the
+    /// size state is per class. Entries memoise failures as <c>null</c>, so a broken prep costs
+    /// one attempt.
     /// </summary>
     /// <remarks>
     /// Each kept hinter is charged to the glyph cache budget and records the frame of its last
@@ -15,11 +16,11 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
     /// </remarks>
     internal sealed class TrueTypeHinterCache : IGlyphCachePool
     {
-        private readonly Dictionary<(ushort ScaleQ, GlyphMaskMode Mode), Entry> _hinters = new();
+        private readonly Dictionary<(ushort ScaleQ, TrueTypeRenderClass RenderClass), Entry> _hinters = new();
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private readonly long _hinterBytes;
-        private readonly List<(ushort, GlyphMaskMode)> _stale = new();
+        private readonly List<(ushort, TrueTypeRenderClass)> _stale = new();
 
         /// <param name="budget">The budget the hinters are charged to.</param>
         /// <param name="hinterBytes">The memory one hinter holds.</param>
@@ -43,22 +44,22 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         }
 
         /// <summary>
-        /// The hinter for <paramref name="scaleQ"/> and <paramref name="mode"/>, created by
+        /// The hinter for <paramref name="scaleQ"/> and <paramref name="renderClass"/>, created by
         /// <paramref name="typeface"/> on a miss.
         /// </summary>
-        public TrueTypeGlyphHinter? Get(ushort scaleQ, GlyphMaskMode mode, GlyphTypeface typeface)
+        public TrueTypeGlyphHinter? Get(ushort scaleQ, TrueTypeRenderClass renderClass, GlyphTypeface typeface)
         {
             lock (_hinters)
             {
-                if (_hinters.TryGetValue((scaleQ, mode), out var entry))
+                if (_hinters.TryGetValue((scaleQ, renderClass), out var entry))
                 {
                     entry.LastUse = _clock.Frame;
                     return entry.Hinter;
                 }
 
-                var hinter = typeface.CreateTrueTypeHinter(scaleQ, mode);
+                var hinter = typeface.CreateTrueTypeHinter(scaleQ, renderClass);
 
-                _hinters.Add((scaleQ, mode), new Entry(hinter) { LastUse = _clock.Frame });
+                _hinters.Add((scaleQ, renderClass), new Entry(hinter) { LastUse = _clock.Frame });
 
                 if (hinter is not null)
                 {
@@ -109,7 +110,7 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             {
                 while (freed < bytes)
                 {
-                    (ushort, GlyphMaskMode) victim = default;
+                    (ushort, TrueTypeRenderClass) victim = default;
                     var victimUse = long.MaxValue;
 
                     foreach (var pair in _hinters)

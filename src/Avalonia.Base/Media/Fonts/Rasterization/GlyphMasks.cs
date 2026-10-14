@@ -84,7 +84,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var applyAutoWarps = true;
             var hinted = false;
 
-            if (key.GridFit && typeface.GetTrueTypeHinter(key.ScaleQ, key.Mode) is { } hinter)
+            if (key.GridFit && typeface.GetTrueTypeHinter(key.ScaleQ, key.Mode, key.Strong) is { } hinter)
             {
                 if (hinter.State.GlyphHintingDisabled)
                 {

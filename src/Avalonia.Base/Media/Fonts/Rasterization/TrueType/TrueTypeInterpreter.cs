@@ -21,12 +21,27 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         Glyph,
     }
 
-    /// <summary>Where the mask pipeline is rendering to; GETINFO answers depend on it.</summary>
+    /// <summary>
+    /// Where the mask pipeline is rendering to and which engine the programs are told they run
+    /// on; GETINFO answers depend on it, and prep may branch on them.
+    /// </summary>
     internal enum TrueTypeRenderClass : byte
     {
+        /// <summary>Grayscale coverage on the v40 engine.</summary>
         Grayscale,
+
+        /// <summary>Per-stripe LCD coverage on the v40 engine.</summary>
         Subpixel,
+
+        /// <summary>Bi-level coverage on the classic v35 engine.</summary>
         Aliased,
+
+        /// <summary>
+        /// Grayscale or LCD coverage on the classic v35 engine, for text that takes the font's
+        /// complete program: v35 with the grayscale bit, as FreeType's v35 interpreter answers
+        /// for any target other than monochrome.
+        /// </summary>
+        ClassicGrayscale,
     }
 
     /// <summary>
@@ -1681,12 +1696,15 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         {
             var result = 0;
 
+            var classic = _renderClass is TrueTypeRenderClass.Aliased or TrueTypeRenderClass.ClassicGrayscale;
+
             if ((selector & 1) != 0)
             {
                 // The v40 engine identity: ClearType-era fonts take their modern branches.
-                // Bi-level text runs the classic engine on both axes, whose fonts expect the
-                // v35 answer that goes with it.
-                result = _renderClass == TrueTypeRenderClass.Aliased ? 35 : 40;
+                // Text that runs the font's complete program (bi-level, and Strong y) runs the
+                // classic engine, whose fonts expect the v35 answer that goes with it; Arial,
+                // for one, rounds its crossbar and x-height differently for the two answers.
+                result = classic ? 35 : 40;
             }
 
             if ((selector & 8) != 0 && _isVariation)
@@ -1694,12 +1712,16 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 result |= 1 << 10;
             }
 
-            // Rotated (bit 8), stretched (bit 9) and the legacy grayscale flag (bit 12)
-            // never apply: the mask tier is axis-aligned with one square ppem, v40 forces
-            // the legacy flag off outside monochrome rendering, and monochrome is not
+            // Rotated (bit 8) and stretched (bit 9) never apply: the mask tier is axis-aligned
+            // with one square ppem. The legacy grayscale flag (bit 12) is the classic engine's
+            // answer for antialiased targets; v40 forces it off, and monochrome is not
             // grayscale.
+            if ((selector & 32) != 0 && _renderClass == TrueTypeRenderClass.ClassicGrayscale)
+            {
+                result |= 1 << 12;
+            }
 
-            if (_renderClass != TrueTypeRenderClass.Aliased)
+            if (!classic)
             {
                 if ((selector & 64) != 0)
                 {

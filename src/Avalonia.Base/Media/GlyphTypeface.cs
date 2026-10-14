@@ -2785,13 +2785,15 @@ namespace Avalonia.Media
         // Populated on the render thread like the other per-size caches.
         private Fonts.Rasterization.TrueType.TrueTypeHinterCache? _trueTypeHinters;
 
-        /// <summary>The number of bytecode hinters kept, one per quantized size and mask mode.</summary>
+        /// <summary>The number of bytecode hinters kept, one per quantized size and render class.</summary>
         internal int TrueTypeHinterCount => _trueTypeHinters?.Count ?? 0;
 
         /// <summary>
         /// The bytecode hinter for the given quantized size and mask mode, null when the
         /// font is ineligible or its programs faulted at this size (memoised, so a broken
-        /// prep costs one attempt).
+        /// prep costs one attempt). <paramref name="strong"/> asks for the hinter Strong text
+        /// runs its complete program on, which tells the programs they run on the classic v35
+        /// engine; Light grayscale and LCD text gets the v40 one.
         /// </summary>
         /// <remarks>
         /// A simulated variant hints through its unsimulated face: the simulation is applied
@@ -2799,11 +2801,11 @@ namespace Avalonia.Media
         /// points must be those of the real glyph, not of the emboldened or slanted box.
         /// </remarks>
         internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? GetTrueTypeHinter(
-            ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
+            ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode, bool strong = false)
         {
             if (FontSimulations != FontSimulations.None)
             {
-                return UnsimulatedTypeface.GetTrueTypeHinter(scaleQ, mode);
+                return UnsimulatedTypeface.GetTrueTypeHinter(scaleQ, mode, strong);
             }
 
             if (!HasTrueTypeHinting)
@@ -2820,8 +2822,22 @@ namespace Avalonia.Media
 
             var hinters = _trueTypeHinters ?? GetOrCreateTrueTypeHinters();
 
-            return hinters.Get(scaleQ, mode, this);
+            return hinters.Get(scaleQ, GetTrueTypeRenderClass(mode, strong), this);
         }
+
+        /// <summary>
+        /// The render class a mask build hints under: bi-level text runs the classic engine on
+        /// both axes, Strong grayscale and LCD text runs it for y, and Light text runs v40.
+        /// </summary>
+        private static Fonts.Rasterization.TrueType.TrueTypeRenderClass GetTrueTypeRenderClass(
+            Fonts.Rasterization.GlyphMaskMode mode, bool strong)
+            => mode switch
+            {
+                Fonts.Rasterization.GlyphMaskMode.Aliased => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Aliased,
+                _ when strong => Fonts.Rasterization.TrueType.TrueTypeRenderClass.ClassicGrayscale,
+                Fonts.Rasterization.GlyphMaskMode.Subpixel => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Subpixel,
+                _ => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Grayscale,
+            };
 
         private Fonts.Rasterization.TrueType.TrueTypeHinterCache GetOrCreateTrueTypeHinters()
         {
@@ -2858,16 +2874,9 @@ namespace Avalonia.Media
         }
 
         internal Fonts.Rasterization.TrueType.TrueTypeGlyphHinter? CreateTrueTypeHinter(
-            ushort scaleQ, Fonts.Rasterization.GlyphMaskMode mode)
+            ushort scaleQ, Fonts.Rasterization.TrueType.TrueTypeRenderClass renderClass)
         {
             var maxp = Fonts.Tables.MaxpTable.Load(this);
-
-            var renderClass = mode switch
-            {
-                Fonts.Rasterization.GlyphMaskMode.Subpixel => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Subpixel,
-                Fonts.Rasterization.GlyphMaskMode.Aliased => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Aliased,
-                _ => Fonts.Rasterization.TrueType.TrueTypeRenderClass.Grayscale,
-            };
 
             // cvar adjusts the unscaled CVT per instance; the deltas depend only on the
             // active coordinates, so all of this instance's size states share them.
