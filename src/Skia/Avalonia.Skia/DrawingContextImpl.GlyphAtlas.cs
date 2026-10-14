@@ -196,6 +196,12 @@ namespace Avalonia.Skia
                 return;
             }
 
+            if (bilinear && backend.Image is null && batch.Page is { } stretchedPage &&
+                TryAppendStretchedToGlyphBatch(stretchedPage, backend, transform, color))
+            {
+                return;
+            }
+
             FlushGlyphBatch(GlyphBatchFlushReason.OtherTextPath);
 
             var image = backend.Image ?? GetPageImage(batch.Page!).Image;

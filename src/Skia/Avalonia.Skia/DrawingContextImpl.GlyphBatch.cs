@@ -162,6 +162,83 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
+        /// Defers a run's atlas batch drawn scaled, a zoom frame stretching sprites, as a pending
+        /// batch of its own. Returns <c>false</c> when the draw cannot be deferred.
+        /// </summary>
+        /// <remarks>
+        /// A zoom frame in which many runs cross the stretch band lays every run's sprites into the
+        /// atlas pages; drawn at once, each run's draw would refresh the pages after its own writes.
+        /// Waiting with the static runs, the pages are refreshed once when the batches are drawn,
+        /// which shows every sprite written before. The deferred draw is the draw the run would
+        /// make on its own, under its transform with bilinear sampling, so the pixels are the same;
+        /// it keeps its place in the drawing order as the other pending batches do, by the overlap
+        /// test against them. Only an upright scale with no clip deferred or trimmed qualifies,
+        /// since its sprites cannot be trimmed to a clip.
+        /// </remarks>
+        private bool TryAppendStretchedToGlyphBatch(GlyphAtlasPage page, SkiaGlyphAtlasBatch backend,
+            in Matrix transform, SKColor color)
+        {
+            if (!BatchesGlyphAtlasDraws || _grContext is null || _deferredClips != 0 ||
+                transform.M12 != 0 || transform.M21 != 0 || !(transform.M11 > 0) || !(transform.M22 > 0))
+            {
+                return false;
+            }
+
+            var local = backend.Bounds;
+
+            // Bilinear sampling reaches half a pixel past a sprite; one more covers rounding.
+            var bounds = new SKRect(
+                (float)Math.Floor(local.Left * transform.M11 + transform.M31) - 1,
+                (float)Math.Floor(local.Top * transform.M22 + transform.M32) - 1,
+                (float)Math.Ceiling(local.Right * transform.M11 + transform.M31) + 1,
+                (float)Math.Ceiling(local.Bottom * transform.M22 + transform.M32) + 1);
+
+            // Also rejects NaN.
+            if (!(Math.Abs(bounds.Left) <= 1 << 24 && Math.Abs(bounds.Top) <= 1 << 24 &&
+                  Math.Abs(bounds.Right) <= 1 << 24 && Math.Abs(bounds.Bottom) <= 1 << 24))
+            {
+                return false;
+            }
+
+            if (_clipDepth > 0 && _clipLevels[_clipDepth - 1] is { HasTrim: true } level && !level.Trim.Contains(bounds))
+            {
+                return false;
+            }
+
+            FlushLcdBatch(GlyphBatchFlushReason.OtherTextPath);
+            CountClippedRun(bounds);
+            AdmitToShapeClips(bounds);
+
+            if (_pendingRunCount >= MaxPendingRuns)
+            {
+                FlushAtlasBatch(GlyphBatchFlushReason.RunLimit);
+            }
+            else if (FindOverlappingPendingBatch(bounds, null, null, 0, 0) is not null)
+            {
+                FlushAtlasBatch(GlyphBatchFlushReason.PageChange);
+            }
+
+            if (_pendingBatches is { } slots && _pendingBatchCount == slots.Length)
+            {
+                FlushAtlasBatch(GlyphBatchFlushReason.SlotPressure);
+            }
+
+            var target = t_pendingBatches is { Count: > 0 } pool ? pool.Pop() : new PendingGlyphBatch();
+
+            target.Page = page;
+            target.Color = color;
+            target.Stretch = transform;
+
+            var pending = _pendingBatches ??= new PendingGlyphBatch[MaxPendingBatches];
+
+            pending[_pendingBatchCount++] = target;
+            target.Add(new BatchedRun(backend, 0, 0, color), bounds);
+            _pendingRunCount++;
+
+            return true;
+        }
+
+        /// <summary>
         /// The pending batch a run of <paramref name="page"/> in <paramref name="color"/> joins:
         /// the page's batch, or where translucent colours are not folded, the page's batch of
         /// opaque colours or of exactly that translucent colour.
@@ -174,7 +251,7 @@ namespace Avalonia.Skia
 
                 // A batch's first run decides which runs it takes, so a batch begun by a
                 // translucent colour takes only that colour.
-                if (batch.Page == page && (_foldsTranslucentColors ||
+                if (batch.Page == page && batch.Stretch is null && (_foldsTranslucentColors ||
                                            (color.Alpha == 255 ? batch.Color.Alpha == 255 : batch.Color == color)))
                 {
                     return batch;
@@ -343,6 +420,12 @@ namespace Avalonia.Skia
         /// </remarks>
         private void DrawPendingBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
+            if (batch.Stretch is { } stretch)
+            {
+                DrawPendingStretchedBatch(batch, stretch, reason);
+                return;
+            }
+
             var batchTimer = GlyphPhaseTimers.Start();
 
             CountBatchDrawn(reason, batch.RunCount);
@@ -480,6 +563,34 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
         }
 
+        /// <summary>
+        /// Draws a deferred stretched run as it would have drawn on its own, and returns the batch
+        /// to the pool. It leaves the matrix it drew under set.
+        /// </summary>
+        private void DrawPendingStretchedBatch(PendingGlyphBatch batch, in Matrix stretch, GlyphBatchFlushReason reason)
+        {
+            var batchTimer = GlyphPhaseTimers.Start();
+
+            CountBatchDrawn(reason, 1);
+
+            var page = batch.Page!;
+            var backend = batch.Runs[0].Backend;
+            var transient = page.IsEvicted ? new GlyphPageImage(CreatePageImage(page)) : null;
+            var image = transient ?? GetPageImage(page);
+            var paint = SKPaintCache.Shared.Get();
+
+            paint.Color = batch.Color;
+            SetDeviceTransform(stretch);
+            t_atlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear, paint);
+            t_atlasGeometry += backend.Sources.Length;
+            SKPaintCache.Shared.ReturnReset(paint);
+            transient?.Dispose();
+
+            batch.Clear();
+            (t_pendingBatches ??= new Stack<PendingGlyphBatch>()).Push(batch);
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
+        }
+
         private static readonly int s_flushReasonCount = Enum.GetValues<GlyphBatchFlushReason>().Length;
 
         // Per flush reason: the batches drawn, and the flushes that drew at least one.
@@ -561,6 +672,12 @@ namespace Avalonia.Skia
 
             /// <summary>Whether a run's colour is translucent.</summary>
             public bool HasTranslucentColors;
+
+            /// <summary>
+            /// The device transform of a batch that holds one run drawn scaled with bilinear
+            /// sampling; <c>null</c> for runs drawn 1:1.
+            /// </summary>
+            public Matrix? Stretch;
 
             // Runs per group whose bounds are united for the overlap test. Runs arrive in drawing
             // order, which for text is mostly reading order, so a group covers a few neighbouring
@@ -704,6 +821,7 @@ namespace Avalonia.Skia
                 SpriteCount = 0;
                 HasMixedColors = false;
                 HasTranslucentColors = false;
+                Stretch = null;
                 Page = null;
                 _union = SKRect.Empty;
             }
