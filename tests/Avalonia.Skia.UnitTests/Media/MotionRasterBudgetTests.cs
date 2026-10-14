@@ -434,6 +434,48 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(expected, tried);
         }
 
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Failed_Scene_Estimated_Past_Twice_The_Budget_Is_Tried_Once_When_The_Hold_Reaches_Its_Longest(
+            Target target)
+        {
+            // Three runs and room for two: the first moving frame tries and runs out, and every frame
+            // after it costs twice as much per glyph, which estimates the scene past twice the
+            // budget, as a scene first measured cold. Its holds keep doubling without a try, and the
+            // frame after the first hold of the longest length tries once more. That try runs out
+            // too, and the scene then stretches through further holds of the longest length.
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+            const int longest = MotionRasterBudget.MaxHoldFrames;
+            var retry = moving + (hold + 1) + (2 * hold + 1) + (4 * hold + 1) + (8 * hold + 1) + (longest + 1);
+
+            Assert.Equal(16 * hold, longest);
+
+            var tried = TriedFrames(target, retry + 2 * (longest + 1) + 4,
+                frame => frame <= moving ? GlyphCost : 2 * GlyphCost);
+
+            Assert.Equal(new[] { moving, retry }, tried);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Scene_Stopped_Within_Twice_The_Budget_After_A_Flat_Cost_Gets_No_Try_At_The_Longest_Hold(
+            Target target)
+        {
+            // The scene whose two tries ran out of budget at a flat cost needs its estimate to fit
+            // the budget itself, which it never does: past the frame a hold of the longest length
+            // would end on, it still does not try.
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+            const int longest = MotionRasterBudget.MaxHoldFrames;
+            var second = moving + hold + 1;
+            var longestEnd = second + (2 * hold + 1) + (4 * hold + 1) + (8 * hold + 1) + (longest + 1);
+
+            var tried = TriedFrames(target, longestEnd + longest + 4, _ => GlyphCost);
+
+            Assert.Equal(new[] { moving, second }, tried);
+        }
+
         /// <summary>
         /// Rotates <paramref name="runCount"/> runs, with room for two and a half at a cost per
         /// glyph of <see cref="GlyphCost"/>, for <paramref name="frames"/> frames at the frame's
