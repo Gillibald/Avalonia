@@ -39,6 +39,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// once it runs warm. Each try that runs out of budget again doubles the hold, up to
     /// <see cref="MaxHoldFrames"/>, so a scene whose sharp frames do not fit, though its estimate
     /// does, rarely costs a frame over budget; a try that fits, a stop or a pause starts over.
+    /// Until then a try also needs the scene estimated within the budget rather than twice it.
     /// A stop is a draw that repeats the run's transform, a pause more than two frames without
     /// moving text. Frames a moving run draws from a raster it has cached, such as a zoom jumping
     /// back to its start or reversing through scales it drew before, keep the motion going.
@@ -194,7 +195,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             t_estimate += estimate;
             Continue(frame);
 
-            if (frame < t_holdUntil || t_previousEstimate >= 2 * t_budget)
+            // After a try ran out, the scene must be estimated within the budget itself, not twice
+            // it, to try again before the hold resets: an estimate that fit twice the budget
+            // already proved too low once.
+            if (frame < t_holdUntil || t_previousEstimate >= (t_hold > 0 ? 1 : 2) * t_budget)
             {
                 return false;
             }
