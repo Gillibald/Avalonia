@@ -37,6 +37,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// once it runs warm. Each try that runs out of budget again doubles the hold, up to
     /// <see cref="MaxHoldFrames"/>, so a scene whose sharp frames do not fit, though its estimate
     /// does, rarely costs a frame over budget; a try that fits, a stop or a pause starts over.
+    /// A stop is a draw that repeats the run's transform, a pause more than two frames without
+    /// moving text. Frames a moving run draws from a raster it has cached, such as a zoom jumping
+    /// back to its start or reversing through scales it drew before, keep the motion going.
     /// </para>
     /// </remarks>
     internal static class MotionRasterBudget
@@ -187,14 +190,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             run.MovesOnGpu = true;
             t_estimate += estimate;
-
-            // A motion more than two frames after the last one follows a pause, which ends a hold.
-            if (frame - t_lastMotionFrame > 2)
-            {
-                EndHold();
-            }
-
-            t_lastMotionFrame = frame;
+            Continue(frame);
 
             if (frame < t_holdUntil || t_previousEstimate >= 2 * t_budget)
             {
@@ -220,13 +216,28 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Records a motion frame of <paramref name="run"/> drawn from a raster it has cached, which
+        /// leaves nothing to decide: the motion goes on.
+        /// </summary>
+        public static void Moving(ManagedGlyphRunImpl run)
+        {
+            var frame = BeginFrame();
+
+            run.MovesOnGpu = true;
+            Continue(frame);
+        }
+
+        /// <summary>
         /// Records a draw of <paramref name="run"/> that is not a motion frame. A draw under a
         /// changed transform, <paramref name="changing"/>, may start a motion, so it counts
         /// towards the frame's estimate with the share of its masks a motion frame would rasterize,
-        /// <paramref name="missShare"/>; a run that was moving and now holds its transform ends
-        /// the hold, and the next motion is weighed anew.
+        /// <paramref name="missShare"/>. A run that was moving and now repeats its transform,
+        /// <paramref name="held"/>, has stopped: that ends the hold, and the next motion is weighed
+        /// anew. One that was moving and draws a static frame under a new transform, after a cache
+        /// hit started its count of changes over, is still moving.
         /// </summary>
-        public static void NotMoving(ManagedGlyphRunImpl run, double pixelsPerEm, bool changing, double missShare)
+        public static void NotMoving(ManagedGlyphRunImpl run, double pixelsPerEm, bool changing, bool held,
+            double missShare)
         {
             if (changing)
             {
@@ -234,11 +245,34 @@ namespace Avalonia.Media.Fonts.Rasterization
                 t_estimate += Estimate(run, pixelsPerEm, missShare);
             }
 
-            if (run.MovesOnGpu)
+            if (!run.MovesOnGpu)
+            {
+                return;
+            }
+
+            if (held)
             {
                 run.MovesOnGpu = false;
                 EndHold();
             }
+            else
+            {
+                Continue(BeginFrame());
+            }
+        }
+
+        /// <summary>
+        /// Notes that text moves in <paramref name="frame"/>; motion more than two frames after the
+        /// last one follows a pause, which ends a hold.
+        /// </summary>
+        private static void Continue(long frame)
+        {
+            if (frame - t_lastMotionFrame > 2)
+            {
+                EndHold();
+            }
+
+            t_lastMotionFrame = frame;
         }
 
         private static void EndHold()

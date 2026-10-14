@@ -121,7 +121,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (!churning)
             {
                 MotionRasterBudget.NotMoving(run, pixelsPerEm,
-                    transformedContext is not null && run.TransformChurn.Changing, 1);
+                    transformedContext is not null && run.TransformChurn.Changing,
+                    transformedContext is null || run.TransformChurn.Held, 1);
+            }
+            else if (hit)
+            {
+                MotionRasterBudget.Moving(run);
             }
             else if (!hit)
             {

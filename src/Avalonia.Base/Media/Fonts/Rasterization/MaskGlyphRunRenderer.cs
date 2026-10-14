@@ -160,7 +160,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (snappedPhase == decision.Key.OriginPhase)
                 {
                     // A cached sprite set draws sharp even while a zoom passes through its scale.
-                    run.UprightChurn.Record(scaleX, 0, 0, scaleY, cacheHit: true, holdOnCacheHit: true);
+                    if (run.UprightChurn.Record(scaleX, 0, 0, scaleY, cacheHit: true, holdOnCacheHit: true))
+                    {
+                        MotionRasterBudget.Moving(run);
+                    }
+                    else
+                    {
+                        MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
+                            run.UprightChurn.Held, 0);
+                    }
 
                     var snappedY = (int)Math.Round(deviceY);
                     var argb = ToArgb(alpha, solid.Color);
@@ -281,7 +289,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                     if (!churning)
                     {
                         MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
-                            run.GlyphTypeface.MaskCache.RecentMissShare);
+                            run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare);
+                    }
+                    else if (!sharpAtlasZoom)
+                    {
+                        MotionRasterBudget.Moving(run);
                     }
 
                     var start = sharpAtlasZoom ? MotionRasterBudget.Start() : 0;
@@ -392,7 +404,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
                 else
                 {
-                    MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing, 1);
+                    MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
+                        zoomContext is null || run.UprightChurn.Held, 1);
                 }
             }
 

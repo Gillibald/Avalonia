@@ -632,6 +632,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public bool Changing => _changes > 0;
 
+        /// <summary>Whether the last recorded draw repeated the transform of the draw before it.</summary>
+        public bool Held { get; private set; }
+
         /// <summary>
         /// Records a draw of the run under the device transform whose linear part is
         /// [<paramref name="m11"/> <paramref name="m12"/>; <paramref name="m21"/> <paramref name="m22"/>]
@@ -647,6 +650,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 : !cacheHit ? Math.Min(_changes + 1, Threshold)
                 : holdOnCacheHit ? _changes
                 : 0;
+            Held = _hasLast && !changed;
             _hasLast = true;
             _lastM11 = m11;
             _lastM12 = m12;
