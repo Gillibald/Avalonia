@@ -165,6 +165,44 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         [Fact]
+        public void A_Sprite_Set_Whose_Charge_Evicts_An_Older_Set_Of_Its_Run_Is_Charged_Once()
+        {
+            // Three small sets fit the limit; a large fourth takes the caches past half over it,
+            // so its charge evicts the run's sets of earlier frames from inside the charge. The
+            // pool must hold exactly what the run's sets take, and nothing once it is disposed.
+            var sprite = SpritesOf(1, scaleQ: 99).ByteCost;
+            var budget = new GlyphCacheBudget(30 * sprite);
+            var state = new TransformedRunState(budget);
+            var sets = new[]
+            {
+                SpritesOf(10, scaleQ: 100), SpritesOf(10, scaleQ: 101), SpritesOf(10, scaleQ: 102),
+                SpritesOf(100, scaleQ: 103),
+            };
+
+            foreach (var set in sets)
+            {
+                using (budget.BeginFrame())
+                {
+                    state.Add(set);
+                }
+            }
+
+            var held = 0L;
+
+            foreach (var set in sets)
+            {
+                held += set.IsDisposed ? 0 : set.ByteCost;
+            }
+
+            Assert.True(sets[1].IsDisposed, "the run's oldest secondary set was not evicted");
+            Assert.Equal(held, budget.BytesOf(GlyphCachePoolKind.SpriteSets));
+
+            state.Dispose();
+
+            Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.SpriteSets));
+        }
+
+        [Fact]
         public void Hinter_Size_States_Are_Charged_While_Kept()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
