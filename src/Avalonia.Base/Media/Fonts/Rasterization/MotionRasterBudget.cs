@@ -23,8 +23,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// A run is estimated at the glyphs whose masks it has to rasterize (all of them for transient
     /// masks; for upright sprites the share recent sprite builds of the typeface missed the mask
     /// cache), plus <see cref="RunOverheadGlyphs"/> for laying out and handing over its masks,
-    /// times its typeface's measured cost per glyph at its size (<see cref="GlyphRasterCost"/>). The runs that moved, or were about to move, in the previous
-    /// frame give the estimate of the scene; a scene estimated at twice the budget or more stretches
+    /// times its typeface's measured cost per unhinted glyph at its size
+    /// (<see cref="GlyphMaskCache.UnhintedRasterCost"/>), since motion frames rasterize their
+    /// glyphs unhinted. The runs that moved, or were about to move, in the previous frame give
+    /// the estimate of the scene; a scene estimated at twice the budget or more stretches
     /// every run without trying, so a screen of CJK text or a dashboard of thousands of glyphs
     /// draws as it would without the budget. The frames before an animation is recognized draw
     /// its runs under changing transforms, which estimates the scene before its first moving frame.
@@ -301,7 +303,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             => GlyphCostOverride is { } cost
                 ? run.GlyphCount * cost
                 : (run.GlyphCount * missShare + RunOverheadGlyphs) *
-                  run.GlyphTypeface.MaskCache.RasterCost.PerGlyph(pixelsPerEm);
+                  run.GlyphTypeface.MaskCache.UnhintedRasterCost.PerGlyph(pixelsPerEm);
 
         /// <summary>
         /// Starts a new budget when the thread draws a frame other than the last one it drew

@@ -1,7 +1,7 @@
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// What a run's last upright draw from the glyph atlas resolved, and the inputs it resolved
+    /// What a run's last static upright draw from the glyph atlas resolved, and the inputs it resolved
     /// it from: the device scale, the mask mode, the hinting asked for, the context's run mask
     /// bound and the version of the run's sprite sets. A draw under the same inputs resolves the
     /// same hinting and key wherever it is placed, provided its origin snaps to the same pen

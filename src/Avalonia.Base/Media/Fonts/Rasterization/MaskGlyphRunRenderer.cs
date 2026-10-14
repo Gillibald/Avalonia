@@ -43,23 +43,26 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static GlyphPathBuilder? t_scratch;
 
         [ThreadStatic]
-        private static int t_unsettledDraws;
+        private static int t_stretchedDraws;
+
+        [ThreadStatic]
+        private static int t_unhintedMotionDraws;
 
         /// <summary>
         /// The draws made on this thread that showed a run other than a draw under a held
-        /// transform shows it: a bilinear stretch of an earlier raster, or colour glyphs replayed
-        /// as vectors, while the run's transform changes from draw to draw. Such a run draws sharp
-        /// on its first draw under an unchanged transform, so a renderer that draws only what
-        /// changed must draw it once more after the motion stops (see
-        /// <c>ServerCompositionTarget</c>).
+        /// transform shows it, while the run's transform changes from draw to draw: a bilinear
+        /// stretch of an earlier raster, colour glyphs replayed as vectors, or glyphs rasterized
+        /// unhinted where a static draw grid-fits them. Such a run draws as a static draw does on
+        /// its first draw under an unchanged transform, so a renderer that draws only what changed
+        /// must draw it once more after the motion stops (see <c>ServerCompositionTarget</c>).
         /// </summary>
-        internal static int UnsettledDraws => t_unsettledDraws;
+        internal static int UnsettledDraws => t_stretchedDraws + t_unhintedMotionDraws;
 
         /// <summary>
         /// The draws of <see cref="UnsettledDraws"/> that stretched an earlier raster or replayed
         /// colour glyphs as vectors, rather than rasterizing the frame.
         /// </summary>
-        internal static int StretchedDraws => t_unsettledDraws;
+        internal static int StretchedDraws => t_stretchedDraws;
 
         private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder), GlyphMask> s_buildMask =
             static (key, state) => GlyphMasks.Build(state.Item1, state.Item2, key);
@@ -144,6 +147,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // A run drawn from the atlas again under the inputs of its last atlas draw, at an origin
             // of the same pen phase, resolves to the same key and sprite set, however far it moved.
+            // Only static frames make that decision, so a moving run whose static frames grid-fit
+            // its glyphs goes on below to draw them unhinted, its draw already seen by the guard.
+            var churnRecorded = false;
+
             if (alphaContext is not null && run.UprightDecision is { } decision &&
                 decision.Matches(scaleX, scaleY, mode, textHintingMode, surface.MaxRunMaskSize,
                     run.TransformedSprites.Version) &&
@@ -163,10 +170,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                     GlyphMaskKey.SnapPen(deviceX, out snappedX, out snappedPhase);
                 }
 
-                if (snappedPhase == decision.Key.OriginPhase)
+                var moving = snappedPhase == decision.Key.OriginPhase &&
+                    run.UprightChurn.Record(scaleX, 0, 0, scaleY, cacheHit: true, holdOnCacheHit: true);
+
+                churnRecorded = moving;
+
+                // A static frame draws the decision's sprites, and so does a moving one when they
+                // hold unhinted glyphs: sharp even while a zoom passes through their scale.
+                if (snappedPhase == decision.Key.OriginPhase && (!moving || !decision.Key.GridFit))
                 {
-                    // A cached sprite set draws sharp even while a zoom passes through its scale.
-                    if (run.UprightChurn.Record(scaleX, 0, 0, scaleY, cacheHit: true, holdOnCacheHit: true))
+                    if (moving)
                     {
                         MotionRasterBudget.Moving(run);
                     }
@@ -248,12 +261,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var originY = (int)Math.Round(deviceY);
 
-
             var scaleQ = GlyphMaskKey.QuantizeScale((float)pixelsPerEm);
             var key = new RunMaskKey(scaleQ, originPhase, mode, tint, gridFit, strong)
             {
                 GlyphScaleQ = gridFit ? run.GlyphTypeface.GetHintedScaleQ(scaleQ) : scaleQ
             };
+
+            // What a static frame at this transform draws; a moving run's frames differ from it
+            // when they draw unhinted glyphs (see UseMotionKey).
+            var staticKey = key;
 
             // A hardware GPU draws grayscale glyph masks from the typeface's atlas, as it draws
             // transformed text: no run-sized mask, coverage stored corrected for the colour's
@@ -280,22 +296,31 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // the raster the zoom's next frames stretch.
                 var spritesCached = run.TransformedSprites.TryGet(key, out _);
 
-                var churning = run.UprightChurn.Record(scaleX, 0, 0, scaleY, spritesCached, holdOnCacheHit: true);
+                var churning = churnRecorded ||
+                    run.UprightChurn.Record(scaleX, 0, 0, scaleY, spritesCached, holdOnCacheHit: true);
+
+                // A moving run draws unhinted glyphs, never the grid-fitted sprites of a static
+                // frame at its scale, so a slow zoom does not mix the two shapes.
+                if (churning && key.GridFit)
+                {
+                    UseMotionKey(ref key, ref originX, deviceX);
+                    spritesCached = run.TransformedSprites.TryGet(key, out _);
+                }
 
                 atlasZooming = churning && !spritesCached;
 
-                // A zoom frame the budget affords draws as a static frame at its scale would.
-                // Its glyph masks may be cached from an earlier pass over the scale: the share
-                // that recent sprite builds had to rasterize weighs the estimate.
+                // A zoom frame the budget affords draws as a static unhinted frame at its scale
+                // would. Its glyph masks may be cached from an earlier pass over the scale: the
+                // share that recent unhinted sprite builds had to rasterize weighs the estimate.
                 var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm,
-                    run.GlyphTypeface.MaskCache.RecentMissShare);
+                    run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
 
                 if (!atlasZooming || sharpAtlasZoom)
                 {
                     if (!churning)
                     {
                         MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
-                            run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare);
+                            run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
                     }
                     else if (!sharpAtlasZoom)
                     {
@@ -307,10 +332,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
                         originX, originY, argb);
 
-                    (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
-                        surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
+                    if (key == staticKey)
+                    {
+                        (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
+                            surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
+                    }
+                    else
+                    {
+                        t_unhintedMotionDraws++;
+                    }
 
-                    // The sprites are now the last static frame; a zoom starting here stretches them.
+                    // The sprites are now the raster a zoom's next frames stretch.
                     run.SettledUpright = null;
 
                     if (sharpAtlasZoom)
@@ -396,11 +428,50 @@ namespace Avalonia.Media.Fonts.Rasterization
             // from sprites at its scale instead (above), and a software GPU composes a run mask at
             // its scale and settles there; both sharp.
             var zoomContext = context as ITransformedGlyphContext;
+
+            // The rasters a moving run draws are its unhinted ones, so a grid-fitted mask that a
+            // static frame cached at this scale does not make the frame a static one.
+            var guardHit = hit;
+
+            if (key.GridFit && run.UprightChurn.Animating && surface.RasterTarget != GlyphRasterTarget.HardwareGpu)
+            {
+                var motionKey = key;
+                var motionOriginX = originX;
+
+                UseMotionKey(ref motionKey, ref motionOriginX, deviceX);
+                guardHit = cache.TryGet(blendsCoverage ? motionKey with { Tint = RunMaskKey.CoverageTint } : motionKey,
+                    out var motionMask) && !motionMask.IsEvicted;
+            }
+
             var zooming = zoomContext is not null &&
                 (surface.RasterTarget == GlyphRasterTarget.HardwareGpu
                     ? atlasZooming
                     : (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || mode != GlyphMaskMode.Subpixel) &&
-                      run.UprightChurn.Record(scaleX, 0, 0, scaleY, hit));
+                      run.UprightChurn.Record(scaleX, 0, 0, scaleY, guardHit));
+
+            // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
+            // more than outline masks and fill the mask cache with sizes that never return, so a
+            // run with colour glyphs stretches its settled mask on a hardware GPU too.
+            if (colorGlyphs && zoomContext is not null && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                (colorChurn ?? run.UprightChurn.Record(scaleX, 0, 0, scaleY, hit)))
+            {
+                zooming = true;
+            }
+
+            // A moving run draws unhinted glyphs, never a grid-fitted mask cached for a static
+            // frame at its scale.
+            if (zooming && key.GridFit)
+            {
+                UseMotionKey(ref key, ref originX, deviceX);
+                coverageKey = key with { Tint = RunMaskKey.CoverageTint };
+                hit = cache.TryGet(blendsCoverage ? coverageKey : key, out runMask);
+
+                if (hit && runMask.IsEvicted)
+                {
+                    cache.Remove(key);
+                    hit = false;
+                }
+            }
 
             if (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu && !colorGlyphs)
             {
@@ -420,15 +491,6 @@ namespace Avalonia.Media.Fonts.Rasterization
                 ? MotionRasterBudget.Start()
                 : 0;
 
-            // Colour masks rasterized at every scale of a zoom would each be drawn once, cost far
-            // more than outline masks and fill the mask cache with sizes that never return, so a
-            // run with colour glyphs stretches its settled mask on a hardware GPU too.
-            if (colorGlyphs && zoomContext is not null && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
-                (colorChurn ?? run.UprightChurn.Record(scaleX, 0, 0, scaleY, hit)))
-            {
-                zooming = true;
-            }
-
             if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform) &&
                 TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
             {
@@ -438,6 +500,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
+
+                if (key != staticKey)
+                {
+                    t_unhintedMotionDraws++;
+                }
 
                 GlyphMaskBlitter.BlendRunCoverage(blitTarget, frameCoverage, originX + frameCoverage.OffsetX,
                     originY + frameCoverage.OffsetY, key.Tint, MaskGamma.GetTableForPremulBgra(key.Tint));
@@ -462,7 +529,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // them as vectors until the scale holds still.
             if (colorGlyphs && zooming && !hit)
             {
-                t_unsettledDraws++;
+                t_stretchedDraws++;
 
                 return false;
             }
@@ -528,6 +595,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
+
+            if (key != staticKey)
+            {
+                t_unhintedMotionDraws++;
+            }
 
             if (blendsCoverage)
             {
@@ -623,6 +695,26 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
+        /// Turns <paramref name="key"/> and <paramref name="originX"/> into what a moving run
+        /// draws: its glyphs unhinted, as <see cref="TextHintingMode.None"/> draws them, on the
+        /// quarter-pixel pens unhinted text takes. Grid fitting snaps stems and heights to the
+        /// pixel grid differently at each size, so a zoom drawn hinted changes its glyphs' shapes
+        /// from frame to frame, by up to half a dense glyph's coverage in one step; unhinted
+        /// outlines only scale, and cost a third to two thirds as much to rasterize. The first
+        /// frame under a held transform grid-fits again, in one change.
+        /// </summary>
+        private static void UseMotionKey(ref RunMaskKey key, ref int originX, float deviceX)
+        {
+            if (!key.GridFit)
+            {
+                return;
+            }
+
+            GlyphMaskKey.SnapPen(deviceX, out originX, out var originPhase);
+            key = key with { OriginPhase = originPhase, GridFit = false, Strong = false, GlyphScaleQ = key.ScaleQ };
+        }
+
+        /// <summary>
         /// The cost a glyph mask pixel that misses the cache adds to rasterizing a zoom frame,
         /// in pixels of a bilinear stretch of the settled run mask through the raster backend:
         /// on x64 at 14-30 px about 11 ns per rasterized mask pixel (outline, grid fit, cache
@@ -675,7 +767,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var delta = inverse * transform;
             var growth = Math.Abs(delta.M11 * delta.M22 - delta.M12 * delta.M21);
             var stretching = last.CoveragePixels * growth;
-            var missing = run.GlyphTypeface.MaskCache.RecentMissShare * last.MaskPixels;
+            var missing = run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false) * last.MaskPixels;
             var rasterizing = (ZoomRasterPixelCost * missing + ZoomCoveragePixelCost * last.CoveragePixels) * growth +
                               ZoomGlyphCost * run.GlyphCount;
 
@@ -749,7 +841,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     : RunCoverage.TryBuild(key, masks.AsSpan(0, count), pens.AsSpan(0, count),
                         pens.AsSpan(count, count), out coverage);
 
-                maskCache.RecordUse(used, t_rasterizedPixels);
+                maskCache.RecordUse(used, t_rasterizedPixels, key.GridFit);
                 run.LastUprightRaster = new UprightRasterCost(used,
                     coverage is null ? 0 : (long)coverage.Width * coverage.Height);
 
@@ -842,7 +934,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 };
             }
 
-            maskCache.RecordUse(used, t_rasterizedPixels);
+            maskCache.RecordUse(used, t_rasterizedPixels, key.GridFit);
 
             if (placed != count)
             {
@@ -929,7 +1021,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var oldTransform = context.Transform;
             var straightTint = ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 
-            t_unsettledDraws++;
+            t_stretchedDraws++;
             context.Transform = surface.DevicePixels;
 
             foreach (var part in runMask.Parts)

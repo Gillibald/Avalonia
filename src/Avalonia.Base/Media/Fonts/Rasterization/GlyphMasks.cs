@@ -52,7 +52,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // Stripe masks rasterize three samples per pixel, a cost no moving text pays.
             if (!mask.IsEmpty && key.Mode != GlyphMaskMode.Subpixel)
             {
-                typeface.MaskCache.RasterCost.Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
+                typeface.MaskCache.RasterCostOf(key.GridFit).Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
             }
 
             return mask;
@@ -332,7 +332,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            typeface.MaskCache.RasterCost.Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
+            typeface.MaskCache.RasterCostOf(key.GridFit).Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
 
             return true;
         }

@@ -66,29 +66,59 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Masks evicted for the glyph cache budget since construction; for diagnostics and tests.</summary>
         public long Evictions => Volatile.Read(ref _evictions);
 
-        // Recent mask use of upright run builds, each total decayed by a sixteenth per build so
-        // that about the last frame's runs count.
+        // Recent mask use of upright run builds, grid-fitted and unhinted apart, each total
+        // decayed by a sixteenth per build so that about the last frame's runs count.
         private double _recentUsedPixels;
         private double _recentMissedPixels;
+        private double _recentUnhintedUsedPixels;
+        private double _recentUnhintedMissedPixels;
 
         /// <summary>
-        /// The share of mask pixels that recent upright run builds had to rasterize rather than
-        /// find here: near 0 while text draws at scales it has drawn before, near the share of
-        /// distinct masks in a run while every frame meets a new scale.
+        /// The share of mask pixels that recent upright run builds with grid fitting
+        /// (<paramref name="gridFit"/>) or without had to rasterize rather than find here: near 0
+        /// while text draws at scales it has drawn before, near the share of distinct masks in a
+        /// run while every frame meets a new scale. Static text keeps its grid-fitted masks and
+        /// moving text its unhinted ones, so each estimates its own kind of build. Before the
+        /// first unhinted build the grid-fitted share stands in: how often the runs of a frame
+        /// share glyphs does not depend on the hinting.
         /// </summary>
-        public double RecentMissShare => _recentUsedPixels > 0 ? _recentMissedPixels / _recentUsedPixels : 1;
+        public double RecentMissShare(bool gridFit)
+        {
+            if (!gridFit && _recentUnhintedUsedPixels > 0)
+            {
+                return _recentUnhintedMissedPixels / _recentUnhintedUsedPixels;
+            }
+
+            return _recentUsedPixels > 0 ? _recentMissedPixels / _recentUsedPixels : 1;
+        }
 
         /// <summary>
-        /// Records that a run build used <paramref name="usedPixels"/> mask pixels, of which it
-        /// rasterized <paramref name="missedPixels"/>. A heuristic: concurrent builds may lose
-        /// an update.
+        /// Records that a run build with grid fitting (<paramref name="gridFit"/>) or without used
+        /// <paramref name="usedPixels"/> mask pixels, of which it rasterized
+        /// <paramref name="missedPixels"/>. A heuristic: concurrent builds may lose an update.
         /// </summary>
-        public void RecordUse(long usedPixels, long missedPixels)
+        public void RecordUse(long usedPixels, long missedPixels, bool gridFit)
         {
             const double keep = 15.0 / 16;
 
-            _recentUsedPixels = _recentUsedPixels * keep + usedPixels;
-            _recentMissedPixels = _recentMissedPixels * keep + missedPixels;
+            if (gridFit)
+            {
+                _recentUsedPixels = _recentUsedPixels * keep + usedPixels;
+                _recentMissedPixels = _recentMissedPixels * keep + missedPixels;
+            }
+            else
+            {
+                // The first unhinted builds continue from the grid-fitted history, as the share
+                // reported before them does.
+                if (_recentUnhintedUsedPixels == 0)
+                {
+                    _recentUnhintedUsedPixels = _recentUsedPixels;
+                    _recentUnhintedMissedPixels = _recentMissedPixels;
+                }
+
+                _recentUnhintedUsedPixels = _recentUnhintedUsedPixels * keep + usedPixels;
+                _recentUnhintedMissedPixels = _recentUnhintedMissedPixels * keep + missedPixels;
+            }
         }
 
         /// <summary>Peeks a cached mask without building. Lock-free; for diagnostics and tests.</summary>
@@ -329,12 +359,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphMaskCache(GlyphCacheBudget? budget = null)
             : base(budget)
         {
+            UnhintedRasterCost = new GlyphRasterCost(RasterCost);
         }
 
-        /// <summary>What rasterizing one of the typeface's glyph masks costs, learned from its builds.</summary>
+        /// <summary>
+        /// What rasterizing one of the typeface's grid-fitted glyph masks costs, learned from its
+        /// builds.
+        /// </summary>
         public GlyphRasterCost RasterCost { get; } = new();
 
-        /// <summary>What rasterizing one of the typeface's unhinted glyph masks costs; not told apart yet.</summary>
-        public GlyphRasterCost UnhintedRasterCost => RasterCost;
+        /// <summary>
+        /// What rasterizing one of the typeface's unhinted glyph masks costs, learned from its
+        /// builds: the masks of moving and transformed text, which skip the font's programs and
+        /// the auto-fit and cost a third to two thirds of a grid-fitted mask.
+        /// </summary>
+        public GlyphRasterCost UnhintedRasterCost { get; }
+
+        /// <summary>The cost of the typeface's glyph masks with grid fitting or without.</summary>
+        public GlyphRasterCost RasterCostOf(bool gridFit) => gridFit ? RasterCost : UnhintedRasterCost;
     }
 }

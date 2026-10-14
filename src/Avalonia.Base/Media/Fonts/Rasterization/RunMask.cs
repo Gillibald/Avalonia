@@ -632,6 +632,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public bool Changing => _changes > 0;
 
+        /// <summary>Whether the last recorded draw counted the run as animating.</summary>
+        public bool Animating => _changes >= Threshold;
+
         /// <summary>Whether the last recorded draw repeated the transform of the draw before it.</summary>
         public bool Held { get; private set; }
 

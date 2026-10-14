@@ -36,11 +36,18 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static readonly double s_microsecondsPerTick = 1e6 / Stopwatch.Frequency;
 
+        private readonly GlyphRasterCost? _seed;
+
         private double _microseconds;
 
-        /// <param name="seed">Not used yet.</param>
+        /// <param name="seed">
+        /// The cost this one reports until it has samples of its own, in place of
+        /// <see cref="FallbackMicroseconds"/>: the cost of the same typeface's grid-fitted masks
+        /// bounds that of its unhinted ones from above.
+        /// </param>
         public GlyphRasterCost(GlyphRasterCost? seed = null)
         {
+            _seed = seed;
         }
 
         [ThreadStatic]
@@ -56,11 +63,16 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// The estimated time to rasterize one glyph mask at <paramref name="pixelsPerEm"/>, in
         /// microseconds.
         /// </summary>
-        public double PerGlyph(double pixelsPerEm)
-        {
-            var average = Volatile.Read(ref _microseconds);
+        public double PerGlyph(double pixelsPerEm) => Average * SizeFactor(pixelsPerEm);
 
-            return (average > 0 ? average : FallbackMicroseconds) * SizeFactor(pixelsPerEm);
+        private double Average
+        {
+            get
+            {
+                var average = Volatile.Read(ref _microseconds);
+
+                return average > 0 ? average : _seed?.Average ?? FallbackMicroseconds;
+            }
         }
 
         /// <summary>
