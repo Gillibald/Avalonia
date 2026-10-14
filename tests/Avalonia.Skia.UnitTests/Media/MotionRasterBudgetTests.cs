@@ -399,30 +399,52 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
+        public void A_Scene_Whose_Cost_Wobbles_Between_Failed_Tries_Stops_Trying_Under_Twice_The_Budget(Target target)
+        {
+            // The same scene, but its second try costs 15 % less per glyph than its first, as the
+            // timing of a warm scene can vary: a drop that small is not code still compiling, and a
+            // further try needs the estimate to fit the budget itself.
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+            var tries = new[] { moving, moving + hold + 1, moving + hold + 1 + 2 * hold + 1 };
+
+            var tried = TriedFrames(target, moving + 6 * hold,
+                frame => Array.IndexOf(tries, frame) is var i and >= 0 ? GlyphCost * (i % 2 == 0 ? 1 : 0.85) : GlyphCost);
+
+            Assert.Equal(new[] { moving, moving + hold + 1 }, tried);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
         public void A_Scene_Whose_Cost_Falls_Between_Failed_Tries_Keeps_Trying_Under_Twice_The_Budget(Target target)
         {
-            // The same scene, but each try costs a twentieth less per glyph than the one before, as
-            // code still compiling does: it keeps trying after every hold, which doubles.
+            // Twelve runs and room for two and a half at the cost of a try's first frame, and each
+            // try costs half as much per glyph as the one before, as code still compiling does, yet
+            // still runs out of budget: it keeps trying after every hold, which doubles. The frames
+            // between tries estimate the scene at a quarter of the first try's cost per glyph, under
+            // twice the budget.
             const int moving = TransformChurnGuard.Threshold;
             const int hold = MotionRasterBudget.HoldFrames;
             var expected = new[] { moving, moving + hold + 1, moving + hold + 1 + 2 * hold + 1 };
 
             var tried = TriedFrames(target, expected[2] + 4,
-                frame => Array.IndexOf(expected, frame) is var i and >= 0 ? GlyphCost * (1 - 0.05 * i) : GlyphCost);
+                frame => Array.IndexOf(expected, frame) is var i and >= 0 ? GlyphCost / (1 << i) : GlyphCost / 4,
+                runCount: 12);
 
             Assert.Equal(expected, tried);
         }
 
         /// <summary>
-        /// Rotates three runs, with room for two, for <paramref name="frames"/> frames at the
-        /// frame's <paramref name="glyphCost"/>, and returns the frames that tried the budget.
+        /// Rotates <paramref name="runCount"/> runs, with room for two and a half at a cost per
+        /// glyph of <see cref="GlyphCost"/>, for <paramref name="frames"/> frames at the frame's
+        /// <paramref name="glyphCost"/>, and returns the frames that tried the budget.
         /// </summary>
-        private static List<int> TriedFrames(Target target, int frames, Func<int, double> glyphCost)
+        private static List<int> TriedFrames(Target target, int frames, Func<int, double> glyphCost, int runCount = 3)
         {
             using var output = new FrameTarget(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
-            using var runs = new Runs(typeface, 3);
+            using var runs = new Runs(typeface, runCount);
 
             var tried = new List<int>();
 
@@ -437,7 +459,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     for (var i = 0; i < runs.All.Length; i++)
                     {
-                        context.Transform = At(Motion.Rotation, current, 40 * i);
+                        context.Transform = At(Motion.Rotation, current, 25 * i);
                         context.DrawGlyphRun(Brushes.Black, runs.All[i]);
                     }
                 });
