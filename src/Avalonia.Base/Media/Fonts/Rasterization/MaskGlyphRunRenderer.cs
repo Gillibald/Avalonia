@@ -279,9 +279,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             // they gain least from fewer draw calls, and llvmpipe shades the run mask's
             // correction filter a level apart from the atlas modulation at some pixels. A zoom
             // gesture, whose scale changes every frame, lays its frames out as sprites only while
-            // the frame's rasterization budget affords them (see MotionRasterBudget): each frame's
-            // glyph masks enter the atlas, so a zoom drawn sharp throughout would fill it and
-            // push static text out of it.
+            // the frame's rasterization budget affords them (see MotionRasterBudget), and on the
+            // frames that leave the stretch band: each such frame's glyph masks enter the atlas,
+            // so a zoom drawn sharp throughout would fill it and push static text out of it, while
+            // one set per band crossing stays within the glyph cache limit like any other text.
             var atlasZooming = false;
 
             // A software GPU zoom frame that the budget affords composes a run mask at its scale
@@ -315,56 +316,57 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm,
                     run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
 
-                if (!atlasZooming || sharpAtlasZoom)
-                {
-                    if (!churning)
-                    {
-                        MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
-                            run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
-                    }
-                    else if (!sharpAtlasZoom)
-                    {
-                        MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
-                    }
-
-                    var start = sharpAtlasZoom ? MotionRasterBudget.Start() : 0;
-                    var argb = ToArgb(alpha, solid.Color);
-                    var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
-                        originX, originY, argb);
-
-                    if (key == staticKey)
-                    {
-                        (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
-                            surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
-                    }
-                    else
-                    {
-                        t_unhintedMotionDraws++;
-                    }
-
-                    // The sprites are now the raster a zoom's next frames stretch.
-                    run.SettledUpright = null;
-
-                    if (sharpAtlasZoom)
-                    {
-                        MotionRasterBudget.Charge(run, start);
-                    }
-
-                    return true;
-                }
-
-                // A zoom frame stretches the sprites of the last static frame while it stays within
-                // the band around them; once a zoom frame has settled a run mask, that mask is
-                // the newer one and stretches instead (below).
+                // A zoom frame the budget cannot afford stretches the sprites the zoom last settled
+                // on, those of the last static frame or of its last band crossing, while it stays
+                // within the band around them.
                 var spriteState = run.TransformedSprites;
 
-                if (run.SettledUpright is null &&
+                if (atlasZooming && !sharpAtlasZoom &&
                     spriteState.Settled is { IsDisposed: false, IsUpright: true, HasColor: false } settledSprites &&
                     settledSprites.Key.Mode == key.Mode && IsWithinStretchBand(spriteState, transform) &&
                     TryDrawStretched(atlasContext, run.GlyphTypeface, spriteState, transform, ToArgb(alpha, solid.Color)))
                 {
                     return true;
                 }
+
+                // Past the band, one frame lays its unhinted sprites out at its scale and settles
+                // there, on the frame's budget, as transformed text does: a crossing draws from the
+                // atlas batched with the other runs, the frames after it stretch batches, and a
+                // zoom that comes back to the scale finds the sprites cached.
+                if (!churning)
+                {
+                    MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
+                        run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
+                }
+                else if (!atlasZooming)
+                {
+                    MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
+                }
+
+                var start = atlasZooming ? MotionRasterBudget.Start() : 0;
+                var argb = ToArgb(alpha, solid.Color);
+                var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
+                    originX, originY, argb);
+
+                if (key == staticKey)
+                {
+                    (run.UprightDecision ??= new UprightAtlasDecision()).Set(scaleX, scaleY, mode, textHintingMode,
+                        surface.MaxRunMaskSize, run.TransformedSprites.Version, key, sprites, argb, GetBucket(argb));
+                }
+                else
+                {
+                    t_unhintedMotionDraws++;
+                }
+
+                // The sprites are now the raster a zoom's next frames stretch.
+                run.SettledUpright = null;
+
+                if (atlasZooming)
+                {
+                    MotionRasterBudget.Charge(run, start);
+                }
+
+                return true;
             }
 
             // A hardware GPU with a shared colour atlas draws the colour content of a colour
@@ -422,11 +424,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             // when the gesture starts stretching. A hardware GPU stretches within the band as well:
             // there a stretch is one textured draw per run, while rasterizing builds every glyph
             // mask again at each new scale, which for CJK text on a phone takes two to three times
-            // Skia's whole frame. Its static frames draw atlas sprites, which stretch the same way
-            // (above); past the band one frame composes a run mask at its scale and settles there.
-            // While the frame's rasterization budget affords it, a hardware GPU draws a zoom frame
-            // from sprites at its scale instead (above), and a software GPU composes a run mask at
-            // its scale and settles there; both sharp.
+            // Skia's whole frame. Its zoom frames stretch atlas sprites and lay sprites out past the
+            // band (above). While the frame's rasterization budget affords it, a hardware GPU draws
+            // a zoom frame from sprites at its scale (above), and a software GPU composes a run mask
+            // at its scale and settles there; both sharp.
             var zoomContext = context as ITransformedGlyphContext;
 
             // The rasters a moving run draws are its unhinted ones, so a grid-fitted mask that a
