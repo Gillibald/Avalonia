@@ -1705,6 +1705,82 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_Frame_Whose_Runs_All_Cross_The_Band_Refreshes_Each_Atlas_Page_Once(GpuBackend backend,
+            bool software)
+        {
+            // Every run of a paragraph lays out its crossing's sprites in the same frame. Their
+            // stretched draws wait in the frame's glyph batch, as static runs do, so each atlas
+            // page is refreshed once after all the runs wrote to it rather than after each run,
+            // and the frame looks exactly as it does with every run drawn on its own.
+            static double Scale(int frame) => 1 + 0.04 * frame;
+
+            int crossing;
+            int pages;
+            long refreshes;
+            byte[] batched;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, software))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                var runs = CreateParagraph(typeface, 10, 13, new Point(6.3, 4));
+
+                try
+                {
+                    crossing = TransformedAtlasTests.GridCrossingFrames(
+                        Enumerable.Range(0, 20).Select(Scale).ToList(), runs[0], 0)[0];
+
+                    for (var frame = 0; frame < crossing; frame++)
+                    {
+                        Render(gpu, context => DrawZoomed(context, runs, Scale(frame)), true, out _);
+                    }
+
+                    var before = DrawingContextImpl.PageImagesReplacedOnThread + DrawingContextImpl.PageTextureUpdatesOnThread;
+
+                    batched = Render(gpu, context => DrawZoomed(context, runs, Scale(crossing)), true, out _);
+                    refreshes = DrawingContextImpl.PageImagesReplacedOnThread + DrawingContextImpl.PageTextureUpdatesOnThread -
+                        before;
+                    pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
+                }
+                finally
+                {
+                    DisposeAll(runs);
+                }
+            }
+
+            byte[] separate;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, software))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                var runs = CreateParagraph(typeface, 10, 13, new Point(6.3, 4));
+
+                try
+                {
+                    for (var frame = 0; frame < crossing; frame++)
+                    {
+                        Render(gpu, context => DrawZoomed(context, runs, Scale(frame)), false, out _);
+                    }
+
+                    separate = Render(gpu, context => DrawZoomed(context, runs, Scale(crossing)), false, out _);
+                }
+                finally
+                {
+                    DisposeAll(runs);
+                }
+            }
+
+            Assert.True(refreshes <= pages, $"{refreshes} page refreshes for {pages} pages");
+            TransformedAtlasTests.AssertEqual(separate, batched, $"{backend} crossing frame {crossing}");
+        }
+
+        private static void DrawZoomed(DrawingContextImpl context, ManagedGlyphRunImpl[] runs, double scale)
+        {
+            context.Transform = Matrix.CreateScale(scale, scale);
+            DrawAll(context, runs, Brushes.Black);
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void A_Zoom_Only_Shrinks_The_Sprites_Of_Its_Band_Crossings(GpuBackend backend, bool software)
         {
             // A crossing lays its sprites out at the grid scale at or above the frame's scale, so
