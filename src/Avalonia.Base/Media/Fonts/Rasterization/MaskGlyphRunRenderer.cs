@@ -181,7 +181,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     if (moving)
                     {
-                        MotionRasterBudget.Moving(run);
+                        MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
                     }
                     else
                     {
@@ -324,7 +324,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
                     else if (!sharpAtlasZoom)
                     {
-                        MotionRasterBudget.Moving(run);
+                        MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
                     }
 
                     var start = sharpAtlasZoom ? MotionRasterBudget.Start() : 0;

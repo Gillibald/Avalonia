@@ -218,14 +218,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Records a motion frame of <paramref name="run"/> drawn from a raster it has cached, which
-        /// leaves nothing to decide: the motion goes on.
+        /// Records a motion frame of <paramref name="run"/> at <paramref name="pixelsPerEm"/> drawn
+        /// from a raster it has cached, which leaves nothing to decide: the motion goes on, and the
+        /// run counts towards the frame's estimate with the share of its masks its next motion frame
+        /// would rasterize, <paramref name="missShare"/>, as a run that tries does.
         /// </summary>
-        public static void Moving(ManagedGlyphRunImpl run)
+        public static void Moving(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare)
         {
             var frame = BeginFrame();
 
             run.MovesOnGpu = true;
+            t_estimate += Estimate(run, pixelsPerEm, missShare);
             Continue(frame);
         }
 

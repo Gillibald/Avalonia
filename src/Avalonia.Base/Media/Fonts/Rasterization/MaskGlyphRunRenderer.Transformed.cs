@@ -126,7 +126,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
             else if (hit)
             {
-                MotionRasterBudget.Moving(run);
+                MotionRasterBudget.Moving(run, pixelsPerEm, 1);
             }
             else if (!hit)
             {
