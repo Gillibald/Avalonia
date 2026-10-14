@@ -380,25 +380,56 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void A_Scene_Whose_Tries_Run_Out_Of_Budget_Is_Not_Tried_Again_While_Estimated_Past_The_Budget(
+        public void A_Scene_Whose_Tries_Run_Out_Of_Budget_At_A_Flat_Cost_Stops_Trying_Under_Twice_The_Budget(
             Target target)
         {
             // Three runs and room for two: the scene is estimated under twice the budget, so its
-            // first moving frame tries and runs out. Until the hold ends, a further try needs the
-            // estimate to fit the budget itself, which this scene's never does.
+            // first moving frame tries and runs out, and so does the try after the hold. That
+            // second try cost as much per glyph as the first: the scene is not warming up, and a
+            // further try needs the estimate to fit the budget itself, which this scene's never does.
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+
+            var tried = TriedFrames(target, moving + 6 * hold, _ => GlyphCost);
+
+            Assert.Equal(new[] { moving, moving + hold + 1 }, tried);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Scene_Whose_Cost_Falls_Between_Failed_Tries_Keeps_Trying_Under_Twice_The_Budget(Target target)
+        {
+            // The same scene, but each try costs a twentieth less per glyph than the one before, as
+            // code still compiling does: it keeps trying after every hold, which doubles.
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+            var expected = new[] { moving, moving + hold + 1, moving + hold + 1 + 2 * hold + 1 };
+
+            var tried = TriedFrames(target, expected[2] + 4,
+                frame => Array.IndexOf(expected, frame) is var i and >= 0 ? GlyphCost * (1 - 0.05 * i) : GlyphCost);
+
+            Assert.Equal(expected, tried);
+        }
+
+        /// <summary>
+        /// Rotates three runs, with room for two, for <paramref name="frames"/> frames at the
+        /// frame's <paramref name="glyphCost"/>, and returns the frames that tried the budget.
+        /// </summary>
+        private static List<int> TriedFrames(Target target, int frames, Func<int, double> glyphCost)
+        {
             using var output = new FrameTarget(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
             using var runs = new Runs(typeface, 3);
 
-            const int moving = TransformChurnGuard.Threshold;
-            var frames = moving + 4 * MotionRasterBudget.HoldFrames;
             var tried = new List<int>();
 
             for (var frame = 0; frame < frames; frame++)
             {
                 var before = MotionRasterBudget.TriedFrames;
                 var current = frame;
+
+                MotionRasterBudget.GlyphCostOverride = glyphCost(frame);
 
                 output.Frame(context =>
                 {
@@ -415,7 +446,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
 
-            Assert.Equal(new[] { moving }, tried);
+            return tried;
         }
 
         [Theory]
