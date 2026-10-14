@@ -1572,9 +1572,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
-        public void An_Upright_Zoom_On_A_Hardware_Gpu_Adds_Nothing_To_The_Atlas_While_It_Animates(GpuBackend backend,
-            bool software)
+        public void An_Upright_Zoom_On_A_Hardware_Gpu_Adds_One_Sprite_Set_Per_Band_Crossing_To_The_Atlas(
+            GpuBackend backend, bool software)
         {
+            // Frames between band crossings stretch the last settled sprites and add nothing to
+            // the atlas; a crossing lays its glyphs out once, unhinted, at its scale, so the atlas
+            // grows by at most one mask per distinct glyph and pen phase per crossing. The first
+            // frame that holds still draws from the atlas again, grid-fitted.
             using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var runs = CreateParagraph(typeface, 5, 13, new Point(6.3, 4));
@@ -1586,30 +1590,111 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
+                var glyphs = new HashSet<ushort>();
+
+                foreach (var run in runs)
+                {
+                    glyphs.UnionWith(run.GlyphIndices.ToArray());
+                }
+
+                static double Scale(int frame) => 1 + frame * 0.04;
+
+                var anchor = Scale(TransformChurnGuard.Threshold - 1);
                 var entries = 0;
+                var crossings = 0;
 
                 for (var frame = 0; frame < 30; frame++)
                 {
-                    context.Transform = Matrix.CreateScale(1 + frame * 0.04, 1 + frame * 0.04);
+                    context.Transform = Matrix.CreateScale(Scale(frame), Scale(frame));
                     DrawAll(context, runs, Brushes.Black);
                     context.FlushGlyphBatch();
 
-                    // Frames before the guard recognizes the gesture lay out sprites as static
-                    // text does; the animating frames after it must not fill the atlas with a
-                    // set of glyph masks per scale.
-                    if (frame == TransformChurnGuard.Threshold - 1)
+                    var count = TransformedAtlasTests.AtlasOf(gpu, typeface).Count;
+
+                    if (frame >= TransformChurnGuard.Threshold)
                     {
-                        entries = TransformedAtlasTests.AtlasOf(gpu, typeface).Count;
+                        if (Scale(frame) / anchor > MaskGlyphRunRenderer.MaxStretchScale)
+                        {
+                            anchor = Scale(frame);
+                            crossings++;
+
+                            Assert.True(count > entries, $"crossing frame {frame} added no sprites");
+                            Assert.True(count - entries <= glyphs.Count * GlyphMaskKey.PhaseCount,
+                                $"crossing frame {frame} added {count - entries} entries");
+                        }
+                        else
+                        {
+                            Assert.True(count == entries, $"frame {frame} between crossings added {count - entries} entries");
+                        }
                     }
+
+                    entries = count;
                 }
 
-                Assert.Equal(entries, TransformedAtlasTests.AtlasOf(gpu, typeface).Count);
+                Assert.True(crossings >= 3, $"the zoom crossed the band {crossings} times");
 
-                // The frame that holds still draws from the atlas again.
                 DrawAll(context, runs, Brushes.Black);
                 context.FlushGlyphBatch();
 
                 Assert.True(TransformedAtlasTests.AtlasOf(gpu, typeface).Count > entries, "the settling frame added no atlas entries");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void An_Upright_Zoom_Jumping_Back_To_A_Crossing_Scale_Draws_Its_Sprites_In_One_Batch(GpuBackend backend,
+            bool software)
+        {
+            // A zoom that jumps back to the scale of an earlier band crossing finds that crossing's
+            // sprites cached: it rasterizes nothing and draws every run of the frame from the atlas
+            // in one batched draw.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 5, 13, new Point(6.3, 4));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu.GrContext, true, info);
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            try
+            {
+                static double Scale(int step) => 1 + step * 0.04;
+
+                var anchor = Scale(TransformChurnGuard.Threshold - 1);
+                var crossing = -1;
+
+                for (var step = 0; step < 16; step++)
+                {
+                    if (step >= TransformChurnGuard.Threshold && crossing < 0 &&
+                        Scale(step) / anchor > MaskGlyphRunRenderer.MaxStretchScale)
+                    {
+                        crossing = step;
+                    }
+
+                    context.Transform = Matrix.CreateScale(Scale(step), Scale(step));
+                    DrawAll(context, runs, Brushes.Black);
+                    context.FlushGlyphBatch();
+                }
+
+                Assert.True(crossing > 0 && Scale(15) / Scale(crossing) > MaskGlyphRunRenderer.MaxStretchScale,
+                    "the zoom does not leave the band around its first crossing");
+
+                var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                var batches = DrawingContextImpl.BatchesDrawnOnThread;
+                var stretched = MaskGlyphRunRenderer.StretchedDraws;
+
+                context.Transform = Matrix.CreateScale(Scale(crossing), Scale(crossing));
+                DrawAll(context, runs, Brushes.Black);
+                context.FlushGlyphBatch();
+
+                Assert.Equal(rasterized, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
+                Assert.Equal(stretched, MaskGlyphRunRenderer.StretchedDraws);
+                Assert.Equal(1, DrawingContextImpl.BatchesDrawnOnThread - batches);
             }
             finally
             {

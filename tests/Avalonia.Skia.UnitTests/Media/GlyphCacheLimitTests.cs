@@ -155,10 +155,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 labelMisses = 0;
 
-                // A zoom that needs far more than the limit, every frame a new scale.
-                for (var step = 1; step < 120; step++)
+                // A zoom that needs far more than the limit, every frame a new scale. On a hardware
+                // GPU only its band crossings rasterize, one sprite set each, so it runs to six
+                // times the size to fill the limit there too.
+                for (var step = 1; step < 250; step++)
                 {
-                    Frame(1 + step * 0.01);
+                    Frame(1 + step * 0.02);
                 }
 
                 Assert.True(zoomFace.MaskCache.Evictions > zoomEvictions, "the zoom fit the limit");
