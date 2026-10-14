@@ -93,6 +93,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static bool t_ranOut;
 
+        [ThreadStatic]
+        private static int t_triedFrames;
+
+        /// <summary>
+        /// The frames of the calling thread in which a moving run tried the budget and drew sharp,
+        /// a running total.
+        /// </summary>
+        internal static int TriedFrames => t_triedFrames;
+
         /// <summary>
         /// Replaces <see cref="FrameBudgetMicroseconds"/>, for tests; <c>null</c> keeps it.
         /// </summary>
@@ -194,6 +203,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (t_spent + estimate < t_budget)
             {
+                if (!t_tried)
+                {
+                    t_triedFrames++;
+                }
+
                 t_tried = true;
                 return true;
             }

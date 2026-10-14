@@ -260,6 +260,67 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(Range(moving, frames), stretched[2]);
         }
 
+        public static IEnumerable<object[]> Zooms()
+        {
+            foreach (var target in Enum.GetValues<Target>())
+            {
+                yield return new object[] { target, Motion.Zoom };
+                yield return new object[] { target, Motion.ZoomRotation };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(Zooms))]
+        public void A_Sawtooth_Zoom_That_Keeps_Running_Out_Of_Budget_Doubles_Its_Holds_Across_Wraps(Target target,
+            Motion motion)
+        {
+            // Three runs and room for two, zooming by 1 % a frame and jumping back to the start
+            // scale every 20 frames, which the frames before the motion was recognized left
+            // cached: the frames that pass through cached scales still move, so every try runs
+            // out of budget on the third run and each hold lasts twice as long as the one before.
+            const int period = 20;
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 2.5 * s_runCost, glyphCost: GlyphCost);
+            using var runs = new Runs(typeface, 3);
+
+            var expected = new List<int> { moving, moving + hold + 1 };
+
+            expected.Add(expected[1] + 2 * hold + 1);
+            expected.Add(expected[2] + 4 * hold + 1);
+
+            var frames = expected[3] + 4;
+            var tried = new List<int>();
+
+            for (var frame = 0; frame < frames; frame++)
+            {
+                var scale = 1 + 0.01 * (frame % period);
+                var before = MotionRasterBudget.TriedFrames;
+
+                output.Frame(context =>
+                {
+                    for (var i = 0; i < runs.All.Length; i++)
+                    {
+                        context.Transform = motion == Motion.Zoom
+                            ? Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5 + 40 * i)
+                            : Matrix.CreateScale(scale, scale) * Matrix.CreateRotation(Math.PI * 15 / 180) *
+                              Matrix.CreateTranslation(60.4, 40.7 + 40 * i);
+                        context.DrawGlyphRun(Brushes.Black, runs.All[i]);
+                    }
+                });
+
+                if (MotionRasterBudget.TriedFrames != before)
+                {
+                    tried.Add(frame);
+                }
+            }
+
+            Assert.Equal(expected, tried);
+        }
+
         [Theory]
         [MemberData(nameof(Targets))]
         public void A_Try_That_Fits_The_Budget_Ends_The_Doubling(Target target)
