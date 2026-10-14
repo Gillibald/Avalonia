@@ -328,6 +328,50 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Theory]
+        [MemberData(nameof(Zooms))]
+        public void A_Sawtooth_Zoom_Estimated_Past_Twice_The_Budget_Is_Never_Tried_After_Its_Wraps(Target target,
+            Motion motion)
+        {
+            // Three runs and room for one, so the scene is estimated past twice the budget. The
+            // frames after each wrap draw rasters cached by the frames before the motion was
+            // recognized; they still count towards the scene's estimate, so the frame after them
+            // does not try either.
+            const int period = 20;
+
+            using var output = new FrameTarget(target);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var budget = new InjectedBudget(budget: 1.2 * s_runCost, glyphCost: GlyphCost);
+            using var runs = new Runs(typeface, 3);
+
+            var tried = new List<int>();
+
+            for (var frame = 0; frame < 3 * period; frame++)
+            {
+                var scale = 1 + 0.01 * (frame % period);
+                var before = MotionRasterBudget.TriedFrames;
+
+                output.Frame(context =>
+                {
+                    for (var i = 0; i < runs.All.Length; i++)
+                    {
+                        context.Transform = motion == Motion.Zoom
+                            ? Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5 + 40 * i)
+                            : Matrix.CreateScale(scale, scale) * Matrix.CreateRotation(Math.PI * 15 / 180) *
+                              Matrix.CreateTranslation(60.4, 40.7 + 40 * i);
+                        context.DrawGlyphRun(Brushes.Black, runs.All[i]);
+                    }
+                });
+
+                if (MotionRasterBudget.TriedFrames != before)
+                {
+                    tried.Add(frame);
+                }
+            }
+
+            Assert.Empty(tried);
+        }
+
+        [Theory]
         [MemberData(nameof(Targets))]
         public void A_Try_That_Fits_The_Budget_Ends_The_Doubling(Target target)
         {
