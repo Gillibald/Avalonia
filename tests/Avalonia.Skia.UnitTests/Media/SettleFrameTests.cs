@@ -288,6 +288,40 @@ namespace Avalonia.Skia.UnitTests.Media
             harness.AssertIdle();
         }
 
+        [Theory]
+        [MemberData(nameof(ZoomTargets))]
+        public void An_Environment_Leaves_The_Shared_State_It_Changes_As_It_Was_Even_When_Its_Target_Is_Unavailable(
+            Target target)
+        {
+            // A target without a usable GPU skips the test from the environment's constructor. The
+            // zoom raster cost and the locator scope the environment set up for the test must
+            // still return to what they were, or the tests after it run against them.
+            var cost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+            var current = AvaloniaLocator.Current;
+            var mutable = AvaloniaLocator.CurrentMutable;
+
+            try
+            {
+                using (new Environment(target))
+                {
+                }
+            }
+            catch (Exception)
+            {
+                // The skip of an unavailable target; the state it leaves is what is checked.
+            }
+
+            var leftCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+            var leftCurrent = AvaloniaLocator.Current;
+
+            MaskGlyphRunRenderer.ZoomRasterPixelCost = cost;
+            AvaloniaLocator.Current = current;
+            AvaloniaLocator.CurrentMutable = mutable;
+
+            Assert.Equal(cost, leftCost);
+            Assert.Same(current, leftCurrent);
+        }
+
         /// <summary>The typeface and, on GPU targets, the GPU context every harness of a test shares.</summary>
         private sealed class Environment : IDisposable
         {
