@@ -616,8 +616,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            _budget.SpriteSets.Handle.Charge(bytes - _charged);
+            var change = bytes - _charged;
+
+            // Recorded before charging: the charge may evict this run's own older sets, and their
+            // recharge from inside it must start from the new total.
             _charged = bytes;
+            _budget.SpriteSets.Handle.Charge(change);
         }
 
         private static long ChargedBytes(TransformedGlyphSprites? sprites)
