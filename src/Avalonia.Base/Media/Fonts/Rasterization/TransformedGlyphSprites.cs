@@ -217,6 +217,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The run state holding this set, which charges its bytes to the glyph cache budget.</summary>
         internal TransformedRunState? Owner { get; set; }
 
+        /// <summary>Whether the set was laid out for a zoom's band crossing.</summary>
+        internal bool IsCrossing { get; set; }
+
         /// <summary>Bytes of the pre-tinted images in <see cref="FallbackImages"/>.</summary>
         internal long FallbackImageBytes { get; private set; }
 
@@ -642,6 +645,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         public void AddCrossing(TransformedGlyphSprites sprites)
         {
             Version++;
+            sprites.IsCrossing = true;
             sprites.Owner = this;
             _ownerThread = Environment.CurrentManagedThreadId;
 

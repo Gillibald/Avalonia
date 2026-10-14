@@ -1646,6 +1646,116 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_Second_Zoom_Gesture_From_Another_Scale_Lays_Out_No_Band_Crossing_Again(GpuBackend backend,
+            bool software)
+        {
+            // Band crossings lay their sprites out on a fixed grid of scales, so a gesture that
+            // starts where an earlier one stopped, at a scale off that grid, crosses into the sets
+            // the earlier gesture left cached instead of laying out a chain of its own.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 3, 13, new Point(6.3, 4));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu.GrContext, true, info);
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            void Draw(double scale)
+            {
+                context.Transform = Matrix.CreateScale(scale, scale);
+                DrawAll(context, runs, Brushes.Black);
+                context.FlushGlyphBatch();
+            }
+
+            try
+            {
+                for (var step = 0; step <= 110; step++)
+                {
+                    Draw(1 + 0.01 * step);
+                }
+
+                // The gesture stops at 1.37 and holds.
+                Draw(1.37);
+                Draw(1.37);
+
+                var builds = 0L;
+
+                // The second gesture moves in larger steps, so it passes none of the first one's
+                // scales and meets their crossings only through the grid.
+                for (var step = 1; step <= 21; step++)
+                {
+                    var before = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+
+                    Draw(1.37 + 0.03 * step);
+
+                    if (step >= TransformChurnGuard.Threshold)
+                    {
+                        builds += GlyphRasterDiagnostics.SpriteSetBuildsOnThread - before;
+                    }
+                }
+
+                Assert.Equal(0, builds);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Zoom_Only_Shrinks_The_Sprites_Of_Its_Band_Crossings(GpuBackend backend, bool software)
+        {
+            // A crossing lays its sprites out at the grid scale at or above the frame's scale, so
+            // every frame stretched from them shrinks them, by no more than the stretch band.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 1, 13, new Point(6.3, 4));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu.GrContext, true, info);
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            try
+            {
+                var state = runs[0].TransformedSprites;
+                var crossings = 0;
+
+                // Up past three crossings, then back down.
+                for (var step = 0; step <= 160; step++)
+                {
+                    var scale = step <= 80 ? 1 + 0.01 * step : 1.8 - 0.01 * (step - 80);
+                    var before = MaskGlyphRunRenderer.StretchedDraws;
+
+                    context.Transform = Matrix.CreateScale(scale, scale);
+                    DrawAll(context, runs, Brushes.Black);
+                    context.FlushGlyphBatch();
+
+                    if (MaskGlyphRunRenderer.StretchedDraws == before || state.Settled is not { IsCrossing: true })
+                    {
+                        continue;
+                    }
+
+                    crossings++;
+
+                    var ratio = scale / state.SettledTransform.M11;
+
+                    Assert.True(ratio <= 1 + 1e-9 && ratio >= 1 / MaskGlyphRunRenderer.MaxStretchScale - 1e-9,
+                        $"step {step} stretched the sprites of scale {state.SettledTransform.M11:F4} to {scale:F4}");
+                }
+
+                Assert.True(crossings > 0, "no frame stretched a crossing's sprites");
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void An_Upright_Zoom_Jumping_Back_To_A_Crossing_Scale_Draws_Its_Sprites_In_One_Batch(GpuBackend backend,
             bool software)
         {
