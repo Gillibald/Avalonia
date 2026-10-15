@@ -330,10 +330,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             byte[] Draw(bool recordings)
             {
-                var previous = ColorGlyphRunSplitter.UseRecordings;
-                ColorGlyphRunSplitter.UseRecordings = recordings;
-
-                try
+                using (TestRasterTuning.Change(t => t with { UseColorRecordings = recordings }))
                 {
                     using var run = CreateGlyphRun(typeface, glyphs);
 
@@ -347,10 +344,6 @@ namespace Avalonia.Skia.UnitTests.Media
                             DrawRoute(context, impl, run, route);
                         }
                     });
-                }
-                finally
-                {
-                    ColorGlyphRunSplitter.UseRecordings = previous;
                 }
             }
 
@@ -466,8 +459,9 @@ namespace Avalonia.Skia.UnitTests.Media
         // the v1 glyphs from colour masks instead.
         private static IDisposable CreateEnvironment(bool managed)
         {
-            var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             var scope = TextTestApplication.Enter();
+
+            TestRasterTuning.Set(t => t with { UseColorMasks = false });
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
@@ -479,18 +473,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     TextRasterizationMode = managed ? TextRasterizationMode.Managed : TextRasterizationMode.Backend,
                 });
 
-            return new CompositeDisposable(scope, masksOff);
-        }
-
-        private sealed class CompositeDisposable(params IDisposable[] parts) : IDisposable
-        {
-            public void Dispose()
-            {
-                foreach (var part in parts)
-                {
-                    part.Dispose();
-                }
-            }
+            return scope;
         }
 
         private static byte[] RenderOnRaster(Matrix transform, Action<DrawingContext, IDrawingContextImpl> draw)

@@ -111,7 +111,7 @@ namespace Avalonia.Skia
 
             target = new GlyphBlitTarget(pixmap.GetPixels(), pixmap.RowBytes, format.Width, format.Height,
                 new PixelRect(clip.Left, clip.Top, Math.Max(0, clip.Width), Math.Max(0, clip.Height)),
-                format.Kind == BlitSurfaceKind.Rgba, GetBlitArithmetic(format.Kind));
+                format.Kind == BlitSurfaceKind.Rgba, GetBlitArithmetic(format.Kind), RasterTuning.BlitPath);
 
             return true;
         }

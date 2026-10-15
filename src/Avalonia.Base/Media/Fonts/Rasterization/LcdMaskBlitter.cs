@@ -91,7 +91,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            var path = GlyphMaskBlitter.Path;
+            var path = target.Path;
             var swap = target.IsRgba;
 
             fixed (uint* m = multiply)

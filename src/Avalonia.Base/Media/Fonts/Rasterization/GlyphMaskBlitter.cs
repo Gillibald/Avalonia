@@ -15,7 +15,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal readonly struct GlyphBlitTarget
     {
         public GlyphBlitTarget(IntPtr pixels, int rowBytes, int width, int height, PixelRect clip, bool isRgba,
-            GlyphBlitArithmetic arithmetic = GlyphBlitArithmetic.Pipeline)
+            GlyphBlitArithmetic arithmetic = GlyphBlitArithmetic.Pipeline, GlyphBlitPath? path = null)
         {
             Pixels = pixels;
             RowBytes = rowBytes;
@@ -24,6 +24,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             Clip = clip.Intersect(new PixelRect(0, 0, width, height));
             IsRgba = isRgba;
             Arithmetic = arithmetic;
+            Path = path ?? GlyphMaskBlitter.DetectedPath;
         }
 
         public IntPtr Pixels { get; }
@@ -45,6 +46,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// surface, source-over or multiplied; direct writes reproduce it.
         /// </summary>
         public GlyphBlitArithmetic Arithmetic { get; }
+
+        /// <summary>The instruction set blends into this target use.</summary>
+        public GlyphBlitPath Path { get; }
     }
 
     /// <summary>
@@ -112,9 +116,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static SourceTables? t_sources;
 
         /// <summary>
-        /// Which instruction set the blends use; tests lower it to cover every path.
+        /// The best instruction set this machine and runtime blend with, which a
+        /// <see cref="GlyphBlitTarget"/> uses unless it is given another.
         /// </summary>
-        internal static GlyphBlitPath Path { get; set; } = DetectPath();
+        internal static GlyphBlitPath DetectedPath { get; } = DetectPath();
 
         /// <summary>
         /// Blends <paramref name="mask"/> with its top-left at (<paramref name="x"/>,
@@ -344,7 +349,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // The blend is per channel, so an RGBA surface only needs the tint's R and B swapped.
             var tint = target.IsRgba ? SwapRedBlue(tintBgra) : tintBgra;
 
-            var path = Path;
+            var path = target.Path;
             var sources = GetSourceTable(tint, table ?? s_identity);
 
             // Where full coverage stays full, a fully covered pixel of an opaque tint becomes the

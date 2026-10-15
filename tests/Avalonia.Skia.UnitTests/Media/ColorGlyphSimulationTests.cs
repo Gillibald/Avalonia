@@ -90,8 +90,8 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The record-time split is the vector path; under managed rasterization it only
             // splits v1 glyphs with colour masks switched off.
-            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = CreateEnvironment();
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             var typeface = ColorGlyphV1SplitTests.CreateV1Typeface(out var v1Glyph);
 
             var expected = RenderSplit(typeface, v1Glyph);

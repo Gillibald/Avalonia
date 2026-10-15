@@ -26,26 +26,6 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </remarks>
     internal static class ColorGlyphRunSplitter
     {
-        /// <summary>
-        /// Whether colour glyphs replay their cached recordings where the context supports
-        /// recordings; off draws every colour glyph from its live drawing. For A/B comparisons.
-        /// </summary>
-        internal static bool UseRecordings { get; set; } = true;
-
-        /// <summary>
-        /// Whether managed rasterization draws COLR v1 glyphs of upright runs from colour masks
-        /// (each paint graph rasterized once per scale and phase); off draws them as vectors on
-        /// every draw. For A/B comparisons.
-        /// </summary>
-        internal static bool UseColorMasks { get; set; } = true;
-
-        /// <summary>
-        /// Whether hardware GPU contexts draw the colour glyph content of managed runs from colour
-        /// atlas pages, batched across runs; off draws upright runs from their run masks and cuts
-        /// transformed runs at their v1 glyphs. For A/B comparisons.
-        /// </summary>
-        internal static bool UseColorAtlas { get; set; } = true;
-
         public static bool IsManagedTextRasterization()
             => (AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode
                 ?? TextRasterizationDefaults.PlatformDefault) == TextRasterizationMode.Managed;
@@ -72,8 +52,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             // Backend rasterization splits all of them, so the backend never rasterizes colour or
             // bitmap glyph content itself.
             var includeServerSideKinds = !IsManagedTextRasterization();
+            var tuning = GlyphRasterTuning.Current;
 
-            if (!includeServerSideKinds && (UseColorMasks || colr is not { HasV1Data: true }))
+            if (!includeServerSideKinds && (tuning.UseColorMasks || colr is not { HasV1Data: true }))
             {
                 return false;
             }
@@ -137,7 +118,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 DrawGlyph(context, typeface, info.GlyphIndex, drawingOptions, scale, new Point(
                     baseline.X + currentX + info.GlyphOffset.X,
-                    baseline.Y + info.GlyphOffset.Y));
+                    baseline.Y + info.GlyphOffset.Y), tuning.UseColorRecordings);
 
                 currentX += info.GlyphAdvance;
                 segmentStart = i + 1;
@@ -168,6 +149,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             PlatformDrawingContext? colorContext = null;
             GlyphDrawingOptions? drawingOptions = null;
+            var recordings = GlyphRasterTuning.Of(context).UseColorRecordings;
 
             try
             {
@@ -186,7 +168,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
 
                     DrawGlyph(colorContext, segments.Typeface, segment.Glyph, drawingOptions, segments.Scale,
-                        segment.Pen);
+                        segment.Pen, recordings);
                 }
             }
             finally
@@ -207,7 +189,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// run's positions; the caller draws every other glyph (see <see cref="IsDrawnAsColor"/>).
         /// Used where a managed run falls back to plain outlines, which carry no colour.
         /// </summary>
-        internal static void DrawColorGlyphs(DrawingContext context, ManagedGlyphRunImpl run, IBrush? foreground)
+        internal static void DrawColorGlyphs(DrawingContext context, ManagedGlyphRunImpl run, IBrush? foreground,
+            GlyphRasterTuning tuning)
         {
             var typeface = run.GlyphTypeface;
             var scale = run.FontRenderingEmSize / typeface.Metrics.DesignEmHeight;
@@ -231,7 +214,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 DrawGlyph(context, typeface, indices[i], drawingOptions, scale,
-                    new Point(baseline.X + positions[i * 2], baseline.Y + positions[i * 2 + 1]));
+                    new Point(baseline.X + positions[i * 2], baseline.Y + positions[i * 2 + 1]),
+                    tuning.UseColorRecordings);
             }
         }
 
@@ -254,7 +238,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private static void DrawGlyph(DrawingContext context, GlyphTypeface typeface, ushort glyph,
-            GlyphDrawingOptions? drawingOptions, double scale, Point pen)
+            GlyphDrawingOptions? drawingOptions, double scale, Point pen, bool useRecordings)
         {
             // Drawings render in font design units (the Y-flip is internal): scale to the run's em
             // size and land the local origin on the pen.
@@ -276,7 +260,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // calls the live drawing makes, without building and walking its paint graph per draw.
             // The lease keeps the cache from disposing the recording during the replay; render
             // data takes its own reference to it.
-            if (UseRecordings && context is RenderDataDrawingContext or PlatformDrawingContext &&
+            if (useRecordings && context is RenderDataDrawingContext or PlatformDrawingContext &&
                 typeface.GetGlyphRecording(glyph, drawingOptions) is { } recorded && recorded.TryAcquire())
             {
                 try

@@ -328,18 +328,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
             byte[] Draw(bool masks)
             {
-                var previous = ColorGlyphRunSplitter.UseColorMasks;
-                ColorGlyphRunSplitter.UseColorMasks = masks;
-
-                try
+                using (TestRasterTuning.Change(t => t with { UseColorMasks = masks }))
                 {
                     using var run = CreateGlyphRun(typeface, glyphs, s_text, origin);
 
                     return RenderOnRaster(Matrix.Identity, (context, _) => context.DrawGlyphRun(s_text, run));
-                }
-                finally
-                {
-                    ColorGlyphRunSplitter.UseColorMasks = previous;
                 }
             }
 
@@ -391,16 +384,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// Draws v1 glyphs as vectors until disposed, for tests of the vector path that the
         /// upright tier's colour masks would otherwise take.
         /// </summary>
-        internal static IDisposable SwitchColorMasksOff() => new ColorMaskSwitch();
-
-        private sealed class ColorMaskSwitch : IDisposable
-        {
-            private readonly bool _previous = ColorGlyphRunSplitter.UseColorMasks;
-
-            public ColorMaskSwitch() => ColorGlyphRunSplitter.UseColorMasks = false;
-
-            public void Dispose() => ColorGlyphRunSplitter.UseColorMasks = _previous;
-        }
+        internal static IDisposable SwitchColorMasksOff() => TestRasterTuning.Change(t => t with { UseColorMasks = false });
 
         private static Counts DrawOnce(GlyphTypeface typeface, ushort[] glyphs, IBrush? brush = null)
         {

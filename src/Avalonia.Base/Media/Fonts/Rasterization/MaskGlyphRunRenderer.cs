@@ -116,7 +116,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // declines, the caller cuts the run and draws them as vectors.
             var colorGlyphs = HasColrV1Glyph(run);
 
-            if (colorGlyphs && !ColorGlyphRunSplitter.UseColorMasks)
+            if (colorGlyphs && !tuning.UseColorMasks)
             {
                 return false;
             }
@@ -367,7 +367,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // rather than a run mask per run. Elsewhere a placed glyph would upload a whole page.
             bool? colorChurn = null;
 
-            if (alphaContext is null && mode != GlyphMaskMode.Subpixel && ColorGlyphRunSplitter.UseColorAtlas &&
+            if (alphaContext is null && mode != GlyphMaskMode.Subpixel && tuning.UseColorAtlas &&
                 (run.GlyphTypeface.ColorTable is not null || run.GlyphTypeface.BitmapSource is not null) &&
                 surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
                 context is ITransformedGlyphContext { ColorAtlas: not null } colorContext)

@@ -66,16 +66,9 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 byte[] Draw(bool masks)
                 {
-                    var previous = ColorGlyphRunSplitter.UseColorMasks;
-                    ColorGlyphRunSplitter.UseColorMasks = masks;
-
-                    try
+                    using (TestRasterTuning.Change(t => t with { UseColorMasks = masks }))
                     {
                         return render(context => DrawRows(context, typeface, glyphs));
-                    }
-                    finally
-                    {
-                        ColorGlyphRunSplitter.UseColorMasks = previous;
                     }
                 }
 

@@ -413,7 +413,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 using var context = new PlatformDrawingContext(_impl, ownsImpl: false);
 
-                ColorGlyphRunSplitter.DrawColorGlyphs(context, run, brush);
+                ColorGlyphRunSplitter.DrawColorGlyphs(context, run, brush, GlyphRasterTuning.Of(_impl));
             }
 
             /// <summary>Draws a frame of <paramref name="run"/>: on a GPU, its pending sprites too.</summary>

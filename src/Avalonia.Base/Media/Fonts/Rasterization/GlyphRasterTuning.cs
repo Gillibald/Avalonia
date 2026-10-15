@@ -59,5 +59,32 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <c>null</c> measures it.
         /// </summary>
         public double? MotionNonTextMicroseconds { get; init; }
+
+        /// <summary>
+        /// Whether colour glyphs replay their cached recordings where the context supports
+        /// recordings; off draws every colour glyph from its live drawing. For A/B comparisons.
+        /// </summary>
+        public bool UseColorRecordings { get; init; } = true;
+
+        /// <summary>
+        /// Whether managed rasterization draws COLR v1 glyphs of upright runs from colour masks
+        /// (each paint graph rasterized once per scale and phase); off draws them as vectors on
+        /// every draw. For A/B comparisons.
+        /// </summary>
+        public bool UseColorMasks { get; init; } = true;
+
+        /// <summary>
+        /// Whether hardware GPU contexts draw the colour glyph content of managed runs from colour
+        /// atlas pages, batched across runs; off draws upright runs from their run masks and cuts
+        /// transformed runs at their v1 glyphs. For A/B comparisons.
+        /// </summary>
+        public bool UseColorAtlas { get; init; } = true;
+
+        /// <summary>
+        /// The instruction set direct blends into raster surfaces use; <c>null</c> takes the best
+        /// the machine supports (<see cref="GlyphMaskBlitter.DetectedPath"/>). Tests and benchmarks
+        /// lower it to cover every path.
+        /// </summary>
+        public GlyphBlitPath? BlitPath { get; init; }
     }
 }

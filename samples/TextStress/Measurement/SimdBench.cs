@@ -268,34 +268,23 @@ namespace TextStress.Measurement
 
         private static unsafe void BlitAll(GlyphBlitPath path, List<Mask> masks, uint[] pixels, int repeat)
         {
-            var previous = GlyphMaskBlitter.Path;
-
-            GlyphMaskBlitter.Path = path;
-
-            try
+            fixed (uint* p = pixels)
             {
-                fixed (uint* p = pixels)
+                var target = new GlyphBlitTarget((IntPtr)p, SurfaceSize * 4, SurfaceSize, SurfaceSize,
+                    new PixelRect(0, 0, SurfaceSize, SurfaceSize), isRgba: true, GlyphBlitArithmetic.Rounded, path);
+
+                for (var r = 0; r < repeat; r++)
                 {
-                    var target = new GlyphBlitTarget((IntPtr)p, SurfaceSize * 4, SurfaceSize, SurfaceSize,
-                        new PixelRect(0, 0, SurfaceSize, SurfaceSize), isRgba: true, GlyphBlitArithmetic.Rounded);
-
-                    for (var r = 0; r < repeat; r++)
+                    for (var i = 0; i < masks.Count; i++)
                     {
-                        for (var i = 0; i < masks.Count; i++)
-                        {
-                            var mask = masks[i];
+                        var mask = masks[i];
 
-                            // A translucent dark tint, so the source table and the destination share
-                            // both take part.
-                            GlyphMaskBlitter.Blend(target, mask.Scalar, mask.Width, mask.Height, i % 7, i % 5,
-                                0xC0202020u, null);
-                        }
+                        // A translucent dark tint, so the source table and the destination share
+                        // both take part.
+                        GlyphMaskBlitter.Blend(target, mask.Scalar, mask.Width, mask.Height, i % 7, i % 5,
+                            0xC0202020u, null);
                     }
                 }
-            }
-            finally
-            {
-                GlyphMaskBlitter.Path = previous;
             }
         }
 

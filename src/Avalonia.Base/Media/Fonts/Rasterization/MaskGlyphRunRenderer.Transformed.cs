@@ -235,9 +235,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         private static bool DrawsTransformedColorMasks(IDrawingContextImpl context, in GlyphTargetSurface surface,
             in Matrix transform)
-            => ColorGlyphRunSplitter.UseColorMasks &&
+            => GlyphRasterTuning.Of(context) is { UseColorMasks: true } tuning &&
                (surface.RasterTarget == GlyphRasterTarget.Raster && context is ITransformedGlyphContext ||
-                ColorGlyphRunSplitter.UseColorAtlas && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
+                tuning.UseColorAtlas && surface.RasterTarget == GlyphRasterTarget.HardwareGpu &&
                 context is ITransformedGlyphContext { ColorAtlas: not null }) &&
                !(transform.M12 == 0 && transform.M21 == 0 && transform.M11 > 0 && transform.M22 > 0 &&
                  Math.Abs(transform.M11 - transform.M22) <= transform.M11 * 0.001);

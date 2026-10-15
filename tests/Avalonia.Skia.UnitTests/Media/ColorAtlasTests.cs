@@ -350,16 +350,7 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        internal static IDisposable SwitchColorAtlasOff() => new ColorAtlasSwitch();
-
-        private sealed class ColorAtlasSwitch : IDisposable
-        {
-            private readonly bool _previous = ColorGlyphRunSplitter.UseColorAtlas;
-
-            public ColorAtlasSwitch() => ColorGlyphRunSplitter.UseColorAtlas = false;
-
-            public void Dispose() => ColorGlyphRunSplitter.UseColorAtlas = _previous;
-        }
+        internal static IDisposable SwitchColorAtlasOff() => TestRasterTuning.Change(t => t with { UseColorAtlas = false });
 
         private readonly record struct Counts(long AtlasDraws, long Placements, long Rasterizations, long VectorDraws);
 

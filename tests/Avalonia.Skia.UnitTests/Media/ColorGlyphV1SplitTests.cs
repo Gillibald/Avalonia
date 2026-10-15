@@ -25,8 +25,8 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The record-time split is the vector path; under managed rasterization it only
             // splits v1 glyphs with colour masks switched off.
-            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = CreateEnvironment();
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             var typeface = CreateV1Typeface(out var v1Glyph);
 
             var glyphA = typeface.CharacterToGlyphMap['A'];
@@ -73,8 +73,8 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The record-time split is the vector path; under managed rasterization it only
             // splits v1 glyphs with colour masks switched off.
-            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = CreateEnvironment();
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             var typeface = CreateV1Typeface(out var v1Glyph, paletteIndex: 0xFFFF);
 
             var green = RenderSingle(typeface, v1Glyph, Brushes.Green);
@@ -177,8 +177,8 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The record-time split is the vector path; under managed rasterization it only
             // splits v1 glyphs with colour masks switched off.
-            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             using var scope = CreateEnvironment();
+            using var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
             var typeface = CreateV0AndV1Typeface(out var glyph);
 
             var run = CreateRun(typeface, new[] { glyph });

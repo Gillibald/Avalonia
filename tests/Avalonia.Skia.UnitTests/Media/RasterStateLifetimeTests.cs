@@ -55,38 +55,28 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Colour_Glyph_And_Blit_Path_Switches_Do_Not_Outlive_Application()
         {
-            var recordings = ColorGlyphRunSplitter.UseRecordings;
-            var masks = ColorGlyphRunSplitter.UseColorMasks;
-            var atlas = ColorGlyphRunSplitter.UseColorAtlas;
-            var path = GlyphMaskBlitter.Path;
-
-            try
+            using (TextTestApplication.Enter())
             {
-                using (TextTestApplication.Enter())
+                FailingSetup(() => TestRasterTuning.Set(t => t with
                 {
-                    FailingSetup(() =>
-                    {
-                        ColorGlyphRunSplitter.UseRecordings = false;
-                        ColorGlyphRunSplitter.UseColorMasks = false;
-                        ColorGlyphRunSplitter.UseColorAtlas = false;
-                        GlyphMaskBlitter.Path = GlyphBlitPath.Scalar;
-                    });
-                }
-
-                using (TextTestApplication.Enter())
-                {
-                    Assert.True(ColorGlyphRunSplitter.UseRecordings);
-                    Assert.True(ColorGlyphRunSplitter.UseColorMasks);
-                    Assert.True(ColorGlyphRunSplitter.UseColorAtlas);
-                    Assert.Equal(path, GlyphMaskBlitter.Path);
-                }
+                    UseColorRecordings = false,
+                    UseColorMasks = false,
+                    UseColorAtlas = false,
+                    BlitPath = GlyphBlitPath.Scalar,
+                }));
             }
-            finally
+
+            using (TextTestApplication.Enter())
             {
-                ColorGlyphRunSplitter.UseRecordings = recordings;
-                ColorGlyphRunSplitter.UseColorMasks = masks;
-                ColorGlyphRunSplitter.UseColorAtlas = atlas;
-                GlyphMaskBlitter.Path = path;
+                using var surface = SKSurface.Create(new SKImageInfo(8, 8));
+                using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
+                var tuning = ((IGlyphTargetContext)context).RasterTuning;
+
+                Assert.True(tuning.UseColorRecordings);
+                Assert.True(tuning.UseColorMasks);
+                Assert.True(tuning.UseColorAtlas);
+                Assert.True(((ITransformedGlyphContext)context).TryGetBlitTarget(out var target));
+                Assert.Equal(GlyphMaskBlitter.DetectedPath, target.Path);
             }
         }
 

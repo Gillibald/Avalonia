@@ -78,7 +78,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Paths))]
         public void The_Blend_Equals_The_Compose_Arithmetic_For_Every_Coverage_And_Destination(string path)
         {
-            using var restore = UsePath(path);
+            var blitPath = Enum.Parse<GlyphBlitPath>(path);
 
             // Every (coverage, destination byte) pair, the destination byte repeated into all
             // four channels so each channel sees it; alpha is never below a colour channel in
@@ -109,7 +109,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     RunMaskComposer.ComposeTinted(mask, 0, 0, tint, expected, 256, 256, coverageTable: table);
 
-                    var actual = Blit(start, 256, 256, mask, 0, 0, tint, table, new PixelRect(0, 0, 256, 256));
+                    var actual = Blit(start, 256, 256, mask, 0, 0, tint, table, new PixelRect(0, 0, 256, 256), path: blitPath);
 
                     AssertEqual(expected, actual, 256, $"{path} {color} table {table is not null}");
                 }
@@ -120,7 +120,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Paths))]
         public void Masks_With_Solid_And_Empty_Spans_Blend_As_The_Compose_At_Every_Width_And_Alignment(string path)
         {
-            using var restore = UsePath(path);
+            var blitPath = Enum.Parse<GlyphBlitPath>(path);
 
             // Rows of every width up to 100 pixels mixing spans of no coverage, full coverage
             // and partial coverage at every alignment, the shape of large glyph masks.
@@ -180,7 +180,7 @@ namespace Avalonia.Skia.UnitTests.Media
                             coverageTable: table);
 
                         var actual = Blit(start, surfaceWidth, surfaceHeight, mask, x, 1, tint, table,
-                            new PixelRect(0, 0, surfaceWidth, surfaceHeight));
+                            new PixelRect(0, 0, surfaceWidth, surfaceHeight), path: blitPath);
 
                         AssertEqual(expected, actual, surfaceWidth,
                             $"{path} {color} table {table is not null} width {mask.Width}");
@@ -193,7 +193,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Paths))]
         public void The_Blend_Clips_To_The_Clip_Rectangle_And_The_Surface(string path)
         {
-            using var restore = UsePath(path);
+            var blitPath = Enum.Parse<GlyphBlitPath>(path);
 
             var random = new Random(42);
             const int width = 61;
@@ -224,7 +224,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     coverageTable: table);
                 RestoreOutside(expected, start, width, height, clip);
 
-                var actual = Blit(start, width, height, mask, x, y, tint, table, clip);
+                var actual = Blit(start, width, height, mask, x, y, tint, table, clip, path: blitPath);
 
                 AssertEqual(expected, actual, width, $"{path} trial {trial}");
             }
@@ -234,7 +234,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Paths))]
         public void A_Mask_With_Uncovered_Margins_Blends_As_The_Compose_Of_The_Whole_Mask(string path)
         {
-            using var restore = UsePath(path);
+            var blitPath = Enum.Parse<GlyphBlitPath>(path);
 
             // Transformed glyph masks bound the transformed corners of the ink box, so under
             // rotation their margins hold no coverage; the blend skips them, which must leave
@@ -275,7 +275,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 RunMaskComposer.ComposeTinted(mask, x, y, tint, expected, width, height, coverageTable: table);
                 RestoreOutside(expected, start, width, height, clip);
 
-                var actual = Blit(start, width, height, mask, x, y, tint, table, clip);
+                var actual = Blit(start, width, height, mask, x, y, tint, table, clip, path: blitPath);
 
                 AssertEqual(expected, actual, width, $"{path} trial {trial}");
             }
@@ -285,7 +285,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Paths))]
         public void An_Rgba_Surface_Gets_The_Same_Blend_With_Red_And_Blue_Swapped(string path)
         {
-            using var restore = UsePath(path);
+            var blitPath = Enum.Parse<GlyphBlitPath>(path);
 
             var random = new Random(5);
             var mask = RandomMask(random, 33, 21);
@@ -302,7 +302,8 @@ namespace Avalonia.Skia.UnitTests.Media
             RunMaskComposer.ComposeTinted(mask, 3 - mask.Left, 4 - mask.Top, tint, expected, 40, 30, coverageTable: table);
 
             var swapped = SwapRedBlue(start);
-            var actual = Blit(swapped, 40, 30, mask, 3, 4, tint, table, new PixelRect(0, 0, 40, 30), isRgba: true);
+            var actual = Blit(swapped, 40, 30, mask, 3, 4, tint, table, new PixelRect(0, 0, 40, 30), isRgba: true,
+                path: blitPath);
 
             AssertEqual(expected, SwapRedBlue(actual), 40, $"{path}");
         }
@@ -312,8 +313,9 @@ namespace Avalonia.Skia.UnitTests.Media
         public void A_Transformed_Run_On_A_Raster_Surface_Equals_The_Run_Mask_Compose(string path, string label,
             Matrix transform)
         {
-            using var restore = UsePath(path);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            TestRasterTuning.Set(t => t with { BlitPath = Enum.Parse<GlyphBlitPath>(path) });
 
             // Squeezed advances make neighbouring glyphs overlap.
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 16, new Point(8.37, 32.61), advanceScale: 0.8);
@@ -339,8 +341,10 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Paths))]
         public void A_Run_Crossing_The_Surface_Edges_And_A_Clip_Equals_The_Clipped_Compose(string path)
         {
-            using var restore = UsePath(path);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            TestRasterTuning.Set(t => t with { BlitPath = Enum.Parse<GlyphBlitPath>(path) });
+
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 30, new Point(-12.3, 20.4), advanceScale: 0.85);
 
             // A small surface that the rotated run leaves on the left, top and right, and a clip
@@ -715,13 +719,13 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static unsafe byte[] Blit(byte[] start, int width, int height, GlyphMask mask, int x, int y, uint tint,
-            byte[]? table, PixelRect clip, bool isRgba = false)
+            byte[]? table, PixelRect clip, bool isRgba = false, GlyphBlitPath? path = null)
         {
             var pixels = (byte[])start.Clone();
 
             fixed (byte* p = pixels)
             {
-                var target = new GlyphBlitTarget((IntPtr)p, width * 4, width, height, clip, isRgba);
+                var target = new GlyphBlitTarget((IntPtr)p, width * 4, width, height, clip, isRgba, path: path);
 
                 GlyphMaskBlitter.Blend(target, mask, x, y, tint, table);
             }
@@ -800,24 +804,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Fail($"{label}: first difference at ({pixel % width}, {pixel / width}) channel {index % 4}: " +
                             $"expected {expected[index]}, actual {actual[index]}");
             }
-        }
-
-        private static IDisposable UsePath(string path)
-        {
-            var previous = GlyphMaskBlitter.Path;
-
-            GlyphMaskBlitter.Path = Enum.Parse<GlyphBlitPath>(path);
-
-            return new RestorePath(previous);
-        }
-
-        private sealed class RestorePath : IDisposable
-        {
-            private readonly GlyphBlitPath _previous;
-
-            public RestorePath(GlyphBlitPath previous) => _previous = previous;
-
-            public void Dispose() => GlyphMaskBlitter.Path = _previous;
         }
     }
 }

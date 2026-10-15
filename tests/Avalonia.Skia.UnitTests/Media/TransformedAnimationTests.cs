@@ -785,6 +785,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = cost });
             }
+
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
 
             static Matrix Zoom(double scale) => Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5);

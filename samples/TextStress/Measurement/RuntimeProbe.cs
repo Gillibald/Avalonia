@@ -41,7 +41,7 @@ namespace TextStress.Measurement
                 ("raster_portable_min_cells",
                     GlyphRasterizer.GetPortableMinimumCells(RuntimeInformation.ProcessArchitecture,
                         GlyphRasterizer.RunsOnMono).ToString()),
-                ("blit_path", GlyphMaskBlitter.Path.ToString()),
+                ("blit_path", (GlyphRasterTuning.Current.BlitPath ?? GlyphMaskBlitter.DetectedPath).ToString()),
                 ("blit_arithmetic", BlitArithmetic())
             };
 

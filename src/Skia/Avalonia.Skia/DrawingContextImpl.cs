@@ -431,8 +431,14 @@ namespace Avalonia.Skia
 
         TextRasterThreadState IGlyphTargetContext.RasterState => RasterState;
 
-        // Read on first use, so tuning bound after the context was created and before it draws text applies.
-        GlyphRasterTuning IGlyphTargetContext.RasterTuning => _rasterTuning ??= GlyphRasterTuning.Current;
+        GlyphRasterTuning IGlyphTargetContext.RasterTuning => RasterTuning;
+
+        /// <inheritdoc cref="IGlyphTargetContext.RasterTuning"/>
+        /// <remarks>
+        /// Read on first use, so tuning bound after the context was created and before it draws text
+        /// applies.
+        /// </remarks>
+        internal GlyphRasterTuning RasterTuning => _rasterTuning ??= GlyphRasterTuning.Current;
 
         /// <inheritdoc cref="IGlyphTargetContext.RasterState"/>
         /// <remarks>
@@ -1180,7 +1186,7 @@ namespace Avalonia.Skia
                     {
                         using var colorContext = new PlatformDrawingContext(this, ownsImpl: false);
 
-                        ColorGlyphRunSplitter.DrawColorGlyphs(colorContext, managedRun, foreground);
+                        ColorGlyphRunSplitter.DrawColorGlyphs(colorContext, managedRun, foreground, RasterTuning);
                     }
 
                     return;
@@ -1202,7 +1208,7 @@ namespace Avalonia.Skia
                 {
                     using var colorContext = new PlatformDrawingContext(this, ownsImpl: false);
 
-                    ColorGlyphRunSplitter.DrawColorGlyphs(colorContext, managedRun, foreground);
+                    ColorGlyphRunSplitter.DrawColorGlyphs(colorContext, managedRun, foreground, RasterTuning);
                 }
 
                 if (TextTierDiagnostics.CountTiers)

@@ -268,23 +268,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
 
-            var previous = GlyphMaskBlitter.Path;
-
-            try
+            fixed (uint* pixels = surface)
             {
-                GlyphMaskBlitter.Path = path;
+                var target = new GlyphBlitTarget((IntPtr)pixels, surfaceWidth * 4, surfaceWidth, surfaceHeight, clip,
+                    rgba, arithmetic, path);
 
-                fixed (uint* pixels = surface)
-                {
-                    var target = new GlyphBlitTarget((IntPtr)pixels, surfaceWidth * 4, surfaceWidth, surfaceHeight, clip,
-                        rgba, arithmetic);
-
-                    LcdMaskBlitter.Blend(target, multiply, plus, width, height, x, y);
-                }
-            }
-            finally
-            {
-                GlyphMaskBlitter.Path = previous;
+                LcdMaskBlitter.Blend(target, multiply, plus, width, height, x, y);
             }
 
             for (var i = 0; i < surface.Length; i++)
