@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Media.Fonts;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts
@@ -217,6 +218,34 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
             // The cache keeps nothing alive on its own.
             Assert.Empty(GetCacheEntries(fixture));
+        }
+
+        [Fact]
+        public void File_Data_Of_One_Application_Is_Out_Of_Reach_Of_The_Next()
+        {
+            using var fixture = new FontFileFixture();
+
+            var path = fixture.Write("inter.ttf", FontFileFixture.ReadAsset(FontFileFixture.InterRegularUri));
+            SfntFace? face;
+
+            using (UnitTestApplication.Start())
+            {
+                // A face the application never released.
+                Assert.True(SfntFace.TryLoad(path, 0, out face));
+                Assert.Single(GetCacheEntries(fixture));
+            }
+
+            try
+            {
+                using (UnitTestApplication.Start())
+                {
+                    Assert.Empty(GetCacheEntries(fixture));
+                }
+            }
+            finally
+            {
+                face.Dispose();
+            }
         }
 
         private static List<FontFileCacheEntry> GetCacheEntries(FontFileFixture fixture) =>
