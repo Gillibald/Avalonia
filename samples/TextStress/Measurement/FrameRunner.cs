@@ -71,7 +71,7 @@ namespace TextStress.Measurement
             _compositor = ElementComposition.GetElementVisual(_topLevel)?.Compositor
                           ?? throw new InvalidOperationException("The top level has no compositor.");
             _compositor.AfterCommit += OnAfterCommit;
-            TextTierDiagnostics.CountTiers = true;
+            AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().CountTextTiers = true;
 
             var scaling = _topLevel.RenderScaling;
             var environmentWritten = false;
@@ -441,7 +441,8 @@ namespace TextStress.Measurement
 
             yield return ("tag", _options.Tag);
             yield return ("label", _options.GetString("label", ""));
-            yield return ("atlas_cpu_copy", GlyphMaskAtlas.ResidentPages ? "off" : "on");
+            yield return ("atlas_cpu_copy",
+                AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().ResidentGlyphPages ? "off" : "on");
             yield return ("progress", _options.GetString("progress", ""));
             yield return ("eta", _options.GetString("eta", ""));
             yield return ("build", SetupLabel.Build);
@@ -480,7 +481,8 @@ namespace TextStress.Measurement
                                  ? FormattableString.Invariant($";pending-batches={_options.PendingBatches}")
                                  : ""));
             yield return ("pending_batches",
-                DrawingContextImpl.MaxPendingBatches.ToString(CultureInfo.InvariantCulture));
+                AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().MaxPendingGlyphBatches
+                    .ToString(CultureInfo.InvariantCulture));
             yield return ("prewarm_pass", _options.PrewarmPass.ToString());
             yield return ("fonts", string.Join(", ", fonts));
             yield return ("mode", _options.Mode);

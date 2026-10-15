@@ -176,9 +176,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var run = CreateRun(typeface, v1Glyph, "AHB", replaceV1: false);
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
-            var counting = TextTierDiagnostics.CountTiers;
-
-            TextTierDiagnostics.CountTiers = true;
+            AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
             TextTierDiagnostics.ResetCounters();
 
             try
@@ -193,7 +191,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                TextTierDiagnostics.CountTiers = counting;
                 TextTierDiagnostics.ResetCounters();
             }
         }
@@ -206,9 +203,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var outlines = CreateRun(typeface, v1Glyph, pattern, replaceV1: true);
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
-            var counting = TextTierDiagnostics.CountTiers;
-
-            TextTierDiagnostics.CountTiers = true;
+            AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
             TextTierDiagnostics.ResetCounters();
 
             byte[] actual;
@@ -222,7 +217,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                TextTierDiagnostics.CountTiers = counting;
                 TextTierDiagnostics.ResetCounters();
             }
 

@@ -83,7 +83,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 placements[i] = SKRotationScaleMatrix.CreateTranslation(i * 9, 0);
             }
 
-            return new DrawingContextImpl.SkiaGlyphAtlasBatch(sources, placements, null);
+            return new DrawingContextImpl.SkiaGlyphAtlasBatch(sources, placements, null,
+                SkiaOptions.DefaultStretchVerticesMinSprites);
         }
     }
 }

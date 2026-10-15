@@ -22,11 +22,17 @@ namespace Avalonia.Skia
     {
         private readonly long? _maxResourceBytes;
         private readonly bool? _useStencilBuffers;
+        private readonly bool _residentGlyphPages;
 
-        public PlatformRenderInterface(long? maxResourceBytes = null, bool? useStencilBuffers = null)
+        /// <param name="maxResourceBytes">The GPU resource cache limit (<see cref="SkiaOptions.MaxGpuResourceSizeBytes"/>).</param>
+        /// <param name="useStencilBuffers">See <see cref="SkiaOptions.UseStencilBuffers"/>.</param>
+        /// <param name="residentGlyphPages">See <see cref="SkiaOptions.ResidentGlyphPages"/>.</param>
+        public PlatformRenderInterface(long? maxResourceBytes = null, bool? useStencilBuffers = null,
+            bool residentGlyphPages = true)
         {
             _maxResourceBytes = maxResourceBytes;
             _useStencilBuffers = useStencilBuffers;
+            _residentGlyphPages = residentGlyphPages;
             DefaultPixelFormat = SKImageInfo.PlatformColorType.ToPixelFormat();
         }
 
@@ -38,11 +44,12 @@ namespace Avalonia.Skia
             if (graphicsContext is ISkiaGpu skiaGpu)
                 return new SkiaContext(skiaGpu);
             if (graphicsContext is IGlContext gl)
-                return new SkiaContext(new GlSkiaGpu(gl, _maxResourceBytes, _useStencilBuffers));
+                return new SkiaContext(new GlSkiaGpu(gl, _maxResourceBytes, _useStencilBuffers, _residentGlyphPages));
             if (graphicsContext is IMetalDevice metal)
-                return new SkiaContext(new SkiaMetalGpu(metal, _maxResourceBytes, _useStencilBuffers));
+                return new SkiaContext(new SkiaMetalGpu(metal, _maxResourceBytes, _useStencilBuffers, _residentGlyphPages));
             if (graphicsContext is IVulkanPlatformGraphicsContext vulkanContext)
-                return new SkiaContext(new VulkanSkiaGpu(vulkanContext, _maxResourceBytes, _useStencilBuffers));
+                return new SkiaContext(new VulkanSkiaGpu(vulkanContext, _maxResourceBytes, _useStencilBuffers,
+                    _residentGlyphPages));
             throw new ArgumentException("Graphics context of type is not supported");
         }
 

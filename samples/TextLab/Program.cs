@@ -27,6 +27,8 @@ namespace TextLab
                 // every platform rather than the platform default; the raster selector and the A/B
                 // view flip this registered instance at runtime.
                 .With(new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Managed })
+                // Registered so the tier overlay and counters can be switched for the next frames.
+                .With(new SkiaOptions())
 #if DEBUG
                 .WithDeveloperTools()
 #endif

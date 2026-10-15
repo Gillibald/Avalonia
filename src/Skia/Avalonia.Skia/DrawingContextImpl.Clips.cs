@@ -1028,7 +1028,7 @@ namespace Avalonia.Skia
                 // from their arrays either way; disposing them only releases the vertices kept
                 // for a batch that repeats, and no later frame draws them to build new ones.
                 _trimmed?.Dispose();
-                _trimmed = new SkiaGlyphAtlasBatch(sources, placements, null);
+                _trimmed = new SkiaGlyphAtlasBatch(sources, placements, null, _stretchVerticesMinSprites);
                 _trimmedTo = visible;
 
                 return _trimmed;

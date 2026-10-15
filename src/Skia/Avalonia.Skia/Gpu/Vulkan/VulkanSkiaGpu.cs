@@ -15,7 +15,8 @@ internal class VulkanSkiaGpu : ISkiaGpu
     public IVulkanPlatformGraphicsContext Vulkan { get; private set; }
     public GRContext GrContext { get; private set; }
 
-    public VulkanSkiaGpu(IVulkanPlatformGraphicsContext vulkan, long? maxResourceBytes, bool? useStencilBuffers)
+    public VulkanSkiaGpu(IVulkanPlatformGraphicsContext vulkan, long? maxResourceBytes, bool? useStencilBuffers,
+        bool residentGlyphPages = true)
     {
         Vulkan = vulkan;
         var device = vulkan.Device;
@@ -60,7 +61,7 @@ internal class VulkanSkiaGpu : ISkiaGpu
 
             SkiaGpuRasterizer.Register(GrContext, IsSoftwareDevice(vulkan));
             _updatableTextures = VulkanUpdatableTextureFeature.TryCreate(vulkan, GrContext);
-            SkiaUpdatableTextures.Register(GrContext, _updatableTextures);
+            SkiaUpdatableTextures.Register(GrContext, _updatableTextures, residentPages: residentGlyphPages);
         }
 
         if (vulkan.TryGetFeature<IVulkanContextExternalObjectsFeature>(out var externalObjects))

@@ -36,7 +36,7 @@ namespace GlyphRasterDemo
         {
             // The overlay badges appear on freshly built draws; rebuilding the page is the
             // demo's standard refresh.
-            Avalonia.Skia.TextTierDiagnostics.TintTiers = ((CheckBox)sender!).IsChecked == true;
+            AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().TintTextTiers = ((CheckBox)sender!).IsChecked == true;
             Reload();
         }
 

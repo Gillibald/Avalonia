@@ -16,7 +16,8 @@ internal class SkiaMetalGpu : ISkiaGpu
 
     internal GRContext GrContext => _context ?? throw new ObjectDisposedException(nameof(SkiaMetalGpu));
 
-    public SkiaMetalGpu(IMetalDevice device, long? maxResourceBytes, bool? useStencilBuffers = null)
+    public SkiaMetalGpu(IMetalDevice device, long? maxResourceBytes, bool? useStencilBuffers = null,
+        bool residentGlyphPages = true)
     {
         var avoidStencilBuffers = SkiaOptions.ShouldAvoidStencilBuffers(useStencilBuffers);
         _context = GRContext.CreateMetal(
@@ -29,7 +30,7 @@ internal class SkiaMetalGpu : ISkiaGpu
         if (maxResourceBytes.HasValue)
             _context.SetResourceCacheLimit(maxResourceBytes.Value);
         _updatableTextures = MetalUpdatableTextureFeature.TryCreate(_context, device.Device);
-        SkiaUpdatableTextures.Register(_context, _updatableTextures);
+        SkiaUpdatableTextures.Register(_context, _updatableTextures, residentPages: residentGlyphPages);
     }
 
     public void Dispose()

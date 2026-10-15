@@ -175,7 +175,7 @@ namespace Avalonia.Skia
                 image = SKImage.FromPixelCopy(info, standalone.Alpha, standalone.Width);
             }
 
-            return new SkiaGlyphAtlasBatch(sources, placements, image);
+            return new SkiaGlyphAtlasBatch(sources, placements, image, StretchVerticesMinSprites);
         }
 
         void ITransformedGlyphContext.DrawAtlasBatch(GlyphAtlasBatch batch, in Matrix transform, uint tintArgb,
@@ -984,13 +984,27 @@ namespace Avalonia.Skia
 
             private static long s_nextId;
 
-            public SkiaGlyphAtlasBatch(SKRect[] sources, SKRotationScaleMatrix[] placements, SKImage? image)
+            private readonly int _stretchVerticesMinSprites;
+
+            /// <param name="sources">The sprites' source rectangles.</param>
+            /// <param name="placements">The sprites' placements.</param>
+            /// <param name="image">The batch's own image, for a standalone glyph.</param>
+            /// <param name="stretchVerticesMinSprites">
+            /// The sprites from which a stretched draw uses kept vertices
+            /// (<see cref="DrawingContextImpl.StretchVerticesMinSprites"/>).
+            /// </param>
+            public SkiaGlyphAtlasBatch(SKRect[] sources, SKRotationScaleMatrix[] placements, SKImage? image,
+                int stretchVerticesMinSprites)
             {
                 Sources = sources;
                 Placements = placements;
                 Image = image;
+                _stretchVerticesMinSprites = stretchVerticesMinSprites;
                 Id = System.Threading.Interlocked.Increment(ref s_nextId);
             }
+
+            /// <summary>Whether a stretched draw of these sprites draws from kept vertices.</summary>
+            public bool DrawsStretchedFromVertices => Sources.Length >= _stretchVerticesMinSprites;
 
             /// <summary>Tells these sprites apart from every other batch backend of the process.</summary>
             public long Id { get; }
@@ -1292,7 +1306,7 @@ namespace Avalonia.Skia
             /// <summary>
             /// The bytes the batch keeps: its sprite arrays, a standalone image, and once drawn
             /// stretched the vertices such a draw keeps when the batch has enough sprites for them
-            /// (<see cref="StretchVerticesMinSprites"/>). Vertices of merged batches
+            /// (<see cref="DrawsStretchedFromVertices"/>). Vertices of merged batches
             /// (<see cref="TryGetBatchVertices"/>) are left out: they belong to whichever runs
             /// a static frame merges.
             /// </summary>
@@ -1300,7 +1314,7 @@ namespace Avalonia.Skia
             {
                 var bytes = ObjectBytes + Sources.Length * 32L + (Image?.Info.BytesSize64 ?? 0);
 
-                if (stretched && Image is null && Sources.Length >= StretchVerticesMinSprites)
+                if (stretched && Image is null && DrawsStretchedFromVertices)
                 {
                     var parts = (Sources.Length + MaxSpritesPerVertices - 1) / MaxSpritesPerVertices;
 

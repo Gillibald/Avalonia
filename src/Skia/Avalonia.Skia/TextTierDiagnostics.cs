@@ -3,20 +3,15 @@ using SkiaSharp;
 namespace Avalonia.Skia
 {
     /// <summary>
-    /// Debug-only visualization of glyph run tier routing: when enabled, every drawn run gets
-    /// a translucent badge over its bounds colored by the tier that actually rendered it —
-    /// green for upright run masks, blue for transformed run masks, orange for the native
-    /// blob fallback. Off by default; flipped by diagnostic tooling (the GlyphRasterDemo
-    /// inspector), never by product code.
+    /// Debug-only visualization of glyph run tier routing: with <see cref="SkiaOptions.TintTextTiers"/>,
+    /// every drawn run gets a translucent badge over its bounds colored by the tier that actually
+    /// rendered it: green for upright run masks, blue for transformed run masks, orange for the
+    /// native blob fallback. With <see cref="SkiaOptions.CountTextTiers"/>, per-tier draw counters,
+    /// gated separately from the visual tint so a HUD can watch routing without repainting badges.
+    /// Off by default; set by diagnostic tooling, never by product code.
     /// </summary>
     internal static class TextTierDiagnostics
     {
-        public static volatile bool TintTiers;
-
-        /// <summary>Per-tier draw counters, gated separately from the visual tint so a HUD
-        /// can watch routing without repainting badges. Reset by the tooling.</summary>
-        public static volatile bool CountTiers;
-
         public static long MaskTierDraws;
         public static long TransformedMaskTierDraws;
         public static long BlobTierDraws;

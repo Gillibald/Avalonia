@@ -66,9 +66,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.SkipWhen(surface is null, "GPU surface creation failed.");
 
-            var counting = TextTierDiagnostics.CountTiers;
-
-            TextTierDiagnostics.CountTiers = true;
+            AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
             TextTierDiagnostics.ResetCounters();
 
             try
@@ -95,7 +93,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                TextTierDiagnostics.CountTiers = counting;
                 TextTierDiagnostics.ResetCounters();
             }
         }
@@ -120,9 +117,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, "Counted text", 24, new Point(8, 32));
 
-            var counting = TextTierDiagnostics.CountTiers;
-
-            TextTierDiagnostics.CountTiers = true;
+            AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
             TextTierDiagnostics.ResetCounters();
 
             try
@@ -136,7 +131,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                TextTierDiagnostics.CountTiers = counting;
                 TextTierDiagnostics.ResetCounters();
             }
         }

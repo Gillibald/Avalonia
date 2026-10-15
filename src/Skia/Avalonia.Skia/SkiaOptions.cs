@@ -38,5 +38,59 @@ namespace Avalonia
         /// clipping speed (see issue #21760), so they must never be enabled implicitly.
         /// </summary>
         internal static bool ShouldAvoidStencilBuffers(bool? useStencilBuffers) => useStencilBuffers != true;
+
+        /// <summary>
+        /// Pending glyph batches a drawing context keeps at once, each of one atlas page in one colour
+        /// or several; past this many, all of them are drawn rather than searched. Profiling tools
+        /// change it to measure how the draw count depends on it; a context reads it when it is
+        /// created.
+        /// </summary>
+        internal int MaxPendingGlyphBatches
+        {
+            get => _maxPendingGlyphBatches;
+            set => _maxPendingGlyphBatches = value >= 1
+                ? value
+                : throw new ArgumentOutOfRangeException(nameof(value), value, "At least one batch must be pending.");
+        }
+
+        private int _maxPendingGlyphBatches = DefaultMaxPendingGlyphBatches;
+
+        internal const int DefaultMaxPendingGlyphBatches = 32;
+
+        /// <summary>
+        /// The sprites from which a stretched glyph run draws from vertices kept across frames
+        /// rather than an atlas draw that builds its quads every frame. Profiling tools change it;
+        /// a context reads it when it is created.
+        /// </summary>
+        internal int StretchVerticesMinSprites
+        {
+            get => _stretchVerticesMinSprites;
+            set => _stretchVerticesMinSprites = value >= 0
+                ? value
+                : throw new ArgumentOutOfRangeException(nameof(value), value, "The sprite count cannot be negative.");
+        }
+
+        private int _stretchVerticesMinSprites = DefaultStretchVerticesMinSprites;
+
+        internal const int DefaultStretchVerticesMinSprites = 4;
+
+        /// <summary>
+        /// Whether the glyph atlases of GPU contexts that update page textures in place keep no CPU
+        /// copy of their pages; on by default, off for A/B measurements. Read when the render
+        /// interface is created.
+        /// </summary>
+        internal bool ResidentGlyphPages { get; set; } = true;
+
+        /// <summary>
+        /// Whether every drawn glyph run gets a translucent badge over its bounds coloured by the
+        /// tier that rendered it, for diagnostic tooling. A context reads it when it is created.
+        /// </summary>
+        internal bool TintTextTiers { get; set; }
+
+        /// <summary>
+        /// Whether drawing contexts count the glyph runs each tier renders, for diagnostic tooling.
+        /// A context reads it when it is created.
+        /// </summary>
+        internal bool CountTextTiers { get; set; }
     }
 }

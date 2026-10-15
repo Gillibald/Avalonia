@@ -7,27 +7,16 @@ namespace Avalonia.Skia
 {
     internal partial class DrawingContextImpl
     {
-        private const int DefaultMaxPendingBatches = 32;
-
-        private static int s_maxPendingBatches = DefaultMaxPendingBatches;
-
         /// <summary>
-        /// Pending batches at once, each of one page in one colour or several. On contexts that
-        /// do not update atlas pages in place every typeface has its own atlas, so a list whose
-        /// rows mix a dozen or two typefaces keeps that many batches pending; past this many, all of them are drawn rather than searched.
-        /// A run joining a batch compares its key with every pending batch and its bounds with
-        /// each one's union, so this bounds that work per run alongside
+        /// Pending batches at once, each of one page in one colour or several, from
+        /// <see cref="SkiaOptions.MaxPendingGlyphBatches"/>. On contexts that do not update atlas
+        /// pages in place every typeface has its own atlas, so a list whose rows mix a dozen or two
+        /// typefaces keeps that many batches pending; past this many, all of them are drawn rather
+        /// than searched. A run joining a batch compares its key with every pending batch and its
+        /// bounds with each one's union, so this bounds that work per run alongside
         /// <see cref="MaxPendingRuns"/>.
-        /// Profiling tools change it to measure how the draw count depends on it; a context takes
-        /// the value when it begins its first batch.
         /// </summary>
-        internal static int MaxPendingBatches
-        {
-            get => s_maxPendingBatches;
-            set => s_maxPendingBatches = value >= 1
-                ? value
-                : throw new ArgumentOutOfRangeException(nameof(value), value, "At least one batch must be pending.");
-        }
+        internal int MaxPendingBatches { get; }
 
         // Runs pending in the other batches before a run joins one: the run is checked against
         // every run of the others, so this bounds that work per run. A batch's own runs are not
@@ -431,11 +420,11 @@ namespace Avalonia.Skia
             _pendingRunCount = 0;
         }
 
-        private static PendingGlyphBatch[] RentPendingBatchSlots()
+        private PendingGlyphBatch[] RentPendingBatchSlots()
         {
             while (t_pendingBatchSlots is { Count: > 0 } pool)
             {
-                // Slots made before a profiling tool changed the limit are dropped.
+                // Slots of another limit, from a context of another application, are dropped.
                 if (pool.Pop() is { } slots && slots.Length == MaxPendingBatches)
                 {
                     return slots;
@@ -666,25 +655,16 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
         }
 
-        private static int s_stretchVerticesMinSprites = DefaultStretchVerticesMinSprites;
-
-        private const int DefaultStretchVerticesMinSprites = 4;
-
         /// <summary>
         /// The sprites from which a stretched run draws from vertices kept across frames rather than
-        /// an atlas draw that builds its quads every frame. A zoom stretches each crossing's sprites
-        /// for many frames, and the kept vertices draw a dashboard's short labels about a sixth
-        /// faster and lines of a hundred CJK glyphs about a quarter faster on ANGLE and Vulkan; a
-        /// run of one to three glyphs saves too little to keep vertices for. Profiling tools change
-        /// it; a stretched batch reads it when it is drawn.
+        /// an atlas draw that builds its quads every frame, from
+        /// <see cref="SkiaOptions.StretchVerticesMinSprites"/>. A zoom stretches each crossing's
+        /// sprites for many frames, and the kept vertices draw a dashboard's short labels about a
+        /// sixth faster and lines of a hundred CJK glyphs about a quarter faster on ANGLE and Vulkan;
+        /// a run of one to three glyphs saves too little to keep vertices for. The sprite arrays of a
+        /// batch take it from the context that realized them.
         /// </summary>
-        internal static int StretchVerticesMinSprites
-        {
-            get => s_stretchVerticesMinSprites;
-            set => s_stretchVerticesMinSprites = value >= 0
-                ? value
-                : throw new ArgumentOutOfRangeException(nameof(value), value, "The sprite count cannot be negative.");
-        }
+        internal int StretchVerticesMinSprites { get; }
 
         /// <summary>
         /// Draws the deferred stretched runs of a batch, each as it would have drawn on its own,
@@ -728,7 +708,7 @@ namespace Avalonia.Skia
 
                 SetDeviceTransform(batch.GetStretch(i));
 
-                if (backend.Sources.Length >= s_stretchVerticesMinSprites)
+                if (backend.DrawsStretchedFromVertices)
                 {
                     var vertexPaint = image.BilinearPaint;
                     var built = !backend.HasStretchVertices;

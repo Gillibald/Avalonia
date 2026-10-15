@@ -21,26 +21,32 @@ namespace TextStress
                 Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Enabled = true;
             }
 
+            // The Skia options are bound in the application's locator, where the platform setup
+            // finds them; they reach every drawing context it creates.
+            var skiaOptions = new Avalonia.SkiaOptions();
+
             if (options.StretchVerticesMinSprites >= 0)
             {
-                Avalonia.Skia.DrawingContextImpl.StretchVerticesMinSprites = options.StretchVerticesMinSprites;
+                skiaOptions.StretchVerticesMinSprites = options.StretchVerticesMinSprites;
             }
 
             if (options.PendingBatches > 0)
             {
-                Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = options.PendingBatches;
+                skiaOptions.MaxPendingGlyphBatches = options.PendingBatches;
             }
 
             // Unset keeps the built-in choice.
             switch (options.GetString("atlas-cpu-copy", ""))
             {
                 case "on":
-                    Avalonia.Media.Fonts.Rasterization.GlyphMaskAtlas.ResidentPages = false;
+                    skiaOptions.ResidentGlyphPages = false;
                     break;
                 case "off":
-                    Avalonia.Media.Fonts.Rasterization.GlyphMaskAtlas.ResidentPages = true;
+                    skiaOptions.ResidentGlyphPages = true;
                     break;
             }
+
+            Avalonia.AvaloniaLocator.CurrentMutable.Bind<Avalonia.SkiaOptions>().ToConstant(skiaOptions);
 
             // A negative value keeps the built-in budget. The tuning is bound in the application's
             // locator, which the platform setup adds to and never replaces.

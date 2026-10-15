@@ -82,7 +82,7 @@ namespace TextLab
             _gammaBox.IsCheckedChanged += (_, _) => Rebuild();
             _bgrBox.IsCheckedChanged += (_, _) => Rebuild();
             _tintTiersBox.IsCheckedChanged += (_, _) =>
-                TextTierDiagnostics.TintTiers = _tintTiersBox.IsChecked == true;
+                AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().TintTextTiers = _tintTiersBox.IsChecked == true;
             _stepSlider.PropertyChanged += (_, e) =>
             {
                 if (e.Property == Avalonia.Controls.Primitives.RangeBase.ValueProperty && !_scrubbing)
@@ -131,8 +131,8 @@ namespace TextLab
 
         protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
         {
-            // Leaving the view must not leave the global overlay on.
-            TextTierDiagnostics.TintTiers = false;
+            // Leaving the view must not leave the application's overlay on.
+            AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().TintTextTiers = false;
             base.OnDetachedFromVisualTree(e);
         }
 

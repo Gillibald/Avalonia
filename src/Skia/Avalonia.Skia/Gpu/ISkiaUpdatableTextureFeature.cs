@@ -78,7 +78,7 @@ namespace Avalonia.Skia
         /// <param name="feature">The context's updatable textures, if it has them.</param>
         /// <param name="maskAtlas">
         /// The atlas of the context's glyph masks, or <c>null</c> for one made for the context,
-        /// whose pages keep no CPU copy when <see cref="GlyphMaskAtlas.ResidentPages"/> is on. The
+        /// whose pages keep no CPU copy when <paramref name="residentPages"/> is on. The
         /// atlas holds the masks of every typeface: its pages change whenever any typeface adds a
         /// glyph, which costs a context with updatable textures what was written only, so
         /// contexts without them keep an atlas per typeface. A resident page lives in a texture of
@@ -88,8 +88,12 @@ namespace Avalonia.Skia
         /// The atlas of the context's colour glyph content, premultiplied RGBA pages, by the same
         /// rule as <paramref name="maskAtlas"/>.
         /// </param>
+        /// <param name="residentPages">
+        /// Whether the atlases made for the context keep no CPU copy of their pages
+        /// (<see cref="SkiaOptions.ResidentGlyphPages"/>).
+        /// </param>
         public static void Register(GRContext context, ISkiaUpdatableTextureFeature? feature,
-            GlyphMaskAtlas? maskAtlas = null, GlyphMaskAtlas? colorAtlas = null)
+            GlyphMaskAtlas? maskAtlas = null, GlyphMaskAtlas? colorAtlas = null, bool residentPages = true)
         {
             Registration? previous;
 
@@ -103,11 +107,9 @@ namespace Avalonia.Skia
                 }
                 else
                 {
-                    var resident = GlyphMaskAtlas.ResidentPages;
-
                     s_registrations.AddOrUpdate(context, new Registration(feature,
-                        maskAtlas ?? new GlyphMaskAtlas(residentPages: resident),
-                        colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba, residentPages: resident),
+                        maskAtlas ?? new GlyphMaskAtlas(residentPages: residentPages),
+                        colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba, residentPages: residentPages),
                         ownsMaskAtlas: maskAtlas is null, ownsColorAtlas: colorAtlas is null));
                 }
             }

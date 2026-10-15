@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Transport;
@@ -54,7 +55,7 @@ namespace TextShowcase.Diagnostics
         public FrameHud(Compositor compositor)
         {
             _compositor = compositor;
-            TextTierDiagnostics.CountTiers = true;
+            CountTiers = true;
         }
 
         /// <summary>Raised on the UI thread once a frame's reading is complete.</summary>
@@ -65,8 +66,14 @@ namespace TextShowcase.Diagnostics
         /// <summary>Whether tier draws are counted; the counting costs one interlocked add per managed draw.</summary>
         public static bool CountTiers
         {
-            get => TextTierDiagnostics.CountTiers;
-            set => TextTierDiagnostics.CountTiers = value;
+            get => AvaloniaLocator.Current.GetService<SkiaOptions>()?.CountTextTiers ?? false;
+            set
+            {
+                if (AvaloniaLocator.Current.GetService<SkiaOptions>() is { } options)
+                {
+                    options.CountTextTiers = value;
+                }
+            }
         }
 
         /// <summary>

@@ -22,7 +22,8 @@ namespace Avalonia.Skia
         private readonly IExternalObjectsRenderInterfaceContextFeature? _externalObjectsFeature;
         private readonly GlUpdatableTextureFeature? _updatableTextures;
 
-        public GlSkiaGpu(IGlContext context, long? maxResourceBytes, bool? useStencilBuffers)
+        public GlSkiaGpu(IGlContext context, long? maxResourceBytes, bool? useStencilBuffers,
+            bool residentGlyphPages = true)
         {
             _glContext = context;
             using (_glContext.EnsureCurrent())
@@ -56,7 +57,7 @@ namespace Avalonia.Skia
                     SkiaVertexColorPrecision.IsExactOnGl(context.GlInterface.GetProcAddress));
                 _updatableTextures = GlUpdatableTextureFeature.TryCreate(_grContext, context.GlInterface.GetProcAddress,
                     context.Version.Major);
-                SkiaUpdatableTextures.Register(_grContext, _updatableTextures);
+                SkiaUpdatableTextures.Register(_grContext, _updatableTextures, residentPages: residentGlyphPages);
 
                 context.TryGetFeature<IGlContextExternalObjectsFeature>(out var externalObjects);
                 _externalObjectsFeature = new GlSkiaExternalObjectsFeature(this, externalObjects);

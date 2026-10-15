@@ -69,7 +69,9 @@ namespace TextShowcase.AndroidHost
             => base.CustomizeAppBuilder(builder)
                 .WithInterFont()
                 // Registered so the panes can scope the mode; the chrome keeps the platform default.
-                .With(new FontManagerOptions());
+                .With(new FontManagerOptions())
+                // Registered so the frame HUD can count tier draws in the next frames.
+                .With(new SkiaOptions());
     }
 
     public sealed class ShowcaseApp : Avalonia.Application

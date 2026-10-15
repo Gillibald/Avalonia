@@ -106,7 +106,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(HardwareContexts))]
         public void A_Page_Texture_Holds_The_Page_Pixels_Through_Updates_And_Growth(GpuBackend backend)
         {
-            // A page with a pixel array, as contexts register with GlyphMaskAtlas.ResidentPages off;
+            // A page with a pixel array, as contexts register with SkiaOptions.ResidentGlyphPages off;
             // resident pages are compared with such a page instead.
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false, new GlyphMaskAtlas());
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
@@ -230,7 +230,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.NotNull(gpu!.UpdatableTextures);
             Assert.NotNull(gpu.BackendMaskAtlas);
-            Assert.Equal(GlyphMaskAtlas.ResidentPages, gpu.BackendMaskAtlas!.Resident);
+            Assert.True(gpu.BackendMaskAtlas!.Resident);
         }
 
         [Fact]
@@ -242,7 +242,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.NotNull(gpu!.UpdatableTextures);
             Assert.NotNull(gpu.BackendMaskAtlas);
-            Assert.Equal(GlyphMaskAtlas.ResidentPages, gpu.BackendMaskAtlas!.Resident);
+            Assert.True(gpu.BackendMaskAtlas!.Resident);
         }
 
         public static IEnumerable<object[]> UpdatableTextureContexts()

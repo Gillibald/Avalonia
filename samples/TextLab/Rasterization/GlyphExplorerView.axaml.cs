@@ -96,7 +96,7 @@ namespace TextLab
             _suggestFontButton.Click += (_, _) => FontRequested?.Invoke("Segoe UI Emoji");
 
             _countTiersBox.IsCheckedChanged += (_, _) =>
-                Avalonia.Skia.TextTierDiagnostics.CountTiers = _countTiersBox.IsChecked == true;
+                AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().CountTextTiers = _countTiersBox.IsChecked == true;
             _resetCountersButton.Click += (_, _) =>
             {
                 Avalonia.Skia.TextTierDiagnostics.ResetCounters();

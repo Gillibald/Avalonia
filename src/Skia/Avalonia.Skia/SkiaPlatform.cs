@@ -17,7 +17,8 @@ namespace Avalonia.Skia
 
         public static void Initialize(SkiaOptions options)
         {
-            var renderInterface = new PlatformRenderInterface(options.MaxGpuResourceSizeBytes, options.UseStencilBuffers);
+            var renderInterface = new PlatformRenderInterface(options.MaxGpuResourceSizeBytes, options.UseStencilBuffers,
+                options.ResidentGlyphPages);
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(renderInterface)

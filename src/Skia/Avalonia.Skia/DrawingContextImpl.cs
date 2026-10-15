@@ -281,6 +281,11 @@ namespace Avalonia.Skia
                 _useOpacitySaveLayer = options.UseOpacitySaveLayer;
             }
 
+            MaxPendingBatches = options?.MaxPendingGlyphBatches ?? SkiaOptions.DefaultMaxPendingGlyphBatches;
+            StretchVerticesMinSprites = options?.StretchVerticesMinSprites ?? SkiaOptions.DefaultStretchVerticesMinSprites;
+            TintsTextTiers = options?.TintTextTiers ?? false;
+            CountsTextTiers = options?.CountTextTiers ?? false;
+
             _rasterServices = GlyphRasterServices.TryGetCurrent();
 
             // Last, so a constructor that throws leaves no frame open. A context drawn inside
@@ -441,6 +446,12 @@ namespace Avalonia.Skia
         internal GlyphRasterTuning RasterTuning => _rasterTuning ??= GlyphRasterTuning.Current;
 
         private TextRasterizationDefaults? _rasterizationDefaults;
+
+        /// <summary>Whether drawn glyph runs get a badge coloured by their tier (<see cref="SkiaOptions.TintTextTiers"/>).</summary>
+        internal bool TintsTextTiers { get; }
+
+        /// <summary>Whether the context counts the glyph runs each tier renders (<see cref="SkiaOptions.CountTextTiers"/>).</summary>
+        internal bool CountsTextTiers { get; }
 
         TextRasterizationDefaults IGlyphTargetContext.RasterizationDefaults
             => _rasterizationDefaults ??= TextRasterizationDefaults.Current;
@@ -1116,12 +1127,12 @@ namespace Avalonia.Skia
 
                 if (drawn)
                 {
-                    if (TextTierDiagnostics.CountTiers)
+                    if (CountsTextTiers)
                     {
                         System.Threading.Interlocked.Increment(ref TextTierDiagnostics.MaskTierDraws);
                     }
 
-                    if (TextTierDiagnostics.TintTiers)
+                    if (TintsTextTiers)
                     {
                         FlushGlyphBatch(GlyphBatchFlushReason.Other);
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.MaskTierColor);
@@ -1140,7 +1151,7 @@ namespace Avalonia.Skia
                     if (TryDrawTransformedRun(managedRun, foreground,
                             effectiveTextOptions.TextRenderingMode))
                     {
-                        if (TextTierDiagnostics.CountTiers)
+                        if (CountsTextTiers)
                         {
                             System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
                         }
@@ -1159,12 +1170,12 @@ namespace Avalonia.Skia
                 if (TryDrawTransformedRun(managedRun, foreground,
                         effectiveTextOptions.TextRenderingMode))
                 {
-                    if (TextTierDiagnostics.CountTiers)
+                    if (CountsTextTiers)
                     {
                         System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
                     }
 
-                    if (TextTierDiagnostics.TintTiers)
+                    if (TintsTextTiers)
                     {
                         FlushGlyphBatch(GlyphBatchFlushReason.Other);
                         TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds,
@@ -1216,12 +1227,12 @@ namespace Avalonia.Skia
                     ColorGlyphRunSplitter.DrawColorGlyphs(colorContext, managedRun, foreground, RasterTuning);
                 }
 
-                if (TextTierDiagnostics.CountTiers)
+                if (CountsTextTiers)
                 {
                     System.Threading.Interlocked.Increment(ref TextTierDiagnostics.BlobTierDraws);
                 }
 
-                if (TextTierDiagnostics.TintTiers)
+                if (TintsTextTiers)
                 {
                     TextTierDiagnostics.DrawBadge(Canvas, glyphRun.Bounds, TextTierDiagnostics.BlobTierColor);
                 }

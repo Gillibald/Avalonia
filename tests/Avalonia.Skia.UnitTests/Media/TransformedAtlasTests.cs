@@ -456,11 +456,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>A coverage atlas of several typefaces, made as a registration makes one.</summary>
         internal static GlyphMaskAtlas CreateMaskAtlas(GlyphCacheBudget? budget = null)
-            => new(budget, residentPages: GlyphMaskAtlas.ResidentPages);
+            => new(budget, residentPages: new SkiaOptions().ResidentGlyphPages);
 
         /// <summary>A colour atlas of several typefaces, made as a registration makes one.</summary>
         internal static GlyphMaskAtlas CreateColorAtlas(GlyphCacheBudget? budget = null)
-            => new(budget, format: GlyphAtlasFormat.Rgba, residentPages: GlyphMaskAtlas.ResidentPages);
+            => new(budget, format: GlyphAtlasFormat.Rgba, residentPages: new SkiaOptions().ResidentGlyphPages);
 
         /// <summary>The atlas the contexts of <paramref name="gpu"/> place the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
