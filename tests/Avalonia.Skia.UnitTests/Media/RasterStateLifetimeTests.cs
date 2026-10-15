@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 using Xunit;
@@ -77,6 +78,37 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(tuning.UseColorAtlas);
                 Assert.True(((ITransformedGlyphContext)context).TryGetBlitTarget(out var target));
                 Assert.Equal(GlyphMaskBlitter.DetectedPath, target.Path);
+            }
+        }
+
+        [Fact]
+        public void Text_Rasterization_Defaults_Do_Not_Outlive_Application()
+        {
+            var platformDefault = TextRasterizationDefaults.PlatformDefault;
+            var subpixel = TextRasterizationDefaults.UnspecifiedRendersSubpixel;
+
+            try
+            {
+                using (TextTestApplication.Enter())
+                {
+                    FailingSetup(() =>
+                    {
+                        TextRasterizationDefaults.PlatformDefault = TextRasterizationMode.Backend;
+                        TextRasterizationDefaults.UnspecifiedRendersSubpixel = false;
+                    });
+                }
+
+                using (TextTestApplication.Enter())
+                {
+                    // This assembly's applications render managed, unspecified text subpixel.
+                    Assert.Equal(TextRasterizationMode.Managed, new FontManagerOptions().TextRasterizationMode);
+                    Assert.True(TextRasterizationDefaults.UnspecifiedRendersSubpixel);
+                }
+            }
+            finally
+            {
+                TextRasterizationDefaults.PlatformDefault = platformDefault;
+                TextRasterizationDefaults.UnspecifiedRendersSubpixel = subpixel;
             }
         }
 
