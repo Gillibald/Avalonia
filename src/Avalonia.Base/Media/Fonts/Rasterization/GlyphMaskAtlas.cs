@@ -626,10 +626,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Whether the atlases of contexts that update page textures in place keep no CPU copy of
-        /// their pages, read when a context registers its textures. Off keeps the copy; for A/B
-        /// measurements.
+        /// their pages, read when a context registers its textures; on by default. Off keeps the
+        /// copy; for A/B measurements.
         /// </summary>
-        public static bool ResidentPages { get; set; }
+        public static bool ResidentPages { get; set; } = true;
 
         /// <summary>Bytes charged for the index of the entries, <see cref="IndexEntryBytes"/> each.</summary>
         public long IndexBytes => Interlocked.Read(ref _indexBytes);

@@ -405,7 +405,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// <summary>
         /// A test GPU context registered as the backends register theirs. A context with
         /// updatable textures gets <paramref name="maskAtlas"/> and <paramref name="colorAtlas"/>,
-        /// or atlases of its own.
+        /// or atlases of its own, resident as the backends make them.
         /// Without <paramref name="updatableTextures"/> it registers none. With
         /// <paramref name="backendAtlases"/> it registers the textures alone, as a backend does,
         /// and the context gets the atlases registration makes.
@@ -443,16 +443,24 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext,
                     GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getProcAddress, gpu.GlMajorVersion),
-                    maskAtlas ?? new GlyphMaskAtlas(), colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba));
+                    maskAtlas ?? CreateMaskAtlas(), colorAtlas ?? CreateColorAtlas());
             }
             else if (gpu.UpdatableTextures is { } textures)
             {
-                SkiaUpdatableTextures.Register(gpu.GrContext, textures,
-                    maskAtlas ?? new GlyphMaskAtlas(), colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba));
+                SkiaUpdatableTextures.Register(gpu.GrContext, textures, maskAtlas ?? CreateMaskAtlas(),
+                    colorAtlas ?? CreateColorAtlas());
             }
 
             return gpu;
         }
+
+        /// <summary>A coverage atlas of several typefaces, made as a registration makes one.</summary>
+        internal static GlyphMaskAtlas CreateMaskAtlas(GlyphCacheBudget? budget = null)
+            => new(budget, residentPages: GlyphMaskAtlas.ResidentPages);
+
+        /// <summary>A colour atlas of several typefaces, made as a registration makes one.</summary>
+        internal static GlyphMaskAtlas CreateColorAtlas(GlyphCacheBudget? budget = null)
+            => new(budget, format: GlyphAtlasFormat.Rgba, residentPages: GlyphMaskAtlas.ResidentPages);
 
         /// <summary>The atlas the contexts of <paramref name="gpu"/> place the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(GpuTestContext gpu, GlyphTypeface typeface)

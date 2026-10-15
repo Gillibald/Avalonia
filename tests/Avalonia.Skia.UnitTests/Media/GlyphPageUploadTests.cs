@@ -33,11 +33,25 @@ namespace Avalonia.Skia.UnitTests.Media
             yield return new object[] { GpuBackend.Vulkan };
         }
 
-        [Theory]
-        [MemberData(nameof(HardwareContexts))]
-        public void A_New_Glyph_Uploads_Only_The_Rectangle_It_Was_Written_To(GpuBackend backend)
+        public static IEnumerable<object[]> HardwareContextsByStore()
         {
-            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })
+            {
+                yield return new object[] { backend, false };
+                yield return new object[] { backend, true };
+            }
+        }
+
+        /// <summary>
+        /// A run that places new glyphs on a page uploads them in one update of the page's
+        /// texture: a page with a pixel array the rectangle around them, a resident page the
+        /// strips of the shelves they landed on, which lie within that rectangle.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(HardwareContextsByStore))]
+        public void A_New_Glyph_Uploads_Only_The_Rectangle_It_Was_Written_To(GpuBackend backend, bool resident)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false, new GlyphMaskAtlas(residentPages: resident));
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var paragraph = CreateParagraph(typeface, 13);
             using var symbols = WideRunMaskTests.CreateRun(typeface, "@#%&", 13, new Point(10, 300));
@@ -51,6 +65,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 var height = page.Height;
                 var bytes = DrawingContextImpl.PageImageBytesOnThread;
                 var created = DrawingContextImpl.PageImagesCreatedOnThread;
+                var updates = DrawingContextImpl.PageTextureUpdatesOnThread;
 
                 Render(gpu, context =>
                 {
@@ -58,15 +73,28 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.DrawGlyphRun(Brushes.Black, symbols);
                 });
 
-                Assert.Same(page, Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages()));
+                var atlas = TransformedAtlasTests.AtlasOf(gpu, typeface);
+
+                Assert.Same(page, Assert.Single(atlas.GetPages()));
                 Assert.Equal(height, page.Height);
 
-                var written = WrittenRectangle(TransformedAtlasTests.AtlasOf(gpu, typeface), page, keys);
+                var written = WrittenRectangle(atlas, page, keys);
+                var uploaded = DrawingContextImpl.PageImageBytesOnThread - bytes;
 
                 Assert.False(written.Width == 0 || written.Height == 0, "the run placed no new glyph on the page");
                 Assert.Equal(0, DrawingContextImpl.PageImagesCreatedOnThread - created);
-                Assert.Equal((long)written.Width * written.Height, DrawingContextImpl.PageImageBytesOnThread - bytes);
-                Assert.Equal(page.Pixels!.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));
+                Assert.Equal(updates + 1, DrawingContextImpl.PageTextureUpdatesOnThread);
+
+                if (resident)
+                {
+                    Assert.InRange(uploaded, EntryBytes(atlas, page, keys), (long)written.Width * written.Height);
+                }
+                else
+                {
+                    Assert.Equal((long)written.Width * written.Height, uploaded);
+                    Assert.Equal(page.Pixels!.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(),
+                        ReadPage(gpu, page));
+                }
             }
             finally
             {
@@ -78,7 +106,9 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(HardwareContexts))]
         public void A_Page_Texture_Holds_The_Page_Pixels_Through_Updates_And_Growth(GpuBackend backend)
         {
-            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            // A page with a pixel array, as contexts register with GlyphMaskAtlas.ResidentPages off;
+            // resident pages are compared with such a page instead.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false, new GlyphMaskAtlas());
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             var heights = new HashSet<int>();
 
@@ -724,6 +754,22 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             return pixels;
+        }
+
+        /// <summary>The bytes of the slots of the page's entries that are not in <paramref name="known"/>.</summary>
+        private static long EntryBytes(GlyphMaskAtlas atlas, GlyphAtlasPage page, HashSet<GlyphAtlasEntryKey> known)
+        {
+            long bytes = 0;
+
+            foreach (var entry in page.Keys)
+            {
+                if (!known.Contains(entry) && atlas.TryGet(entry, atlas.Tick(), out var slot))
+                {
+                    bytes += (long)slot.Width * slot.Height * page.BytesPerPixel;
+                }
+            }
+
+            return bytes;
         }
 
         /// <summary>The union of the slots of the page's entries that are not in <paramref name="known"/>.</summary>
