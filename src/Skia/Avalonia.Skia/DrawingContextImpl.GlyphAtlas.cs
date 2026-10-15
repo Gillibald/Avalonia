@@ -538,10 +538,25 @@ namespace Avalonia.Skia
             /// </summary>
             public SKPaint Paint => _paint ??= new SKPaint { Shader = Shader };
 
+            private SKShader? _bilinearShader;
+            private SKPaint? _bilinearPaint;
+
+            /// <summary>
+            /// The paint stretched runs drawn from kept vertices sample the page with, bilinearly
+            /// as their atlas draws do, made on first use and kept with the image; each draw sets
+            /// its colour.
+            /// </summary>
+            public SKPaint BilinearPaint => _bilinearPaint ??= new SKPaint
+            {
+                Shader = _bilinearShader = Image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, s_bilinear)
+            };
+
             public void Dispose()
             {
                 _paint?.Dispose();
                 _shader?.Dispose();
+                _bilinearPaint?.Dispose();
+                _bilinearShader?.Dispose();
                 _owner.Dispose();
             }
         }
@@ -735,6 +750,10 @@ namespace Avalonia.Skia
 
             // The sprites' device rectangle at the origin, made on first use.
             private SKRect? _bounds;
+
+            // The vertices a stretched draw of these sprites alone draws from, built on its first
+            // stretched draw and kept while the sprites are.
+            private SKVertices[]? _stretchVertices;
 
             public SkiaGlyphAtlasBatch(SKRect[] sources, SKRotationScaleMatrix[] placements, SKImage? image)
             {
@@ -950,6 +969,18 @@ namespace Avalonia.Skia
                 return parts;
             }
 
+            /// <summary>Whether <see cref="GetStretchVertices"/> has built the vertices.</summary>
+            public bool HasStretchVertices => _stretchVertices is not null;
+
+            /// <summary>
+            /// The vertices of these sprites drawn alone, placed as an atlas draw at the origin places
+            /// them, built on first use and kept: a zoom stretches the same crossing's sprites frame
+            /// after frame, and drawing them from vertices skips building their quads each time.
+            /// </summary>
+            public SKVertices[] GetStretchVertices(SKColor color)
+                => _stretchVertices ??= BuildVertices(new[] { new BatchedRun(this, 0, 0, color) }, 1, Sources.Length,
+                    colored: false);
+
             private void ReleaseVertices()
             {
                 if (_batchVertices is { } parts)
@@ -966,6 +997,17 @@ namespace Avalonia.Skia
             public void Dispose()
             {
                 ReleaseVertices();
+
+                if (_stretchVertices is { } stretch)
+                {
+                    foreach (var part in stretch)
+                    {
+                        part.Dispose();
+                    }
+
+                    _stretchVertices = null;
+                }
+
                 DisposeTrimmed();
 
                 if (_batchRuns is { } recorded)

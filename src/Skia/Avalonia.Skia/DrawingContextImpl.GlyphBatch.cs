@@ -609,11 +609,36 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
         }
 
+        private static int s_stretchVerticesMinSprites = DefaultStretchVerticesMinSprites;
+
+        private const int DefaultStretchVerticesMinSprites = 4;
+
+        /// <summary>
+        /// The sprites from which a stretched run draws from vertices kept across frames rather than
+        /// an atlas draw that builds its quads every frame. A zoom stretches each crossing's sprites
+        /// for many frames, and the kept vertices draw a dashboard's short labels about a sixth
+        /// faster and lines of a hundred CJK glyphs about a quarter faster on ANGLE and Vulkan; a
+        /// run of one to three glyphs saves too little to keep vertices for. Profiling tools change
+        /// it; a stretched batch reads it when it is drawn.
+        /// </summary>
+        internal static int StretchVerticesMinSprites
+        {
+            get => s_stretchVerticesMinSprites;
+            set => s_stretchVerticesMinSprites = value >= 0
+                ? value
+                : throw new ArgumentOutOfRangeException(nameof(value), value, "The sprite count cannot be negative.");
+        }
+
         /// <summary>
         /// Draws the deferred stretched runs of a batch, each as it would have drawn on its own,
         /// under the clip it was deferred with, and returns the batch to the pool. The page is
         /// refreshed once for all of them. It leaves the matrix it drew under set.
         /// </summary>
+        /// <remarks>
+        /// A run of <see cref="StretchVerticesMinSprites"/> sprites or more draws from vertices
+        /// kept with its sprites, through the page's bilinear shader: the quads and texture
+        /// coordinates of its atlas draw, sampled at the same points, modulating the same colour.
+        /// </remarks>
         private void DrawPendingStretchedBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
             var batchTimer = GlyphPhaseTimers.Start();
@@ -640,8 +665,31 @@ namespace Avalonia.Skia
                 }
 
                 SetDeviceTransform(batch.GetStretch(i));
-                t_atlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear, paint);
-                t_atlasGeometry += backend.Sources.Length;
+
+                if (backend.Sources.Length >= s_stretchVerticesMinSprites)
+                {
+                    var vertexPaint = image.BilinearPaint;
+                    var built = !backend.HasStretchVertices;
+
+                    vertexPaint.Color = batch.Color;
+
+                    foreach (var part in backend.GetStretchVertices(batch.Color))
+                    {
+                        Canvas.DrawVertices(part, SKBlendMode.Modulate, vertexPaint);
+                        t_atlasDraws++;
+                    }
+
+                    if (built)
+                    {
+                        t_atlasGeometry += backend.Sources.Length;
+                    }
+                }
+                else
+                {
+                    t_atlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear,
+                        paint);
+                    t_atlasGeometry += backend.Sources.Length;
+                }
 
                 if (clip is not null)
                 {
