@@ -276,14 +276,13 @@ namespace Avalonia.Skia.UnitTests.Media
             private readonly double? _budget = MotionRasterBudget.BudgetOverride;
             private readonly double? _glyphCost = MotionRasterBudget.GlyphCostOverride;
             private readonly double? _nonText = MotionRasterBudget.NonTextOverride;
-            private readonly double _zoomRasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+            private readonly IDisposable _tuning = TestRasterTuning.Change(t => t with { ZoomRasterPixelCost = 0 });
 
             public AffordingBudget()
             {
                 MotionRasterBudget.BudgetOverride = 1e9;
                 MotionRasterBudget.GlyphCostOverride = 1;
                 MotionRasterBudget.NonTextOverride = 0;
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = 0;
             }
 
             public void Dispose()
@@ -291,7 +290,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 MotionRasterBudget.BudgetOverride = _budget;
                 MotionRasterBudget.GlyphCostOverride = _glyphCost;
                 MotionRasterBudget.NonTextOverride = _nonText;
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = _zoomRasterPixelCost;
+                _tuning.Dispose();
             }
         }
 

@@ -110,13 +110,12 @@ namespace Avalonia.Skia.UnitTests.Media
             var budget = MotionRasterBudget.BudgetOverride;
             var glyphCost = MotionRasterBudget.GlyphCostOverride;
             var nonText = MotionRasterBudget.NonTextOverride;
-            var zoomRasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
 
             // The frames' own render times would leave a cold GPU context no headroom.
             MotionRasterBudget.BudgetOverride = 1e9;
             MotionRasterBudget.GlyphCostOverride = 1;
             MotionRasterBudget.NonTextOverride = 0;
-            MaskGlyphRunRenderer.ZoomRasterPixelCost = 0;
+            TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = 0 });
 
             try
             {
@@ -147,7 +146,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 MotionRasterBudget.BudgetOverride = budget;
                 MotionRasterBudget.GlyphCostOverride = glyphCost;
                 MotionRasterBudget.NonTextOverride = nonText;
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = zoomRasterPixelCost;
             }
         }
 
@@ -294,9 +292,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Target target)
         {
             // A target without a usable GPU skips the test from the environment's constructor. The
-            // zoom raster cost and the locator scope the environment set up for the test must
-            // still return to what they were, or the tests after it run against them.
-            var cost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+            // locator scope the environment set up for the test, and the tuning bound in it, must
+            // still be gone, or the tests after it run against them.
             var current = AvaloniaLocator.Current;
             var mutable = AvaloniaLocator.CurrentMutable;
 
@@ -311,14 +308,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 // The skip of an unavailable target; the state it leaves is what is checked.
             }
 
-            var leftCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
+            var leftTuning = GlyphRasterTuning.Current;
             var leftCurrent = AvaloniaLocator.Current;
 
-            MaskGlyphRunRenderer.ZoomRasterPixelCost = cost;
             AvaloniaLocator.Current = current;
             AvaloniaLocator.CurrentMutable = mutable;
 
-            Assert.Equal(cost, leftCost);
+            Assert.Same(GlyphRasterTuning.Default, leftTuning);
             Assert.Same(current, leftCurrent);
         }
 
@@ -327,7 +323,6 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             private readonly IDisposable _scope;
             private readonly GpuTestContext? _gpu;
-            private readonly double _zoomRasterPixelCost;
 
             public Environment(Target target)
             {
@@ -357,10 +352,8 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 }
 
-                _zoomRasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
-
                 // A CPU surface stretches an upright zoom only where rasterizing costs more.
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6;
+                TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = 1e6 });
             }
 
             public Target Target { get; }
@@ -437,7 +430,6 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 _gpu?.GrContext.Flush();
                 _gpu?.Dispose();
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = _zoomRasterPixelCost;
                 _scope.Dispose();
             }
         }

@@ -483,7 +483,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 ? MotionRasterBudget.Start()
                 : 0;
 
-            if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform) &&
+            if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform, GlyphRasterTuning.Of(context)) &&
                 TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
             {
                 if (frameCoverage is null)
@@ -707,14 +707,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// The cost a glyph mask pixel that misses the cache adds to rasterizing a zoom frame,
-        /// in pixels of a bilinear stretch of the settled run mask through the raster backend:
-        /// on x64 at 14-30 px about 11 ns per rasterized mask pixel (outline, grid fit, cache
-        /// insert) against 2.2 ns per stretched pixel. Tests raise it to make rasterizing costly.
-        /// </summary>
-        internal static double ZoomRasterPixelCost { get; set; } = 5;
-
-        /// <summary>
         /// The cost of building and blending one pixel of a zoom frame's run coverage, in pixels
         /// of a bilinear stretch (about 0.5 ns).
         /// </summary>
@@ -745,8 +737,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// than the run, since the runs of a frame share glyph masks and the first run to need
         /// one rasterizes it for all. Text whose glyph masks are cached, or cheap to rasterize,
         /// rasterizes; dense, complex glyphs that miss the cache (CJK at many scales) stretch.
+        /// A mask pixel costs <see cref="GlyphRasterTuning.ZoomRasterPixelCost"/>.
         /// </summary>
-        private static bool PrefersRasterizingZoom(ManagedGlyphRunImpl run, in Matrix transform)
+        private static bool PrefersRasterizingZoom(ManagedGlyphRunImpl run, in Matrix transform, GlyphRasterTuning tuning)
         {
             var last = run.LastUprightRaster;
 
@@ -760,7 +753,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var growth = Math.Abs(delta.M11 * delta.M22 - delta.M12 * delta.M21);
             var stretching = last.CoveragePixels * growth;
             var missing = run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false) * last.MaskPixels;
-            var rasterizing = (ZoomRasterPixelCost * missing + ZoomCoveragePixelCost * last.CoveragePixels) * growth +
+            var rasterizing = (tuning.ZoomRasterPixelCost * missing + ZoomCoveragePixelCost * last.CoveragePixels) * growth +
                               ZoomGlyphCost * run.GlyphCount;
 
             return rasterizing <= ZoomRasterPreference * stretching;

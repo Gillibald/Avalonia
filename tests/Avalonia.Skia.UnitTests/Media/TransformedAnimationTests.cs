@@ -239,48 +239,39 @@ namespace Avalonia.Skia.UnitTests.Media
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
 
-            var rasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
-
             // A CPU surface stretches an upright zoom only where rasterizing costs more.
-            MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6;
+            TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = 1e6 });
 
-            try
+            Matrix At(int frame) => zoom
+                ? Matrix.CreateScale(1 + 0.02 * frame, 1 + 0.02 * frame) * Matrix.CreateTranslation(10.25, 12.5)
+                : Rotation(5 + frame * 1.7);
+
+            var context = output.Context;
+            var counted = new List<int>();
+
+            for (var frame = 0; frame < 10; frame++)
             {
-                Matrix At(int frame) => zoom
-                    ? Matrix.CreateScale(1 + 0.02 * frame, 1 + 0.02 * frame) * Matrix.CreateTranslation(10.25, 12.5)
-                    : Rotation(5 + frame * 1.7);
+                var before = MaskGlyphRunRenderer.UnsettledDraws;
 
-                var context = output.Context;
-                var counted = new List<int>();
+                context.Transform = At(Math.Min(frame, 7));
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.FlushGlyphBatch();
 
-                for (var frame = 0; frame < 10; frame++)
+                if (MaskGlyphRunRenderer.UnsettledDraws != before)
                 {
-                    var before = MaskGlyphRunRenderer.UnsettledDraws;
-
-                    context.Transform = At(Math.Min(frame, 7));
-                    context.DrawGlyphRun(Brushes.Black, run);
-                    context.FlushGlyphBatch();
-
-                    if (MaskGlyphRunRenderer.UnsettledDraws != before)
-                    {
-                        counted.Add(frame);
-                    }
+                    counted.Add(frame);
                 }
-
-                var stretches = target != Target.Raster || zoom;
-                var expected = new List<int>();
-
-                for (var frame = TransformChurnGuard.Threshold; stretches && frame < 8; frame++)
-                {
-                    expected.Add(frame);
-                }
-
-                Assert.Equal(expected, counted);
             }
-            finally
+
+            var stretches = target != Target.Raster || zoom;
+            var expected = new List<int>();
+
+            for (var frame = TransformChurnGuard.Threshold; stretches && frame < 8; frame++)
             {
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = rasterPixelCost;
+                expected.Add(frame);
             }
+
+            Assert.Equal(expected, counted);
         }
 
         public static IEnumerable<object[]> Obstacles()
@@ -634,18 +625,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // either way; past it, one frame rasterizes at its scale and settles.
             const double band = MaskGlyphRunRenderer.MaxStretchScale;
 
-            var rasterPixelCost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
-
-            MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6;
-
-            try
-            {
-                StretchesWithinTheBand(Target.Raster, band);
-            }
-            finally
-            {
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = rasterPixelCost;
-            }
+            StretchesWithinTheBand(Target.Raster, band, zoomRasterPixelCost: 1e6);
         }
 
         [Theory]
@@ -795,10 +775,16 @@ namespace Avalonia.Skia.UnitTests.Media
             context.TextOptions = options;
         }
 
-        private static void StretchesWithinTheBand(Target target, double band, bool grid = false)
+        private static void StretchesWithinTheBand(Target target, double band, bool grid = false,
+            double? zoomRasterPixelCost = null)
         {
             using var output = TestTarget.Create(target);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            if (zoomRasterPixelCost is { } cost)
+            {
+                TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = cost });
+            }
             using var run = WideRunMaskTests.CreateRun(typeface, Text, 14, new Point(8.37, 32.61));
 
             static Matrix Zoom(double scale) => Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(10.25, 12.5);

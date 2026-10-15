@@ -24,5 +24,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public static GlyphRasterTuning Of(IDrawingContextImpl context)
             => context is IGlyphTargetContext target ? target.RasterTuning : Current;
+
+        /// <summary>
+        /// The cost a glyph mask pixel that misses the cache adds to rasterizing an upright zoom
+        /// frame on a CPU surface, in pixels of a bilinear stretch of the settled run mask through
+        /// the raster backend: on x64 at 14-30 px about 11 ns per rasterized mask pixel (outline,
+        /// grid fit, cache insert) against 2.2 ns per stretched pixel. Tests raise it to make
+        /// rasterizing costly.
+        /// </summary>
+        public double ZoomRasterPixelCost { get; init; } = 5;
     }
 }

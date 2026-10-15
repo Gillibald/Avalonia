@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media.Fonts.Rasterization;
+using SkiaSharp;
 using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media
@@ -14,24 +15,24 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Zoom_Raster_Pixel_Cost_Does_Not_Outlive_Application()
         {
-            var cost = MaskGlyphRunRenderer.ZoomRasterPixelCost;
-
-            try
+            using (TextTestApplication.Enter())
             {
-                using (TextTestApplication.Enter())
-                {
-                    FailingSetup(() => MaskGlyphRunRenderer.ZoomRasterPixelCost = 1e6);
-                }
+                FailingSetup(() => TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = 1e6 }));
+            }
 
-                using (TextTestApplication.Enter())
-                {
-                    Assert.Equal(5, MaskGlyphRunRenderer.ZoomRasterPixelCost);
-                }
-            }
-            finally
+            using (TextTestApplication.Enter())
             {
-                MaskGlyphRunRenderer.ZoomRasterPixelCost = cost;
+                Assert.Equal(5, TuningOfNewContext().ZoomRasterPixelCost);
             }
+        }
+
+        /// <summary>The tuning a drawing context created now draws text with.</summary>
+        private static GlyphRasterTuning TuningOfNewContext()
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(8, 8));
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
+
+            return ((IGlyphTargetContext)context).RasterTuning;
         }
 
         /// <summary>A test setup that makes <paramref name="change"/> and fails before its cleanup is in place.</summary>
