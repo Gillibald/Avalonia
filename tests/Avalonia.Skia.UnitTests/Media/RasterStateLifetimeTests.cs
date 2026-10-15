@@ -311,6 +311,97 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(IntPtr.Zero, texture.Handle);
         }
 
+        [Fact]
+        public void Glyph_Masks_Of_An_Animated_Frame_Do_Not_Serve_The_Next_Frame()
+        {
+            using var app = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var animated = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61));
+            using var next = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61));
+            var budget = GlyphRasterServices.Current.Budget;
+
+            using (budget.BeginFrame())
+            {
+                AnimateOnRaster(animated);
+            }
+
+            using (budget.BeginFrame())
+            {
+                Assert.True(RasterizesFinalTransientDraw(next));
+            }
+        }
+
+        [Fact]
+        public void Glyph_Masks_Of_An_Animated_Frame_Do_Not_Serve_The_Next_Application()
+        {
+            GlyphTypeface typeface;
+
+            using (WideRunMaskTests.CreateEnvironment(out typeface))
+            using (var animated = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61)))
+            {
+                AnimateOnRaster(animated);
+            }
+
+            using (TextTestApplication.Enter())
+            using (var next = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61)))
+            {
+                Assert.True(RasterizesFinalTransientDraw(next));
+            }
+        }
+
+        /// <summary>The rotation of frame <paramref name="frame"/> of an animation.</summary>
+        private static Matrix Rotation(int frame)
+            => Matrix.CreateRotation(Math.PI * (5 + frame * 1.7) / 180) * Matrix.CreateTranslation(160.4, 120.7);
+
+        /// <summary>
+        /// Draws <paramref name="run"/> under a changing rotation until it draws frame 0 from glyph
+        /// masks rasterized for that frame alone.
+        /// </summary>
+        private static void AnimateOnRaster(ManagedGlyphRunImpl run)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(400, 300, SKColorType.Bgra8888, SKAlphaType.Premul));
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+            {
+                Surface = surface, Dpi = new Vector(96, 96),
+            });
+
+            for (var frame = TransformChurnGuard.Threshold; frame > 0; frame--)
+            {
+                context.Transform = Rotation(10 * frame);
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+
+            context.Transform = Rotation(0);
+            context.DrawGlyphRun(Brushes.Black, run);
+        }
+
+        /// <summary>
+        /// Animates <paramref name="run"/> to the transform <see cref="AnimateOnRaster"/> ends with
+        /// and reports whether its last draw rasterized glyph masks.
+        /// </summary>
+        private static bool RasterizesFinalTransientDraw(ManagedGlyphRunImpl run)
+        {
+            using var surface = SKSurface.Create(new SKImageInfo(400, 300, SKColorType.Bgra8888, SKAlphaType.Premul));
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+            {
+                Surface = surface, Dpi = new Vector(96, 96),
+            });
+
+            // The draws before the guard engages cache sprite sets of their own and leave the
+            // transient masks alone.
+            for (var frame = TransformChurnGuard.Threshold; frame > 0; frame--)
+            {
+                context.Transform = Rotation(-10 * frame);
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+
+            var before = TextRasterThreadState.TryGetCurrent()!.RasterTicks;
+
+            context.Transform = Rotation(0);
+            context.DrawGlyphRun(Brushes.Black, run);
+
+            return TextRasterThreadState.TryGetCurrent()!.RasterTicks > before;
+        }
+
         /// <summary>The atlas a drawing context on <paramref name="gpu"/> places subpixel run masks in.</summary>
         private static LcdRunAtlas LcdAtlasOf(GpuTestContext gpu)
         {
