@@ -76,9 +76,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             // A run whose ink lies wholly outside the clip draws nothing, as the backend's own
             // text draw rejects it: nothing is laid out or rasterized for it. Two pixels around the
             // ink cover antialiasing, a strike's resampled edges and the rounding of pens.
-            if (context is ITransformedGlyphContext { DeviceClipBounds: { } clipBounds } &&
-                run.InkBoundsWithStrikes is { } ink &&
-                !ink.TransformToAABB(transform).Inflate(2).Intersects(clipBounds))
+            if (context is ITransformedGlyphContext clipped && run.InkBoundsWithStrikes is { } ink &&
+                clipped.ClipsAway(ink.TransformToAABB(transform).Inflate(2)))
             {
                 return true;
             }

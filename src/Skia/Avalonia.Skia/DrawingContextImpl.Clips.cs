@@ -254,25 +254,43 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// The device bounds of the canvas clip and of the clips deferred on top of it: nothing
-        /// drawn outside them shows.
+        /// Whether nothing drawn inside <paramref name="deviceBounds"/> shows: it misses the canvas
+        /// clip's device bounds, a deferred clip's device rectangle, or every rectangle of a region
+        /// clip on the stack.
         /// </summary>
-        Rect? Avalonia.Media.Fonts.Rasterization.ITransformedGlyphContext.DeviceClipBounds
+        bool Avalonia.Media.Fonts.Rasterization.ITransformedGlyphContext.ClipsAway(Rect deviceBounds)
         {
-            get
+            var rect = new SKRect((float)deviceBounds.Left, (float)deviceBounds.Top, (float)deviceBounds.Right,
+                (float)deviceBounds.Bottom);
+
+            // Also rejects NaN.
+            if (!(Math.Abs(rect.Left) <= 1 << 24 && Math.Abs(rect.Top) <= 1 << 24 &&
+                  Math.Abs(rect.Right) <= 1 << 24 && Math.Abs(rect.Bottom) <= 1 << 24))
             {
-                var canvas = Canvas.DeviceClipBounds;
-                var bounds = new Rect(canvas.Left, canvas.Top, canvas.Width, canvas.Height);
-
-                for (var i = _clipDepth - _deferredClips; i < _clipDepth; i++)
-                {
-                    var device = _clipLevels[i].Device;
-
-                    bounds = bounds.Intersect(new Rect(device.Left, device.Top, device.Width, device.Height));
-                }
-
-                return bounds;
+                return false;
             }
+
+            if (!SKRect.Create(Canvas.DeviceClipBounds.Left, Canvas.DeviceClipBounds.Top,
+                    Canvas.DeviceClipBounds.Width, Canvas.DeviceClipBounds.Height).IntersectsWith(rect))
+            {
+                return true;
+            }
+
+            var pixels = new SKRectI((int)Math.Floor(rect.Left), (int)Math.Floor(rect.Top), (int)Math.Ceiling(rect.Right),
+                (int)Math.Ceiling(rect.Bottom));
+
+            for (var i = 0; i < _clipDepth; i++)
+            {
+                ref readonly var level = ref _clipLevels[i];
+
+                if (level.Region is { } region ? !region.Intersects(pixels) :
+                        level.Deferred && !level.Device.IntersectsWith(rect))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

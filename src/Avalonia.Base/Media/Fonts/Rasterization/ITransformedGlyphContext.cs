@@ -63,10 +63,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphMaskAtlas? ColorAtlas { get; }
 
         /// <summary>
-        /// The device rectangle outside which nothing drawn on this context shows: the bounds of
-        /// its clips, those applied and those it defers, or <c>null</c> when it cannot tell.
+        /// Whether this context's clips, those applied and those it defers, leave nothing drawn
+        /// inside <paramref name="deviceBounds"/> visible. <c>false</c> when it cannot tell.
         /// </summary>
-        Rect? DeviceClipBounds { get; }
+        bool ClipsAway(Rect deviceBounds);
 
         /// <summary>
         /// Grants direct write access to the raster surface when a draw may bypass the backend:
