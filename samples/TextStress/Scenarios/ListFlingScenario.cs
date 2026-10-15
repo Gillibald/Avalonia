@@ -165,7 +165,10 @@ namespace TextStress.Scenarios
                 _list.ContainerPrepared += (_, e) => e.Container.ClipToBounds = false;
             }
 
-            _lastFrame = -1;
+            // A new view starts its fling from rest: the next Apply replays from frame 0 instead of
+            // continuing the motion of the view before it, whose last frame depends on how long the
+            // time-bound prewarm ran.
+            _lastFrame = int.MinValue;
 
             return _list;
         }
