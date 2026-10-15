@@ -150,6 +150,41 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Motion_Hold_Does_Not_Carry_Into_Next_Application()
+        {
+            // A budget a run of 15 glyphs at a microsecond each does not fit, and one it fits many
+            // times over; neither depends on the machine.
+            var tight = GlyphRasterTuning.Default with
+            {
+                MotionBudgetMicroseconds = 10, MotionGlyphCostMicroseconds = 1, MotionNonTextMicroseconds = 0,
+            };
+            var ample = tight with { MotionBudgetMicroseconds = 1e9 };
+
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
+            using (GlyphCacheBudget.Shared.BeginFrame())
+            {
+                // The try runs out of budget: moving runs stretch for the hold that follows.
+                Assert.False(MotionRasterBudget.PrefersSharp(run, 15, 1, tight));
+            }
+
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
+            using (GlyphCacheBudget.Shared.BeginFrame())
+            {
+                try
+                {
+                    Assert.True(MotionRasterBudget.PrefersSharp(run, 15, 1, ample));
+                }
+                finally
+                {
+                    // A stop ends the hold, so a failure here leaves the thread as it found it.
+                    MotionRasterBudget.NotMoving(run, 15, changing: false, held: true, 0, ample);
+                }
+            }
+        }
+
         /// <summary>Draws a run of text through a drawing context of the current application.</summary>
         private static void DrawText(GlyphTypeface typeface)
         {
