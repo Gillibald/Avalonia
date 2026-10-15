@@ -216,6 +216,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 PrefersAlphaMasks = _prefersAlphaMasks, MaxRunMaskSize = _maxRunMaskSize,
             };
 
+            public TextRasterThreadState RasterState => _inner.RasterState;
+
+            public GlyphRasterTuning RasterTuning => ((IGlyphTargetContext)_inner).RasterTuning;
+
             public bool TryGetLcdGeometry(out LcdMaskGeometry geometry)
             {
                 geometry = LcdMaskGeometry.RgbHorizontal;

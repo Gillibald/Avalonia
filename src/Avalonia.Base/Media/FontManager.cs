@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using System.Threading;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting.Unicode;
@@ -30,6 +31,8 @@ namespace Avalonia.Media
         private string? _defaultFamilyNameOverride;
         private volatile bool _optionsResolved;
         private FontFamily? _defaultFontFamily;
+        private Fonts.Rasterization.GlyphRasterServices? _rasterServices;
+        private volatile bool _disposed;
 
         [Obsolete("The platform font manager seam is replaced by ISystemFontProvider; the argument is ignored. Register a system font collection instead.")]
         public FontManager(IFontManagerImpl platformImpl) : this()
@@ -111,6 +114,35 @@ namespace Avalonia.Media
         /// </para>
         /// </remarks>
         public static void TrimGlyphCaches() => Fonts.Rasterization.GlyphCacheBudget.Shared.TrimForMemoryPressure();
+
+        /// <summary>
+        /// The state of managed glyph rasterization this application keeps, created on first use
+        /// from any thread and disposed with the font manager.
+        /// </summary>
+        internal Fonts.Rasterization.GlyphRasterServices RasterServices
+            => Volatile.Read(ref _rasterServices) ?? CreateRasterServices();
+
+        private Fonts.Rasterization.GlyphRasterServices CreateRasterServices()
+        {
+            var created = new Fonts.Rasterization.GlyphRasterServices();
+            var winner = Interlocked.CompareExchange(ref _rasterServices, created, null);
+
+            if (winner is not null)
+            {
+                created.Dispose();
+
+                return winner;
+            }
+
+            // A render thread may ask after the font manager was disposed: what it creates then
+            // holds nothing that outlives it.
+            if (_disposed)
+            {
+                created.Dispose();
+            }
+
+            return created;
+        }
 
         /// <summary>
         ///     Gets the system's default font family.
@@ -571,10 +603,14 @@ namespace Avalonia.Media
 
         void IDisposable.Dispose()
         {
+            _disposed = true;
+
             foreach (var pair in _fontCollections)
                 pair.Value.Dispose();
 
             _fontCollections.Clear();
+
+            Interlocked.Exchange(ref _rasterServices, null)?.Dispose();
         }
     }
 }

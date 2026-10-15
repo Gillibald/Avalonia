@@ -281,6 +281,8 @@ namespace Avalonia.Skia
                 _useOpacitySaveLayer = options.UseOpacitySaveLayer;
             }
 
+            _rasterServices = GlyphRasterServices.TryGetCurrent();
+
             // Last, so a constructor that throws leaves no frame open. A context drawn inside
             // another on this thread (a layer, an offscreen surface) belongs to that frame.
             _glyphCacheFrame = GlyphCacheBudget.Shared.BeginFrame();
@@ -421,6 +423,24 @@ namespace Avalonia.Skia
         GlyphTargetSurface IGlyphTargetContext.TargetSurface => _targetSurface ??= DescribeTargetSurface();
 
         private GlyphTargetSurface? _targetSurface;
+
+        // Resolved once per context: a context draws for the application it was created in.
+        private GlyphRasterServices? _rasterServices;
+        private GlyphRasterTuning? _rasterTuning;
+        private TextRasterThreadState? _rasterState;
+
+        TextRasterThreadState IGlyphTargetContext.RasterState => RasterState;
+
+        // Read on first use, so tuning bound after the context was created and before it draws text applies.
+        GlyphRasterTuning IGlyphTargetContext.RasterTuning => _rasterTuning ??= GlyphRasterTuning.Current;
+
+        /// <inheritdoc cref="IGlyphTargetContext.RasterState"/>
+        /// <remarks>
+        /// Taken on first use, on the thread that draws. An application whose font manager was
+        /// registered only after the context was created is found then.
+        /// </remarks>
+        internal TextRasterThreadState RasterState
+            => _rasterState ??= (_rasterServices ??= GlyphRasterServices.Current).ForCurrentThread();
 
         private GlyphTargetSurface DescribeTargetSurface()
             => new(
