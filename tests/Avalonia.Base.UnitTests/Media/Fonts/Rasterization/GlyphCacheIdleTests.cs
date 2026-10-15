@@ -113,6 +113,41 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             Assert.Empty(timer.Scheduled);
         }
 
+        [Fact]
+        public void Frames_That_Stop_Past_The_Limit_Are_Trimmed_To_It_Keeping_What_The_Last_Frame_Drew()
+        {
+            var timer = new ManualTimer();
+            var now = TimeSpan.Zero;
+            var budget = new GlyphCacheBudget(1024 * Kb, timer, () => now);
+            var motion = new GlyphMaskCache(budget);
+            var settled = new GlyphMaskCache(budget);
+
+            // The last frame of a zoom fills most of the limit; the frame after it, where the zoom
+            // stops, draws the text again at its final scale and takes the caches past the limit.
+            Fill(budget, motion, 700 * Kb);
+            now += TimeSpan.FromMilliseconds(16);
+
+            using (budget.BeginFrame())
+            {
+                for (var glyph = 0; glyph < 600 * Kb / MakeMask(32).ByteCost; glyph++)
+                {
+                    settled.GetOrBuild(Key(glyph), static _ => MakeMask(32));
+                }
+            }
+
+            var drawn = settled.Count;
+
+            Assert.True(budget.UsedBytes > budget.LimitBytes);
+
+            // Nothing changes on screen after that: the idle trim keeps what the last frame drew.
+            now += TimeSpan.FromSeconds(2.5);
+            timer.RunNext();
+
+            Assert.True(budget.UsedBytes <= budget.LimitBytes,
+                $"{budget.UsedBytes} bytes over the limit of {budget.LimitBytes} after frames stopped");
+            Assert.Equal(drawn, settled.Count);
+        }
+
         private sealed class ManualTimer : IGlyphCacheIdleTimer
         {
             public List<Action> Scheduled { get; } = new();

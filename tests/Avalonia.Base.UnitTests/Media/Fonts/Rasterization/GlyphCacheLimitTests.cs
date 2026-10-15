@@ -251,6 +251,47 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         [Fact]
+        public void A_Frame_Past_The_Limit_Evicts_What_No_Recent_Frame_Drew_From_Its_Own_Pool()
+        {
+            const long limit = 1024 * Kb;
+            var mask = MakeMask(32).ByteCost;
+            var budget = new GlyphCacheBudget(limit);
+            var cache = new GlyphMaskCache(budget);
+            var glyph = 0;
+
+            // A zoom leaves the caches just under the limit, and two frames pass without it.
+            using (budget.BeginFrame())
+            {
+                while (budget.UsedBytes + mask <= limit)
+                {
+                    cache.GetOrBuild(Key(glyph++), static _ => MakeMask(32));
+                }
+            }
+
+            Frames(budget, 2);
+
+            // A frame then draws three fifths of the limit anew: the old content gives way as the
+            // frame builds, and every mask the frame built stays.
+            var first = glyph;
+
+            using (budget.BeginFrame())
+            {
+                for (var i = 0; i < limit * 3 / 5 / mask; i++)
+                {
+                    cache.GetOrBuild(Key(glyph++), static _ => MakeMask(32));
+
+                    Assert.True(budget.UsedBytes <= limit,
+                        $"{budget.UsedBytes} bytes in the frame, past the limit of {limit} with old content left");
+                }
+
+                for (var g = first; g < glyph; g++)
+                {
+                    Assert.True(cache.TryGet(Key(g), out _), $"glyph {g} drawn in the frame was evicted");
+                }
+            }
+        }
+
+        [Fact]
         public void A_Typeface_Drawn_Every_Second_Keeps_Its_Masks_While_Another_Streams_New_Ones()
         {
             const long limit = 1024 * Kb;
