@@ -1374,7 +1374,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// directly; Unspecified and SubpixelAntialias both mean LCD when the whole chain
         /// allows it — the same default the native blob applies — and degrade to grayscale
         /// otherwise. Unspecified means grayscale on the platforms that draw text so
-        /// (<see cref="TextRasterizationDefaults.UnspecifiedRendersSubpixel"/>). Color art never
+        /// (<see cref="TextRasterizationDefaults.UnspecifiedRendersSubpixel"/> of the context). Color art never
         /// renders subpixel: stripes only make sense for a solid foreground modulating pure
         /// coverage.
         /// </summary>
@@ -1389,7 +1389,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return GlyphMaskMode.Aliased;
                 case TextRenderingMode.Antialias:
                     return GlyphMaskMode.Antialiased;
-                case TextRenderingMode.Unspecified when !TextRasterizationDefaults.UnspecifiedRendersSubpixel:
+                case TextRenderingMode.Unspecified when !(context is IGlyphTargetContext target
+                    ? target.RasterizationDefaults
+                    : TextRasterizationDefaults.Current).UnspecifiedRendersSubpixel:
                     return GlyphMaskMode.Antialiased;
             }
 

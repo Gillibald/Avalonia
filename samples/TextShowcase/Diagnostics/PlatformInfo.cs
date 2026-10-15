@@ -31,7 +31,7 @@ namespace TextShowcase.Diagnostics
             : "FreeType";
 
         /// <summary>The mode an application gets on this platform when it does not choose one.</summary>
-        public static TextRasterizationMode PlatformDefault => TextRasterizationDefaults.PlatformDefault;
+        public static TextRasterizationMode PlatformDefault => TextRasterizationDefaults.Current.PlatformDefault;
 
         /// <summary>A short name of the GPU path: ANGLE, WGL, Vulkan, Software and so on.</summary>
         public static string Graphics

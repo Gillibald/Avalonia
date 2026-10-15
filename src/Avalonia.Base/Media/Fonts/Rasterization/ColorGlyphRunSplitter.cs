@@ -28,7 +28,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     {
         public static bool IsManagedTextRasterization()
             => (AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode
-                ?? TextRasterizationDefaults.PlatformDefault) == TextRasterizationMode.Managed;
+                ?? TextRasterizationDefaults.Current.PlatformDefault) == TextRasterizationMode.Managed;
 
         /// <summary>
         /// Draws <paramref name="glyphRun"/> with its color glyphs replaced by their drawings.

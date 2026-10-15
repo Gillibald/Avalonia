@@ -18,21 +18,35 @@ namespace Avalonia.Media
     }
 
     /// <summary>
-    /// Resolves the <see cref="TextRasterizationMode"/> an application gets when it does not
-    /// choose one through <see cref="FontManagerOptions.TextRasterizationMode"/>.
+    /// What text an application renders when it does not choose: the
+    /// <see cref="TextRasterizationMode"/> when <see cref="FontManagerOptions.TextRasterizationMode"/> is
+    /// unset, and whether unspecified text renders subpixel. An application binds an instance in its
+    /// locator (<see cref="Current"/>); without one it gets the running platform's defaults as if it
+    /// renders on the GPU. A platform whose default depends on the render path (Android) binds one
+    /// once it has chosen the path, before the first glyph run is created; test applications whose
+    /// expectations were recorded against one stack bind one so they render the same on every host.
     /// </summary>
-    internal static class TextRasterizationDefaults
+    internal sealed class TextRasterizationDefaults
     {
+        private static readonly TextRasterizationDefaults s_process = new(
+            ForPlatform(CurrentPlatform(), RuntimeInformation.ProcessArchitecture),
+            RendersSubpixelByDefault(CurrentPlatform()));
+
+        public TextRasterizationDefaults(TextRasterizationMode platformDefault, bool unspecifiedRendersSubpixel)
+        {
+            PlatformDefault = platformDefault;
+            UnspecifiedRendersSubpixel = unspecifiedRendersSubpixel;
+        }
+
+        /// <summary>The defaults bound in the current locator scope, else the running platform's.</summary>
+        public static TextRasterizationDefaults Current
+            => AvaloniaLocator.Current.GetService<TextRasterizationDefaults>() ?? s_process;
+
         /// <summary>
-        /// Gets or sets the mode used when the application leaves
-        /// <see cref="FontManagerOptions.TextRasterizationMode"/> unset (or registers no options).
-        /// Initialized from the running platform as if it renders on the GPU; a platform whose
-        /// default depends on the render path (Android) sets it again once it has chosen the path,
-        /// before the first glyph run is created. Test assemblies whose expectations were
-        /// recorded against one stack pin it so they render the same on every host.
+        /// The mode used when the application leaves <see cref="FontManagerOptions.TextRasterizationMode"/>
+        /// unset (or registers no options).
         /// </summary>
-        public static TextRasterizationMode PlatformDefault { get; set; } =
-            ForPlatform(CurrentPlatform(), RuntimeInformation.ProcessArchitecture);
+        public TextRasterizationMode PlatformDefault { get; }
 
         /// <summary>
         /// Returns <paramref name="explicitMode"/> when the application chose one, otherwise the
@@ -67,11 +81,10 @@ namespace Avalonia.Media
             };
 
         /// <summary>
-        /// Gets or sets whether text whose rendering mode is unspecified renders subpixel (LCD)
-        /// where the surface allows it, rather than grayscale. Initialized from the running
-        /// platform; test assemblies whose expectations were recorded with one choice pin it.
+        /// Whether text whose rendering mode is unspecified renders subpixel (LCD) where the surface
+        /// allows it, rather than grayscale.
         /// </summary>
-        public static bool UnspecifiedRendersSubpixel { get; set; } = RendersSubpixelByDefault(CurrentPlatform());
+        public bool UnspecifiedRendersSubpixel { get; }
 
         /// <summary>
         /// Whether unspecified text renders subpixel on <paramref name="platform"/> where the

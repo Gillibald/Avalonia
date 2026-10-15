@@ -84,31 +84,20 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Text_Rasterization_Defaults_Do_Not_Outlive_Application()
         {
-            var platformDefault = TextRasterizationDefaults.PlatformDefault;
-            var subpixel = TextRasterizationDefaults.UnspecifiedRendersSubpixel;
-
-            try
+            using (TextTestApplication.Enter())
             {
-                using (TextTestApplication.Enter())
-                {
-                    FailingSetup(() =>
-                    {
-                        TextRasterizationDefaults.PlatformDefault = TextRasterizationMode.Backend;
-                        TextRasterizationDefaults.UnspecifiedRendersSubpixel = false;
-                    });
-                }
-
-                using (TextTestApplication.Enter())
-                {
-                    // This assembly's applications render managed, unspecified text subpixel.
-                    Assert.Equal(TextRasterizationMode.Managed, new FontManagerOptions().TextRasterizationMode);
-                    Assert.True(TextRasterizationDefaults.UnspecifiedRendersSubpixel);
-                }
+                FailingSetup(() => AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(
+                    new TextRasterizationDefaults(TextRasterizationMode.Backend, unspecifiedRendersSubpixel: false)));
             }
-            finally
+
+            using (TextTestApplication.Enter())
             {
-                TextRasterizationDefaults.PlatformDefault = platformDefault;
-                TextRasterizationDefaults.UnspecifiedRendersSubpixel = subpixel;
+                using var surface = SKSurface.Create(new SKImageInfo(8, 8));
+                using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
+
+                // This assembly's applications render managed, unspecified text subpixel.
+                Assert.Equal(TextRasterizationMode.Managed, new FontManagerOptions().TextRasterizationMode);
+                Assert.True(((IGlyphTargetContext)context).RasterizationDefaults.UnspecifiedRendersSubpixel);
             }
         }
 

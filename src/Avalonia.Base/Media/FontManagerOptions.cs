@@ -41,7 +41,7 @@ namespace Avalonia.Media
         /// </remarks>
         public TextRasterizationMode TextRasterizationMode
         {
-            get => _textRasterizationMode ?? TextRasterizationDefaults.PlatformDefault;
+            get => _textRasterizationMode ?? TextRasterizationDefaults.Current.PlatformDefault;
             set => _textRasterizationMode = value;
         }
 

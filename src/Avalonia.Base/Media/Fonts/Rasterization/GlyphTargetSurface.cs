@@ -84,5 +84,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The tuning of the context's application, read once, before the context draws text.</summary>
         GlyphRasterTuning RasterTuning { get; }
+
+        /// <summary>
+        /// The text rasterization defaults of the context's application, read once, before the
+        /// context draws text.
+        /// </summary>
+        TextRasterizationDefaults RasterizationDefaults { get; }
     }
 }

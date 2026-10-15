@@ -220,6 +220,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             public GlyphRasterTuning RasterTuning => ((IGlyphTargetContext)_inner).RasterTuning;
 
+            public TextRasterizationDefaults RasterizationDefaults => ((IGlyphTargetContext)_inner).RasterizationDefaults;
+
             public bool TryGetLcdGeometry(out LcdMaskGeometry geometry)
             {
                 geometry = LcdMaskGeometry.RgbHorizontal;

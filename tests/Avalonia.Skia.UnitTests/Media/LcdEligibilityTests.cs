@@ -142,6 +142,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void The_Resolver_Follows_The_Rendering_Mode_And_The_Context()
         {
+            using var app = TextTestApplication.Enter();
             using var surface = CreateSurface(SKPixelGeometry.RgbHorizontal);
             using var context = CreateContext(surface);
             using var skTypeface = SKTypeface.FromFamilyName("Arial");

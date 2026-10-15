@@ -21,6 +21,16 @@ namespace Avalonia.Skia.UnitTests
         /// </summary>
         public static GlyphRasterTuning Tuning { get; } = GlyphRasterTuning.Default with { MotionBudgetMicroseconds = 0 };
 
+        /// <summary>
+        /// The text rasterization defaults of this assembly's applications. The expectations here
+        /// (goldens, ink bounds, routed tiers) are recorded against managed rasterization with
+        /// unspecified text rendering subpixel on display surfaces; Linux, macOS and ARM64 hosts
+        /// would otherwise render through the backend's text stack, and macOS hosts grayscale.
+        /// Tests that exercise the backend choose it explicitly.
+        /// </summary>
+        public static TextRasterizationDefaults RasterizationDefaults { get; } =
+            new(TextRasterizationMode.Managed, unspecifiedRendersSubpixel: true);
+
         /// <summary>Enters a locator scope with a new font manager and this assembly's bindings.</summary>
         public static IDisposable Enter()
         {
@@ -57,6 +67,7 @@ namespace Avalonia.Skia.UnitTests
         public static void BindDefaults()
         {
             AvaloniaLocator.CurrentMutable.Bind<GlyphRasterTuning>().ToConstant(Tuning);
+            AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(RasterizationDefaults);
         }
     }
 }

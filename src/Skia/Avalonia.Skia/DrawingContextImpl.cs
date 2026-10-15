@@ -440,6 +440,11 @@ namespace Avalonia.Skia
         /// </remarks>
         internal GlyphRasterTuning RasterTuning => _rasterTuning ??= GlyphRasterTuning.Current;
 
+        private TextRasterizationDefaults? _rasterizationDefaults;
+
+        TextRasterizationDefaults IGlyphTargetContext.RasterizationDefaults
+            => _rasterizationDefaults ??= TextRasterizationDefaults.Current;
+
         /// <inheritdoc cref="IGlyphTargetContext.RasterState"/>
         /// <remarks>
         /// Taken on first use, on the thread that draws. An application whose font manager was

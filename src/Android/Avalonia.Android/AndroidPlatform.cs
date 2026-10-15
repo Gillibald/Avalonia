@@ -107,9 +107,10 @@ namespace Avalonia.Android
             // The text rasterization default depends on whether frames compose on the GPU or on
             // the CPU, which is known only now. Glyph runs read the default when they are
             // created, and none exist before the platform finishes initializing.
-            TextRasterizationDefaults.PlatformDefault = TextRasterizationDefaults.ForPlatform(
-                TextRasterizationPlatform.Android, RuntimeInformation.ProcessArchitecture,
-                rendersInSoftware: graphics is null);
+            AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(new TextRasterizationDefaults(
+                TextRasterizationDefaults.ForPlatform(TextRasterizationPlatform.Android,
+                    RuntimeInformation.ProcessArchitecture, rendersInSoftware: graphics is null),
+                TextRasterizationDefaults.RendersSubpixelByDefault(TextRasterizationPlatform.Android)));
 
             if (graphics is not null)
             {

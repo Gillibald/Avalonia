@@ -111,7 +111,7 @@ namespace Avalonia.Base.UnitTests.Media
         [Fact]
         public void Unset_Options_Report_The_Platform_Default()
         {
-            Assert.Equal(TextRasterizationDefaults.PlatformDefault, new FontManagerOptions().TextRasterizationMode);
+            Assert.Equal(TextRasterizationDefaults.Current.PlatformDefault, new FontManagerOptions().TextRasterizationMode);
         }
 
         [Theory]

@@ -16,33 +16,23 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Unspecified_Text_Renders_Grayscale_Where_The_Platform_Does()
         {
-            var previous = TextRasterizationDefaults.UnspecifiedRendersSubpixel;
+            var unspecified = Render(TextRenderingMode.Unspecified, unspecifiedRendersSubpixel: false);
+            var grayscale = Render(TextRenderingMode.Antialias, unspecifiedRendersSubpixel: false);
+            var subpixel = Render(TextRenderingMode.SubpixelAntialias, unspecifiedRendersSubpixel: false);
 
-            try
-            {
-                TextRasterizationDefaults.UnspecifiedRendersSubpixel = false;
+            Assert.Equal(grayscale, unspecified);
+            Assert.Equal(0, CountChroma(unspecified));
+            Assert.True(CountChroma(subpixel) > 0, "explicit subpixel text drew no stripes");
 
-                var unspecified = Render(TextRenderingMode.Unspecified);
-                var grayscale = Render(TextRenderingMode.Antialias);
-                var subpixel = Render(TextRenderingMode.SubpixelAntialias);
-
-                Assert.Equal(grayscale, unspecified);
-                Assert.Equal(0, CountChroma(unspecified));
-                Assert.True(CountChroma(subpixel) > 0, "explicit subpixel text drew no stripes");
-
-                TextRasterizationDefaults.UnspecifiedRendersSubpixel = true;
-
-                Assert.Equal(subpixel, Render(TextRenderingMode.Unspecified));
-            }
-            finally
-            {
-                TextRasterizationDefaults.UnspecifiedRendersSubpixel = previous;
-            }
+            Assert.Equal(subpixel, Render(TextRenderingMode.Unspecified, unspecifiedRendersSubpixel: true));
         }
 
-        private static uint[] Render(TextRenderingMode mode)
+        private static uint[] Render(TextRenderingMode mode, bool unspecifiedRendersSubpixel)
         {
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+
+            AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(
+                new TextRasterizationDefaults(TextRasterizationMode.Managed, unspecifiedRendersSubpixel));
             using var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(6.37, 20.2));
 
             var info = new SKImageInfo(160, 30, SKColorType.Bgra8888, SKAlphaType.Premul);

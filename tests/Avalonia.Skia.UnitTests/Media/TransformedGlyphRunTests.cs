@@ -237,6 +237,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             public GlyphRasterTuning RasterTuning { get; } = GlyphRasterTuning.Current;
 
+            public TextRasterizationDefaults RasterizationDefaults { get; } = TextRasterizationDefaults.Current;
+
             private TextRasterThreadState? _rasterState;
 
             public bool TryGetLcdGeometry(out LcdMaskGeometry geometry)

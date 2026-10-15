@@ -35,6 +35,13 @@ static class TestRenderHelper
         AvaloniaLocator.CurrentMutable.Bind<ITextShaperImpl>().ToConstant(new HarfBuzzTextShaper());
         AvaloniaLocator.CurrentMutable.Bind<ICursorFactory>().ToConstant(new NullCursorFactory());
 
+        // The expectations here (goldens, ink bounds, routed tiers) are recorded against managed
+        // rasterization with unspecified text rendering subpixel on display surfaces; Linux, macOS
+        // and ARM64 hosts would otherwise render through the backend's text stack, and macOS hosts
+        // grayscale. Tests that exercise the backend choose it explicitly.
+        AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(
+            new TextRasterizationDefaults(TextRasterizationMode.Managed, unspecifiedRendersSubpixel: true));
+
         // The app builder registers the render subsystem's system fonts; render tests skip the builder.
         FontManager.Current.AddFontCollection(
             new SystemFontCollection(FontManager.SystemFontsKey, new SkiaFontProvider()));
