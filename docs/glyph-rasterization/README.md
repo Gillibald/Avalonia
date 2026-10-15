@@ -74,7 +74,9 @@ src/Avalonia.Base/Media/Fonts/Rasterization/   the backend-neutral core
     ColorGlyphRunSplitter.cs, ColorGlyphSegments.cs  COLR v1 / bitmap splits
     IBitmapGlyphDecoder.cs   image decoder seam for bitmap strikes
     ManagedGlyphRunImpl.cs   the managed glyph run implementation
-    GlyphRasterDiagnostics.cs, GlyphPhaseTimers.cs  internal counters and timers
+    GlyphRasterServices.cs   per-application state owned by FontManager: budget, diagnostics, per-thread state
+    TextRasterThreadState.cs, TextRasterCounters.cs, GlyphPhaseTimers.cs  per-thread decisions, counters, timers
+    GlyphRasterTuning.cs     internal tuning bound in the application's locator
 src/Avalonia.Base/Media/TextRasterizationDefaults.cs  per-platform default mode
 src/Avalonia.Base/Media/Fonts/SfntFace.cs      font file view: tables as slices of shared, memory-mapped file data
 src/Avalonia.Base/Media/Fonts/Tables/Colr/     COLR/CPAL parsing and painters
