@@ -348,6 +348,28 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Diagnostics_Counters_Of_A_New_Application_Start_At_Zero()
+        {
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
+
+                DrawText(typeface);
+
+                Assert.NotEqual(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
+                Assert.NotEqual(0, GlyphRasterDiagnostics.MaskCacheMissesOnThread);
+                Assert.NotEqual(0, TextTierDiagnostics.MaskTierDraws);
+            }
+
+            using (TextTestApplication.Enter())
+            {
+                Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
+                Assert.Equal(0, GlyphRasterDiagnostics.MaskCacheMissesOnThread);
+                Assert.Equal(0, TextTierDiagnostics.MaskTierDraws);
+            }
+        }
+
         /// <summary>The rotation of frame <paramref name="frame"/> of an animation.</summary>
         private static Matrix Rotation(int frame)
             => Matrix.CreateRotation(Math.PI * (5 + frame * 1.7) / 180) * Matrix.CreateTranslation(160.4, 120.7);
