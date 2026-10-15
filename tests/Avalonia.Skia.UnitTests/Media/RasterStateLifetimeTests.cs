@@ -177,6 +177,46 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Unsettled_Draws_And_Raster_Ticks_Of_A_New_Application_Start_At_Zero()
+        {
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                // A zoom on a CPU surface where rasterizing costs more than stretching: the frames
+                // after the motion is recognized stretch the settled mask.
+                TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = 1e6 });
+
+                ZoomOnRaster(typeface);
+
+                Assert.NotEqual(0, MaskGlyphRunRenderer.UnsettledDraws);
+                Assert.NotEqual(0, GlyphRasterCost.TicksOnThread);
+            }
+
+            using (WideRunMaskTests.CreateEnvironment(out _))
+            {
+                Assert.Equal(0, MaskGlyphRunRenderer.UnsettledDraws);
+                Assert.Equal(0, GlyphRasterCost.TicksOnThread);
+            }
+        }
+
+        /// <summary>Draws ten frames of a run zooming on a CPU surface, through one drawing context.</summary>
+        private static void ZoomOnRaster(GlyphTypeface typeface)
+        {
+            using var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61));
+            using var surface = SKSurface.Create(new SKImageInfo(400, 120, SKColorType.Bgra8888, SKAlphaType.Premul));
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+            {
+                Surface = surface, Dpi = new Vector(96, 96),
+            });
+
+            for (var frame = 0; frame < 10; frame++)
+            {
+                context.Transform = Matrix.CreateScale(1 + 0.02 * frame, 1 + 0.02 * frame) *
+                                    Matrix.CreateTranslation(10.25, 12.5);
+                context.DrawGlyphRun(Brushes.Black, run);
+            }
+        }
+
         /// <summary>Draws a run of text through a drawing context of the current application.</summary>
         private static void DrawText(GlyphTypeface typeface)
         {
