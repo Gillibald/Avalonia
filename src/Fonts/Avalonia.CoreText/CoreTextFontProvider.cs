@@ -36,10 +36,12 @@ namespace Avalonia.Media.Fonts
             new('C', 'B', 'D', 'T'),
         };
 
-        private static readonly ConcurrentDictionary<(string Path, int FaceIndex), bool> s_drawable = new();
+        // Facts read from font files, kept per file and face for the provider's lifetime: a file
+        // replaced while the application runs is read again by the next provider.
+        private readonly ConcurrentDictionary<(string Path, int FaceIndex), bool> _drawable = new();
 
-        private static readonly ConcurrentDictionary<(string Path, int FaceIndex),
-            (FontWeight Weight, FontStyle Style, FontStretch Stretch)?> s_staticFaceProperties = new();
+        private readonly ConcurrentDictionary<(string Path, int FaceIndex),
+            (FontWeight Weight, FontStyle Style, FontStretch Stretch)?> _staticFaceProperties = new();
 
         /// <summary>
         /// Initializes CoreText lazily on first use: constructing (and registering) the provider
@@ -303,13 +305,13 @@ namespace Avalonia.Media.Fonts
         /// <summary>
         /// Whether the font system can draw the face: it carries TrueType, CFF or CFF2 outlines,
         /// sbix or CBDT bitmaps, or hvgl outlines where the system has the renderer for them.
-        /// Answers are kept per file and face, which never change while the process runs.
+        /// Answers are kept per file and face for the provider's lifetime.
         /// </summary>
-        internal static bool IsDrawable(SystemFontFace face)
+        internal bool IsDrawable(SystemFontFace face)
         {
             var key = (face.FilePath ?? string.Empty, face.FaceIndex);
 
-            if (s_drawable.TryGetValue(key, out var drawable))
+            if (_drawable.TryGetValue(key, out var drawable))
             {
                 return drawable;
             }
@@ -333,7 +335,7 @@ namespace Avalonia.Media.Fonts
                 }
             }
 
-            return s_drawable.GetOrAdd(key, drawable);
+            return _drawable.GetOrAdd(key, drawable);
         }
 
         public bool TryGetFamilyFaces(string familyName, [NotNullWhen(true)] out IReadOnlyList<SystemFontFace>? faces)
@@ -735,7 +737,7 @@ namespace Avalonia.Media.Fonts
         /// dictionary, the file path from the URL attribute, and for TrueType collections the face
         /// index resolved by PostScript name through the managed loader.
         /// </summary>
-        private static SystemFontFace? CreateFontFace(IntPtr descriptor)
+        private SystemFontFace? CreateFontFace(IntPtr descriptor)
         {
             if (descriptor == IntPtr.Zero)
             {
@@ -832,15 +834,15 @@ namespace Avalonia.Media.Fonts
 
         /// <summary>
         /// The weight, style and stretch the font system reads from a static face's file, as its
-        /// glyph typeface reports them. Kept per file and face, which never change while the
-        /// process runs; <see langword="false"/> for faces of variable fonts and unreadable files.
+        /// glyph typeface reports them. Kept per file and face for the provider's lifetime;
+        /// <see langword="false"/> for faces of variable fonts and unreadable files.
         /// </summary>
-        internal static bool TryGetStaticFaceProperties(string filePath, int faceIndex,
+        internal bool TryGetStaticFaceProperties(string filePath, int faceIndex,
             out (FontWeight Weight, FontStyle Style, FontStretch Stretch) properties)
         {
             var key = (filePath, faceIndex);
 
-            if (!s_staticFaceProperties.TryGetValue(key, out var cached))
+            if (!_staticFaceProperties.TryGetValue(key, out var cached))
             {
                 cached = null;
 
@@ -856,7 +858,7 @@ namespace Avalonia.Media.Fonts
                     glyphTypeface.Dispose();
                 }
 
-                cached = s_staticFaceProperties.GetOrAdd(key, cached);
+                cached = _staticFaceProperties.GetOrAdd(key, cached);
             }
 
             properties = cached.GetValueOrDefault();

@@ -368,19 +368,19 @@ namespace Avalonia.CoreText.UnitTests
 
                 var face = new SystemFontFace("Inter", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, path, 0);
 
-                using (new CoreTextFontProvider())
+                using (var first = new CoreTextFontProvider())
                 {
-                    Assert.True(CoreTextFontProvider.IsDrawable(face));
-                    Assert.True(CoreTextFontProvider.TryGetStaticFaceProperties(path, 0, out _));
+                    Assert.True(first.IsDrawable(face));
+                    Assert.True(first.TryGetStaticFaceProperties(path, 0, out _));
                 }
 
                 // The file is replaced by one the font system cannot load.
                 File.WriteAllBytes(path, new byte[64]);
 
-                using (new CoreTextFontProvider())
+                using (var second = new CoreTextFontProvider())
                 {
-                    Assert.False(CoreTextFontProvider.IsDrawable(face));
-                    Assert.False(CoreTextFontProvider.TryGetStaticFaceProperties(path, 0, out _));
+                    Assert.False(second.IsDrawable(face));
+                    Assert.False(second.TryGetStaticFaceProperties(path, 0, out _));
                 }
             }
             finally
