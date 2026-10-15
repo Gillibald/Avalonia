@@ -25,6 +25,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
         {
+            run.MarkDrawn();
+
             var surface = GlyphTargetSurface.Of(context);
             var transform = surface.ToDevice(context.Transform);
             var determinant = transform.M11 * transform.M22 - transform.M12 * transform.M21;

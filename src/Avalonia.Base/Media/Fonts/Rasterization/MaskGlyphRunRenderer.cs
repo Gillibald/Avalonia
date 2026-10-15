@@ -77,6 +77,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             IBrush? foreground, TextRenderingMode textRenderingMode,
             TextHintingMode textHintingMode = TextHintingMode.Unspecified)
         {
+            run.MarkDrawn();
+
             // Every size, snapping and subpixel decision is made in device pixels.
             var surface = GlyphTargetSurface.Of(context);
             var transform = surface.ToDevice(context.Transform);

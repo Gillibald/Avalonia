@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Platform;
 using Avalonia.Utilities;
 
@@ -11,15 +13,25 @@ public interface IImmutableGlyphRunReference : IDisposable
 
 internal class ImmutableGlyphRunReference : IImmutableGlyphRunReference
 {
+    private IRef<IGlyphRunImpl>? _glyphRun;
+
     public ImmutableGlyphRunReference(IRef<IGlyphRunImpl>? glyphRun)
     {
-        GlyphRun = glyphRun;
+        _glyphRun = glyphRun;
+
+        // A custom draw operation draws the run through this reference, so the run keeps the
+        // state drawing builds while the reference lives.
+        (glyphRun?.Item as ManagedGlyphRunImpl)?.AddDrawingReference();
     }
 
-    public IRef<IGlyphRunImpl>? GlyphRun { get; private set; }
+    public IRef<IGlyphRunImpl>? GlyphRun => _glyphRun;
+
     public void Dispose()
     {
-        GlyphRun?.Dispose();
-        GlyphRun = null;
+        if (Interlocked.Exchange(ref _glyphRun, null) is not { } glyphRun)
+            return;
+
+        (glyphRun.Item as ManagedGlyphRunImpl)?.ReleaseDrawingReference();
+        glyphRun.Dispose();
     }
 }

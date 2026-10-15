@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Avalonia.Media;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Rendering.Composition.Transport;
@@ -54,6 +55,9 @@ internal partial class RenderDataStream : IDisposable
                     bitmap.Dispose();
                     break;
                 case IRef<IGlyphRunImpl> glyphRun:
+                    // Disposing the resources twice must not count the run's release twice.
+                    if (glyphRun.IsAlive && glyphRun.Item is ManagedGlyphRunImpl managed)
+                        managed.ReleaseDrawingReference();
                     glyphRun.Dispose();
                     break;
                 case ICustomDrawOperation operation:
@@ -123,10 +127,19 @@ internal partial class RenderDataStream : IDisposable
 
     public void DrawGlyphRun(IBrush? serverBrush, IRef<IGlyphRunImpl>? glyphRun)
     {
+        var brush = _resources.Intern(serverBrush);
+        var resources = _resources.Count;
+        var handle = _resources.Intern(glyphRun);
+
+        // The stream holds the run to draw it until it disposes its resources; the run keeps the
+        // state drawing builds while something holds it so.
+        if (_resources.Count > resources && glyphRun!.Item is ManagedGlyphRunImpl managed)
+            managed.AddDrawingReference();
+
         _writer.WritePayload(new DrawGlyphRunPayload
         {
-            ServerBrush = _resources.Intern(serverBrush),
-            GlyphRun = _resources.Intern(glyphRun)
+            ServerBrush = brush,
+            GlyphRun = handle
         });
     }
 

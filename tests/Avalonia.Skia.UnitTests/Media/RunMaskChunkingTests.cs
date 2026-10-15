@@ -68,7 +68,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using var bitmap = new SKBitmap(info);
             using var canvas = new SKCanvas(bitmap);
-            using var inner = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+            var inner = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
 
             var context = new BoundedMaskContext(inner, ChunkBound, prefersAlphaMasks: true, lcd: false);
 
@@ -116,6 +116,9 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
+                // The frame that drew the run ends first: a run disposed within it keeps its masks
+                // for the frame's pending draws until it ends.
+                inner.Dispose();
                 run.Dispose();
             }
 

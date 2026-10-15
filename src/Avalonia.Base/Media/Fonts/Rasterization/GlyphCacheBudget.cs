@@ -175,6 +175,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         private List<IGlyphCacheFrameListener> _frameListeners = new();
         private List<IGlyphCacheFrameListener> _runningListeners = new();
         private GlyphCachePoolHandle[] _trimPools = Array.Empty<GlyphCachePoolHandle>();
+
+        // Run state nothing draws any more, waiting for the frames that drew it to end.
+        private readonly List<ReleasedRunState> _releasedRunState = new();
+        private int _releasedRunStateCount;
         private long _used;
         private long _peak;
         private long _frame;
@@ -423,6 +427,100 @@ namespace Avalonia.Media.Fonts.Rasterization
             return new GlyphCacheFrame(this, id);
         }
 
+        /// <summary>
+        /// Disposes <paramref name="state"/>, render-thread state of a glyph run that nothing draws
+        /// any more, once the frame that last drew it has ended: at once when it has, else when a
+        /// frame begins after it ended. The state's own disposal credits its bytes.
+        /// </summary>
+        /// <param name="state">The state, detached from its run so no draw reaches it again.</param>
+        /// <param name="lastDrawn">The <see cref="Frame"/> the run was last drawn in, 0 if never.</param>
+        /// <param name="thread">The managed thread id that last drew the run.</param>
+        /// <remarks>
+        /// Run state is drawn by one thread at a time, so only that thread's frame can still hold
+        /// it: the frame it had open when it drew the run began at or before
+        /// <paramref name="lastDrawn"/>.
+        /// </remarks>
+        public void ReleaseRunState(IDisposable? state, long lastDrawn, int thread)
+        {
+            if (state is null)
+            {
+                return;
+            }
+
+            lock (_frameLock)
+            {
+                // The pending draws of that frame may still hold the state.
+                if (IsDrawnByOpenFrame(lastDrawn, thread))
+                {
+                    _releasedRunState.Add(new ReleasedRunState(state, lastDrawn, thread));
+                    Volatile.Write(ref _releasedRunStateCount, _releasedRunState.Count);
+
+                    return;
+                }
+            }
+
+            state.Dispose();
+        }
+
+        /// <summary>The run state <see cref="ReleaseRunState"/> holds back for open frames; for diagnostics and tests.</summary>
+        internal int PendingRunStateReleases => Volatile.Read(ref _releasedRunStateCount);
+
+        // Called under the frame lock.
+        private bool IsDrawnByOpenFrame(long lastDrawn, int thread)
+        {
+            if (lastDrawn <= 0)
+            {
+                return false;
+            }
+
+            foreach (var open in _open)
+            {
+                if (open.Thread == thread && !IsStale(open.Start) && open.Start <= lastDrawn)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Disposes the run state held back for frames that have ended since.</summary>
+        private void ReleaseHeldRunState()
+        {
+            if (Volatile.Read(ref _releasedRunStateCount) == 0)
+            {
+                return;
+            }
+
+            List<IDisposable>? ready = null;
+
+            lock (_frameLock)
+            {
+                for (var i = _releasedRunState.Count - 1; i >= 0; i--)
+                {
+                    if (!IsDrawnByOpenFrame(_releasedRunState[i].LastDrawn, _releasedRunState[i].Thread))
+                    {
+                        (ready ??= new List<IDisposable>()).Add(_releasedRunState[i].State);
+                        _releasedRunState.RemoveAt(i);
+                    }
+                }
+
+                Volatile.Write(ref _releasedRunStateCount, _releasedRunState.Count);
+            }
+
+            if (ready is null)
+            {
+                return;
+            }
+
+            foreach (var state in ready)
+            {
+                state.Dispose();
+            }
+        }
+
+        private readonly record struct ReleasedRunState(IDisposable State, long LastDrawn, int Thread);
+
         /// <summary>Runs <paramref name="listener"/> once when the next frame begins.</summary>
         public void RunAtNextFrame(IGlyphCacheFrameListener listener)
         {
@@ -532,6 +630,14 @@ namespace Avalonia.Media.Fonts.Rasterization
                 try
                 {
                     t_quiescentTrim = quiescent;
+
+                    // Frames stopped: run state held back for the last of them goes now rather
+                    // than at a frame that may be long in coming.
+                    if (quiescent)
+                    {
+                        ReleaseHeldRunState();
+                    }
+
                     Trim(target, usedBefore, fair: false, includeAffine: quiescent);
 
                     return !quiescent;
@@ -686,6 +792,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private void OnFrameStart(long frame)
         {
+            // Before the trims, so they count only what is still held.
+            ReleaseHeldRunState();
+
             if (frame % SweepInterval == 0)
             {
                 SweepCollectedPools();
