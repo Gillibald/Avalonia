@@ -21,6 +21,11 @@ namespace TextStress
                 Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Enabled = true;
             }
 
+            if (options.StretchVerticesMinSprites >= 0)
+            {
+                Avalonia.Skia.DrawingContextImpl.StretchVerticesMinSprites = options.StretchVerticesMinSprites;
+            }
+
             if (options.PendingBatches > 0)
             {
                 Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = options.PendingBatches;

@@ -45,6 +45,12 @@ namespace TextStress
         /// <summary>The GPU glyph batcher's pending batch limit; 0 keeps the built-in value.</summary>
         public int PendingBatches { get; private set; }
 
+        /// <summary>
+        /// The sprites from which a stretched run draws from kept vertices; -1 keeps the built-in
+        /// value. An in-build A/B switch for the stretched draw path.
+        /// </summary>
+        public int StretchVerticesMinSprites { get; private set; } = -1;
+
         public int Seed { get; private set; } = 1;
 
         public int Pass { get; private set; } = 1;
@@ -108,6 +114,7 @@ namespace TextStress
                     case "prewarm-pass": options.PrewarmPass = value is "1" or "true" or "on" or "yes"; break;
                     case "phase-timers": options.PhaseTimers = value is "1" or "true" or "on" or "yes"; break;
                     case "pending-batches": options.PendingBatches = ParseInt(key, value); break;
+                    case "stretch-vertices": options.StretchVerticesMinSprites = ParseInt(key, value); break;
                     case "seed": options.Seed = ParseInt(key, value); break;
                     case "pass": options.Pass = ParseInt(key, value); break;
                     case "out": options.Out = value; break;
@@ -164,6 +171,7 @@ namespace TextStress
             "  --prewarm-ms N   discarded frames before the first measurement, in ms (default 2000)\n" +
             "  --prewarm-pass   run every measured frame once, discarded, before measuring (warm caches)\n" +
             "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 32)\n" +
+            "  --stretch-vertices N  sprites from which a stretched run draws from kept vertices (default: built-in)\n" +
             "  --phase-timers   record the render thread's glyph phase timers (us_/n_ columns)\n" +
             "  --glyph-cache-mb N   FontManagerOptions.GlyphCacheLimitBytes in MB (default: platform default)\n" +
             "  --motion-budget-us N   time a GPU frame may spend rasterizing moving text sharp, in us; 0 always\n" +
