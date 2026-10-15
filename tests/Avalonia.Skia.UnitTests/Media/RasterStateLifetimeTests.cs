@@ -26,6 +26,45 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Motion_Budget_Overrides_Do_Not_Outlive_Application()
+        {
+            var budget = MotionRasterBudget.BudgetOverride;
+            var glyphCost = MotionRasterBudget.GlyphCostOverride;
+            var interval = MotionRasterBudget.FrameIntervalOverride;
+            var nonText = MotionRasterBudget.NonTextOverride;
+
+            try
+            {
+                using (TextTestApplication.Enter())
+                {
+                    FailingSetup(() =>
+                    {
+                        MotionRasterBudget.BudgetOverride = 1e9;
+                        MotionRasterBudget.GlyphCostOverride = 1;
+                        MotionRasterBudget.FrameIntervalOverride = 1e6;
+                        MotionRasterBudget.NonTextOverride = 0;
+                    });
+                }
+
+                using (TextTestApplication.Enter())
+                {
+                    // The motion budget of this assembly's applications affords nothing.
+                    Assert.Equal(0, MotionRasterBudget.BudgetOverride);
+                    Assert.Null(MotionRasterBudget.GlyphCostOverride);
+                    Assert.Null(MotionRasterBudget.FrameIntervalOverride);
+                    Assert.Null(MotionRasterBudget.NonTextOverride);
+                }
+            }
+            finally
+            {
+                MotionRasterBudget.BudgetOverride = budget;
+                MotionRasterBudget.GlyphCostOverride = glyphCost;
+                MotionRasterBudget.FrameIntervalOverride = interval;
+                MotionRasterBudget.NonTextOverride = nonText;
+            }
+        }
+
         /// <summary>The tuning a drawing context created now draws text with.</summary>
         private static GlyphRasterTuning TuningOfNewContext()
         {
