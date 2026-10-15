@@ -710,6 +710,47 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
+        /// An evicted resident page keeps its texture until a frame begins that no frame still
+        /// being drawn precedes, then releases it.
+        /// </summary>
+        [Fact]
+        public void An_Evicted_Resident_Page_Releases_Its_Texture_When_The_Next_Frame_Begins()
+        {
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var atlas = new GlyphMaskAtlas(budget, residentPages: true);
+            var texture = new DisposeCounter();
+            GlyphAtlasPage page;
+
+            using (budget.BeginFrame())
+            {
+                Assert.True(atlas.TryAdd(Key(1), CreateMask(new Random(3), 20, 20), atlas.Tick(), out var slot));
+
+                page = slot.Page!;
+                page.Realized = texture;
+
+                Assert.True(((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue) > 0);
+                Assert.True(page.IsEvicted);
+                Assert.Same(texture, page.Realized);
+                Assert.Equal(0, texture.Disposals);
+            }
+
+            using (budget.BeginFrame())
+            {
+            }
+
+            Assert.Null(page.Realized);
+            Assert.Equal(1, texture.Disposals);
+            Assert.False(page.CanComposeWhole);
+        }
+
+        private sealed class DisposeCounter : IDisposable
+        {
+            public int Disposals { get; private set; }
+
+            public void Dispose() => Disposals++;
+        }
+
+        /// <summary>
         /// A page is charged its allocated rows, whatever holds its texels: the budget's limits and
         /// eviction order depend on those numbers.
         /// </summary>

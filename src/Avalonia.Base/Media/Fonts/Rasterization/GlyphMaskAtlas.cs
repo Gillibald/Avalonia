@@ -303,7 +303,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        /// <summary>Drops what a resident page has staged; for a page that will never be drawn again.</summary>
+        /// <summary>
+        /// Drops what a resident page has staged, for a page that will never be drawn again: no
+        /// texture can be made for it afterwards.
+        /// </summary>
         internal void DropStaging()
         {
             lock (_writtenLock)
@@ -313,6 +316,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return;
                 }
 
+                _stripsTaken = true;
                 _strips.Clear();
                 NativeMemory.Free(_staging);
                 _staging = null;
@@ -495,6 +499,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly Dictionary<GlyphAtlasEntryKey, GlyphAtlasSlot> _slots = new();
         private readonly List<GlyphAtlasPage> _pages = new();
         private readonly List<GlyphAtlasPage> _emptied = new();
+        private readonly List<GlyphAtlasPage> _retiring = new();
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
@@ -610,7 +615,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Drops the pages <see cref="Retire"/> emptied, at the start of a frame on the thread
-        /// that draws it, unless another owner has placed entries on them since.
+        /// that draws it, unless another owner has placed entries on them since, and releases the
+        /// textures of dropped resident pages no frame still being drawn uses.
         /// </summary>
         void IGlyphCacheFrameListener.OnFrameStart(long frame)
         {
@@ -625,6 +631,22 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 _emptied.Clear();
+
+                var floor = _clock.PinFloor;
+
+                for (var i = _retiring.Count - 1; i >= 0; i--)
+                {
+                    if (_retiring[i].LastUse < floor)
+                    {
+                        ReleaseResident(_retiring[i]);
+                        _retiring.RemoveAt(i);
+                    }
+                }
+
+                if (_retiring.Count > 0)
+                {
+                    _clock.RunAtNextFrame(this);
+                }
             }
         }
 
@@ -897,9 +919,15 @@ namespace Avalonia.Media.Fonts.Rasterization
                     page.DropStaging();
                 }
 
+                foreach (var page in _retiring)
+                {
+                    ReleaseResident(page);
+                }
+
                 _slots.Clear();
                 _pages.Clear();
                 _emptied.Clear();
+                _retiring.Clear();
                 Interlocked.Exchange(ref _allocated, 0);
                 Interlocked.Exchange(ref _indexBytes, 0);
             }
@@ -968,11 +996,30 @@ namespace Avalonia.Media.Fonts.Rasterization
             Interlocked.Increment(ref _evictions);
 
             page.IsEvicted = true;
+
+            if (page.IsResident)
+            {
+                // Sprites of the page may still wait in a batch of the frame that dropped it, and
+                // only its texture and the strips staged for it hold their texels: both stay until
+                // a frame begins that no longer draws the page.
+                _retiring.Add(page);
+                _clock.RunAtNextFrame(this);
+            }
+            else
+            {
+                page.Realized?.Dispose();
+                page.Realized = null;
+            }
+
+            return charged + index;
+        }
+
+        /// <summary>Releases the texture and the staged strips of a dropped resident page.</summary>
+        private static void ReleaseResident(GlyphAtlasPage page)
+        {
             page.Realized?.Dispose();
             page.Realized = null;
             page.DropStaging();
-
-            return charged + index;
         }
 
         /// <summary>
