@@ -30,12 +30,13 @@ namespace Avalonia.Skia
         private LcdRunAtlas? _lcdAtlas;
 
         /// <summary>
-        /// The atlas subpixel run masks are placed in, the application's unless set; tests give a
-        /// context a small one.
+        /// The atlas subpixel run masks are placed in, unless set: the GPU context registration's
+        /// for the context's application, or the application's own where the context has no
+        /// registration. Tests give a context a small one.
         /// </summary>
         internal LcdRunAtlas LcdAtlas
         {
-            get => _lcdAtlas ??= RasterState.Services.LcdAtlas;
+            get => _lcdAtlas ??= _registration?.LcdAtlasFor(RasterState.Services) ?? RasterState.Services.LcdAtlas;
             set => _lcdAtlas = value;
         }
 

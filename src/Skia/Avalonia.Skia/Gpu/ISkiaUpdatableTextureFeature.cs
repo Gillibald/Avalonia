@@ -136,6 +136,7 @@ namespace Avalonia.Skia
             private GlyphRasterServices? _services;
             private GlyphMaskAtlas? _ownMaskAtlas;
             private GlyphMaskAtlas? _ownColorAtlas;
+            private LcdRunAtlas? _lcdAtlas;
 
             /// <param name="feature">The context's updatable textures.</param>
             /// <param name="maskAtlas">The atlas of the context's glyph masks, or <c>null</c> to make one per application.</param>
@@ -173,6 +174,20 @@ namespace Avalonia.Skia
                 }
             }
 
+            /// <summary>
+            /// The atlas the subpixel run masks drawn on the context for <paramref name="services"/>'
+            /// application go to, made for that application.
+            /// </summary>
+            public LcdRunAtlas LcdAtlasFor(GlyphRasterServices services)
+            {
+                lock (_lock)
+                {
+                    EnsureOwnAtlases(services);
+
+                    return _lcdAtlas!;
+                }
+            }
+
             /// <summary>Releases the atlases made for the registration: their pages and budget charges go.</summary>
             public void ReleaseOwnedAtlases()
             {
@@ -192,6 +207,7 @@ namespace Avalonia.Skia
                     _ownMaskAtlas = new GlyphMaskAtlas(services.Budget, residentPages: ResidentPages);
                     _ownColorAtlas = new GlyphMaskAtlas(services.Budget, format: GlyphAtlasFormat.Rgba,
                         residentPages: ResidentPages);
+                    _lcdAtlas = new LcdRunAtlas(services.Budget);
                 }
 
                 return (_ownMaskAtlas, _ownColorAtlas);
@@ -202,8 +218,10 @@ namespace Avalonia.Skia
             {
                 _ownMaskAtlas?.Release();
                 _ownColorAtlas?.Release();
+                _lcdAtlas?.Release();
                 _ownMaskAtlas = null;
                 _ownColorAtlas = null;
+                _lcdAtlas = null;
                 _services = null;
             }
         }

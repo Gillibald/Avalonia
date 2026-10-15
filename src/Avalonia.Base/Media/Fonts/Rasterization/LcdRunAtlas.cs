@@ -202,6 +202,24 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// Drops every page and leaves the budget, for the atlas of a GPU context that is gone or
+        /// of an application that ended: entries report themselves evicted, so a run that still
+        /// draws composes its mask again elsewhere.
+        /// </summary>
+        public void Release()
+        {
+            lock (_lock)
+            {
+                while (_pages.Count > 0)
+                {
+                    Evict(_pages[_pages.Count - 1]);
+                }
+            }
+
+            _handle.Release();
+        }
+
         internal void Release(LcdAtlasEntry entry)
         {
             lock (_lock)

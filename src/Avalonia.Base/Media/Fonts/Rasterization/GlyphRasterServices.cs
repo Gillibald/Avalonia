@@ -34,7 +34,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private LcdRunAtlas? _lcdAtlas;
 
-        /// <summary>The atlas the hardware GPU contexts of the application place their subpixel run masks in.</summary>
+        /// <summary>
+        /// The atlas the hardware GPU contexts of the application without an updatable-texture
+        /// registration place their subpixel run masks in; contexts with one use the registration's.
+        /// </summary>
         public LcdRunAtlas LcdAtlas
             => Volatile.Read(ref _lcdAtlas) ??
                Interlocked.CompareExchange(ref _lcdAtlas, new LcdRunAtlas(Budget), null) ??
