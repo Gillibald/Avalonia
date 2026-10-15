@@ -10,10 +10,11 @@ namespace Avalonia.Skia
     /// <c>glTexSubImage2D</c>.
     /// </summary>
     /// <remarks>
-    /// An update reads a sub-rectangle of a larger CPU buffer, which needs
+    /// An update reads each rectangle from rows of a larger CPU buffer, which needs
     /// <c>GL_UNPACK_ROW_LENGTH</c>: desktop GL 3.0 or GLES 3.0 and later have both. Colour texels go
     /// up as <c>GL_RGBA</c>, the one byte order GLES 3 and WebGL 2 accept without an extension.
-    /// Skia's cached GL state is reset after every call that binds a texture.
+    /// Skia's cached GL state is reset once after every call that binds a texture, however many
+    /// rectangles it uploads.
     /// </remarks>
     internal sealed unsafe class GlUpdatableTextureFeature : ISkiaUpdatableTextureFeature
     {
@@ -186,17 +187,27 @@ namespace Avalonia.Skia
             return texture;
         }
 
-        private void Upload(uint id, int bytesPerPixel, PixelRect rect, ReadOnlySpan<byte> source, int rowBytes)
+        private void Upload(uint id, int bytesPerPixel, ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging)
         {
+            if (regions.IsEmpty)
+            {
+                return;
+            }
+
             _bindBuffer(PixelUnpackBuffer, 0);
             _bindTexture((int)Texture2D, id);
             _pixelStorei(UnpackAlignment, 1);
-            _pixelStorei(UnpackRowLength, rowBytes / bytesPerPixel);
 
-            fixed (byte* p = source)
+            fixed (byte* p = staging)
             {
-                _texSubImage2D((int)Texture2D, 0, rect.X, rect.Y, rect.Width, rect.Height,
-                    bytesPerPixel == 4 ? Rgba : Red, UnsignedByte, p + rect.Y * rowBytes + rect.X * bytesPerPixel);
+                foreach (var region in regions)
+                {
+                    var rect = region.Target;
+
+                    _pixelStorei(UnpackRowLength, region.RowBytes / bytesPerPixel);
+                    _texSubImage2D((int)Texture2D, 0, rect.X, rect.Y, rect.Width, rect.Height,
+                        bytesPerPixel == 4 ? Rgba : Red, UnsignedByte, p + region.Offset);
+                }
             }
 
             _pixelStorei(UnpackRowLength, 0);
@@ -219,11 +230,8 @@ namespace Avalonia.Skia
 
             public SKImage Image { get; set; } = null!;
 
-            public void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes) =>
-                _gl.Upload(_id, _bytesPerPixel, rect, source, rowBytes);
-
             public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging) =>
-                throw new NotSupportedException();
+                _gl.Upload(_id, _bytesPerPixel, regions, staging);
 
             /// <summary>Drops the wrapper; Skia deletes the texture once no recorded draw uses it.</summary>
             public void Dispose() => Image.Dispose();

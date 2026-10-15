@@ -174,95 +174,6 @@ namespace Avalonia.Skia.UnitTests.Media
             yield return new object[] { GpuBackend.Vulkan };
         }
 
-        [Theory]
-        [MemberData(nameof(UpdatableTextureContexts))]
-        public void An_Updatable_Texture_Holds_Its_Source_Through_Rectangle_Updates(GpuBackend backend)
-        {
-            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
-            var textures = SkiaUpdatableTextures.Get(gpu.GrContext)?.Feature;
-
-            Assert.NotNull(textures);
-
-            const int width = 300, height = 70, rowBytes = 320;
-            var source = new byte[rowBytes * height];
-
-            for (var i = 0; i < source.Length; i++)
-            {
-                source[i] = (byte)(i * 7 + i / rowBytes);
-            }
-
-            using var texture = textures!.TryCreateAlpha8(width, height, source, rowBytes);
-
-            Assert.NotNull(texture);
-            Assert.Equal(Crop(source, rowBytes, width, height), ReadImage(gpu, texture!.Image, width, height));
-
-            var image = texture.Image;
-
-            // Rectangles at the edges and one in the middle, each written in between two reads.
-            foreach (var rect in new[]
-                     {
-                         new PixelRect(0, 0, 1, 1), new PixelRect(width - 17, height - 5, 17, 5),
-                         new PixelRect(31, 9, 113, 40),
-                     })
-            {
-                for (var y = rect.Y; y < rect.Bottom; y++)
-                {
-                    for (var x = rect.X; x < rect.Right; x++)
-                    {
-                        source[y * rowBytes + x] ^= 0xA5;
-                    }
-                }
-
-                texture.Update(rect, source, rowBytes);
-
-                Assert.Same(image, texture.Image);
-                Assert.Equal(Crop(source, rowBytes, width, height), ReadImage(gpu, texture.Image, width, height));
-            }
-        }
-
-        [Theory]
-        [MemberData(nameof(UpdatableTextureContexts))]
-        public void An_Updatable_Rgba_Texture_Holds_Its_Source_Through_Rectangle_Updates(GpuBackend backend)
-        {
-            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
-            var textures = SkiaUpdatableTextures.Get(gpu.GrContext)?.Feature;
-
-            Assert.NotNull(textures);
-
-            const int width = 300, height = 70, rowBytes = 1312;
-            var random = new Random(17);
-            var source = new byte[rowBytes * height];
-
-            for (var y = 0; y < height; y++)
-            {
-                FillPremultiplied(random, source.AsSpan(y * rowBytes, width * 4));
-            }
-
-            using var texture = textures!.TryCreateRgba8(width, height, source, rowBytes);
-
-            Assert.NotNull(texture);
-            Assert.Equal(Crop(source, rowBytes, width * 4, height), ReadRgbaImage(gpu, texture!.Image, width, height));
-
-            var image = texture.Image;
-
-            foreach (var rect in new[]
-                     {
-                         new PixelRect(0, 0, 1, 1), new PixelRect(width - 17, height - 5, 17, 5),
-                         new PixelRect(31, 9, 113, 40),
-                     })
-            {
-                for (var y = rect.Y; y < rect.Bottom; y++)
-                {
-                    FillPremultiplied(random, source.AsSpan(y * rowBytes + rect.X * 4, rect.Width * 4));
-                }
-
-                texture.Update(rect, source, rowBytes);
-
-                Assert.Same(image, texture.Image);
-                Assert.Equal(Crop(source, rowBytes, width * 4, height), ReadRgbaImage(gpu, texture.Image, width, height));
-            }
-        }
-
         public static IEnumerable<object[]> RegionUpdateContexts()
         {
             foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })
@@ -574,18 +485,6 @@ namespace Avalonia.Skia.UnitTests.Media
             fixed (byte* p = pixels)
             {
                 Assert.True(target.ReadPixels(info, (IntPtr)p, info.RowBytes, 0, 0));
-            }
-
-            return pixels;
-        }
-
-        private static byte[] Crop(byte[] source, int rowBytes, int width, int height)
-        {
-            var pixels = new byte[width * height];
-
-            for (var y = 0; y < height; y++)
-            {
-                source.AsSpan(y * rowBytes, width).CopyTo(pixels.AsSpan(y * width));
             }
 
             return pixels;

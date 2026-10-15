@@ -130,10 +130,13 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
                 return null;
             }
 
-            ReplaceRegion(handle, bytesPerPixel, new PixelRect(0, 0, width, height), pixels, rowBytes);
+            fixed (byte* p = pixels)
+            {
+                ReplaceRegion(handle, new PixelRect(0, 0, width, height), p, rowBytes);
+            }
         }
 
-        var texture = new Texture(this, handle, bytesPerPixel);
+        var texture = new Texture(this, handle);
 
         lock (_lock)
         {
@@ -159,9 +162,8 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
         return texture;
     }
 
-    /// <summary>Copies <paramref name="rect"/> of <paramref name="source"/> into the texture.</summary>
-    private static void ReplaceRegion(IntPtr texture, int bytesPerPixel, PixelRect rect, ReadOnlySpan<byte> source,
-        int rowBytes)
+    /// <summary>Copies the texels at <paramref name="source"/>, rows <paramref name="rowBytes"/> apart, into <paramref name="rect"/> of the texture.</summary>
+    private static void ReplaceRegion(IntPtr texture, PixelRect rect, byte* source, int rowBytes)
     {
         var region = new MTLRegion
         {
@@ -172,11 +174,8 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
             Depth = 1,
         };
 
-        fixed (byte* p = source)
-        {
-            ((delegate* unmanaged<IntPtr, IntPtr, MTLRegion, nuint, byte*, nuint, void>)s_msgSend)(
-                texture, s_replaceRegion, region, 0, p + rect.Y * rowBytes + rect.X * bytesPerPixel, (nuint)rowBytes);
-        }
+        ((delegate* unmanaged<IntPtr, IntPtr, MTLRegion, nuint, byte*, nuint, void>)s_msgSend)(
+            texture, s_replaceRegion, region, 0, source, (nuint)rowBytes);
     }
 
     /// <summary>
@@ -228,33 +227,36 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
     private sealed class Texture : ISkiaUpdatableTexture
     {
         private readonly MetalUpdatableTextureFeature _owner;
-        private readonly int _bytesPerPixel;
         private bool _released;
 
-        public Texture(MetalUpdatableTextureFeature owner, IntPtr handle, int bytesPerPixel)
+        public Texture(MetalUpdatableTextureFeature owner, IntPtr handle)
         {
             _owner = owner;
             Handle = handle;
-            _bytesPerPixel = bytesPerPixel;
         }
 
         public IntPtr Handle { get; }
 
         public SKImage Image { get; set; } = null!;
 
-        public void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes)
+        public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging)
         {
             lock (_owner._lock)
             {
-                if (!_released && !_owner._disposed)
+                if (_released || _owner._disposed)
                 {
-                    ReplaceRegion(Handle, _bytesPerPixel, rect, source, rowBytes);
+                    return;
+                }
+
+                fixed (byte* p = staging)
+                {
+                    foreach (var region in regions)
+                    {
+                        ReplaceRegion(Handle, region.Target, p + region.Offset, region.RowBytes);
+                    }
                 }
             }
         }
-
-        public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging) =>
-            throw new NotSupportedException();
 
         /// <summary>Drops the wrapper; the texture goes once Skia no longer uses it.</summary>
         public void Dispose() => Image.Dispose();

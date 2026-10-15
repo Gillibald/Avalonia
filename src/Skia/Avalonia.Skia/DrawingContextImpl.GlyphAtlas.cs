@@ -782,7 +782,13 @@ namespace Avalonia.Skia
                     if (bottom > written.Y)
                     {
                         written = new PixelRect(written.X, written.Y, written.Width, bottom - written.Y);
-                        _texture.Update(written, page.Pixels, page.RowBytes);
+
+                        ReadOnlySpan<TextureRegion> region = stackalloc TextureRegion[]
+                        {
+                            new(written, written.Y * page.RowBytes + written.X * page.BytesPerPixel, page.RowBytes)
+                        };
+
+                        _texture.Update(region, page.Pixels);
                         t_pageTextureUpdates++;
                         t_pageTextureRegions++;
                         t_pageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;

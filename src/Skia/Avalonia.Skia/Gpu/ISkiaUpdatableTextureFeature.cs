@@ -41,24 +41,14 @@ namespace Avalonia.Skia
         SKImage Image { get; }
 
         /// <summary>
-        /// Copies <paramref name="rect"/> of <paramref name="source"/>, which holds the whole
-        /// texture with rows <paramref name="rowBytes"/> apart, into the same rectangle of the
-        /// texture.
-        /// </summary>
-        /// <remarks>
-        /// The update takes effect before any draw Skia has not yet submitted, including draws
-        /// of this image recorded earlier: those must only sample texels the update leaves as
-        /// they were.
-        /// </remarks>
-        void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes);
-
-        /// <summary>
         /// Copies the texels of every region from <paramref name="staging"/> into its rectangle of
-        /// the texture, as one piece of backend work.
+        /// the texture, as one piece of backend work: one queue submission on Vulkan.
         /// </summary>
         /// <remarks>
-        /// <paramref name="staging"/> may be read until the call returns. The update takes effect
-        /// before any draw Skia has not yet submitted, as a single rectangle's does.
+        /// <paramref name="staging"/> is read before the call returns, so the caller may reuse it
+        /// at once. The update takes effect before any draw Skia has not yet submitted, including
+        /// draws of this image recorded earlier: those must only sample texels the update leaves
+        /// as they were.
         /// </remarks>
         void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging);
     }

@@ -61,6 +61,9 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
     private const int SlotCount = 4;
     private const int MinStagingBytes = 64 * 1024;
 
+    // Regions of one update whose copy descriptions live on the stack.
+    private const int MaxStackRegions = 64;
+
     // A whole page goes up when a texture is made, up to 2 MB (8 MB for a colour page); a slot keeps at most this much
     // afterwards, enough for the rectangles of ordinary updates.
     private const int MaxRetainedStagingBytes = 256 * 1024;
@@ -206,7 +209,9 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
 
         var texture = new Texture(this, image, memory, bytesPerPixel);
 
-        if (!Upload(texture, new PixelRect(0, 0, width, height), pixels, rowBytes, LayoutUndefined))
+        ReadOnlySpan<TextureRegion> whole = stackalloc TextureRegion[] { new(new PixelRect(0, 0, width, height), 0, rowBytes) };
+
+        if (!Upload(texture, whole, pixels, LayoutUndefined))
         {
             Free(image, memory);
             return null;
@@ -291,14 +296,26 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
     }
 
     /// <summary>
-    /// Copies <paramref name="rect"/> of <paramref name="source"/> into the image in one
-    /// submission, moving it from <paramref name="oldLayout"/> through the transfer layout to
-    /// the layout Skia samples it in.
+    /// Copies the regions of <paramref name="source"/> into the image in one submission, moving it
+    /// from <paramref name="oldLayout"/> through the transfer layout to the layout Skia samples it in.
     /// </summary>
-    private bool Upload(Texture texture, PixelRect rect, ReadOnlySpan<byte> source, int rowBytes, uint oldLayout)
+    private bool Upload(Texture texture, ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> source,
+        uint oldLayout)
     {
-        var rowWidth = rect.Width * texture.BytesPerPixel;
-        var bytes = (long)rowWidth * rect.Height;
+        if (regions.IsEmpty)
+        {
+            return true;
+        }
+
+        // Each region's rows go into the staging buffer tightly packed, the regions one after
+        // another at offsets a multiple of four bytes, which every texel format allows.
+        long bytes = 0;
+
+        foreach (var region in regions)
+        {
+            bytes += AlignedSize(region, texture.BytesPerPixel);
+        }
+
         var slot = AcquireSlot(bytes);
 
         if (slot is null)
@@ -306,20 +323,45 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
             return false;
         }
 
-        // Rows go into the staging buffer tightly packed; whole rows in one block.
-        var start = rect.Y * rowBytes + rect.X * texture.BytesPerPixel;
+        Span<VkBufferImageCopy> copies = regions.Length <= MaxStackRegions
+            ? stackalloc VkBufferImageCopy[regions.Length]
+            : new VkBufferImageCopy[regions.Length];
+        long offset = 0;
 
-        if (rowWidth == rowBytes)
+        for (var i = 0; i < regions.Length; i++)
         {
-            source.Slice(start, (int)bytes).CopyTo(new Span<byte>((void*)slot.Mapped, (int)bytes));
-        }
-        else
-        {
-            for (var y = 0; y < rect.Height; y++)
+            var region = regions[i];
+            var rect = region.Target;
+            var rowWidth = rect.Width * texture.BytesPerPixel;
+            var target = (byte*)slot.Mapped + offset;
+
+            if (rowWidth == region.RowBytes)
             {
-                source.Slice(start + y * rowBytes, rowWidth)
-                    .CopyTo(new Span<byte>((byte*)slot.Mapped + (long)y * rowWidth, rowWidth));
+                source.Slice(region.Offset, rowWidth * rect.Height)
+                    .CopyTo(new Span<byte>(target, rowWidth * rect.Height));
             }
+            else
+            {
+                for (var y = 0; y < rect.Height; y++)
+                {
+                    source.Slice(region.Offset + y * region.RowBytes, rowWidth)
+                        .CopyTo(new Span<byte>(target + (long)y * rowWidth, rowWidth));
+                }
+            }
+
+            copies[i] = new VkBufferImageCopy
+            {
+                bufferOffset = (ulong)offset,
+                imageAspectMask = AspectColor,
+                imageLayerCount = 1,
+                imageOffsetX = rect.X,
+                imageOffsetY = rect.Y,
+                imageExtentWidth = (uint)rect.Width,
+                imageExtentHeight = (uint)rect.Height,
+                imageExtentDepth = 1,
+            };
+
+            offset += AlignedSize(region, texture.BytesPerPixel);
         }
 
         var commandBuffer = slot.CommandBuffer;
@@ -343,18 +385,11 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         _api.CmdPipelineBarrier(commandBuffer, oldLayout == LayoutUndefined ? StageTopOfPipe : StageFragmentShader,
             StageTransfer, 0, 0, null, 0, null, 1, &toTransfer);
 
-        var region = new VkBufferImageCopy
+        fixed (VkBufferImageCopy* first = copies)
         {
-            imageAspectMask = AspectColor,
-            imageLayerCount = 1,
-            imageOffsetX = rect.X,
-            imageOffsetY = rect.Y,
-            imageExtentWidth = (uint)rect.Width,
-            imageExtentHeight = (uint)rect.Height,
-            imageExtentDepth = 1,
-        };
-
-        _api.CmdCopyBufferToImage(commandBuffer, slot.Buffer, texture.Handle, LayoutTransferDst, 1, &region);
+            _api.CmdCopyBufferToImage(commandBuffer, slot.Buffer, texture.Handle, LayoutTransferDst,
+                (uint)copies.Length, first);
+        }
 
         var toShader = Barrier(texture.Handle, LayoutTransferDst, LayoutShaderReadOnly, AccessTransferWrite,
             AccessShaderRead);
@@ -395,6 +430,10 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
 
         return true;
     }
+
+    /// <summary>The bytes a region's packed rows take in the staging buffer, rounded up to four.</summary>
+    private static long AlignedSize(in TextureRegion region, int bytesPerPixel)
+        => ((long)region.Target.Width * bytesPerPixel * region.Target.Height + 3) & ~3L;
 
     /// <summary>The next slot of the ring, once its last copy finished, with room for <paramref name="bytes"/>.</summary>
     private Slot? AcquireSlot(long bytes)
@@ -633,18 +672,15 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
 
         public SKImage Image { get; set; } = null!;
 
-        public void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes)
+        public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging)
         {
             using var _ = _owner._vulkan.Device.Lock();
 
             if (!_released && !_owner._failed && !_owner._disposed)
             {
-                _owner.Upload(this, rect, source, rowBytes, LayoutShaderReadOnly);
+                _owner.Upload(this, regions, staging, LayoutShaderReadOnly);
             }
         }
-
-        public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging) =>
-            throw new NotSupportedException();
 
         /// <summary>Drops the wrapper; the image is destroyed once Skia no longer uses it.</summary>
         public void Dispose() => Image.Dispose();
