@@ -46,8 +46,29 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return BuildTransformed(typeface, scratch, key);
             }
 
+            return BuildUprightTimed(typeface, scratch, key, transient: false, out _);
+        }
+
+        /// <summary>
+        /// Builds the upright mask <paramref name="key"/> describes, exactly the coverage and
+        /// placement <see cref="Build"/> makes, into a buffer rented from the shared pool, for a
+        /// mask that is copied into an atlas and never cached. The caller returns
+        /// <paramref name="rented"/> to <see cref="ArrayPool{T}.Shared"/> after use; it is
+        /// <c>null</c> when the mask owns its buffer (empty, or a stripe mask).
+        /// </summary>
+        internal static GlyphMask BuildUprightTransient(GlyphTypeface typeface, GlyphPathBuilder scratch,
+            in GlyphMaskKey key, out byte[]? rented)
+        {
+            Debug.Assert(!key.IsTransformed);
+
+            return BuildUprightTimed(typeface, scratch, key, transient: true, out rented);
+        }
+
+        private static GlyphMask BuildUprightTimed(GlyphTypeface typeface, GlyphPathBuilder scratch,
+            in GlyphMaskKey key, bool transient, out byte[]? rented)
+        {
             var start = Stopwatch.GetTimestamp();
-            var mask = BuildUpright(typeface, scratch, key);
+            var mask = BuildUpright(typeface, scratch, key, transient, out rented);
 
             // Stripe masks rasterize three samples per pixel, a cost no moving text pays.
             if (!mask.IsEmpty && key.Mode != GlyphMaskMode.Subpixel)
@@ -58,8 +79,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             return mask;
         }
 
-        private static GlyphMask BuildUpright(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
+        private static GlyphMask BuildUpright(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            bool transient, out byte[]? rentedBuffer)
         {
+            rentedBuffer = null;
+
             var scale = key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
 
             if (!typeface.TryGetUnsimulatedGlyphInkBounds(key.Glyph, out var box) ||
@@ -189,6 +213,18 @@ namespace Avalonia.Media.Fonts.Rasterization
                     (-left + key.PhaseOffset) * 3, -top, aliased: false, samples);
 
                 return new GlyphMask(FilterStripes(samples, width, height), width, height, left, top, channels: 3);
+            }
+
+            if (transient)
+            {
+                var buffer = ArrayPool<byte>.Shared.Rent(width * height);
+
+                GlyphRasterizer.Rasterize(scratch, width, height,
+                    -left + key.PhaseOffset, -top, key.Mode == GlyphMaskMode.Aliased, buffer.AsSpan(0, width * height));
+
+                rentedBuffer = buffer;
+
+                return GlyphMask.CreateOverBuffer(buffer, width, height, left, top, penOffset);
             }
 
             var alpha = new byte[width * height];

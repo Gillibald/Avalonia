@@ -57,14 +57,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// tail is never touched. Such a mask is transient: it must not enter a cache, since the
         /// buffer goes back to its owner once the mask has been composed.
         /// </summary>
-        internal static GlyphMask CreateOverBuffer(byte[] buffer, int width, int height, int left, int top)
+        internal static GlyphMask CreateOverBuffer(byte[] buffer, int width, int height, int left, int top,
+            float penOffset = 0f)
         {
             if (width <= 0 || height <= 0 || buffer.Length < width * height)
             {
                 throw new ArgumentException("The buffer must hold width * height bytes.", nameof(buffer));
             }
 
-            return new GlyphMask(buffer, width, height, left, top);
+            return new GlyphMask(buffer, width, height, left, top) { PenOffset = penOffset };
         }
 
         public byte[] Alpha { get; }

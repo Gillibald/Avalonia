@@ -898,7 +898,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var start = MotionRasterBudget.Start();
                 var timer = GlyphPhaseTimers.Start();
 
-                sprites = BuildUprightSprites(run, gridKey, (float)grid, (float)grid);
+                sprites = gridKey.SnapsPens
+                    ? BuildUprightSprites(run, gridKey, (float)grid, (float)grid)
+                    : BuildCrossingSprites(context, run, gridKey, (float)grid, foregroundArgb);
                 state.AddCrossing(sprites, grid);
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
                 MotionRasterBudget.Charge(run, start);
@@ -1010,6 +1012,119 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return new TransformedGlyphSprites(key, embolden, oblique, laidOut) { IsUpright = true };
+        }
+
+        /// <summary>
+        /// Lays out an upright run's glyph masks for a zoom's band crossing on a hardware GPU as
+        /// <see cref="BuildUprightSprites"/> does, with the atlas as the masks' only storage, as
+        /// it is for transformed sprites: a mask the atlas holds for the foreground's luminance
+        /// bucket is laid out from its entry; any other is taken from the glyph mask cache when a
+        /// static frame cached it, or else rasterized into a transient buffer, and placed in the
+        /// atlas at once. Crossings lie on scales no static frame draws, so mask cache entries
+        /// for them would only keep objects alive beside the atlas copy. A crossing laid out
+        /// again after its atlas page was evicted rasterizes again. Records in the typeface's
+        /// mask cache how many mask pixels the build had to rasterize, atlas entries counting
+        /// as found. The keys must not snap pens: an atlas entry does not keep a mask's pen offset.
+        /// </summary>
+        private static TransformedGlyphSprites BuildCrossingSprites(ITransformedGlyphContext context,
+            ManagedGlyphRunImpl run, in RunMaskKey key, float scale, uint foregroundArgb)
+        {
+            var typeface = run.GlyphTypeface;
+            var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
+            var owner = context.MaskAtlas is null ? 0 : typeface.MaskOwnerId;
+            var bucket = GetBucket(foregroundArgb);
+            var tick = atlas.Tick();
+            var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
+            var oblique = (typeface.FontSimulations & FontSimulations.Oblique) != 0;
+            var maskCache = typeface.MaskCache;
+            var scratch = t_scratch ??= new GlyphPathBuilder();
+            var count = run.GlyphCount;
+            var indices = run.GlyphIndices;
+            var positions = run.GlyphPositions;
+            var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
+            var laidOut = new TransformedSprite[count];
+            var placed = 0;
+            long used = 0;
+            long rasterized = 0;
+
+            for (var i = 0; i < count; i++)
+            {
+                var relativeX = originFraction + positions[i * 2] * scale;
+                SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scale);
+                var glyphKey = new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit,
+                    key.Strong, embolden, oblique);
+                int left, top, width, height;
+
+                if (atlas.TryGet(owner, glyphKey, bucket, tick, out var slot))
+                {
+                    if (slot.IsEmpty)
+                    {
+                        continue;
+                    }
+
+                    (left, top, width, height) = (slot.Left, slot.Top, slot.Width, slot.Height);
+                }
+                else
+                {
+                    byte[]? rented = null;
+
+                    try
+                    {
+                        if (!maskCache.TryGet(glyphKey, out var mask))
+                        {
+                            var timer = GlyphPhaseTimers.Start();
+
+                            mask = GlyphMasks.BuildUprightTransient(typeface, scratch, glyphKey, out rented);
+                            GlyphPhaseTimers.Stop(GlyphTimerPhase.Rasterize, timer);
+                            rasterized += mask.Width * mask.Height;
+                        }
+
+                        // A mask over the cache's entry bound draws from its own image, made when
+                        // the batches are built; an empty one is remembered as no ink.
+                        if (mask.IsEmpty || mask.Width * mask.Height <= GlyphMaskCache.MaxEntryBytes)
+                        {
+                            atlas.TryAdd(owner, glyphKey, bucket, mask, tick, out _);
+                        }
+
+                        if (mask.IsEmpty)
+                        {
+                            continue;
+                        }
+
+                        (left, top, width, height) = (mask.Left, mask.Top, mask.Width, mask.Height);
+                    }
+                    finally
+                    {
+                        if (rented is not null)
+                        {
+                            ArrayPool<byte>.Shared.Return(rented);
+                        }
+                    }
+                }
+
+                used += width * height;
+
+                laidOut[placed++] = new TransformedSprite
+                {
+                    Glyph = indices[i],
+                    PhaseX = glyphPhase,
+                    Kind = TransformedSpriteKind.Foreground,
+                    X = penX + left,
+                    Y = penY + top,
+                    Width = width,
+                    Height = height,
+                };
+            }
+
+            maskCache.RecordUse(used, rasterized, key.GridFit);
+
+            if (placed != count)
+            {
+                Array.Resize(ref laidOut, placed);
+            }
+
+            return new TransformedGlyphSprites(key, embolden, oblique, laidOut) { IsUpright = true, IsAtlasOnly = true };
         }
 
         /// <summary>

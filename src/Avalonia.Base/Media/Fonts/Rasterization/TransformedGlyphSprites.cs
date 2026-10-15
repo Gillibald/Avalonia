@@ -176,10 +176,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         public RunMaskKey Key { get; }
 
         /// <summary>
-        /// Whether the sprites are an upright run's grid-fitted glyph masks, which live in the
-        /// glyph mask cache like every upright mask, rather than transformed ones.
+        /// Whether the sprites are an upright run's glyph masks rather than transformed ones.
+        /// Their masks live in the glyph mask cache like every upright mask, unless
+        /// <see cref="IsAtlasOnly"/>.
         /// </summary>
         public bool IsUpright { get; init; }
+
+        /// <summary>
+        /// Whether the glyph masks live in the atlas alone, as transformed masks do: a mask
+        /// missing from it is rasterized into a transient buffer and copied in, and never enters
+        /// the glyph mask cache. The sets of a zoom's band crossings keep their masks this way.
+        /// </summary>
+        public bool IsAtlasOnly { get; init; }
 
         /// <summary>The bold simulation of the glyph masks, as <see cref="GlyphMaskKey.EmboldenQ"/>.</summary>
         public ushort EmboldenQ { get; }

@@ -725,13 +725,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                         try
                         {
-                            // Upright masks are grid-fitted and live in the glyph mask cache;
-                            // transformed ones are rasterized for the atlas alone.
-                            var mask = sprites.IsUpright
+                            // Upright masks of static frames live in the glyph mask cache;
+                            // transformed ones and those of zoom crossings are rasterized for the
+                            // atlas alone.
+                            var mask = sprites.IsUpright && !sprites.IsAtlasOnly
                                 ? typeface.MaskCache.GetOrBuild(key, (typeface, scratch), s_buildMask)
                                 : typeface.MaskCache.TryGet(key, out var cached)
                                     ? cached
-                                    : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
+                                    : sprites.IsUpright
+                                        ? GlyphMasks.BuildUprightTransient(typeface, scratch, key, out rented)
+                                        : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
 
                             if (mask.IsEmpty)
                             {

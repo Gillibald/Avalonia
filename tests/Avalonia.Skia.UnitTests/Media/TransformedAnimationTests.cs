@@ -1001,6 +1001,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var context = output.Context;
             var glyphMasks = 0;
             var runMasks = 0;
+            long rasterizations = 0;
             long allocated = 0;
 
             for (var frame = 0; frame < 24; frame++)
@@ -1021,6 +1022,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     glyphMasks = typeface.MaskCache.Count;
                     runMasks = run.RunMasks.Count;
+                    rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
                 }
             }
 
@@ -1030,7 +1032,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 // A hardware GPU and a CPU surface rasterize every time the zoom leaves the
                 // stretch band.
-                Assert.True(typeface.MaskCache.Count > glyphMasks);
+                Assert.True(GlyphRasterDiagnostics.GlyphRasterizationsOnThread > rasterizations);
                 return;
             }
 

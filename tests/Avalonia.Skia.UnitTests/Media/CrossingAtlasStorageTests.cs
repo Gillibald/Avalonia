@@ -168,6 +168,72 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Transient_Upright_Glyph_Masks_Equal_The_Cached_Ones()
+        {
+            // A crossing rasterizes its upright masks into transient buffers; the atlas must
+            // receive exactly the coverage and placement the cached build makes, simulated or not.
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var scratch = new GlyphPathBuilder();
+            var simulations = new[] { ((ushort)0, false), ((ushort)40, false), ((ushort)0, true), ((ushort)24, true) };
+            var compared = 0;
+
+            foreach (var size in new[] { 9.0f, 13.5f, 17.25f, 31f })
+            {
+                foreach (var c in "Typography 1234567890 Wjgq@%&")
+                {
+                    var glyph = typeface.CharacterToGlyphMap[c];
+
+                    for (byte phase = 0; phase < GlyphMaskKey.PhaseCount; phase++)
+                    {
+                        foreach (var mode in new[] { GlyphMaskMode.Antialiased, GlyphMaskMode.Aliased })
+                        {
+                            foreach (var (embolden, oblique) in simulations)
+                            {
+                                var key = new GlyphMaskKey(glyph, GlyphMaskKey.QuantizeScale(size), phase, mode,
+                                    GridFit: false, Strong: false, EmboldenQ: embolden, Oblique: oblique);
+
+                                compared += AssertTransientEqualsCached(typeface, scratch, key) ? 1 : 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Assert.True(compared > 1000, $"{compared} masks compared");
+        }
+
+        private static bool AssertTransientEqualsCached(GlyphTypeface typeface, GlyphPathBuilder scratch,
+            GlyphMaskKey key)
+        {
+            var cached = GlyphMasks.Build(typeface, scratch, key);
+            var transient = GlyphMasks.BuildUprightTransient(typeface, scratch, key, out var rented);
+
+            try
+            {
+                Assert.Equal(cached.IsEmpty, transient.IsEmpty);
+
+                if (cached.IsEmpty)
+                {
+                    return false;
+                }
+
+                Assert.Equal((cached.Left, cached.Top, cached.Width, cached.Height, cached.PenOffset),
+                    (transient.Left, transient.Top, transient.Width, transient.Height, transient.PenOffset));
+                Assert.True(cached.Alpha.AsSpan().SequenceEqual(transient.Alpha.AsSpan(0, cached.Width * cached.Height)),
+                    $"{key} differs");
+
+                return true;
+            }
+            finally
+            {
+                if (rented is not null)
+                {
+                    System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+                }
+            }
+        }
+
         /// <summary>
         /// Zooms from 1 to 5, far enough that the crossings six grid steps below the top are
         /// dropped, empties the glyph mask cache, and returns a scale whose crossing was dropped.
