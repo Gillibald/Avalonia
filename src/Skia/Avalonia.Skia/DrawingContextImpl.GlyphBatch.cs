@@ -519,10 +519,12 @@ namespace Avalonia.Skia
             var first = runs[0];
             var imagesCreated = t_pageImagesCreated;
 
-            // A page dropped from the atlas after its sprites were appended still holds their
-            // coverage; its image is made for this draw alone, since the page keeps none.
-            var transient = page.IsEvicted ? new GlyphPageImage(CreatePageImage(page)) : null;
-            var image = transient ?? GetPageImage(page);
+            if (GetBatchPageImage(page, out var transient) is not { } image)
+            {
+                RecyclePendingBatch(batch, batchTimer);
+                return;
+            }
+
             var freshImage = t_pageImagesCreated != imagesCreated;
 
             var colored = batch.HasMixedColors;
@@ -640,6 +642,25 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawTeardown, teardownTimer);
             t_atlasDraws += draws;
 
+            RecyclePendingBatch(batch, batchTimer);
+        }
+
+        /// <summary>
+        /// The image a pending batch of <paramref name="page"/> draws from, or <c>null</c> when its
+        /// page can no longer be drawn. A page with a pixel array dropped from the atlas after its
+        /// sprites were appended still holds their coverage; its image is made for this draw
+        /// alone (<paramref name="transient"/>), since the page keeps none.
+        /// </summary>
+        private GlyphPageImage? GetBatchPageImage(GlyphAtlasPage page, out GlyphPageImage? transient)
+        {
+            transient = page.IsEvicted && page.Pixels is not null ? new GlyphPageImage(CreatePageImage(page)) : null;
+
+            return transient ?? GetPageImage(page);
+        }
+
+        /// <summary>Returns a drawn batch to the pool.</summary>
+        private static void RecyclePendingBatch(PendingGlyphBatch batch, long batchTimer)
+        {
             batch.Clear();
             (t_pendingBatches ??= new Stack<PendingGlyphBatch>()).Push(batch);
             GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
@@ -682,8 +703,13 @@ namespace Avalonia.Skia
             CountBatchDrawn(reason, batch.RunCount);
 
             var page = batch.Page!;
-            var transient = page.IsEvicted ? new GlyphPageImage(CreatePageImage(page)) : null;
-            var image = transient ?? GetPageImage(page);
+
+            if (GetBatchPageImage(page, out var transient) is not { } image)
+            {
+                RecyclePendingBatch(batch, batchTimer);
+                return;
+            }
+
             var paint = SKPaintCache.Shared.Get();
 
             paint.Color = batch.Color;
@@ -736,9 +762,7 @@ namespace Avalonia.Skia
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
 
-            batch.Clear();
-            (t_pendingBatches ??= new Stack<PendingGlyphBatch>()).Push(batch);
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
+            RecyclePendingBatch(batch, batchTimer);
         }
 
         private static readonly int s_flushReasonCount = Enum.GetValues<GlyphBatchFlushReason>().Length;

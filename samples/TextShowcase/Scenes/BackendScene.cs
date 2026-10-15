@@ -126,7 +126,10 @@ namespace TextShowcase.Scenes
             return root;
         }
 
-        /// <summary>The used rows of a page as dark ink on white, so it reads on a projector.</summary>
+        /// <summary>
+        /// The used rows of a page as dark ink on white, so it reads on a projector. A page that
+        /// lives only in a GPU texture shows where it holds ink.
+        /// </summary>
         private static WriteableBitmap ToBitmap(GlyphAtlasPage page)
         {
             var width = GlyphMaskAtlas.PageWidth;
@@ -146,7 +149,9 @@ namespace TextShowcase.Scenes
                     for (var x = 0; x < width; x++)
                     {
                         var index = y * width + x;
-                        var value = (byte)(255 - (index < source.Length ? source[index] : 0));
+                        var value = source is null
+                            ? (byte)((page.ReadInk(x, y, 1) & 1) != 0 ? 0 : 255)
+                            : (byte)(255 - (index < source.Length ? source[index] : 0));
                         var px = row + x * 4;
                         px[0] = value;
                         px[1] = value;

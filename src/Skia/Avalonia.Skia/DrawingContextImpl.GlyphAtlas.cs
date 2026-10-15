@@ -204,7 +204,12 @@ namespace Avalonia.Skia
 
             FlushGlyphBatch(GlyphBatchFlushReason.OtherTextPath);
 
-            var image = backend.Image ?? GetPageImage(batch.Page!).Image;
+            // A page this context can no longer draw was dropped; its sprites are built again.
+            if ((backend.Image ?? GetPageImage(batch.Page!)?.Image) is not { } image)
+            {
+                return;
+            }
+
             var paint = SKPaintCache.Shared.Get();
 
             paint.Color = color;
@@ -366,16 +371,19 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// The image of an atlas page at its current version.
+        /// The image of an atlas page at its current version, or <c>null</c> for a resident page
+        /// this context cannot draw, which is then dropped from its atlas.
         /// </summary>
         /// <remarks>
         /// A context with updatable textures keeps the page in a texture of its own, uploaded
-        /// whole once and then updated with only the rectangle the atlas wrote since, so a new
-        /// glyph moves its own pixels to the GPU instead of the page. Elsewhere the image wraps
-        /// the page's pinned array without copying, once per version, and a GPU context uploads
-        /// that image whole, up to 2 MB (8 MB for a colour page), the first time it draws it.
+        /// whole once and then updated with only what the atlas wrote since, so a new glyph moves
+        /// its own pixels to the GPU instead of the page. Elsewhere the image wraps the page's
+        /// pinned array without copying, once per version, and a GPU context uploads that image
+        /// whole, up to 2 MB (8 MB for a colour page), the first time it draws it. A resident page
+        /// keeps its texels only in the texture of the context it was made for: any other context,
+        /// or that context once lost, has nothing to draw it from.
         /// </remarks>
-        private GlyphPageImage GetPageImage(GlyphAtlasPage page)
+        private GlyphPageImage? GetPageImage(GlyphAtlasPage page)
         {
             var grContext = _grContext;
 
@@ -399,6 +407,12 @@ namespace Avalonia.Skia
 
             var textures = grContext is null ? null : SkiaUpdatableTextures.Get(grContext)?.Feature;
 
+            if (page.IsResident && (textures is null || !page.CanComposeWhole))
+            {
+                page.Atlas?.Discard(page);
+                return null;
+            }
+
             if (textures is null && page.Realized is GlyphPageImage current && page.RealizedVersion == page.Version)
             {
                 return current;
@@ -420,6 +434,13 @@ namespace Avalonia.Skia
             {
                 page.Realized = created;
                 image = created.Image;
+            }
+            else if (page.IsResident)
+            {
+                // The backend refused the texture after the page handed it its writes.
+                GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
+                page.Atlas?.Discard(page);
+                return null;
             }
             else
             {
@@ -476,7 +497,7 @@ namespace Avalonia.Skia
         }
 
         /// <summary>The image this context draws <paramref name="page"/> from at its current version; for tests.</summary>
-        internal SKImage GetAtlasPageImage(GlyphAtlasPage page) => GetPageImage(page).Image;
+        internal SKImage? GetAtlasPageImage(GlyphAtlasPage page) => GetPageImage(page)?.Image;
 
         [ThreadStatic]
         private static int t_pageImagesCreated;
@@ -541,7 +562,7 @@ namespace Avalonia.Skia
 
         private static unsafe SKImage CreatePageImage(GlyphAtlasPage page)
         {
-            var pixels = page.Pixels;
+            var pixels = page.Pixels ?? throw new InvalidOperationException("A resident page has no pixels to wrap.");
             var info = new SKImageInfo(GlyphMaskAtlas.PageWidth, page.Height,
                 page.BytesPerPixel == 4 ? SKColorType.Rgba8888 : SKColorType.Alpha8, SKAlphaType.Premul);
             var address = (IntPtr)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(pixels));
@@ -622,13 +643,16 @@ namespace Avalonia.Skia
         /// <para>
         /// The texture is a single-channel or RGBA texture, as the page holds, of the context's
         /// <see cref="ISkiaUpdatableTextureFeature"/>, made with the whole page and wrapped for
-        /// Skia once. An update hands the rectangle the atlas wrote since to the backend straight
-        /// from the page's array, so the page's image, shader and paint stay the same across
-        /// versions. SkiaSharp offers no partial upload of its own: drawing the rectangle into a
-        /// page surface instead makes Skia create and fill a texture for every rectangle, 40-60 us
-        /// of render-thread time each. The array stays the source of truth: a texture that no
-        /// longer fits its page (the page outgrew it, another context draws it, the context was
-        /// lost) is dropped and the page uploaded whole again.
+        /// Skia once. An update hands what the atlas wrote since to the backend, so the page's
+        /// image, shader and paint stay the same across versions: for a page with a pixel array
+        /// the rectangle around the writes, straight from the array; for a resident page its
+        /// staged strips, one region per shelf, from the page's staging buffer, which is freed
+        /// once uploaded. SkiaSharp offers no partial upload of its own: drawing the rectangle
+        /// into a page surface instead makes Skia create and fill a texture for every rectangle,
+        /// 40-60 us of render-thread time each. A page with an array stays its own source of
+        /// truth: a texture that no longer fits its page (the page outgrew it, another context
+        /// draws it, the context was lost) is dropped and the page uploaded whole again. A
+        /// resident page's texture is its only copy once it took the first strips.
         /// </para>
         /// <para>
         /// The texture has the rows of the largest page from the start, the ones the page does not
@@ -704,13 +728,70 @@ namespace Avalonia.Skia
 
                 // The whole page goes up, so earlier writes need no upload of their own.
                 var version = page.Version;
+                var height = TextureHeight(page);
+                var length = page.RowBytes * height;
+                var texture = page.IsResident
+                    ? CreateFromStrips(textures, page, height, length)
+                    : CreateFromPixels(textures, page, height, length);
 
+                if (texture is null)
+                {
+                    return null;
+                }
+
+                var created = new GlyphPageTexture(context, texture, page) { Version = version };
+
+                (t_textures ??= new List<GlyphPageTexture>()).Add(created);
+                t_pageImagesCreated++;
+                t_pageImageBytes += length;
+
+                return created;
+            }
+
+            /// <summary>
+            /// A texture of a resident page: clear texels with the page's staged strips copied in,
+            /// which hold every write of a page whose texture is made the first time.
+            /// </summary>
+            private static unsafe ISkiaUpdatableTexture? CreateFromStrips(ISkiaUpdatableTextureFeature textures,
+                GlyphAtlasPage page, int height, int length)
+            {
+                var count = page.TakeStrips(ref t_strips, out var staging, out _);
+                var whole = (byte*)NativeMemory.AllocZeroed((nuint)length);
+
+                try
+                {
+                    var bytesPerPixel = page.BytesPerPixel;
+
+                    for (var i = 0; i < count; i++)
+                    {
+                        var strip = t_strips![i];
+                        var target = strip.Target;
+                        var rowLength = target.Width * bytesPerPixel;
+
+                        for (var y = 0; y < target.Height; y++)
+                        {
+                            new ReadOnlySpan<byte>((byte*)staging + strip.Offset + y * strip.RowBytes, rowLength)
+                                .CopyTo(new Span<byte>(whole + (target.Y + y) * page.RowBytes + target.X * bytesPerPixel,
+                                    rowLength));
+                        }
+                    }
+
+                    return Create(textures, page, height, new ReadOnlySpan<byte>(whole, length));
+                }
+                finally
+                {
+                    NativeMemory.Free(whole);
+                    GlyphAtlasPage.FreeStaging(staging);
+                }
+            }
+
+            private static unsafe ISkiaUpdatableTexture? CreateFromPixels(ISkiaUpdatableTextureFeature textures,
+                GlyphAtlasPage page, int height, int length)
+            {
                 page.TakeWritten(out _);
 
-                var height = TextureHeight(page);
+                var pixels = page.Pixels!;
                 var used = page.RowBytes * page.Height;
-                var length = page.RowBytes * height;
-                ISkiaUpdatableTexture? texture;
 
                 // The rows past the page's go up clear, so the texture draws as the page's array at
                 // every height; a texture's initial contents are undefined on every backend. The
@@ -726,31 +807,16 @@ namespace Avalonia.Skia
                     {
                         var padded = new Span<byte>(staging, length);
 
-                        page.Pixels.AsSpan(0, used).CopyTo(padded);
-                        texture = Create(textures, page, height, padded);
+                        pixels.AsSpan(0, used).CopyTo(padded);
+                        return Create(textures, page, height, padded);
                     }
                     finally
                     {
                         NativeMemory.Free(staging);
                     }
                 }
-                else
-                {
-                    texture = Create(textures, page, height, page.Pixels.AsSpan(0, used));
-                }
 
-                if (texture is null)
-                {
-                    return null;
-                }
-
-                var created = new GlyphPageTexture(context, texture, page) { Version = version };
-
-                (t_textures ??= new List<GlyphPageTexture>()).Add(created);
-                t_pageImagesCreated++;
-                t_pageImageBytes += length;
-
-                return created;
+                return Create(textures, page, height, pixels.AsSpan(0, used));
             }
 
             private static ISkiaUpdatableTexture? Create(ISkiaUpdatableTextureFeature textures, GlyphAtlasPage page,
@@ -775,7 +841,11 @@ namespace Avalonia.Skia
                     return;
                 }
 
-                if (page.TakeWritten(out var written))
+                if (page.IsResident)
+                {
+                    UploadStrips(page);
+                }
+                else if (page.TakeWritten(out var written))
                 {
                     var bottom = Math.Min(written.Bottom, Height);
 
@@ -797,6 +867,49 @@ namespace Avalonia.Skia
 
                 Version = version;
             }
+
+            /// <summary>Uploads the strips a resident page staged since the last upload, in one update.</summary>
+            private unsafe void UploadStrips(GlyphAtlasPage page)
+            {
+                var count = page.TakeStrips(ref t_strips, out var staging, out var stagingLength);
+
+                try
+                {
+                    if (count == 0)
+                    {
+                        return;
+                    }
+
+                    var regions = t_regions is { } kept && kept.Length >= count
+                        ? kept
+                        : t_regions = new TextureRegion[Math.Max(count, (t_regions?.Length ?? 8) * 2)];
+                    long bytes = 0;
+
+                    for (var i = 0; i < count; i++)
+                    {
+                        var strip = t_strips![i];
+
+                        regions[i] = new TextureRegion(strip.Target, strip.Offset, strip.RowBytes);
+                        bytes += (long)strip.Target.Width * strip.Target.Height * page.BytesPerPixel;
+                    }
+
+                    _texture.Update(regions.AsSpan(0, count), new ReadOnlySpan<byte>((void*)staging, stagingLength));
+                    t_pageTextureUpdates++;
+                    t_pageTextureRegions += count;
+                    t_pageImageBytes += bytes;
+                }
+                finally
+                {
+                    GlyphAtlasPage.FreeStaging(staging);
+                }
+            }
+
+            // The strips a page handed over and the regions they go up as, kept per thread.
+            [ThreadStatic]
+            private static GlyphAtlasStrip[]? t_strips;
+
+            [ThreadStatic]
+            private static TextureRegion[]? t_regions;
 
             /// <summary>Marks the texture released; the thread that made it frees it.</summary>
             public void Dispose() => _released = true;

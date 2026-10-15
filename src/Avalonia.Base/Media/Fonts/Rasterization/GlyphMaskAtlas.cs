@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -62,38 +63,94 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
+    /// A rectangle of an atlas page written since the page's texture last took its writes, and
+    /// where its texels are in the page's staging buffer: the first at <see cref="Offset"/>, rows
+    /// <see cref="RowBytes"/> apart.
+    /// </summary>
+    internal readonly record struct GlyphAtlasStrip(PixelRect Target, int Offset, int RowBytes);
+
+    /// <summary>
     /// One page of a <see cref="GlyphMaskAtlas"/>: <see cref="GlyphMaskAtlas.PageWidth"/>
-    /// columns, rows grown on demand, holding A8 coverage or premultiplied RGBA colour. The pixels
-    /// live in a pinned array, so a backend can wrap them as an image without a copy. A coverage
+    /// columns, rows grown on demand, holding A8 coverage or premultiplied RGBA colour. A coverage
     /// page holds entries of every luminance bucket, each stored through its own bucket's
     /// correction.
     /// </summary>
-    internal sealed class GlyphAtlasPage
+    /// <remarks>
+    /// <para>
+    /// A page keeps its texels in one of two stores. The pixel store is a pinned array, so a
+    /// backend can wrap the page as an image without a copy. A resident page, of an atlas whose
+    /// pages live in the textures of one GPU context, keeps no array: what the atlas writes waits
+    /// in a staging buffer as one strip per shelf, the columns of the entries placed on that
+    /// shelf since the texture last took the page's writes, until the texture takes them; an ink
+    /// bitmap answers the ink tests of batching.
+    /// </para>
+    /// <para>
+    /// A strip starts at its shelf's first new entry and spans the shelf's rows. Shelves fill
+    /// left to right and the atlas never writes over an entry, so a strip covers only texels
+    /// no earlier upload wrote: its gutters and unused rows are zero in the strip and in the
+    /// texture alike.
+    /// </para>
+    /// </remarks>
+    internal sealed unsafe class GlyphAtlasPage
     {
         internal readonly List<GlyphAtlasEntryKey> Keys = new();
         internal readonly List<(int Y, int Height, int X)> Shelves = new();
 
+        // The smallest staging buffer a page allocates.
+        private const int MinStagingBytes = 16 * 1024;
+
+        private readonly object _writtenLock = new();
+        private int _writtenLeft = int.MaxValue;
+        private int _writtenTop = int.MaxValue;
+        private int _writtenRight;
+        private int _writtenBottom;
+
+        // The resident store's writes since the texture last took them: the strips, by shelf, and
+        // the native buffer holding their texels. Guarded by _writtenLock.
+        private readonly List<GlyphAtlasStrip>? _strips;
+        private byte* _staging;
+        private int _stagingLength;
+        private int _stagingCapacity;
+        private bool _stripsTaken;
+
         internal GlyphAtlasPage(int height, int bytesPerPixel = 1, bool resident = false)
         {
             BytesPerPixel = bytesPerPixel;
-            Pixels = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
             Height = height;
-            Ink = resident ? new GlyphAtlasInk() : null;
+
+            if (resident)
+            {
+                Ink = new GlyphAtlasInk();
+                _strips = new List<GlyphAtlasStrip>();
+            }
+            else
+            {
+                Pixels = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
+            }
         }
 
-        /// <summary>Row-major texels, <see cref="RowBytes"/> bytes per row.</summary>
-        public byte[] Pixels { get; private set; }
+        /// <summary>
+        /// Row-major texels, <see cref="RowBytes"/> bytes per row; <c>null</c> for a resident page,
+        /// whose texels only its texture holds.
+        /// </summary>
+        public byte[]? Pixels { get; private set; }
+
+        /// <summary>Whether the page's texels live only in the texture of its context.</summary>
+        internal bool IsResident => _strips is not null;
+
+        /// <summary>The atlas holding the page.</summary>
+        internal GlyphMaskAtlas? Atlas { get; init; }
 
         /// <summary>Bytes per texel: 1 for coverage, 4 for premultiplied RGBA.</summary>
         public int BytesPerPixel { get; }
 
         /// <summary>
-        /// Where the page holds ink, for a page of an atlas whose pages live in GPU textures;
-        /// <c>null</c> where <see cref="Pixels"/> answers instead.
+        /// Where the page holds ink, for a resident page; <c>null</c> where <see cref="Pixels"/>
+        /// answers instead.
         /// </summary>
         internal GlyphAtlasInk? Ink { get; }
 
-        /// <summary>Bytes per row of <see cref="Pixels"/>.</summary>
+        /// <summary>Bytes per row of the page's texels.</summary>
         public int RowBytes => GlyphMaskAtlas.PageWidth * BytesPerPixel;
 
         /// <summary>The allocated rows.</summary>
@@ -101,12 +158,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// The bytes the page is charged to the glyph cache budget: its allocated rows at
-        /// <see cref="RowBytes"/> each.
+        /// <see cref="RowBytes"/> each. For a resident page they stand for the rows of its texture.
         /// </summary>
         public long ChargedBytes => (long)RowBytes * Height;
 
-        /// <summary>The bytes of CPU memory the page holds for its texels and their ink.</summary>
-        internal long CpuBytes => Pixels.Length + (Ink?.Bytes ?? 0);
+        /// <summary>
+        /// The bytes of CPU memory the page holds for its texels: the array, or the ink bitmap and
+        /// the staging buffer of a resident page.
+        /// </summary>
+        internal long CpuBytes => (Pixels?.Length ?? 0) + (Ink?.Bytes ?? 0) + Volatile.Read(ref _stagingCapacity);
 
         /// <summary>
         /// The ink of <paramref name="count"/> texels of row <paramref name="y"/> from column
@@ -153,12 +213,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The <see cref="Version"/> <see cref="Realized"/> was made from.</summary>
         public int RealizedVersion { get; set; }
 
-        private readonly object _writtenLock = new();
-        private int _writtenLeft = int.MaxValue;
-        private int _writtenTop = int.MaxValue;
-        private int _writtenRight;
-        private int _writtenBottom;
-
         /// <summary>
         /// Takes the bounds of every write since the last call, so a backend that keeps a copy
         /// of the page can update only that part. Returns <c>false</c> when nothing was written.
@@ -186,29 +240,186 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        internal void MarkWritten(int x, int y, int width, int height)
+        /// <summary>
+        /// Takes the strips of a resident page written since the last call: copies them into
+        /// <paramref name="strips"/>, grown as needed, and hands over the staging buffer holding
+        /// their texels, which the caller frees with <see cref="FreeStaging"/> once uploaded.
+        /// Returns the number of strips. After the first call the page cannot be rebuilt from
+        /// what it keeps: <see cref="CanComposeWhole"/> turns false.
+        /// </summary>
+        /// <remarks>
+        /// A write is staged before <see cref="Version"/> moves past it: a backend that reads the
+        /// version first and takes the strips second never misses a write of that version.
+        /// </remarks>
+        internal int TakeStrips(ref GlyphAtlasStrip[]? strips, out IntPtr staging, out int stagingLength)
         {
             lock (_writtenLock)
             {
-                _writtenLeft = Math.Min(_writtenLeft, x);
-                _writtenTop = Math.Min(_writtenTop, y);
-                _writtenRight = Math.Max(_writtenRight, x + width);
-                _writtenBottom = Math.Max(_writtenBottom, y + height);
+                _stripsTaken = true;
+
+                var count = _strips?.Count ?? 0;
+
+                if (count == 0)
+                {
+                    staging = IntPtr.Zero;
+                    stagingLength = 0;
+
+                    return 0;
+                }
+
+                staging = (IntPtr)_staging;
+                stagingLength = _stagingLength;
+
+                if (strips is null || strips.Length < count)
+                {
+                    strips = new GlyphAtlasStrip[Math.Max(count, (strips?.Length ?? 8) * 2)];
+                }
+
+                _strips!.CopyTo(strips);
+                _strips.Clear();
+                _staging = null;
+                _stagingLength = 0;
+                Volatile.Write(ref _stagingCapacity, 0);
+
+                return count;
             }
         }
 
-        /// <summary>The texels of row <paramref name="y"/> from column <paramref name="x"/> on, for the atlas to write.</summary>
-        internal Span<byte> TexelRow(int x, int y, int texels)
-            => Pixels.AsSpan(y * RowBytes + x * BytesPerPixel, texels * BytesPerPixel);
+        /// <summary>Frees a staging buffer <see cref="TakeStrips"/> handed over.</summary>
+        internal static void FreeStaging(IntPtr staging) => NativeMemory.Free((void*)staging);
+
+        /// <summary>
+        /// Whether every write of a resident page is still staged, so a texture made now from
+        /// clear texels and the strips holds the whole page.
+        /// </summary>
+        internal bool CanComposeWhole
+        {
+            get
+            {
+                lock (_writtenLock)
+                {
+                    return !_stripsTaken;
+                }
+            }
+        }
+
+        /// <summary>Drops what a resident page has staged; for a page that will never be drawn again.</summary>
+        internal void DropStaging()
+        {
+            lock (_writtenLock)
+            {
+                if (_strips is null)
+                {
+                    return;
+                }
+
+                _strips.Clear();
+                NativeMemory.Free(_staging);
+                _staging = null;
+                _stagingLength = 0;
+                Volatile.Write(ref _stagingCapacity, 0);
+            }
+        }
+
+        /// <summary>The lock a write holds while it fills the texels <see cref="BeginWrite"/> returned.</summary>
+        internal object WriteLock => _writtenLock;
+
+        /// <summary>
+        /// The texels an entry of <paramref name="width"/> by <paramref name="height"/> texels at
+        /// (<paramref name="x"/>, <paramref name="y"/>), on the shelf of <paramref name="shelfHeight"/>
+        /// rows that starts at row <paramref name="y"/>, is written to, rows
+        /// <paramref name="rowBytes"/> apart. The caller holds <see cref="WriteLock"/> until it has
+        /// filled them.
+        /// </summary>
+        internal Span<byte> BeginWrite(int x, int y, int width, int height, int shelfHeight, out int rowBytes)
+        {
+            var bytesPerPixel = BytesPerPixel;
+
+            if (Pixels is { } pixels)
+            {
+                rowBytes = RowBytes;
+                MarkWritten(x, y, width, height);
+
+                return pixels.AsSpan(y * rowBytes + x * bytesPerPixel, (height - 1) * rowBytes + width * bytesPerPixel);
+            }
+
+            var strips = _strips!;
+            var index = strips.Count - 1;
+
+            while (index >= 0 && strips[index].Target.Y != y)
+            {
+                index--;
+            }
+
+            GlyphAtlasStrip strip;
+
+            if (index < 0)
+            {
+                // The strip reaches to the page's right edge, so every later entry of the shelf
+                // fits it; texels no entry writes stay clear.
+                var stripRowBytes = (GlyphMaskAtlas.PageWidth - x) * bytesPerPixel;
+
+                strip = new GlyphAtlasStrip(new PixelRect(x, y, 0, 0), Stage(stripRowBytes * shelfHeight),
+                    stripRowBytes);
+                strips.Add(strip);
+                index = strips.Count - 1;
+            }
+            else
+            {
+                strip = strips[index];
+            }
+
+            var target = strip.Target;
+            var right = Math.Max(target.Right, x + width);
+            var bottom = Math.Max(target.Bottom, y + height);
+
+            strips[index] = strip with { Target = new PixelRect(target.X, y, right - target.X, bottom - y) };
+            rowBytes = strip.RowBytes;
+
+            return new Span<byte>(_staging + strip.Offset + (x - target.X) * bytesPerPixel,
+                (height - 1) * rowBytes + width * bytesPerPixel);
+        }
+
+        /// <summary>Appends <paramref name="bytes"/> clear bytes to the staging buffer; returns their offset.</summary>
+        private int Stage(int bytes)
+        {
+            var offset = _stagingLength;
+            var length = offset + bytes;
+
+            if (length > _stagingCapacity)
+            {
+                var capacity = Math.Max(length, Math.Max(MinStagingBytes, _stagingCapacity * 2));
+
+                _staging = (byte*)NativeMemory.Realloc(_staging, (nuint)capacity);
+                Volatile.Write(ref _stagingCapacity, capacity);
+            }
+
+            new Span<byte>(_staging + offset, bytes).Clear();
+            _stagingLength = length;
+
+            return offset;
+        }
+
+        private void MarkWritten(int x, int y, int width, int height)
+        {
+            _writtenLeft = Math.Min(_writtenLeft, x);
+            _writtenTop = Math.Min(_writtenTop, y);
+            _writtenRight = Math.Max(_writtenRight, x + width);
+            _writtenBottom = Math.Max(_writtenBottom, y + height);
+        }
 
         internal void Grow(int height)
         {
-            var grown = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
+            if (Pixels is { } pixels)
+            {
+                var grown = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
 
-            // A fresh array rather than a resize in place: a backend image of the old version
-            // can still be waiting to be read by a pending GPU upload.
-            Pixels.AsSpan(0, RowBytes * UsedHeight).CopyTo(grown);
-            Pixels = grown;
+                // A fresh array rather than a resize in place: a backend image of the old version
+                // can still be waiting to be read by a pending GPU upload.
+                pixels.AsSpan(0, RowBytes * UsedHeight).CopyTo(grown);
+                Pixels = grown;
+            }
+
             Height = height;
             Version++;
         }
@@ -287,7 +498,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
-        private long _cpuBytes;
         private long _indexBytes;
         private long _evictions;
 
@@ -297,8 +507,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="perTypeface">Whether the atlas holds the masks of one typeface.</param>
         /// <param name="format">The texel layout of the pages.</param>
         /// <param name="residentPages">
-        /// Whether the pages live in the GPU textures of one context; the ink tests of batching
-        /// read an ink bitmap per page there.
+        /// Whether the pages live in the GPU textures of one context and keep no CPU copy of their
+        /// texels (see <see cref="GlyphAtlasPage"/>).
         /// </param>
         public GlyphMaskAtlas(GlyphCacheBudget? budget = null, bool perTypeface = false,
             GlyphAtlasFormat format = GlyphAtlasFormat.Alpha8, bool residentPages = false)
@@ -345,8 +555,27 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The bytes the pages are charged, <see cref="GlyphAtlasPage.ChargedBytes"/> each.</summary>
         public long AllocatedBytes => Interlocked.Read(ref _allocated);
 
-        /// <summary>Bytes of CPU memory the atlas holds for the pixels of its pages; for diagnostics.</summary>
-        public long CpuBytes => Interlocked.Read(ref _cpuBytes);
+        /// <summary>
+        /// Bytes of CPU memory the atlas holds for its pages' texels (<see cref="GlyphAtlasPage.CpuBytes"/>);
+        /// for diagnostics.
+        /// </summary>
+        public long CpuBytes
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    long bytes = 0;
+
+                    foreach (var page in _pages)
+                    {
+                        bytes += page.CpuBytes;
+                    }
+
+                    return bytes;
+                }
+            }
+        }
 
         /// <summary>
         /// Whether atlases of contexts that update page textures in place keep no CPU copy of
@@ -554,9 +783,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
 
                 var timer = GlyphPhaseTimers.Start();
-                var (page, x, y) = Place(mask.Width + 1, mask.Height + 1, tick);
+                var (page, x, y, shelfHeight) = Place(mask.Width + 1, mask.Height + 1, tick);
 
-                Write(page, mask, x, y, bucket);
+                Write(page, mask, x, y, shelfHeight, bucket);
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasWrite, timer);
                 page.Keys.Add(entry);
                 page.LastUse = tick;
@@ -569,7 +798,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private (GlyphAtlasPage Page, int X, int Y) Place(int width, int height, long tick)
+        private (GlyphAtlasPage Page, int X, int Y, int ShelfHeight) Place(int width, int height, long tick)
         {
             // An open shelf of a similar height first, so short glyphs do not waste tall rows.
             foreach (var page in _pages)
@@ -584,7 +813,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         shelf.X + width <= PageWidth)
                     {
                         shelves[s] = (shelf.Y, shelf.Height, shelf.X + width);
-                        return (page, shelf.X, shelf.Y);
+                        return (page, shelf.X, shelf.Y, shelf.Height);
                     }
                 }
             }
@@ -593,7 +822,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 if (page.UsedHeight + height <= MaxPageHeight)
                 {
-                    return (page, LeadingGutter, OpenShelf(page, width, height, tick));
+                    return (page, LeadingGutter, OpenShelf(page, width, height, tick), height);
                 }
             }
 
@@ -612,14 +841,16 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             // Stamped before it is charged, so a build past the limit does not evict it.
-            var fresh = new GlyphAtlasPage(rows, BytesPerPixel, Resident) { UsedHeight = LeadingGutter, LastUse = tick };
+            var fresh = new GlyphAtlasPage(rows, BytesPerPixel, Resident)
+            {
+                UsedHeight = LeadingGutter, LastUse = tick, Atlas = this
+            };
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.ChargedBytes);
-            Interlocked.Add(ref _cpuBytes, fresh.CpuBytes);
             _handle.Charge(fresh.ChargedBytes);
 
-            return (fresh, LeadingGutter, OpenShelf(fresh, width, height, tick));
+            return (fresh, LeadingGutter, OpenShelf(fresh, width, height, tick), height);
         }
 
         private int OpenShelf(GlyphAtlasPage page, int width, int height, long tick)
@@ -637,11 +868,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // growing by the rows a shelf needs would copy the page once per shelf.
                 var rows = Math.Min(MaxPageHeight, Math.Max(RoundUp(y + height), page.Height * 2));
                 var charged = page.ChargedBytes;
-                var cpu = page.CpuBytes;
 
                 page.Grow(rows);
                 Interlocked.Add(ref _allocated, page.ChargedBytes - charged);
-                Interlocked.Add(ref _cpuBytes, page.CpuBytes - cpu);
                 _handle.Charge(page.ChargedBytes - charged);
             }
 
@@ -656,17 +885,22 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Forgets every entry and page and leaves the budget, for the atlas of a typeface that
         /// draws no more. Pages are unlinked, not dropped: batches built from them keep sampling
-        /// their pixels and backend images, which the GC reclaims with the last batch.
+        /// their pixels and backend images, which the GC reclaims with the last batch. Resident
+        /// pages drop what they staged and was not uploaded yet.
         /// </summary>
         public void Release()
         {
             lock (_lock)
             {
+                foreach (var page in _pages)
+                {
+                    page.DropStaging();
+                }
+
                 _slots.Clear();
                 _pages.Clear();
                 _emptied.Clear();
                 Interlocked.Exchange(ref _allocated, 0);
-                Interlocked.Exchange(ref _cpuBytes, 0);
                 Interlocked.Exchange(ref _indexBytes, 0);
             }
 
@@ -729,7 +963,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _pages.Remove(page);
             Interlocked.Add(ref _allocated, -charged);
-            Interlocked.Add(ref _cpuBytes, -page.CpuBytes);
             Interlocked.Add(ref _indexBytes, -index);
             _handle.Credit(charged + index);
             Interlocked.Increment(ref _evictions);
@@ -737,8 +970,24 @@ namespace Avalonia.Media.Fonts.Rasterization
             page.IsEvicted = true;
             page.Realized?.Dispose();
             page.Realized = null;
+            page.DropStaging();
 
             return charged + index;
+        }
+
+        /// <summary>
+        /// Drops <paramref name="page"/> as the budget would, for a resident page a context can no
+        /// longer draw: the texels exist nowhere else, so its sprites must be built again.
+        /// </summary>
+        internal void Discard(GlyphAtlasPage page)
+        {
+            lock (_lock)
+            {
+                if (!page.IsEvicted && _pages.Contains(page))
+                {
+                    Evict(page);
+                }
+            }
         }
 
         /// <summary>Charges the index for <paramref name="entries"/> more entries, or credits it for fewer.</summary>
@@ -758,58 +1007,54 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        private static void Write(GlyphAtlasPage page, GlyphMask mask, int x, int y, int bucket)
+        private static void Write(GlyphAtlasPage page, GlyphMask mask, int x, int y, int shelfHeight, int bucket)
         {
-            if (page.BytesPerPixel == 4)
+            var bytesPerPixel = page.BytesPerPixel;
+            var texels = mask.Width * bytesPerPixel;
+
+            // Under the page's write lock: a resident page's texture takes staged writes on the
+            // thread that draws, which must not see a write half done.
+            lock (page.WriteLock)
             {
-                WriteRgba(page, mask, x, y);
-                return;
+                var target = page.BeginWrite(x, y, mask.Width, mask.Height, shelfHeight, out var rowBytes);
+
+                for (var row = 0; row < mask.Height; row++)
+                {
+                    var source = mask.Alpha.AsSpan(row * texels, texels);
+                    var targetRow = target.Slice(row * rowBytes, texels);
+
+                    if (bytesPerPixel == 4)
+                    {
+                        CopyBgraAsRgba(source, targetRow);
+                    }
+                    else if (bucket == Uncorrected)
+                    {
+                        source.CopyTo(targetRow);
+                    }
+                    else
+                    {
+                        Correct(source, targetRow, bucket);
+                    }
+
+                    page.Ink?.Mark(x, y + row, targetRow, bytesPerPixel);
+                }
+
+                page.Version++;
             }
 
-            for (var row = 0; row < mask.Height; row++)
-            {
-                var source = mask.Alpha.AsSpan(row * mask.Width, mask.Width);
-                var target = page.TexelRow(x, y + row, mask.Width);
-
-                if (bucket == Uncorrected)
-                {
-                    source.CopyTo(target);
-                }
-                else
-                {
-                    Correct(source, target, bucket);
-                }
-
-                page.Ink?.Mark(x, y + row, target, 1);
-            }
-
-            page.MarkWritten(x, y, mask.Width, mask.Height);
-            page.Version++;
             GlyphRasterDiagnostics.CountAtlasPlacement();
         }
 
-        /// <summary>Copies a premultiplied BGRA mask onto an RGBA page, swapping red and blue.</summary>
-        private static void WriteRgba(GlyphAtlasPage page, GlyphMask mask, int x, int y)
+        /// <summary>Copies premultiplied BGRA texels as RGBA, swapping red and blue.</summary>
+        private static void CopyBgraAsRgba(ReadOnlySpan<byte> source, Span<byte> target)
         {
-            for (var row = 0; row < mask.Height; row++)
+            for (var i = 0; i < source.Length; i += 4)
             {
-                var source = mask.Alpha.AsSpan(row * mask.Width * 4, mask.Width * 4);
-                var target = page.TexelRow(x, y + row, mask.Width);
-
-                for (var i = 0; i < source.Length; i += 4)
-                {
-                    target[i] = source[i + 2];
-                    target[i + 1] = source[i + 1];
-                    target[i + 2] = source[i];
-                    target[i + 3] = source[i + 3];
-                }
-
-                page.Ink?.Mark(x, y + row, target, 4);
+                target[i] = source[i + 2];
+                target[i + 1] = source[i + 1];
+                target[i + 2] = source[i];
+                target[i + 3] = source[i + 3];
             }
-
-            page.MarkWritten(x, y, mask.Width, mask.Height);
-            page.Version++;
-            GlyphRasterDiagnostics.CountAtlasPlacement();
         }
 
         /// <summary>Copies coverage through the <see cref="MaskGamma"/> table of <paramref name="bucket"/>.</summary>

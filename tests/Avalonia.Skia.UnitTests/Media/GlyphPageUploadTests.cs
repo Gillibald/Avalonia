@@ -66,7 +66,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.False(written.Width == 0 || written.Height == 0, "the run placed no new glyph on the page");
                 Assert.Equal(0, DrawingContextImpl.PageImagesCreatedOnThread - created);
                 Assert.Equal((long)written.Width * written.Height, DrawingContextImpl.PageImageBytesOnThread - bytes);
-                Assert.Equal(page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));
+                Assert.Equal(page.Pixels!.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));
             }
             finally
             {
@@ -93,7 +93,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     foreach (var page in TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages())
                     {
                         heights.Add(page.Height);
-                        Assert.Equal(page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(),
+                        Assert.Equal(page.Pixels!.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(),
                             ReadPage(gpu, page));
                     }
                 }
@@ -136,7 +136,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Equal((long)GlyphMaskAtlas.PageWidth * GlyphMaskAtlas.MaxPageHeight,
                     DrawingContextImpl.PageImageBytesOnThread - bytes);
                 TransformedAtlasTests.AssertEqual(before, after, "frame on the new context");
-                Assert.Equal(page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));
+                Assert.Equal(page.Pixels!.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));
             }
             finally
             {
@@ -348,7 +348,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     heights.Add(page.Height);
                     Assert.Equal(referencePages[p].Height, page.Height);
-                    Assert.True(referencePages[p].Pixels.AsSpan(0, used).SequenceEqual(drawn.AsSpan(0, used)),
+                    Assert.True(referencePages[p].Pixels!.AsSpan(0, used).SequenceEqual(drawn.AsSpan(0, used)),
                         $"page {p} differs from its reference after round {round}");
                 }
             }
@@ -463,7 +463,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var page = slot.Page!;
 
-                Assert.Equal(page.Pixels.AsSpan(0, page.RowBytes * page.Height).ToArray(),
+                Assert.Equal(page.Pixels!.AsSpan(0, page.RowBytes * page.Height).ToArray(),
                     ReadRgbaImage(gpu!, PageImage(gpu!, page), GlyphMaskAtlas.PageWidth, page.Height));
             }
         }
@@ -497,7 +497,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var created = DrawingContextImpl.PageImagesCreatedOnThread;
 
             var before = ThreadAllocations.Start();
-            var image = context.GetAtlasPageImage(page);
+            var image = context.GetAtlasPageImage(page)!;
             var allocated = ThreadAllocations.Since(before);
 
             Assert.Equal(created + 1, DrawingContextImpl.PageImagesCreatedOnThread);
@@ -508,7 +508,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var drawn = ReadImage(gpu, image, GlyphMaskAtlas.PageWidth, image.Height);
             var used = GlyphMaskAtlas.PageWidth * page.Height;
 
-            Assert.Equal(page.Pixels.AsSpan(0, used).ToArray(), drawn.AsSpan(0, used).ToArray());
+            Assert.Equal(page.Pixels!.AsSpan(0, used).ToArray(), drawn.AsSpan(0, used).ToArray());
             Assert.True(drawn.AsSpan(used).IndexOfAnyExcept((byte)0) < 0, "rows beyond the page are not clear");
         }
 
@@ -564,7 +564,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var drawn = ReadRgbaImage(gpu, image, GlyphMaskAtlas.PageWidth, image.Height);
 
-            Assert.Equal(page.Pixels.AsSpan(0, page.RowBytes * page.Height).ToArray(),
+            Assert.Equal(page.Pixels!.AsSpan(0, page.RowBytes * page.Height).ToArray(),
                 drawn.AsSpan(0, page.RowBytes * page.Height).ToArray());
             Assert.True(drawn.AsSpan(page.RowBytes * page.Height).IndexOfAnyExcept((byte)0) < 0,
                 "rows beyond the page are not clear");
@@ -576,7 +576,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 new SKImageInfo(4, 4, SKColorType.Rgba8888, SKAlphaType.Premul));
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
 
-            return context.GetAtlasPageImage(page);
+            return context.GetAtlasPageImage(page)!;
         }
 
         private static void FillPremultiplied(Random random, Span<byte> rgba)
@@ -650,7 +650,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 new SKImageInfo(4, 4, SKColorType.Rgba8888, SKAlphaType.Premul));
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
 
-            return ReadImage(gpu, context.GetAtlasPageImage(page), GlyphMaskAtlas.PageWidth, page.Height);
+            return ReadImage(gpu, context.GetAtlasPageImage(page)!, GlyphMaskAtlas.PageWidth, page.Height);
         }
 
         /// <summary>An A8 image as a GPU context draws it, read back through a 1:1 copy into an A8 surface.</summary>

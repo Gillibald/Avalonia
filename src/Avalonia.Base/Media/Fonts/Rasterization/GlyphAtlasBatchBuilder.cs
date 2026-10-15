@@ -305,9 +305,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             // Entries are never overwritten, and a grown page copies them, so the current arrays
-            // hold both sprites' coverage.
-            var firstPixels = firstPage.Pixels;
-            var secondPixels = secondPage.Pixels;
+            // hold both sprites' coverage; pages without an ink bitmap keep their arrays.
+            var firstPixels = firstPage.Pixels!;
+            var secondPixels = secondPage.Pixels!;
             var firstStep = firstPage.BytesPerPixel;
             var secondStep = secondPage.BytesPerPixel;
 

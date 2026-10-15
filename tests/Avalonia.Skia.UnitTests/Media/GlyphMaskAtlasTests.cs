@@ -32,7 +32,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             foreach (var (mask, slot) in entries)
             {
-                var pixels = slot.Page!.Pixels;
+                var pixels = slot.Page!.Pixels!;
 
                 Assert.Equal(mask.Left, slot.Left);
                 Assert.Equal(mask.Top, slot.Top);
@@ -96,7 +96,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             foreach (var (mask, slot) in entries)
             {
-                var pixels = slot.Page!.Pixels;
+                var pixels = slot.Page!.Pixels!;
 
                 // A bilinear draw of the entry reads one texel beyond each edge, which must be
                 // empty page rather than the clamped edge of the page or a neighbour's coverage.
@@ -164,7 +164,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         var value = mask.Alpha[y * mask.Width + x];
 
                         Assert.Equal(bucket == GlyphMaskAtlas.Uncorrected ? value : MaskGamma.GetTable(bucket)[value],
-                            slot.Page!.Pixels[(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
+                            slot.Page!.Pixels![(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
                     }
                 }
             }
@@ -304,7 +304,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     for (var x = 0; x < mask.Width; x++)
                     {
                         Assert.Equal(MaskGamma.GetTable(0)[mask.Alpha[y * mask.Width + x]],
-                            slot.Page!.Pixels[(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
+                            slot.Page!.Pixels![(slot.Y + y) * GlyphMaskAtlas.PageWidth + slot.X + x]);
                     }
                 }
             }
@@ -533,7 +533,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.Equal(4, page.BytesPerPixel);
                 Assert.Equal(GlyphMaskAtlas.PageWidth * 4, page.RowBytes);
-                Assert.Equal(page.RowBytes * page.Height, page.Pixels.Length);
+                Assert.Equal(page.RowBytes * page.Height, page.Pixels!.Length);
                 Assert.Equal(mask.Left, slot.Left);
                 Assert.Equal(mask.Top, slot.Top);
 
@@ -550,7 +550,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         {
                             var expected = inside ? mask.Alpha[(y * mask.Width + x) * 4 + s_bgraOfRgba[c]] : 0;
 
-                            Assert.Equal(expected, page.Pixels[texel + c]);
+                            Assert.Equal(expected, page.Pixels![texel + c]);
                         }
                     }
                 }
@@ -593,8 +593,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.Single(atlas.GetPages());
             Assert.Equal(GlyphMaskAtlas.MaxPageHeight, page.Height);
-            Assert.True(allocated <= 2L * page.Pixels.Length,
-                $"filling a page of {page.Pixels.Length} bytes allocated {allocated} bytes");
+            Assert.True(allocated <= 2L * page.Pixels!.Length,
+                $"filling a page of {page.Pixels!.Length} bytes allocated {allocated} bytes");
         }
 
         [Fact]
