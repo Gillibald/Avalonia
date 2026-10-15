@@ -19,7 +19,7 @@ namespace Avalonia.Media
     /// </summary>
     public sealed class FontManager : IDisposable
     {
-        internal static Uri SystemFontsKey = new Uri("fonts:SystemFonts", UriKind.Absolute);
+        internal static readonly Uri SystemFontsKey = new Uri("fonts:SystemFonts", UriKind.Absolute);
 
         public const string FontCollectionScheme = "fonts";
         public const string SystemFontScheme = "systemfont";

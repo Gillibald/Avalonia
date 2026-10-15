@@ -49,7 +49,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <see cref="EffectivePath(GlyphRasterizerPath, int, int)"/> moves to the scalar path. Every path
         /// produces the same bytes.
         /// </summary>
-        internal static GlyphRasterizerPath Path { get; set; } = DetectPath();
+        internal static GlyphRasterizerPath Path { get; } = DetectPath();
 
         /// <summary>Whether this machine can run <paramref name="path"/>.</summary>
         internal static bool IsSupported(GlyphRasterizerPath path) => path switch
