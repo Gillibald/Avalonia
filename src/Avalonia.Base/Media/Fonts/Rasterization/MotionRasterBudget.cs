@@ -42,11 +42,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// A failed try that cost per glyph no more than <see cref="WarmingDrop"/> less than the
     /// failed try before it shows the scene does not fit, rather than code still compiling: until
     /// the hold resets, a try then also needs the scene estimated within the budget rather than
-    /// twice it. Any other scene that ran out of budget and is then estimated at twice the budget
-    /// or more goes on doubling its hold without trying, and tries once more after the first hold
-    /// of <see cref="MaxHoldFrames"/>, whatever its estimate, since an estimate measured on code
-    /// still compiling can stay past twice the budget long after the code runs warm. After that
-    /// try it follows the rules above until the hold resets.
+    /// twice it. A scene that ran out of budget and whose estimate then keeps it from trying goes
+    /// on doubling its hold, and tries once more after the first hold of
+    /// <see cref="RetryHoldFrames"/>, whatever its estimate: tries on code still compiling can
+    /// cost alike per glyph, and an estimate measured on that code can stay past the gate long
+    /// after the code runs warm. After that try it follows the rules above until the hold resets.
     /// A stop is a draw that repeats the run's transform, a pause more than two frames without
     /// moving text. Frames a moving run draws from a raster it has cached, such as a zoom jumping
     /// back to its start or reversing through scales it drew before, keep the motion going.
@@ -70,6 +70,14 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>The longest hold after repeated tries that ran out of budget, 8 s at 60 Hz.</summary>
         internal const int MaxHoldFrames = 16 * HoldFrames;
+
+        /// <summary>
+        /// The hold after which a scene its estimate keeps from trying is tried once anyway, 2 s at
+        /// 60 Hz. The first tries of a process run on code still compiling, often three in a row
+        /// at several times the warm cost per glyph, and leave an estimate measured on that code;
+        /// by the end of this hold, in the first gesture, the code runs warm.
+        /// </summary>
+        internal const int RetryHoldFrames = 4 * HoldFrames;
 
         /// <summary>
         /// What a run costs beyond its glyphs, in glyphs: laying out its masks and handing them to
@@ -232,16 +240,16 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (t_previousEstimate >= (t_strict ? 1 : 2) * t_budget && (frame == 0 || frame != t_retryFrame))
             {
-                // A scene that ran out of budget before and is held back only by twice the budget
-                // goes on doubling its hold while its estimate keeps it from trying, and tries once
-                // after the first hold of the longest length, whatever its estimate. A scene whose
-                // failed tries showed its cost does not fall waits for an estimate that fits.
-                if (t_hold == 0 || t_strict)
+                // A scene that ran out of budget before goes on doubling its hold while its estimate
+                // keeps it from trying, and tries once after the first hold of RetryHoldFrames,
+                // whatever its estimate: the estimate and the costs of the tries that led there may
+                // all have been measured on code still compiling.
+                if (t_hold == 0)
                 {
                     return false;
                 }
 
-                if (t_hold < MaxHoldFrames || t_retried)
+                if (t_hold < RetryHoldFrames || t_retried)
                 {
                     t_hold = Math.Min(2 * t_hold, MaxHoldFrames);
                     t_holdUntil = frame + 1 + t_hold;
