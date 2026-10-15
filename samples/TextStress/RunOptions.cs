@@ -227,6 +227,8 @@ namespace TextStress
             "  --atlas-cpu-copy on|off   whether glyph atlas pages of contexts with updatable textures keep a\n" +
             "    CPU copy of their pixels (default: built-in)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
+            "  --forced-gc on|off   collect garbage after swapping the view, before the glyph cache peak\n" +
+            "    resets (default on)\n" +
             "  --preset desktop|phone   content area the scene lays out in: desktop 1280x720 DIP, phone 360x640\n" +
             "    DIP (default: desktop; Android: phone, desktop on tablets); a run fails (exit 4) when the\n" +
             "    window or the safe area offers less than the content area plus the status strip\n" +

@@ -91,13 +91,16 @@ namespace TextStress.Measurement
                     await RunFrameAsync(-1, apply: false);
                 }
 
-                // The previous view's glyph runs hold their render-thread state (sprite sets, run
-                // masks) until the collector finalizes them. Collect now and render once more so
-                // that state is gone before the peak resets; otherwise the measured peak includes
-                // it or not depending on when a collection happened to run.
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                GC.Collect();
+                // Whatever the previous view left for the collector goes before the peak resets,
+                // so the measured peak does not depend on when a collection happened to run.
+                // --forced-gc off leaves it to the collector, to show what a build holds without one.
+                if (_options.GetBool("forced-gc", true))
+                {
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect();
+                }
+
                 await RunFrameAsync(-1, apply: false);
 
                 if (_options.PrewarmPass && n == _options.N[0])
