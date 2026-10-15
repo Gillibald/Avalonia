@@ -91,7 +91,12 @@ namespace Avalonia.Skia
 
             var toDevice = ToDevice(transform);
 
-            if (toDevice.M12 != 0 || toDevice.M21 != 0 || toDevice.ContainsPerspective())
+            if (toDevice.M12 != 0 || toDevice.M21 != 0)
+            {
+                return !clip.IsRounded && TryDeferTurnedRectClip(clip.Rect, transform, toDevice, aliased: false);
+            }
+
+            if (toDevice.ContainsPerspective())
             {
                 return false;
             }
@@ -122,6 +127,63 @@ namespace Avalonia.Skia
                     (float)(device.Right - 1), (float)(device.Bottom - radiusY - 1)),
                 Down = new SKRect((float)(device.Left + radiusX + 1), (float)(device.Top + 1),
                     (float)(device.Right - radiusX - 1), (float)(device.Bottom - 1)),
+            };
+
+            TrackClipLevel(level);
+            _deferredClips++;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Records a rectangle clip that the transform rotates or skews without applying it to the
+        /// canvas. Returns <c>false</c> when this context applies every clip.
+        /// </summary>
+        private bool TryDeferTurnedRectClip(Rect clip)
+        {
+            if (!DefersClips || CanvasTransform() is not { } transform)
+            {
+                return false;
+            }
+
+            var toDevice = ToDevice(transform);
+
+            return (toDevice.M12 != 0 || toDevice.M21 != 0) &&
+                   TryDeferTurnedRectClip(clip, transform, toDevice, aliased: true);
+        }
+
+        /// <summary>
+        /// Records <paramref name="clip"/>, turned by <paramref name="toDevice"/>, as a deferred
+        /// shape clip, applied antialiased or, with <paramref name="aliased"/>, as a plain
+        /// rectangle clip when something needs it on the canvas.
+        /// </summary>
+        /// <remarks>
+        /// Runs drawn under the clip stay pending only while their device bounds keep a pixel and a
+        /// half inside each of its four edges (<see cref="ClipEdges"/>). Every pixel centre of the
+        /// bounds then lies that far inside, since a distance to a line is least at a corner of a
+        /// rectangle, and there the clip covers the pixel fully whether it is antialiased or not.
+        /// Such runs draw the same pixels with the clip as without.
+        /// </remarks>
+        private bool TryDeferTurnedRectClip(Rect clip, Matrix transform, Matrix toDevice, bool aliased)
+        {
+            if (toDevice.ContainsPerspective() ||
+                !ClipEdges.TryCreate(clip, toDevice, out var edges, out var device))
+            {
+                return false;
+            }
+
+            CheckLease();
+
+            var level = new ClipLevel(GlyphRunClipKind.Transformed, device, null)
+            {
+                Deferred = true,
+                Transform = transform,
+                IsShape = true,
+                Shape = new RoundedRect(clip),
+                Local = clip.ToSKRect(),
+                Aliased = aliased,
+                HasEdges = true,
+                Edges = edges,
             };
 
             TrackClipLevel(level);
@@ -278,7 +340,7 @@ namespace Avalonia.Skia
         /// <summary>Clips the canvas to a deferred clip under the current canvas transform, as pushing it would have.</summary>
         private void ClipCanvas(in ClipLevel level)
         {
-            if (!level.IsShape)
+            if (!level.IsShape || level.Aliased)
             {
                 Canvas.ClipRect(level.Local);
                 return;
@@ -667,6 +729,15 @@ namespace Avalonia.Skia
             /// </summary>
             public SKRect Across, Down;
 
+            /// <summary>Whether a deferred shape clip is a rectangle applied without antialiasing.</summary>
+            public bool Aliased;
+
+            /// <summary>Whether the shape clip is a rotated or skewed rectangle that <see cref="Edges"/> bound.</summary>
+            public bool HasEdges;
+
+            /// <summary>The device edges of a rotated or skewed rectangle clip.</summary>
+            public ClipEdges Edges;
+
             /// <summary>
             /// Whether a run that does not <see cref="Fits">fit</see> the shape clip was batched
             /// while it was pushed, so its pending runs must be drawn before it is popped.
@@ -677,7 +748,8 @@ namespace Avalonia.Skia
             /// Whether <paramref name="bounds"/>, whole device pixels, lie where the shape clip
             /// covers every pixel fully, so drawing them without the clip changes no pixel.
             /// </summary>
-            public readonly bool Fits(in SKRect bounds) => Inside(Across, bounds) || Inside(Down, bounds);
+            public readonly bool Fits(in SKRect bounds) =>
+                HasEdges ? Edges.Encloses(bounds) : Inside(Across, bounds) || Inside(Down, bounds);
 
             private static bool Inside(in SKRect outer, in SKRect bounds) =>
                 outer.Left <= bounds.Left && outer.Top <= bounds.Top && bounds.Right <= outer.Right &&
@@ -695,6 +767,114 @@ namespace Avalonia.Skia
                        bounds.Bottom <= Device.Bottom;
             }
         }
+        /// <summary>
+        /// The four edges of a rectangle clip under a rotation or skew, in device pixels: each an
+        /// inward unit normal and the least projection on it of a point a pixel and a half inside
+        /// that edge.
+        /// </summary>
+        internal readonly struct ClipEdges
+        {
+            // A pixel centre this far inside every edge is fully covered by the clip, antialiased
+            // or not, as for the rounded rectangle bands.
+            private const double Margin = 1.5;
+
+            private readonly double _x0, _y0, _d0, _x1, _y1, _d1, _x2, _y2, _d2, _x3, _y3, _d3;
+
+            private ClipEdges(double[] normals)
+            {
+                _x0 = normals[0]; _y0 = normals[1]; _d0 = normals[2];
+                _x1 = normals[3]; _y1 = normals[4]; _d1 = normals[5];
+                _x2 = normals[6]; _y2 = normals[7]; _d2 = normals[8];
+                _x3 = normals[9]; _y3 = normals[10]; _d3 = normals[11];
+            }
+
+            /// <summary>
+            /// The edges of <paramref name="rect"/> mapped by <paramref name="toDevice"/>, and its
+            /// device bounds. Returns <c>false</c> for a degenerate or unbounded quadrilateral.
+            /// </summary>
+            public static bool TryCreate(Rect rect, Matrix toDevice, out ClipEdges edges, out SKRect device)
+            {
+                edges = default;
+                device = default;
+
+                Span<Point> corners = stackalloc Point[]
+                {
+                    rect.TopLeft.Transform(toDevice), rect.TopRight.Transform(toDevice),
+                    rect.BottomRight.Transform(toDevice), rect.BottomLeft.Transform(toDevice),
+                };
+
+                var minX = double.MaxValue;
+                var minY = double.MaxValue;
+                var maxX = double.MinValue;
+                var maxY = double.MinValue;
+
+                foreach (var corner in corners)
+                {
+                    minX = Math.Min(minX, corner.X);
+                    minY = Math.Min(minY, corner.Y);
+                    maxX = Math.Max(maxX, corner.X);
+                    maxY = Math.Max(maxY, corner.Y);
+                }
+
+                // Also rejects NaN.
+                if (!(Math.Abs(minX) <= 1 << 24 && Math.Abs(minY) <= 1 << 24 && Math.Abs(maxX) <= 1 << 24 &&
+                      Math.Abs(maxY) <= 1 << 24))
+                {
+                    return false;
+                }
+
+                // The side of each edge the inside lies on follows the corners' turning direction,
+                // which a reflection reverses.
+                var turn = Math.Sign((corners[1].X - corners[0].X) * (corners[2].Y - corners[1].Y) -
+                                     (corners[1].Y - corners[0].Y) * (corners[2].X - corners[1].X));
+
+                if (turn == 0)
+                {
+                    return false;
+                }
+
+                var normals = new double[12];
+
+                for (var i = 0; i < 4; i++)
+                {
+                    var from = corners[i];
+                    var to = corners[(i + 1) % 4];
+                    var dx = to.X - from.X;
+                    var dy = to.Y - from.Y;
+                    var length = Math.Sqrt(dx * dx + dy * dy);
+
+                    if (!(length > 0))
+                    {
+                        return false;
+                    }
+
+                    var nx = -dy / length * turn;
+                    var ny = dx / length * turn;
+
+                    normals[i * 3] = nx;
+                    normals[i * 3 + 1] = ny;
+                    normals[i * 3 + 2] = nx * from.X + ny * from.Y + Margin;
+                }
+
+                edges = new ClipEdges(normals);
+                device = new SKRect((float)minX, (float)minY, (float)maxX, (float)maxY);
+
+                return true;
+            }
+
+            /// <summary>
+            /// Whether <paramref name="bounds"/>, whole device pixels, lie at least a pixel and a
+            /// half inside every edge.
+            /// </summary>
+            public bool Encloses(in SKRect bounds) =>
+                Encloses(bounds, _x0, _y0, _d0) && Encloses(bounds, _x1, _y1, _d1) &&
+                Encloses(bounds, _x2, _y2, _d2) && Encloses(bounds, _x3, _y3, _d3);
+
+            // A projection on a normal is least at one of the rectangle's corners.
+            private static bool Encloses(in SKRect bounds, double nx, double ny, double least) =>
+                nx * (nx >= 0 ? bounds.Left : bounds.Right) + ny * (ny >= 0 ? bounds.Top : bounds.Bottom) >= least;
+        }
+
         internal sealed partial class SkiaGlyphAtlasBatch
         {
             // The sprites cut to the visible rectangle they were last trimmed to, kept while runs

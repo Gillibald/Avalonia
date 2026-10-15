@@ -1212,7 +1212,7 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void PushClip(Rect clip)
         {
-            if (TryDeferRectClip(clip))
+            if (TryDeferRectClip(clip) || TryDeferTurnedRectClip(clip))
             {
                 return;
             }
