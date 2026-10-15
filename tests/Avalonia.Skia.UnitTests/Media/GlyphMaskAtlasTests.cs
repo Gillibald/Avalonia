@@ -718,6 +718,109 @@ namespace Avalonia.Skia.UnitTests.Media
             return charges;
         }
 
+        /// <summary>
+        /// Batching asks whether two sprites hold ink at a pixel they both cover. The pages of an
+        /// atlas whose pages live in GPU textures answer from an ink bitmap, which must answer as
+        /// the pixels of the same entries do, alone and paired with a page that keeps its pixels.
+        /// </summary>
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void The_Ink_Bitmap_Answers_SharesCoverage_As_The_Pixels_Do(bool rgba)
+        {
+            var format = rgba ? GlyphAtlasFormat.Rgba : GlyphAtlasFormat.Alpha8;
+            var pixelAtlas = new GlyphMaskAtlas(format: format);
+            var residentAtlas = new GlyphMaskAtlas(format: format, residentPages: true);
+            var random = new Random(71);
+            var entries = new List<(GlyphMask Mask, GlyphAtlasSlot Pixel, GlyphAtlasSlot Resident)>();
+
+            for (var i = 0; i < 160; i++)
+            {
+                var mask = CreateSparseMask(random, random.Next(1, 90), random.Next(1, 70), rgba);
+
+                Assert.True(pixelAtlas.TryAdd(Key(i), mask, pixelAtlas.Tick(), out var pixel));
+                Assert.True(residentAtlas.TryAdd(Key(i), mask, residentAtlas.Tick(), out var resident));
+                Assert.Equal((pixel.X, pixel.Y), (resident.X, resident.Y));
+                entries.Add((mask, pixel, resident));
+            }
+
+            var shared = 0;
+            const int trials = 6000;
+
+            for (var trial = 0; trial < trials; trial++)
+            {
+                var a = entries[random.Next(entries.Count)];
+                var b = entries[random.Next(entries.Count)];
+                var dx = random.Next(-b.Mask.Width + 1, a.Mask.Width);
+                var dy = random.Next(-b.Mask.Height + 1, a.Mask.Height);
+                var expected = MasksShareInk(a.Mask, b.Mask, dx, dy);
+
+                bool Shares(GlyphAtlasSlot first, GlyphAtlasSlot second) => GlyphAtlasBatchBuilder.SharesCoverage(
+                    first.Page!, new GlyphAtlasSprite(first.X, first.Y, first.Width, first.Height, 0, 0),
+                    second.Page!, new GlyphAtlasSprite(second.X, second.Y, second.Width, second.Height, dx, dy));
+
+                Assert.Equal(expected, Shares(a.Pixel, b.Pixel));
+                Assert.Equal(expected, Shares(a.Resident, b.Resident));
+                Assert.Equal(expected, Shares(a.Pixel, b.Resident));
+                Assert.Equal(expected, Shares(a.Resident, b.Pixel));
+
+                shared += expected ? 1 : 0;
+            }
+
+            Assert.InRange(shared, trials / 10, trials - trials / 10);
+        }
+
+        /// <summary>Whether mask <paramref name="b"/>, offset by (<paramref name="dx"/>, <paramref name="dy"/>), holds ink where <paramref name="a"/> does.</summary>
+        private static bool MasksShareInk(GlyphMask a, GlyphMask b, int dx, int dy)
+        {
+            for (var y = Math.Max(0, dy); y < Math.Min(a.Height, dy + b.Height); y++)
+            {
+                for (var x = Math.Max(0, dx); x < Math.Min(a.Width, dx + b.Width); x++)
+                {
+                    if (HasInk(a, x, y) && HasInk(b, x - dx, y - dy))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasInk(GlyphMask mask, int x, int y)
+            => mask.Channels == 4 ? mask.Alpha[(y * mask.Width + x) * 4 + 3] != 0 : mask.Alpha[y * mask.Width + x] != 0;
+
+        /// <summary>A coverage or premultiplied BGRA mask with ink in 1 to 10 % of its texels.</summary>
+        internal static GlyphMask CreateSparseMask(Random random, int width, int height, bool rgba)
+        {
+            var channels = rgba ? 4 : 1;
+            var pixels = new byte[width * height * channels];
+            var inked = random.Next(1, 11);
+
+            for (var i = 0; i < width * height; i++)
+            {
+                if (random.Next(100) >= inked)
+                {
+                    continue;
+                }
+
+                var alpha = random.Next(1, 256);
+
+                if (!rgba)
+                {
+                    pixels[i] = (byte)alpha;
+                    continue;
+                }
+
+                pixels[i * 4] = (byte)random.Next(0, alpha + 1);
+                pixels[i * 4 + 1] = (byte)random.Next(0, alpha + 1);
+                pixels[i * 4 + 2] = (byte)random.Next(0, alpha + 1);
+                pixels[i * 4 + 3] = (byte)alpha;
+            }
+
+            return new GlyphMask(pixels, width, height, 0, 0, channels: channels);
+        }
+
         // For each RGBA channel, the BGRA channel holding it.
         private static readonly int[] s_bgraOfRgba = { 2, 1, 0, 3 };
 

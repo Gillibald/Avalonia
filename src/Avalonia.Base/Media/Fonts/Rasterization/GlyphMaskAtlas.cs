@@ -73,11 +73,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal readonly List<GlyphAtlasEntryKey> Keys = new();
         internal readonly List<(int Y, int Height, int X)> Shelves = new();
 
-        internal GlyphAtlasPage(int height, int bytesPerPixel = 1)
+        internal GlyphAtlasPage(int height, int bytesPerPixel = 1, bool resident = false)
         {
             BytesPerPixel = bytesPerPixel;
             Pixels = GC.AllocateArray<byte>(RowBytes * height, pinned: true);
             Height = height;
+            Ink = resident ? new GlyphAtlasInk() : null;
         }
 
         /// <summary>Row-major texels, <see cref="RowBytes"/> bytes per row.</summary>
@@ -85,6 +86,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Bytes per texel: 1 for coverage, 4 for premultiplied RGBA.</summary>
         public int BytesPerPixel { get; }
+
+        /// <summary>
+        /// Where the page holds ink, for a page of an atlas whose pages live in GPU textures;
+        /// <c>null</c> where <see cref="Pixels"/> answers instead.
+        /// </summary>
+        internal GlyphAtlasInk? Ink { get; }
 
         /// <summary>Bytes per row of <see cref="Pixels"/>.</summary>
         public int RowBytes => GlyphMaskAtlas.PageWidth * BytesPerPixel;
@@ -98,8 +105,35 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public long ChargedBytes => (long)RowBytes * Height;
 
-        /// <summary>The bytes of CPU memory the page holds for its texels.</summary>
-        internal long CpuBytes => Pixels.Length;
+        /// <summary>The bytes of CPU memory the page holds for its texels and their ink.</summary>
+        internal long CpuBytes => Pixels.Length + (Ink?.Bytes ?? 0);
+
+        /// <summary>
+        /// The ink of <paramref name="count"/> texels of row <paramref name="y"/> from column
+        /// <paramref name="x"/> on, at most 64, one bit per texel, the first in the lowest bit: set
+        /// where the coverage, or the alpha of an RGBA texel, is not zero.
+        /// </summary>
+        internal ulong ReadInk(int x, int y, int count)
+        {
+            if (Ink is { } ink)
+            {
+                return ink.Read(x, y, count);
+            }
+
+            var step = BytesPerPixel;
+            var row = Pixels.AsSpan(y * RowBytes + x * step + step - 1, (count - 1) * step + 1);
+            var bits = 0UL;
+
+            for (var i = 0; i < count; i++)
+            {
+                if (row[i * step] != 0)
+                {
+                    bits |= 1UL << i;
+                }
+            }
+
+            return bits;
+        }
 
         /// <summary>The rows taken by shelves.</summary>
         internal int UsedHeight { get; set; }
@@ -262,12 +296,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </param>
         /// <param name="perTypeface">Whether the atlas holds the masks of one typeface.</param>
         /// <param name="format">The texel layout of the pages.</param>
+        /// <param name="residentPages">
+        /// Whether the pages live in the GPU textures of one context; the ink tests of batching
+        /// read an ink bitmap per page there.
+        /// </param>
         public GlyphMaskAtlas(GlyphCacheBudget? budget = null, bool perTypeface = false,
-            GlyphAtlasFormat format = GlyphAtlasFormat.Alpha8)
+            GlyphAtlasFormat format = GlyphAtlasFormat.Alpha8, bool residentPages = false)
         {
             _clock = budget ?? GlyphCacheBudget.Shared;
             _handle = _clock.Register(GlyphCachePoolKind.Atlas, this, perTypeface);
             Format = format;
+            Resident = residentPages;
         }
 
         /// <summary>The texel layout of the pages.</summary>
@@ -275,6 +314,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Bytes per texel of the pages.</summary>
         public int BytesPerPixel => Format == GlyphAtlasFormat.Rgba ? 4 : 1;
+
+        /// <summary>Whether the pages live in the GPU textures of one context.</summary>
+        public bool Resident { get; }
 
         /// <summary>
         /// The atlas of every typeface drawn on contexts that update part of a page in place,
@@ -570,7 +612,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             // Stamped before it is charged, so a build past the limit does not evict it.
-            var fresh = new GlyphAtlasPage(rows, BytesPerPixel) { UsedHeight = LeadingGutter, LastUse = tick };
+            var fresh = new GlyphAtlasPage(rows, BytesPerPixel, Resident) { UsedHeight = LeadingGutter, LastUse = tick };
 
             _pages.Add(fresh);
             Interlocked.Add(ref _allocated, fresh.ChargedBytes);

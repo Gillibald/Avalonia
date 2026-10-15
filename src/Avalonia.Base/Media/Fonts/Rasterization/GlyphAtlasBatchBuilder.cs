@@ -298,6 +298,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             var top = Math.Max(first.Y, second.Y);
             var bottom = Math.Min(first.Y + first.Height, second.Y + second.Height);
 
+            if (firstPage.Ink is not null || secondPage.Ink is not null)
+            {
+                return SharesInk(firstPage, first.SourceX + left - first.X, first.SourceY + top - first.Y, secondPage,
+                    second.SourceX + left - second.X, second.SourceY + top - second.Y, right - left, bottom - top);
+            }
+
             // Entries are never overwritten, and a grown page copies them, so the current arrays
             // hold both sprites' coverage.
             var firstPixels = firstPage.Pixels;
@@ -319,6 +325,35 @@ namespace Avalonia.Media.Fonts.Rasterization
                 for (var x = left; x < right; x++)
                 {
                     if (firstPixels[firstRow + x * firstStep] != 0 && secondPixels[secondRow + x * secondStep] != 0)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Whether a <paramref name="width"/> by <paramref name="height"/> rectangle of each page,
+        /// at the given texels, holds ink at the same place, read 64 texels at a time.
+        /// </summary>
+        private static bool SharesInk(GlyphAtlasPage firstPage, int firstX, int firstY, GlyphAtlasPage secondPage,
+            int secondX, int secondY, int width, int height)
+        {
+            if (firstPage.Ink is { } firstInk && secondPage.Ink is { } secondInk)
+            {
+                return GlyphAtlasInk.Shares(firstInk, firstX, firstY, secondInk, secondX, secondY, width, height);
+            }
+
+            for (var row = 0; row < height; row++)
+            {
+                for (var column = 0; column < width; column += 64)
+                {
+                    var count = Math.Min(64, width - column);
+
+                    if ((firstPage.ReadInk(firstX + column, firstY + row, count) &
+                         secondPage.ReadInk(secondX + column, secondY + row, count)) != 0)
                     {
                         return true;
                     }
