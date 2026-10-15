@@ -98,17 +98,84 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
+        /// Cells clipped tightly around their content, as a text block clips to its bounds: the
+        /// clip is the run's ink grown by four DIPs, so under the turn the corners of the run's
+        /// device bounds reach past the clip's edges while its ink keeps clear of them. Such runs
+        /// stay pending too, measured in the clip's own frame.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(Cases))]
+        public void Rotated_Cells_Whose_Ink_Keeps_Clear_Of_A_Tight_Clip_Draw_In_A_Few_Atlas_Calls(GpuBackend backend,
+            Content content, ClipShape clip)
+        {
+            using var gpu = ColorAtlasTests.CreateGpu(backend, true);
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var runs = CreateCells(content, out var owners, lastCrossesItsClip: false);
+
+            void Draw(DrawingContextImpl context)
+            {
+                context.Clear(Colors.White);
+
+                for (var i = 0; i < runs.Length; i++)
+                {
+                    context.Transform = CellTransform(i, degrees: 15);
+                    PushClip(context, clip, InkOf(runs[i], content).Inflate(4));
+                    context.DrawGlyphRun(s_text, runs[i]);
+                    context.PopClip();
+                }
+
+                context.Transform = Matrix.Identity;
+            }
+
+            try
+            {
+                var expected = GlyphAtlasClipBatchTests.Render(gpu, Draw, batched: false, subpixel: false, out var alone);
+
+                GlyphAtlasClipBatchTests.Render(gpu, Draw, batched: true, subpixel: false, out _);
+
+                var actual = GlyphAtlasClipBatchTests.Render(gpu, Draw, batched: true, subpixel: false, out var draws);
+
+                TransformedAtlasTests.AssertEqual(expected, actual, $"{content} cells under tight {clip} clips");
+                Assert.True(alone >= runs.Length, $"the reference drew {alone} atlas calls for {runs.Length} cells");
+                Assert.True(draws <= 4, $"{runs.Length} rotated cells drew {draws} atlas calls");
+            }
+            finally
+            {
+                GlyphAtlasClipBatchTests.DisposeAll(runs);
+                GC.KeepAlive(owners);
+            }
+        }
+
+        /// <summary>
+        /// The box a cell's run inks: its outline bounds, and for a strike glyph its image too, a
+        /// full-em square standing on the em line at the pen.
+        /// </summary>
+        private static Rect InkOf(ManagedGlyphRunImpl run, Content content)
+        {
+            if (content == Content.Latin)
+            {
+                return run.Bounds;
+            }
+
+            var em = run.FontRenderingEmSize;
+            var pen = run.BaselineOrigin;
+
+            return run.Bounds.Union(new Rect(pen.X, pen.Y - em, em, em));
+        }
+
+        /// <summary>
         /// Cell <paramref name="index"/>: a turn of 15 degrees about its centre, at its place in
         /// the grid. The last cell turns its run out of its clip, so the clip cuts it.
         /// </summary>
-        private static Matrix CellTransform(int index)
+        private static Matrix CellTransform(int index, double? degrees = null)
         {
             var column = index % Columns;
             var row = index / Columns;
-            var degrees = index == Columns * Rows - 1 ? 40 : 15;
+
+            degrees ??= index == Columns * Rows - 1 ? 40 : 15;
 
             return Matrix.CreateTranslation(-CellWidth / 2, -CellHeight / 2) *
-                   Matrix.CreateRotation(degrees * Math.PI / 180) *
+                   Matrix.CreateRotation(degrees.Value * Math.PI / 180) *
                    Matrix.CreateTranslation(CellWidth / 2 + column * CellWidth + 2.3, CellHeight / 2 + row * CellHeight + 4.6);
         }
 
@@ -128,7 +195,8 @@ namespace Avalonia.Skia.UnitTests.Media
         /// The cells' runs; <paramref name="owners"/> holds the glyph runs that own strike runs, which
         /// must outlive the draws.
         /// </summary>
-        private static ManagedGlyphRunImpl[] CreateCells(Content content, out List<GlyphRun> owners)
+        private static ManagedGlyphRunImpl[] CreateCells(Content content, out List<GlyphRun> owners,
+            bool lastCrossesItsClip = true)
         {
             var runs = new ManagedGlyphRunImpl[Columns * Rows];
 
@@ -141,7 +209,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 for (var i = 0; i < runs.Length; i++)
                 {
                     // The last cell's label runs past its right edge, which the clip cuts.
-                    var text = i == runs.Length - 1 ? "Clipped!" : "Ag" + i;
+                    var text = lastCrossesItsClip && i == runs.Length - 1 ? "Clipped!" : "Ag" + i;
 
                     runs[i] = WideRunMaskTests.CreateRun(typeface, text, 15, new Point(14.3, 34.6));
                 }
@@ -154,7 +222,7 @@ namespace Avalonia.Skia.UnitTests.Media
             for (var i = 0; i < runs.Length; i++)
             {
                 // The last cell's glyph sits across its right edge.
-                var origin = i == runs.Length - 1 ? new Point(44, 38) : new Point(18, 38);
+                var origin = lastCrossesItsClip && i == runs.Length - 1 ? new Point(44, 38) : new Point(18, 38);
                 var run = new GlyphRun(strikes, 22, default, new List<GlyphInfo> { new(glyph, 0, 26) }, origin);
 
                 owners.Add(run);
