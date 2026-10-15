@@ -1210,6 +1210,33 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static bool HasColrV1Glyph(ManagedGlyphRunImpl run)
             => run.HasColrV1Glyph ??= ScanForColrV1Glyph(run);
 
+        /// <summary>
+        /// Whether the run holds a glyph with an image in one of its typeface's bitmap strikes,
+        /// scanned once per run.
+        /// </summary>
+        private static bool HasStrikeImage(ManagedGlyphRunImpl run)
+            => run.HasStrikeImage ??= ScanForStrikeImage(run);
+
+        private static bool ScanForStrikeImage(ManagedGlyphRunImpl run)
+        {
+            if (run.GlyphTypeface.BitmapSource is not { } bitmaps)
+            {
+                return false;
+            }
+
+            var glyphs = run.GlyphIndices;
+
+            for (var i = 0; i < glyphs.Length; i++)
+            {
+                if (bitmaps.HasGlyphImage(glyphs[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static bool ScanForColrV1Glyph(ManagedGlyphRunImpl run)
         {
             var typeface = run.GlyphTypeface;

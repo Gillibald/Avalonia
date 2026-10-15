@@ -159,6 +159,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             switch (sprite.Entry)
             {
                 case ColorAtlasEntry.PaintGraph:
+                case ColorAtlasEntry.TransformedStrike:
                     // Colour masks ignore mode and grid fit, so every run shares them.
                     mask = new GlyphMaskKey(sprite.Glyph, key.ScaleQ, sprite.PhaseX, GlyphMaskMode.Antialiased,
                         GridFit: false, Transform: key.Transform, PhaseY: sprite.PhaseY);
@@ -360,6 +361,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                         return ColorGlyphMasks.TryGetAtlasMask(_typeface, colorKey);
                     }
+
+                    case ColorAtlasEntry.TransformedStrike:
+                        return ColorGlyphMasks.TryGetAtlasMask(_typeface, new ColorGlyphMaskKey(sprite.Glyph, _key.ScaleQ,
+                            sprite.PhaseX, Transform: _key.Transform, PhaseY: sprite.PhaseY));
 
                     case ColorAtlasEntry.Strike:
                     {

@@ -9,7 +9,8 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// each texel weighted by its overlap; an axis that grows interpolates linearly between the
     /// two texel centres nearest to the destination pixel centre, held inside the outermost
     /// centres. Weights are fixed point, the same for every channel, so premultiplied texels stay
-    /// valid and the result does not depend on the platform.
+    /// valid and the result does not depend on the platform. Under a rotation, skew or anisotropic
+    /// scale, <see cref="Resample"/> maps the bitmap through an affine transform instead.
     /// </summary>
     internal static class BitmapGlyphScaler
     {
@@ -46,6 +47,95 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 ArrayPool<ushort>.Shared.Return(intermediate);
             }
+        }
+
+        /// <summary>The most samples a destination pixel takes along one of its axes.</summary>
+        private const int MaxSamplesPerAxis = 16;
+
+        /// <summary>
+        /// Writes <paramref name="source"/> resampled under an affine map into a
+        /// <paramref name="width"/> by <paramref name="height"/> destination, rows <c>width * 4</c>
+        /// bytes apart. The destination point (x, y) reads the source point
+        /// (<paramref name="m11"/> x + <paramref name="m21"/> y + <paramref name="offsetX"/>,
+        /// <paramref name="m12"/> x + <paramref name="m22"/> y + <paramref name="offsetY"/>), in units
+        /// where texel i spans [i, i + 1]. Each destination pixel averages bilinear samples spread
+        /// evenly over its square, as many along each axis as the source texels that axis of the
+        /// pixel covers, so a map that shrinks averages the texels a pixel covers and one that grows
+        /// interpolates between the texel centres nearest to the pixel centre. Outside the source
+        /// is transparent, so its edges fade over half a texel. Every channel takes the same
+        /// weights, so premultiplied texels stay valid.
+        /// </summary>
+        public static void Resample(in DecodedGlyphBitmap source, float m11, float m12, float m21, float m22,
+            float offsetX, float offsetY, int width, int height, Span<byte> destination)
+        {
+            var columns = Math.Clamp((int)MathF.Round(MathF.Sqrt(m11 * m11 + m12 * m12)), 1, MaxSamplesPerAxis);
+            var rows = Math.Clamp((int)MathF.Round(MathF.Sqrt(m21 * m21 + m22 * m22)), 1, MaxSamplesPerAxis);
+            var weight = 1f / (columns * rows);
+            var bgra = source.Bgra;
+            var sourceWidth = source.Width;
+            var sourceHeight = source.Height;
+
+            for (var y = 0; y < height; y++)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    float b = 0, g = 0, r = 0, a = 0;
+
+                    for (var row = 0; row < rows; row++)
+                    {
+                        var sampleY = y + (row + 0.5f) / rows;
+
+                        for (var column = 0; column < columns; column++)
+                        {
+                            var sampleX = x + (column + 0.5f) / columns;
+
+                            // Texel centres sit at half units: the texels around the point and the
+                            // point's position between their centres.
+                            var u = m11 * sampleX + m21 * sampleY + offsetX - 0.5f;
+                            var v = m12 * sampleX + m22 * sampleY + offsetY - 0.5f;
+                            var u0 = (int)MathF.Floor(u);
+                            var v0 = (int)MathF.Floor(v);
+                            var fu = u - u0;
+                            var fv = v - v0;
+
+                            Accumulate(bgra, sourceWidth, sourceHeight, u0, v0, (1 - fu) * (1 - fv), ref b, ref g, ref r, ref a);
+                            Accumulate(bgra, sourceWidth, sourceHeight, u0 + 1, v0, fu * (1 - fv), ref b, ref g, ref r, ref a);
+                            Accumulate(bgra, sourceWidth, sourceHeight, u0, v0 + 1, (1 - fu) * fv, ref b, ref g, ref r, ref a);
+                            Accumulate(bgra, sourceWidth, sourceHeight, u0 + 1, v0 + 1, fu * fv, ref b, ref g, ref r, ref a);
+                        }
+                    }
+
+                    var target = destination.Slice((y * width + x) * 4, 4);
+
+                    target[0] = ToLevel(b * weight);
+                    target[1] = ToLevel(g * weight);
+                    target[2] = ToLevel(r * weight);
+                    target[3] = ToLevel(a * weight);
+                }
+            }
+        }
+
+        private static void Accumulate(byte[] bgra, int width, int height, int x, int y, float weight,
+            ref float b, ref float g, ref float r, ref float a)
+        {
+            if ((uint)x >= (uint)width || (uint)y >= (uint)height || weight == 0)
+            {
+                return;
+            }
+
+            var i = (y * width + x) * 4;
+
+            b += weight * bgra[i];
+            g += weight * bgra[i + 1];
+            r += weight * bgra[i + 2];
+            a += weight * bgra[i + 3];
+        }
+
+        private static byte ToLevel(float value)
+        {
+            var level = (int)(value + 0.5f);
+
+            return (byte)(level > 255 ? 255 : level < 0 ? 0 : level);
         }
 
         private static void ScaleRows(byte[] bgra, int sourceWidth, int sourceHeight, int width, in Taps columns,

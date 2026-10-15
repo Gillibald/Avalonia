@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media.Fonts.Tables.Bitmaps;
 using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -9,7 +10,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// cached in the typeface's <see cref="GlyphTypeface.ColorMaskCache"/>. Upright runs compose
     /// their run masks from these instead of replaying the glyph's vector fills on every draw. On
     /// hardware GPUs the masks are colour atlas entries instead, upright or rasterized under a
-    /// static rotation or skew, and the atlas is their storage.
+    /// static rotation or skew, and the atlas is their storage. Under a rotation, skew or
+    /// anisotropic scale, a glyph with a bitmap strike image (<see cref="IsStrikeGlyph"/>) gets a
+    /// colour mask too, under the same keys: the image of the strike the size selects, resampled
+    /// under the key's transform.
     /// </summary>
     /// <remarks>
     /// A mask is the glyph's cached recording replayed into a CPU raster surface of the render
@@ -28,6 +32,34 @@ namespace Avalonia.Media.Fonts.Rasterization
             IPlatformRenderInterface RenderInterface), GlyphMask> s_build =
             static (key, state) => Build(state.Typeface, state.Recording, state.RenderInterface, key);
 
+        private static readonly Func<ColorGlyphMaskKey, (GlyphTypeface Typeface, IBitmapGlyphDecoder Decoder), GlyphMask>
+            s_buildStrike = static (key, state) => BuildStrike(state.Typeface, state.Decoder, key) ?? GlyphMask.Empty;
+
+        /// <summary>
+        /// Whether <paramref name="glyph"/> draws from a bitmap strike image that colour masks
+        /// resample: the typeface has an image for it in some strike, no COLR v1 paint graph, and
+        /// a decoder is available.
+        /// </summary>
+        public static bool IsStrikeGlyph(GlyphTypeface typeface, ushort glyph)
+            => typeface.BitmapSource is { } bitmaps && bitmaps.HasGlyphImage(glyph) &&
+               !(typeface.ColorTable is { HasV1Data: true } colr && ColorGlyphRunSplitter.IsV1Glyph(typeface, colr, glyph)) &&
+               AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is not null;
+
+        /// <summary>
+        /// Resolves the key and the placement of the colour mask that bitmap glyph
+        /// <paramref name="glyph"/> takes under a transformed key. Returns <c>false</c> when its
+        /// strike has no image for it, or its mask would exceed the mask bounds or
+        /// <see cref="GlyphMaskCache{TKey}.MaxEntryBytes"/>.
+        /// </summary>
+        public static bool TryGetStrikePlacement(GlyphTypeface typeface, ushort glyph, ushort scaleQ, byte phase,
+            GlyphMaskTransform transform, byte phaseY, out ColorGlyphMaskKey key, out int left, out int top,
+            out int width, out int height)
+        {
+            key = new ColorGlyphMaskKey(glyph, scaleQ, phase, Transform: transform, PhaseY: phaseY);
+
+            return TryGetStrikePlacement(typeface, key, out _, out left, out top, out width, out height) &&
+                   (long)width * height * 4 + 48 <= GlyphMaskCache.MaxEntryBytes;
+        }
         /// <summary>
         /// Gets the colour mask of v1 glyph <paramref name="glyph"/> at <paramref name="scaleQ"/> and
         /// <paramref name="phase"/>, rasterizing it on a miss. <paramref name="foreground"/> is the
@@ -140,6 +172,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return cached;
             }
 
+            if (IsStrikeGlyph(typeface, key.Glyph))
+            {
+                return AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is { } decoder
+                    ? BuildStrike(typeface, decoder, key)
+                    : null;
+            }
+
             if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is not { } renderInterface)
             {
                 return null;
@@ -178,6 +217,18 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (cache.TryGet(key, out var cached))
             {
                 return cached;
+            }
+
+            if (IsStrikeGlyph(typeface, key.Glyph))
+            {
+                if (AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is not { } decoder)
+                {
+                    return null;
+                }
+
+                var mask = cache.GetOrBuild(key, (typeface, decoder), s_buildStrike);
+
+                return mask.IsEmpty ? null : mask;
             }
 
             if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is not { } renderInterface)
@@ -263,6 +314,120 @@ namespace Avalonia.Media.Fonts.Rasterization
             height = (int)MathF.Ceiling(maxY + phaseY) + Pad - top;
 
             return width > 0 && height > 0 && width <= GlyphMasks.MaxMaskSize && height <= GlyphMasks.MaxMaskSize;
+        }
+
+        /// <summary>
+        /// The device rectangle a transformed strike mask covers relative to its snapped pen: the
+        /// image rectangle of the strike the key's size selects, grown by half a texel on every
+        /// side, where resampling fades its edges, scaled to the key's size, its corners mapped
+        /// through the key's linear part, shifted by the phases and padded by <see cref="Pad"/>.
+        /// </summary>
+        private static bool TryGetStrikePlacement(GlyphTypeface typeface, in ColorGlyphMaskKey key,
+            out BitmapStrike strike, out int left, out int top, out int width, out int height)
+        {
+            left = top = width = height = 0;
+            strike = default;
+
+            if (typeface.BitmapSource is not { } bitmaps)
+            {
+                return false;
+            }
+
+            strike = bitmaps.SelectStrike(key.PixelsPerEm);
+
+            if (!bitmaps.TryGetImageBounds(strike, key.Glyph, out var image))
+            {
+                // A size known only from the image itself: decode it, as drawing it will.
+                if (AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is not { } decoder ||
+                    !bitmaps.TryGetPlacement(strike, key.Glyph, decoder, out var placement))
+                {
+                    return false;
+                }
+
+                image = new PixelRect(placement.Left, placement.Top, placement.Bitmap.Width, placement.Bitmap.Height);
+            }
+
+            if (image.Width <= 0 || image.Height <= 0 || strike.PpemY <= 0)
+            {
+                return false;
+            }
+
+            var scale = key.PixelsPerEm / strike.PpemY;
+            var linear = key.Transform;
+            var minX = float.MaxValue;
+            var minY = float.MaxValue;
+            var maxX = float.MinValue;
+            var maxY = float.MinValue;
+
+            for (var corner = 0; corner < 4; corner++)
+            {
+                var x = ((corner & 1) == 0 ? image.X - 0.5f : image.Right + 0.5f) * scale;
+                var y = ((corner & 2) == 0 ? image.Y - 0.5f : image.Bottom + 0.5f) * scale;
+                var deviceX = x * linear.Scale11 + y * linear.Skew21;
+                var deviceY = x * linear.Skew12 + y * linear.Scale22;
+
+                minX = MathF.Min(minX, deviceX);
+                minY = MathF.Min(minY, deviceY);
+                maxX = MathF.Max(maxX, deviceX);
+                maxY = MathF.Max(maxY, deviceY);
+            }
+
+            left = (int)MathF.Floor(minX + key.PhaseOffset) - Pad;
+            top = (int)MathF.Floor(minY + key.PhaseOffsetY) - Pad;
+            width = (int)MathF.Ceiling(maxX + key.PhaseOffset) + Pad - left;
+            height = (int)MathF.Ceiling(maxY + key.PhaseOffsetY) + Pad - top;
+
+            return width > 0 && height > 0 && width <= GlyphMasks.MaxMaskSize && height <= GlyphMasks.MaxMaskSize;
+        }
+
+        /// <summary>
+        /// The colour mask of a strike glyph under a transformed key: the image of the strike the
+        /// key's size selects, resampled under the inverse of the key's scaled linear part
+        /// (<see cref="BitmapGlyphScaler.Resample"/>). Returns <c>null</c> when the image does not
+        /// decode or the transform is singular.
+        /// </summary>
+        private static GlyphMask? BuildStrike(GlyphTypeface typeface, IBitmapGlyphDecoder decoder,
+            in ColorGlyphMaskKey key)
+        {
+            if (!TryGetStrikePlacement(typeface, key, out var strike, out var left, out var top, out var width,
+                    out var height) ||
+                !typeface.BitmapSource!.TryGetPlacement(strike, key.Glyph, decoder, out var placement))
+            {
+                return null;
+            }
+
+            // Device = linear * (strike pixels * scale); its inverse takes a mask pixel back to
+            // the image, whose texel i spans [i, i + 1] from the image's own top-left.
+            var scale = key.PixelsPerEm / strike.PpemY;
+            var linear = key.Transform;
+            var a = linear.Scale11 * scale;
+            var b = linear.Skew12 * scale;
+            var c = linear.Skew21 * scale;
+            var d = linear.Scale22 * scale;
+            var determinant = a * d - b * c;
+
+            if (determinant == 0 || !float.IsFinite(determinant))
+            {
+                return null;
+            }
+
+            GlyphRasterDiagnostics.CountColorMaskRasterization();
+
+            var i11 = d / determinant;
+            var i12 = -b / determinant;
+            var i21 = -c / determinant;
+            var i22 = a / determinant;
+
+            // Mask pixel (0, 0) starts at device (left - phase, top - phaseY) relative to the pen.
+            var originX = left - key.PhaseOffset;
+            var originY = top - key.PhaseOffsetY;
+            var offsetX = i11 * originX + i21 * originY - placement.Left;
+            var offsetY = i12 * originX + i22 * originY - placement.Top;
+            var pixels = new byte[width * height * 4];
+
+            BitmapGlyphScaler.Resample(placement.Bitmap, i11, i12, i21, i22, offsetX, offsetY, width, height, pixels);
+
+            return new GlyphMask(pixels, width, height, left, top, channels: 4);
         }
 
         private static unsafe GlyphMask Build(GlyphTypeface typeface, ColorGlyphRecording recording,

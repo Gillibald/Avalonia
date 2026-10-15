@@ -234,6 +234,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Whether the run holds a COLR v1 glyph; <c>null</c> until first asked.</summary>
         internal bool? HasColrV1Glyph;
 
+        /// <summary>
+        /// Whether the run holds a glyph with a bitmap strike image; <c>null</c> until first asked.
+        /// </summary>
+        internal bool? HasStrikeImage;
+
         private ColorGlyphSegments? _colorGlyphSegments;
         private bool _colorGlyphSegmentsResolved;
 

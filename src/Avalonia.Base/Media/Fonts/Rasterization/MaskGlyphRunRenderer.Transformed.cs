@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using Avalonia.Media.Fonts.Tables.Bitmaps;
 using Avalonia.Platform;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -20,7 +21,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// glyphs is taken only by a hardware GPU drawing it under a static rotation, skew or
         /// anisotropic scale: its paint graphs are rasterized once under the transform into colour
         /// atlas entries; every other draw of such a run, an animating transform included, leaves
-        /// the v1 glyphs to the caller's vector replay.
+        /// the v1 glyphs to the caller's vector replay. A run with bitmap strike images is taken
+        /// the same way, its images resampled once under the transform into colour masks
+        /// (<see cref="ColorGlyphMasks.IsStrikeGlyph"/>), while a decoder is available.
         /// </summary>
         public static bool TryDrawTransformed(IDrawingContextImpl context, ManagedGlyphRunImpl run,
             IBrush? foreground, TextRenderingMode textRenderingMode)
@@ -43,14 +46,18 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var typeface = run.GlyphTypeface;
 
-            // A strike bitmap under a free transform would need resampling that masks do not
-            // do; the native path keeps those runs.
-            if (typeface.OutlineType == GlyphOutlineType.None || typeface.BitmapSource is not null)
+            // Strike images under a free transform are resampled into colour masks; without a
+            // decoder the native path keeps the run, as it keeps a typeface without outlines.
+            var strikes = typeface.BitmapSource is not null && HasStrikeImage(run);
+
+            if (strikes && AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is null ||
+                typeface.BitmapSource is not null && !strikes ||
+                typeface.OutlineType == GlyphOutlineType.None && !strikes)
             {
                 return false;
             }
 
-            var colorGlyphs = HasColrV1Glyph(run);
+            var colorGlyphs = strikes || HasColrV1Glyph(run);
 
             if (colorGlyphs && !DrawsTransformedColorMasks(context, surface, transform))
             {
@@ -898,7 +905,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var glyphKey = new GlyphMaskKey(indices[i], key.ScaleQ, phaseX, key.Mode, GridFit: false,
                     Strong: false, EmboldenQ: embolden, Oblique: oblique, Transform: key.Transform, PhaseY: phaseY);
 
-                if (colorGlyphs && ColorGlyphRunSplitter.IsV1Glyph(typeface, colr!, indices[i]))
+                if (colorGlyphs && colr is { HasV1Data: true } && ColorGlyphRunSplitter.IsV1Glyph(typeface, colr, indices[i]))
                 {
                     // COLR v1: the paint graph rasterized under the transform, a colour atlas entry.
                     if (!ColorGlyphMasks.TryGetAtlasPlacement(typeface, indices[i], key.ScaleQ, phaseX, key.Transform,
@@ -929,6 +936,38 @@ namespace Avalonia.Media.Fonts.Rasterization
                         Kind = TransformedSpriteKind.Color,
                         Entry = ColorAtlasEntry.PaintGraph,
                         Color = colorKey.HasForeground ? colorKey.Foreground : 0,
+                    };
+                }
+                else if (colorGlyphs && ColorGlyphMasks.IsStrikeGlyph(typeface, indices[i]))
+                {
+                    // A bitmap strike: its image resampled under the transform, a colour atlas entry.
+                    if (!ColorGlyphMasks.TryGetStrikePlacement(typeface, indices[i], key.ScaleQ, phaseX, key.Transform,
+                            phaseY, out _, out var left, out var top, out var width, out var height))
+                    {
+                        return false;
+                    }
+
+                    if (count == items.Length)
+                    {
+                        var grown = ArrayPool<TransformedGlyphItem>.Shared.Rent(items.Length * 2);
+
+                        items.AsSpan(0, count).CopyTo(grown);
+                        ArrayPool<TransformedGlyphItem>.Shared.Return(items);
+                        items = grown;
+                    }
+
+                    items[count++] = new TransformedGlyphItem
+                    {
+                        Key = glyphKey with { EmboldenQ = 0, Oblique = false },
+                        PenX = penX,
+                        PenY = penY,
+                        Left = left,
+                        Top = top,
+                        Width = width,
+                        Height = height,
+                        Kind = TransformedSpriteKind.Color,
+                        Entry = ColorAtlasEntry.TransformedStrike,
+                        Color = 0,
                     };
                 }
                 else if (colr is not null && cpal is not null && colr.TryGetBaseGlyphRecord(indices[i], out var baseRecord))

@@ -46,6 +46,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>An outline glyph of a colour typeface, tinted through the coverage correction.</summary>
         Outline,
+
+        /// <summary>
+        /// A bitmap strike's image resampled under a rotation, skew or anisotropic scale into a
+        /// colour mask (<see cref="ColorGlyphMasks"/>).
+        /// </summary>
+        TransformedStrike,
     }
 
     /// <summary>
