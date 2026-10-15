@@ -183,6 +183,8 @@ namespace TextStress
             "  --label text   campaign label shown in the title and overlay, such as base or tip\n" +
             "    (default: --tag)\n" +
             "  --overlay on|off   draw the setup label over the content (default on; the title always has it)\n" +
+            "  --progress i/n   position in a campaign, shown as \"run i of n\" first in the title and overlay\n" +
+            "  --eta text   time left in the campaign as the driver estimates it, shown next to the progress\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +
             "  --out file   tab-separated results; --pass N and --tag text are copied into it\n" +

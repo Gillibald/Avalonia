@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Avalonia;
@@ -30,10 +31,11 @@ namespace TextStress
     {
         private const double FontSize = 13;
 
-        private SetupLabel(IReadOnlyList<string> lines)
+        private SetupLabel(string? progress, IReadOnlyList<string> lines)
         {
             Lines = lines;
-            Title = "TextStress | " + string.Join(" | ", lines);
+            Title = (progress is null ? "" : progress + " | ") + "TextStress | " +
+                    string.Join(" | ", progress is null ? lines : lines.Skip(1));
         }
 
         /// <summary>The label of the running process, once <see cref="Show"/> has run.</summary>
@@ -99,6 +101,12 @@ namespace TextStress
         {
             var lines = new List<string>();
             var tag = options.GetString("label", options.Tag);
+            var progress = Progress(options);
+
+            if (progress is not null)
+            {
+                lines.Add(progress);
+            }
 
             lines.Add((tag.Length > 0 ? tag + " | " : "") + "build " + Build);
 
@@ -119,7 +127,34 @@ namespace TextStress
             lines.Add(scenarioLine);
             lines.Add(MotionPolicy());
 
-            return new SetupLabel(lines);
+            return new SetupLabel(progress, lines);
+        }
+
+        /// <summary>
+        /// Where the run stands in its campaign, from <c>--progress i/n</c> and <c>--eta text</c>:
+        /// "run 12 of 96 | 14 min left", or null when the driver passes neither. A progress that is
+        /// not of the form i/n is shown as given.
+        /// </summary>
+        private static string? Progress(RunOptions options)
+        {
+            var progress = options.GetString("progress", "").Trim();
+            var eta = options.GetString("eta", "").Trim();
+            var parts = progress.Split('/');
+
+            if (parts.Length == 2 &&
+                int.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out var run) &&
+                int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var runs))
+            {
+                progress = "run " + run.ToString(CultureInfo.InvariantCulture) + " of " +
+                           runs.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (eta.Length > 0)
+            {
+                progress = progress.Length > 0 ? progress + " | " + eta : eta;
+            }
+
+            return progress.Length > 0 ? progress : null;
         }
 
         /// <summary>The render path the platform resolved, and the one requested when it was forced.</summary>

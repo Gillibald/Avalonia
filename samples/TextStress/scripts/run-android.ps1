@@ -187,6 +187,13 @@ if (-not $NoWarmupRun) {
     Invoke-Adb shell rm -f "$deviceDir/$file" "$deviceDir/$file.done" | Out-Null
 }
 
+# Every process is one run: passes x renders x jobs x variants x modes. TextStress shows the count
+# and the time left, estimated from the average run executed so far, in its title and overlay.
+$total = $Passes * @($Renders).Count * @($Jobs).Count * @($variantNames).Count * @($Modes).Count
+$run = 0
+$executed = 0
+$executedTime = [TimeSpan]::Zero
+
 for ($pass = 1; $pass -le $Passes; $pass++) {
     $modes = if ($pass % 2 -eq 1) { $Modes } else { @($Modes)[($Modes.Count - 1)..0] }
 
@@ -213,13 +220,23 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
                         $arguments += @('--frames', $Frames, '--warmup', $Warmup)
                     }
 
+                    $run++
                     if ($SkipExisting -and (Test-Path (Join-Path $renderDir $file))) { continue }
+
+                    $arguments += @('--progress', "$run/$total")
+
+                    if ($executed -gt 0) {
+                        $left = $executedTime.TotalMinutes / $executed * ($total - $run + 1)
+                        $arguments += @('--eta', ('"{0:N0} min left"' -f [Math]::Ceiling($left)))
+                    }
+
+                    $runStarted = Get-Date
 
                     # A run the display rate did not hold for (exit 3) is repeated once.
                     for ($attempt = 1; $attempt -le 2; $attempt++) {
                         $cool = Wait-CoolDown
-                        $line = "{0:HH:mm:ss} pass {1} {2} {3} {4} {5} (waited {6} s, AP {7} C, status {8})" -f (Get-Date), $pass,
-                            $render, $job, $variant, $mode, $cool.WaitedSec, $cool.Thermal.Ap, $cool.Thermal.Status
+                        $line = "{0:HH:mm:ss} run {9}/{10} pass {1} {2} {3} {4} {5} (waited {6} s, AP {7} C, status {8})" -f (Get-Date), $pass,
+                            $render, $job, $variant, $mode, $cool.WaitedSec, $cool.Thermal.Ap, $cool.Thermal.Status, $run, $total
                         Write-Host $line
                         Add-Content $log $line
 
@@ -262,6 +279,9 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
                                 $cool.Thermal.Ap, $after.Ap, $after.Status) + $clocks + @($seconds) -join "`t")
                         if ($exit -ne '3') { break }
                     }
+
+                    $executed++
+                    $executedTime += (Get-Date) - $runStarted
                 }
             }
         }

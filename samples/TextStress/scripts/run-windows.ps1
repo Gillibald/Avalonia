@@ -62,6 +62,11 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 $log = Join-Path $OutDir 'run.log'
 $started = Get-Date
 
+# Every process is one run: passes x renders x jobs x variants x two modes. TextStress shows the
+# count and the time left, estimated from the average run so far, in its title and overlay.
+$total = $Passes * $Renders.Count * $Jobs.Count * $variantNames.Count * 2
+$run = 0
+
 for ($pass = 1; $pass -le $Passes; $pass++) {
     $modes = if ($pass % 2 -eq 1) { @('managed', 'backend') } else { @('backend', 'managed') }
 
@@ -88,7 +93,15 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
                         $arguments += @('--frames', $Frames, '--warmup', $Warmup)
                     }
 
-                    $line = "{0:HH:mm:ss} pass {1} {2} {3} {4}" -f (Get-Date), $pass, $render, $name, $mode
+                    $run++
+                    $arguments += @('--progress', "$run/$total")
+
+                    if ($run -gt 1) {
+                        $left = ((Get-Date) - $started).TotalMinutes / ($run - 1) * ($total - $run + 1)
+                        $arguments += @('--eta', ("{0:N0} min left" -f [Math]::Ceiling($left)))
+                    }
+
+                    $line = "{0:HH:mm:ss} run {5}/{6} pass {1} {2} {3} {4}" -f (Get-Date), $pass, $render, $name, $mode, $run, $total
                     Write-Host $line
                     Add-Content $log $line
 

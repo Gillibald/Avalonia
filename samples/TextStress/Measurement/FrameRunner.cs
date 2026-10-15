@@ -428,6 +428,8 @@ namespace TextStress.Measurement
             yield return ("tag", _options.Tag);
             yield return ("label", _options.GetString("label", ""));
             yield return ("atlas_cpu_copy", GlyphMaskAtlas.ResidentPages ? "off" : "on");
+            yield return ("progress", _options.GetString("progress", ""));
+            yield return ("eta", _options.GetString("eta", ""));
             yield return ("build", SetupLabel.Build);
             yield return ("setup", SetupLabel.Current?.Title ?? "");
             yield return ("date_utc", DateTime.UtcNow.ToString("u", CultureInfo.InvariantCulture));
