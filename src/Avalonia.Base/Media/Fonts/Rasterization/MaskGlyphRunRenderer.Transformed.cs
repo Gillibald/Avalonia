@@ -210,7 +210,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (transformedContext is null)
             {
-                DrawPerGlyph(context, surface, sprites, EnsureMasks(typeface, sprites), originX, originY, tint);
+                DrawPerGlyph(context, surface, typeface, sprites, EnsureMasks(typeface, sprites), originX, originY, tint);
             }
             else if (surface.RasterTarget == GlyphRasterTarget.Raster)
             {
@@ -354,7 +354,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!rasterContext.TryGetBlitTarget(out var target))
             {
-                DrawPerGlyph(context, surface, sprites, masks, originX, originY, tint);
+                DrawPerGlyph(context, surface, typeface, sprites, masks, originX, originY, tint);
                 return;
             }
 
@@ -384,6 +384,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>The colour mask key of colour sprite <paramref name="index"/>.</summary>
+        private static ColorGlyphMaskKey ColorKeyOf(TransformedGlyphSprites sprites, int index)
+        {
+            ref readonly var sprite = ref sprites.Sprites[index];
+
+            return new ColorGlyphMaskKey(sprite.Glyph, sprites.Key.ScaleQ, sprite.PhaseX, Foreground: sprite.Color,
+                HasForeground: sprite.Color != 0, Transform: sprites.Key.Transform, PhaseY: sprite.PhaseY);
+        }
+
         private static uint ToPremulTint(uint argb)
             => RunMaskComposer.MakeTint((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
@@ -408,11 +417,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 if (laidOut[i].Kind == TransformedSpriteKind.Color)
                 {
-                    // A paint graph's colour mask, keyed as its colour atlas entry would be.
-                    masks[i] = ColorGlyphMasks.TryGetCachedMask(typeface, new ColorGlyphMaskKey(laidOut[i].Glyph,
-                        sprites.Key.ScaleQ, laidOut[i].PhaseX, Foreground: laidOut[i].Color,
-                        HasForeground: laidOut[i].Color != 0, Transform: sprites.Key.Transform,
-                        PhaseY: laidOut[i].PhaseY)) ?? GlyphMask.Empty;
+                    // A colour mask, keyed as its colour atlas entry would be.
+                    masks[i] = ColorGlyphMasks.TryGetCachedMask(typeface, ColorKeyOf(sprites, i)) ?? GlyphMask.Empty;
                     continue;
                 }
 
@@ -434,7 +440,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// tint and held by the sprite set; sprites showing the same mask share one.
         /// </summary>
         private static void DrawPerGlyph(IDrawingContextImpl context, in GlyphTargetSurface surface,
-            TransformedGlyphSprites sprites, GlyphMask[] masks, int originX, int originY, uint tint)
+            GlyphTypeface typeface, TransformedGlyphSprites sprites, GlyphMask[] masks, int originX, int originY,
+            uint tint)
         {
             if (sprites.FallbackImages is not { } images || sprites.FallbackTint != tint)
             {
@@ -449,12 +456,18 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             for (var i = 0; i < laidOut.Length; i++)
             {
-                if (images[i] is not IBitmapImpl bitmap)
+                ref readonly var sprite = ref laidOut[i];
+
+                // A colour mask's image belongs to the typeface, shared by every run that shows it.
+                var image = sprite.Kind == TransformedSpriteKind.Color
+                    ? typeface.ColorFallbackImages.GetOrCreate(ColorKeyOf(sprites, i), masks[i])
+                    : images[i];
+
+                if (image is not IBitmapImpl bitmap)
                 {
                     continue;
                 }
 
-                ref readonly var sprite = ref laidOut[i];
                 var source = new Rect(0, 0, sprite.Width, sprite.Height);
 
                 context.DrawBitmap(bitmap, 1, source, source.Translate(new Vector(originX + sprite.X, originY + sprite.Y)));
@@ -485,6 +498,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                     }
 
                     var kind = laidOut[i].Kind;
+
+                    // Colour masks draw the typeface's shared images (ColorFallbackImageCache).
+                    if (kind == TransformedSpriteKind.Color)
+                    {
+                        continue;
+                    }
+
                     var spriteTint = kind == TransformedSpriteKind.PaletteLayer ? ToPremulTint(laidOut[i].Color) : tint;
 
                     if (shared.TryGetValue((mask, kind, spriteTint), out var existing))
@@ -504,14 +524,6 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var span = new Span<byte>((void*)framebuffer.Address, framebuffer.RowBytes * mask.Height);
 
                     span.Clear();
-
-                    if (kind == TransformedSpriteKind.Color)
-                    {
-                        GlyphRasterDiagnostics.CountColorFallbackImage();
-                        RunMaskComposer.ComposeColor(mask, -mask.Left, -mask.Top, span, mask.Width, mask.Height,
-                            framebuffer.RowBytes);
-                        continue;
-                    }
 
                     RunMaskComposer.ComposeTinted(mask, -mask.Left, -mask.Top, spriteTint, span, mask.Width,
                         mask.Height, framebuffer.RowBytes, kind == TransformedSpriteKind.Foreground ? table : null);

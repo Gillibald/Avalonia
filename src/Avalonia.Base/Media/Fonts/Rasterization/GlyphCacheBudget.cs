@@ -1234,7 +1234,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             Priority = kind switch
             {
                 GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets => 1,
-                GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas => 2,
+                GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas or GlyphCachePoolKind.ColorFallbackImages => 2,
                 GlyphCachePoolKind.Masks or GlyphCachePoolKind.Hinters or GlyphCachePoolKind.BitmapImages => 3,
                 _ => 4,
             };
@@ -1261,7 +1261,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// sprite sets), so it is only trimmed where no frame is drawn from it.
         /// </summary>
         public bool IsFrameAffine => Kind is GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas or
-            GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets;
+            GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets or GlyphCachePoolKind.ColorFallbackImages;
 
         /// <summary>
         /// Whether the pool holds run-level state (run masks, sprite sets), which only the thread

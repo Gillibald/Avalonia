@@ -79,6 +79,7 @@ namespace Avalonia.Media
         private GlyphCache? _glyphCache;
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>? _colorMaskCache;
+        private Fonts.Rasterization.ColorFallbackImageCache? _colorFallbackImages;
         private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
         private int _maskOwnerId;
         private static int s_lastMaskOwnerId;
@@ -2616,6 +2617,7 @@ namespace Avalonia.Media
         {
             Interlocked.Exchange(ref _glyphMaskCache, null)?.Release();
             Interlocked.Exchange(ref _colorMaskCache, null)?.Release();
+            Interlocked.Exchange(ref _colorFallbackImages, null)?.Release();
             Interlocked.Exchange(ref _glyphMaskAtlas, null)?.Release();
             Interlocked.Exchange(ref _trueTypeHinters, null)?.Release();
             Interlocked.Exchange(ref _glyphCache, null)?.Release();
@@ -2943,6 +2945,23 @@ namespace Avalonia.Media
             FontSimulations != FontSimulations.None
                 ? UnsimulatedTypeface.ColorMaskCache
                 : _colorMaskCache ?? GetOrCreateColorMaskCache();
+
+        /// <summary>
+        /// The backend images of this typeface's colour masks, for transformed draws that cannot
+        /// write the surface directly. Created on first use; a simulated variant uses its
+        /// unsimulated face's, as for <see cref="ColorMaskCache"/>.
+        /// </summary>
+        internal Fonts.Rasterization.ColorFallbackImageCache ColorFallbackImages =>
+            FontSimulations != FontSimulations.None
+                ? UnsimulatedTypeface.ColorFallbackImages
+                : _colorFallbackImages ?? GetOrCreateColorFallbackImages();
+
+        private Fonts.Rasterization.ColorFallbackImageCache GetOrCreateColorFallbackImages()
+        {
+            var created = new Fonts.Rasterization.ColorFallbackImageCache(CacheBudget);
+
+            return Interlocked.CompareExchange(ref _colorFallbackImages, created, null) ?? created;
+        }
 
         private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey> GetOrCreateColorMaskCache()
         {
