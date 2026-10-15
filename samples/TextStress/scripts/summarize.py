@@ -14,7 +14,9 @@ comparison against the reference variant (--ref, default base):
 - a keep-rule verdict per job: 'better' or 'worse' when the variant's pass range of p50, p95 or
   frames over 8.3 ms lies below or above the reference's by more than 2 % (at least 0.02 ms, one
   frame for the counts), 'within' otherwise,
-  'memory worse' when its lowest peak exceeds the reference's highest by more than 2 %, and
+  'memory worse' when its lowest peak exceeds the reference's highest by more than 2 % (only
+  between runs that both have the content presets; a run from an older build is 'not
+  comparable'), and
   'near budget' when a p95 lies within 10 % of 8.3 or 16.7 ms. --counters-only judges counters only.
 
 Other results (run-windows.ps1, run-android.ps1) are pooled over passes per (scenario, params, n,
@@ -748,7 +750,13 @@ def campaign(src, paths, ref, counters_only):
                 continue
             state, names = counter_verdict(base, ps)
             counters = state if state != "differ" else f"differ ({len(names)})"
-            memory = ", ".join(memory_verdict(base, ps)) or "not worse"
+            # A build before the content presets ran a different process (window host, overlay),
+            # so its private bytes are no baseline for a run with the presets.
+            if all(g[0] != "window" for g in areas[(key[0], key[1])].get(ref, ())) and \
+                    all(g[0] != "window" for g in areas[(key[0], key[1])].get(v, ())):
+                memory = ", ".join(memory_verdict(base, ps)) or "not worse"
+            else:
+                memory = "not comparable (run before presets)"
             notes = []
             if counters_only:
                 time = "-"
@@ -760,7 +768,7 @@ def campaign(src, paths, ref, counters_only):
                 if not tv and min(len(base), len(ps)) < 3 and notes:
                     third[v].append(f"{key[0]} {name(key)}")
                 overall[v] += tv
-            if memory != "not worse":
+            if memory.startswith("memory worse"):
                 overall[v].append("memory worse")
             if state == "differ":
                 overall[v].append("counters differ")

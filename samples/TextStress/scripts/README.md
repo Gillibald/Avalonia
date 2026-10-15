@@ -12,7 +12,7 @@ Run one measurement at a time: never two TextStress or test processes at once, a
 
 ## Content area
 
-Every scene renders into a fixed content area, `--preset desktop` (1280x720 DIP) or `--preset phone` (360x720 DIP), with a 48 DIP status strip below it. The window sizes to both; on Android the area is centred in the safe area and the orientation follows the preset. A run exits with code 4 when the window, the safe area or the screen offers less. The result header records `preset`, `density`, `content_size` and `content_pixels`; `summarize.py` never compares runs whose content areas differ. Results from builds before the presets laid scenes out in a 1280x800 window: compare against them with `-ContentSize 1280x800`.
+Every scene renders into a fixed content area, `--preset desktop` (1280x720 DIP) or `--preset phone` (360x640 DIP, fits practically every phone in portrait), with a 64 DIP status strip below it. The window sizes to both; on Android the area is centred in the safe area and the orientation follows the preset. A run exits with code 4 when the window, the safe area or the screen offers less. The result header records `preset`, `density`, `content_size` and `content_pixels`; `summarize.py` never compares runs whose content areas differ. Results from builds before the presets laid scenes out in a 1280x800 window: compare against them with `-ContentSize 1280x800`.
 
 The strip shows `run i of n | eta` large and, below, the label (base blue, tip orange, `--tag-color` for others) with commit, render path, text mode and job. `--overlay off` leaves it blank at the same size.
 
@@ -64,7 +64,7 @@ Output: `<OutDir>/<render>/<variant>.<job>-p<pass>.tsv` with the console output 
 python samples/TextStress/scripts/summarize.py <dir> [summary.md] [--ref base] [--counters-only]
 ```
 
-For a campaign folder: content areas, frame times (p50, p95, max, frames over 8.3 and 16.7 ms, frames with a collection) as ranges over passes, counters per pass with every counter that differs from the reference, memory peaks, and a verdict per job. `better`/`worse` need pass ranges that are disjoint by more than 2 % (at least 0.02 ms; one frame for counts of slow frames), the gap separate launches of one build show; `within` means they are not. The keep rule: the target scenes better, nothing worse, memory not worse.
+For a campaign folder: content areas, frame times (p50, p95, max, frames over 8.3 and 16.7 ms, frames with a collection) as ranges over passes, counters per pass with every counter that differs from the reference, memory peaks, and a verdict per job. `better`/`worse` need pass ranges that are disjoint by more than 2 % (at least 0.02 ms; one frame for counts of slow frames), the gap separate launches of one build show; `within` means they are not. The keep rule: the target scenes better, nothing worse, memory not worse. Memory is compared only between runs that both have the content presets: a build from before them hosted the scene in its window with an overlay, so its private bytes are reported as not comparable, while counters and times still compare when the content areas match.
 
 ## hash-outputs.ps1
 
