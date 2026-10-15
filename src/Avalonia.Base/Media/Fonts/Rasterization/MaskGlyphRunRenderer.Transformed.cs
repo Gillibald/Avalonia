@@ -118,6 +118,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var hit = state.TryGet(key, out var sprites);
             var transformedContext = context as ITransformedGlyphContext;
             var tuning = GlyphRasterTuning.Of(context);
+            var raster = TextRasterThreadState.Of(context);
 
             // The transform changes every frame, so masks rasterized now would never be drawn
             // again. A CPU surface rasterizes the frame anyway, into transient buffers that no
@@ -139,13 +140,13 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!churning)
             {
-                MotionRasterBudget.NotMoving(run, pixelsPerEm,
+                raster.Motion.NotMoving(run, pixelsPerEm,
                     transformedContext is not null && run.TransformChurn.Changing,
                     transformedContext is null || run.TransformChurn.Held, 1, tuning);
             }
             else if (hit)
             {
-                MotionRasterBudget.Moving(run, pixelsPerEm, 1, tuning);
+                raster.Motion.Moving(run, pixelsPerEm, 1, tuning);
             }
             else if (!hit)
             {
@@ -163,13 +164,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                         solid.Color);
                 }
 
-                if (MotionRasterBudget.PrefersSharp(run, pixelsPerEm, 1, tuning))
+                if (raster.Motion.PrefersSharp(run, pixelsPerEm, 1, tuning))
                 {
                     var start = MotionRasterBudget.Start();
                     var drawn = TryDrawTransient(transformedContext!, run, key, transform, originX, originY, alpha,
                         solid.Color);
 
-                    MotionRasterBudget.Charge(run, start, tuning);
+                    raster.Motion.Charge(run, start, tuning);
 
                     return drawn;
                 }
@@ -202,7 +203,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (crossingStart != 0)
             {
-                MotionRasterBudget.Charge(run, crossingStart, tuning);
+                raster.Motion.Charge(run, crossingStart, tuning);
             }
 
             state.Settle(sprites, transform, originX, originY);
@@ -211,8 +212,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (transformedContext is null)
             {
-                DrawPerGlyph(context, surface, typeface, sprites,
-                    EnsureMasks(TextRasterThreadState.Of(context), typeface, sprites), originX, originY, tint);
+                DrawPerGlyph(context, surface, typeface, sprites, EnsureMasks(raster, typeface, sprites), originX, originY,
+                    tint);
             }
             else if (surface.RasterTarget == GlyphRasterTarget.Raster)
             {

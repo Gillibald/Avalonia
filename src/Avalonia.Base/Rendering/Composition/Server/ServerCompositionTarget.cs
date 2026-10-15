@@ -34,6 +34,10 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _fullRedrawRequested;
         private bool _disposed;
 
+        // Resolved on the first frame that finds them, through the locator: the application's
+        // font manager owns them, and a target renders for one application.
+        private GlyphRasterServices? _rasterServices;
+
         /// <summary>
         /// Render passes since the last frame that drew text stretched from another transform's
         /// raster; -1 while no such text is left on screen.
@@ -245,6 +249,8 @@ namespace Avalonia.Rendering.Composition.Server
                 return;
             }
             
+            // The text raster state of the application this target renders for, on this thread.
+            var raster = (_rasterServices ??= GlyphRasterServices.TryGetCurrent())?.ForCurrentThread();
             var unsettledDraws = MaskGlyphRunRenderer.UnsettledDraws;
             var renderStart = Stopwatch.GetTimestamp();
             var rasterStart = GlyphRasterCost.TicksOnThread;
@@ -328,7 +334,7 @@ namespace Avalonia.Rendering.Composition.Server
             IsDrawingSettleFrame = false;
 
             // The time this frame spent outside text sizes the motion budget of the next ones.
-            MotionRasterBudget.FrameRendered(Stopwatch.GetTimestamp() - renderStart,
+            raster?.Motion.FrameRendered(Stopwatch.GetTimestamp() - renderStart,
                 GlyphRasterCost.TicksOnThread - rasterStart);
         }
 

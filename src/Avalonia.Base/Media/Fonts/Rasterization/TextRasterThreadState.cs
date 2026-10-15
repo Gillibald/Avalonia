@@ -21,6 +21,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The phase timers of glyph drawing on this thread.</summary>
         public GlyphPhaseTimers PhaseTimers { get; }
 
+        /// <summary>How this thread draws frames of runs whose transform keeps changing.</summary>
+        public MotionRasterBudget Motion { get; } = new();
+
         /// <summary>
         /// The state of the calling thread in the current application, or <c>null</c> when it has
         /// no font manager. For code that draws outside a drawing context, such as tools and

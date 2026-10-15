@@ -166,22 +166,14 @@ namespace Avalonia.Skia.UnitTests.Media
             using (GlyphCacheBudget.Shared.BeginFrame())
             {
                 // The try runs out of budget: moving runs stretch for the hold that follows.
-                Assert.False(MotionRasterBudget.PrefersSharp(run, 15, 1, tight));
+                Assert.False(GlyphRasterServices.Current.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, tight));
             }
 
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
             using (GlyphCacheBudget.Shared.BeginFrame())
             {
-                try
-                {
-                    Assert.True(MotionRasterBudget.PrefersSharp(run, 15, 1, ample));
-                }
-                finally
-                {
-                    // A stop ends the hold, so a failure here leaves the thread as it found it.
-                    MotionRasterBudget.NotMoving(run, 15, changing: false, held: true, 0, ample);
-                }
+                Assert.True(GlyphRasterServices.Current.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, ample));
             }
         }
 

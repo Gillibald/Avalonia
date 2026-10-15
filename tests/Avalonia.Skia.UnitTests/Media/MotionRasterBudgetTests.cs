@@ -311,7 +311,7 @@ namespace Avalonia.Skia.UnitTests.Media
             for (var frame = 0; frame < frames; frame++)
             {
                 var scale = 1 + 0.01 * (frame % period);
-                var before = MotionRasterBudget.TriedFrames;
+                var before = ThreadTriedFrames;
 
                 var cost = expected.IndexOf(frame + 1) > 0 ? GlyphCost / 2 : GlyphCost;
 
@@ -329,7 +329,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 });
 
-                if (MotionRasterBudget.TriedFrames != before)
+                if (ThreadTriedFrames != before)
                 {
                     tried.Add(frame);
                 }
@@ -359,7 +359,7 @@ namespace Avalonia.Skia.UnitTests.Media
             for (var frame = 0; frame < 3 * period; frame++)
             {
                 var scale = 1 + 0.01 * (frame % period);
-                var before = MotionRasterBudget.TriedFrames;
+                var before = ThreadTriedFrames;
 
                 output.Frame(context =>
                 {
@@ -373,7 +373,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 });
 
-                if (MotionRasterBudget.TriedFrames != before)
+                if (ThreadTriedFrames != before)
                 {
                     tried.Add(frame);
                 }
@@ -523,7 +523,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var frame = 0; frame < frames; frame++)
             {
-                var before = MotionRasterBudget.TriedFrames;
+                var before = ThreadTriedFrames;
                 var current = frame;
 
                 TestRasterTuning.Set(t => t with { MotionGlyphCostMicroseconds = glyphCost(frame) });
@@ -537,7 +537,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
                 });
 
-                if (MotionRasterBudget.TriedFrames != before)
+                if (ThreadTriedFrames != before)
                 {
                     tried.Add(frame);
                 }
@@ -680,16 +680,18 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // Frames of 5 ms with 1 ms of text: 4 ms outside text, whatever came before, and
             // moved only part of the way by one slow frame.
+            var budget = new MotionRasterBudget();
+
             for (var frame = 0; frame < 60; frame++)
             {
-                MotionRasterBudget.RecordFrame(renderMicroseconds: 5000, textMicroseconds: 1000);
+                budget.RecordFrame(renderMicroseconds: 5000, textMicroseconds: 1000);
             }
 
-            Assert.InRange(MotionRasterBudget.NonTextMicroseconds(GlyphRasterTuning.Default), 3990, 4010);
+            Assert.InRange(budget.NonTextMicroseconds(GlyphRasterTuning.Default), 3990, 4010);
 
-            MotionRasterBudget.RecordFrame(renderMicroseconds: 13000, textMicroseconds: 1000);
+            budget.RecordFrame(renderMicroseconds: 13000, textMicroseconds: 1000);
 
-            Assert.InRange(MotionRasterBudget.NonTextMicroseconds(GlyphRasterTuning.Default), 4500, 7000);
+            Assert.InRange(budget.NonTextMicroseconds(GlyphRasterTuning.Default), 4500, 7000);
         }
 
         [Fact]
@@ -722,6 +724,9 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(Range(moving + 1, held + 1), stretched[0]);
             Assert.Equal(Range(moving, held + 1), stretched[2]);
         }
+
+        /// <summary>The frames in which a moving run of this thread's application drew sharp, a running total.</summary>
+        private static int ThreadTriedFrames => GlyphRasterServices.Current.ForCurrentThread().Motion.TriedFrames;
 
         /// <summary>The frames from <paramref name="from"/> up to, not including, <paramref name="to"/>.</summary>
         private static List<int> Range(int from, int to)
