@@ -597,6 +597,48 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Pages_Opened_After_A_Page_Filled_Are_Allocated_Once()
+        {
+            // An atlas that filled a page keeps growing, as a zoom laying out new scales does: the
+            // pages it opens next fill too, so growing them in steps only adds garbage.
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var atlas = new GlyphMaskAtlas(budget);
+            var random = new Random(53);
+            var perPage = (GlyphMaskAtlas.MaxPageHeight - 2) / 41;
+            var masks = new GlyphMask[perPage * 3];
+
+            for (var i = 0; i < masks.Length; i++)
+            {
+                masks[i] = CreateMask(random, 900, 40);
+            }
+
+            long allocated;
+
+            using (budget.BeginFrame())
+            {
+                var tick = atlas.Tick();
+                var before = ThreadAllocations.Start();
+
+                for (var i = 0; i < masks.Length; i++)
+                {
+                    Assert.True(atlas.TryAdd(Key(i), masks[i], tick, out _));
+                }
+
+                allocated = ThreadAllocations.Since(before);
+            }
+
+            var pages = atlas.GetPages();
+            var pageBytes = (long)GlyphMaskAtlas.PageWidth * GlyphMaskAtlas.MaxPageHeight;
+
+            Assert.Equal(3, pages.Length);
+            Assert.All(pages, page => Assert.Equal(GlyphMaskAtlas.MaxPageHeight, page.Height));
+
+            // The first page doubles as it fills; the two after it are allocated at full height.
+            Assert.True(allocated <= 4 * pageBytes,
+                $"filling three pages of {pageBytes} bytes allocated {allocated} bytes");
+        }
+
+        [Fact]
         public void Rgba_Pages_Charge_Four_Bytes_Per_Texel_And_Eviction_Credits_Them()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
