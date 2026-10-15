@@ -716,7 +716,6 @@ namespace Avalonia.Skia.UnitTests.Media
                 masks[i] = CreateMask(random, 900, 40);
             }
 
-            var retainedBefore = GC.GetTotalMemory(true);
             long allocated;
 
             using (budget.BeginFrame())
@@ -732,14 +731,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 allocated = ThreadAllocations.Since(before);
             }
 
-            var retained = GC.GetTotalMemory(true) - retainedBefore;
             var page = Assert.Single(atlas.GetPages());
             var quarter = page.ChargedBytes / 4;
+            var ink = Assert.IsType<GlyphAtlasInk>(page.Ink);
 
             Assert.Equal(GlyphMaskAtlas.MaxPageHeight, page.Height);
             Assert.Null(page.Pixels);
             Assert.True(allocated < quarter, $"filling a page of {page.ChargedBytes} bytes allocated {allocated} bytes");
-            Assert.True(retained < quarter, $"filling a page of {page.ChargedBytes} bytes retained {retained} bytes");
+            Assert.True(ink.Bytes <= page.ChargedBytes / 8, $"a page of {page.ChargedBytes} bytes keeps {ink.Bytes} bytes of ink");
             GC.KeepAlive(masks);
         }
 
