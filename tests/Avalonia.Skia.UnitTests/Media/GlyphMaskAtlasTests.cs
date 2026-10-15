@@ -648,7 +648,7 @@ namespace Avalonia.Skia.UnitTests.Media
             => new((ushort)glyph, 160, 0, GlyphMaskMode.Antialiased, GridFit: false,
                 Transform: new GlyphMaskTransform(0, 100, -100, 0));
 
-        private static GlyphMask CreateMask(Random random, int width, int height)
+        internal static GlyphMask CreateMask(Random random, int width, int height)
         {
             var alpha = new byte[width * height];
 

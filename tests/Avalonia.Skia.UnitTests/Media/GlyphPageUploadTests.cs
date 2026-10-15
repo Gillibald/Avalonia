@@ -308,6 +308,50 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
+        /// The texture of a page is made at the full page height while the page itself is
+        /// shorter. The rows the page does not have go up clear without a managed copy of the
+        /// texture's size: a zoom opens page after page, and each such copy would be garbage.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(UpdatableTextureContexts))]
+        public void A_Short_Page_Gets_A_Full_Height_Texture_Without_A_Managed_Copy(GpuBackend backend)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+
+            Assert.SkipWhen(SkiaUpdatableTextures.Get(gpu.GrContext) is null, $"{backend} has no updatable textures");
+
+            var atlas = new GlyphMaskAtlas();
+            var random = new Random(47);
+
+            Assert.True(atlas.TryAdd(new GlyphMaskKey(1, 200, 0, GlyphMaskMode.Antialiased),
+                GlyphMaskAtlasTests.CreateMask(random, 300, 40), atlas.Tick(), out var slot));
+
+            var page = slot.Page!;
+
+            Assert.True(page.Height < GlyphMaskAtlas.MaxPageHeight, "the page starts at its full height");
+
+            using var surface = SKSurface.Create(gpu.GrContext, false,
+                new SKImageInfo(4, 4, SKColorType.Rgba8888, SKAlphaType.Premul));
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+            var created = DrawingContextImpl.PageImagesCreatedOnThread;
+
+            var before = ThreadAllocations.Start();
+            var image = context.GetAtlasPageImage(page);
+            var allocated = ThreadAllocations.Since(before);
+
+            Assert.Equal(created + 1, DrawingContextImpl.PageImagesCreatedOnThread);
+            Assert.Equal(GlyphMaskAtlas.MaxPageHeight, image.Height);
+            Assert.True(allocated < (long)GlyphMaskAtlas.PageWidth * GlyphMaskAtlas.MaxPageHeight / 16,
+                $"making the page texture allocated {allocated} bytes");
+
+            var drawn = ReadImage(gpu, image, GlyphMaskAtlas.PageWidth, image.Height);
+            var used = GlyphMaskAtlas.PageWidth * page.Height;
+
+            Assert.Equal(page.Pixels.AsSpan(0, used).ToArray(), drawn.AsSpan(0, used).ToArray());
+            Assert.True(drawn.AsSpan(used).IndexOfAnyExcept((byte)0) < 0, "rows beyond the page are not clear");
+        }
+
+        /// <summary>
         /// A colour page that grows keeps its texture: the context uploads only what the atlas
         /// wrote, not the whole page again, and the rows the page does not use yet read as clear.
         /// </summary>
