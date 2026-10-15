@@ -6,21 +6,29 @@ namespace Avalonia.Skia
     /// Debug-only visualization of glyph run tier routing: with <see cref="SkiaOptions.TintTextTiers"/>,
     /// every drawn run gets a translucent badge over its bounds colored by the tier that actually
     /// rendered it: green for upright run masks, blue for transformed run masks, orange for the
-    /// native blob fallback. With <see cref="SkiaOptions.CountTextTiers"/>, per-tier draw counters,
-    /// gated separately from the visual tint so a HUD can watch routing without repainting badges.
-    /// Off by default; set by diagnostic tooling, never by product code.
+    /// native blob fallback. With <see cref="SkiaOptions.CountTextTiers"/>, per-tier draw counters
+    /// (<see cref="SkiaTextCounters.MaskTierDraws"/> and its siblings), gated separately from the
+    /// visual tint so a HUD can watch routing without repainting badges. Off by default; set by
+    /// diagnostic tooling, never by product code.
     /// </summary>
     internal static class TextTierDiagnostics
     {
-        public static long MaskTierDraws;
-        public static long TransformedMaskTierDraws;
-        public static long BlobTierDraws;
+        /// <summary>The <see cref="SkiaTextCounters.MaskTierDraws"/> of the calling thread.</summary>
+        public static long MaskTierDraws => SkiaTextCounters.TryGetCurrent()?.MaskTierDraws ?? 0;
 
+        /// <summary>The <see cref="SkiaTextCounters.TransformedMaskTierDraws"/> of the calling thread.</summary>
+        public static long TransformedMaskTierDraws => SkiaTextCounters.TryGetCurrent()?.TransformedMaskTierDraws ?? 0;
+
+        /// <summary>The <see cref="SkiaTextCounters.BlobTierDraws"/> of the calling thread.</summary>
+        public static long BlobTierDraws => SkiaTextCounters.TryGetCurrent()?.BlobTierDraws ?? 0;
+
+        /// <summary>Starts the tier counters of the calling thread at zero.</summary>
         public static void ResetCounters()
         {
-            System.Threading.Interlocked.Exchange(ref MaskTierDraws, 0);
-            System.Threading.Interlocked.Exchange(ref TransformedMaskTierDraws, 0);
-            System.Threading.Interlocked.Exchange(ref BlobTierDraws, 0);
+            if (SkiaTextCounters.TryGetCurrent() is { } counters)
+            {
+                counters.MaskTierDraws = counters.TransformedMaskTierDraws = counters.BlobTierDraws = 0;
+            }
         }
 
         public static readonly SKColor MaskTierColor = new(0x22, 0xAA, 0x22, 0x46);

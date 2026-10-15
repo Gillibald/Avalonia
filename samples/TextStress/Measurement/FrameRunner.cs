@@ -344,9 +344,12 @@ namespace TextStress.Measurement
             target.BudgetPeakBytes = budget.PeakBytes;
             target.BudgetEvictedBytes = budget.EvictedBytes;
 
-            target.TierMask = Interlocked.Read(ref TextTierDiagnostics.MaskTierDraws);
-            target.TierTransformed = Interlocked.Read(ref TextTierDiagnostics.TransformedMaskTierDraws);
-            target.TierBlob = Interlocked.Read(ref TextTierDiagnostics.BlobTierDraws);
+            // Process-wide readings on the UI thread: the tier counts of every thread that drew.
+            var services = GlyphRasterServices.Current;
+
+            target.TierMask = SkiaTextCounters.Sum(services, c => c.MaskTierDraws);
+            target.TierTransformed = SkiaTextCounters.Sum(services, c => c.TransformedMaskTierDraws);
+            target.TierBlob = SkiaTextCounters.Sum(services, c => c.BlobTierDraws);
             target.Decodes = Interlocked.Read(ref BitmapDecodeCounter.Decodes);
             target.DecodeTicks = Interlocked.Read(ref BitmapDecodeCounter.DecodeTicks);
         }

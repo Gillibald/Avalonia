@@ -90,9 +90,9 @@ namespace TextShowcase.Diagnostics
 
             _ = batch.Processed.ContinueWith(_ =>
             {
-                mask = Interlocked.Read(ref TextTierDiagnostics.MaskTierDraws);
-                transformed = Interlocked.Read(ref TextTierDiagnostics.TransformedMaskTierDraws);
-                fallback = Interlocked.Read(ref TextTierDiagnostics.BlobTierDraws);
+                mask = TextTierDiagnostics.MaskTierDraws;
+                transformed = TextTierDiagnostics.TransformedMaskTierDraws;
+                fallback = TextTierDiagnostics.BlobTierDraws;
                 atlas = DrawingContextImpl.AtlasDrawsOnThread;
                 batches = DrawingContextImpl.BatchesDrawnOnThread;
                 uploads = DrawingContextImpl.PageImagesCreatedOnThread;
@@ -106,9 +106,9 @@ namespace TextShowcase.Diagnostics
                 var end = Stopwatch.GetTimestamp();
 
                 reading.RenderMs = start == 0 ? double.NaN : (end - start) * 1000.0 / Stopwatch.Frequency;
-                reading.MaskTierDraws = Interlocked.Read(ref TextTierDiagnostics.MaskTierDraws) - mask;
-                reading.TransformedTierDraws = Interlocked.Read(ref TextTierDiagnostics.TransformedMaskTierDraws) - transformed;
-                reading.FallbackTierDraws = Interlocked.Read(ref TextTierDiagnostics.BlobTierDraws) - fallback;
+                reading.MaskTierDraws = TextTierDiagnostics.MaskTierDraws - mask;
+                reading.TransformedTierDraws = TextTierDiagnostics.TransformedMaskTierDraws - transformed;
+                reading.FallbackTierDraws = TextTierDiagnostics.BlobTierDraws - fallback;
                 reading.AtlasDraws = DrawingContextImpl.AtlasDrawsOnThread - atlas;
                 reading.BatchesDrawn = DrawingContextImpl.BatchesDrawnOnThread - batches;
                 reading.PageUploads = DrawingContextImpl.PageImagesCreatedOnThread - uploads;

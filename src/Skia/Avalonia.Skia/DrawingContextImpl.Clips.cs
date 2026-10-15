@@ -724,44 +724,28 @@ namespace Avalonia.Skia
                    Math.Abs(device.Bottom - bottom) <= PixelAlignmentTolerance;
         }
 
-        [ThreadStatic]
-        private static long[]? t_clippedRuns;
-
-        [ThreadStatic]
-        private static long t_runsInsideEveryClip;
-
-        private static readonly int s_clipKindCount = Enum.GetValues<GlyphRunClipKind>().Length;
-
-        /// <summary>
-        /// The batched glyph runs drawn on this thread whose innermost clip is of
-        /// <paramref name="kind"/>, and whose device bounds lie inside that clip
-        /// (<paramref name="inside"/>) or cross its edge. For a rounded rectangle, a geometry or a
-        /// transformed clip, inside means inside its device bounds. For profiling tools.
-        /// </summary>
+        /// <summary>The <see cref="SkiaTextCounters.GetClippedRuns"/> of the calling thread.</summary>
         internal static long GetClippedRunsOnThread(GlyphRunClipKind kind, bool inside) =>
-            t_clippedRuns?[(int)kind * 2 + (inside ? 1 : 0)] ?? 0;
+            SkiaTextCounters.TryGetCurrent()?.GetClippedRuns(kind, inside) ?? 0;
 
-        /// <summary>
-        /// The batched glyph runs drawn on this thread under no clip, or inside every clip
-        /// pushed, in the sense of <see cref="GetClippedRunsOnThread"/>; for profiling tools.
-        /// </summary>
-        internal static long RunsInsideEveryClipOnThread => t_runsInsideEveryClip;
+        /// <summary>The <see cref="SkiaTextCounters.RunsInsideEveryClip"/> of the calling thread.</summary>
+        internal static long RunsInsideEveryClipOnThread => SkiaTextCounters.TryGetCurrent()?.RunsInsideEveryClip ?? 0;
 
         /// <summary>Counts a batched run covering <paramref name="bounds"/> in device pixels against the clips.</summary>
         private void CountClippedRun(SKRect bounds)
         {
-            var counts = t_clippedRuns ??= new long[s_clipKindCount * 2];
+            var counters = Counters;
 
             if (_clipDepth == 0)
             {
-                counts[(int)GlyphRunClipKind.None * 2 + 1]++;
-                t_runsInsideEveryClip++;
+                counters.CountClippedRun(GlyphRunClipKind.None, inside: true);
+                counters.RunsInsideEveryClip++;
                 return;
             }
 
             var innermost = _clipLevels[_clipDepth - 1];
 
-            counts[(int)innermost.Kind * 2 + (innermost.Contains(bounds) ? 1 : 0)]++;
+            counters.CountClippedRun(innermost.Kind, innermost.Contains(bounds));
 
             for (var i = 0; i < _clipDepth; i++)
             {
@@ -771,7 +755,7 @@ namespace Avalonia.Skia
                 }
             }
 
-            t_runsInsideEveryClip++;
+            counters.RunsInsideEveryClip++;
         }
 
         /// <summary>

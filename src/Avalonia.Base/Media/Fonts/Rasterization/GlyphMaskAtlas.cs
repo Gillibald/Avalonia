@@ -699,23 +699,38 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Looks up the entry holding the coverage of <paramref name="key"/> as rasterized by
         /// <paramref name="owner"/>, corrected for <paramref name="bucket"/>, and stamps its page
-        /// with <paramref name="tick"/>.
+        /// with <paramref name="tick"/>. The lookup is counted in <paramref name="raster"/>, the
+        /// drawing thread's text raster state, or the current application's when omitted.
         /// </summary>
-        public bool TryGet(int owner, in GlyphMaskKey key, int bucket, long tick, out GlyphAtlasSlot slot)
-            => TryGet(new GlyphAtlasEntryKey(owner, key, bucket), tick, out slot);
+        public bool TryGet(int owner, in GlyphMaskKey key, int bucket, long tick, out GlyphAtlasSlot slot,
+            TextRasterThreadState? raster = null)
+            => TryGet(new GlyphAtlasEntryKey(owner, key, bucket), tick, out slot, raster);
 
-        /// <summary>Looks up <paramref name="entry"/> and stamps its page with <paramref name="tick"/>.</summary>
-        public bool TryGet(in GlyphAtlasEntryKey entry, long tick, out GlyphAtlasSlot slot)
+        /// <summary>
+        /// Looks up <paramref name="entry"/> and stamps its page with <paramref name="tick"/>. The
+        /// lookup is counted in <paramref name="raster"/>, or the current application's state when omitted.
+        /// </summary>
+        public bool TryGet(in GlyphAtlasEntryKey entry, long tick, out GlyphAtlasSlot slot,
+            TextRasterThreadState? raster = null)
         {
+            var counters = (raster ?? TextRasterThreadState.TryGetCurrent())?.Counters;
+
             lock (_lock)
             {
                 if (!_slots.TryGetValue(entry, out slot))
                 {
-                    GlyphRasterDiagnostics.CountAtlasLookup(hit: false);
+                    if (counters is not null)
+                    {
+                        counters.AtlasMisses++;
+                    }
+
                     return false;
                 }
 
-                GlyphRasterDiagnostics.CountAtlasLookup(hit: true);
+                if (counters is not null)
+                {
+                    counters.AtlasHits++;
+                }
 
                 if (slot.Page is { } page)
                 {
@@ -792,12 +807,18 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return true;
                 }
 
-                var timers = (raster ?? TextRasterThreadState.TryGetCurrent())?.PhaseTimers;
+                var state = raster ?? TextRasterThreadState.TryGetCurrent();
+                var timers = state?.PhaseTimers;
                 var timer = GlyphPhaseTimers.Start(timers);
                 var (page, x, y, shelfHeight) = Place(mask.Width + 1, mask.Height + 1, tick);
 
                 Write(page, mask, x, y, shelfHeight, bucket);
                 timers?.Stop(GlyphTimerPhase.AtlasWrite, timer);
+
+                if (state is not null)
+                {
+                    state.Counters.AtlasPlacements++;
+                }
                 page.Keys.Add(entry);
                 page.LastUse = tick;
 
@@ -1082,8 +1103,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 page.Version++;
             }
-
-            GlyphRasterDiagnostics.CountAtlasPlacement();
         }
 
         /// <summary>Copies premultiplied BGRA texels as RGBA, swapping red and blue.</summary>

@@ -218,9 +218,9 @@ namespace Avalonia.Skia
             var savedMatrix = saved is null ? Canvas.TotalMatrix44 : default;
 
             SetDeviceTransform(transform);
-            t_atlasDraws += DrawAtlasSprites(image, backend.Sources, backend.Placements,
+            Counters.AtlasDraws += DrawAtlasSprites(image, backend.Sources, backend.Placements,
                 bilinear ? s_bilinear : s_nearest, paint);
-            t_atlasGeometry += backend.Sources.Length;
+            Counters.AtlasGeometrySubmitted += backend.Sources.Length;
             SetCanvasTransform(saved, savedMatrix);
 
             SKPaintCache.Shared.ReturnReset(paint);
@@ -272,7 +272,7 @@ namespace Avalonia.Skia
                 Canvas.DrawAtlas((SKImage)image, sources, placements, s_nearest, paint);
             }
 
-            t_atlasGeometry += sprites.Length;
+            Counters.AtlasGeometrySubmitted += sprites.Length;
             SetCanvasTransform(saved, savedMatrix);
 
             SKPaintCache.Shared.ReturnReset(paint);
@@ -424,7 +424,7 @@ namespace Avalonia.Skia
 
             if (page.Realized is not null)
             {
-                t_pageImagesReplaced++;
+                Counters.PageImagesReplaced++;
             }
 
             page.Realized?.Dispose();
@@ -433,7 +433,7 @@ namespace Avalonia.Skia
             GlyphPageImage image;
 
             if (textures is not null &&
-                GlyphPageTexture.TryCreate(grContext!, textures, registration!.PageTextures, page) is { } created)
+                GlyphPageTexture.TryCreate(grContext!, textures, registration!.PageTextures, page, Counters) is { } created)
             {
                 page.Realized = created;
                 image = created.Image;
@@ -491,75 +491,35 @@ namespace Avalonia.Skia
 
             var timer = GlyphPhaseTimers.Start(PhaseTimers);
 
-            texture.Update(page);
+            texture.Update(page, Counters);
             PhaseTimers?.Stop(GlyphTimerPhase.PageRewrap, timer);
         }
 
         /// <summary>The image this context draws <paramref name="page"/> from at its current version; for tests.</summary>
         internal SKImage? GetAtlasPageImage(GlyphAtlasPage page) => GetPageImage(page)?.Image;
 
-        [ThreadStatic]
-        private static int t_pageImagesCreated;
+        /// <summary>The <see cref="SkiaTextCounters.PageImagesCreated"/> of the calling thread; for tests.</summary>
+        internal static int PageImagesCreatedOnThread => SkiaTextCounters.TryGetCurrent()?.PageImagesCreated ?? 0;
 
-        [ThreadStatic]
-        private static int t_pageImagesReplaced;
+        /// <summary>The <see cref="SkiaTextCounters.PageImagesReplaced"/> of the calling thread.</summary>
+        internal static int PageImagesReplacedOnThread => SkiaTextCounters.TryGetCurrent()?.PageImagesReplaced ?? 0;
 
-        [ThreadStatic]
-        private static long t_pageImageBytes;
+        /// <summary>The <see cref="SkiaTextCounters.PageImageBytes"/> of the calling thread.</summary>
+        internal static long PageImageBytesOnThread => SkiaTextCounters.TryGetCurrent()?.PageImageBytes ?? 0;
 
-        [ThreadStatic]
-        private static int t_pageTextureUpdates;
+        /// <summary>The <see cref="SkiaTextCounters.PageTextureUpdates"/> of the calling thread.</summary>
+        internal static int PageTextureUpdatesOnThread => SkiaTextCounters.TryGetCurrent()?.PageTextureUpdates ?? 0;
 
-        [ThreadStatic]
-        private static int t_pageTextureRegions;
+        /// <summary>The <see cref="SkiaTextCounters.PageTextureRegions"/> of the calling thread.</summary>
+        internal static int PageTextureRegionsOnThread => SkiaTextCounters.TryGetCurrent()?.PageTextureRegions ?? 0;
 
-        [ThreadStatic]
-        private static int t_atlasDraws;
+        /// <summary>The <see cref="SkiaTextCounters.AtlasDraws"/> of the calling thread; for tests.</summary>
+        internal static int AtlasDrawsOnThread => SkiaTextCounters.TryGetCurrent()?.AtlasDraws ?? 0;
 
-        /// <summary>
-        /// The number of atlas page images made on this thread, each holding the whole page: a
-        /// page texture, or an image wrapping the page's array, which a GPU context uploads
-        /// whole; for tests.
-        /// </summary>
-        internal static int PageImagesCreatedOnThread => t_pageImagesCreated;
+        /// <summary>The <see cref="SkiaTextCounters.AtlasGeometrySubmitted"/> of the calling thread; for tests.</summary>
+        internal static int AtlasGeometrySubmittedOnThread => SkiaTextCounters.TryGetCurrent()?.AtlasGeometrySubmitted ?? 0;
 
-        /// <summary>
-        /// The atlas page images made on this thread that replaced the image or texture of their
-        /// page; for profiling tools.
-        /// </summary>
-        internal static int PageImagesReplacedOnThread => t_pageImagesReplaced;
-
-        /// <summary>
-        /// The atlas page bytes handed to the GPU on this thread: whole pages for new page
-        /// images, written rectangles for page texture updates; for profiling tools.
-        /// </summary>
-        internal static long PageImageBytesOnThread => t_pageImageBytes;
-
-        /// <summary>
-        /// The page texture updates on this thread, each uploading what the atlas wrote to the
-        /// page since the last; for profiling tools.
-        /// </summary>
-        internal static int PageTextureUpdatesOnThread => t_pageTextureUpdates;
-
-        /// <summary>
-        /// The rectangles the page texture updates on this thread uploaded, several per update
-        /// where the atlas wrote to several places of the page; for profiling tools.
-        /// </summary>
-        internal static int PageTextureRegionsOnThread => t_pageTextureRegions;
-
-        /// <summary>The number of atlas draw calls issued on this thread; for tests.</summary>
-        internal static int AtlasDrawsOnThread => t_atlasDraws;
-
-        [ThreadStatic]
-        private static int t_atlasGeometry;
-
-        /// <summary>
-        /// The number of glyph atlas sprites whose geometry was handed to Skia on this thread;
-        /// sprites drawn from geometry kept from an earlier frame do not count. For tests.
-        /// </summary>
-        internal static int AtlasGeometrySubmittedOnThread => t_atlasGeometry;
-
-        private static unsafe SKImage CreatePageImage(GlyphAtlasPage page)
+        private unsafe SKImage CreatePageImage(GlyphAtlasPage page)
         {
             var pixels = page.Pixels ?? throw new InvalidOperationException("A resident page has no pixels to wrap.");
             var info = new SKImageInfo(GlyphMaskAtlas.PageWidth, page.Height,
@@ -568,8 +528,8 @@ namespace Avalonia.Skia
 
             using var pixmap = new SKPixmap(info, address, page.RowBytes);
 
-            t_pageImagesCreated++;
-            t_pageImageBytes += info.BytesSize64;
+            Counters.PageImagesCreated++;
+            Counters.PageImageBytes += info.BytesSize64;
 
             // Writes after this point only fill rows and columns no sprite of this version
             // samples, and growth moves the page to a new array, so the wrapped pixels stay
@@ -721,7 +681,7 @@ namespace Avalonia.Skia
             /// the context's registration, or returns <c>null</c> when the backend or Skia refuse it.
             /// </summary>
             public static unsafe GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
-                PageTextureSet set, GlyphAtlasPage page)
+                PageTextureSet set, GlyphAtlasPage page, SkiaTextCounters counters)
             {
                 set.Collect();
 
@@ -741,8 +701,8 @@ namespace Avalonia.Skia
                 var created = new GlyphPageTexture(context, texture, page) { Version = version };
 
                 set.Add(created);
-                t_pageImagesCreated++;
-                t_pageImageBytes += length;
+                counters.PageImagesCreated++;
+                counters.PageImageBytes += length;
 
                 return created;
             }
@@ -829,7 +789,7 @@ namespace Avalonia.Skia
             /// texture's rows: a page that outgrew it gets a texture of its own afterwards, made
             /// from the whole page.
             /// </summary>
-            public void Update(GlyphAtlasPage page)
+            public void Update(GlyphAtlasPage page, SkiaTextCounters counters)
             {
                 var version = page.Version;
 
@@ -842,7 +802,7 @@ namespace Avalonia.Skia
 
                 if (page.IsResident)
                 {
-                    UploadStrips(page);
+                    UploadStrips(page, counters);
                 }
                 else if (page.TakeWritten(out var written))
                 {
@@ -858,9 +818,9 @@ namespace Avalonia.Skia
                         };
 
                         _texture.Update(region, page.Pixels);
-                        t_pageTextureUpdates++;
-                        t_pageTextureRegions++;
-                        t_pageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;
+                        counters.PageTextureUpdates++;
+                        counters.PageTextureRegions++;
+                        counters.PageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;
                     }
                 }
 
@@ -868,7 +828,7 @@ namespace Avalonia.Skia
             }
 
             /// <summary>Uploads the strips a resident page staged since the last upload, in one update.</summary>
-            private unsafe void UploadStrips(GlyphAtlasPage page)
+            private unsafe void UploadStrips(GlyphAtlasPage page, SkiaTextCounters counters)
             {
                 var count = page.TakeStrips(ref t_strips, out var staging, out var stagingLength);
 
@@ -893,9 +853,9 @@ namespace Avalonia.Skia
                     }
 
                     _texture.Update(regions.AsSpan(0, count), new ReadOnlySpan<byte>((void*)staging, stagingLength));
-                    t_pageTextureUpdates++;
-                    t_pageTextureRegions += count;
-                    t_pageImageBytes += bytes;
+                    counters.PageTextureUpdates++;
+                    counters.PageTextureRegions += count;
+                    counters.PageImageBytes += bytes;
                 }
                 finally
                 {

@@ -25,6 +25,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>How this thread draws frames of runs whose transform keeps changing.</summary>
         public MotionRasterBudget Motion { get; }
 
+        /// <summary>The running totals of the glyph rasterization work done on this thread.</summary>
+        public TextRasterCounters Counters { get; } = new();
+
         private MaskGlyphRunRenderer.TransientGlyphScratch? _transient;
 
         /// <summary>

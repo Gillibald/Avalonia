@@ -92,7 +92,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            GlyphRasterDiagnostics.CountColorFallbackImage();
+            if (TextRasterCounters.TryGetCurrent() is { } counters)
+            {
+                counters.ColorFallbackImages++;
+            }
 
             var bitmap = renderInterface.CreateWriteableBitmap(new PixelSize(mask.Width, mask.Height),
                 new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);

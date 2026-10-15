@@ -190,8 +190,8 @@ namespace Avalonia.Skia
                 return;
             }
 
-            CountFlush(reason);
-            CountBatchDrawn(reason, _lcdBatchCount);
+            Counters.CountFlush(reason);
+            Counters.CountBatchDrawn(reason, _lcdBatchCount);
 
             var page = _lcdBatchPage!;
             var arrays = _lcdBatch!;
@@ -231,7 +231,7 @@ namespace Avalonia.Skia
 
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
-            t_atlasDraws++;
+            Counters.AtlasDraws++;
 
             (t_lcdBatchArrays ??= new Stack<LcdBatchArrays>()).Push(arrays);
             _lcdBatch = null;
@@ -243,7 +243,7 @@ namespace Avalonia.Skia
         /// The image of a subpixel atlas page at its current version, wrapping the page's pinned
         /// array; a GPU context uploads it once per version.
         /// </summary>
-        private static SKImage GetLcdPageImage(LcdAtlasPage page)
+        private SKImage GetLcdPageImage(LcdAtlasPage page)
         {
             if (page.Realized is SKImage current && page.RealizedVersion == page.Version)
             {
@@ -252,7 +252,7 @@ namespace Avalonia.Skia
 
             if (page.Realized is not null)
             {
-                t_pageImagesReplaced++;
+                Counters.PageImagesReplaced++;
             }
 
             page.Realized?.Dispose();
@@ -265,7 +265,7 @@ namespace Avalonia.Skia
             return image;
         }
 
-        private static unsafe SKImage CreateLcdPageImage(LcdAtlasPage page)
+        private unsafe SKImage CreateLcdPageImage(LcdAtlasPage page)
         {
             var pixels = page.Pixels;
 
@@ -276,8 +276,8 @@ namespace Avalonia.Skia
 
             using var pixmap = new SKPixmap(info, address, LcdRunAtlas.PageWidth * 4);
 
-            t_pageImagesCreated++;
-            t_pageImageBytes += info.BytesSize64;
+            Counters.PageImagesCreated++;
+            Counters.PageImageBytes += info.BytesSize64;
 
             // Placements after this point only fill rows and columns no entry of this version
             // samples, and growth moves the page to a new array, so the wrapped pixels stay what

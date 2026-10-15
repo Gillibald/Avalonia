@@ -417,7 +417,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            GlyphRasterDiagnostics.CountColorMaskRasterization();
+            if (TextRasterCounters.TryGetCurrent() is { } counters)
+            {
+                counters.ColorMaskRasterizations++;
+            }
 
             var i11 = d / determinant;
             var i12 = -b / determinant;
@@ -444,7 +447,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return GlyphMask.Empty;
             }
 
-            GlyphRasterDiagnostics.CountColorMaskRasterization();
+            if (TextRasterCounters.TryGetCurrent() is { } counters)
+            {
+                counters.ColorMaskRasterizations++;
+            }
 
             var scale = (double)key.PixelsPerEm / typeface.Metrics.DesignEmHeight;
 

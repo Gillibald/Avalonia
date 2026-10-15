@@ -1035,7 +1035,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     key.Strong, embolden, oblique);
                 int left, top, width, height;
 
-                if (atlas.TryGet(owner, glyphKey, bucket, tick, out var slot))
+                if (atlas.TryGet(owner, glyphKey, bucket, tick, out var slot, raster))
                 {
                     if (slot.IsEmpty)
                     {

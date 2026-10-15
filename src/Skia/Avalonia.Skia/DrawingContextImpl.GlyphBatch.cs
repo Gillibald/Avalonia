@@ -402,7 +402,7 @@ namespace Avalonia.Skia
                 return;
             }
 
-            CountFlush(reason);
+            Counters.CountFlush(reason);
 
             // Every batch sets the matrix it draws under, so the context's transform is restored
             // once after the last instead of after each.
@@ -459,7 +459,7 @@ namespace Avalonia.Skia
             var matrix = transform is null ? Canvas.TotalMatrix44 : default;
 
             _pendingRunCount -= batch.RunCount;
-            CountFlush(reason);
+            Counters.CountFlush(reason);
             DrawPendingBatch(batch, reason);
             SetCanvasTransform(transform, matrix);
 
@@ -499,14 +499,14 @@ namespace Avalonia.Skia
 
             var batchTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
-            CountBatchDrawn(reason, batch.RunCount);
+            Counters.CountBatchDrawn(reason, batch.RunCount);
 
             var page = batch.Page!;
             var runs = batch.Runs;
             var count = batch.RunCount;
             var spriteCount = batch.SpriteCount;
             var first = runs[0];
-            var imagesCreated = t_pageImagesCreated;
+            var imagesCreated = Counters.PageImagesCreated;
 
             if (GetBatchPageImage(page, out var transient) is not { } image)
             {
@@ -514,7 +514,7 @@ namespace Avalonia.Skia
                 return;
             }
 
-            var freshImage = t_pageImagesCreated != imagesCreated;
+            var freshImage = Counters.PageImagesCreated != imagesCreated;
 
             var colored = batch.HasMixedColors;
             var verticesTimer = GlyphPhaseTimers.Start(PhaseTimers);
@@ -593,14 +593,14 @@ namespace Avalonia.Skia
 
                 if (built)
                 {
-                    t_atlasGeometry += spriteCount;
+                    Counters.AtlasGeometrySubmitted += spriteCount;
                 }
             }
             else if (count == 1)
             {
                 draws = DrawAtlasSprites(image.Image, first.Backend.Sources, first.Backend.Placements, s_nearest,
                     paint);
-                t_atlasGeometry += spriteCount;
+                Counters.AtlasGeometrySubmitted += spriteCount;
             }
             else
             {
@@ -614,7 +614,7 @@ namespace Avalonia.Skia
                     Canvas.DrawAtlas(image.Image, mergedSources!, mergedPlacements!, s_nearest, paint);
                 }
 
-                t_atlasGeometry += spriteCount;
+                Counters.AtlasGeometrySubmitted += spriteCount;
             }
 
             PhaseTimers?.Stop(freshImage ? GlyphTimerPhase.NativeDrawFresh : GlyphTimerPhase.NativeDraw,
@@ -629,7 +629,7 @@ namespace Avalonia.Skia
 
             transient?.Dispose();
             PhaseTimers?.Stop(GlyphTimerPhase.DrawTeardown, teardownTimer);
-            t_atlasDraws += draws;
+            Counters.AtlasDraws += draws;
 
             RecyclePendingBatch(batch, batchTimer);
         }
@@ -680,7 +680,7 @@ namespace Avalonia.Skia
         {
             var batchTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
-            CountBatchDrawn(reason, batch.RunCount);
+            Counters.CountBatchDrawn(reason, batch.RunCount);
 
             var page = batch.Page!;
 
@@ -718,19 +718,19 @@ namespace Avalonia.Skia
                     foreach (var part in backend.GetStretchVertices(batch.Color))
                     {
                         Canvas.DrawVertices(part, SKBlendMode.Modulate, vertexPaint);
-                        t_atlasDraws++;
+                        Counters.AtlasDraws++;
                     }
 
                     if (built)
                     {
-                        t_atlasGeometry += backend.Sources.Length;
+                        Counters.AtlasGeometrySubmitted += backend.Sources.Length;
                     }
                 }
                 else
                 {
-                    t_atlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear,
+                    Counters.AtlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear,
                         paint);
-                    t_atlasGeometry += backend.Sources.Length;
+                    Counters.AtlasGeometrySubmitted += backend.Sources.Length;
                 }
 
                 if (clip is not null)
@@ -745,70 +745,22 @@ namespace Avalonia.Skia
             RecyclePendingBatch(batch, batchTimer);
         }
 
-        private static readonly int s_flushReasonCount = Enum.GetValues<GlyphBatchFlushReason>().Length;
-
-        // Per flush reason: the batches drawn, and the flushes that drew at least one.
-        [ThreadStatic]
-        private static long[]? t_batchesFlushed;
-
-        [ThreadStatic]
-        private static long[]? t_flushes;
-
-        [ThreadStatic]
-        private static long t_batchedRuns;
-
-        [ThreadStatic]
-        private static long t_batchesDrawn;
-
-        [ThreadStatic]
-        private static int t_maxRunsPerBatch;
-
-        /// <summary>
-        /// The pending glyph batches, grayscale or subpixel, drawn on this thread because of
-        /// <paramref name="reason"/>; for profiling tools and tests.
-        /// </summary>
+        /// <summary>The <see cref="SkiaTextCounters.GetBatchesFlushed"/> of the calling thread.</summary>
         internal static long GetBatchesFlushedOnThread(GlyphBatchFlushReason reason) =>
-            t_batchesFlushed?[(int)reason] ?? 0;
+            SkiaTextCounters.TryGetCurrent()?.GetBatchesFlushed(reason) ?? 0;
 
-        /// <summary>
-        /// The flushes on this thread that drew at least one pending glyph batch because of
-        /// <paramref name="reason"/>; for profiling tools and tests.
-        /// </summary>
-        internal static long GetFlushesOnThread(GlyphBatchFlushReason reason) => t_flushes?[(int)reason] ?? 0;
+        /// <summary>The <see cref="SkiaTextCounters.GetFlushes"/> of the calling thread.</summary>
+        internal static long GetFlushesOnThread(GlyphBatchFlushReason reason) =>
+            SkiaTextCounters.TryGetCurrent()?.GetFlushes(reason) ?? 0;
 
-        /// <summary>The runs, or subpixel entries, in the pending glyph batches drawn on this thread.</summary>
-        internal static long BatchedRunsOnThread => t_batchedRuns;
+        /// <summary>The <see cref="SkiaTextCounters.BatchedRuns"/> of the calling thread.</summary>
+        internal static long BatchedRunsOnThread => SkiaTextCounters.TryGetCurrent()?.BatchedRuns ?? 0;
 
-        /// <summary>The pending glyph batches drawn on this thread, each one atlas draw or more.</summary>
-        internal static long BatchesDrawnOnThread => t_batchesDrawn;
+        /// <summary>The <see cref="SkiaTextCounters.BatchesDrawn"/> of the calling thread.</summary>
+        internal static long BatchesDrawnOnThread => SkiaTextCounters.TryGetCurrent()?.BatchesDrawn ?? 0;
 
-        /// <summary>
-        /// The most runs one pending glyph batch drawn on this thread held since the last call,
-        /// starting the next span at zero.
-        /// </summary>
-        internal static int TakeMaxRunsPerBatchOnThread()
-        {
-            var max = t_maxRunsPerBatch;
-
-            t_maxRunsPerBatch = 0;
-
-            return max;
-        }
-
-        private static void CountFlush(GlyphBatchFlushReason reason) =>
-            (t_flushes ??= new long[s_flushReasonCount])[(int)reason]++;
-
-        private static void CountBatchDrawn(GlyphBatchFlushReason reason, int runs)
-        {
-            (t_batchesFlushed ??= new long[s_flushReasonCount])[(int)reason]++;
-            t_batchedRuns += runs;
-            t_batchesDrawn++;
-
-            if (runs > t_maxRunsPerBatch)
-            {
-                t_maxRunsPerBatch = runs;
-            }
-        }
+        /// <summary>The <see cref="SkiaTextCounters.TakeMaxRunsPerBatch"/> of the calling thread.</summary>
+        internal static int TakeMaxRunsPerBatchOnThread() => SkiaTextCounters.TryGetCurrent()?.TakeMaxRunsPerBatch() ?? 0;
 
         /// <summary>
         /// The runs of one page waiting to be drawn together, in one colour or in several, with

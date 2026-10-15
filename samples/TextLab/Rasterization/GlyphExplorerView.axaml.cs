@@ -99,7 +99,7 @@ namespace TextLab
                 AvaloniaLocator.Current.GetRequiredService<SkiaOptions>().CountTextTiers = _countTiersBox.IsChecked == true;
             _resetCountersButton.Click += (_, _) =>
             {
-                Avalonia.Skia.TextTierDiagnostics.ResetCounters();
+                _tierBaseline = ReadTierDraws();
                 UpdateHud();
             };
 
@@ -225,6 +225,19 @@ namespace TextLab
             base.OnDetachedFromVisualTree(e);
         }
 
+        // The tier counts at the last reset; the counters themselves only grow.
+        private (long Mask, long Transformed, long Blob) _tierBaseline;
+
+        /// <summary>The glyph runs each tier drew, on every thread that drew for the application.</summary>
+        private static (long Mask, long Transformed, long Blob) ReadTierDraws()
+        {
+            var services = GlyphRasterServices.Current;
+
+            return (Avalonia.Skia.SkiaTextCounters.Sum(services, c => c.MaskTierDraws),
+                Avalonia.Skia.SkiaTextCounters.Sum(services, c => c.TransformedMaskTierDraws),
+                Avalonia.Skia.SkiaTextCounters.Sum(services, c => c.BlobTierDraws));
+        }
+
         private void UpdateHud()
         {
             if (_typeface is not { } typeface)
@@ -235,9 +248,10 @@ namespace TextLab
 
             var cache = typeface.MaskCache;
 
-            var maskDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.MaskTierDraws);
-            var transformedDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.TransformedMaskTierDraws);
-            var blobDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.BlobTierDraws);
+            var tiers = ReadTierDraws();
+            var maskDraws = tiers.Mask - _tierBaseline.Mask;
+            var transformedDraws = tiers.Transformed - _tierBaseline.Transformed;
+            var blobDraws = tiers.Blob - _tierBaseline.Blob;
 
             _hudText.Text = FormattableString.Invariant(
                 $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB; all glyph caches {GlyphRasterServices.Current.Budget.UsedBytes / 1024} KB of {GlyphRasterServices.Current.Budget.LimitBytes / 1024} KB{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, blob {blobDraws}");

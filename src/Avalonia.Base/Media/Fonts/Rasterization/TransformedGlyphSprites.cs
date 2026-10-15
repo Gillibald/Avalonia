@@ -171,7 +171,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 UsesForegroundBucket |= sprite.Kind == TransformedSpriteKind.Foreground;
             }
 
-            GlyphRasterDiagnostics.CountSpriteSetBuild();
+            if (TextRasterCounters.TryGetCurrent() is { } counters)
+            {
+                counters.SpriteSetBuilds++;
+            }
         }
 
         /// <summary>Whether a sprite draws from a colour atlas page.</summary>

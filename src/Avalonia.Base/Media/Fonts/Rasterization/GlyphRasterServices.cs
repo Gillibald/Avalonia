@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -21,7 +22,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         public GlyphRasterServices()
         {
-            _threads = new ThreadLocal<TextRasterThreadState>(() => new TextRasterThreadState(this));
+            _threads = new ThreadLocal<TextRasterThreadState>(() => new TextRasterThreadState(this), trackAllValues: true);
             Budget = new GlyphCacheBudget(static () => AvaloniaLocator.Current.GetService<FontManagerOptions>(),
                 TextRasterizationDefaults.CurrentPlatform());
         }
@@ -80,6 +81,28 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             // Drawing after the owner went away keeps working, on state no one else sees.
             return new TextRasterThreadState(this);
+        }
+
+        /// <summary>
+        /// The states of the threads that drew text for the application so far, for diagnostics that
+        /// add up the counters of every thread. Each state is written by its own thread only, so a
+        /// reader on another thread sees totals that may lag by the draw in progress.
+        /// </summary>
+        public IList<TextRasterThreadState> GetThreadStates()
+        {
+            if (!_disposed)
+            {
+                try
+                {
+                    return _threads.Values;
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Disposed by the owner's thread meanwhile.
+                }
+            }
+
+            return Array.Empty<TextRasterThreadState>();
         }
 
         public void Dispose()

@@ -475,6 +475,15 @@ namespace Avalonia.Skia
         /// <summary>The phase timers glyph drawing on this context records in, when there are any.</summary>
         private GlyphPhaseTimers? PhaseTimers => TryGetRasterState()?.PhaseTimers;
 
+        private SkiaTextCounters? _counters;
+
+        /// <summary>
+        /// The Skia text counters of the context's raster state, or of the context alone when its
+        /// application has no font manager.
+        /// </summary>
+        internal SkiaTextCounters Counters
+            => _counters ??= TryGetRasterState() is { } state ? SkiaTextCounters.Of(state) : new SkiaTextCounters();
+
         private GlyphTargetSurface DescribeTargetSurface()
             => new(
                 new Vector(ToDevice(Matrix.Identity).M11, ToDevice(Matrix.Identity).M22),
@@ -1140,7 +1149,7 @@ namespace Avalonia.Skia
                 {
                     if (CountsTextTiers)
                     {
-                        System.Threading.Interlocked.Increment(ref TextTierDiagnostics.MaskTierDraws);
+                        Counters.MaskTierDraws++;
                     }
 
                     if (TintsTextTiers)
@@ -1164,7 +1173,7 @@ namespace Avalonia.Skia
                     {
                         if (CountsTextTiers)
                         {
-                            System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
+                            Counters.TransformedMaskTierDraws++;
                         }
                     }
                     else
@@ -1183,7 +1192,7 @@ namespace Avalonia.Skia
                 {
                     if (CountsTextTiers)
                     {
-                        System.Threading.Interlocked.Increment(ref TextTierDiagnostics.TransformedMaskTierDraws);
+                        Counters.TransformedMaskTierDraws++;
                     }
 
                     if (TintsTextTiers)
@@ -1240,7 +1249,7 @@ namespace Avalonia.Skia
 
                 if (CountsTextTiers)
                 {
-                    System.Threading.Interlocked.Increment(ref TextTierDiagnostics.BlobTierDraws);
+                    Counters.BlobTierDraws++;
                 }
 
                 if (TintsTextTiers)

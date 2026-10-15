@@ -706,7 +706,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static bool BuildAtlasBatches(ITransformedGlyphContext context, GlyphTypeface typeface,
             GlyphMaskAtlas atlas, GlyphMaskAtlas? colorAtlas, TransformedGlyphSprites sprites, int bucket)
         {
-            GlyphRasterDiagnostics.CountAtlasBatchBuild();
+            context.RasterState.Counters.AtlasBatchBuilds++;
 
             var tick = atlas.Tick();
             var owner = context.MaskAtlas is null ? 0 : typeface.MaskOwnerId;
@@ -758,7 +758,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     var key = sprites.GetGlyphKey(i);
                     var spriteBucket = sprite.Kind == TransformedSpriteKind.Foreground ? bucket : GlyphMaskAtlas.Uncorrected;
 
-                    if (!atlas.TryGet(owner, key, spriteBucket, tick, out var slot))
+                    if (!atlas.TryGet(owner, key, spriteBucket, tick, out var slot, raster))
                     {
                         byte[]? rented = null;
 
@@ -837,7 +837,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var entry = GetColorEntryKey(owner, typeface, sprites, index);
 
-            if (colorAtlas.TryGet(entry, tick, out slot))
+            if (colorAtlas.TryGet(entry, tick, out slot, raster))
             {
                 return true;
             }

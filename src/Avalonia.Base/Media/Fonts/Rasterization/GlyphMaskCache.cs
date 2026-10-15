@@ -163,22 +163,32 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="state">The state <paramref name="build"/> takes.</param>
         /// <param name="build">Builds the mask on a miss.</param>
         /// <param name="raster">
-        /// The text raster state of the drawing thread, which a miss is timed in; the current
-        /// application's when omitted.
+        /// The text raster state of the drawing thread, which the lookup is counted and a miss is
+        /// timed in; the current application's when omitted.
         /// </param>
         public GlyphMask GetOrBuild<TState>(in TKey key, TState state,
             Func<TKey, TState, GlyphMask> build, TextRasterThreadState? raster = null)
         {
+            raster ??= TextRasterThreadState.TryGetCurrent();
+
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
                 entry.LastUse = _clock.Frame;
-                GlyphRasterDiagnostics.CountMaskCacheHit();
+
+                if (raster is not null)
+                {
+                    raster.Counters.MaskCacheHits++;
+                }
+
                 return hit;
             }
 
-            GlyphRasterDiagnostics.CountMaskCacheMiss();
+            if (raster is not null)
+            {
+                raster.Counters.MaskCacheMisses++;
+            }
 
-            var timers = (raster ?? TextRasterThreadState.TryGetCurrent())?.PhaseTimers;
+            var timers = raster?.PhaseTimers;
             var timer = GlyphPhaseTimers.Start(timers);
             var built = build(key, state) ?? GlyphMask.Empty;
 

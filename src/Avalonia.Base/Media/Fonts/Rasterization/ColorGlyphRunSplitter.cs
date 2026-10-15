@@ -244,7 +244,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             // size and land the local origin on the pen.
             var transform = Matrix.CreateScale(scale, scale) * Matrix.CreateTranslation(pen.X, pen.Y);
 
-            GlyphRasterDiagnostics.CountColorGlyphVectorDraw();
+            if (TextRasterCounters.TryGetCurrent() is { } counters)
+            {
+                counters.ColorGlyphVectorDraws++;
+            }
 
             // A strike image is chosen for the device size, which only the context the glyph is
             // drawn on knows: render data replays the operation under the device transform, and a

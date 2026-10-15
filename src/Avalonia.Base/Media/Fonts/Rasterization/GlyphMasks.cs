@@ -72,8 +72,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static GlyphMask BuildUprightTimed(GlyphTypeface typeface, GlyphPathBuilder scratch,
             in GlyphMaskKey key, bool transient, out byte[]? rented, TextRasterThreadState? raster)
         {
+            raster ??= TextRasterThreadState.TryGetCurrent();
+
             var start = Stopwatch.GetTimestamp();
-            var mask = BuildUpright(typeface, scratch, key, transient, out rented);
+            var mask = BuildUpright(typeface, scratch, key, transient, out rented, raster?.Counters);
 
             // Stripe masks rasterize three samples per pixel, a cost no moving text pays.
             if (!mask.IsEmpty && key.Mode != GlyphMaskMode.Subpixel)
@@ -93,14 +95,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             typeface.MaskCache.RasterCostOf(key.GridFit).Record(key.PixelsPerEm, ticks);
 
-            if ((raster ?? TextRasterThreadState.TryGetCurrent()) is { } state)
+            if (raster is not null)
             {
-                state.RasterTicks += ticks;
+                raster.RasterTicks += ticks;
             }
         }
 
         private static GlyphMask BuildUpright(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
-            bool transient, out byte[]? rentedBuffer)
+            bool transient, out byte[]? rentedBuffer, TextRasterCounters? counters)
         {
             rentedBuffer = null;
 
@@ -112,7 +114,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return GlyphMask.Empty;
             }
 
-            GlyphRasterDiagnostics.CountGlyphRasterization();
+            if (counters is not null)
+            {
+                counters.GlyphRasterizations++;
+            }
 
             // Bi-level Strong text is the one build that fits x on whole-pixel pens; every
             // other build keeps the outline's natural x, which spacing at the shaper's
@@ -383,9 +388,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             int left, int top, int width, int height, Span<byte> destination, int stride,
             TextRasterThreadState? raster = null)
         {
+            raster ??= TextRasterThreadState.TryGetCurrent();
+
             var start = Stopwatch.GetTimestamp();
 
-            if (!RasterizeTransformedCore(typeface, scratch, key, left, top, width, height, destination, stride))
+            if (!RasterizeTransformedCore(typeface, scratch, key, left, top, width, height, destination, stride,
+                    raster?.Counters))
             {
                 return false;
             }
@@ -396,9 +404,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private static bool RasterizeTransformedCore(GlyphTypeface typeface, GlyphPathBuilder scratch,
-            in GlyphMaskKey key, int left, int top, int width, int height, Span<byte> destination, int stride)
+            in GlyphMaskKey key, int left, int top, int width, int height, Span<byte> destination, int stride,
+            TextRasterCounters? counters)
         {
-            GlyphRasterDiagnostics.CountGlyphRasterization();
+            if (counters is not null)
+            {
+                counters.GlyphRasterizations++;
+            }
+
             scratch.Reset();
 
             var simulations = key.Simulations;
