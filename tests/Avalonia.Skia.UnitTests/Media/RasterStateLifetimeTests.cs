@@ -131,6 +131,43 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Phase_Timers_Switched_On_Do_Not_Record_In_The_Next_Application()
+        {
+            var enabled = GlyphPhaseTimers.Enabled;
+
+            try
+            {
+                using (TextTestApplication.Enter())
+                {
+                    FailingSetup(() => GlyphPhaseTimers.Enabled = true);
+                }
+
+                using (WideRunMaskTests.CreateEnvironment(out var typeface))
+                {
+                    var before = GlyphPhaseTimers.GetCountOnThread(GlyphTimerPhase.GlyphRun);
+
+                    DrawText(typeface);
+
+                    Assert.Equal(before, GlyphPhaseTimers.GetCountOnThread(GlyphTimerPhase.GlyphRun));
+                }
+            }
+            finally
+            {
+                GlyphPhaseTimers.Enabled = enabled;
+            }
+        }
+
+        /// <summary>Draws a run of text through a drawing context of the current application.</summary>
+        private static void DrawText(GlyphTypeface typeface)
+        {
+            using var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20));
+            using var surface = SKSurface.Create(new SKImageInfo(160, 32));
+            using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
+
+            context.DrawGlyphRun(Brushes.Black, run);
+        }
+
         /// <summary>The tuning a drawing context created now draws text with.</summary>
         private static GlyphRasterTuning TuningOfNewContext()
         {
