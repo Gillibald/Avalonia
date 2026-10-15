@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Immutable;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Platform;
 using Avalonia.Skia.Helpers;
 using SkiaSharp;
 using Xunit;
@@ -68,6 +69,52 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.PushClip(new Rect(0, 0, Width / 2.0, Height));
                     context.Transform = Matrix.CreateRotation(15 * Math.PI / 180) *
                                         Matrix.CreateTranslation(Width * 0.7, Height / 2.0);
+                    context.DrawGlyphRun(s_text, run);
+                    context.Transform = Matrix.Identity;
+                    context.PopClip();
+                });
+
+                Assert.Equal(0, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
+                Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterizations);
+                Assert.Equal(0, GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - colorMasks);
+                Assert.All(pixels, b => Assert.Equal(255, b));
+            }
+            finally
+            {
+                run.Dispose();
+                GC.KeepAlive(owner);
+            }
+        }
+
+        /// <summary>
+        /// A dirty region of several rectangles, as a frame that repaints a few cells of a grid
+        /// clips to: a run in the gap between them lies inside the region's bounds but outside the
+        /// region, and lays out nothing either.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(Cases))]
+        public void A_Transformed_Run_Between_The_Rectangles_Of_A_Region_Clip_Lays_Out_Nothing(Target target,
+            Content content)
+        {
+            using var gpu = target == Target.Raster ? null : ColorAtlasTests.CreateGpu(Backend(target), true);
+            using var scope = ColorAtlasTests.CreateEnvironment();
+            var (run, owner) = CreateRun(content);
+            using var region = new SkiaRegionImpl();
+
+            region.AddRect(new LtrbPixelRect(0, 0, 60, Height));
+            region.AddRect(new LtrbPixelRect(Width - 60, 0, Width, Height));
+
+            try
+            {
+                var builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                var rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                var colorMasks = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
+
+                var pixels = Render(gpu, context =>
+                {
+                    context.PushClip(region);
+                    context.Transform = Matrix.CreateRotation(15 * Math.PI / 180) *
+                                        Matrix.CreateTranslation(Width * 0.35, Height / 2.0);
                     context.DrawGlyphRun(s_text, run);
                     context.Transform = Matrix.Identity;
                     context.PopClip();
