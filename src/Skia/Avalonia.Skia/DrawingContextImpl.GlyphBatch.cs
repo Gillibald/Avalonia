@@ -34,11 +34,14 @@ namespace Avalonia.Skia
         // tested against it, so text of one page stays one batch however many runs.
         private const int MaxPendingRuns = 128;
 
-        // Contexts are made per frame, so pending batches and their run lists come from a
-        // per-thread pool instead of each context growing its own; a layer drawn while its
-        // parent holds batches rents others.
+        // Contexts are made per frame, so pending batches and their run lists, and the slots
+        // that list them, come from per-thread pools instead of each context growing its own;
+        // a layer drawn while its parent holds batches rents others.
         [ThreadStatic]
         private static Stack<PendingGlyphBatch>? t_pendingBatches;
+
+        [ThreadStatic]
+        private static Stack<PendingGlyphBatch[]>? t_pendingBatchSlots;
 
         private PendingGlyphBatch[]? _pendingBatches;
         private int _pendingBatchCount;
@@ -150,7 +153,7 @@ namespace Avalonia.Skia
                 target.Page = page;
                 target.Color = color;
 
-                var pending = _pendingBatches ??= new PendingGlyphBatch[MaxPendingBatches];
+                var pending = _pendingBatches ??= RentPendingBatchSlots();
 
                 pending[_pendingBatchCount++] = target;
             }
@@ -256,7 +259,7 @@ namespace Avalonia.Skia
                 target.Color = color;
                 target.IsStretched = true;
 
-                var pending = _pendingBatches ??= new PendingGlyphBatch[MaxPendingBatches];
+                var pending = _pendingBatches ??= RentPendingBatchSlots();
 
                 pending[_pendingBatchCount++] = target;
             }
@@ -424,6 +427,35 @@ namespace Avalonia.Skia
             }
 
             SetCanvasTransform(transform, matrix);
+            _pendingBatchCount = 0;
+            _pendingRunCount = 0;
+        }
+
+        private static PendingGlyphBatch[] RentPendingBatchSlots()
+        {
+            while (t_pendingBatchSlots is { Count: > 0 } pool)
+            {
+                // Slots made before a profiling tool changed the limit are dropped.
+                if (pool.Pop() is { } slots && slots.Length == MaxPendingBatches)
+                {
+                    return slots;
+                }
+            }
+
+            return new PendingGlyphBatch[MaxPendingBatches];
+        }
+
+        /// <summary>Returns the pending batch slots, emptied, to this thread's pool.</summary>
+        private void ReturnPendingBatchSlots()
+        {
+            if (_pendingBatches is not { } slots)
+            {
+                return;
+            }
+
+            Array.Clear(slots);
+            (t_pendingBatchSlots ??= new Stack<PendingGlyphBatch[]>()).Push(slots);
+            _pendingBatches = null;
             _pendingBatchCount = 0;
             _pendingRunCount = 0;
         }

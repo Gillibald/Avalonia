@@ -1409,6 +1409,8 @@ namespace Avalonia.Skia
             finally
             {
                 _disposed = true;
+                ReturnPendingBatchSlots();
+                ReturnClipStack();
                 _glyphCacheFrame.Dispose();
             }
         }

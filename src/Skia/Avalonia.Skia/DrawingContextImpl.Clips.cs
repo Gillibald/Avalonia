@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using SkiaSharp;
 
 namespace Avalonia.Skia
@@ -8,7 +9,16 @@ namespace Avalonia.Skia
         // Skia treats a device rectangle edge this close to a whole pixel as lying on it.
         private const double PixelAlignmentTolerance = 1e-3;
 
-        private ClipLevel[] _clipLevels = new ClipLevel[8];
+        // Contexts are made per frame, so the clip stack comes from a per-thread pool and keeps
+        // the depth the deepest frame needed, instead of each context allocating and regrowing
+        // its own; a context made while another is drawn on the thread rents another.
+        [ThreadStatic]
+        private static Stack<ClipLevel[]>? t_clipStacks;
+
+        [ThreadStatic]
+        private static SKPoint[]? t_clipRadii;
+
+        private ClipLevel[] _clipLevels = t_clipStacks is { Count: > 0 } pool ? pool.Pop() : new ClipLevel[8];
         private int _clipDepth;
 
         // The innermost clips not yet applied to the canvas. They are always the top of the
@@ -276,13 +286,13 @@ namespace Avalonia.Skia
 
             var clip = level.Shape;
             var roundRect = SKRoundRectCache.Shared.Get();
+            var radii = t_clipRadii ??= new SKPoint[4];
 
-            roundRect.SetRectRadii(clip.Rect.ToSKRect(),
-                new[]
-                {
-                    clip.RadiiTopLeft.ToSKPoint(), clip.RadiiTopRight.ToSKPoint(),
-                    clip.RadiiBottomRight.ToSKPoint(), clip.RadiiBottomLeft.ToSKPoint(),
-                });
+            radii[0] = clip.RadiiTopLeft.ToSKPoint();
+            radii[1] = clip.RadiiTopRight.ToSKPoint();
+            radii[2] = clip.RadiiBottomRight.ToSKPoint();
+            radii[3] = clip.RadiiBottomLeft.ToSKPoint();
+            roundRect.SetRectRadii(clip.Rect.ToSKRect(), radii);
 
             Canvas.ClipRoundRect(roundRect, antialias: true);
             SKRoundRectCache.Shared.Return(roundRect);
@@ -465,6 +475,15 @@ namespace Avalonia.Skia
             TrackClipLevel(new ClipLevel(kind, bounds.TransformToAABB(transform).ToSKRect(), null));
         }
 
+        /// <summary>Clears the clip stack, which holds regions, and returns it to this thread's pool.</summary>
+        private void ReturnClipStack()
+        {
+            Array.Clear(_clipLevels);
+            (t_clipStacks ??= new Stack<ClipLevel[]>()).Push(_clipLevels);
+            _clipLevels = Array.Empty<ClipLevel>();
+            _clipDepth = 0;
+        }
+
         private void TrackRegionClip(SKRegion region) =>
             TrackClipLevel(new ClipLevel(GlyphRunClipKind.Region, region.Bounds, region));
 
@@ -472,7 +491,7 @@ namespace Avalonia.Skia
         {
             if (_clipDepth == _clipLevels.Length)
             {
-                Array.Resize(ref _clipLevels, _clipDepth * 2);
+                Array.Resize(ref _clipLevels, Math.Max(8, _clipDepth * 2));
             }
 
             // Runs are trimmed to the intersection of every pixel-aligned rectangle clip, applied
