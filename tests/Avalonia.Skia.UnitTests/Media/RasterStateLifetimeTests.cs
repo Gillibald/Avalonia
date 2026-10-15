@@ -274,6 +274,28 @@ namespace Avalonia.Skia.UnitTests.Media
             GC.KeepAlive(first);
         }
 
+        [Fact]
+        public void Each_Gpu_Context_Places_Subpixel_Run_Masks_In_An_Atlas_Of_Its_Own()
+        {
+            using var first = TransformedAtlasTests.CreateGpu(GpuBackend.NativeGl, false);
+            using var second = TransformedAtlasTests.CreateGpu(GpuBackend.Angle, false);
+            using var app = TextTestApplication.Enter();
+
+            var atlas = LcdAtlasOf(first);
+
+            Assert.Same(atlas, LcdAtlasOf(first));
+            Assert.NotSame(atlas, LcdAtlasOf(second));
+        }
+
+        /// <summary>The atlas a drawing context on <paramref name="gpu"/> places subpixel run masks in.</summary>
+        private static LcdRunAtlas LcdAtlasOf(GpuTestContext gpu)
+        {
+            using var surface = SKSurface.Create(gpu.GrContext, true, new SKImageInfo(8, 8));
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            return context.LcdAtlas;
+        }
+
         /// <summary>Draws ten frames of a run zooming on a CPU surface, through one drawing context.</summary>
         private static void ZoomOnRaster(GlyphTypeface typeface)
         {
