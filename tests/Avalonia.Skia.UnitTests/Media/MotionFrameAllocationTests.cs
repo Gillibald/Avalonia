@@ -138,5 +138,98 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
             }
         }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Crossing_Laid_Out_Again_Allocates_Only_What_It_Keeps(GpuBackend backend)
+        {
+            // A zoom that comes back to a crossing whose sprite set it dropped lays the set out
+            // again from the atlas. That frame keeps a laid-out sprite (32 bytes) and the batch's
+            // source rectangle and placement (32 bytes) per glyph, plus a few objects per run;
+            // everything else it allocated would be garbage, of which the zoom makes a lot.
+            const long keptPerGlyph = 32 + 32 + 32;
+
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var surface = SKSurface.Create(gpu.GrContext, true,
+                new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
+            var runs = new ManagedGlyphRunImpl[6];
+            var glyphs = 0;
+
+            for (var i = 0; i < runs.Length; i++)
+            {
+                runs[i] = WideRunMaskTests.CreateRun(typeface, s_lines[i % s_lines.Length], 13,
+                    new Point(6.3, 30 + i * 18));
+                glyphs += runs[i].GlyphCount;
+            }
+
+            var budget = MotionRasterBudget.BudgetOverride;
+
+            MotionRasterBudget.BudgetOverride = 0;
+
+            void Frame(double scale)
+            {
+                using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+                context.Transform = Matrix.CreateScale(scale, scale);
+
+                foreach (var run in runs)
+                {
+                    context.DrawGlyphRun(Brushes.Black, run);
+                }
+            }
+
+            void Empty()
+            {
+                using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+            }
+
+            try
+            {
+                // Two passes from 1 to 5 and back down: every crossing is laid out once and laid
+                // out again after the zoom dropped it, so every buffer has grown before the
+                // measured pass.
+                var top = MaskGlyphRunRenderer.CrossingScale(5, 1);
+                var revisit = top / Math.Pow(MaskGlyphRunRenderer.MaxStretchScale, 6) * 0.99;
+
+                for (var pass = 0; pass < 3; pass++)
+                {
+                    for (var step = 0; step <= 400; step++)
+                    {
+                        Frame(1 + 0.01 * step);
+                    }
+
+                    var builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                    var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                    var before = ThreadAllocations.Start();
+
+                    Frame(revisit);
+
+                    var allocated = ThreadAllocations.Since(before);
+
+                    before = ThreadAllocations.Start();
+                    Empty();
+                    allocated -= ThreadAllocations.Since(before);
+
+                    Assert.Equal(runs.Length, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
+                    Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterized);
+
+                    if (pass == 2)
+                    {
+                        Assert.True(allocated <= glyphs * keptPerGlyph,
+                            $"laying out {glyphs} glyphs again allocated {allocated} bytes, {allocated / (double)glyphs:F1} per glyph");
+                    }
+                }
+            }
+            finally
+            {
+                MotionRasterBudget.BudgetOverride = budget;
+
+                foreach (var run in runs)
+                {
+                    run.Dispose();
+                }
+            }
+        }
     }
 }
