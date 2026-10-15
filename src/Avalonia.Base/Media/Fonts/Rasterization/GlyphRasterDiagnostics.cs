@@ -40,6 +40,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static long t_colorGlyphVectorDraws;
 
+        [ThreadStatic]
+        private static long t_colorFallbackImages;
+
         /// <summary>Glyph outlines filled into coverage, upright or transformed, cached or transient.</summary>
         public static long GlyphRasterizationsOnThread => t_glyphRasterizations;
 
@@ -70,11 +73,18 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Colour glyphs drawn as vectors, from their recordings or live drawings.</summary>
         public static long ColorGlyphVectorDrawsOnThread => t_colorGlyphVectorDraws;
 
+        /// <summary>
+        /// Backend images made of colour masks for draws that cannot write the surface directly.
+        /// </summary>
+        public static long ColorFallbackImagesOnThread => t_colorFallbackImages;
+
         internal static void CountGlyphRasterization() => t_glyphRasterizations++;
 
         internal static void CountColorMaskRasterization() => t_colorMaskRasterizations++;
 
         internal static void CountColorGlyphVectorDraw() => t_colorGlyphVectorDraws++;
+
+        internal static void CountColorFallbackImage() => t_colorFallbackImages++;
 
         internal static void CountMaskCacheHit() => t_maskCacheHits++;
 

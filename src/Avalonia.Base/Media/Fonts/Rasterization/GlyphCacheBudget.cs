@@ -34,6 +34,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// (<see cref="Tables.Bitmaps.DecodedBitmapCache"/>).
         /// </summary>
         BitmapImages,
+
+        /// <summary>
+        /// Backend images of one typeface's colour masks, for draws that cannot write the surface
+        /// directly.
+        /// </summary>
+        ColorFallbackImages,
     }
 
     /// <summary>A glyph cache whose entries the <see cref="GlyphCacheBudget"/> it is registered with may evict.</summary>

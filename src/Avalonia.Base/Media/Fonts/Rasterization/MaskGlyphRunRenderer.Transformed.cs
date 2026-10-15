@@ -507,6 +507,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     if (kind == TransformedSpriteKind.Color)
                     {
+                        GlyphRasterDiagnostics.CountColorFallbackImage();
                         RunMaskComposer.ComposeColor(mask, -mask.Left, -mask.Top, span, mask.Width, mask.Height,
                             framebuffer.RowBytes);
                         continue;
