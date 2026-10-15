@@ -666,6 +666,50 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>
+        /// A page of an atlas whose pages live in GPU textures keeps no array of its texels: the
+        /// managed memory it takes is its ink bitmap, an eighth of the page's bytes at most.
+        /// </summary>
+        [Fact]
+        public void A_Resident_Page_Keeps_No_Pixel_Copy()
+        {
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var atlas = new GlyphMaskAtlas(budget, residentPages: true);
+            var random = new Random(43);
+            var masks = new GlyphMask[(GlyphMaskAtlas.MaxPageHeight - 2) / 41];
+
+            for (var i = 0; i < masks.Length; i++)
+            {
+                masks[i] = CreateMask(random, 900, 40);
+            }
+
+            var retainedBefore = GC.GetTotalMemory(true);
+            long allocated;
+
+            using (budget.BeginFrame())
+            {
+                var tick = atlas.Tick();
+                var before = ThreadAllocations.Start();
+
+                for (var i = 0; i < masks.Length; i++)
+                {
+                    Assert.True(atlas.TryAdd(Key(i), masks[i], tick, out _));
+                }
+
+                allocated = ThreadAllocations.Since(before);
+            }
+
+            var retained = GC.GetTotalMemory(true) - retainedBefore;
+            var page = Assert.Single(atlas.GetPages());
+            var quarter = page.ChargedBytes / 4;
+
+            Assert.Equal(GlyphMaskAtlas.MaxPageHeight, page.Height);
+            Assert.Null(page.Pixels);
+            Assert.True(allocated < quarter, $"filling a page of {page.ChargedBytes} bytes allocated {allocated} bytes");
+            Assert.True(retained < quarter, $"filling a page of {page.ChargedBytes} bytes retained {retained} bytes");
+            GC.KeepAlive(masks);
+        }
+
+        /// <summary>
         /// A page is charged its allocated rows, whatever holds its texels: the budget's limits and
         /// eviction order depend on those numbers.
         /// </summary>

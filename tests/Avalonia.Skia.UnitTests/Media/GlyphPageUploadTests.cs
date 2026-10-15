@@ -294,6 +294,136 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        /// <summary>
+        /// A page that keeps no CPU copy draws from a texture holding what a page that keeps one
+        /// holds after the same placements: strips of new entries on open shelves, new shelves,
+        /// growth, coverage through every kind of correction, colour pages.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(RegionUpdateContexts))]
+        public void A_Resident_Page_Texture_Matches_A_Reference_Page_Through_Updates_And_Growth(GpuBackend backend,
+            bool rgba)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+
+            Assert.SkipWhen(SkiaUpdatableTextures.Get(gpu.GrContext) is null, $"{backend} has no updatable textures");
+
+            var format = rgba ? GlyphAtlasFormat.Rgba : GlyphAtlasFormat.Alpha8;
+            var reference = new GlyphMaskAtlas(format: format);
+            var resident = new GlyphMaskAtlas(format: format, residentPages: true);
+            var random = new Random(37);
+            var key = 0;
+            var heights = new HashSet<int>();
+
+            for (var round = 0; round < 10; round++)
+            {
+                for (var i = 0; i < 30; i++, key++)
+                {
+                    var width = random.Next(1, 70);
+                    var height = random.Next(1, 8 + round * 9);
+                    var mask = rgba
+                        ? GlyphMaskAtlasTests.CreateColorMask(random, width, height)
+                        : GlyphMaskAtlasTests.CreateSparseMask(random, width, height, false);
+                    var bucket = rgba || key % 3 == 0 ? GlyphMaskAtlas.Uncorrected : key % MaskGamma.BucketCount;
+                    var glyph = new GlyphMaskKey((ushort)key, 200, 0, GlyphMaskMode.Antialiased);
+
+                    Assert.True(reference.TryAdd(glyph, bucket, mask, reference.Tick(), out var expected));
+                    Assert.True(resident.TryAdd(glyph, bucket, mask, resident.Tick(), out var actual));
+                    Assert.Equal((expected.X, expected.Y), (actual.X, actual.Y));
+                }
+
+                var pages = resident.GetPages();
+                var referencePages = reference.GetPages();
+
+                Assert.Equal(referencePages.Length, pages.Length);
+
+                for (var p = 0; p < pages.Length; p++)
+                {
+                    var page = pages[p];
+                    var used = page.RowBytes * page.Height;
+                    var image = PageImage(gpu, page);
+                    var drawn = rgba
+                        ? ReadRgbaImage(gpu, image, GlyphMaskAtlas.PageWidth, page.Height)
+                        : ReadImage(gpu, image, GlyphMaskAtlas.PageWidth, page.Height);
+
+                    heights.Add(page.Height);
+                    Assert.Equal(referencePages[p].Height, page.Height);
+                    Assert.True(referencePages[p].Pixels.AsSpan(0, used).SequenceEqual(drawn.AsSpan(0, used)),
+                        $"page {p} differs from its reference after round {round}");
+                }
+            }
+
+            Assert.True(heights.Count > 2, "no page grew");
+        }
+
+        /// <summary>
+        /// The new entries of a page go up in one texture update per page, as strips of the shelves
+        /// they landed on: no more bytes than the rectangle around all of them, and no fewer than
+        /// their own texels.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(RegionUpdateContexts))]
+        public void New_Glyphs_Upload_At_Most_The_Written_Union_In_One_Call_Per_Page(GpuBackend backend, bool rgba)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+
+            Assert.SkipWhen(SkiaUpdatableTextures.Get(gpu.GrContext) is null, $"{backend} has no updatable textures");
+
+            var atlas = new GlyphMaskAtlas(format: rgba ? GlyphAtlasFormat.Rgba : GlyphAtlasFormat.Alpha8,
+                residentPages: true);
+            var random = new Random(41);
+            var key = 0;
+
+            void Add(int count)
+            {
+                for (var i = 0; i < count; i++, key++)
+                {
+                    var width = random.Next(4, 40);
+                    var height = random.Next(4, 40);
+                    var mask = rgba
+                        ? GlyphMaskAtlasTests.CreateColorMask(random, width, height)
+                        : GlyphMaskAtlasTests.CreateMask(random, width, height);
+
+                    Assert.True(atlas.TryAdd(new GlyphMaskKey((ushort)key, 200, 0, GlyphMaskMode.Antialiased), mask,
+                        atlas.Tick(), out _));
+                }
+            }
+
+            Add(60);
+
+            var page = Assert.Single(atlas.GetPages());
+            var known = page.Keys.ToHashSet();
+
+            PageImage(gpu, page);
+
+            var updates = DrawingContextImpl.PageTextureUpdatesOnThread;
+            var bytes = DrawingContextImpl.PageImageBytesOnThread;
+            var created = DrawingContextImpl.PageImagesCreatedOnThread;
+
+            Add(40);
+
+            Assert.Same(page, Assert.Single(atlas.GetPages()));
+
+            var union = WrittenRectangle(atlas, page, known);
+            long entries = 0;
+
+            foreach (var entry in page.Keys)
+            {
+                if (!known.Contains(entry) && atlas.TryGet(entry, atlas.Tick(), out var written))
+                {
+                    entries += (long)written.Width * written.Height * page.BytesPerPixel;
+                }
+            }
+
+            PageImage(gpu, page);
+
+            var uploaded = DrawingContextImpl.PageImageBytesOnThread - bytes;
+
+            Assert.Equal(created, DrawingContextImpl.PageImagesCreatedOnThread);
+            Assert.Equal(updates + 1, DrawingContextImpl.PageTextureUpdatesOnThread);
+            Assert.InRange(uploaded, entries, (long)union.Width * union.Height * page.BytesPerPixel);
+        }
+
         public static IEnumerable<object[]> ColorPageContexts()
         {
             foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })
