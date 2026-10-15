@@ -1779,6 +1779,90 @@ namespace Avalonia.Skia.UnitTests.Media
             DrawAll(context, runs, Brushes.Black);
         }
 
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Frame_Drawn_Between_Clip_Pushes_Uploads_Each_Page_Texture_Once(GpuBackend backend, bool software)
+        {
+            // Every run of a paragraph sits in a clip with edges between pixels, which the context
+            // applies to the canvas and so draws the pending batches at every push, and every run
+            // places glyph masks no run before it did. The page texture is uploaded once for the
+            // frame, after all of them wrote, and the frame holds exactly the pixels of a context
+            // that wraps whole pages.
+            const int count = 12;
+            byte[] uploaded;
+            long refreshes;
+            int pages;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, software))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                var runs = CreateSizedParagraph(typeface, count);
+
+                try
+                {
+                    Render(gpu, context => context.DrawGlyphRun(Brushes.Black, runs[0]), true, out _);
+
+                    var before = DrawingContextImpl.PageImagesCreatedOnThread +
+                                 DrawingContextImpl.PageTextureUpdatesOnThread;
+
+                    uploaded = Render(gpu, context => DrawInFractionalClips(context, runs), true, out _);
+                    refreshes = DrawingContextImpl.PageImagesCreatedOnThread +
+                                DrawingContextImpl.PageTextureUpdatesOnThread - before;
+                    pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
+                }
+                finally
+                {
+                    DisposeAll(runs);
+                }
+            }
+
+            byte[] wrapped;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, software, updatableTextures: false))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                var runs = CreateSizedParagraph(typeface, count);
+
+                try
+                {
+                    Render(gpu, context => context.DrawGlyphRun(Brushes.Black, runs[0]), true, out _);
+                    wrapped = Render(gpu, context => DrawInFractionalClips(context, runs), true, out _);
+                }
+                finally
+                {
+                    DisposeAll(runs);
+                }
+            }
+
+            Assert.True(refreshes <= pages, $"{refreshes} page refreshes for {pages} pages");
+            TransformedAtlasTests.AssertEqual(wrapped, uploaded, $"{backend} frame");
+        }
+
+        /// <summary>A paragraph whose every run has a size of its own, so no two runs share a glyph mask.</summary>
+        private static ManagedGlyphRunImpl[] CreateSizedParagraph(GlyphTypeface typeface, int count)
+        {
+            var runs = new ManagedGlyphRunImpl[count];
+
+            for (var i = 0; i < count; i++)
+            {
+                runs[i] = WideRunMaskTests.CreateRun(typeface, s_lines[i % s_lines.Length], 10 + 0.5 * i,
+                    new Point(6.3, 16 + 22 * i));
+            }
+
+            return runs;
+        }
+
+        /// <summary>Draws each run inside a clip of its line whose edges lie between pixels.</summary>
+        private static void DrawInFractionalClips(DrawingContextImpl context, ManagedGlyphRunImpl[] runs)
+        {
+            for (var i = 0; i < runs.Length; i++)
+            {
+                context.PushClip(new Rect(0.5, 2.5 + 22 * i, 500, 21.25));
+                context.DrawGlyphRun(Brushes.Black, runs[i]);
+                context.PopClip();
+            }
+        }
+
         public static IEnumerable<object[]> PageRefreshContexts()
         {
             foreach (var context in HardwareContexts())
