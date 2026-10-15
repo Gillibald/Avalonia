@@ -100,6 +100,64 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void Sharp_Zoom_Frames_Add_No_Glyph_Masks_To_The_Mask_Cache(GpuBackend backend)
+        {
+            // A zoom frame the motion budget affords draws its unhinted glyphs sharp at a scale no
+            // static frame draws, like a crossing; the atlas holds their masks, the cache does not.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var surface = CreateSurface(gpu);
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+            var runs = CreateParagraph(typeface, 3);
+            var budget = MotionRasterBudget.BudgetOverride;
+            var interval = MotionRasterBudget.FrameIntervalOverride;
+            var glyphCost = MotionRasterBudget.GlyphCostOverride;
+
+            // Every frame affords rasterizing, however long a cold frame takes.
+            MotionRasterBudget.BudgetOverride = 1e9;
+            MotionRasterBudget.FrameIntervalOverride = 1e9;
+            MotionRasterBudget.GlyphCostOverride = 1;
+
+            try
+            {
+                var sharp = 0;
+
+                for (var frame = 0; frame < 30; frame++)
+                {
+                    var masks = typeface.MaskCache.Count;
+                    var stretched = MaskGlyphRunRenderer.StretchedDraws;
+                    var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+
+                    Draw(context, runs, 1 + frame * 0.013);
+
+                    if (frame < TransformChurnGuard.Threshold)
+                    {
+                        continue;
+                    }
+
+                    if (MaskGlyphRunRenderer.StretchedDraws == stretched &&
+                        GlyphRasterDiagnostics.GlyphRasterizationsOnThread > rasterized)
+                    {
+                        sharp++;
+                    }
+
+                    Assert.True(typeface.MaskCache.Count == masks,
+                        $"zoom frame {frame} added {typeface.MaskCache.Count - masks} glyph masks to the cache");
+                }
+
+                Assert.True(sharp >= 10, $"{sharp} zoom frames drew sharp");
+            }
+            finally
+            {
+                MotionRasterBudget.BudgetOverride = budget;
+                MotionRasterBudget.FrameIntervalOverride = interval;
+                MotionRasterBudget.GlyphCostOverride = glyphCost;
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void A_Crossing_Laid_Out_Again_Takes_Its_Glyph_Masks_From_The_Atlas(GpuBackend backend)
         {
             // A long zoom drops the sprite sets of crossings it moved away from, but not their
