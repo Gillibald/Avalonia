@@ -52,6 +52,44 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Colour_Glyph_And_Blit_Path_Switches_Do_Not_Outlive_Application()
+        {
+            var recordings = ColorGlyphRunSplitter.UseRecordings;
+            var masks = ColorGlyphRunSplitter.UseColorMasks;
+            var atlas = ColorGlyphRunSplitter.UseColorAtlas;
+            var path = GlyphMaskBlitter.Path;
+
+            try
+            {
+                using (TextTestApplication.Enter())
+                {
+                    FailingSetup(() =>
+                    {
+                        ColorGlyphRunSplitter.UseRecordings = false;
+                        ColorGlyphRunSplitter.UseColorMasks = false;
+                        ColorGlyphRunSplitter.UseColorAtlas = false;
+                        GlyphMaskBlitter.Path = GlyphBlitPath.Scalar;
+                    });
+                }
+
+                using (TextTestApplication.Enter())
+                {
+                    Assert.True(ColorGlyphRunSplitter.UseRecordings);
+                    Assert.True(ColorGlyphRunSplitter.UseColorMasks);
+                    Assert.True(ColorGlyphRunSplitter.UseColorAtlas);
+                    Assert.Equal(path, GlyphMaskBlitter.Path);
+                }
+            }
+            finally
+            {
+                ColorGlyphRunSplitter.UseRecordings = recordings;
+                ColorGlyphRunSplitter.UseColorMasks = masks;
+                ColorGlyphRunSplitter.UseColorAtlas = atlas;
+                GlyphMaskBlitter.Path = path;
+            }
+        }
+
         /// <summary>The tuning a drawing context created now draws text with.</summary>
         private static GlyphRasterTuning TuningOfNewContext()
         {
