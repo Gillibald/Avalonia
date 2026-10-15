@@ -210,7 +210,7 @@ namespace TextStress
             "  --mode managed|backend|default   text rasterization mode; default leaves it to the platform\n" +
             "    (default managed)\n" +
             "  --render default|angle|wgl|software|vulkan   Win32 rendering mode (default: platform list);\n" +
-            "    on Android egl|vulkan|software\n" +
+            "    on macOS metal|opengl|software, on Android egl|vulkan|software\n" +
             "  --refresh 60|120   Android: display refresh rate the window holds; a run fails (exit 3) if it\n" +
             "    does not hold (default 60)\n" +
             "  --frames N   measured frames per sweep value, 0 = interactive until closed (default 600)\n" +

@@ -48,11 +48,21 @@ namespace TextStress
 
             if (options.Render != "default")
             {
-                builder = builder.With(new Win32PlatformOptions { RenderingMode = ParseWin32Rendering(options.Render) });
+                builder = OperatingSystem.IsMacOS()
+                    ? builder.With(new AvaloniaNativePlatformOptions { RenderingMode = ParseMacRendering(options.Render) })
+                    : builder.With(new Win32PlatformOptions { RenderingMode = ParseWin32Rendering(options.Render) });
             }
 
             return builder;
         }
+
+        private static IReadOnlyList<AvaloniaNativeRenderingMode> ParseMacRendering(string value) => value switch
+        {
+            "metal" => new[] { AvaloniaNativeRenderingMode.Metal },
+            "opengl" => new[] { AvaloniaNativeRenderingMode.OpenGl },
+            "software" => new[] { AvaloniaNativeRenderingMode.Software },
+            _ => throw new ArgumentException($"Unknown --render '{value}' on macOS.")
+        };
 
         private static IReadOnlyList<Win32RenderingMode> ParseWin32Rendering(string value) => value switch
         {
