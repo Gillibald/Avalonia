@@ -31,6 +31,17 @@ namespace TextStress
                 Avalonia.Skia.DrawingContextImpl.MaxPendingBatches = options.PendingBatches;
             }
 
+            // Unset keeps the built-in choice.
+            switch (options.GetString("atlas-cpu-copy", ""))
+            {
+                case "on":
+                    Avalonia.Media.Fonts.Rasterization.GlyphMaskAtlas.ResidentPages = false;
+                    break;
+                case "off":
+                    Avalonia.Media.Fonts.Rasterization.GlyphMaskAtlas.ResidentPages = true;
+                    break;
+            }
+
             // A negative value keeps the built-in budget.
             var motionBudget = options.GetDouble("motion-budget-us", -1);
 

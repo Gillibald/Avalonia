@@ -285,6 +285,7 @@ namespace TextStress.Measurement
 
             seen.Add(shared);
             target.AtlasBytes += shared.AllocatedBytes;
+            target.AtlasCpuBytes += shared.CpuBytes + GlyphMaskAtlas.SharedColor.CpuBytes;
             target.AtlasEvictions += shared.Evictions;
             target.AtlasPages += sharedPages;
             target.AtlasPagesShared = sharedPages;
@@ -308,6 +309,7 @@ namespace TextStress.Measurement
                     var pages = atlas.GetPages().Length;
 
                     target.AtlasBytes += atlas.AllocatedBytes;
+                    target.AtlasCpuBytes += atlas.CpuBytes;
                     target.AtlasEvictions += atlas.Evictions;
                     target.AtlasPages += pages;
                     target.AtlasFaces += pages > 0 ? 1 : 0;
@@ -343,6 +345,7 @@ namespace TextStress.Measurement
             sample.AtlasFaces = after.AtlasFaces;
             sample.ColorAtlasBytes = after.ColorAtlasBytes;
             sample.ColorAtlasPages = after.ColorAtlasPages;
+            sample.AtlasCpuBytes = after.AtlasCpuBytes;
             sample.BudgetUsedBytes = after.BudgetUsedBytes;
             sample.BudgetPeakBytes = after.BudgetPeakBytes;
             sample.BudgetEvictedBytes = after.BudgetEvictedBytes - before.BudgetEvictedBytes;
@@ -415,6 +418,7 @@ namespace TextStress.Measurement
 
             yield return ("tag", _options.Tag);
             yield return ("label", _options.GetString("label", ""));
+            yield return ("atlas_cpu_copy", GlyphMaskAtlas.ResidentPages ? "off" : "on");
             yield return ("build", SetupLabel.Build);
             yield return ("setup", SetupLabel.Current?.Title ?? "");
             yield return ("date_utc", DateTime.UtcNow.ToString("u", CultureInfo.InvariantCulture));

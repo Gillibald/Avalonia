@@ -177,6 +177,8 @@ namespace TextStress
             "  --motion-budget-us N   time a GPU frame may spend rasterizing moving text sharp, in us; 0 always\n" +
             "    stretches (default: built-in)\n" +
             "  --motion-interval-us N   frame interval the motion budget assumes, in us (default: 120 Hz)\n" +
+            "  --atlas-cpu-copy on|off   whether glyph atlas pages of contexts with updatable textures keep a\n" +
+            "    CPU copy of their pixels (default: built-in)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
             "  --label text   campaign label shown in the title and overlay, such as base or tip\n" +
             "    (default: --tag)\n" +

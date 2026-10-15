@@ -491,6 +491,9 @@ namespace Avalonia.Skia
         private static int t_pageTextureUpdates;
 
         [ThreadStatic]
+        private static int t_pageTextureRegions;
+
+        [ThreadStatic]
         private static int t_atlasDraws;
 
         /// <summary>
@@ -517,6 +520,12 @@ namespace Avalonia.Skia
         /// page since the last; for profiling tools.
         /// </summary>
         internal static int PageTextureUpdatesOnThread => t_pageTextureUpdates;
+
+        /// <summary>
+        /// The rectangles the page texture updates on this thread uploaded, several per update
+        /// where the atlas wrote to several places of the page; for profiling tools.
+        /// </summary>
+        internal static int PageTextureRegionsOnThread => t_pageTextureRegions;
 
         /// <summary>The number of atlas draw calls issued on this thread; for tests.</summary>
         internal static int AtlasDrawsOnThread => t_atlasDraws;
@@ -775,6 +784,7 @@ namespace Avalonia.Skia
                         written = new PixelRect(written.X, written.Y, written.Width, bottom - written.Y);
                         _texture.Update(written, page.Pixels, page.RowBytes);
                         t_pageTextureUpdates++;
+                        t_pageTextureRegions++;
                         t_pageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;
                     }
                 }

@@ -66,6 +66,10 @@ namespace TextStress.Measurement
         // of other GPU contexts are not counted.
         public long ColorAtlasBytes;
         public int ColorAtlasPages;
+
+        // CPU memory the coverage and colour atlases hold for their pages' pixels, every atlas
+        // counted, beside the bytes their pages are charged.
+        public long AtlasCpuBytes;
         public long TierMask;
         public long TierTransformed;
         public long TierBlob;

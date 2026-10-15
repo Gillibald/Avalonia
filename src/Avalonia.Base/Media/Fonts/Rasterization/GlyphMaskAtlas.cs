@@ -289,6 +289,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Bytes of all page arrays.</summary>
         public long AllocatedBytes => Interlocked.Read(ref _allocated);
 
+        /// <summary>Bytes of CPU memory the atlas holds for the pixels of its pages; for diagnostics.</summary>
+        public long CpuBytes => Interlocked.Read(ref _allocated);
+
+        /// <summary>
+        /// Whether atlases of contexts that update page textures in place keep no CPU copy of
+        /// their pages. Off keeps the copy; for A/B measurements.
+        /// </summary>
+        public static bool ResidentPages { get; set; }
+
         /// <summary>Bytes charged for the index of the entries, <see cref="IndexEntryBytes"/> each.</summary>
         public long IndexBytes => Interlocked.Read(ref _indexBytes);
 
