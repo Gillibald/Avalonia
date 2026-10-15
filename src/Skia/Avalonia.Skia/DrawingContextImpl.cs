@@ -130,6 +130,7 @@ namespace Avalonia.Skia
             public ISkiaSharpApiLease Lease()
             {
                 _context.PrepareCanvas(GlyphBatchFlushReason.Other);
+                UploadPendingPageTextures();
                 return new ApiLease(_context);
             }
 
@@ -1385,6 +1386,8 @@ namespace Avalonia.Skia
             PrepareCanvas(GlyphBatchFlushReason.EndOfSession);
             try
             {
+                UploadPendingPageTextures();
+
                 // Return leased paints.
                 SKPaintCache.Shared.ReturnReset(_strokePaint);
                 SKPaintCache.Shared.ReturnReset(_fillPaint);

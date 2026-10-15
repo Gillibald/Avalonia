@@ -132,7 +132,8 @@ namespace Avalonia.Skia.UnitTests.Media
                 var bytes = DrawingContextImpl.PageImageBytesOnThread;
                 var after = Render(gpu, context => DrawAll(context, paragraph));
 
-                Assert.Equal((long)GlyphMaskAtlas.PageWidth * page.Height,
+                // The page's texture has the rows of the largest page, the ones it does not use clear.
+                Assert.Equal((long)GlyphMaskAtlas.PageWidth * GlyphMaskAtlas.MaxPageHeight,
                     DrawingContextImpl.PageImageBytesOnThread - bytes);
                 TransformedAtlasTests.AssertEqual(before, after, "frame on the new context");
                 Assert.Equal(page.Pixels.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));

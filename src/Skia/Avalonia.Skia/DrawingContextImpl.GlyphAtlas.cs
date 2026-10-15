@@ -381,15 +381,20 @@ namespace Avalonia.Skia
 
             if (page.Realized is GlyphPageTexture texture && texture.CanDraw(page, grContext))
             {
-                if (texture.Version != page.Version)
+                if (texture.Version != page.Version && !texture.UpdatePending)
                 {
-                    var updateTimer = GlyphPhaseTimers.Start();
-
-                    texture.Update(page);
-                    GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, updateTimer);
+                    texture.UpdatePending = true;
+                    (t_pendingPageTextures ??= new List<(GlyphAtlasPage, GlyphPageTexture)>()).Add((page, texture));
                 }
 
                 return texture.Image;
+            }
+
+            // A texture the page outgrew still backs the draws recorded so far: they get what the
+            // atlas wrote for them before it is replaced.
+            if (page.Realized is GlyphPageTexture outgrown && outgrown.UpdatePending)
+            {
+                UploadPageTexture(page, outgrown);
             }
 
             var textures = grContext is null ? null : SkiaUpdatableTextures.Get(grContext)?.Feature;
@@ -426,6 +431,48 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
 
             return image;
+        }
+
+        // The page textures drawn on this thread since the atlas wrote to their pages, uploaded
+        // once before the GPU runs the draws recorded so far. Contexts drawn inside another on the
+        // same GPU context share the list, so whichever ends first uploads for both.
+        [ThreadStatic]
+        private static List<(GlyphAtlasPage Page, GlyphPageTexture Texture)>? t_pendingPageTextures;
+
+        /// <summary>
+        /// Uploads what the atlas wrote to the pages drawn from page textures on this thread since
+        /// the last upload. A texture update takes effect before the draws recorded earlier in the frame,
+        /// which the GPU runs when the surface is flushed, so a page drawn many times in a frame,
+        /// a page batch per clip or per stretched run in between writes, is uploaded once. The
+        /// context uploads before anything else can make the GPU run its draws: when it ends,
+        /// when the graphics API is leased, and when a caller flushes it to read the surface.
+        /// </summary>
+        private static void UploadPendingPageTextures()
+        {
+            if (t_pendingPageTextures is not { Count: > 0 } pending)
+            {
+                return;
+            }
+
+            foreach (var (page, texture) in pending)
+            {
+                UploadPageTexture(page, texture);
+            }
+
+            pending.Clear();
+        }
+
+        private static void UploadPageTexture(GlyphAtlasPage page, GlyphPageTexture texture)
+        {
+            if (!texture.UpdatePending)
+            {
+                return;
+            }
+
+            var timer = GlyphPhaseTimers.Start();
+
+            texture.Update(page);
+            GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
         }
 
         /// <summary>The image this context draws <paramref name="page"/> from at its current version; for tests.</summary>
@@ -575,17 +622,19 @@ namespace Avalonia.Skia
         /// lost) is dropped and the page uploaded whole again.
         /// </para>
         /// <para>
-        /// A colour page's texture has the rows of the largest page from the start, the ones the
-        /// page does not use yet clear, so the page grows within it. Colour entries take four bytes
-        /// a texel and fill a page in few glyphs, and a texture made anew at every growth uploaded
-        /// several megabytes each time. A coverage page's texture has the page's rows only: it
-        /// grows rarely and cheaply, and text alone keeps its GPU memory at what it uses.
+        /// The texture has the rows of the largest page from the start, the ones the page does not
+        /// use yet clear, so the page grows within it. A texture made anew at every growth uploaded
+        /// the whole page each time: a frame that places many glyphs, a zoom's band crossing of a
+        /// screen of CJK text say, grows a page by a few dozen rows at a time, and its pages made
+        /// 20-35 textures in one frame on a phone. The rows a coverage page does not use yet cost
+        /// at most one page's texture of GPU memory per atlas, the page still growing.
         /// </para>
         /// <para>
         /// The upload takes effect before the draws recorded earlier in the frame, which Skia
         /// runs at its next flush, so those draws see the new pixels too. They only sample
         /// entries the atlas wrote before them, and the atlas never writes over an entry, only
-        /// into rows and columns no entry uses yet.
+        /// into rows and columns no entry uses yet. So the contexts of a thread upload a page once
+        /// before the GPU runs their draws rather than each time they draw it.
         /// </para>
         /// <para>
         /// GPU resources are released on the thread that drives their context. Disposing a page
@@ -620,6 +669,12 @@ namespace Avalonia.Skia
             /// <summary>The page version the texture holds.</summary>
             public int Version { get; private set; }
 
+            /// <summary>
+            /// Whether a context drew from the texture since the atlas wrote to its page and will
+            /// upload the writes before its draws run.
+            /// </summary>
+            public bool UpdatePending { get; set; }
+
             /// <summary>The texture wrapped for Skia; the same image at every version.</summary>
             public GlyphPageImage Image { get; }
 
@@ -628,12 +683,9 @@ namespace Avalonia.Skia
                 !_released && ReferenceEquals(context, _context) && !SkiaUpdatableTextures.IsLost(_context) &&
                 Height >= page.Height;
 
-            /// <summary>
-            /// The rows of the texture made for <paramref name="page"/>: the largest page's for a
-            /// colour page, the page's own for a coverage page.
-            /// </summary>
+            /// <summary>The rows of the texture made for <paramref name="page"/>: the largest page's.</summary>
             private static int TextureHeight(GlyphAtlasPage page) =>
-                page.BytesPerPixel == 4 ? GlyphMaskAtlas.MaxPageHeight : page.Height;
+                Math.Max(GlyphMaskAtlas.MaxPageHeight, page.Height);
 
             /// <summary>Makes a texture of the whole page, or returns <c>null</c> when the backend or Skia refuse it.</summary>
             public static GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
@@ -681,16 +733,33 @@ namespace Avalonia.Skia
                 return created;
             }
 
-            /// <summary>Uploads what the atlas wrote to the page since the texture's version.</summary>
+            /// <summary>
+            /// Uploads what the atlas wrote to the page since the texture's version, within the
+            /// texture's rows: a page that outgrew it gets a texture of its own afterwards, made
+            /// from the whole page.
+            /// </summary>
             public void Update(GlyphAtlasPage page)
             {
                 var version = page.Version;
 
+                UpdatePending = false;
+
+                if (_released || SkiaUpdatableTextures.IsLost(_context))
+                {
+                    return;
+                }
+
                 if (page.TakeWritten(out var written))
                 {
-                    _texture.Update(written, page.Pixels, page.RowBytes);
-                    t_pageTextureUpdates++;
-                    t_pageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;
+                    var bottom = Math.Min(written.Bottom, Height);
+
+                    if (bottom > written.Y)
+                    {
+                        written = new PixelRect(written.X, written.Y, written.Width, bottom - written.Y);
+                        _texture.Update(written, page.Pixels, page.RowBytes);
+                        t_pageTextureUpdates++;
+                        t_pageImageBytes += (long)written.Width * written.Height * page.BytesPerPixel;
+                    }
                 }
 
                 Version = version;

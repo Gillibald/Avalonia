@@ -386,7 +386,11 @@ namespace Avalonia.Skia
         /// also drops the kept direct-write target, since the operation that follows may change
         /// the clip or move the surface's pixels.
         /// </summary>
-        internal void FlushGlyphBatch() => FlushGlyphBatch(GlyphBatchFlushReason.Other);
+        internal void FlushGlyphBatch()
+        {
+            FlushGlyphBatch(GlyphBatchFlushReason.Other);
+            UploadPendingPageTextures();
+        }
 
         /// <inheritdoc cref="FlushGlyphBatch()"/>
         /// <param name="reason">Why the batches are drawn now, for the flush counters.</param>
