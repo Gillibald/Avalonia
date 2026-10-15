@@ -90,6 +90,8 @@ internal class VulkanSkiaGpu : ISkiaGpu
 
     public void Dispose()
     {
+        SkiaUpdatableTextures.Register(GrContext, null);
+
         if (Vulkan.IsLost)
         {
             GrContext.AbandonContext();

@@ -60,42 +60,59 @@ namespace Avalonia.Skia
     internal readonly record struct TextureRegion(PixelRect Target, int Offset, int RowBytes);
 
     /// <summary>
-    /// The updatable textures registered per <see cref="GRContext"/>, and the glyph mask atlas
-    /// that goes with them. Drawing contexts only know their <see cref="GRContext"/>, so the GPU
-    /// that made the context registers its feature here once.
+    /// The updatable textures registered per <see cref="GRContext"/>, and the glyph mask atlases
+    /// that go with them. Drawing contexts only know their <see cref="GRContext"/>, so the GPU
+    /// that made the context registers its feature here once, and removes it when it is disposed.
     /// </summary>
     internal static class SkiaUpdatableTextures
     {
         private static readonly ConditionalWeakTable<GRContext, Registration> s_registrations = new();
+        private static readonly object s_lock = new();
 
         /// <summary>
         /// Registers <paramref name="feature"/> for <paramref name="context"/>, or removes the
-        /// registration when it is <c>null</c>.
+        /// registration when it is <c>null</c>. A registration replaced or removed releases the
+        /// atlases it made.
         /// </summary>
         /// <param name="context">The context drawing the textures.</param>
         /// <param name="feature">The context's updatable textures, if it has them.</param>
         /// <param name="maskAtlas">
-        /// The atlas of the context's glyph masks; <see cref="GlyphMaskAtlas.Shared"/> unless the
-        /// caller keeps the context's masks apart from other contexts'. Shared pages change
-        /// whenever any typeface adds a glyph, which costs a context with updatable textures the
-        /// written rectangle only, so contexts without them keep an atlas per typeface.
+        /// The atlas of the context's glyph masks, or <c>null</c> for one made for the context,
+        /// whose pages keep no CPU copy when <see cref="GlyphMaskAtlas.ResidentPages"/> is on. The
+        /// atlas holds the masks of every typeface: its pages change whenever any typeface adds a
+        /// glyph, which costs a context with updatable textures what was written only, so
+        /// contexts without them keep an atlas per typeface. A resident page lives in a texture of
+        /// this context alone, so every context has atlases of its own.
         /// </param>
         /// <param name="colorAtlas">
-        /// The atlas of the context's colour glyph content, premultiplied RGBA pages;
-        /// <see cref="GlyphMaskAtlas.SharedColor"/> unless the caller keeps it apart, by the same
+        /// The atlas of the context's colour glyph content, premultiplied RGBA pages, by the same
         /// rule as <paramref name="maskAtlas"/>.
         /// </param>
         public static void Register(GRContext context, ISkiaUpdatableTextureFeature? feature,
             GlyphMaskAtlas? maskAtlas = null, GlyphMaskAtlas? colorAtlas = null)
         {
-            if (feature is null)
+            Registration? previous;
+
+            lock (s_lock)
             {
-                s_registrations.Remove(context);
-                return;
+                s_registrations.TryGetValue(context, out previous);
+
+                if (feature is null)
+                {
+                    s_registrations.Remove(context);
+                }
+                else
+                {
+                    var resident = GlyphMaskAtlas.ResidentPages;
+
+                    s_registrations.AddOrUpdate(context, new Registration(feature,
+                        maskAtlas ?? new GlyphMaskAtlas(residentPages: resident),
+                        colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba, residentPages: resident),
+                        ownsMaskAtlas: maskAtlas is null, ownsColorAtlas: colorAtlas is null));
+                }
             }
 
-            s_registrations.AddOrUpdate(context, new Registration(feature, maskAtlas ?? GlyphMaskAtlas.Shared,
-                colorAtlas ?? GlyphMaskAtlas.SharedColor));
+            previous?.ReleaseOwnedAtlases();
         }
 
         /// <summary>The registration of <paramref name="context"/>, unless it has none or is lost.</summary>
@@ -109,11 +126,31 @@ namespace Avalonia.Skia
         /// <summary>The updatable textures of one context and the atlases its glyph masks go to.</summary>
         internal sealed class Registration
         {
-            public Registration(ISkiaUpdatableTextureFeature feature, GlyphMaskAtlas maskAtlas, GlyphMaskAtlas colorAtlas)
+            private readonly bool _ownsMaskAtlas;
+            private readonly bool _ownsColorAtlas;
+
+            public Registration(ISkiaUpdatableTextureFeature feature, GlyphMaskAtlas maskAtlas, GlyphMaskAtlas colorAtlas,
+                bool ownsMaskAtlas = false, bool ownsColorAtlas = false)
             {
                 Feature = feature;
                 MaskAtlas = maskAtlas;
                 ColorAtlas = colorAtlas;
+                _ownsMaskAtlas = ownsMaskAtlas;
+                _ownsColorAtlas = ownsColorAtlas;
+            }
+
+            /// <summary>Releases the atlases made for the registration: their pages and budget charges go.</summary>
+            public void ReleaseOwnedAtlases()
+            {
+                if (_ownsMaskAtlas)
+                {
+                    MaskAtlas.Release();
+                }
+
+                if (_ownsColorAtlas)
+                {
+                    ColorAtlas.Release();
+                }
             }
 
             public ISkiaUpdatableTextureFeature Feature { get; }

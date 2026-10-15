@@ -32,12 +32,12 @@ namespace Avalonia.Skia.RenderTests
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
             // Every output draws the same sprite set: the CPU outputs blit its glyph masks, the
-            // software GPU outputs draw it from an atlas, the shared one on GL and the
-            // typeface's own on Vulkan.
+            // software GPU outputs draw it from atlas batches, built from the context's atlas where
+            // it updates pages in place (released with the context) and the typeface's own
+            // elsewhere.
             var gpu = MesaSoftwareRenderer.GlEnabled || MesaSoftwareRenderer.VulkanEnabled;
-            var owner = impl.GlyphTypeface.MaskOwnerId;
             var atlased = impl.GlyphTypeface.MaskAtlas.Count > 0 ||
-                          GlyphMaskAtlas.Shared.GetPages().Any(page => page.Keys.Any(key => key.Owner == owner));
+                          impl.TransformedSprites.Settled?.Batches is { Length: > 0 };
 
             Assert.Equal(1, impl.TransformedSprites.Count);
             Assert.Equal(gpu, atlased);

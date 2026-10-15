@@ -34,6 +34,11 @@ internal class SkiaMetalGpu : ISkiaGpu
 
     public void Dispose()
     {
+        if (_context is not null)
+        {
+            SkiaUpdatableTextures.Register(_context, null);
+        }
+
         _context?.Dispose();
         _context = null;
         _updatableTextures?.Dispose();

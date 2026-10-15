@@ -142,6 +142,8 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             if (_ownsGrContext)
             {
+                // As a backend's GPU object does when it is disposed.
+                SkiaUpdatableTextures.Register(GrContext, null);
                 GrContext.Dispose();
             }
 

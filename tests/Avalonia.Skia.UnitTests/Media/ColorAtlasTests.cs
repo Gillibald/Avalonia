@@ -268,9 +268,11 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
 
-            // The shared colour atlas, as the backends register it: disposal retires the
+            // A colour atlas of every typeface, as a context registers one: disposal retires the
             // typeface's entries there.
-            using var gpu = CreateGpu(backend, updatable, GlyphMaskAtlas.SharedColor);
+            var colorAtlas = new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba);
+
+            using var gpu = CreateGpu(backend, updatable, colorAtlas);
             using var scope = CreateEnvironment();
             var typeface = CreateTypeface(Content.SegoeUiEmoji, out var glyphs);
 
@@ -283,7 +285,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 Render(gpu, runs);
 
-                Assert.Contains(GlyphMaskAtlas.SharedColor.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
+                Assert.Contains(colorAtlas.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
             }
             finally
             {
@@ -292,7 +294,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             typeface.Dispose();
 
-            Assert.DoesNotContain(GlyphMaskAtlas.SharedColor.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
+            Assert.DoesNotContain(colorAtlas.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
             Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
         }
 

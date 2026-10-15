@@ -78,12 +78,14 @@ namespace TextShowcase.Scenes
 
                 last = time;
 
-                var atlasPages = GlyphMaskAtlas.Shared.GetPages();
+                var atlas = Array.Find(GlyphMaskAtlas.GetSharedAtlases(),
+                    candidate => candidate.Format == GlyphAtlasFormat.Alpha8 && candidate.GetPages().Length > 0);
+                var atlasPages = atlas?.GetPages() ?? Array.Empty<GlyphAtlasPage>();
 
-                status.Text = atlasPages.Length == 0
+                status.Text = atlas is null
                     ? "No shared atlas pages: this context composes glyphs without a GPU atlas (CPU raster, or a GPU API that cannot update pages in place)."
                     : FormattableString.Invariant(
-                        $"{atlasPages.Length} page(s), {GlyphMaskAtlas.Shared.AllocatedBytes / 1048576.0:0.0} MB, {GlyphMaskAtlas.Shared.Count} entries. Coverage is stored gamma-corrected per luminance bucket; the backend only samples it.");
+                        $"{atlasPages.Length} page(s), {atlas.AllocatedBytes / 1048576.0:0.0} MB, {atlas.Count} entries. Coverage is stored gamma-corrected per luminance bucket; the backend only samples it.");
 
                 if (atlasPages.Length != versions.Length)
                 {

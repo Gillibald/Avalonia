@@ -113,8 +113,14 @@ namespace TextShowcase.Diagnostics
             _ = batch.Rendered.ContinueWith(_ =>
             {
                 reading.GlyphCacheBytes = GlyphCacheBudget.Shared.UsedBytes;
-                reading.SharedAtlasPages = GlyphMaskAtlas.Shared.GetPages().Length;
-                reading.SharedAtlasBytes = GlyphMaskAtlas.Shared.AllocatedBytes;
+                foreach (var atlas in GlyphMaskAtlas.GetSharedAtlases())
+                {
+                    if (atlas.Format == GlyphAtlasFormat.Alpha8)
+                    {
+                        reading.SharedAtlasPages += atlas.GetPages().Length;
+                        reading.SharedAtlasBytes += atlas.AllocatedBytes;
+                    }
+                }
                 reading.SkiaFontCacheBytes = SKGraphics.GetFontCacheUsed();
                 reading.SkiaFontCacheGlyphs = SKGraphics.GetFontCacheCountUsed();
 

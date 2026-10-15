@@ -432,9 +432,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// <summary>
     /// The storage of transformed glyph masks on GPU contexts: A8 pages, shelf-packed, drawn by
     /// the backend with one batched call per page. A context that updates part of a page in
-    /// place keeps the masks of every typeface in <see cref="Shared"/>, so text in many
-    /// typefaces samples few pages; other contexts use one atlas per typeface, whose pages are
-    /// uploaded whole whenever they change. Every entry has an
+    /// place keeps the masks of every typeface in an atlas pair of its own, coverage and colour,
+    /// made when it registers its textures, so text in many typefaces samples few pages; other
+    /// contexts use one atlas per typeface, whose pages are uploaded whole whenever they change.
+    /// Every entry has an
     /// empty row and column on each side: shelves start one column in from the page's left edge
     /// and the first shelf one row down, and every entry keeps one empty column to its right and
     /// one empty row below it. A batch drawn with bilinear sampling under a scaling or rotating
@@ -466,6 +467,10 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </remarks>
     internal sealed class GlyphMaskAtlas : IGlyphCacheFrameListener, IGlyphCachePool
     {
+        // The live atlases that hold the masks of several typefaces, which a disposed typeface
+        // retires its entries from.
+        private static readonly List<WeakReference<GlyphMaskAtlas>> s_shared = new();
+
         /// <summary>Page width in pixels.</summary>
         public const int PageWidth = 1024;
 
@@ -522,6 +527,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             _handle = _clock.Register(GlyphCachePoolKind.Atlas, this, perTypeface);
             Format = format;
             Resident = residentPages;
+
+            if (!perTypeface)
+            {
+                lock (s_shared)
+                {
+                    s_shared.RemoveAll(static atlas => !atlas.TryGetTarget(out _));
+                    s_shared.Add(new WeakReference<GlyphMaskAtlas>(this));
+                }
+            }
         }
 
         /// <summary>The texel layout of the pages.</summary>
@@ -534,16 +548,44 @@ namespace Avalonia.Media.Fonts.Rasterization
         public bool Resident { get; }
 
         /// <summary>
-        /// The atlas of every typeface drawn on contexts that update part of a page in place,
-        /// entries told apart by <see cref="GlyphAtlasEntryKey.Owner"/>.
+        /// The live atlases holding the masks of several typefaces, entries told apart by
+        /// <see cref="GlyphAtlasEntryKey.Owner"/>: those of contexts that update part of a page in
+        /// place; for diagnostics.
         /// </summary>
-        public static GlyphMaskAtlas Shared { get; } = new();
+        public static GlyphMaskAtlas[] GetSharedAtlases()
+        {
+            lock (s_shared)
+            {
+                var atlases = new List<GlyphMaskAtlas>(s_shared.Count);
+
+                foreach (var reference in s_shared)
+                {
+                    if (reference.TryGetTarget(out var atlas))
+                    {
+                        atlases.Add(atlas);
+                    }
+                }
+
+                return atlases.ToArray();
+            }
+        }
 
         /// <summary>
-        /// The atlas of every typeface's colour glyph content on contexts that update part of a
-        /// page in place: premultiplied RGBA pages beside the coverage pages of <see cref="Shared"/>.
+        /// Removes the entries of <paramref name="owner"/>, a typeface that draws no more, from
+        /// every live atlas holding the masks of several typefaces (see <see cref="Retire"/>).
         /// </summary>
-        public static GlyphMaskAtlas SharedColor { get; } = new(format: GlyphAtlasFormat.Rgba);
+        public static void RetireEverywhere(int owner)
+        {
+            if (owner == 0)
+            {
+                return;
+            }
+
+            foreach (var atlas in GetSharedAtlases())
+            {
+                atlas.Retire(owner);
+            }
+        }
 
         /// <summary>Number of entries, including memoised no-ink glyphs.</summary>
         public int Count
@@ -583,8 +625,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Whether atlases of contexts that update page textures in place keep no CPU copy of
-        /// their pages. Off keeps the copy; for A/B measurements.
+        /// Whether the atlases of contexts that update page textures in place keep no CPU copy of
+        /// their pages, read when a context registers its textures. Off keeps the copy; for A/B
+        /// measurements.
         /// </summary>
         public static bool ResidentPages { get; set; }
 
@@ -906,17 +949,27 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Forgets every entry and page and leaves the budget, for the atlas of a typeface that
-        /// draws no more. Pages are unlinked, not dropped: batches built from them keep sampling
-        /// their pixels and backend images, which the GC reclaims with the last batch. Resident
-        /// pages drop what they staged and was not uploaded yet.
+        /// draws no more or of a context that is gone. Pages with pixel arrays are unlinked, not
+        /// dropped: batches built from them keep sampling their pixels and backend images, which
+        /// the GC reclaims with the last batch. Resident pages, whose only copy is the texture of
+        /// the gone context, are dropped with their textures and staged strips.
         /// </summary>
         public void Release()
         {
+            lock (s_shared)
+            {
+                s_shared.RemoveAll(atlas => !atlas.TryGetTarget(out var target) || target == this);
+            }
+
             lock (_lock)
             {
                 foreach (var page in _pages)
                 {
-                    page.DropStaging();
+                    if (page.IsResident)
+                    {
+                        page.IsEvicted = true;
+                        ReleaseResident(page);
+                    }
                 }
 
                 foreach (var page in _retiring)

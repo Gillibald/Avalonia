@@ -178,6 +178,8 @@ namespace Avalonia.Skia
 
         public void Dispose()
         {
+            SkiaUpdatableTextures.Register(_grContext, null);
+
             if (_glContext.IsLost)
                 _grContext.AbandonContext();
             else

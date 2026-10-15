@@ -277,20 +277,29 @@ namespace TextStress.Measurement
             target.PrivateBytes = ThreadClock.PrivateBytes();
 
             // A simulated face shares its unsimulated face's cache and atlas, so count each once.
-            // A GL 3 or GLES 3 context places the masks of every face in the shared atlas, others in
-            // each face's own atlas.
+            // A context with updatable textures places the masks of every face in atlases of its
+            // own, others in each face's own atlas.
             var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            var shared = GlyphMaskAtlas.Shared;
-            var sharedPages = shared.GetPages().Length;
 
-            seen.Add(shared);
-            target.AtlasBytes += shared.AllocatedBytes;
-            target.AtlasCpuBytes += shared.CpuBytes + GlyphMaskAtlas.SharedColor.CpuBytes;
-            target.AtlasEvictions += shared.Evictions;
-            target.AtlasPages += sharedPages;
-            target.AtlasPagesShared = sharedPages;
-            target.ColorAtlasBytes = GlyphMaskAtlas.SharedColor.AllocatedBytes;
-            target.ColorAtlasPages = GlyphMaskAtlas.SharedColor.GetPages().Length;
+            foreach (var shared in GlyphMaskAtlas.GetSharedAtlases())
+            {
+                var sharedPages = shared.GetPages().Length;
+
+                seen.Add(shared);
+                target.AtlasCpuBytes += shared.CpuBytes;
+
+                if (shared.Format == GlyphAtlasFormat.Rgba)
+                {
+                    target.ColorAtlasBytes += shared.AllocatedBytes;
+                    target.ColorAtlasPages += sharedPages;
+                    continue;
+                }
+
+                target.AtlasBytes += shared.AllocatedBytes;
+                target.AtlasEvictions += shared.Evictions;
+                target.AtlasPages += sharedPages;
+                target.AtlasPagesShared += sharedPages;
+            }
 
             foreach (var typeface in _scenario.Typefaces)
             {

@@ -492,7 +492,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var typeface = GlyphAtlasBatchTests.LoadAsset("Inter-Regular.ttf");
             var other = GlyphAtlasBatchTests.LoadAsset("Inter-Regular.ttf");
-            var atlas = GlyphMaskAtlas.Shared;
+            var atlas = new GlyphMaskAtlas();
             var random = new Random(37);
             var tick = atlas.Tick();
 

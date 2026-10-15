@@ -62,8 +62,8 @@ namespace TextStress.Measurement
         public int AtlasPagesShared;
         public int AtlasFaces;
 
-        // The shared colour atlas of contexts with updatable textures; per-typeface colour atlases
-        // of other GPU contexts are not counted.
+        // The colour atlases of contexts with updatable textures; per-typeface colour atlases of
+        // other GPU contexts are not counted.
         public long ColorAtlasBytes;
         public int ColorAtlasPages;
 

@@ -106,44 +106,6 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(heights.Count > 1, "no page grew");
         }
 
-        [Theory]
-        [MemberData(nameof(HardwareContexts))]
-        public void A_Page_Drawn_After_Context_Loss_Is_Uploaded_Whole_To_The_New_Context(GpuBackend backend)
-        {
-            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
-            var paragraph = CreateParagraph(typeface, 13);
-
-            try
-            {
-                byte[] before;
-
-                // Both contexts place masks in one atlas, as two contexts of one process do.
-                var atlas = new GlyphMaskAtlas();
-
-                using (var lost = TransformedAtlasTests.CreateGpu(backend, false, atlas))
-                {
-                    Render(lost, context => DrawAll(context, paragraph));
-                    before = Render(lost, context => DrawAll(context, paragraph));
-                    lost.GrContext.AbandonContext();
-                }
-
-                using var gpu = TransformedAtlasTests.CreateGpu(backend, false, atlas);
-                var page = Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages());
-                var bytes = DrawingContextImpl.PageImageBytesOnThread;
-                var after = Render(gpu, context => DrawAll(context, paragraph));
-
-                // The page's texture has the rows of the largest page, the ones it does not use clear.
-                Assert.Equal((long)GlyphMaskAtlas.PageWidth * GlyphMaskAtlas.MaxPageHeight,
-                    DrawingContextImpl.PageImageBytesOnThread - bytes);
-                TransformedAtlasTests.AssertEqual(before, after, "frame on the new context");
-                Assert.Equal(page.Pixels!.AsSpan(0, GlyphMaskAtlas.PageWidth * page.Height).ToArray(), ReadPage(gpu, page));
-            }
-            finally
-            {
-                DisposeAll(paragraph);
-            }
-        }
-
         /// <summary>
         /// A context made after a context was lost registers atlases of its own: it draws the same
         /// frame from pages it builds anew, and the lost context's atlas gave up its pages.
@@ -230,25 +192,27 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
-        public void The_Metal_Backend_Updates_Textures_In_Place_And_Shares_One_Glyph_Atlas()
+        public void The_Metal_Backend_Updates_Textures_In_Place_With_Glyph_Atlases_Of_Its_Own()
         {
             using var gpu = GpuTestContext.TryCreate(GpuBackend.Metal, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable Metal context: {reason}");
 
             Assert.NotNull(gpu!.UpdatableTextures);
-            Assert.Same(GlyphMaskAtlas.Shared, gpu.BackendMaskAtlas);
+            Assert.NotNull(gpu.BackendMaskAtlas);
+            Assert.Equal(GlyphMaskAtlas.ResidentPages, gpu.BackendMaskAtlas!.Resident);
         }
 
         [Fact]
-        public void The_Vulkan_Backend_Updates_Textures_In_Place_And_Shares_One_Glyph_Atlas()
+        public void The_Vulkan_Backend_Updates_Textures_In_Place_With_Glyph_Atlases_Of_Its_Own()
         {
             using var gpu = GpuTestContext.TryCreate(GpuBackend.Vulkan, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable Vulkan context: {reason}");
 
             Assert.NotNull(gpu!.UpdatableTextures);
-            Assert.Same(GlyphMaskAtlas.Shared, gpu.BackendMaskAtlas);
+            Assert.NotNull(gpu.BackendMaskAtlas);
+            Assert.Equal(GlyphMaskAtlas.ResidentPages, gpu.BackendMaskAtlas!.Resident);
         }
 
         public static IEnumerable<object[]> UpdatableTextureContexts()

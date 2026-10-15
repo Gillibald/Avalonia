@@ -405,8 +405,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// <summary>
         /// A test GPU context registered as the backends register theirs. A context with
         /// updatable textures gets <paramref name="maskAtlas"/> and <paramref name="colorAtlas"/>,
-        /// or atlases of its own, in place of <see cref="GlyphMaskAtlas.Shared"/> and
-        /// <see cref="GlyphMaskAtlas.SharedColor"/>, so tests running in parallel never share pages.
+        /// or atlases of its own.
         /// Without <paramref name="updatableTextures"/> it registers none. With
         /// <paramref name="backendAtlases"/> it registers the textures alone, as a backend does,
         /// and the context gets the atlases registration makes.
