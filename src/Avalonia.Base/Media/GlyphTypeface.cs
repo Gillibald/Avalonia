@@ -2699,6 +2699,21 @@ namespace Avalonia.Media
         }
 
         /// <summary>
+        /// Removes the masks of <paramref name="typeface"/> from the atlases of several typefaces
+        /// of the budget its caches were made against, the budget the contexts that placed them
+        /// drew for; of the current application's when it made none.
+        /// </summary>
+        private static void RetireFromSharedAtlases(GlyphTypeface? typeface)
+        {
+            if (typeface is not null && Volatile.Read(ref typeface._maskOwnerId) is var owner and not 0 &&
+                (typeface._cachesBudget ?? typeface._cacheBudget ??
+                 Fonts.Rasterization.GlyphRasterServices.TryGetCurrent()?.Budget) is { } budget)
+            {
+                budget.RetireEverywhere(owner);
+            }
+        }
+
+        /// <summary>
         /// Drops the caches this instance made against <paramref name="budget"/>, which ends with
         /// its application; the next draw makes them again against the budget current then.
         /// Payloads are unlinked, never disposed, so runs drawing from them keep what they hold.
@@ -4559,8 +4574,8 @@ namespace Avalonia.Media
             // The glyph atlases of GPU contexts outlive the typeface, and masks of a disposed owner
             // can never be drawn again. A face created with simulations owns its masks through
             // its unsimulated view.
-            Fonts.Rasterization.GlyphMaskAtlas.RetireEverywhere(_maskOwnerId);
-            Fonts.Rasterization.GlyphMaskAtlas.RetireEverywhere(_unsimulatedTypeface?._maskOwnerId ?? 0);
+            RetireFromSharedAtlases(this);
+            RetireFromSharedAtlases(_unsimulatedTypeface);
 
             // The typeface's own glyph caches give their bytes back to the glyph cache budget
             // now, not when the GC collects them. Payloads are unlinked, never disposed: runs

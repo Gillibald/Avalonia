@@ -1181,6 +1181,48 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
+        /// <summary>
+        /// The live atlases charged to this budget that hold the masks of several typefaces,
+        /// entries told apart by <see cref="GlyphAtlasEntryKey.Owner"/>: those of GPU contexts that
+        /// update part of a page in place; for diagnostics.
+        /// </summary>
+        public GlyphMaskAtlas[] GetSharedAtlases()
+        {
+            var atlases = new List<GlyphMaskAtlas>();
+
+            lock (_poolsLock)
+            {
+                foreach (var handle in _pools)
+                {
+                    if (handle.Kind == GlyphCachePoolKind.Atlas && !handle.IsPerTypeface &&
+                        handle.TryGetPool(out var pool) && pool is GlyphMaskAtlas atlas)
+                    {
+                        atlases.Add(atlas);
+                    }
+                }
+            }
+
+            return atlases.ToArray();
+        }
+
+        /// <summary>
+        /// Removes the entries of <paramref name="owner"/>, a typeface that draws no more, from
+        /// every live atlas of this budget holding the masks of several typefaces
+        /// (see <see cref="GlyphMaskAtlas.Retire"/>).
+        /// </summary>
+        public void RetireEverywhere(int owner)
+        {
+            if (owner == 0)
+            {
+                return;
+            }
+
+            foreach (var atlas in GetSharedAtlases())
+            {
+                atlas.Retire(owner);
+            }
+        }
+
         /// <summary>The bytes charged by the live pools of <paramref name="kind"/>; for diagnostics and tests.</summary>
         public long BytesOf(GlyphCachePoolKind kind)
         {

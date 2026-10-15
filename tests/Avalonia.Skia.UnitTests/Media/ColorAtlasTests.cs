@@ -273,9 +273,9 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
 
-            // A colour atlas of every typeface, as a context registers one: disposal retires the
-            // typeface's entries there.
-            var colorAtlas = new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba);
+            // A colour atlas of every typeface, as a context registers one, charged to the budget the
+            // typeface's caches are: disposal retires the typeface's entries there.
+            var colorAtlas = new GlyphMaskAtlas(budget, format: GlyphAtlasFormat.Rgba);
 
             using var gpu = CreateGpu(backend, updatable, colorAtlas);
             using var scope = CreateEnvironment();
@@ -300,7 +300,9 @@ namespace Avalonia.Skia.UnitTests.Media
             typeface.Dispose();
 
             Assert.DoesNotContain(colorAtlas.GetPages(), p => p.Keys.Any(k => k.Owner == owner));
-            Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
+
+            // The typeface's own atlas left the budget; the shared one keeps its pages until a frame begins.
+            Assert.Equal(colorAtlas.AllocatedBytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
         }
 
         public static IEnumerable<object[]> ContextsWithoutUpdatableTextures()

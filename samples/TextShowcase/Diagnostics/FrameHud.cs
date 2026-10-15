@@ -120,7 +120,7 @@ namespace TextShowcase.Diagnostics
             _ = batch.Rendered.ContinueWith(_ =>
             {
                 reading.GlyphCacheBytes = GlyphRasterServices.Current.Budget.UsedBytes;
-                foreach (var atlas in GlyphMaskAtlas.GetSharedAtlases())
+                foreach (var atlas in GlyphRasterServices.Current.Budget.GetSharedAtlases())
                 {
                     if (atlas.Format == GlyphAtlasFormat.Alpha8)
                     {

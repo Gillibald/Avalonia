@@ -295,7 +295,7 @@ namespace TextStress.Measurement
             // own, others in each face's own atlas.
             var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
 
-            foreach (var shared in GlyphMaskAtlas.GetSharedAtlases())
+            foreach (var shared in GlyphRasterServices.Current.Budget.GetSharedAtlases())
             {
                 var sharedPages = shared.GetPages().Length;
 

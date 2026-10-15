@@ -262,9 +262,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using (TextTestApplication.Enter())
             {
-                Assert.DoesNotContain(first, GlyphMaskAtlas.GetSharedAtlases());
+                var budget = GlyphRasterServices.Current.Budget;
 
-                GlyphMaskAtlas.RetireEverywhere(owner);
+                Assert.DoesNotContain(first, budget.GetSharedAtlases());
+
+                budget.RetireEverywhere(owner);
 
                 Assert.Equal(1, first.Count);
             }

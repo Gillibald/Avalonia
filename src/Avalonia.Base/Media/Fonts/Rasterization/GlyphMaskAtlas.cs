@@ -467,10 +467,6 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </remarks>
     internal sealed class GlyphMaskAtlas : IGlyphCacheFrameListener, IGlyphCachePool
     {
-        // The live atlases that hold the masks of several typefaces, which a disposed typeface
-        // retires its entries from.
-        private static readonly List<WeakReference<GlyphMaskAtlas>> s_shared = new();
-
         /// <summary>Page width in pixels.</summary>
         public const int PageWidth = 1024;
 
@@ -527,15 +523,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             _handle = _clock.Register(GlyphCachePoolKind.Atlas, this, perTypeface);
             Format = format;
             Resident = residentPages;
-
-            if (!perTypeface)
-            {
-                lock (s_shared)
-                {
-                    s_shared.RemoveAll(static atlas => !atlas.TryGetTarget(out _));
-                    s_shared.Add(new WeakReference<GlyphMaskAtlas>(this));
-                }
-            }
         }
 
         /// <summary>The texel layout of the pages.</summary>
@@ -546,46 +533,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Whether the pages live in the GPU textures of one context.</summary>
         public bool Resident { get; }
-
-        /// <summary>
-        /// The live atlases holding the masks of several typefaces, entries told apart by
-        /// <see cref="GlyphAtlasEntryKey.Owner"/>: those of contexts that update part of a page in
-        /// place; for diagnostics.
-        /// </summary>
-        public static GlyphMaskAtlas[] GetSharedAtlases()
-        {
-            lock (s_shared)
-            {
-                var atlases = new List<GlyphMaskAtlas>(s_shared.Count);
-
-                foreach (var reference in s_shared)
-                {
-                    if (reference.TryGetTarget(out var atlas))
-                    {
-                        atlases.Add(atlas);
-                    }
-                }
-
-                return atlases.ToArray();
-            }
-        }
-
-        /// <summary>
-        /// Removes the entries of <paramref name="owner"/>, a typeface that draws no more, from
-        /// every live atlas holding the masks of several typefaces (see <see cref="Retire"/>).
-        /// </summary>
-        public static void RetireEverywhere(int owner)
-        {
-            if (owner == 0)
-            {
-                return;
-            }
-
-            foreach (var atlas in GetSharedAtlases())
-            {
-                atlas.Retire(owner);
-            }
-        }
 
         /// <summary>Number of entries, including memoised no-ink glyphs.</summary>
         public int Count
@@ -955,11 +902,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public void Release()
         {
-            lock (s_shared)
-            {
-                s_shared.RemoveAll(atlas => !atlas.TryGetTarget(out var target) || target == this);
-            }
-
             lock (_lock)
             {
                 foreach (var page in _pages)
