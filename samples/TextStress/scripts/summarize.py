@@ -14,7 +14,7 @@ comparison against the reference variant (--ref, default base):
 - a keep-rule verdict per job: 'better' or 'worse' when the variant's pass range of p50, p95 or
   frames over 8.3 ms lies below or above the reference's by more than the gap two launches of
   one build show (2 % for p50, 6 % for p95, one frame for the counts), 'within' otherwise,
-  'memory worse' when its lowest peak exceeds the reference's highest by more than 2 % (only
+  'memory worse' when its lowest peak exceeds the reference's highest by more than 2 % (4 % for private bytes) (only
   between runs that both have the content presets; a run from an older build is 'not
   comparable'), and
   'near budget' when a p95 lies within 10 % of 8.3 or 16.7 ms. --counters-only judges counters only.
@@ -572,11 +572,13 @@ def time_verdict(b, t):
 
 
 def memory_verdict(b, t):
+    """Glyph memory repeats exactly from launch to launch; private bytes of two launches of one
+    build differed by up to 4 MB around 150 MB, so they need a wider margin."""
     out = []
-    for k in ("atlas", "budget", "private"):
+    for k, relative, absolute in (("atlas", 0.02, 0.1), ("budget", 0.02, 0.1), ("private", 0.04, 1.0)):
         bh = max(x[k] for x in b)
         tl = min(x[k] for x in t)
-        if not math.isnan(bh) and not math.isnan(tl) and tl > bh * 1.02 + 0.1:
+        if not math.isnan(bh) and not math.isnan(tl) and tl > bh * (1 + relative) + absolute:
             out.append(f"memory worse {k}")
     return out
 
