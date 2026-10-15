@@ -688,7 +688,7 @@ namespace Avalonia.Skia
                 Math.Max(GlyphMaskAtlas.MaxPageHeight, page.Height);
 
             /// <summary>Makes a texture of the whole page, or returns <c>null</c> when the backend or Skia refuse it.</summary>
-            public static GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
+            public static unsafe GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
                 GlyphAtlasPage page)
             {
                 Collect(context);
@@ -701,23 +701,34 @@ namespace Avalonia.Skia
                 var height = TextureHeight(page);
                 var used = page.RowBytes * page.Height;
                 var length = page.RowBytes * height;
-                var bytes = page.Pixels.AsSpan(0, used);
+                ISkiaUpdatableTexture? texture;
 
                 // The rows past the page's go up clear, so the texture draws as the page's array at
                 // every height; a texture's initial contents are undefined on every backend. The
-                // staging array is made once per texture and left to the collector: a pooled one
-                // would keep the largest page's bytes for the life of the process.
+                // padded staging copy lives in native memory, freed as soon as the backend has
+                // taken it: it is the full texture's size and a zoom opens page after page, so on
+                // the managed heap each copy would be garbage, and a pooled one would keep the
+                // largest page's bytes for the life of the process.
                 if (length > used)
                 {
-                    var padded = new byte[length];
+                    var staging = (byte*)NativeMemory.AllocZeroed((nuint)length);
 
-                    bytes.CopyTo(padded);
-                    bytes = padded;
+                    try
+                    {
+                        var padded = new Span<byte>(staging, length);
+
+                        page.Pixels.AsSpan(0, used).CopyTo(padded);
+                        texture = Create(textures, page, height, padded);
+                    }
+                    finally
+                    {
+                        NativeMemory.Free(staging);
+                    }
                 }
-
-                var texture = page.BytesPerPixel == 4
-                    ? textures.TryCreateRgba8(GlyphMaskAtlas.PageWidth, height, bytes, page.RowBytes)
-                    : textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, height, bytes, page.RowBytes);
+                else
+                {
+                    texture = Create(textures, page, height, page.Pixels.AsSpan(0, used));
+                }
 
                 if (texture is null)
                 {
@@ -732,6 +743,12 @@ namespace Avalonia.Skia
 
                 return created;
             }
+
+            private static ISkiaUpdatableTexture? Create(ISkiaUpdatableTextureFeature textures, GlyphAtlasPage page,
+                int height, ReadOnlySpan<byte> pixels) =>
+                page.BytesPerPixel == 4
+                    ? textures.TryCreateRgba8(GlyphMaskAtlas.PageWidth, height, pixels, page.RowBytes)
+                    : textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, height, pixels, page.RowBytes);
 
             /// <summary>
             /// Uploads what the atlas wrote to the page since the texture's version, within the
