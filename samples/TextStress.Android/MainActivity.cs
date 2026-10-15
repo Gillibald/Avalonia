@@ -61,6 +61,13 @@ namespace TextStress.AndroidHost
                 args.Add(path);
                 options = RunOptions.Parse(args.ToArray());
                 doneMarker = path + ".done";
+
+                // Tablets measure the desktop preset; a phone cannot show its 1280 DIP width.
+                var smallestWidth = Resources?.Configuration?.SmallestScreenWidthDp ?? 0;
+                options.ResolvePreset(smallestWidth >= 600 ? "desktop" : "phone");
+                RequestedOrientation = options.Width > options.Height
+                    ? ScreenOrientation.SensorLandscape
+                    : ScreenOrientation.Portrait;
             }
             catch (ArgumentException e)
             {
@@ -96,8 +103,8 @@ namespace TextStress.AndroidHost
                 AndroidRun.Info("probe " + key + "=" + value);
             }
 
-            // The theme has no action bar, so the title shows in the recent apps list; the overlay
-            // shows the label on screen.
+            // The theme has no action bar, so the title shows in the recent apps list; the status
+            // strip shows the label on screen.
             SetupLabel.HostTitle = title => RunOnUiThread(() => Title = title);
             StressRun.ConfigureProcess(options);
             ((TextStressApplication)Application!).Start(options);

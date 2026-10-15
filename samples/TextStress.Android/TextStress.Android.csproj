@@ -21,6 +21,7 @@
     <Compile Include="..\TextStress\RunOptions.cs" Link="Shared\RunOptions.cs" />
     <Compile Include="..\TextStress\StressRun.cs" Link="Shared\StressRun.cs" />
     <Compile Include="..\TextStress\SetupLabel.cs" Link="Shared\SetupLabel.cs" />
+    <Compile Include="..\TextStress\Stage.cs" Link="Shared\Stage.cs" />
     <Compile Include="..\TextStress\Measurement\*.cs" Link="Shared\Measurement\%(Filename)%(Extension)" />
     <Compile Include="..\TextStress\Scenarios\*.cs" Link="Shared\Scenarios\%(Filename)%(Extension)" />
   </ItemGroup>

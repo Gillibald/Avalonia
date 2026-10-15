@@ -6,7 +6,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Imaging;
@@ -18,25 +17,45 @@ namespace TextStress
 {
     /// <summary>
     /// What a running TextStress process measures: build, campaign label, text rasterization mode,
-    /// render path, runtime, scenario and motion policy. Shown in the window title and in an overlay,
-    /// so whoever watches a campaign can tell which setup is on screen.
+    /// render path, runtime, scenario and motion policy. The window title carries all of it; the
+    /// status strip below the content shows the campaign position large and the label, commit,
+    /// render path, mode and scenario small, so whoever watches a campaign can tell which setup is
+    /// on screen.
     /// </summary>
     /// <remarks>
-    /// The overlay is a bitmap rendered once from the label's outline geometry and drawn by an
-    /// <see cref="Image"/> in the overlay layer. Text drawn there every frame would add glyph runs,
-    /// glyph cache entries and atlas draws to every measured frame; the bitmap adds one image draw
-    /// and never touches the glyph pipeline. <c>--overlay off</c> leaves only the title.
+    /// The strip is a bitmap rendered once from outline geometry (<see cref="RenderStrip"/>) and
+    /// shown by an <see cref="Image"/> outside the content area. Text drawn there every frame would
+    /// add glyph runs, glyph cache entries and atlas draws to every measured frame; the bitmap
+    /// never touches the glyph pipeline, and <see cref="Stage"/> keeps it out of the frames' dirty
+    /// regions.
     /// </remarks>
     internal sealed class SetupLabel
     {
-        private const double FontSize = 13;
+        private const double ProgressFontSize = 20;
+        private const double DetailFontSize = 12;
 
-        private SetupLabel(string? progress, IReadOnlyList<string> lines)
+        private SetupLabel(string? progress, IReadOnlyList<string> lines, string stripProgress,
+            string stripLabel, string stripDetail, Color labelColor)
         {
             Lines = lines;
             Title = (progress is null ? "" : progress + " | ") + "TextStress | " +
                     string.Join(" | ", progress is null ? lines : lines.Skip(1));
+            StripProgress = stripProgress;
+            StripLabel = stripLabel;
+            StripDetail = stripDetail;
+            LabelColor = labelColor;
         }
+
+        /// <summary>The strip's first line: the campaign position, or the scenario for a run outside one.</summary>
+        public string StripProgress { get; }
+
+        /// <summary>The campaign label (base, tip, ...) in the strip's second line; empty without one.</summary>
+        public string StripLabel { get; }
+
+        /// <summary>Commit, render path, text mode and scenario, after the label.</summary>
+        public string StripDetail { get; }
+
+        public Color LabelColor { get; }
 
         /// <summary>The label of the running process, once <see cref="Show"/> has run.</summary>
         public static SetupLabel? Current { get; private set; }
@@ -62,8 +81,8 @@ namespace TextStress
         }
 
         /// <summary>
-        /// Describes the setup, puts it in the title and, unless disabled, in the overlay of
-        /// <paramref name="topLevel"/>. <paramref name="scenario"/> is null for runs without frames.
+        /// Describes the setup and puts it in the title of <paramref name="topLevel"/>; the
+        /// <see cref="Stage"/> shows the strip. <paramref name="scenario"/> is null for runs without frames.
         /// </summary>
         public static SetupLabel Show(TopLevel topLevel, RunOptions options, Scenario? scenario)
         {
@@ -77,22 +96,6 @@ namespace TextStress
             }
 
             HostTitle?.Invoke(label.Title);
-
-            if (options.GetBool("overlay", true) && OverlayLayer.GetOverlayLayer(topLevel) is { } layer &&
-                label.Render(topLevel.RenderScaling) is { } bitmap)
-            {
-                var image = new Image
-                {
-                    Source = bitmap,
-                    Width = bitmap.Size.Width,
-                    Height = bitmap.Size.Height,
-                    IsHitTestVisible = false
-                };
-
-                Canvas.SetLeft(image, 8);
-                Canvas.SetBottom(image, 8);
-                layer.Children.Add(image);
-            }
 
             return label;
         }
@@ -118,16 +121,60 @@ namespace TextStress
             var scenarioLine = scenario is null
                 ? options.Scenario
                 : options.Scenario + " " + scenario.Describe().Replace(';', ' ');
+            var sweep = options.N.Count > 1 || options.N[0] != 0 ? " n=" + string.Join(",", options.N) : "";
 
-            if (options.N.Count > 1 || options.N[0] != 0)
+            if (sweep.Length > 0)
             {
-                scenarioLine += " | n=" + string.Join(",", options.N);
+                scenarioLine += " |" + sweep;
             }
 
             lines.Add(scenarioLine);
             lines.Add(MotionPolicy());
 
-            return new SetupLabel(progress, lines);
+            var job = options.GetString("job", "");
+            var detail = Commit + " | " + ResolvedRenderPath() + " | " + mode + " | " +
+                         (job.Length > 0 ? job : options.Scenario + sweep);
+
+            return new SetupLabel(progress, lines, progress ?? (job.Length > 0 ? job : options.Scenario), tag,
+                detail, LabelColorOf(tag, options.GetString("tag-color", "")));
+        }
+
+        /// <summary>The commit the process was built from, marked when the tree had local changes.</summary>
+        private static string Commit =>
+            (Metadata("TextStress.Commit") ?? "unknown") + (Metadata("TextStress.Dirty") == "true" ? "+dirty" : "");
+
+        /// <summary>
+        /// The label's colour: <c>--tag-color</c> when given, fixed colours for base and tip so the
+        /// two sides of an A/B never look alike, and a hue derived from the text for other labels.
+        /// </summary>
+        private static Color LabelColorOf(string label, string requested)
+        {
+            if (requested.Length > 0)
+            {
+                return Color.TryParse(requested, out var color)
+                    ? color
+                    : throw new ArgumentException($"--tag-color expects a colour such as #1f5fbf, not '{requested}'.");
+            }
+
+            switch (label.ToLowerInvariant())
+            {
+                case "base":
+                    return Color.FromRgb(0x1F, 0x5F, 0xBF);
+                case "tip":
+                    return Color.FromRgb(0xC2, 0x41, 0x0C);
+                case "":
+                    return Color.FromRgb(0x60, 0x60, 0x60);
+            }
+
+            // A stable hash: string.GetHashCode differs between processes.
+            var hash = 0u;
+
+            foreach (var c in label)
+            {
+                hash = hash * 31 + c;
+            }
+
+            return HsvColor.ToRgb(hash % 360, 0.75, 0.6);
         }
 
         /// <summary>
@@ -159,6 +206,12 @@ namespace TextStress
 
         /// <summary>The render path the platform resolved, and the one requested when it was forced.</summary>
         private static string RenderPath(RunOptions options)
+        {
+            var resolved = ResolvedRenderPath();
+            return options.Render == "default" ? resolved : resolved + " (--render " + options.Render + ")";
+        }
+
+        private static string ResolvedRenderPath()
         {
             var graphics = AvaloniaLocator.Current.GetService<IPlatformGraphics>();
             var name = graphics?.GetType().Name ?? "";
@@ -193,7 +246,7 @@ namespace TextStress
                 resolved = name;
             }
 
-            return options.Render == "default" ? resolved : resolved + " (--render " + options.Render + ")";
+            return resolved;
         }
 
         private static string Runtime()
@@ -264,53 +317,69 @@ namespace TextStress
         }
 
         /// <summary>
-        /// Renders the lines as filled outlines on a translucent plate, at device resolution.
-        /// Outline geometry goes through the path filler, not the glyph rasterizer, so the label
-        /// leaves the glyph caches and the atlases as the scenario alone fills them.
+        /// Renders the status strip at device resolution: line 1 the campaign position in large
+        /// type, line 2 the label on a chip of its colour, then commit, render path, text mode and
+        /// scenario. Lines too wide for the strip shrink to fit. Text becomes outline geometry, which
+        /// goes through the path filler, not the glyph rasterizer, so the strip leaves the glyph
+        /// caches and the atlases as the scenario alone fills them.
         /// </summary>
-        private RenderTargetBitmap? Render(double scaling)
+        public RenderTargetBitmap RenderStrip(Size size, double scaling)
         {
-            var typeface = new Typeface(FontFamily.Default);
-            var geometries = new List<Geometry>();
             const double padding = 6;
-            var width = 0.0;
-            var y = padding;
+            const double chipPadding = 4;
+            var typeface = new Typeface(FontFamily.Default);
+            var bold = new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold);
+            var progress = Text(StripProgress, bold, ProgressFontSize);
+            var label = StripLabel.Length > 0 ? Text(StripLabel, bold, DetailFontSize) : null;
+            var detail = Text(StripDetail, typeface, DetailFontSize);
+            var chipWidth = label is null ? 0 : label.WidthIncludingTrailingWhitespace + 2 * chipPadding + 6;
+            var contentWidth = Math.Max(progress.WidthIncludingTrailingWhitespace,
+                chipWidth + detail.WidthIncludingTrailingWhitespace);
+            var contentHeight = progress.Height + detail.Height;
+            var fit = Math.Min(1, Math.Min((size.Width - 2 * padding) / contentWidth,
+                (size.Height - 2 * padding) / contentHeight));
 
-            foreach (var line in Lines)
-            {
-                var text = new FormattedText(line, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                    typeface, FontSize, Brushes.Black);
-
-                if (text.BuildGeometry(new Point(padding, y)) is { } geometry)
-                {
-                    geometries.Add(geometry);
-                }
-
-                width = Math.Max(width, text.WidthIncludingTrailingWhitespace);
-                y += text.Height;
-            }
-
-            if (geometries.Count == 0)
-            {
-                return null;
-            }
-
-            var size = new Size(Math.Ceiling(width + 2 * padding), Math.Ceiling(y + padding));
             var pixels = PixelSize.FromSize(size, scaling);
             var bitmap = new RenderTargetBitmap(pixels, new Vector(96 * scaling, 96 * scaling));
 
             using (var context = bitmap.CreateDrawingContext())
             {
-                context.DrawRectangle(new SolidColorBrush(Color.FromArgb(0xE0, 0xFF, 0xF4, 0xC0)),
-                    new Pen(Brushes.DarkGoldenrod, 1), new Rect(size).Deflate(0.5), 4, 4);
+                context.FillRectangle(new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2)), new Rect(size));
+                context.FillRectangle(new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8)), new Rect(0, 0, size.Width, 1));
 
-                foreach (var geometry in geometries)
+                using (context.PushTransform(Matrix.CreateScale(fit, fit) *
+                                             Matrix.CreateTranslation(padding, (size.Height - contentHeight * fit) / 2)))
                 {
-                    context.DrawGeometry(Brushes.Black, null, geometry);
+                    Draw(context, progress, new Point(0, 0), Brushes.Black);
+
+                    var x = 0.0;
+
+                    if (label is not null)
+                    {
+                        var chip = new Rect(0, progress.Height, label.WidthIncludingTrailingWhitespace + 2 * chipPadding,
+                            detail.Height);
+                        context.DrawRectangle(new SolidColorBrush(LabelColor), null, chip, 3, 3);
+                        Draw(context, label, new Point(chipPadding, progress.Height + (detail.Height - label.Height) / 2),
+                            Brushes.White);
+                        x = chipWidth;
+                    }
+
+                    Draw(context, detail, new Point(x, progress.Height), new SolidColorBrush(Color.FromRgb(0x30, 0x30, 0x30)));
                 }
             }
 
             return bitmap;
+        }
+
+        private static FormattedText Text(string text, Typeface typeface, double size) =>
+            new(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, size, Brushes.Black);
+
+        private static void Draw(DrawingContext context, FormattedText text, Point origin, IBrush brush)
+        {
+            if (text.BuildGeometry(origin) is { } geometry)
+            {
+                context.DrawGeometry(brush, null, geometry);
+            }
         }
     }
 }

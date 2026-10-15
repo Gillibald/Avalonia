@@ -60,9 +60,50 @@ namespace TextStress
         /// <summary>Free-form label written to the environment header, such as the commit id.</summary>
         public string Tag { get; private set; } = "";
 
-        public double Width { get; private set; } = 1280;
+        /// <summary>
+        /// The content area preset the scene renders into: "desktop", "phone", or "custom" when
+        /// <c>--width</c> or <c>--height</c> set a size of their own. Null until
+        /// <see cref="ResolvePreset"/> has run.
+        /// </summary>
+        public string? Preset { get; private set; }
 
-        public double Height { get; private set; } = 800;
+        /// <summary>Width of the content area the scene lays out in, in DIP.</summary>
+        public double Width { get; private set; }
+
+        /// <summary>Height of the content area the scene lays out in, in DIP.</summary>
+        public double Height { get; private set; }
+
+        private double? _width;
+        private double? _height;
+
+        /// <summary>
+        /// Content area sizes in DIP. Desktop plus the status strip fits the client area a laptop
+        /// gives a 1280x800 window (about 1280x795 on macOS); phone plus the strip fits between the
+        /// system bars of a 1080x2400 portrait phone at density 2.8125 (about 384x775 DIP).
+        /// </summary>
+        private static readonly Dictionary<string, (double Width, double Height)> s_presets = new()
+        {
+            ["desktop"] = (1280, 720),
+            ["phone"] = (360, 720)
+        };
+
+        /// <summary>
+        /// Settles the content area: the <c>--preset</c> given, or <paramref name="fallback"/> (the
+        /// host's choice for its device), with <c>--width</c> and <c>--height</c> overriding its size.
+        /// </summary>
+        public void ResolvePreset(string fallback)
+        {
+            var name = Preset ?? fallback;
+
+            if (!s_presets.TryGetValue(name, out var size))
+            {
+                throw new ArgumentException($"--preset must be desktop or phone, not '{name}'.");
+            }
+
+            Width = _width ?? size.Width;
+            Height = _height ?? size.Height;
+            Preset = Width == size.Width && Height == size.Height ? name : "custom";
+        }
 
         /// <summary>Sweep values; one entry for scenarios that do not sweep.</summary>
         public IReadOnlyList<int> N { get; private set; } = new[] { 0 };
@@ -119,8 +160,9 @@ namespace TextStress
                     case "pass": options.Pass = ParseInt(key, value); break;
                     case "out": options.Out = value; break;
                     case "tag": options.Tag = value; break;
-                    case "width": options.Width = ParseInt(key, value); break;
-                    case "height": options.Height = ParseInt(key, value); break;
+                    case "width": options._width = ParseInt(key, value); break;
+                    case "height": options._height = ParseInt(key, value); break;
+                    case "preset": options.Preset = value.ToLowerInvariant(); break;
                     case "n":
                         options.N = value.Split(',', StringSplitOptions.RemoveEmptyEntries)
                             .Select(v => ParseInt(key, v)).ToArray();
@@ -132,6 +174,11 @@ namespace TextStress
             if (options.Mode is not ("managed" or "backend" or "default"))
             {
                 throw new ArgumentException($"--mode must be managed, backend or default, not '{options.Mode}'.");
+            }
+
+            if (options.Preset is { } preset && !s_presets.ContainsKey(preset))
+            {
+                throw new ArgumentException($"--preset must be desktop or phone, not '{preset}'.");
             }
 
             return options;
@@ -180,10 +227,17 @@ namespace TextStress
             "  --atlas-cpu-copy on|off   whether glyph atlas pages of contexts with updatable textures keep a\n" +
             "    CPU copy of their pixels (default: built-in)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
-            "  --label text   campaign label shown in the title and overlay, such as base or tip\n" +
-            "    (default: --tag)\n" +
-            "  --overlay on|off   draw the setup label over the content (default on; the title always has it)\n" +
-            "  --progress i/n   position in a campaign, shown as \"run i of n\" first in the title and overlay\n" +
+            "  --preset desktop|phone   content area the scene lays out in: desktop 1280x720 DIP, phone 360x720\n" +
+            "    DIP (default: desktop; Android: phone, desktop on tablets); a run fails (exit 4) when the\n" +
+            "    window or the safe area offers less than the content area plus the status strip\n" +
+            "  --width N --height N   content area size in DIP instead of the preset's (recorded as custom)\n" +
+            "  --label text   campaign label shown in the title and the status strip, such as base or tip\n" +
+            "    (default: --tag); base and tip get fixed colours, other labels one derived from the text\n" +
+            "  --tag-color #rrggbb   colour of the label in the status strip\n" +
+            "  --job text   campaign job name, shown in the status strip instead of the scenario\n" +
+            "  --overlay on|off   draw the status strip below the content (default on; off leaves the strip\n" +
+            "    blank at the same size; the title always has the setup)\n" +
+            "  --progress i/n   position in a campaign, shown as \"run i of n\" first in the title and strip\n" +
             "  --eta text   time left in the campaign as the driver estimates it, shown next to the progress\n" +
             "  --seed N     content seed (default 1)\n" +
             "  --n a,b,c    sweep values, run in order in this process\n" +

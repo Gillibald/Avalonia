@@ -170,7 +170,11 @@ namespace TextStress.AndroidHost
             string[]? columns = null;
             var rows = new List<string[]>();
             var header = new StringBuilder();
-            string[] logged = { "graphics", "gpu_renderer", "client_size", "render_scaling", "thread_clock", "fonts" };
+            string[] logged =
+            {
+                "graphics", "gpu_renderer", "client_size", "render_scaling", "preset", "content_pixels", "thread_clock",
+                "fonts"
+            };
 
             foreach (var line in File.ReadLines(path))
             {

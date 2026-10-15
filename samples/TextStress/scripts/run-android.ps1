@@ -270,7 +270,7 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
                         }
                         else {
                             $failures++
-                            $failure = "  FAILED with exit $exit (3 = refresh rate did not hold)"
+                            $failure = "  FAILED with exit $exit (3 = refresh rate did not hold, 4 = the content area does not fit)"
                             Write-Warning $failure
                             Add-Content $log $failure
                         }

@@ -20,6 +20,7 @@ namespace TextStress
             try
             {
                 Options = RunOptions.Parse(args);
+                Options.ResolvePreset("desktop");
             }
             catch (ArgumentException e)
             {

@@ -98,9 +98,18 @@ namespace TextStress
                 }
 
                 var scenario = Scenario.Create(options);
-                SetupLabel.Show(topLevel, options, scenario);
+                var label = SetupLabel.Show(topLevel, options, scenario);
+                var stage = Stage.Current ?? Stage.Attach(topLevel, options);
+                await stage.ShowAsync(label);
+
+                if (stage.Check() is { } problem)
+                {
+                    StressLog.Error(problem);
+                    return Stage.ContentFailedExitCode;
+                }
+
                 writer = options.Out is null ? null : new ResultWriter(options.Out, options);
-                await new FrameRunner(topLevel, scenario, options, writer).RunAsync();
+                await new FrameRunner(topLevel, stage, scenario, options, writer).RunAsync();
                 return 0;
             }
             catch (Exception e)

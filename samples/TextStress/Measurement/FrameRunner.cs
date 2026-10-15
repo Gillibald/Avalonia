@@ -39,6 +39,7 @@ namespace TextStress.Measurement
     internal sealed class FrameRunner
     {
         private readonly TopLevel _topLevel;
+        private readonly Stage _stage;
         private readonly Scenario _scenario;
         private readonly RunOptions _options;
         private readonly ResultWriter? _writer;
@@ -56,9 +57,10 @@ namespace TextStress.Measurement
         private int _snapshots;
         private long _heapBytes;
 
-        public FrameRunner(TopLevel topLevel, Scenario scenario, RunOptions options, ResultWriter? writer)
+        public FrameRunner(TopLevel topLevel, Stage stage, Scenario scenario, RunOptions options, ResultWriter? writer)
         {
             _topLevel = topLevel;
+            _stage = stage;
             _scenario = scenario;
             _options = options;
             _writer = writer;
@@ -81,7 +83,7 @@ namespace TextStress.Measurement
 
             foreach (var n in _options.N)
             {
-                _topLevel.Content = _scenario.CreateView(n, scaling);
+                _stage.Content = _scenario.CreateView(n, scaling);
 
                 // Let layout, template application and first rendering of the new content settle.
                 for (var i = 0; i < 3; i++)
@@ -178,7 +180,7 @@ namespace TextStress.Measurement
         /// </summary>
         private async Task PrewarmAsync(int n, double scaling)
         {
-            _topLevel.Content = _scenario.CreateView(n, scaling);
+            _stage.Content = _scenario.CreateView(n, scaling);
 
             var watch = Stopwatch.StartNew();
             var period = Math.Max(1, _options.Warmup);
@@ -444,6 +446,13 @@ namespace TextStress.Measurement
             yield return ("gpu_renderer", renderer);
             yield return ("render_scaling", scaling.ToString(CultureInfo.InvariantCulture));
             yield return ("client_size", FormattableString.Invariant($"{_topLevel.ClientSize.Width}x{_topLevel.ClientSize.Height}"));
+
+            foreach (var entry in _stage.Describe())
+            {
+                yield return entry;
+            }
+
+            yield return ("job", _options.GetString("job", ""));
             yield return ("thread_clock", ThreadClock.Description);
             yield return ("phase_timers", GlyphPhaseTimers.Enabled
                 ? FormattableString.Invariant(

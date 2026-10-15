@@ -21,11 +21,11 @@ namespace TextStress
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
                 var options = Program.Options;
+                // The window sizes to the stage: the preset's content area and the status strip.
                 var window = new Window
                 {
                     Title = "TextStress",
-                    Width = options.Width,
-                    Height = options.Height,
+                    SizeToContent = SizeToContent.WidthAndHeight,
                     CanResize = false,
                     WindowStartupLocation = WindowStartupLocation.Manual,
                     Position = new PixelPoint(40, 40),
@@ -44,6 +44,7 @@ namespace TextStress
                     }
                 };
 
+                Stage.Attach(window, options);
                 desktop.MainWindow = window;
             }
 
