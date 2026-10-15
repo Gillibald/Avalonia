@@ -1,5 +1,4 @@
 using System;
-using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -32,7 +31,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// on that hold ink: <paramref name="texels"/> holds them <paramref name="step"/> bytes apart,
         /// coverage or alpha in the last byte of each.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Mark(int x, int y, ReadOnlySpan<byte> texels, int step)
         {
             ulong[]? block = null;
@@ -135,7 +133,6 @@ namespace Avalonia.Media.Fonts.Rasterization
             return count < 64 ? bits & ((1UL << count) - 1) : bits;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private static bool SharesNarrow(GlyphAtlasInk first, int firstX, int firstY, GlyphAtlasInk second,
             int secondX, int secondY, int width, int height)
         {
