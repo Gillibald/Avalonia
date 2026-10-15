@@ -1,4 +1,6 @@
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
 
 namespace Avalonia.Media.Fonts.Rasterization
 {
@@ -30,23 +32,67 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// on that hold ink: <paramref name="texels"/> holds them <paramref name="step"/> bytes apart,
         /// coverage or alpha in the last byte of each.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Mark(int x, int y, ReadOnlySpan<byte> texels, int step)
         {
             ulong[]? block = null;
-            var row = y % BlockRows * WordsPerRow;
+            var row = (y & (BlockRows - 1)) * WordsPerRow;
+            var count = texels.Length / step;
 
-            for (int i = 0, offset = step - 1; offset < texels.Length; i++, offset += step)
+            // The bits of 64 texels at a time, gathered without branching on each texel: a frame
+            // that lays out a screen of new glyphs marks every texel of their boxes, and whether a
+            // texel holds ink changes too often for a branch to predict.
+            for (var start = 0; start < count; start += 64)
             {
-                if (texels[offset] == 0)
+                var length = Math.Min(64, count - start);
+                var bits = 0UL;
+                var i = 0;
+
+                if (step == 1)
                 {
-                    continue;
+                    for (; i + 16 <= length; i += 16)
+                    {
+                        var empty = Vector128.Equals(Vector128.Create(texels.Slice(start + i, 16)), Vector128<byte>.Zero);
+
+                        bits |= (~(ulong)empty.ExtractMostSignificantBits() & 0xFFFF) << i;
+                    }
+                }
+                else if (step == 4)
+                {
+                    var alpha = Vector128.Create(0xFF000000u);
+
+                    for (; i + 4 <= length; i += 4)
+                    {
+                        var texel = Vector128.Create(texels.Slice((start + i) * 4, 16)).AsUInt32();
+                        var empty = Vector128.Equals(texel & alpha, Vector128<uint>.Zero);
+
+                        bits |= (~(ulong)empty.ExtractMostSignificantBits() & 0xF) << i;
+                    }
                 }
 
-                block ??= GetBlock(y);
+                for (; i < length; i++)
+                {
+                    bits |= (texels[(start + i) * step + step - 1] != 0 ? 1UL : 0UL) << i;
+                }
 
-                var column = x + i;
+                if (bits != 0)
+                {
+                    Set(block ??= GetBlock(y), row, x + start, bits, length);
+                }
+            }
+        }
 
-                block[row + column / 64] |= 1UL << (column % 64);
+        /// <summary>Sets <paramref name="count"/> bits, at most 64, from column <paramref name="column"/> of a block row.</summary>
+        private static void Set(ulong[] block, int row, int column, ulong bits, int count)
+        {
+            var word = row + (column >> 6);
+            var shift = column & 63;
+
+            block[word] |= bits << shift;
+
+            if (shift + count > 64)
+            {
+                block[word + 1] |= bits >> (64 - shift);
             }
         }
 
@@ -72,13 +118,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public ulong Read(int x, int y, int count)
         {
-            if (_blocks[y / BlockRows] is not { } block)
+            if (_blocks[y >> 6] is not { } block)
             {
                 return 0;
             }
 
-            var word = y % BlockRows * WordsPerRow + x / 64;
-            var shift = x % 64;
+            var word = (y & (BlockRows - 1)) * WordsPerRow + (x >> 6);
+            var shift = x & 63;
             var bits = block[word] >> shift;
 
             if (shift != 0 && shift + count > 64)
@@ -87,6 +133,66 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             return count < 64 ? bits & ((1UL << count) - 1) : bits;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private static bool SharesNarrow(GlyphAtlasInk first, int firstX, int firstY, GlyphAtlasInk second,
+            int secondX, int secondY, int width, int height)
+        {
+            var mask = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
+            var firstShift = firstX & 63;
+            var secondShift = secondX & 63;
+            var firstSpans = firstShift + width > 64;
+            var secondSpans = secondShift + width > 64;
+            ulong[]? firstBlock = null;
+            ulong[]? secondBlock = null;
+            var firstIndex = -1;
+            var secondIndex = -1;
+
+            for (var row = 0; row < height; row++)
+            {
+                var y = firstY + row;
+                var v = secondY + row;
+
+                if (y >> 6 != firstIndex)
+                {
+                    firstIndex = y >> 6;
+                    firstBlock = first._blocks[firstIndex];
+                }
+
+                if (v >> 6 != secondIndex)
+                {
+                    secondIndex = v >> 6;
+                    secondBlock = second._blocks[secondIndex];
+                }
+
+                if (firstBlock is null || secondBlock is null)
+                {
+                    continue;
+                }
+
+                var a = (y & (BlockRows - 1)) * WordsPerRow + (firstX >> 6);
+                var b = (v & (BlockRows - 1)) * WordsPerRow + (secondX >> 6);
+                var firstBits = firstBlock[a] >> firstShift;
+                var secondBits = secondBlock[b] >> secondShift;
+
+                if (firstSpans)
+                {
+                    firstBits |= firstBlock[a + 1] << (64 - firstShift);
+                }
+
+                if (secondSpans)
+                {
+                    secondBits |= secondBlock[b + 1] << (64 - secondShift);
+                }
+
+                if ((firstBits & secondBits & mask) != 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -98,6 +204,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         public static bool Shares(GlyphAtlasInk first, int firstX, int firstY, GlyphAtlasInk second, int secondX,
             int secondY, int width, int height)
         {
+            // Sprites of neighbouring glyphs mostly overlap in a few columns over many rows: one
+            // word or two of each page per row, the block looked up when the row enters it.
+            if (width <= 64)
+            {
+                return SharesNarrow(first, firstX, firstY, second, secondX, secondY, width, height);
+            }
+
             for (var row = 0; row < height; row++)
             {
                 for (var column = 0; column < width; column += 64)
