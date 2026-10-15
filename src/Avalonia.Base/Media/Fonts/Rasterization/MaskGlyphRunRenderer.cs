@@ -335,7 +335,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var start = atlasZooming ? MotionRasterBudget.Start() : 0;
                 var argb = ToArgb(alpha, solid.Color);
                 var sprites = DrawUprightFromAtlas(atlasContext, run, key, transform, (float)scaleX, (float)scaleY,
-                    originX, originY, argb);
+                    originX, originY, argb, atlasOnly: churning && key != staticKey);
 
                 if (key == staticKey)
                 {
@@ -900,7 +900,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 sprites = gridKey.SnapsPens
                     ? BuildUprightSprites(run, gridKey, (float)grid, (float)grid)
-                    : BuildCrossingSprites(context, run, gridKey, (float)grid, foregroundArgb);
+                    : BuildAtlasOnlySprites(context, run, gridKey, (float)grid, (float)grid, foregroundArgb);
                 state.AddCrossing(sprites, grid);
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
                 MotionRasterBudget.Charge(run, start);
@@ -926,12 +926,14 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Draws an upright run from the typeface's atlas through its cached sprite set, laying
-        /// the set out on first use, and returns the set.
+        /// the set out on first use, and returns the set. A moving run's sharp frame lays its set
+        /// out with the atlas as the masks' only storage (<paramref name="atlasOnly"/>), see
+        /// <see cref="BuildAtlasOnlySprites"/>.
         /// </summary>
         private static TransformedGlyphSprites DrawUprightFromAtlas(ITransformedGlyphContext context,
             ManagedGlyphRunImpl run,
             in RunMaskKey key, in Matrix transform, float scaleX, float scaleY, int originX, int originY,
-            uint foregroundArgb)
+            uint foregroundArgb, bool atlasOnly)
         {
             var state = run.TransformedSprites;
 
@@ -939,7 +941,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 var timer = GlyphPhaseTimers.Start();
 
-                sprites = BuildUprightSprites(run, key, scaleX, scaleY);
+                sprites = atlasOnly && !key.SnapsPens
+                    ? BuildAtlasOnlySprites(context, run, key, scaleX, scaleY, foregroundArgb)
+                    : BuildUprightSprites(run, key, scaleX, scaleY);
                 state.Add(sprites);
 
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
@@ -1010,19 +1014,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Lays out an upright run's glyph masks for a zoom's band crossing on a hardware GPU as
-        /// <see cref="BuildUprightSprites"/> does, with the atlas as the masks' only storage, as
-        /// it is for transformed sprites: a mask the atlas holds for the foreground's luminance
-        /// bucket is laid out from its entry; any other is taken from the glyph mask cache when a
-        /// static frame cached it, or else rasterized into a transient buffer, and placed in the
-        /// atlas at once. Crossings lie on scales no static frame draws, so mask cache entries
-        /// for them would only keep objects alive beside the atlas copy. A crossing laid out
-        /// again after its atlas page was evicted rasterizes again. Records in the typeface's
-        /// mask cache how many mask pixels the build had to rasterize, atlas entries counting
-        /// as found. The keys must not snap pens: an atlas entry does not keep a mask's pen offset.
+        /// Lays out the glyph masks of a moving upright run on a hardware GPU, for a zoom's band
+        /// crossing or a sharp zoom frame, as <see cref="BuildUprightSprites"/> does, with the atlas
+        /// as the masks' only storage, as it is for transformed sprites: a mask the atlas holds for
+        /// the foreground's luminance bucket is laid out from its entry; any other is taken from
+        /// the glyph mask cache when a static frame cached it, or else rasterized into a transient
+        /// buffer, and placed in the atlas at once. A moving run's unhinted masks lie on scales no
+        /// static frame draws, so mask cache entries for them would only keep objects alive beside
+        /// the atlas copy. A set laid out again after its atlas page was evicted rasterizes again.
+        /// Records in the typeface's mask cache how many mask pixels the build had to rasterize,
+        /// atlas entries counting as found. The keys must not snap pens: an atlas entry does not
+        /// keep a mask's pen offset.
         /// </summary>
-        private static TransformedGlyphSprites BuildCrossingSprites(ITransformedGlyphContext context,
-            ManagedGlyphRunImpl run, in RunMaskKey key, float scale, uint foregroundArgb)
+        private static TransformedGlyphSprites BuildAtlasOnlySprites(ITransformedGlyphContext context,
+            ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY, uint foregroundArgb)
         {
             var typeface = run.GlyphTypeface;
             var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
@@ -1044,9 +1049,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             for (var i = 0; i < count; i++)
             {
-                var relativeX = originFraction + positions[i * 2] * scale;
+                var relativeX = originFraction + positions[i * 2] * scaleX;
                 SnapGlyphPen(in key, relativeX, out var penX, out var glyphPhase);
-                var penY = (int)MathF.Round(positions[i * 2 + 1] * scale);
+                var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
                 var glyphKey = new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit,
                     key.Strong, embolden, oblique);
                 int left, top, width, height;

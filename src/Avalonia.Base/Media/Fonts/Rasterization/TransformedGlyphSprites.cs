@@ -196,7 +196,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>
         /// Whether the glyph masks live in the atlas alone, as transformed masks do: a mask
         /// missing from it is rasterized into a transient buffer and copied in, and never enters
-        /// the glyph mask cache. The sets of a zoom's band crossings keep their masks this way.
+        /// the glyph mask cache. The sets a moving run lays out, for a zoom's band crossings and its
+        /// sharp frames, keep their masks this way.
         /// </summary>
         public bool IsAtlasOnly { get; init; }
 
