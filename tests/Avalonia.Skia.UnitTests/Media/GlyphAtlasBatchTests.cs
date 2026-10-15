@@ -1952,6 +1952,102 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_Long_Monotonic_Zoom_Keeps_Only_The_Crossings_Within_Two_Grid_Steps(GpuBackend backend,
+            bool software)
+        {
+            // A zoom from 1 to 5 crosses nine grid scales. Once it has moved on, the crossings more
+            // than two grid steps below the scale it reached are gone: a frame back at the scale of
+            // one of them lays it out again, while a frame at a crossing two steps below draws the
+            // one it kept.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 1, 13, new Point(6.3, 4));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu.GrContext, true, info);
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            try
+            {
+                long Draw(double scale)
+                {
+                    var before = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+
+                    context.Transform = Matrix.CreateScale(scale, scale);
+                    DrawAll(context, runs, Brushes.Black);
+                    context.FlushGlyphBatch();
+
+                    return GlyphRasterDiagnostics.SpriteSetBuildsOnThread - before;
+                }
+
+                for (var step = 0; step <= 400; step++)
+                {
+                    Draw(1 + 0.01 * step);
+                }
+
+                var top = MaskGlyphRunRenderer.CrossingScale(5, 1);
+
+                Assert.Equal(Math.Pow(MaskGlyphRunRenderer.MaxStretchScale, 9), top, 9);
+
+                // Two grid steps below the top crossing, then six.
+                Assert.Equal(0, Draw(top / Math.Pow(MaskGlyphRunRenderer.MaxStretchScale, 2) * 0.99));
+                Assert.Equal(1, Draw(top / Math.Pow(MaskGlyphRunRenderer.MaxStretchScale, 6) * 0.99));
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Sawtooth_Zoom_Over_Three_Grid_Steps_Keeps_Reusing_Its_Crossings(GpuBackend backend,
+            bool software)
+        {
+            // A zoom from 1 to 1.6 that jumps back to 1 every 60 frames passes four crossings, the
+            // lowest three grid steps below the highest. Its first two passes lay them out; every
+            // later pass draws them again without laying anything out.
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, software);
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var runs = CreateParagraph(typeface, 3, 13, new Point(6.3, 4));
+
+            var info = new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+            using var surface = SKSurface.Create(gpu.GrContext, true, info);
+            using var context = TransformedAtlasTests.CreateContext(gpu, surface);
+
+            try
+            {
+                var start = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                long builds = 0;
+
+                for (var step = 0; step < 5 * 60; step++)
+                {
+                    if (step == 2 * 60)
+                    {
+                        builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+
+                        Assert.True(builds - start >= 4 * runs.Length, $"{builds - start} sprite sets laid out");
+                    }
+
+                    var scale = 1 + 0.01 * (step % 60);
+
+                    context.Transform = Matrix.CreateScale(scale, scale);
+                    DrawAll(context, runs, Brushes.Black);
+                    context.FlushGlyphBatch();
+                }
+
+                Assert.Equal(0, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
+            }
+            finally
+            {
+                DisposeAll(runs);
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void An_Upright_Zoom_Jumping_Back_To_A_Crossing_Scale_Draws_Its_Sprites_In_One_Batch(GpuBackend backend,
             bool software)
         {
