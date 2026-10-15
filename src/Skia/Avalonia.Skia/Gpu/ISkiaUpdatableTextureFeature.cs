@@ -112,7 +112,10 @@ namespace Avalonia.Skia
                 }
             }
 
+            // Registration changes happen on the thread that drives the context, the thread the
+            // page textures must be freed on.
             previous?.ReleaseOwnedAtlases();
+            previous?.PageTextures.Clear();
         }
 
         /// <summary>The registration of <paramref name="context"/>, unless it has none or is lost.</summary>
@@ -155,6 +158,12 @@ namespace Avalonia.Skia
 
             /// <summary>Whether the atlases made for the registration keep no CPU copy of their pages.</summary>
             public bool ResidentPages { get; }
+
+            /// <summary>
+            /// The glyph page textures made on the context, freed with the registration when the
+            /// context goes.
+            /// </summary>
+            public DrawingContextImpl.PageTextureSet PageTextures { get; } = new();
 
             /// <summary>The atlas glyph masks drawn for <paramref name="services"/>' application go to.</summary>
             public GlyphMaskAtlas MaskAtlasFor(GlyphRasterServices services)

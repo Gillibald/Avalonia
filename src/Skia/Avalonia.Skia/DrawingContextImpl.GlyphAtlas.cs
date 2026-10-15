@@ -387,12 +387,14 @@ namespace Avalonia.Skia
         {
             var grContext = _grContext;
 
-            if (page.Realized is GlyphPageTexture texture && texture.CanDraw(page, grContext))
+            var registration = grContext is null ? null : SkiaUpdatableTextures.Get(grContext);
+
+            if (page.Realized is GlyphPageTexture texture && texture.CanDraw(page, grContext) && registration is not null)
             {
                 if (texture.Version != page.Version && !texture.UpdatePending)
                 {
                     texture.UpdatePending = true;
-                    (t_pendingPageTextures ??= new List<(GlyphAtlasPage, GlyphPageTexture)>()).Add((page, texture));
+                    registration.PageTextures.AddPendingUpload(page, texture);
                 }
 
                 return texture.Image;
@@ -405,7 +407,7 @@ namespace Avalonia.Skia
                 UploadPageTexture(page, outgrown);
             }
 
-            var textures = grContext is null ? null : SkiaUpdatableTextures.Get(grContext)?.Feature;
+            var textures = registration?.Feature;
 
             if (page.IsResident && (textures is null || !page.CanComposeWhole))
             {
@@ -430,7 +432,8 @@ namespace Avalonia.Skia
 
             GlyphPageImage image;
 
-            if (textures is not null && GlyphPageTexture.TryCreate(grContext!, textures, page) is { } created)
+            if (textures is not null &&
+                GlyphPageTexture.TryCreate(grContext!, textures, registration!.PageTextures, page) is { } created)
             {
                 page.Realized = created;
                 image = created.Image;
@@ -454,23 +457,19 @@ namespace Avalonia.Skia
             return image;
         }
 
-        // The page textures drawn on this thread since the atlas wrote to their pages, uploaded
-        // once before the GPU runs the draws recorded so far. Contexts drawn inside another on the
-        // same GPU context share the list, so whichever ends first uploads for both.
-        [ThreadStatic]
-        private static List<(GlyphAtlasPage Page, GlyphPageTexture Texture)>? t_pendingPageTextures;
-
         /// <summary>
-        /// Uploads what the atlas wrote to the pages drawn from page textures on this thread since
-        /// the last upload. A texture update takes effect before the draws recorded earlier in the frame,
-        /// which the GPU runs when the surface is flushed, so a page drawn many times in a frame,
-        /// a page batch per clip or per stretched run in between writes, is uploaded once. The
-        /// context uploads before anything else can make the GPU run its draws: when it ends,
-        /// when the graphics API is leased, and when a caller flushes it to read the surface.
+        /// Uploads what the atlas wrote to the pages drawn from page textures of the context's GPU
+        /// context since the last upload. A texture update takes effect before the draws recorded
+        /// earlier in the frame, which the GPU runs when the surface is flushed, so a page drawn
+        /// many times in a frame, a page batch per clip or per stretched run in between writes, is
+        /// uploaded once. Contexts drawn inside another on the same GPU context share the list of
+        /// its registration, so whichever ends first uploads for both. The context uploads before
+        /// anything else can make the GPU run its draws: when it ends, when the graphics API is
+        /// leased, and when a caller flushes it to read the surface.
         /// </summary>
         private void UploadPendingPageTextures()
         {
-            if (t_pendingPageTextures is not { Count: > 0 } pending)
+            if (_registration?.PageTextures.TakePendingUploads() is not { Count: > 0 } pending)
             {
                 return;
             }
@@ -579,7 +578,7 @@ namespace Avalonia.Skia
         }
 
         /// <summary>An atlas page's image at one version, and the shader that samples it texel for pixel.</summary>
-        private sealed class GlyphPageImage : IDisposable
+        internal sealed class GlyphPageImage : IDisposable
         {
             private SKShader? _shader;
             private SKPaint? _paint;
@@ -671,17 +670,14 @@ namespace Avalonia.Skia
         /// </para>
         /// <para>
         /// GPU resources are released on the thread that drives their context. Disposing a page
-        /// texture, which eviction may do on any thread, only marks it; the thread that made it
-        /// frees it when it next makes a texture for that context, together with the textures
-        /// of collected pages and of lost contexts. The backend frees the texture itself once no
-        /// recorded draw uses it any more.
+        /// texture, which eviction may do on any thread, only marks it; the context's registration
+        /// (<see cref="PageTextureSet"/>) frees it when the next texture is made for that context,
+        /// together with the textures of collected pages, and frees them all when the context goes.
+        /// The backend frees the texture itself once no recorded draw uses it any more.
         /// </para>
         /// </remarks>
-        private sealed class GlyphPageTexture : IDisposable
+        internal sealed class GlyphPageTexture : IDisposable
         {
-            [ThreadStatic]
-            private static List<GlyphPageTexture>? t_textures;
-
             private readonly GRContext _context;
             private readonly ISkiaUpdatableTexture _texture;
             private readonly WeakReference<GlyphAtlasPage> _page;
@@ -720,11 +716,14 @@ namespace Avalonia.Skia
             private static int TextureHeight(GlyphAtlasPage page) =>
                 Math.Max(GlyphMaskAtlas.MaxPageHeight, page.Height);
 
-            /// <summary>Makes a texture of the whole page, or returns <c>null</c> when the backend or Skia refuse it.</summary>
+            /// <summary>
+            /// Makes a texture of the whole page, listed in <paramref name="set"/>, the textures of
+            /// the context's registration, or returns <c>null</c> when the backend or Skia refuse it.
+            /// </summary>
             public static unsafe GlyphPageTexture? TryCreate(GRContext context, ISkiaUpdatableTextureFeature textures,
-                GlyphAtlasPage page)
+                PageTextureSet set, GlyphAtlasPage page)
             {
-                Collect(context);
+                set.Collect();
 
                 // The whole page goes up, so earlier writes need no upload of their own.
                 var version = page.Version;
@@ -741,7 +740,7 @@ namespace Avalonia.Skia
 
                 var created = new GlyphPageTexture(context, texture, page) { Version = version };
 
-                (t_textures ??= new List<GlyphPageTexture>()).Add(created);
+                set.Add(created);
                 t_pageImagesCreated++;
                 t_pageImageBytes += length;
 
@@ -911,34 +910,71 @@ namespace Avalonia.Skia
             [ThreadStatic]
             private static TextureRegion[]? t_regions;
 
-            /// <summary>Marks the texture released; the thread that made it frees it.</summary>
+            /// <summary>Marks the texture released; its context's registration frees it.</summary>
             public void Dispose() => _released = true;
 
             /// <summary>
-            /// Frees this thread's released textures of <paramref name="context"/>, those whose
-            /// page was collected, and those of lost contexts, which release nothing on the GPU.
+            /// Whether the texture can be freed: it was released, its page was collected, or its
+            /// context was lost, which releases nothing on the GPU.
             /// </summary>
-            private static void Collect(GRContext context)
+            internal bool IsDisposable =>
+                _released || SkiaUpdatableTextures.IsLost(_context) || !_page.TryGetTarget(out _);
+        }
+
+        /// <summary>
+        /// The page textures of one GPU context and the uploads its drawing contexts owe them, kept
+        /// by the context's registration (<see cref="SkiaUpdatableTextures.Registration"/>). It is
+        /// used on the thread that drives the context.
+        /// </summary>
+        internal sealed class PageTextureSet
+        {
+            private readonly List<GlyphPageTexture> _textures = new();
+            private List<(GlyphAtlasPage Page, GlyphPageTexture Texture)> _pending = new();
+            private List<(GlyphAtlasPage Page, GlyphPageTexture Texture)> _uploading = new();
+
+            /// <summary>The textures listed; for diagnostics and tests.</summary>
+            internal int Count => _textures.Count;
+
+            internal void Add(GlyphPageTexture texture) => _textures.Add(texture);
+
+            /// <summary>Records that a context drew <paramref name="texture"/> after its page changed.</summary>
+            internal void AddPendingUpload(GlyphAtlasPage page, GlyphPageTexture texture) => _pending.Add((page, texture));
+
+            /// <summary>
+            /// Takes the uploads owed so far; the caller empties the list once it has uploaded them,
+            /// and it comes back for the uploads after.
+            /// </summary>
+            internal List<(GlyphAtlasPage Page, GlyphPageTexture Texture)> TakePendingUploads()
             {
-                if (t_textures is not { } textures)
-                {
-                    return;
-                }
+                (_pending, _uploading) = (_uploading, _pending);
 
-                for (var i = textures.Count - 1; i >= 0; i--)
-                {
-                    var texture = textures[i];
+                return _uploading;
+            }
 
-                    if (!SkiaUpdatableTextures.IsLost(texture._context) &&
-                        (!ReferenceEquals(texture._context, context) ||
-                         !texture._released && texture._page.TryGetTarget(out _)))
+            /// <summary>Frees the textures that can go (<see cref="GlyphPageTexture.IsDisposable"/>).</summary>
+            internal void Collect()
+            {
+                for (var i = _textures.Count - 1; i >= 0; i--)
+                {
+                    if (_textures[i].IsDisposable)
                     {
-                        continue;
+                        _textures[i].Image.Dispose();
+                        _textures.RemoveAt(i);
                     }
-
-                    texture.Image.Dispose();
-                    textures.RemoveAt(i);
                 }
+            }
+
+            /// <summary>Frees every texture, for a context that is gone.</summary>
+            internal void Clear()
+            {
+                foreach (var texture in _textures)
+                {
+                    texture.Image.Dispose();
+                }
+
+                _textures.Clear();
+                _pending.Clear();
+                _uploading.Clear();
             }
         }
 
