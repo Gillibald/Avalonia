@@ -287,6 +287,30 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.NotSame(atlas, LcdAtlasOf(second));
         }
 
+        [Fact]
+        public void Disposing_A_Gpu_Context_Frees_Its_Glyph_Page_Textures_At_Once()
+        {
+            SKImage texture;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(GpuBackend.NativeGl, false))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
+            using (var surface = SKSurface.Create(gpu.GrContext, true, new SKImageInfo(160, 32)))
+            using (var context = TransformedAtlasTests.CreateContext(gpu, surface))
+            {
+                context.DrawGlyphRun(Brushes.Black, run);
+                context.FlushGlyphBatch();
+
+                var page = Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages());
+
+                texture = context.GetAtlasPageImage(page)!;
+
+                Assert.NotEqual(IntPtr.Zero, texture.Handle);
+            }
+
+            Assert.Equal(IntPtr.Zero, texture.Handle);
+        }
+
         /// <summary>The atlas a drawing context on <paramref name="gpu"/> places subpixel run masks in.</summary>
         private static LcdRunAtlas LcdAtlasOf(GpuTestContext gpu)
         {
