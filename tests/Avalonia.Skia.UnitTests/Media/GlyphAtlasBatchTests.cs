@@ -1952,6 +1952,62 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(HardwareContexts))]
+        public void A_Long_Stretched_Run_Hands_Its_Sprites_To_Skia_Once_Across_Zoom_Frames(GpuBackend backend,
+            bool software)
+        {
+            // A run of a few hundred glyphs zooms within the stretch band of its last static frame.
+            // Every zoom frame stretches the same sprites, so after the first the run hands no
+            // sprite geometry to Skia, and every frame holds exactly the pixels of the run
+            // stretched on its own.
+            var text = string.Join(" ", s_lines);
+
+            static double Scale(int frame) => 1 + 0.02 * frame;
+
+            const int frames = 10;
+            var batched = new List<byte[]>();
+            var geometry = new List<int>();
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, software))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            using (var run = WideRunMaskTests.CreateRun(typeface, text, 9, new Point(6.3, 40)))
+            {
+                Assert.True(run.GlyphCount >= 200, $"{run.GlyphCount} glyphs");
+
+                for (var frame = 0; frame < frames; frame++)
+                {
+                    var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                    var stretched = MaskGlyphRunRenderer.StretchedDraws;
+
+                    batched.Add(Render(gpu, context => DrawZoomed(context, new[] { run }, Scale(frame)), true, out _));
+                    geometry.Add(MaskGlyphRunRenderer.StretchedDraws == stretched
+                        ? -1
+                        : DrawingContextImpl.AtlasGeometrySubmittedOnThread - before);
+                }
+            }
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, software))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            using (var run = WideRunMaskTests.CreateRun(typeface, text, 9, new Point(6.3, 40)))
+            {
+                for (var frame = 0; frame < frames; frame++)
+                {
+                    var separate = Render(gpu, context => DrawZoomed(context, new[] { run }, Scale(frame)), false,
+                        out _);
+
+                    TransformedAtlasTests.AssertEqual(separate, batched[frame], $"{backend} frame {frame}");
+                }
+            }
+
+            // The frames before the motion is recognized draw static; the first stretched frame
+            // hands its sprites over, the later ones none.
+            var first = geometry.FindIndex(count => count >= 0);
+
+            Assert.True(first >= 0 && geometry[first] > 0, string.Join(", ", geometry));
+            Assert.All(geometry.Skip(first + 1), count => Assert.Equal(0, count));
+        }
+
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
         public void A_Long_Monotonic_Zoom_Keeps_Only_The_Crossings_Within_Two_Grid_Steps(GpuBackend backend,
             bool software)
         {
