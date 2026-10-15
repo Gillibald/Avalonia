@@ -73,6 +73,16 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return !colorGlyphs;
             }
 
+            // A run whose ink lies wholly outside the clip draws nothing, as the backend's own
+            // text draw rejects it: nothing is laid out or rasterized for it. Two pixels around the
+            // ink cover antialiasing, a strike's resampled edges and the rounding of pens.
+            if (context is ITransformedGlyphContext { DeviceClipBounds: { } clipBounds } &&
+                run.InkBoundsWithStrikes is { } ink &&
+                !ink.TransformToAABB(transform).Inflate(2).Intersects(clipBounds))
+            {
+                return true;
+            }
+
             // The em scale is the square root of the determinant's magnitude, which leaves a
             // pure rotation's linear part a rotation and keeps its entries on the quantization
             // grid's range.

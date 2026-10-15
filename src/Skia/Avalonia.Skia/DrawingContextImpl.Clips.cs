@@ -254,6 +254,28 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
+        /// The device bounds of the canvas clip and of the clips deferred on top of it: nothing
+        /// drawn outside them shows.
+        /// </summary>
+        Rect? Avalonia.Media.Fonts.Rasterization.ITransformedGlyphContext.DeviceClipBounds
+        {
+            get
+            {
+                var canvas = Canvas.DeviceClipBounds;
+                var bounds = new Rect(canvas.Left, canvas.Top, canvas.Width, canvas.Height);
+
+                for (var i = _clipDepth - _deferredClips; i < _clipDepth; i++)
+                {
+                    var device = _clipLevels[i].Device;
+
+                    bounds = bounds.Intersect(new Rect(device.Left, device.Top, device.Width, device.Height));
+                }
+
+                return bounds;
+            }
+        }
+
+        /// <summary>
         /// Whether the ink of the transformed run being drawn keeps clear of the turned rectangle
         /// clip <paramref name="level"/>, measured in the clip's own frame: the run is drawn under
         /// the transform the clip was pushed under, and its ink, grown by

@@ -63,6 +63,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphMaskAtlas? ColorAtlas { get; }
 
         /// <summary>
+        /// The device rectangle outside which nothing drawn on this context shows: the bounds of
+        /// its clips, those applied and those it defers, or <c>null</c> when it cannot tell.
+        /// </summary>
+        Rect? DeviceClipBounds { get; }
+
+        /// <summary>
         /// Grants direct write access to the raster surface when a draw may bypass the backend:
         /// a CPU surface with no layer, no ambient opacity, no non-default blend mode and a
         /// rectangular clip. The caller writes device pixels, whatever the transform. Returns
