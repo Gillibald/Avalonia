@@ -162,23 +162,36 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// Defers a run's atlas batch drawn scaled, a zoom frame stretching sprites, as a pending
-        /// batch of its own. Returns <c>false</c> when the draw cannot be deferred.
+        /// Defers a run's atlas batch drawn scaled, a zoom frame stretching sprites, in the pending
+        /// stretched batch of its page and colour. Returns <c>false</c> when the draw cannot be
+        /// deferred.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// A zoom frame in which many runs cross the stretch band lays every run's sprites into the
         /// atlas pages; drawn at once, each run's draw would refresh the pages after its own writes.
         /// Waiting with the static runs, the pages are refreshed once when the batches are drawn,
-        /// which shows every sprite written before. The deferred draw is the draw the run would
-        /// make on its own, under its transform with bilinear sampling, so the pixels are the same;
-        /// it keeps its place in the drawing order as the other pending batches do, by the overlap
-        /// test against them. Only an upright scale with no clip deferred or trimmed qualifies,
-        /// since its sprites cannot be trimmed to a clip.
+        /// which shows every sprite written before. Each deferred run draws the call it would make
+        /// on its own, under its transform with bilinear sampling, so the pixels are the same; the
+        /// runs of one page and colour share a pending batch, drawn in the order they came, and
+        /// keep their place in the drawing order against the other pending batches by the overlap
+        /// test, as the runs drawn 1:1 do. Parts of one run on different pages under the same
+        /// transform put coverage on no pixel in common, as at 1:1, so they do not count as
+        /// overlapping: the sprites of disjoint parts map to quads with disjoint interiors.
+        /// </para>
+        /// <para>
+        /// Bilinear sprites cannot be trimmed to a clip. A run that the pixel-aligned rectangle
+        /// clips around it cut draws under their intersection, clipped on the canvas when its batch
+        /// is drawn: that clip covers exactly the whole pixels the clips let through, applied or
+        /// deferred, so the run no longer depends on the clips still being on the canvas, and pops
+        /// and pushes of such clips leave it pending. A shape clip it does not fit is applied
+        /// first, as for every batched run, and stays until its pop draws the pending batches.
+        /// </para>
         /// </remarks>
         private bool TryAppendStretchedToGlyphBatch(GlyphAtlasPage page, SkiaGlyphAtlasBatch backend,
-            in Matrix transform, SKColor color)
+            in Matrix transform, SKColor color, object? disjointRun)
         {
-            if (!BatchesGlyphAtlasDraws || _grContext is null || _deferredClips != 0 ||
+            if (!BatchesGlyphAtlasDraws || _grContext is null ||
                 transform.M12 != 0 || transform.M21 != 0 || !(transform.M11 > 0) || !(transform.M22 > 0))
             {
                 return false;
@@ -200,42 +213,74 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            if (_clipDepth > 0 && _clipLevels[_clipDepth - 1] is { HasTrim: true } level && !level.Trim.Contains(bounds))
-            {
-                return false;
-            }
-
             FlushLcdBatch(GlyphBatchFlushReason.OtherTextPath);
             CountClippedRun(bounds);
             AdmitToShapeClips(bounds);
 
-            if (_pendingRunCount >= MaxPendingRuns)
+            SKRect? clip = null;
+
+            if (_clipDepth > 0 && _clipLevels[_clipDepth - 1] is { HasTrim: true } level && !level.Trim.Contains(bounds))
+            {
+                bounds = SKRect.Intersect(bounds, level.Trim);
+
+                if (bounds.IsEmpty)
+                {
+                    return true;
+                }
+
+                clip = level.Trim;
+            }
+
+            var target = FindPendingStretchedBatch(page, color);
+
+            if (_pendingRunCount - (target?.RunCount ?? 0) >= MaxPendingRuns)
             {
                 FlushAtlasBatch(GlyphBatchFlushReason.RunLimit);
+                target = null;
             }
-            else if (FindOverlappingPendingBatch(bounds, null, null, 0, 0) is not null)
+            else if (FindOverlappingPendingBatch(bounds, target, disjointRun, 0, 0, transform) is not null)
             {
                 FlushAtlasBatch(GlyphBatchFlushReason.PageChange);
+                target = null;
             }
 
-            if (_pendingBatches is { } slots && _pendingBatchCount == slots.Length)
+            if (target is null)
             {
-                FlushAtlasBatch(GlyphBatchFlushReason.SlotPressure);
+                if (_pendingBatches is { } slots && _pendingBatchCount == slots.Length)
+                {
+                    FlushAtlasBatch(GlyphBatchFlushReason.SlotPressure);
+                }
+
+                target = t_pendingBatches is { Count: > 0 } pool ? pool.Pop() : new PendingGlyphBatch();
+                target.Page = page;
+                target.Color = color;
+                target.IsStretched = true;
+
+                var pending = _pendingBatches ??= new PendingGlyphBatch[MaxPendingBatches];
+
+                pending[_pendingBatchCount++] = target;
             }
 
-            var target = t_pendingBatches is { Count: > 0 } pool ? pool.Pop() : new PendingGlyphBatch();
-
-            target.Page = page;
-            target.Color = color;
-            target.Stretch = transform;
-
-            var pending = _pendingBatches ??= new PendingGlyphBatch[MaxPendingBatches];
-
-            pending[_pendingBatchCount++] = target;
-            target.Add(new BatchedRun(backend, 0, 0, color), bounds);
+            target.Add(new BatchedRun(backend, 0, 0, color, disjointRun), bounds, transform, clip);
             _pendingRunCount++;
 
             return true;
+        }
+
+        /// <summary>The pending stretched batch of <paramref name="page"/> in <paramref name="color"/>.</summary>
+        private PendingGlyphBatch? FindPendingStretchedBatch(GlyphAtlasPage page, SKColor color)
+        {
+            for (var i = 0; i < _pendingBatchCount; i++)
+            {
+                var batch = _pendingBatches![i];
+
+                if (batch.Page == page && batch.IsStretched && batch.Color == color)
+                {
+                    return batch;
+                }
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -251,7 +296,7 @@ namespace Avalonia.Skia
 
                 // A batch's first run decides which runs it takes, so a batch begun by a
                 // translucent colour takes only that colour.
-                if (batch.Page == page && batch.Stretch is null && (_foldsTranslucentColors ||
+                if (batch.Page == page && !batch.IsStretched && (_foldsTranslucentColors ||
                                            (color.Alpha == 255 ? batch.Color.Alpha == 255 : batch.Color == color)))
                 {
                     return batch;
@@ -264,16 +309,17 @@ namespace Avalonia.Skia
         /// <summary>
         /// The first pending batch other than <paramref name="target"/> that a run covering
         /// <paramref name="bounds"/> overlaps, not counting other parts of
-        /// <paramref name="disjointRun"/> at the same offset.
+        /// <paramref name="disjointRun"/> at the same offset, or for a stretched run under the same
+        /// <paramref name="stretch"/>.
         /// </summary>
         private PendingGlyphBatch? FindOverlappingPendingBatch(in SKRect bounds, PendingGlyphBatch? target,
-            object? disjointRun, int x, int y)
+            object? disjointRun, int x, int y, Matrix? stretch = null)
         {
             for (var i = 0; i < _pendingBatchCount; i++)
             {
                 var batch = _pendingBatches![i];
 
-                if (batch != target && batch.Overlaps(bounds, disjointRun, x, y))
+                if (batch != target && batch.Overlaps(bounds, disjointRun, x, y, stretch))
                 {
                     return batch;
                 }
@@ -321,7 +367,7 @@ namespace Avalonia.Skia
 
             for (var i = 0; i < _pendingBatchCount; i++)
             {
-                if (_pendingBatches![i].Overlaps(rect, null, 0, 0))
+                if (_pendingBatches![i].Overlaps(rect, null, 0, 0, null))
                 {
                     return false;
                 }
@@ -420,9 +466,9 @@ namespace Avalonia.Skia
         /// </remarks>
         private void DrawPendingBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
-            if (batch.Stretch is { } stretch)
+            if (batch.IsStretched)
             {
-                DrawPendingStretchedBatch(batch, stretch, reason);
+                DrawPendingStretchedBatch(batch, reason);
                 return;
             }
 
@@ -564,25 +610,45 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// Draws a deferred stretched run as it would have drawn on its own, and returns the batch
-        /// to the pool. It leaves the matrix it drew under set.
+        /// Draws the deferred stretched runs of a batch, each as it would have drawn on its own,
+        /// under the clip it was deferred with, and returns the batch to the pool. The page is
+        /// refreshed once for all of them. It leaves the matrix it drew under set.
         /// </summary>
-        private void DrawPendingStretchedBatch(PendingGlyphBatch batch, in Matrix stretch, GlyphBatchFlushReason reason)
+        private void DrawPendingStretchedBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
             var batchTimer = GlyphPhaseTimers.Start();
 
-            CountBatchDrawn(reason, 1);
+            CountBatchDrawn(reason, batch.RunCount);
 
             var page = batch.Page!;
-            var backend = batch.Runs[0].Backend;
             var transient = page.IsEvicted ? new GlyphPageImage(CreatePageImage(page)) : null;
             var image = transient ?? GetPageImage(page);
             var paint = SKPaintCache.Shared.Get();
 
             paint.Color = batch.Color;
-            SetDeviceTransform(stretch);
-            t_atlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear, paint);
-            t_atlasGeometry += backend.Sources.Length;
+
+            for (var i = 0; i < batch.RunCount; i++)
+            {
+                var backend = batch.Runs[i].Backend;
+                var clip = batch.GetStretchClip(i);
+
+                if (clip is { } rect)
+                {
+                    Canvas.Save();
+                    SetDeviceTransform(Matrix.Identity);
+                    Canvas.ClipRect(rect);
+                }
+
+                SetDeviceTransform(batch.GetStretch(i));
+                t_atlasDraws += DrawAtlasSprites(image.Image, backend.Sources, backend.Placements, s_bilinear, paint);
+                t_atlasGeometry += backend.Sources.Length;
+
+                if (clip is not null)
+                {
+                    Canvas.Restore();
+                }
+            }
+
             SKPaintCache.Shared.ReturnReset(paint);
             transient?.Dispose();
 
@@ -674,10 +740,15 @@ namespace Avalonia.Skia
             public bool HasTranslucentColors;
 
             /// <summary>
-            /// The device transform of a batch that holds one run drawn scaled with bilinear
-            /// sampling; <c>null</c> for runs drawn 1:1.
+            /// Whether the batch holds runs drawn scaled with bilinear sampling, each under its own
+            /// device transform and clip, rather than runs drawn 1:1.
             /// </summary>
-            public Matrix? Stretch;
+            public bool IsStretched;
+
+            // Per run of a stretched batch: its device transform, and the device rectangle it is
+            // clipped to when the clips around it cut it.
+            private Matrix[] _stretches = Array.Empty<Matrix>();
+            private SKRect?[] _stretchClips = Array.Empty<SKRect?>();
 
             // Runs per group whose bounds are united for the overlap test. Runs arrive in drawing
             // order, which for text is mostly reading order, so a group covers a few neighbouring
@@ -696,6 +767,26 @@ namespace Avalonia.Skia
 
             /// <summary>The device rectangle the runs cover.</summary>
             public SKRect Bounds => _union;
+
+            /// <summary>Adds a run drawn under <paramref name="stretch"/>, clipped to <paramref name="clip"/>.</summary>
+            public void Add(in BatchedRun run, in SKRect bounds, in Matrix stretch, SKRect? clip)
+            {
+                if (_stretches.Length <= RunCount)
+                {
+                    Array.Resize(ref _stretches, Math.Max(Runs.Length, RunCount * 2));
+                    Array.Resize(ref _stretchClips, _stretches.Length);
+                }
+
+                _stretches[RunCount] = stretch;
+                _stretchClips[RunCount] = clip;
+                Add(run, bounds);
+            }
+
+            /// <summary>The device transform of stretched run <paramref name="index"/>.</summary>
+            public Matrix GetStretch(int index) => _stretches[index];
+
+            /// <summary>The device rectangle stretched run <paramref name="index"/> is clipped to, if any.</summary>
+            public SKRect? GetStretchClip(int index) => _stretchClips[index];
 
             public void Add(in BatchedRun run, in SKRect bounds)
             {
@@ -725,9 +816,10 @@ namespace Avalonia.Skia
 
             /// <summary>
             /// Whether <paramref name="bounds"/> overlaps one of the runs, edges excluded, other
-            /// than a part of <paramref name="disjointRun"/> placed at the same offset.
+            /// than a part of <paramref name="disjointRun"/> placed at the same offset, or for a
+            /// stretched run (<paramref name="stretch"/>), drawn under the same transform.
             /// </summary>
-            public bool Overlaps(in SKRect bounds, object? disjointRun, int x, int y)
+            public bool Overlaps(in SKRect bounds, object? disjointRun, int x, int y, Matrix? stretch)
             {
                 if (!Intersects(_union, bounds))
                 {
@@ -736,7 +828,7 @@ namespace Avalonia.Skia
 
                 if (RunCount <= GroupSize)
                 {
-                    return OverlapsRuns(bounds, 0, RunCount, disjointRun, x, y);
+                    return OverlapsRuns(bounds, 0, RunCount, disjointRun, x, y, stretch);
                 }
 
                 var groups = Group();
@@ -748,7 +840,8 @@ namespace Avalonia.Skia
                         continue;
                     }
 
-                    if (OverlapsRuns(bounds, start, Math.Min(start + GroupSize, RunCount), disjointRun, x, y))
+                    if (OverlapsRuns(bounds, start, Math.Min(start + GroupSize, RunCount), disjointRun, x, y,
+                            stretch))
                     {
                         return true;
                     }
@@ -757,15 +850,16 @@ namespace Avalonia.Skia
                 return false;
             }
 
-            private bool OverlapsRuns(in SKRect bounds, int start, int end, object? disjointRun, int x, int y)
+            private bool OverlapsRuns(in SKRect bounds, int start, int end, object? disjointRun, int x, int y,
+                Matrix? stretch)
             {
                 var runBounds = _bounds;
 
                 for (var i = start; i < end; i++)
                 {
                     if (Intersects(runBounds[i], bounds) &&
-                        !(disjointRun is not null && Runs[i].DisjointRun == disjointRun && Runs[i].X == x &&
-                          Runs[i].Y == y))
+                        !(disjointRun is not null && Runs[i].DisjointRun == disjointRun &&
+                          SamePlacement(i, x, y, stretch)))
                     {
                         return true;
                     }
@@ -773,6 +867,11 @@ namespace Avalonia.Skia
 
                 return false;
             }
+
+            private bool SamePlacement(int index, int x, int y, Matrix? stretch)
+                => IsStretched
+                    ? stretch is { } transform && _stretches[index] == transform
+                    : stretch is null && Runs[index].X == x && Runs[index].Y == y;
 
             /// <summary>
             /// The group unions, brought up to date with the runs added since the last test: a
@@ -821,7 +920,12 @@ namespace Avalonia.Skia
                 SpriteCount = 0;
                 HasMixedColors = false;
                 HasTranslucentColors = false;
-                Stretch = null;
+                if (IsStretched)
+                {
+                    Array.Clear(_stretchClips, 0, _stretchClips.Length);
+                }
+
+                IsStretched = false;
                 Page = null;
                 _union = SKRect.Empty;
             }

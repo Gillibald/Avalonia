@@ -197,7 +197,7 @@ namespace Avalonia.Skia
             }
 
             if (bilinear && backend.Image is null && batch.Page is { } stretchedPage &&
-                TryAppendStretchedToGlyphBatch(stretchedPage, backend, transform, color))
+                TryAppendStretchedToGlyphBatch(stretchedPage, backend, transform, color, batch.DisjointRun))
             {
                 return;
             }
