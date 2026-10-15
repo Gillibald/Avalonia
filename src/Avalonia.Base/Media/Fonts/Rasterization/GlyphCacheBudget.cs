@@ -83,6 +83,15 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// run-level state, which a static scene draws from, stay.
     /// </para>
     /// <para>
+    /// The limit holds as follows. Only what the open frames draw and what each source drew in
+    /// its previous frame may keep the caches past it, and the latter only up to a quarter over.
+    /// A build that takes the caches past the limit evicts from its own pool, at once, what no
+    /// source drew in its last two frames, and past half over the limit what no open frame
+    /// draws; run-level state, which only the thread drawing its run may drop, waits for the
+    /// next frame start instead. Once frames stop, the idle trim brings the caches within the
+    /// limit, keeping what each source drew in its last frame.
+    /// </para>
+    /// <para>
     /// Nothing is evicted while there is room. Each frame begins with a trim to the limit: among
     /// the entries older than the floor, the pool whose oldest entry has waited longest past its
     /// kind's minimum age gives up entries first. The minimum ages order the kinds by what an
@@ -171,6 +180,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private long _frame;
         private long _pinFloor;
         private long _softFloor;
+        private long _lastFloor;
         private long _evictedBytes;
         private int _nextFrameId;
         private int _trimming;
@@ -464,7 +474,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             // A frame-start trim finishes in a moment; this one waits for it rather than leaving
             // the free-threaded pools to the next frame, which may be long in coming.
-            if (TrimOutsideFrame(0, pressure: true, wait: true))
+            if (TrimOutsideFrame(0, IdleFloor.Pressure, wait: true))
             {
                 _pendingPressureTrim = true;
             }
@@ -477,12 +487,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// whether frame-affine pools were left to the next frame start.
         /// </summary>
         /// <param name="target">The bytes to trim to.</param>
-        /// <param name="pressure">
-        /// Whether to drop everything no open frame uses, rather than what each source did not draw
-        /// in its last two frames.
-        /// </param>
+        /// <param name="floor">What the trim keeps.</param>
         /// <param name="wait">Whether to wait for a trim already running rather than leave it all to the next frame.</param>
-        private bool TrimOutsideFrame(long target, bool pressure, bool wait)
+        private bool TrimOutsideFrame(long target, IdleFloor floor, bool wait)
         {
             var gate = false;
 
@@ -496,7 +503,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 lock (_frameLock)
                 {
                     quiescent = !HasOpenFrames();
-                    usedBefore = !pressure ? _softFloor : quiescent ? _frame + 1 : _pinFloor;
+                    usedBefore = floor switch
+                    {
+                        IdleFloor.Pressure => quiescent ? _frame + 1 : _pinFloor,
+                        IdleFloor.LastFrame => _lastFloor,
+                        _ => _softFloor,
+                    };
                 }
 
                 if (!quiescent)
@@ -569,13 +581,20 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Trims to the retain target what each source did not draw in its last two frames,
-        /// outside a frame. Frame-affine pools are trimmed now when no frame is open, else at the
-        /// next frame start.
+        /// Trims to the retain target what each source did not draw in its last two frames, then
+        /// to the limit what each source did not draw in its last frame, outside a frame.
+        /// Frame-affine pools are trimmed now when no frame is open, else at the next frame start.
         /// </summary>
         private void TrimIdle()
         {
-            if (UsedBytes > RetainBytes && TrimOutsideFrame(RetainBytes, pressure: false, wait: false))
+            var deferred = UsedBytes > RetainBytes && TrimOutsideFrame(RetainBytes, IdleFloor.TwoFrames, wait: false);
+
+            if (UsedBytes > LimitBytes)
+            {
+                deferred |= TrimOutsideFrame(LimitBytes, IdleFloor.LastFrame, wait: false);
+            }
+
+            if (deferred)
             {
                 _pendingIdleTrim = true;
             }
@@ -645,9 +664,15 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var soft = pin;
+            var last = pin;
 
             foreach (var source in _sources)
             {
+                if (source.LastStart > 0 && !IsStale(source.LastStart) && source.LastStart < last)
+                {
+                    last = source.LastStart;
+                }
+
                 if (source.PreviousStart > 0 && !IsStale(source.LastStart) && source.PreviousStart < soft)
                 {
                     soft = source.PreviousStart;
@@ -656,6 +681,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             Volatile.Write(ref _pinFloor, pin);
             Volatile.Write(ref _softFloor, soft);
+            Volatile.Write(ref _lastFloor, last);
         }
 
         private void OnFrameStart(long frame)
@@ -876,20 +902,47 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// Evicts from the pool of <paramref name="handle"/> alone, after a build took the caches
-        /// past half over the limit: what earlier frames used, until the caches are back within it.
-        /// Frame-affine pools keep what each source drew in its previous frame, which the frame
-        /// being drawn is likely to draw again.
+        /// past the limit: what no source drew in its last two frames, until the caches are back
+        /// within the limit, then, past half over the limit, what earlier frames used, until they
+        /// are back within that. Frame-affine pools keep what each source drew in its previous
+        /// frame, which the frame being drawn is likely to draw again. Run-level state is left to
+        /// the next frame start until the caches pass half over the limit.
         /// </summary>
         internal void EvictInline(GlyphCachePoolHandle handle)
         {
-            var over = UsedBytes - InlineLimitBytes;
+            if (!handle.TryGetPool(out var pool))
+            {
+                return;
+            }
 
-            if (over > 0 && handle.TryGetPool(out var pool))
+            var over = UsedBytes - LimitBytes;
+
+            if (over > 0 && !handle.IsRunLevel)
+            {
+                Interlocked.Add(ref _evictedBytes, pool.EvictOldest(SoftFloor, over));
+            }
+
+            over = UsedBytes - InlineLimitBytes;
+
+            if (over > 0)
             {
                 var usedBefore = handle.IsFrameAffine ? SoftFloor : PinFloor;
 
                 Interlocked.Add(ref _evictedBytes, pool.EvictOldest(usedBefore, over));
             }
+        }
+
+        /// <summary>What a trim outside a frame keeps.</summary>
+        private enum IdleFloor
+        {
+            /// <summary>What each source drew in its last two frames.</summary>
+            TwoFrames,
+
+            /// <summary>What each source drew in its last frame.</summary>
+            LastFrame,
+
+            /// <summary>What the open frames draw.</summary>
+            Pressure,
         }
 
         /// <summary>
@@ -1095,6 +1148,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         public bool IsFrameAffine => Kind is GlyphCachePoolKind.Atlas or GlyphCachePoolKind.LcdAtlas or
             GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets;
 
+        /// <summary>
+        /// Whether the pool holds run-level state (run masks, sprite sets), which only the thread
+        /// that draws a run may drop and whose eviction looks through every run.
+        /// </summary>
+        public bool IsRunLevel => Kind is GlyphCachePoolKind.RunMasks or GlyphCachePoolKind.SpriteSets;
+
         /// <summary>The bytes the pool holds.</summary>
         public long Bytes => Interlocked.Read(ref _bytes);
 
@@ -1116,9 +1175,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Records that the pool now holds <paramref name="bytes"/> more. Past half over the
-        /// limit, the pool evicts what earlier frames used at once; the caller may hold the
-        /// pool's lock.
+        /// Records that the pool now holds <paramref name="bytes"/> more. Past the limit, the pool
+        /// evicts at once what no source drew in its last two frames, and past half over the
+        /// limit what earlier frames used (<see cref="GlyphCacheBudget.EvictInline"/>); the
+        /// caller may hold the pool's lock.
         /// </summary>
         public void Charge(long bytes)
         {
@@ -1129,7 +1189,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             Interlocked.Add(ref _bytes, bytes);
 
-            if (Budget.Add(bytes) > Budget.InlineLimitBytes && bytes > 0)
+            if (Budget.Add(bytes) > Budget.LimitBytes && bytes > 0)
             {
                 Budget.EvictInline(this);
             }
