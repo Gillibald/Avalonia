@@ -1,9 +1,24 @@
 """Summarize TextStress result files into Markdown tables.
 
-usage: python summarize.py <results-dir> [summary.md]
+usage: python summarize.py <results-dir> [summary.md] [--ref base] [--counters-only]
 
-Reads every *.tsv under the directory (each written by one TextStress process), pools the
-frames of all passes per (scenario, params, n, mode, render) and writes:
+Campaign results (campaign.ps1: <render>/<variant>.<job>-p<pass>.tsv) get a per-variant
+comparison against the reference variant (--ref, default base):
+- the content area of every run (preset, density, content pixels; runs from builds before the
+  presets count their window's client area). Runs whose content areas differ lay a scene out
+  differently, so they are never compared: the job is reported as refused;
+- frame times per pass, as ranges over the passes: render-thread p50, p95 and max, frames over
+  8.3 and 16.7 ms, frames that had a garbage collection and slow frames among them;
+- render-thread counters as totals per pass, with every counter that differs from the reference;
+- memory peaks: glyph atlas, glyph cache budget, private bytes, render-thread allocations;
+- a keep-rule verdict per job: 'better' or 'worse' when the variant's pass range of p50, p95 or
+  frames over 8.3 ms lies below or above the reference's by more than 2 % (at least 0.02 ms, one
+  frame for the counts), 'within' otherwise,
+  'memory worse' when its lowest peak exceeds the reference's highest by more than 2 %, and
+  'near budget' when a p95 lies within 10 % of 8.3 or 16.7 ms. --counters-only judges counters only.
+
+Other results (run-windows.ps1, run-android.ps1) are pooled over passes per (scenario, params, n,
+mode, render, content area) and written as:
 - per scenario: frame interval and render time percentiles, CPU per thread, frames over the
   16.6 ms and 8.3 ms budgets (by interval and by busy time), allocations, GC, memory, caches;
 - per sweep: cost against N with the local log-log slope and a knee flag where the marginal
@@ -19,6 +34,7 @@ Only the standard library is used.
 import glob
 import math
 import os
+import re
 import statistics
 import sys
 from collections import defaultdict, OrderedDict
@@ -107,19 +123,64 @@ def share(xs, limit):
     return 100.0 * sum(1 for x in xs if x > limit) / len(xs) if xs else float("nan")
 
 
+CAMPAIGN_FILE = re.compile(r"^(?P<variant>[A-Za-z0-9_-]+)\.(?P<job>.+)-p(?P<pass>\d+)\.tsv$")
+
+
+def geometry(env):
+    """(preset, density, content pixels) of a run. Builds before the content presets laid the
+    scene out in the whole client area, so their geometry is the client size in pixels."""
+    density = env.get("density") or env.get("render_scaling") or "?"
+    if env.get("content_pixels"):
+        return env.get("preset", "?"), density, env["content_pixels"]
+    try:
+        w, h = (float(x) for x in env.get("client_size", "").split("x"))
+        s = float(density)
+        return "window", density, f"{round(w * s)}x{round(h * s)}"
+    except ValueError:
+        return "window", density, "?"
+
+
+def geometry_text(g):
+    return f"{g[0]} {g[2]} px at {g[1]}"
+
+
 def main():
-    src = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(src, "summary.md")
+    argv, args, ref, counters_only = sys.argv[1:], [], "base", False
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--ref":
+            ref = argv[i + 1]
+            i += 1
+        elif argv[i] == "--counters-only":
+            counters_only = True
+        else:
+            args.append(argv[i])
+        i += 1
+    src = args[0]
+    out = args[1] if len(args) > 1 else os.path.join(src, "summary.md")
+    paths = sorted(glob.glob(os.path.join(src, "**", "*.tsv"), recursive=True))
+
+    if any(CAMPAIGN_FILE.match(os.path.basename(p)) for p in paths):
+        lines = campaign(src, paths, ref, counters_only)
+        with open(out, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"wrote {out}")
+        return
+
     groups = defaultdict(list)
     envs = {}
-    for path in sorted(glob.glob(os.path.join(src, "**", "*.tsv"), recursive=True)):
+    geometries = set()
+    for path in paths:
         env, rows = load(path)
         if not rows:
             continue
+        # Runs with different content areas lay their scenes out differently; they never pool.
+        g = geometry(env)
+        geometries.add(g)
         for r in rows:
-            key = (r["scenario"], env.get("params", ""), r["n"], r["mode"], r["render"])
+            key = (r["scenario"], env.get("params", "") + ";area=" + geometry_text(g), r["n"], r["mode"], r["render"])
             groups[key].append(r)
-        envs[(env.get("scenario"), env.get("render"), env.get("mode"))] = env
+        envs[(env.get("scenario"), env.get("render"), env.get("mode"), g)] = env
 
     lines = []
     w = lines.append
@@ -127,16 +188,20 @@ def main():
     w("")
     w(f"Source: `{os.path.abspath(src)}`, {sum(len(v) for v in groups.values())} frames in {len(groups)} groups.")
     w("")
+    if len(geometries) > 1:
+        w("**Runs with different content areas** (" + "; ".join(geometry_text(g) for g in sorted(geometries)) +
+          "): their scenes lay out differently, so they are kept apart and never compared.")
+        w("")
     w("## Environment")
     w("")
     seen = OrderedDict()
-    for (scenario, render, mode), env in sorted(envs.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
-        key = (render, env.get("graphics"), env.get("gpu_renderer"))
+    for (scenario, render, mode, g), env in sorted(envs.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
+        key = (render, env.get("graphics"), env.get("gpu_renderer"), g)
         seen.setdefault(key, env)
-    w("| render | graphics | renderer | scaling | client | clock | os | runtime | tag |")
+    w("| render | graphics | renderer | content area | client | clock | os | runtime | tag |")
     w("|---|---|---|---|---|---|---|---|---|")
-    for (render, graphics, renderer), env in seen.items():
-        w(f"| {render} | {graphics} | {renderer} | {env.get('render_scaling')} | {env.get('client_size')} | "
+    for (render, graphics, renderer, g), env in seen.items():
+        w(f"| {render} | {graphics} | {renderer} | {geometry_text(g)} | {env.get('client_size')} | "
           f"{env.get('thread_clock')} | {env.get('os')} | {env.get('runtime')} | {env.get('tag')} |")
     w("")
     w("Columns: `int` frame interval (render end to render end); `render` render-thread wall time from "
@@ -433,6 +498,291 @@ def phase_cells(rows, plus, minus, count):
     total = sum(sum(r.get(c, 0) for c in plus) - sum(r.get(c, 0) for c in minus) for r in rows)
     spans = sum(r.get(count, 0) for r in rows)
     return f"{fmt(total / len(rows), 1)} | {fmt(spans / len(rows), 2)} | {fmt(total / spans if spans else float('nan'), 3)}"
+
+
+# Render-thread counters compared per pass. For a fixed scene they repeat exactly from run to run,
+# except where a policy reads the clock (the motion raster budget), so a difference between
+# variants means the scene or the code under test draws differently.
+CAMPAIGN_COUNTERS = ["glyph_rasterizations", "atlas_draws", "page_uploads", "atlas_geometry", "batches_drawn",
+                     "batched_runs", "page_images_replaced", "page_upload_bytes", "page_texture_updates",
+                     "page_texture_regions", "mask_hits", "mask_misses", "sprite_set_builds", "atlas_batch_builds",
+                     "atlas_hits", "atlas_misses", "atlas_placements", "stretched_draws", "unsettled_draws",
+                     "tier_mask", "tier_transformed", "tier_blob", "decodes", "mask_evictions", "atlas_evictions"]
+
+# The counters shown in the counter table; the differing-counters column covers all of them.
+SHOWN_COUNTERS = [("glyph_rasterizations", "raster"), ("atlas_draws", "draws"), ("batches_drawn", "batches"),
+                  ("batched_runs", "runs"), ("page_uploads", "uploads"), ("stretched_draws", "stretched")]
+
+MB = 1048576.0
+
+
+def counter_columns(row):
+    return [c for c in CAMPAIGN_COUNTERS if c in row] + \
+           sorted(c for c in row if c.startswith(("fb_", "fe_", "clip_")))
+
+
+def pass_stats(rows):
+    ms = col(rows, "render_ms")
+    gcs = [r["gc0"] + r["gc1"] + r["gc2"] for r in rows]
+
+    def peak(name, scale=MB):
+        xs = [r[name] for r in rows if name in r and not math.isnan(r[name])]
+        return max(xs) / scale if xs else float("nan")
+
+    counters = {}
+    for c in counter_columns(rows[0]):
+        xs = [r[c] for r in rows if not math.isnan(r[c]) and r[c] >= 0]
+        if xs:
+            counters[c] = sum(xs)
+    return dict(
+        frames=len(rows), p50=pct(ms, 50), p95=pct(ms, 95), max=max(ms),
+        o8=sum(1 for x in ms if x > 8.3), o16=sum(1 for x in ms if x > 16.7),
+        gc=sum(1 for g in gcs if g > 0), o8gc=sum(1 for x, g in zip(ms, gcs) if x > 8.3 and g > 0),
+        ui50=pct(col(rows, "ui_ms"), 50), atlas=peak("atlas_bytes"), budget=peak("budget_peak_bytes"),
+        private=peak("private_bytes"),
+        alloc=sum(r["render_alloc"] for r in rows if r["render_alloc"] >= 0) / MB,
+        gc0=sum(r["gc0"] for r in rows), gc1=sum(r["gc1"] for r in rows), gc2=sum(r["gc2"] for r in rows),
+        counters=counters)
+
+
+def rng(values, digits=2):
+    values = [v for v in values if not (isinstance(v, float) and math.isnan(v))]
+    if not values:
+        return "-"
+    lo, hi = fmt(float(min(values)), digits), fmt(float(max(values)), digits)
+    return lo if lo == hi else f"{lo}-{hi}"
+
+
+def time_verdict(b, t):
+    """Disjoint pass ranges, by more than the gap separate processes show without any change:
+    2 % or 0.02 ms for times, one frame for counts of slow frames. Two passes give a narrow
+    range, and launches of one build differ by about that much."""
+    out = []
+    for k, relative, absolute in (("p50", 0.02, 0.02), ("p95", 0.02, 0.02), ("o8", 0, 1)):
+        bl, bh = min(x[k] for x in b), max(x[k] for x in b)
+        tl, th = min(x[k] for x in t), max(x[k] for x in t)
+        if tl > bh + max(absolute, relative * bh):
+            out.append(f"worse {k}")
+        elif th < bl - max(absolute, relative * bl):
+            out.append(f"better {k}")
+    return out
+
+
+def memory_verdict(b, t):
+    out = []
+    for k in ("atlas", "budget", "private"):
+        bh = max(x[k] for x in b)
+        tl = min(x[k] for x in t)
+        if not math.isnan(bh) and not math.isnan(tl) and tl > bh * 1.02 + 0.1:
+            out.append(f"memory worse {k}")
+    return out
+
+
+def counter_verdict(b, t):
+    """('identical' | 'vary' | 'differ', differing counters)."""
+    names = sorted(set.intersection(*(set(x["counters"]) for x in b + t)))
+    differ, vary = [], []
+    for c in names:
+        bv = {x["counters"][c] for x in b}
+        tv = {x["counters"][c] for x in t}
+        if bv == tv and len(bv) == 1:
+            continue
+        if min(tv) > max(bv) or max(tv) < min(bv):
+            differ.append(c)
+        else:
+            vary.append(c)
+    if differ:
+        return "differ", differ
+    return ("vary", vary) if vary else ("identical", [])
+
+
+def near_budget(stats):
+    return any(0.9 * limit <= x["p95"] <= 1.1 * limit for x in stats for limit in (8.3, 16.7))
+
+
+def campaign(src, paths, ref, counters_only):
+    runs = defaultdict(lambda: defaultdict(dict))
+    areas = defaultdict(lambda: defaultdict(set))
+    envs = {}
+    for path in paths:
+        m = CAMPAIGN_FILE.match(os.path.basename(path))
+        if not m:
+            continue
+        env, rows = load(path)
+        if not rows:
+            continue
+        render = os.path.basename(os.path.dirname(path))
+        variant, job, p = m.group("variant"), m.group("job"), int(m.group("pass"))
+        areas[(render, job)][variant].add(geometry(env))
+        envs.setdefault((render, variant), env)
+        by_n = defaultdict(list)
+        for r in rows:
+            by_n[r["n"]].append(r)
+        for n, rs in by_n.items():
+            runs[(render, job, n)][variant][p] = pass_stats(rs)
+
+    variants = sorted({v for key in runs for v in runs[key]}, key=lambda v: (v != ref, v))
+    lines = []
+    w = lines.append
+    w("# TextStress campaign summary")
+    w("")
+    w(f"Source: `{os.path.abspath(src)}`. Variants {', '.join(variants)}; reference `{ref}`. Ranges are min-max "
+      "over passes; times are render-thread wall times per frame (ms).")
+    w("")
+    w("## Content areas")
+    w("")
+    w("| render | variant | content area | client | build | label | strip |")
+    w("|---|---|---|---|---|---|---|")
+    for (render, variant), env in sorted(envs.items()):
+        w(f"| {render} | {variant} | {geometry_text(geometry(env))} | {env.get('client_size')} | {env.get('build')} | "
+          f"{env.get('label')} | {env.get('status_strip', '-')} |")
+    w("")
+
+    # Density and content pixels decide the layout; the preset only names a size, and a run from
+    # a build before the presets ("window") lays out like any preset of its client size.
+    def layout(gs):
+        return {g[1:] for g in gs}
+
+    refused = {}
+    for (render, job), by_variant in areas.items():
+        reasons = []
+        for v, gs in by_variant.items():
+            if len(layout(gs)) > 1:
+                reasons.append(f"{v} ran with {len(gs)} content areas")
+        if ref in by_variant:
+            for v, gs in by_variant.items():
+                if v != ref and layout(gs) != layout(by_variant[ref]):
+                    reasons.append(f"{v} {', '.join(geometry_text(g) for g in sorted(gs))} vs {ref} "
+                                   f"{', '.join(geometry_text(g) for g in sorted(by_variant[ref]))}")
+        if reasons:
+            refused[(render, job)] = "; ".join(reasons)
+    if refused:
+        w("**Refused comparisons**: these jobs ran with different content areas, so their scenes lay out "
+          "differently and nothing is compared:")
+        w("")
+        for (render, job), why in sorted(refused.items()):
+            w(f"- {render} {job}: {why}")
+        w("")
+
+    keys = sorted(runs, key=lambda k: (k[0], k[1], k[2]))
+
+    def name(key):
+        render, job, n = key
+        return job if n == 0 else f"{job} n={n}"
+
+    if not counters_only:
+        w("## Frame times")
+        w("")
+        w("`gc` frames during which a collection ran, `>8.3 gc` those among the frames over 8.3 ms.")
+        w("")
+        w("| render | job | variant | passes | frames | p50 | p95 | max | >8.3 | >16.7 | gc | >8.3 gc | ui p50 |")
+        w("|" + "---|" * 13)
+        for key in keys:
+            for v in variants:
+                ps = list(runs[key].get(v, {}).values())
+                if not ps:
+                    continue
+                c = lambda k, d=2: rng([x[k] for x in ps], d)
+                w(f"| {key[0]} | {name(key)} | {v} | {len(ps)} | {ps[0]['frames']} | {c('p50')} | {c('p95')} | "
+                  f"{c('max', 1)} | {c('o8', 0)} | {c('o16', 0)} | {c('gc', 0)} | {c('o8gc', 0)} | {c('ui50')} |")
+        w("")
+
+    w("## Counters")
+    w("")
+    w("Totals per pass. `differs from " + ref + "` lists every compared counter whose pass totals do not match "
+      "the reference's (`~` when the ranges overlap, a counter that varies from pass to pass).")
+    w("")
+    w("| render | job | variant | " + " | ".join(label for _, label in SHOWN_COUNTERS) + f" | differs from {ref} |")
+    w("|" + "---|" * (4 + len(SHOWN_COUNTERS)))
+    for key in keys:
+        base = list(runs[key].get(ref, {}).values())
+        for v in variants:
+            ps = list(runs[key].get(v, {}).values())
+            if not ps:
+                continue
+            cells = [rng([x["counters"].get(c, float("nan")) for x in ps], 0) for c, _ in SHOWN_COUNTERS]
+            diff = ""
+            if v != ref and base and (key[0], key[1]) not in refused:
+                state, names = counter_verdict(base, ps)
+                diff = "none" if state == "identical" else ", ".join(names if state == "differ" else ["~" + n for n in names])
+            w(f"| {key[0]} | {name(key)} | {v} | " + " | ".join(cells) + f" | {diff} |")
+    w("")
+
+    w("## Memory")
+    w("")
+    w("Peaks over the run (MB) and render-thread allocations per pass (MB).")
+    w("")
+    w("| render | job | variant | atlas | glyph cache budget | private | render alloc | gc0/1/2 |")
+    w("|---|---|---|---|---|---|---|---|")
+    for key in keys:
+        for v in variants:
+            ps = list(runs[key].get(v, {}).values())
+            if not ps:
+                continue
+            c = lambda k, d=1: rng([x[k] for x in ps], d)
+            w(f"| {key[0]} | {name(key)} | {v} | {c('atlas')} | {c('budget')} | {c('private', 0)} | {c('alloc')} | "
+              f"{c('gc0', 0)}/{c('gc1', 0)}/{c('gc2', 0)} |")
+    w("")
+
+    w("## Verdicts")
+    w("")
+    w("Keep rule: keep a change when its target scenes are `better` (pass ranges disjoint), no scene is `worse` "
+      "and memory is not worse. `within` means the ranges overlap; with two passes, add a third only where the "
+      "ranges overlap in a target scene or a scene is near a frame budget.")
+    w("")
+    w("| render | job | variant | time | counters | memory | note |")
+    w("|---|---|---|---|---|---|---|")
+    overall = defaultdict(list)
+    third = defaultdict(list)
+    for key in keys:
+        base = list(runs[key].get(ref, {}).values())
+        for v in variants:
+            if v == ref:
+                continue
+            ps = list(runs[key].get(v, {}).values())
+            if not ps or not base:
+                continue
+            if (key[0], key[1]) in refused:
+                w(f"| {key[0]} | {name(key)} | {v} | refused | refused | refused | different content areas |")
+                overall[v].append("refused")
+                continue
+            state, names = counter_verdict(base, ps)
+            counters = state if state != "differ" else f"differ ({len(names)})"
+            memory = ", ".join(memory_verdict(base, ps)) or "not worse"
+            notes = []
+            if counters_only:
+                time = "-"
+            else:
+                tv = time_verdict(base, ps)
+                time = ", ".join(tv) or "within"
+                if near_budget(base + ps):
+                    notes.append("near budget")
+                if not tv and min(len(base), len(ps)) < 3 and notes:
+                    third[v].append(f"{key[0]} {name(key)}")
+                overall[v] += tv
+            if memory != "not worse":
+                overall[v].append("memory worse")
+            if state == "differ":
+                overall[v].append("counters differ")
+            w(f"| {key[0]} | {name(key)} | {v} | {time} | {counters} | {memory} | {', '.join(notes)} |")
+    w("")
+    for v in variants:
+        if v == ref or v not in overall and v not in third:
+            continue
+        found = overall[v]
+        if counters_only:
+            verdict = "counters differ" if "counters differ" in found else "counters identical or within pass variation"
+        elif any(f.startswith("worse") or f == "memory worse" for f in found):
+            verdict = "do not keep: " + ", ".join(sorted({f for f in found if f.startswith("worse") or f == "memory worse"}))
+        elif any(f.startswith("better") for f in found):
+            verdict = "keep if the better scenes are the targets"
+        else:
+            verdict = "no difference beyond the pass spread"
+        if "refused" in found:
+            verdict += "; some jobs refused"
+        w(f"- **{v} vs {ref}**: {verdict}." + (f" Third pass advised for {', '.join(third[v])}." if third[v] else ""))
+    w("")
+    return lines
 
 
 if __name__ == "__main__":

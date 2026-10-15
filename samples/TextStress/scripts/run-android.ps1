@@ -59,7 +59,16 @@ param(
     [string] $ApkPath = '',
     [string] $RunTag = '',
     # Skips runs whose result file is already in OutDir, to fill in failed runs of an earlier invocation.
-    [switch] $SkipExisting
+    [switch] $SkipExisting,
+    # Set by a driver that calls this script several times in one campaign: the runs before this call, the
+    # campaign's run count, and its estimate of the time left, so the progress and the time left
+    # cover the whole campaign.
+    [int] $ProgressBase = 0,
+    [int] $ProgressTotal = 0,
+    [string] $Eta = '',
+    [switch] $NoSummary,
+    # Keeps the installed APK, for a driver that already installed it for an earlier call.
+    [switch] $NoInstall
 )
 
 $ErrorActionPreference = 'Stop'
@@ -139,8 +148,10 @@ if (-not $NoBuild) {
 }
 
 if ($ApkPath) { $apk = $ApkPath }
-Invoke-Adb install -r $apk | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "install failed" }
+if (-not $NoInstall) {
+    Invoke-Adb install -r $apk | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "install failed" }
+}
 
 $tag = (git -C $repo rev-parse --short HEAD).Trim()
 $status = git -C $repo status --porcelain -- src samples/TextStress samples/TextStress.Android
@@ -223,11 +234,21 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
                     $run++
                     if ($SkipExisting -and (Test-Path (Join-Path $renderDir $file))) { continue }
 
-                    $arguments += @('--progress', "$run/$total")
+                    if ($ProgressTotal -gt 0) {
+                        $arguments += @('--progress', "$($ProgressBase + $run)/$ProgressTotal")
+                        if ($executed -gt 0) {
+                            $left = $executedTime.TotalMinutes / $executed * ($ProgressTotal - $ProgressBase - $run + 1)
+                            $arguments += @('--eta', ('"{0:N0} min left"' -f [Math]::Ceiling($left)))
+                        }
+                        elseif ($Eta) { $arguments += @('--eta', "`"$Eta`"") }
+                    }
+                    else {
+                        $arguments += @('--progress', "$run/$total")
 
-                    if ($executed -gt 0) {
-                        $left = $executedTime.TotalMinutes / $executed * ($total - $run + 1)
-                        $arguments += @('--eta', ('"{0:N0} min left"' -f [Math]::Ceiling($left)))
+                        if ($executed -gt 0) {
+                            $left = $executedTime.TotalMinutes / $executed * ($total - $run + 1)
+                            $arguments += @('--eta', ('"{0:N0} min left"' -f [Math]::Ceiling($left)))
+                        }
                     }
 
                     $runStarted = Get-Date
@@ -290,4 +311,4 @@ for ($pass = 1; $pass -le $Passes; $pass++) {
 
 Invoke-Adb shell am force-stop $package | Out-Null
 Add-Content $log ("finished after {0:N1} min, {1} failed runs" -f ((Get-Date) - $started).TotalMinutes, $failures)
-python (Join-Path $PSScriptRoot 'summarize.py') $OutDir (Join-Path $OutDir 'summary.md')
+if (-not $NoSummary) { python (Join-Path $PSScriptRoot 'summarize.py') $OutDir (Join-Path $OutDir 'summary.md') }
