@@ -33,5 +33,31 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// rasterizing costly.
         /// </summary>
         public double ZoomRasterPixelCost { get; init; } = 5;
+
+        /// <summary>
+        /// The most time a frame may spend rasterizing motion frames sharp, in microseconds;
+        /// <c>null</c> keeps <see cref="MotionRasterBudget.FrameBudgetMicroseconds"/>.
+        /// </summary>
+        public double? MotionBudgetMicroseconds { get; init; }
+
+        /// <summary>
+        /// The cost per glyph the motion budget assumes, in microseconds: a run is estimated at its
+        /// glyph count times it, whatever its masks find cached, and a frame that rasterizes is
+        /// charged its estimate rather than the time it took, so decisions depend neither on the
+        /// machine nor on what was cached before. <c>null</c> measures.
+        /// </summary>
+        public double? MotionGlyphCostMicroseconds { get; init; }
+
+        /// <summary>
+        /// The interval between frames the motion budget assumes, in microseconds; <c>null</c>
+        /// assumes a 120 Hz display.
+        /// </summary>
+        public double? MotionFrameIntervalMicroseconds { get; init; }
+
+        /// <summary>
+        /// The time frames spend outside text that the motion budget assumes, in microseconds;
+        /// <c>null</c> measures it.
+        /// </summary>
+        public double? MotionNonTextMicroseconds { get; init; }
     }
 }

@@ -452,7 +452,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static int Luma(SKColor color) => 54 * color.Red + 183 * color.Green + 19 * color.Blue;
 
         private static IDisposable StartApp()
-            => UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            => TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null)));
 
         private static SKSurface CreateSurface(out SKImageInfo info)

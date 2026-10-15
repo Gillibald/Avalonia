@@ -21,7 +21,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             Assert.SkipWhen(Environment.GetEnvironmentVariable("DECORATION_INTERCEPT_PROBE") is not { Length: > 0 }, "probe");
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null)));
 
             using var skTypeface = SKFontManager.Default.MatchFamily("Courier New", SKFontStyle.Normal);

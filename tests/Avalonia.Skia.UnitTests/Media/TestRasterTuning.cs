@@ -2,12 +2,12 @@ using System;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Reactive;
 
-namespace Avalonia.Skia.UnitTests.Media
+namespace Avalonia.Skia.UnitTests
 {
     /// <summary>
     /// Changes the <see cref="GlyphRasterTuning"/> of the current application by binding a changed
-    /// copy into its locator scope. Drawing contexts read the tuning when they are created, and the
-    /// binding ends with the scope, so nothing a test tunes reaches the next one.
+    /// copy into its locator scope. Drawing contexts read the tuning once, before they draw text, and
+    /// the binding ends with the scope, so nothing a test tunes reaches the next one.
     /// </summary>
     internal static class TestRasterTuning
     {

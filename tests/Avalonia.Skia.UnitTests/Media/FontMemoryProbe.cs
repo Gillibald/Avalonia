@@ -21,7 +21,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             Assert.SkipWhen(Environment.GetEnvironmentVariable("FONT_MEMORY_PROBE") != "1", "probe");
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 

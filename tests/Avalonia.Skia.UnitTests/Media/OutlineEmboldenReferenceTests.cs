@@ -85,7 +85,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [MemberData(nameof(Glyphs))]
         public void Bold_Outline_Matches_FreeType(string font, string character)
         {
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface()));
 
             var glyph = Find(font, character);

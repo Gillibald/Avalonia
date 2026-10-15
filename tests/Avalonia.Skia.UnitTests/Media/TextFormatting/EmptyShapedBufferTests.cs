@@ -66,7 +66,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
         private static IDisposable Start()
         {
-            var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            var disposable = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface()));
 
             FontManager.Current.AddFontCollection(new GlyphlessSystemFontCollection());

@@ -29,7 +29,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(skTypeface is null || !skTypeface.FamilyName.Contains("Emoji"),
                 "Segoe UI Emoji is not installed.");
 
-            using var scope = AvaloniaLocator.EnterScope();
+            using var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
@@ -250,7 +250,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static IDisposable CreateEnvironment()
         {
-            var scope = AvaloniaLocator.EnterScope();
+            var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());

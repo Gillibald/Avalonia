@@ -313,7 +313,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 var scale = 1 + 0.01 * (frame % period);
                 var before = MotionRasterBudget.TriedFrames;
 
-                MotionRasterBudget.GlyphCostOverride = expected.IndexOf(frame + 1) > 0 ? GlyphCost / 2 : GlyphCost;
+                var cost = expected.IndexOf(frame + 1) > 0 ? GlyphCost / 2 : GlyphCost;
+
+                TestRasterTuning.Set(t => t with { MotionGlyphCostMicroseconds = cost });
 
                 output.Frame(context =>
                 {
@@ -524,7 +526,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 var before = MotionRasterBudget.TriedFrames;
                 var current = frame;
 
-                MotionRasterBudget.GlyphCostOverride = glyphCost(frame);
+                TestRasterTuning.Set(t => t with { MotionGlyphCostMicroseconds = glyphCost(frame) });
 
                 output.Frame(context =>
                 {
@@ -588,14 +590,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(crossing > 0, "the zoom never crossed the band");
 
-            MotionRasterBudget.BudgetOverride = 1e9;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 1e9 });
 
             for (var frame = 12; frame < 18; frame++)
             {
                 Assert.True(Draw(1 + 0.04 * frame) > 0, $"frame {frame} did not draw sharp");
             }
 
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
             Assert.Equal(0, Draw(crossing));
         }
@@ -683,30 +685,19 @@ namespace Avalonia.Skia.UnitTests.Media
                 MotionRasterBudget.RecordFrame(renderMicroseconds: 5000, textMicroseconds: 1000);
             }
 
-            Assert.InRange(MotionRasterBudget.NonTextMicroseconds, 3990, 4010);
+            Assert.InRange(MotionRasterBudget.NonTextMicroseconds(GlyphRasterTuning.Default), 3990, 4010);
 
             MotionRasterBudget.RecordFrame(renderMicroseconds: 13000, textMicroseconds: 1000);
 
-            Assert.InRange(MotionRasterBudget.NonTextMicroseconds, 4500, 7000);
+            Assert.InRange(MotionRasterBudget.NonTextMicroseconds(GlyphRasterTuning.Default), 4500, 7000);
         }
 
         [Fact]
         public void The_Frame_Interval_Is_A_120_Hz_Frame_Unless_Injected()
         {
-            var previous = MotionRasterBudget.FrameIntervalOverride;
-
-            try
-            {
-                MotionRasterBudget.FrameIntervalOverride = null;
-                Assert.Equal(1e6 / 120, MotionRasterBudget.FrameIntervalMicroseconds, 3);
-
-                MotionRasterBudget.FrameIntervalOverride = 16667;
-                Assert.Equal(16667, MotionRasterBudget.FrameIntervalMicroseconds, 3);
-            }
-            finally
-            {
-                MotionRasterBudget.FrameIntervalOverride = previous;
-            }
+            Assert.Equal(1e6 / 120, MotionRasterBudget.FrameIntervalMicroseconds(GlyphRasterTuning.Default), 3);
+            Assert.Equal(16667, MotionRasterBudget.FrameIntervalMicroseconds(
+                GlyphRasterTuning.Default with { MotionFrameIntervalMicroseconds = 16667 }), 3);
         }
 
         [Theory]
@@ -768,7 +759,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 if (glyphCost is not null)
                 {
-                    MotionRasterBudget.GlyphCostOverride = glyphCost(frame);
+                    TestRasterTuning.Set(t => t with { MotionGlyphCostMicroseconds = glyphCost(frame) });
                 }
 
                 output.Frame(context =>
@@ -854,33 +845,26 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        /// <summary>Sets the frame budget and the cost per glyph for the scope.</summary>
         /// <summary>
         /// Sets the budget's cap, the cost per glyph, the frame interval and the time a frame spends
         /// outside text for the scope; the time outside text is none unless given.
         /// </summary>
         private sealed class InjectedBudget : IDisposable
         {
-            private readonly double? _budget = MotionRasterBudget.BudgetOverride;
-            private readonly double? _glyphCost = MotionRasterBudget.GlyphCostOverride;
-            private readonly double? _interval = MotionRasterBudget.FrameIntervalOverride;
-            private readonly double? _nonText = MotionRasterBudget.NonTextOverride;
+            private readonly IDisposable _tuning;
 
             public InjectedBudget(double budget, double glyphCost, double? interval = null, double nonText = 0)
             {
-                MotionRasterBudget.BudgetOverride = budget;
-                MotionRasterBudget.GlyphCostOverride = glyphCost;
-                MotionRasterBudget.FrameIntervalOverride = interval;
-                MotionRasterBudget.NonTextOverride = nonText;
+                _tuning = TestRasterTuning.Change(t => t with
+                {
+                    MotionBudgetMicroseconds = budget,
+                    MotionGlyphCostMicroseconds = glyphCost,
+                    MotionFrameIntervalMicroseconds = interval,
+                    MotionNonTextMicroseconds = nonText,
+                });
             }
 
-            public void Dispose()
-            {
-                MotionRasterBudget.BudgetOverride = _budget;
-                MotionRasterBudget.GlyphCostOverride = _glyphCost;
-                MotionRasterBudget.FrameIntervalOverride = _interval;
-                MotionRasterBudget.NonTextOverride = _nonText;
-            }
+            public void Dispose() => _tuning.Dispose();
         }
 
         /// <summary>

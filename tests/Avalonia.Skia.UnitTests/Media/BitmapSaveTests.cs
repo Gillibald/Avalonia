@@ -102,7 +102,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static IDisposable Start()
-            => UnitTestApplication.Start(
+            => TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface()));
     }
 }

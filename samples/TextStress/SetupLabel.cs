@@ -282,12 +282,13 @@ namespace TextStress
         /// </summary>
         private static string MotionPolicy()
         {
-            var budget = MotionRasterBudget.BudgetOverride is { } over
+            var tuning = GlyphRasterTuning.Current;
+            var budget = tuning.MotionBudgetMicroseconds is { } over
                 ? Us(over)
                 : Us(MotionRasterBudget.FrameBudgetMicroseconds) + " built-in";
-            var interval = MotionRasterBudget.FrameIntervalOverride is { } intervalOver
+            var interval = tuning.MotionFrameIntervalMicroseconds is { } intervalOver
                 ? Us(intervalOver)
-                : Us(MotionRasterBudget.FrameIntervalMicroseconds) + " built-in";
+                : Us(MotionRasterBudget.FrameIntervalMicroseconds(tuning)) + " built-in";
 
             var renderer = typeof(MotionRasterBudget).Assembly
                 .GetType("Avalonia.Media.Fonts.Rasterization.MaskGlyphRunRenderer");

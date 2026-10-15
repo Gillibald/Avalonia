@@ -29,39 +29,26 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Motion_Budget_Overrides_Do_Not_Outlive_Application()
         {
-            var budget = MotionRasterBudget.BudgetOverride;
-            var glyphCost = MotionRasterBudget.GlyphCostOverride;
-            var interval = MotionRasterBudget.FrameIntervalOverride;
-            var nonText = MotionRasterBudget.NonTextOverride;
-
-            try
+            using (TextTestApplication.Enter())
             {
-                using (TextTestApplication.Enter())
+                FailingSetup(() => TestRasterTuning.Set(t => t with
                 {
-                    FailingSetup(() =>
-                    {
-                        MotionRasterBudget.BudgetOverride = 1e9;
-                        MotionRasterBudget.GlyphCostOverride = 1;
-                        MotionRasterBudget.FrameIntervalOverride = 1e6;
-                        MotionRasterBudget.NonTextOverride = 0;
-                    });
-                }
-
-                using (TextTestApplication.Enter())
-                {
-                    // The motion budget of this assembly's applications affords nothing.
-                    Assert.Equal(0, MotionRasterBudget.BudgetOverride);
-                    Assert.Null(MotionRasterBudget.GlyphCostOverride);
-                    Assert.Null(MotionRasterBudget.FrameIntervalOverride);
-                    Assert.Null(MotionRasterBudget.NonTextOverride);
-                }
+                    MotionBudgetMicroseconds = 1e9,
+                    MotionGlyphCostMicroseconds = 1,
+                    MotionFrameIntervalMicroseconds = 1e6,
+                    MotionNonTextMicroseconds = 0,
+                }));
             }
-            finally
+
+            using (TextTestApplication.Enter())
             {
-                MotionRasterBudget.BudgetOverride = budget;
-                MotionRasterBudget.GlyphCostOverride = glyphCost;
-                MotionRasterBudget.FrameIntervalOverride = interval;
-                MotionRasterBudget.NonTextOverride = nonText;
+                var tuning = TuningOfNewContext();
+
+                // The motion budget of this assembly's applications affords nothing.
+                Assert.Equal(0, tuning.MotionBudgetMicroseconds);
+                Assert.Null(tuning.MotionGlyphCostMicroseconds);
+                Assert.Null(tuning.MotionFrameIntervalMicroseconds);
+                Assert.Null(tuning.MotionNonTextMicroseconds);
             }
         }
 

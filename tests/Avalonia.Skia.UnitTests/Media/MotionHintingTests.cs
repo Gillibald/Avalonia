@@ -273,25 +273,15 @@ namespace Avalonia.Skia.UnitTests.Media
         /// </summary>
         private sealed class AffordingBudget : IDisposable
         {
-            private readonly double? _budget = MotionRasterBudget.BudgetOverride;
-            private readonly double? _glyphCost = MotionRasterBudget.GlyphCostOverride;
-            private readonly double? _nonText = MotionRasterBudget.NonTextOverride;
-            private readonly IDisposable _tuning = TestRasterTuning.Change(t => t with { ZoomRasterPixelCost = 0 });
-
-            public AffordingBudget()
+            private readonly IDisposable _tuning = TestRasterTuning.Change(t => t with
             {
-                MotionRasterBudget.BudgetOverride = 1e9;
-                MotionRasterBudget.GlyphCostOverride = 1;
-                MotionRasterBudget.NonTextOverride = 0;
-            }
+                MotionBudgetMicroseconds = 1e9,
+                MotionGlyphCostMicroseconds = 1,
+                MotionNonTextMicroseconds = 0,
+                ZoomRasterPixelCost = 0,
+            });
 
-            public void Dispose()
-            {
-                MotionRasterBudget.BudgetOverride = _budget;
-                MotionRasterBudget.GlyphCostOverride = _glyphCost;
-                MotionRasterBudget.NonTextOverride = _nonText;
-                _tuning.Dispose();
-            }
+            public void Dispose() => _tuning.Dispose();
         }
 
         /// <summary>

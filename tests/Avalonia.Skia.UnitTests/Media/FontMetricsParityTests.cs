@@ -30,7 +30,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(skTypeface is null || !skTypeface.FamilyName.StartsWith(family.Split(' ')[0]),
                 $"{family} is not installed.");
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 

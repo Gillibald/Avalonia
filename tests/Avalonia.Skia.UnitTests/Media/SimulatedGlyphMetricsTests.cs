@@ -278,7 +278,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static IDisposable StartWithGeometry() =>
-            UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface()));
 
         private static Rect GetBounds(List<Point> points)

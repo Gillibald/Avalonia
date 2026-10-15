@@ -50,10 +50,8 @@ namespace Avalonia.Skia.UnitTests.Media
                     new Point(6.3, 30 + i * 18));
             }
 
-            var budget = MotionRasterBudget.BudgetOverride;
-
             // No frame affords rasterizing, so every moving frame stretches the cached sprites.
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
             void Frame(double scale)
             {
@@ -130,8 +128,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                MotionRasterBudget.BudgetOverride = budget;
-
                 foreach (var run in runs)
                 {
                     run.Dispose();
@@ -163,9 +159,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 glyphs += runs[i].GlyphCount;
             }
 
-            var budget = MotionRasterBudget.BudgetOverride;
-
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
             void Frame(double scale)
             {
@@ -223,8 +217,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                MotionRasterBudget.BudgetOverride = budget;
-
                 foreach (var run in runs)
                 {
                     run.Dispose();

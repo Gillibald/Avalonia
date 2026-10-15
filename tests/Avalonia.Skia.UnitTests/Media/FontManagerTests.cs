@@ -22,7 +22,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Create_Typeface_From_Fallback()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontManager = FontManager.Current;
 
@@ -35,7 +35,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Create_Typeface_From_Fallback_Bold()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var glyphTypeface = new Typeface(new FontFamily($"A, B, Arial"), weight: FontWeight.Bold).GlyphTypeface;
 
@@ -46,7 +46,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Yield_Default_GlyphTypeface_For_Invalid_FamilyName()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var glyphTypeface = new Typeface(new FontFamily("Unknown")).GlyphTypeface;
 
@@ -57,7 +57,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Load_Typeface_From_Resource()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var glyphTypeface = new Typeface(s_fontUri).GlyphTypeface;
 
@@ -68,7 +68,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Load_Nearest_Matching_Font()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var glyphTypeface = new Typeface(s_fontUri, FontStyle.Italic, FontWeight.Black).GlyphTypeface;
 
@@ -79,7 +79,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Throw_For_Invalid_Custom_Font()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 Assert.Throws<InvalidOperationException>(() => new Typeface("resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests#Unknown").GlyphTypeface);
             }
@@ -88,7 +88,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Return_False_For_Unregistered_FontCollection_Uri()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var result = FontManager.Current.TryGetGlyphTypeface(new Typeface("fonts:invalid#Something"), out _);
 
@@ -101,7 +101,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var fontManagerImpl = new TestFontManager();
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontManagerImpl)))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontManagerImpl)))
             {
                 Assert.True(FontManager.Current.TryGetGlyphTypeface(Typeface.Default, out _));
 
@@ -121,7 +121,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var fontManagerImpl = new CustomFontManagerImpl();
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontManagerImpl)))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontManagerImpl)))
             {
                 var emoji = Codepoint.ReadAt("😀", 0, out _);
 
@@ -140,7 +140,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Load_Embedded_DefaultFontFamily()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -158,7 +158,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Return_False_For_Invalid_DefaultFontFamily()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -174,7 +174,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Load_Embedded_Fallbacks()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -194,7 +194,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Match_Chararcter_Width_Embedded_Fallbacks()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -214,7 +214,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Match_Chararcter_From_SystemFonts()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -234,7 +234,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData("/#NotFound, /#Unknown", "avares://some/path")] // embedded fonts
         public void Should_Match_Character_With_Fallbacks(string familyName, string? baseUri)
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -254,7 +254,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Use_Custom_SystemFont()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -272,7 +272,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Get_Nearest_Match_For_Custom_SystemFont()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -289,7 +289,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Get_Implicit_Typeface()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -311,7 +311,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The Skia render interface is required: it derives the render typefaces this test
             // inspects from the glyph typefaces' font data.
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
@@ -344,7 +344,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Fact("Requires Windows Fonts")]
         public void Should_Get_GlyphTypeface_By_Localized_FamilyName()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                        TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
@@ -359,7 +359,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Get_FontFeatures()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -380,7 +380,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Map_FontFamily()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -407,7 +407,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Map_FontFamily_Regardless_Of_Casing()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -441,7 +441,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Get_FamilyTypefaces()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -457,7 +457,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Use_FontCollection_MatchCharacter()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -485,7 +485,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Use_Last_Resort_Font_Last_MatchCharacter()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -522,7 +522,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Theory("Windows specific font")]
         public void Should_Get_SystemFont_With_BaseUri(string name)
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
                 {
@@ -541,7 +541,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // The Skia render interface is required: the test builds glyph outlines of the matched
             // glyph typefaces.
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
@@ -585,7 +585,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Fact("Windows specific font")]
         public void Oblique_Simulation_Should_Slant_Glyph_Outlines()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
@@ -617,7 +617,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Fallback_When_Font_Family_Is_Empty()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 using (AvaloniaLocator.EnterScope())
@@ -633,7 +633,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             const string fontUri = "resm:Avalonia.Skia.UnitTests.Fonts.TestFontNoCmap412.ttf?assembly=Avalonia.Skia.UnitTests#TestFontNoCmap412";
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
             using var scope = AvaloniaLocator.EnterScope();
 
             // Skia can load the font
@@ -682,7 +682,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(FontWeight.SemiLight, "Inter Light")]
         public void TryMatchCharacter_Should_Return_Correct_Weight(FontWeight requestedWeight, string expectedFamilyName)
         {
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
             using var scope = AvaloniaLocator.EnterScope();
 
             FontManager.Current.AddFontCollection(new InterFontCollection());
@@ -703,7 +703,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [InlineData(FontStretch.SemiExpanded)]
         public void TryMatchCharacter_Should_Return_Correct_Stretch(FontStretch requestedStretch)
         {
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
             using var scope = AvaloniaLocator.EnterScope();
 
             FontManager.Current.AddFontCollection(new InterFontCollection());
@@ -719,7 +719,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void TryGetGlyphTypeface_Should_Use_Perfect_Match_In_Collection_Before_Nearest_Match()
         {
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl()));
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl()));
             using var scope = AvaloniaLocator.EnterScope();
 
             // Load bold font (Inter-Bold.ttf) first
@@ -744,7 +744,7 @@ namespace Avalonia.Skia.UnitTests.Media
         public void TryGetGlyphTypeface_Should_Cache_Matched_GlyphTypeface_Under_Requested_FamilyName()
         {
             var fontManagerImpl = new FamilyRemappingFontManagerImpl("NotInstalled", "Noto Mono");
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontManagerImpl));
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontManagerImpl));
 
             // "NotInstalled" is not installed, so the platform substitutes it with a different
             // family ("Noto Mono"), much like requesting "Arial" yields "Liberation Sans" on some Linux distributions.

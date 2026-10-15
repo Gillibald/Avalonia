@@ -22,7 +22,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Win32Fact("Relies on some installed font family")]
         public void Should_Cache_Nearest_Match()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider())))
             {
                 var fontCollection = new TestSystemFontCollection(new SkiaFontProvider());
 
@@ -52,7 +52,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Use_Fallback()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var source = new Uri(NotoMono, UriKind.Absolute);
 
@@ -69,7 +69,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Should_Ignore_FontFamily()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new CustomFontManagerImpl())))
             {
                 var key = new Uri(NotoMono, UriKind.Absolute);
 
@@ -155,7 +155,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var fontProvider = new AliasFontProvider(alias: "MyAlias");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
                 var fontCollection = new TestSystemFontCollection(fontProvider);
                 var blackKey = new FontCollectionKey(FontStyle.Normal, FontWeight.Black, FontStretch.Normal);
@@ -198,7 +198,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var fontProvider = new AliasFontProvider(alias: "MyAlias");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
                 var fontCollection = new TestSystemFontCollection(fontProvider);
 
@@ -233,7 +233,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // XAML author may.
             var fontProvider = new AliasFontProvider(alias: "Noto Mono");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
                 var fontCollection = new TestSystemFontCollection(fontProvider);
 
@@ -253,7 +253,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             var fontProvider = new AliasFontProvider(alias: "MyAlias");
 
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: fontProvider)))
             {
                 var fontCollection = new TestSystemFontCollection(fontProvider);
 

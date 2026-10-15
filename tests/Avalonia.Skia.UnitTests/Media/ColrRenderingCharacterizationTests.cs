@@ -25,7 +25,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Two_Circle_Radial_Gradient_Maps_To_Focal_Point_And_Outer_Circle()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface())))
             {
                 var outlineGlyph = SyntheticFont.FromAsset(InterAsset).TryCreateGlyphTypeface()!
@@ -54,7 +54,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Sweep_Gradient_Angle_Is_Decoded_To_Degrees()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface())))
             {
                 var outlineGlyph = SyntheticFont.FromAsset(InterAsset).TryCreateGlyphTypeface()!
@@ -79,7 +79,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Composite_Paint_Emits_An_Isolated_Group_With_A_Blended_Source_Layer()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface())))
             {
                 var outlineGlyph = SyntheticFont.FromAsset(InterAsset).TryCreateGlyphTypeface()!
@@ -108,7 +108,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Glyph_Drawing_Is_Memoised_Per_Glyph()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface())))
             {
                 var outlineGlyph = SyntheticFont.FromAsset(InterAsset).TryCreateGlyphTypeface()!
@@ -132,7 +132,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Palette_Selection_Resolves_Solid_Fills_From_The_Selected_Palette()
         {
-            using (UnitTestApplication.Start(
+            using (TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface())))
             {
                 var outlineGlyph = SyntheticFont.FromAsset(InterAsset).TryCreateGlyphTypeface()!

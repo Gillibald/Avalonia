@@ -76,7 +76,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
         private static IDisposable Start(string[] fontResourceNames)
         {
-            var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            var disposable = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface()));
 
             // The curated set becomes the system fonts; the default family resolves against it.

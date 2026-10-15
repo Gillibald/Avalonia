@@ -102,7 +102,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
         private static IDisposable Start()
         {
-            return UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            return TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null)));
         }
     }

@@ -376,7 +376,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static IDisposable CreateEnvironment(out RecordingDecoder decoder)
         {
-            var scope = AvaloniaLocator.EnterScope();
+            var scope = TextTestApplication.Enter();
 
             decoder = new RecordingDecoder(new SkiaBitmapGlyphDecoder());
 

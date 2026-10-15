@@ -42,20 +42,25 @@ namespace TextStress
                     break;
             }
 
-            // A negative value keeps the built-in budget.
+            // A negative value keeps the built-in budget. The tuning is bound in the application's
+            // locator, which the platform setup adds to and never replaces.
+            var tuning = Avalonia.Media.Fonts.Rasterization.GlyphRasterTuning.Current;
             var motionBudget = options.GetDouble("motion-budget-us", -1);
 
             if (motionBudget >= 0)
             {
-                Avalonia.Media.Fonts.Rasterization.MotionRasterBudget.BudgetOverride = motionBudget;
+                tuning = tuning with { MotionBudgetMicroseconds = motionBudget };
             }
 
             var motionInterval = options.GetDouble("motion-interval-us", -1);
 
             if (motionInterval > 0)
             {
-                Avalonia.Media.Fonts.Rasterization.MotionRasterBudget.FrameIntervalOverride = motionInterval;
+                tuning = tuning with { MotionFrameIntervalMicroseconds = motionInterval };
             }
+
+            Avalonia.AvaloniaLocator.CurrentMutable.Bind<Avalonia.Media.Fonts.Rasterization.GlyphRasterTuning>()
+                .ToConstant(tuning);
         }
 
         /// <summary>

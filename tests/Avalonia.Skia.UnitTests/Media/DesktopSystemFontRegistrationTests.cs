@@ -87,7 +87,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static ISystemFontProvider GetRegisteredProvider(AppBuilder builder)
         {
-            using var scope = AvaloniaLocator.EnterScope();
+            using var scope = TextTestApplication.Enter();
 
             var fontManager = new FontManager();
 
@@ -111,7 +111,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static bool ResolvesFromMappedFontFile(AppBuilder builder, string familyName = "Segoe UI")
         {
-            using var scope = AvaloniaLocator.EnterScope();
+            using var scope = TextTestApplication.Enter();
 
             var fontManager = new FontManager();
 

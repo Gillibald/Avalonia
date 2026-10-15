@@ -84,7 +84,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static IDisposable StartWithSystemFonts()
-            => UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            => TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface(), systemFontProvider: new SkiaFontProvider()));
 
         private sealed class OutlineRecorder : IGeometryContext

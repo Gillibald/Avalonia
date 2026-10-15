@@ -14,7 +14,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Hit_Test_Should_Respect_Fill()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 
@@ -42,7 +42,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Hit_Test_Should_Respect_Stroke()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 
@@ -72,7 +72,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Geometry_Hit_Test_Should_Detect_Stroke_Only_Shapes()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 
@@ -104,7 +104,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Geometry_Hit_Test_Border_With_Background_And_Border()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 
@@ -144,7 +144,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Geometry_Hit_Test_Border_Null_Background_With_BorderBrush()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 
@@ -180,7 +180,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Geometry_Hit_Test_Border_Null_Background_And_Null_BorderBrush_NoHit()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 
@@ -214,7 +214,7 @@ namespace Avalonia.Skia.UnitTests
         [Fact]
         public void Geometry_Hit_Test_Line_Intersects_RectangleGeometry()
         {
-            using (AvaloniaLocator.EnterScope())
+            using (TextTestApplication.Enter())
             {
                 SkiaPlatform.Initialize();
 

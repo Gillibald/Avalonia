@@ -34,7 +34,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(probe is null || !probe.FamilyName.Contains("Emoji"),
                 "Segoe UI Emoji is not installed.");
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 
@@ -86,7 +86,7 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(probe is null || !probe.FamilyName.Contains("Emoji"),
                 "Segoe UI Emoji is not installed.");
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 

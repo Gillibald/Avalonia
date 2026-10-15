@@ -117,6 +117,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var state = run.TransformedSprites;
             var hit = state.TryGet(key, out var sprites);
             var transformedContext = context as ITransformedGlyphContext;
+            var tuning = GlyphRasterTuning.Of(context);
 
             // The transform changes every frame, so masks rasterized now would never be drawn
             // again. A CPU surface rasterizes the frame anyway, into transient buffers that no
@@ -140,11 +141,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 MotionRasterBudget.NotMoving(run, pixelsPerEm,
                     transformedContext is not null && run.TransformChurn.Changing,
-                    transformedContext is null || run.TransformChurn.Held, 1);
+                    transformedContext is null || run.TransformChurn.Held, 1, tuning);
             }
             else if (hit)
             {
-                MotionRasterBudget.Moving(run, pixelsPerEm, 1);
+                MotionRasterBudget.Moving(run, pixelsPerEm, 1, tuning);
             }
             else if (!hit)
             {
@@ -162,13 +163,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                         solid.Color);
                 }
 
-                if (MotionRasterBudget.PrefersSharp(run, pixelsPerEm, 1))
+                if (MotionRasterBudget.PrefersSharp(run, pixelsPerEm, 1, tuning))
                 {
                     var start = MotionRasterBudget.Start();
                     var drawn = TryDrawTransient(transformedContext!, run, key, transform, originX, originY, alpha,
                         solid.Color);
 
-                    MotionRasterBudget.Charge(run, start);
+                    MotionRasterBudget.Charge(run, start, tuning);
 
                     return drawn;
                 }
@@ -201,7 +202,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (crossingStart != 0)
             {
-                MotionRasterBudget.Charge(run, crossingStart);
+                MotionRasterBudget.Charge(run, crossingStart, tuning);
             }
 
             state.Settle(sprites, transform, originX, originY);

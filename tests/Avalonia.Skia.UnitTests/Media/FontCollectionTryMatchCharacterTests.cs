@@ -462,7 +462,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         private static IDisposable StartApp() =>
-            UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
+            TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(systemFontProvider: new SkiaFontProvider()));
 
         private static TestFontCollection BuildCollection(params string[] assetFileNames)
         {

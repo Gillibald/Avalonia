@@ -69,7 +69,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void PlatformTypeface_Should_Be_Created_By_Render_Interface()
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                 renderInterface: new PlatformRenderInterface())))
             {
                 var glyphTypeface = LoadGlyphTypeface(InterFontUri);

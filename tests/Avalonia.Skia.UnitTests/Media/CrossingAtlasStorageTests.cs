@@ -45,10 +45,9 @@ namespace Avalonia.Skia.UnitTests.Media
             using var surface = CreateSurface(gpu);
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
             var runs = CreateParagraph(typeface, 3);
-            var budget = MotionRasterBudget.BudgetOverride;
 
             // No frame affords rasterizing sharp, so every moving frame stretches a crossing.
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
             try
             {
@@ -93,7 +92,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                MotionRasterBudget.BudgetOverride = budget;
                 DisposeAll(runs);
             }
         }
@@ -109,14 +107,12 @@ namespace Avalonia.Skia.UnitTests.Media
             using var surface = CreateSurface(gpu);
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
             var runs = CreateParagraph(typeface, 3);
-            var budget = MotionRasterBudget.BudgetOverride;
-            var interval = MotionRasterBudget.FrameIntervalOverride;
-            var glyphCost = MotionRasterBudget.GlyphCostOverride;
 
             // Every frame affords rasterizing, however long a cold frame takes.
-            MotionRasterBudget.BudgetOverride = 1e9;
-            MotionRasterBudget.FrameIntervalOverride = 1e9;
-            MotionRasterBudget.GlyphCostOverride = 1;
+            TestRasterTuning.Set(t => t with
+            {
+                MotionBudgetMicroseconds = 1e9, MotionFrameIntervalMicroseconds = 1e9, MotionGlyphCostMicroseconds = 1,
+            });
 
             try
             {
@@ -149,9 +145,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                MotionRasterBudget.BudgetOverride = budget;
-                MotionRasterBudget.FrameIntervalOverride = interval;
-                MotionRasterBudget.GlyphCostOverride = glyphCost;
                 DisposeAll(runs);
             }
         }
@@ -168,9 +161,8 @@ namespace Avalonia.Skia.UnitTests.Media
             using var surface = CreateSurface(gpu);
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
             var runs = new[] { CreateDistinctGlyphRun(typeface) };
-            var budget = MotionRasterBudget.BudgetOverride;
 
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
             try
             {
@@ -185,7 +177,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                MotionRasterBudget.BudgetOverride = budget;
                 DisposeAll(runs);
             }
         }
@@ -204,9 +195,8 @@ namespace Avalonia.Skia.UnitTests.Media
             using var surface = CreateSurface(gpu);
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
             var runs = new[] { CreateDistinctGlyphRun(typeface) };
-            var budget = MotionRasterBudget.BudgetOverride;
 
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
             try
             {
@@ -221,7 +211,6 @@ namespace Avalonia.Skia.UnitTests.Media
             }
             finally
             {
-                MotionRasterBudget.BudgetOverride = budget;
                 DisposeAll(runs);
             }
         }

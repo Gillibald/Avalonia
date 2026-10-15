@@ -471,7 +471,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static IDisposable Start()
         {
-            var disposable = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            var disposable = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface()));
 
             AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(

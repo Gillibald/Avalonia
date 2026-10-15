@@ -47,7 +47,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Directory.CreateDirectory(directory!);
 
-            using var scope = AvaloniaLocator.EnterScope();
+            using var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());

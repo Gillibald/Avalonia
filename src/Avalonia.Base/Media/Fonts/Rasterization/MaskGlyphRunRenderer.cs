@@ -88,6 +88,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
+            var tuning = GlyphRasterTuning.Of(context);
+
             var scaleX = transform.M11;
             var scaleY = transform.M22;
 
@@ -183,12 +185,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     if (moving)
                     {
-                        MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
+                        MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false), tuning);
                     }
                     else
                     {
                         MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
-                            run.UprightChurn.Held, 0);
+                            run.UprightChurn.Held, 0, tuning);
                     }
 
                     var snappedY = (int)Math.Round(deviceY);
@@ -316,7 +318,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // would. Its glyph masks may be cached from an earlier pass over the scale: the
                 // share that recent unhinted sprite builds had to rasterize weighs the estimate.
                 var sharpAtlasZoom = atlasZooming && MotionRasterBudget.PrefersSharp(run, pixelsPerEm,
-                    run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
+                    run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false), tuning);
 
                 if (atlasZooming && !sharpAtlasZoom)
                 {
@@ -327,11 +329,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (!churning)
                 {
                     MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
-                        run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
+                        run.UprightChurn.Held, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false), tuning);
                 }
                 else if (!atlasZooming)
                 {
-                    MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false));
+                    MotionRasterBudget.Moving(run, pixelsPerEm, run.GlyphTypeface.MaskCache.RecentMissShare(gridFit: false), tuning);
                 }
 
                 var start = atlasZooming ? MotionRasterBudget.Start() : 0;
@@ -354,7 +356,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (atlasZooming)
                 {
-                    MotionRasterBudget.Charge(run, start);
+                    MotionRasterBudget.Charge(run, start, tuning);
                 }
 
                 return true;
@@ -469,12 +471,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 if (zooming)
                 {
-                    sharpZoom = MotionRasterBudget.PrefersSharp(run, pixelsPerEm, hit ? 0 : 1);
+                    sharpZoom = MotionRasterBudget.PrefersSharp(run, pixelsPerEm, hit ? 0 : 1, tuning);
                 }
                 else
                 {
                     MotionRasterBudget.NotMoving(run, pixelsPerEm, run.UprightChurn.Changing,
-                        zoomContext is null || run.UprightChurn.Held, 1);
+                        zoomContext is null || run.UprightChurn.Held, 1, tuning);
                 }
             }
 
@@ -483,7 +485,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 ? MotionRasterBudget.Start()
                 : 0;
 
-            if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform, GlyphRasterTuning.Of(context)) &&
+            if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform, tuning) &&
                 TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
             {
                 if (frameCoverage is null)
@@ -583,7 +585,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (zoomRasterStart != 0)
             {
-                MotionRasterBudget.Charge(run, zoomRasterStart);
+                MotionRasterBudget.Charge(run, zoomRasterStart, tuning);
             }
 
             run.SettledUpright = new SettledRunMask(key, transform, originX, originY);
@@ -898,7 +900,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     : BuildAtlasOnlySprites(context, run, gridKey, (float)grid, (float)grid, foregroundArgb);
                 state.AddCrossing(sprites, grid);
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
-                MotionRasterBudget.Charge(run, start);
+                MotionRasterBudget.Charge(run, start, context.RasterTuning);
             }
 
             state.Settle(sprites, gridTransform, originX, originY);

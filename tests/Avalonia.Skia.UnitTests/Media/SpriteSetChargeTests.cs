@@ -38,40 +38,32 @@ namespace Avalonia.Skia.UnitTests.Media
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
             using var run = WideRunMaskTests.CreateRun(typeface, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ", 13,
                 new Point(6.3, 17));
-            var budget = MotionRasterBudget.BudgetOverride;
 
-            MotionRasterBudget.BudgetOverride = 0;
+            TestRasterTuning.Set(t => t with { MotionBudgetMicroseconds = 0 });
 
-            try
+            static double Scale(int frame) => 1 + frame * 0.04;
+
+            var scales = Enumerable.Range(0, 20).Select(Scale).ToList();
+            var crossing = TransformedAtlasTests.GridCrossingFrames(scales, run, 0)[0];
+            var state = run.TransformedSprites;
+
+            for (var frame = 0; frame < crossing; frame++)
             {
-                static double Scale(int frame) => 1 + frame * 0.04;
-
-                var scales = Enumerable.Range(0, 20).Select(Scale).ToList();
-                var crossing = TransformedAtlasTests.GridCrossingFrames(scales, run, 0)[0];
-                var state = run.TransformedSprites;
-
-                for (var frame = 0; frame < crossing; frame++)
-                {
-                    Draw(context, run, scales[frame]);
-                }
-
-                var before = state.ByteCost;
-
-                Draw(context, run, scales[crossing]);
-
-                var set = state.Settled;
-
-                Assert.True(set is { IsCrossing: true }, "the crossing frame settled no crossing set");
-
-                var charged = state.ByteCost - before;
-
-                Assert.True(charged >= set!.Count * MinStretchedSpriteBytes,
-                    $"a crossing of {set.Count} sprites drawn stretched was charged {charged} bytes");
+                Draw(context, run, scales[frame]);
             }
-            finally
-            {
-                MotionRasterBudget.BudgetOverride = budget;
-            }
+
+            var before = state.ByteCost;
+
+            Draw(context, run, scales[crossing]);
+
+            var set = state.Settled;
+
+            Assert.True(set is { IsCrossing: true }, "the crossing frame settled no crossing set");
+
+            var charged = state.ByteCost - before;
+
+            Assert.True(charged >= set!.Count * MinStretchedSpriteBytes,
+                $"a crossing of {set.Count} sprites drawn stretched was charged {charged} bytes");
         }
 
         private static void Draw(DrawingContextImpl context, ManagedGlyphRunImpl run, double scale)

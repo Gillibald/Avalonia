@@ -107,46 +107,37 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var final = At(Motion.Zoom, MotionFrames - 1);
             var expected = environment.RenderStatic(final, null);
-            var budget = MotionRasterBudget.BudgetOverride;
-            var glyphCost = MotionRasterBudget.GlyphCostOverride;
-            var nonText = MotionRasterBudget.NonTextOverride;
 
             // The frames' own render times would leave a cold GPU context no headroom.
-            MotionRasterBudget.BudgetOverride = 1e9;
-            MotionRasterBudget.GlyphCostOverride = 1;
-            MotionRasterBudget.NonTextOverride = 0;
-            TestRasterTuning.Set(t => t with { ZoomRasterPixelCost = 0 });
-
-            try
+            TestRasterTuning.Set(t => t with
             {
-                using var run = environment.CreateRun();
-                using var harness = environment.CreateHarness();
+                MotionBudgetMicroseconds = 1e9,
+                MotionGlyphCostMicroseconds = 1,
+                MotionNonTextMicroseconds = 0,
+                ZoomRasterPixelCost = 0,
+            });
 
-                var text = harness.AddRun(run);
-                var stretched = MaskGlyphRunRenderer.StretchedDraws;
+            using var run = environment.CreateRun();
+            using var harness = environment.CreateHarness();
 
-                for (var frame = 0; frame < MotionFrames; frame++)
-                {
-                    text.RenderTransform = new MatrixTransform(At(Motion.Zoom, frame));
-                    harness.Services.RunJobs();
-                }
+            var text = harness.AddRun(run);
+            var stretched = MaskGlyphRunRenderer.StretchedDraws;
 
-                Assert.Equal(stretched, MaskGlyphRunRenderer.StretchedDraws);
-
-                var rendered = harness.Renders;
-
-                harness.TickUntilIdle();
-
-                Assert.Equal(rendered + 1, harness.Renders);
-                TransformedAtlasTests.AssertEqual(expected, harness.Read(), target.ToString());
-                harness.AssertIdle();
-            }
-            finally
+            for (var frame = 0; frame < MotionFrames; frame++)
             {
-                MotionRasterBudget.BudgetOverride = budget;
-                MotionRasterBudget.GlyphCostOverride = glyphCost;
-                MotionRasterBudget.NonTextOverride = nonText;
+                text.RenderTransform = new MatrixTransform(At(Motion.Zoom, frame));
+                harness.Services.RunJobs();
             }
+
+            Assert.Equal(stretched, MaskGlyphRunRenderer.StretchedDraws);
+
+            var rendered = harness.Renders;
+
+            harness.TickUntilIdle();
+
+            Assert.Equal(rendered + 1, harness.Renders);
+            TransformedAtlasTests.AssertEqual(expected, harness.Read(), target.ToString());
+            harness.AssertIdle();
         }
 
         [Theory]

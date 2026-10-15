@@ -472,7 +472,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable CreateVariedEnvironment(out GlyphTypeface typeface, FontSimulations simulations,
             bool managed)
         {
-            var scope = AvaloniaLocator.EnterScope();
+            var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
@@ -858,7 +858,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable CreateEnvironment(out GlyphTypeface typeface,
             FontSimulations simulations = FontSimulations.None)
         {
-            var scope = AvaloniaLocator.EnterScope();
+            var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());

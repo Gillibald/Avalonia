@@ -467,7 +467,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static IDisposable CreateEnvironment(bool managed)
         {
             var masksOff = ColorGlyphMaskTests.SwitchColorMasksOff();
-            var scope = AvaloniaLocator.EnterScope();
+            var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());

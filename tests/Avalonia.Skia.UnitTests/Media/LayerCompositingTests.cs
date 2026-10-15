@@ -20,7 +20,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Isolated_SourceIn_Layer_Composites_Against_The_Group_Not_The_Page()
         {
-            using var app = UnitTestApplication.Start(
+            using var app = TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface(null)));
 
             var info = new SKImageInfo(Canvas, Canvas, SKColorType.Bgra8888, SKAlphaType.Premul);
@@ -71,7 +71,7 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Layer_Opacity_Applies_To_The_Group_As_A_Whole()
         {
-            using var app = UnitTestApplication.Start(
+            using var app = TextTestApplication.Start(
                 TestServices.MockPlatformRenderInterface.With(renderInterface: new PlatformRenderInterface(null)));
 
             var info = new SKImageInfo(Canvas, Canvas, SKColorType.Bgra8888, SKAlphaType.Premul);

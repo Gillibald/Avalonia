@@ -18,7 +18,7 @@ namespace Avalonia.Skia.UnitTests
         ]
         public void RenderBoundsAreCorrectlyCalculated(string path, PenLineCap cap, PenLineJoin join, double thickness, double miterLimit, double x, double y, double width, double height)
         {
-            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using (TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                        .With(renderInterface: new PlatformRenderInterface())))
             {
                 var geo = PathGeometry.Parse(path);

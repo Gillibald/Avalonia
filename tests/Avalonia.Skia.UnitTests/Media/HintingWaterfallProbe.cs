@@ -25,7 +25,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Directory.CreateDirectory(directory);
 
-            using var app = UnitTestApplication.Start(TestServices.MockPlatformRenderInterface
+            using var app = TextTestApplication.Start(TestServices.MockPlatformRenderInterface
                 .With(renderInterface: new PlatformRenderInterface(null)));
 
             var typeface = LoadTypeface();

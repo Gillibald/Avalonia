@@ -402,7 +402,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         internal static IDisposable CreateEnvironment()
         {
-            var scope = AvaloniaLocator.EnterScope();
+            var scope = TextTestApplication.Enter();
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());

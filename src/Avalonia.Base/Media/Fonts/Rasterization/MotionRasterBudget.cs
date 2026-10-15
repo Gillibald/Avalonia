@@ -146,32 +146,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal static int TriedFrames => t_triedFrames;
 
-        /// <summary>
-        /// Replaces <see cref="FrameBudgetMicroseconds"/>, for tests; <c>null</c> keeps it.
-        /// </summary>
-        internal static double? BudgetOverride { get; set; }
-
-        /// <summary>
-        /// Replaces the measured cost per glyph, in microseconds, for tests: a run is estimated at
-        /// its glyph count times it, whatever its masks find cached, and a frame that rasterizes is
-        /// charged its estimate rather than the time it took, so decisions depend neither on the
-        /// machine nor on what earlier tests cached. <c>null</c> measures.
-        /// </summary>
-        internal static double? GlyphCostOverride { get; set; }
-
         [ThreadStatic]
         private static double t_budget;
 
         [ThreadStatic]
         private static double t_nonText;
 
-        private static double Cap => BudgetOverride ?? FrameBudgetMicroseconds;
-
-        /// <summary>Replaces the frame interval, in microseconds, for tests and benchmarks.</summary>
-        internal static double? FrameIntervalOverride { get; set; }
-
-        /// <summary>Replaces the time frames spend outside text, in microseconds, for tests.</summary>
-        internal static double? NonTextOverride { get; set; }
+        private static double Cap(GlyphRasterTuning tuning) => tuning.MotionBudgetMicroseconds ?? FrameBudgetMicroseconds;
 
         /// <summary>
         /// What a frame keeps free besides its other work, in microseconds: about the spread of the
@@ -180,14 +161,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         internal const double SafetyMarginMicroseconds = 1000;
 
-        /// <summary>The interval between frames, in microseconds.</summary>
-        internal static double FrameIntervalMicroseconds => FrameIntervalOverride ?? 1e6 / 120;
+        /// <summary>The interval between frames under <paramref name="tuning"/>, in microseconds.</summary>
+        internal static double FrameIntervalMicroseconds(GlyphRasterTuning tuning)
+            => tuning.MotionFrameIntervalMicroseconds ?? 1e6 / 120;
 
         /// <summary>
         /// The time recent frames of the thread that drew moving text spent outside text, in
-        /// microseconds, each frame weighing a quarter.
+        /// microseconds, each frame weighing a quarter, unless <paramref name="tuning"/> sets it.
         /// </summary>
-        internal static double NonTextMicroseconds => NonTextOverride ?? t_nonText;
+        internal static double NonTextMicroseconds(GlyphRasterTuning tuning) => tuning.MotionNonTextMicroseconds ?? t_nonText;
 
         /// <summary>
         /// Records that a frame took <paramref name="renderMicroseconds"/> to render, of which
@@ -224,10 +206,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// frame has to rasterize rather than find cached: 1 for transient masks, 0 when all it
         /// draws is cached.
         /// </summary>
-        public static bool PrefersSharp(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare)
+        public static bool PrefersSharp(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare,
+            GlyphRasterTuning tuning)
         {
-            var frame = BeginFrame();
-            var estimate = Estimate(run, pixelsPerEm, missShare);
+            var frame = BeginFrame(tuning);
+            var estimate = Estimate(run, pixelsPerEm, missShare, tuning);
 
             run.MovesOnGpu = true;
             t_estimate += estimate;
@@ -285,12 +268,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// run counts towards the frame's estimate with the share of its masks its next motion frame
         /// would rasterize, <paramref name="missShare"/>, as a run that tries does.
         /// </summary>
-        public static void Moving(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare)
+        public static void Moving(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare,
+            GlyphRasterTuning tuning)
         {
-            var frame = BeginFrame();
+            var frame = BeginFrame(tuning);
 
             run.MovesOnGpu = true;
-            t_estimate += Estimate(run, pixelsPerEm, missShare);
+            t_estimate += Estimate(run, pixelsPerEm, missShare, tuning);
             Continue(frame);
         }
 
@@ -304,12 +288,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// hit started its count of changes over, is still moving.
         /// </summary>
         public static void NotMoving(ManagedGlyphRunImpl run, double pixelsPerEm, bool changing, bool held,
-            double missShare)
+            double missShare, GlyphRasterTuning tuning)
         {
             if (changing)
             {
-                BeginFrame();
-                t_estimate += Estimate(run, pixelsPerEm, missShare);
+                BeginFrame(tuning);
+                t_estimate += Estimate(run, pixelsPerEm, missShare, tuning);
             }
 
             if (!run.MovesOnGpu)
@@ -324,7 +308,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
             else
             {
-                Continue(BeginFrame());
+                Continue(BeginFrame(tuning));
             }
         }
 
@@ -358,18 +342,19 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Charges the frame's budget for a motion frame of <paramref name="run"/> that rasterized
         /// since <paramref name="start"/>.
         /// </summary>
-        public static void Charge(ManagedGlyphRunImpl run, long start)
+        public static void Charge(ManagedGlyphRunImpl run, long start, GlyphRasterTuning tuning)
         {
             var elapsed = (Stopwatch.GetTimestamp() - start) * s_microsecondsPerTick;
 
-            BeginFrame();
+            BeginFrame(tuning);
 
-            t_spent += GlyphCostOverride is { } cost ? run.GlyphCount * cost : elapsed;
+            t_spent += tuning.MotionGlyphCostMicroseconds is { } cost ? run.GlyphCount * cost : elapsed;
             t_chargedGlyphs += run.GlyphCount;
         }
 
-        private static double Estimate(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare)
-            => GlyphCostOverride is { } cost
+        private static double Estimate(ManagedGlyphRunImpl run, double pixelsPerEm, double missShare,
+            GlyphRasterTuning tuning)
+            => tuning.MotionGlyphCostMicroseconds is { } cost
                 ? run.GlyphCount * cost
                 : (run.GlyphCount * missShare + RunOverheadGlyphs) *
                   run.GlyphTypeface.MaskCache.UnhintedRasterCost.PerGlyph(pixelsPerEm);
@@ -380,7 +365,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// frame. A last frame that tried and did not run out of budget ends the doubling of the
         /// hold. Drawing outside a frame decides every draw on its own.
         /// </summary>
-        private static long BeginFrame()
+        private static long BeginFrame(GlyphRasterTuning tuning)
         {
             var frame = GlyphCacheBudget.Shared.CurrentThreadFrame;
 
@@ -405,8 +390,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 t_tried = false;
                 t_ranOut = false;
                 t_previousEstimate = t_estimate;
-                t_budget = Math.Clamp(FrameIntervalMicroseconds - NonTextMicroseconds - SafetyMarginMicroseconds, 0,
-                    Math.Max(0, Cap));
+                t_budget = Math.Clamp(FrameIntervalMicroseconds(tuning) - NonTextMicroseconds(tuning) -
+                    SafetyMarginMicroseconds, 0, Math.Max(0, Cap(tuning)));
                 t_frame = frame;
                 t_spent = 0;
                 t_chargedGlyphs = 0;
