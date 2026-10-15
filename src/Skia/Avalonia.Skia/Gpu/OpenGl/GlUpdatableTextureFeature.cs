@@ -222,6 +222,9 @@ namespace Avalonia.Skia
             public void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes) =>
                 _gl.Upload(_id, _bytesPerPixel, rect, source, rowBytes);
 
+            public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging) =>
+                throw new NotSupportedException();
+
             /// <summary>Drops the wrapper; Skia deletes the texture once no recorded draw uses it.</summary>
             public void Dispose() => Image.Dispose();
 

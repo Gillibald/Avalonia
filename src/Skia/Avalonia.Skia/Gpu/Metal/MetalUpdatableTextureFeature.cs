@@ -253,6 +253,9 @@ internal sealed unsafe partial class MetalUpdatableTextureFeature : ISkiaUpdatab
             }
         }
 
+        public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging) =>
+            throw new NotSupportedException();
+
         /// <summary>Drops the wrapper; the texture goes once Skia no longer uses it.</summary>
         public void Dispose() => Image.Dispose();
 

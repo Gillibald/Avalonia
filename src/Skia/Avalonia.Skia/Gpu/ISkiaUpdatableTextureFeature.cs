@@ -51,7 +51,23 @@ namespace Avalonia.Skia
         /// they were.
         /// </remarks>
         void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes);
+
+        /// <summary>
+        /// Copies the texels of every region from <paramref name="staging"/> into its rectangle of
+        /// the texture, as one piece of backend work.
+        /// </summary>
+        /// <remarks>
+        /// <paramref name="staging"/> may be read until the call returns. The update takes effect
+        /// before any draw Skia has not yet submitted, as a single rectangle's does.
+        /// </remarks>
+        void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging);
     }
+
+    /// <summary>
+    /// A rectangle of an updatable texture and where its texels are in a staging buffer: the
+    /// first texel at <see cref="Offset"/>, rows <see cref="RowBytes"/> apart.
+    /// </summary>
+    internal readonly record struct TextureRegion(PixelRect Target, int Offset, int RowBytes);
 
     /// <summary>
     /// The updatable textures registered per <see cref="GRContext"/>, and the glyph mask atlas

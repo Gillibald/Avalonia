@@ -263,6 +263,126 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        public static IEnumerable<object[]> RegionUpdateContexts()
+        {
+            foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })
+            {
+                yield return new object[] { backend, false };
+                yield return new object[] { backend, true };
+            }
+        }
+
+        /// <summary>
+        /// A texture takes several rectangles in one update from a staging buffer that holds only
+        /// their texels, each region with rows of its own length, and keeps every texel no region
+        /// covers.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(RegionUpdateContexts))]
+        public void An_Updatable_Texture_Holds_Its_Source_Through_Region_Updates(GpuBackend backend, bool rgba)
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
+            var textures = SkiaUpdatableTextures.Get(gpu.GrContext)?.Feature;
+
+            Assert.NotNull(textures);
+
+            const int width = 300, height = 70;
+            var bpp = rgba ? 4 : 1;
+            var rowBytes = width * bpp;
+            var random = new Random(19);
+            var texels = new byte[rowBytes * height];
+
+            Fill(random, texels, rgba);
+
+            using var texture = rgba
+                ? textures!.TryCreateRgba8(width, height, texels, rowBytes)
+                : textures!.TryCreateAlpha8(width, height, texels, rowBytes);
+
+            Assert.NotNull(texture);
+
+            var image = texture!.Image;
+
+            foreach (var rects in new[]
+                     {
+                         new[] { new PixelRect(0, 0, 1, 1) },
+                         new[]
+                         {
+                             new PixelRect(width - 17, height - 5, 17, 5), new PixelRect(31, 9, 113, 40),
+                             new PixelRect(0, 60, 3, 10), new PixelRect(200, 0, 99, 2),
+                         },
+                     })
+            {
+                var regions = new TextureRegion[rects.Length];
+                var staging = new List<byte>();
+
+                for (var r = 0; r < rects.Length; r++)
+                {
+                    var rect = rects[r];
+
+                    // Rows of each region padded by a few texels, as a strip of a wider buffer is.
+                    var regionRowBytes = (rect.Width + r + 1) * bpp;
+                    var block = new byte[regionRowBytes * rect.Height];
+
+                    Fill(random, block, rgba);
+                    regions[r] = new TextureRegion(rect, staging.Count, regionRowBytes);
+
+                    for (var y = 0; y < rect.Height; y++)
+                    {
+                        block.AsSpan(y * regionRowBytes, rect.Width * bpp)
+                            .CopyTo(texels.AsSpan((rect.Y + y) * rowBytes + rect.X * bpp));
+                    }
+
+                    staging.AddRange(block);
+                }
+
+                texture.Update(regions, staging.ToArray());
+
+                Assert.Same(image, texture.Image);
+                Assert.Equal(texels, rgba
+                    ? ReadRgbaImage(gpu, texture.Image, width, height)
+                    : ReadImage(gpu, texture.Image, width, height));
+            }
+        }
+
+        /// <summary>The regions of one update go to the Vulkan queue in one submission.</summary>
+        [Fact]
+        public void Strips_Of_One_Page_Go_Up_In_One_Vulkan_Submission()
+        {
+            using var gpu = TransformedAtlasTests.CreateGpu(GpuBackend.Vulkan, false);
+            var textures = (Avalonia.Skia.Vulkan.VulkanUpdatableTextureFeature)SkiaUpdatableTextures.Get(gpu.GrContext)!
+                .Feature;
+            var source = new byte[GlyphMaskAtlas.PageWidth * 64];
+
+            using var texture = textures.TryCreateAlpha8(GlyphMaskAtlas.PageWidth, 64, source, GlyphMaskAtlas.PageWidth);
+
+            Assert.NotNull(texture);
+
+            var regions = new TextureRegion[8];
+
+            for (var i = 0; i < regions.Length; i++)
+            {
+                regions[i] = new TextureRegion(new PixelRect(i * 100 + 1, i * 7 + 1, 90, 6), i * 900, 150);
+            }
+
+            var submissions = textures.Submissions;
+
+            texture!.Update(regions, new byte[regions.Length * 900]);
+
+            Assert.Equal(submissions + 1, textures.Submissions);
+        }
+
+        private static void Fill(Random random, byte[] texels, bool rgba)
+        {
+            if (rgba)
+            {
+                FillPremultiplied(random, texels);
+            }
+            else
+            {
+                random.NextBytes(texels);
+            }
+        }
+
         public static IEnumerable<object[]> ColorPageContexts()
         {
             foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })

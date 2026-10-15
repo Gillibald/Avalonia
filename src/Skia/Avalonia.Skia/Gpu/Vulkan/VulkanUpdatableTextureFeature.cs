@@ -246,6 +246,9 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
         return texture;
     }
 
+    /// <summary>The submissions to the device's queue so far; for tests.</summary>
+    internal ulong Submissions => _submitted;
+
     /// <summary>
     /// Waits for every copy, then frees the images Skia has not released yet and the upload
     /// resources. Images released later free nothing: a disposed context took them along.
@@ -639,6 +642,9 @@ internal sealed unsafe class VulkanUpdatableTextureFeature : ISkiaUpdatableTextu
                 _owner.Upload(this, rect, source, rowBytes, LayoutShaderReadOnly);
             }
         }
+
+        public void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging) =>
+            throw new NotSupportedException();
 
         /// <summary>Drops the wrapper; the image is destroyed once Skia no longer uses it.</summary>
         public void Dispose() => Image.Dispose();
