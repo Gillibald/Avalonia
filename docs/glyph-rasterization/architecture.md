@@ -27,7 +27,7 @@ This page is the map: the layers of managed glyph rasterization, how a `GlyphRun
 +--------------------------------------------------------------------------------+
 | Skia backend                                                    Avalonia.Skia   |
 |   DrawingContextImpl: frame-level batching, deferred clips, state folding       |
-|   page textures: ISkiaUpdatableTextureFeature (GL/GLES 3/WebGL 2, Vulkan)       |
+|   page textures: ISkiaUpdatableTextureFeature (GL/GLES 3/WebGL 2/Vulkan/Metal) |
 |   LcdTextBlender, MaskGammaFilters, NativeTextBlob fallback                     |
 +--------------------------------------------------------------------------------+
 ```
@@ -123,8 +123,8 @@ The managed side talks to the backend through two internal interfaces in `Avalon
 | Interface | Member | Purpose |
 |---|---|---|
 | `ITransformedGlyphContext` | `RasterTarget` | `Raster`, `SoftwareGpu` or `HardwareGpu`; decides atlas vs run masks, re-raster vs stretch |
-| | `MaskAtlas` | the shared atlas, or null to use each typeface's own atlas |
-| | `ColorAtlas` | the shared colour atlas (RGBA pages), or null to draw colour runs from run masks |
+| | `MaskAtlas` | the context's atlas of every typeface, or null to use each typeface's own atlas |
+| | `ColorAtlas` | the context's colour atlas (RGBA pages), or null to draw colour runs from run masks |
 | | `TryGetBlitTarget` | direct access to CPU surface pixels |
 | | `CreateAtlasBatch`, `DrawAtlasBatch` | realize a batch's sprite arrays; draw sprites from atlas pages, tinted, nearest or bilinear |
 | | `CreateTransientImage`, `DrawTransientSprites` | one-frame A8 images for animated text |
@@ -147,18 +147,21 @@ internal interface ISkiaUpdatableTextureFeature
 internal interface ISkiaUpdatableTexture : IDisposable
 {
     SKImage Image { get; }                                       // the same image after every update
-    void Update(PixelRect rect, ReadOnlySpan<byte> source, int rowBytes);
+    void Update(ReadOnlySpan<TextureRegion> regions, ReadOnlySpan<byte> staging); // one backend call or submission
 }
+
+internal readonly record struct TextureRegion(PixelRect Target, int Offset, int RowBytes);
 ```
 
-`SkiaUpdatableTextures.Register` ties a feature and the atlases to use (A8 and colour) to a `GRContext`. Where a feature is registered, the context uses the process-wide shared atlases; elsewhere each typeface keeps its own A8 atlas, a page is re-wrapped and uploaded whole when it changes, and colour runs draw from run masks. See [gpu-atlas.md](gpu-atlas.md).
+`SkiaUpdatableTextures.Register` ties a feature to a `GRContext` and makes the context's atlas pair (A8 and colour), whose pages live only in the context's textures; registering again or removing the registration (every GPU object does when disposed) releases the pair. Elsewhere each typeface keeps its own A8 atlas with pixel arrays, a page is re-wrapped and uploaded whole when it changes, and colour runs draw from run masks. See [gpu-atlas.md](gpu-atlas.md).
 
 | Context | Updatable textures | Atlas |
 |---|---|---|
-| OpenGL 3+ / GLES 3+ (WGL, ANGLE, desktop GL, Mesa) | `GlUpdatableTextureFeature`: R8 and RGBA8 textures, `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH` | shared |
-| WebGL 2 (browser) | same feature; signatures declared for Mono's WebAssembly trampolines | shared |
-| Vulkan | `VulkanUpdatableTextureFeature`: R8 and R8G8B8A8 images, staging ring, `vkCmdCopyBufferToImage` between barriers | shared |
-| Metal, GL below 3, WebGL 1 | none | per typeface, whole-page uploads |
+| OpenGL 3+ / GLES 3+ (WGL, ANGLE, desktop GL, Mesa) | `GlUpdatableTextureFeature`: R8 and RGBA8 textures, `glTexSubImage2D` per region with `GL_UNPACK_ROW_LENGTH` | pair per context, resident pages |
+| WebGL 2 (browser) | same feature; signatures declared for Mono's WebAssembly trampolines | pair per context, resident pages |
+| Vulkan | `VulkanUpdatableTextureFeature`: R8 and R8G8B8A8 images, staging ring, one `vkCmdCopyBufferToImage` with all regions between barriers, one submission | pair per context, resident pages |
+| Metal | `MetalUpdatableTextureFeature`: R8 and RGBA8 textures in shared storage, `replaceRegion` per region | pair per context, resident pages |
+| GL below 3, WebGL 1 | none | per typeface, whole-page uploads |
 | CPU raster | not needed (direct blends) | per typeface |
 
 ## Caches and the budget
@@ -168,8 +171,8 @@ internal interface ISkiaUpdatableTexture : IDisposable
 | `GlyphCache` | typeface | outlines and COLR drawings |
 | `GlyphMaskCache` | typeface (simulated variants share their base face's) | per-glyph masks; entries above 512 KB are never cached |
 | `TrueTypeHinterCache` | typeface | hinter size states per (scale, mask mode) |
-| `GlyphMaskAtlas` | process (`Shared`) or typeface | A8 pages, 1024 wide, up to 2048 rows |
-| `GlyphMaskAtlas` (colour) | process (`SharedColor`), contexts with updatable textures only | premultiplied RGBA pages of colour glyph content, same geometry |
+| `GlyphMaskAtlas` | GPU context with updatable textures, or typeface | A8 pages, 1024 wide, up to 2048 rows; on a context's atlas the texels live only in its textures |
+| `GlyphMaskAtlas` (colour) | GPU context with updatable textures | premultiplied RGBA pages of colour glyph content, same geometry |
 | `LcdRunAtlas` | process | RGBA pages of whole-run subpixel masks |
 | `RunMaskCache` | run | primary slot plus three secondaries: run coverage, pre-tinted chunks, LCD payloads, alpha masks |
 | sprite sets | run | sprites and kept geometry per luminance bucket |

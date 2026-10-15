@@ -43,7 +43,7 @@ Monochrome glyphs, COLR v0 layer glyphs and bitmap strikes are handled server si
 | [architecture.md](architecture.md) | layers, data flow on CPU and GPU, backend seams, caches and the budget, threads |
 | [pipeline.md](pipeline.md) | run creation, draw dispatch, triage rules, fallback chain |
 | [masks.md](masks.md) | contour capture, the analytic rasterizer and its SIMD paths, mask keys and caches, the glyph cache budget, run composition, CPU blending, gamma |
-| [gpu-atlas.md](gpu-atlas.md) | atlas pages and the shared atlas, sprite grouping, frame-level batching, state folding, page texture uploads per backend |
+| [gpu-atlas.md](gpu-atlas.md) | atlas pages, the atlas pair per GPU context and resident pages, sprite grouping, frame-level batching, state folding, page texture uploads per backend |
 | [hinting.md](hinting.md) | the hinting ladder, the TrueType bytecode engine, the fallback auto-hinter (zones, stroke fit, stem snapping), pen snapping |
 | [subpixel.md](subpixel.md) | LCD subpixel rendering: eligibility, mask format, GPU blender, CPU two-pass |
 | [color-glyphs.md](color-glyphs.md) | COLR v0 mask stacks, COLR v1 paint graphs, layers and composites |

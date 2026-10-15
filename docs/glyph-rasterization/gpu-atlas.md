@@ -4,7 +4,7 @@ On GPU contexts the cost of text is the number of draws, not rasterization: ever
 
 ## Atlas pages
 
-[GlyphMaskAtlas](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskAtlas.cs) holds A8 pages `PageWidth = 1024` wide that grow in 64-row steps up to `MaxPageHeight = 2048` (the texture size OpenGL ES 3.0 guarantees). Growth allocates a new pinned array, because a pending upload may still read the old one. Entries are shelf-packed: a mask joins an open shelf whose height is within a quarter of its own, else opens a shelf on the first page with room, else a new page.
+[GlyphMaskAtlas](../../src/Avalonia.Base/Media/Fonts/Rasterization/GlyphMaskAtlas.cs) holds A8 pages `PageWidth = 1024` wide, up to `MaxPageHeight = 2048` rows (the texture size OpenGL ES 3.0 guarantees). A page starts with the rows its first shelf needs, rounded up to 64, and at least doubles when it grows; once a page of the atlas is full, new pages start at full height. Entries are shelf-packed: a mask joins an open shelf whose height is within a quarter of its own, else opens a shelf on the first page with room, else a new page.
 
 | Property | Rule |
 |---|---|
@@ -13,20 +13,35 @@ On GPU contexts the cost of text is the number of draws, not rasterization: ever
 | Buckets | entries of every bucket share pages, so text in colors of several buckets samples one page |
 | Gutter | one empty column and row before every shelf and after every entry, so bilinear sampling of a stretched sprite only reads empty texels beyond its edges |
 | Largest entry | 1022 x 2046; larger masks draw from a standalone image |
-| Dirty tracking | `Version` bumps on every write; `TakeWritten` returns the union rectangle written since the last upload |
-| Eviction | whole pages, least recently used by frame, through the glyph cache budget; an evicted page that pending sprites still reference draws from a one-off image |
+| Storage | a pinned pixel array per page, or none on resident pages ([below](#resident-pages)) |
+| Dirty tracking | `Version` bumps on every write; a page with a pixel array reports the union rectangle written since the last upload (`TakeWritten`), a resident page its staged strips (`TakeStrips`) |
+| Eviction | whole pages, least recently used by frame, through the glyph cache budget; an evicted page that pending sprites still reference draws from a one-off image of its array, or, when resident, from its texture, which stays until a frame begins that no open frame precedes |
 
 Owner ids come from `GlyphTypeface.MaskOwnerId` (assigned once, never reused; simulated faces use their unsimulated face's id, variation clones their own), so faces that share a font file keep their own masks. Disposing a typeface retires its entries; pages left empty are dropped at the next frame start.
 
-### Shared or per typeface
+### An atlas pair per context, or one atlas per typeface
 
-One process-wide atlas (`GlyphMaskAtlas.Shared`) serves every context whose `GRContext` has an updatable texture feature registered (see [architecture.md](architecture.md#seams-to-the-backend)): GL 3 / GLES 3 and later, WebGL 2, Vulkan. Those contexts upload only the rectangle a frame wrote, so a page written by every typeface costs little to keep current. Other contexts (Metal, older GL, WebGL 1) keep one atlas per typeface, because each new page version there becomes a new `SKImage` that Skia uploads whole (up to 2 MB). The colour atlas exists only on the first kind of context (`GlyphMaskAtlas.SharedColor`): a colour page is up to 8 MB, and re-uploading it whole whenever a glyph is placed would cost more than the run masks it replaces, so contexts without updatable textures keep drawing colour runs from run masks.
+Every `GRContext` with an updatable texture feature registered (GL 3 / GLES 3 and later, WebGL 2, Vulkan, Metal; see [architecture.md](architecture.md#seams-to-the-backend)) gets an atlas pair of its own when it registers: a coverage atlas for every typeface's masks and a colour atlas. Those contexts upload only what a frame wrote, so a page written by every typeface costs little to keep current. The GPU object that made the context removes the registration when it is disposed, which releases the pair: its pages, textures and budget charges go. Two windows on one context share its pair; a second context has a pair of its own and never draws another context's pages. Atlases of several typefaces sit in a weak registry (`GlyphMaskAtlas.GetSharedAtlases`), and a disposed typeface retires its entries from all of them (`RetireEverywhere`).
+
+Other contexts (older GL, WebGL 1, a context while it is lost) keep one atlas per typeface with pixel arrays, because each new page version there becomes a new `SKImage` that Skia uploads whole (up to 2 MB). The colour atlas exists only on the first kind of context: a colour page is up to 8 MB, and re-uploading it whole whenever a glyph is placed would cost more than the run masks it replaces, so contexts without updatable textures keep drawing colour runs from run masks.
+
+### Resident pages
+
+The atlases of a context with updatable textures keep their pages only in the context's textures (`GlyphMaskAtlas.ResidentPages`, on by default; off gives them pixel arrays, for A/B measurements). A resident page holds:
+
+| Part | What it is |
+|---|---|
+| Staging strips | what the atlas wrote since the texture last took the page's writes, one strip per shelf: the shelf's rows from its first new entry to the page's right edge, in one native staging buffer per page. Shelves fill left to right and entries are never overwritten, so a strip covers only texels no earlier upload wrote; its gutters and unused rows are zero in the strip and in the texture alike |
+| Ink bitmap | one bit per texel, set where the coverage (or a colour texel's alpha) is not zero, in 64-row blocks allocated on the first ink they receive; the overlap tests of batching read it instead of the texels |
+| Texture | the page's only copy of its texels once it took the first strips |
+
+The first draw of a page makes its texture from clear texels with the strips copied in; later frames hand the strips to the texture as the regions of one update ([page uploads](#page-uploads)) and free the staging. A context that cannot draw a resident page (another context, a lost context, a backend that refused the texture) drops the page from its atlas, and the runs on it are built again. After a context loss the new context registers a fresh pair and starts empty: sprite sets built against the old atlas fail their atlas check, and the first frame rebuilds what it draws from the mask cache or the rasterizer, with identical pixels (the rasterizer is deterministic and entries do not depend on where they sit, thanks to the gutters).
 
 ## Colour atlas pages
 
-An atlas of `GlyphAtlasFormat.Rgba` pages holds premultiplied colour, four bytes per texel in R, G, B, A order (the one byte order GL 3, GLES 3 and WebGL 2 upload without an extension, and Vulkan's mandatory `R8G8B8A8_UNORM`); masks arrive as BGRA and are swizzled when placed. Pages, shelves, gutters, dirty rectangles, eviction and budget charging are those of the A8 atlas, at four bytes per texel (a full page is 8 MB).
+An atlas of `GlyphAtlasFormat.Rgba` pages holds premultiplied colour, four bytes per texel in R, G, B, A order (the one byte order GL 3, GLES 3 and WebGL 2 upload without an extension, and Vulkan's mandatory `R8G8B8A8_UNORM`); masks arrive as BGRA and are swizzled when placed. Pages, shelves, gutters, strips, ink bitmaps, dirty tracking, eviction and budget charging are those of the A8 atlas, at four bytes per texel (a full page is 8 MB).
 
-On hardware GPU contexts with the shared colour atlas, an upright run of a colour typeface draws from colour pages instead of composing a run-mask texture per run. Each glyph's share of the pre-tinted run mask becomes an entry (`ColorAtlasEntry`), holding exactly the bytes the run-mask compose writes for that glyph onto transparent:
+On hardware GPU contexts with a colour atlas, an upright run of a colour typeface draws from colour pages instead of composing a run-mask texture per run. Each glyph's share of the pre-tinted run mask becomes an entry (`ColorAtlasEntry`), holding exactly the bytes the run-mask compose writes for that glyph onto transparent:
 
 | Entry | Pixels | Key beyond the glyph and scale |
 |---|---|---|
@@ -94,9 +109,10 @@ Everything else (layers, effects, opacity masks, region and geometry clips, othe
 
 | Context | Upload of a changed page |
 |---|---|
-| With `ISkiaUpdatableTextureFeature` | one texture per page and `GRContext`, created with the page's content; later frames upload `TakeWritten`'s rectangle in place. The image, shader and paint stay the same across versions. Draws recorded earlier in the frame see the new texels at flush, which is safe because they only sample entries the atlas never rewrites. Growth, another context or a lost context create a new texture uploaded whole. Textures are freed on the thread that created them |
-| GL / GLES / WebGL 2 | `glTexSubImage2D` of the rectangle from the pinned page array with `GL_UNPACK_ROW_LENGTH`, then `GRContext.ResetContext`; `GL_R8` textures for A8 pages, `GL_RGBA8` uploaded as `GL_RGBA` for colour pages |
-| Vulkan | rows packed into a host-visible staging buffer (ring of 4 slots, each kept at most 256 KB after a whole-page upload), one command buffer: barrier to `TRANSFER_DST`, `vkCmdCopyBufferToImage`, barrier back to `SHADER_READ_ONLY`, `vkQueueSubmit` on the main queue under the device lock; queue order places the copy after Skia's submitted work and before its unsubmitted work; `R8_UNORM` or `R8G8B8A8_UNORM` images |
+| With `ISkiaUpdatableTextureFeature` | one texture per page, made at full page height (rows the page does not use yet clear) from the page's content; later frames upload what was written in one `Update(regions, staging)` call per page and frame: the strips of a resident page, one region each, or the written rectangle of a page with an array. The image, shader and paint stay the same across versions. Draws recorded earlier in the frame see the new texels at flush, which is safe because they only sample entries the atlas never rewrites. A page with an array drawn by another or a lost context gets a new texture uploaded whole; a resident page is dropped instead. Textures are freed on the thread that created them |
+| GL / GLES / WebGL 2 | one `glTexSubImage2D` per region with `GL_UNPACK_ROW_LENGTH` set to the region's row length, then one `GRContext.ResetContext`; `GL_R8` textures for A8 pages, `GL_RGBA8` uploaded as `GL_RGBA` for colour pages |
+| Vulkan | every region's rows packed into one host-visible staging slot (ring of 4 slots, each kept at most 256 KB after a whole-page upload), one command buffer: barrier to `TRANSFER_DST`, one `vkCmdCopyBufferToImage` with a copy region each, barrier back to `SHADER_READ_ONLY`, one `vkQueueSubmit` on the main queue under the device lock; queue order places the copy after Skia's submitted work and before its unsubmitted work; `R8_UNORM` or `R8G8B8A8_UNORM` images |
+| Metal | one `replaceRegion` per region on textures in shared storage (managed storage on Macs without unified memory), written on the CPU before Skia commits the command buffer it is recording |
 | Without the feature | `SKImage.FromPixels` over the pinned page array (`Alpha8` or `Rgba8888`), once per version; Skia uploads that image whole the first time it draws it |
 
 ## Subpixel text on GPUs
