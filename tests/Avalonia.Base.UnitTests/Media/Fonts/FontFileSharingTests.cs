@@ -11,9 +11,14 @@ using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts
 {
-    public class FontFileSharingTests
+    public class FontFileSharingTests : IDisposable
     {
         private static readonly OpenTypeTag s_nameTag = new('n', 'a', 'm', 'e');
+
+        // Faces share file data through the font manager of the application loading them.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
 
         [Fact]
         public void Faces_Of_One_Collection_File_Share_One_File_Data()

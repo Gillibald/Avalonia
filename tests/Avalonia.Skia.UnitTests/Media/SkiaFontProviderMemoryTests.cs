@@ -17,8 +17,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// a face neither copies the file into managed memory nor, where Skia exposes the file memory,
     /// into native memory.
     /// </summary>
-    public class SkiaFontProviderMemoryTests
+    public class SkiaFontProviderMemoryTests : IDisposable
     {
+        // Faces share file data through the font manager of the application loading them.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Win32Fact("Requires Windows fonts")]
         public void Faces_Of_One_Collection_File_Should_Share_One_File_Data()
         {

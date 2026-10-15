@@ -117,6 +117,12 @@ namespace Avalonia.Media
             => AvaloniaLocator.Current.GetService<FontManager>()?._rasterServices?.Budget.TrimForMemoryPressure();
 
         /// <summary>
+        /// The registry of the font file data the application's faces share; it holds no reference of
+        /// its own, so it needs no disposal.
+        /// </summary>
+        internal FontFileCache FileCache { get; } = new();
+
+        /// <summary>
         /// The state of managed glyph rasterization this application keeps, created on first use
         /// from any thread and disposed with the font manager.
         /// </summary>

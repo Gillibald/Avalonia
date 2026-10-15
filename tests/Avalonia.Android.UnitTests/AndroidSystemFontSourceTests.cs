@@ -82,6 +82,10 @@ namespace Avalonia.Android.UnitTests
         [Fact]
         public void The_First_Name_Only_The_Platform_Knows_Enumerates_The_Platform_Fonts_Once()
         {
+            // Faces map their files through the font manager of the application loading them.
+            using var scope = AvaloniaLocator.EnterScope();
+            using var fontManager = FontManager.Current;
+
             // Updated fonts outside the configuration (Google Sans under /data/fonts/files) are
             // reachable by name only through the platform's font list; the platform's matcher
             // answers unknown names with its default face.

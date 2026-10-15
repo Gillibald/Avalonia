@@ -323,6 +323,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         [Fact]
         public void Typefaces_Of_One_Collection_File_Share_One_File_Data()
         {
+            // Faces share file data through the font manager of the application loading them.
+            using var application = UnitTestApplication.Start();
             using var fixture = new FontFileFixture();
 
             var path = fixture.Write("collection.ttc", FontFileFixture.BuildCollection(

@@ -7,17 +7,24 @@ using System.IO;
 namespace Avalonia.Media.Fonts
 {
     /// <summary>
-    /// Process-wide registry of font file data: one <see cref="SharedFontData"/> per font file
-    /// while any face over it lives, so all faces of a collection file, repeated loads of one
-    /// face, and several collections over the same files share one mapping (or one copy).
+    /// The registry of one application's font file data, owned by its <see cref="FontManager"/>:
+    /// one <see cref="SharedFontData"/> per font file while any face over it lives, so all faces
+    /// of a collection file, repeated loads of one face, and several collections over the same
+    /// files share one mapping (or one copy).
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The cache holds no reference of its own. An entry leaves the cache when the last face over
     /// it releases its reference, which disposes the data; a later request maps or reads the file
     /// again. Native font data is therefore bounded by the distinct files in use, without
     /// eviction policy.
+    /// </para>
+    /// <para>
+    /// The static members serve the current application's cache. Without a font manager, as in
+    /// tools that load a font file on their own, every load maps or reads its file privately.
+    /// </para>
     /// </remarks>
-    internal static class FontFileCache
+    internal sealed class FontFileCache
     {
         // Default volumes on Windows and macOS are case-insensitive: differently cased paths name
         // one file there and must share one entry.
@@ -26,13 +33,16 @@ namespace Avalonia.Media.Fonts
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
 
-        private static readonly ConcurrentDictionary<string, SharedFontData> s_pathEntries = new(s_pathComparer);
+        private readonly ConcurrentDictionary<string, SharedFontData> _pathEntries = new(s_pathComparer);
 
-        private static readonly ConcurrentDictionary<FontContentKey, SharedFontData> s_contentEntries = new();
+        private readonly ConcurrentDictionary<FontContentKey, SharedFontData> _contentEntries = new();
 
         // Resolving symbolic links costs a file system call per lookup; distinct raw paths are few
         // (one per installed font file at most), so the resolved form is remembered.
-        private static readonly ConcurrentDictionary<string, string> s_canonicalPaths = new(s_pathComparer);
+        private readonly ConcurrentDictionary<string, string> _canonicalPaths = new(s_pathComparer);
+
+        /// <summary>The cache of the current application, or <c>null</c> when it has no font manager.</summary>
+        public static FontFileCache? TryGetCurrent() => AvaloniaLocator.Current.GetService<FontManager>()?.FileCache;
 
         /// <summary>
         /// Opens the data of the font file at the specified path, memory-mapped where the platform
@@ -44,6 +54,26 @@ namespace Avalonia.Media.Fonts
         /// <returns><see langword="true"/> if the file could be opened; otherwise, <see langword="false"/>.</returns>
         public static bool TryOpen(string path, [NotNullWhen(true)] out SharedFontData? data)
         {
+            if (TryGetCurrent() is { } cache)
+            {
+                return cache.TryOpenShared(path, out data);
+            }
+
+            data = null;
+
+            if (string.IsNullOrEmpty(path) || OpenFile(path) is not { } opened)
+            {
+                return false;
+            }
+
+            data = new SharedFontData(opened.Owner, opened.Memory);
+
+            return true;
+        }
+
+        /// <summary>Opens the data of the font file at <paramref name="path"/> through this cache.</summary>
+        private bool TryOpenShared(string path, [NotNullWhen(true)] out SharedFontData? data)
+        {
             data = null;
 
             if (string.IsNullOrEmpty(path) || !TryGetCanonicalPath(path, out var canonicalPath))
@@ -51,7 +81,7 @@ namespace Avalonia.Media.Fonts
                 return false;
             }
 
-            return TryGetOrCreate(s_pathEntries, canonicalPath, static path => OpenFile(path), out data);
+            return TryGetOrCreate(_pathEntries, canonicalPath, static path => OpenFile(path), out data);
         }
 
         /// <summary>
@@ -69,23 +99,42 @@ namespace Avalonia.Media.Fonts
             Func<(IDisposable Owner, ReadOnlyMemory<byte> Memory)?> factory,
             [NotNullWhen(true)] out SharedFontData? data)
         {
-            return TryGetOrCreate(s_contentEntries, key, _ => factory(), out data);
+            if (TryGetCurrent() is { } cache)
+            {
+                return TryGetOrCreate(cache._contentEntries, key, _ => factory(), out data);
+            }
+
+            if (factory() is not { } created)
+            {
+                data = null;
+
+                return false;
+            }
+
+            data = new SharedFontData(created.Owner, created.Memory);
+
+            return true;
         }
 
         /// <summary>
-        /// Gets the live entries: the key (canonical path or <see cref="FontContentKey"/>), the
-        /// owner type and the data length.
+        /// Gets the live entries of the current application: the key (canonical path or
+        /// <see cref="FontContentKey"/>), the owner type and the data length.
         /// </summary>
         internal static IReadOnlyList<FontFileCacheEntry> GetSnapshot()
         {
             var entries = new List<FontFileCacheEntry>();
 
-            foreach (var entry in s_pathEntries)
+            if (TryGetCurrent() is not { } cache)
+            {
+                return entries;
+            }
+
+            foreach (var entry in cache._pathEntries)
             {
                 entries.Add(new FontFileCacheEntry(entry.Key, entry.Value.Owner.GetType(), entry.Value.Memory.Length));
             }
 
-            foreach (var entry in s_contentEntries)
+            foreach (var entry in cache._contentEntries)
             {
                 entries.Add(new FontFileCacheEntry(entry.Key, entry.Value.Owner.GetType(), entry.Value.Memory.Length));
             }
@@ -188,9 +237,9 @@ namespace Avalonia.Media.Fonts
             }
         }
 
-        private static bool TryGetCanonicalPath(string path, [NotNullWhen(true)] out string? canonicalPath)
+        private bool TryGetCanonicalPath(string path, [NotNullWhen(true)] out string? canonicalPath)
         {
-            if (s_canonicalPaths.TryGetValue(path, out canonicalPath))
+            if (_canonicalPaths.TryGetValue(path, out canonicalPath))
             {
                 return true;
             }
@@ -217,7 +266,7 @@ namespace Avalonia.Media.Fonts
             {
                 // Only existing files are remembered, so a path that does not exist yet resolves
                 // again once it does.
-                s_canonicalPaths.TryAdd(path, canonicalPath);
+                _canonicalPaths.TryAdd(path, canonicalPath);
             }
 
             return true;

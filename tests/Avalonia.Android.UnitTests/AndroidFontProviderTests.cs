@@ -97,6 +97,9 @@ namespace Avalonia.Android.UnitTests
         [Fact]
         public void Every_Face_Of_The_System_Fonts_Shares_One_Mapping_Per_File()
         {
+            // Faces share file data through the font manager of the application loading them.
+            using var scope = AvaloniaLocator.EnterScope();
+            using var fontManager = FontManager.Current;
             using var provider = new AndroidFontProvider(_fixture.VendorConfiguration(), () => null);
 
             var memories = new List<IFontMemory>();

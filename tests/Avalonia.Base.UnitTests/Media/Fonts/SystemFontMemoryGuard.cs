@@ -21,6 +21,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
     {
         public static void AssertOneMappedDataPerFile(Func<ISystemFontProvider> createProvider)
         {
+            // Faces share file data through the font manager of the application loading them.
+            using var application = EnterFontManagerScope();
+
             var comparer = OperatingSystem.IsWindows() || OperatingSystem.IsMacOS()
                 ? StringComparer.OrdinalIgnoreCase
                 : StringComparer.Ordinal;
@@ -91,6 +94,24 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
                 ((IDisposable)collection).Dispose();
                 provider.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Enters a locator scope with a font manager of its own, which leaving the scope disposes;
+        /// for test projects without the unit test application.
+        /// </summary>
+        public static IDisposable EnterFontManagerScope() => new FontManagerScope();
+
+        private sealed class FontManagerScope : IDisposable
+        {
+            private readonly IDisposable _scope = AvaloniaLocator.EnterScope();
+            private readonly FontManager _fontManager = FontManager.Current;
+
+            public void Dispose()
+            {
+                ((IDisposable)_fontManager).Dispose();
+                _scope.Dispose();
             }
         }
 
