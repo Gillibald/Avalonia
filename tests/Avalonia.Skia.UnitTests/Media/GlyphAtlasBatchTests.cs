@@ -1779,6 +1779,126 @@ namespace Avalonia.Skia.UnitTests.Media
             DrawAll(context, runs, Brushes.Black);
         }
 
+        public static IEnumerable<object[]> PageRefreshContexts()
+        {
+            foreach (var context in HardwareContexts())
+            {
+                yield return new[] { context[0], true };
+                yield return new[] { context[0], false };
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(PageRefreshContexts))]
+        public void A_Crossing_Frame_Of_Many_Clipped_Runs_Refreshes_Each_Atlas_Page_Once(GpuBackend backend,
+            bool updatable)
+        {
+            // Forty runs, more than a frame keeps batches pending, each drawn inside a clip of its
+            // own line that cuts its descenders, all inside a clip that cuts the paragraph's right
+            // side and bottom, lay out their crossing sprites in the same frame. Their stretched
+            // draws wait in the frame's glyph batch with the clips they were drawn under, so each
+            // atlas page is refreshed once, after every run wrote to it, whether the context
+            // updates page textures in place or wraps the whole page; and the frame holds exactly
+            // the pixels of every run drawn on its own.
+            const int count = 40;
+            const double em = 9;
+            var origin = new Point(6.3, 4);
+
+            static double Scale(int frame) => 1 + 0.04 * frame;
+
+            int crossing;
+            int pages;
+            long refreshes;
+            int stretched;
+            byte[] batched;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, false, updatableTextures: updatable))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                var runs = CreateParagraph(typeface, count, em, origin);
+
+                try
+                {
+                    crossing = TransformedAtlasTests.GridCrossingFrames(
+                        Enumerable.Range(0, 20).Select(Scale).ToList(), runs[0], 0)[0];
+
+                    for (var frame = 0; frame < crossing; frame++)
+                    {
+                        Render(gpu, context => DrawZoomedInClips(context, runs, Scale(frame), em, origin), true, out _);
+                    }
+
+                    var before = DrawingContextImpl.PageImagesCreatedOnThread +
+                                 DrawingContextImpl.PageTextureUpdatesOnThread;
+                    var stretchedBefore = MaskGlyphRunRenderer.StretchedDraws;
+
+                    batched = Render(gpu, context => DrawZoomedInClips(context, runs, Scale(crossing), em, origin),
+                        true, out _);
+                    refreshes = DrawingContextImpl.PageImagesCreatedOnThread +
+                                DrawingContextImpl.PageTextureUpdatesOnThread - before;
+                    stretched = MaskGlyphRunRenderer.StretchedDraws - stretchedBefore;
+                    pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
+                }
+                finally
+                {
+                    DisposeAll(runs);
+                }
+            }
+
+            byte[] separate;
+
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, false, updatableTextures: updatable))
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                var runs = CreateParagraph(typeface, count, em, origin);
+
+                try
+                {
+                    for (var frame = 0; frame < crossing; frame++)
+                    {
+                        Render(gpu, context => DrawZoomedInClips(context, runs, Scale(frame), em, origin), false, out _);
+                    }
+
+                    separate = Render(gpu, context => DrawZoomedInClips(context, runs, Scale(crossing), em, origin),
+                        false, out _);
+                }
+                finally
+                {
+                    DisposeAll(runs);
+                }
+            }
+
+            Assert.Equal(count, stretched);
+            Assert.True(refreshes <= pages, $"{refreshes} page refreshes for {pages} pages");
+            TransformedAtlasTests.AssertEqual(separate, batched, $"{backend} crossing frame {crossing}");
+        }
+
+        /// <summary>
+        /// Draws <paramref name="runs"/>, a paragraph made by <see cref="CreateParagraph"/>, zoomed by
+        /// <paramref name="scale"/>, each run inside a pixel-aligned clip of its line that cuts its
+        /// descenders, and all of them inside a clip that cuts the paragraph's right side and bottom.
+        /// </summary>
+        private static void DrawZoomedInClips(DrawingContextImpl context, ManagedGlyphRunImpl[] runs, double scale,
+            double em, Point origin)
+        {
+            var step = Math.Round(em * 1.35);
+
+            context.Transform = Matrix.Identity;
+            context.PushClip(new Rect(0, 0, 300, 280));
+
+            for (var i = 0; i < runs.Length; i++)
+            {
+                var top = Math.Floor((origin.Y + i * step) * scale);
+
+                context.Transform = Matrix.Identity;
+                context.PushClip(new Rect(0, top, 400, Math.Ceiling(em * scale) + 1));
+                context.Transform = Matrix.CreateScale(scale, scale);
+                context.DrawGlyphRun(Brushes.Black, runs[i]);
+                context.PopClip();
+            }
+
+            context.PopClip();
+        }
+
         [Theory]
         [MemberData(nameof(HardwareContexts))]
         public void A_Zoom_Only_Shrinks_The_Sprites_Of_Its_Band_Crossings(GpuBackend backend, bool software)
