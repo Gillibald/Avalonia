@@ -867,6 +867,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 grid = scale;
             }
 
+            state.TrimCrossings(grid);
+
             if (state.Settled is { IsDisposed: false, IsUpright: true, HasColor: false } settled &&
                 settled.Key.Mode == key.Mode &&
                 (settled.IsCrossing
@@ -874,6 +876,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                     : IsWithinStretchBand(state, transform)) &&
                 TryDrawStretched(context, run.GlyphTypeface, state, transform, foregroundArgb))
             {
+                state.MarkCrossingDrawn(settled);
+
                 return true;
             }
 
@@ -895,7 +899,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var timer = GlyphPhaseTimers.Start();
 
                 sprites = BuildUprightSprites(run, gridKey, (float)grid, (float)grid);
-                state.AddCrossing(sprites);
+                state.AddCrossing(sprites, grid);
                 GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
                 MotionRasterBudget.Charge(run, start);
             }

@@ -220,6 +220,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Whether the set was laid out for a zoom's band crossing.</summary>
         internal bool IsCrossing { get; set; }
 
+        /// <summary>The device scale a crossing set was laid out at, a point of the crossing grid.</summary>
+        internal double CrossingScale { get; set; }
+
         /// <summary>Bytes of the pre-tinted images in <see cref="FallbackImages"/>.</summary>
         internal long FallbackImageBytes { get; private set; }
 
@@ -467,6 +470,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         private int _nextEvict;
         private List<TransformedGlyphSprites?>? _crossings;
         private List<long>? _crossingUse;
+        private List<long>? _crossingZoomUse;
+        private long _zoomFrames;
         private bool _tracked;
         private int _ownerThread;
         private bool _disposed;
@@ -598,6 +603,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     if (crossings[i] is { } entry && entry.Key == key)
                     {
                         _crossingUse![i] = _budget.Frame;
+                        _crossingZoomUse![i] = _zoomFrames;
                         sprites = entry;
                         return true;
                     }
@@ -637,35 +643,116 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         /// <summary>
-        /// Adds the sprite set of a zoom's band crossing. Crossing sets stay out of the ring the
-        /// other sets rotate through, so the sets a gesture's sharp frames lay out never push
-        /// them out and a zoom that passes the crossing scale again finds them; like the ring's
-        /// sets, the budget evicts them by age.
+        /// Adds the sprite set of a zoom's band crossing at the grid scale <paramref name="scale"/>.
+        /// Crossing sets stay out of the ring the other sets rotate through, so the sets a gesture's
+        /// sharp frames lay out never push them out and a zoom that passes the crossing scale again
+        /// finds them; like the ring's sets, the budget evicts them by age, and
+        /// <see cref="TrimCrossings"/> drops those a zoom has moved away from.
         /// </summary>
-        public void AddCrossing(TransformedGlyphSprites sprites)
+        public void AddCrossing(TransformedGlyphSprites sprites, double scale)
         {
             Version++;
             sprites.IsCrossing = true;
+            sprites.CrossingScale = scale;
             sprites.Owner = this;
             _ownerThread = Environment.CurrentManagedThreadId;
 
             var crossings = _crossings ??= new List<TransformedGlyphSprites?>();
             var use = _crossingUse ??= new List<long>();
+            var zoomUse = _crossingZoomUse ??= new List<long>();
             var slot = crossings.IndexOf(null);
 
             if (slot < 0)
             {
                 crossings.Add(sprites);
                 use.Add(_budget.Frame);
+                zoomUse.Add(_zoomFrames);
             }
             else
             {
                 crossings[slot] = sprites;
                 use[slot] = _budget.Frame;
+                zoomUse[slot] = _zoomFrames;
             }
 
             Track();
             Recharge();
+        }
+
+        /// <summary>
+        /// The grid steps a zoom keeps the crossings of around the crossing it draws: the two below
+        /// and above it, within which a zoom that turns back stretches over little more than a
+        /// band before it finds a crossing it laid out.
+        /// </summary>
+        internal const int CrossingKeepSteps = 2;
+
+        /// <summary>
+        /// The zoom frames a crossing farther away than <see cref="CrossingKeepSteps"/> stays
+        /// after the run last drew it, two seconds at 60 Hz: a sawtooth or a zoom going back and
+        /// forth passes its crossings again within that, and keeps them.
+        /// </summary>
+        internal const int CrossingKeepFrames = 120;
+
+        /// <summary>
+        /// Counts a zoom frame of the run drawn from the crossing at the grid scale
+        /// <paramref name="scale"/>, and drops the crossings more than
+        /// <see cref="CrossingKeepSteps"/> grid steps from it that the run has not drawn for
+        /// <see cref="CrossingKeepFrames"/> of its zoom frames, so a zoom that keeps going one way
+        /// holds a few crossings rather than one per grid scale it passed. The settled set stays.
+        /// </summary>
+        /// <remarks>
+        /// The atlas entries of a dropped set stay: atlas pages mix the entries of neighbouring
+        /// scales on their shelves, so retiring a set's entries frees no page, and a zoom coming
+        /// back would place them again on new rows. Pages no set draws age out of the glyph cache
+        /// budget as before.
+        /// </remarks>
+        public void TrimCrossings(double scale)
+        {
+            _zoomFrames++;
+
+            if (_crossings is not { } crossings)
+            {
+                return;
+            }
+
+            var step = Math.Log(MaskGlyphRunRenderer.MaxStretchScale);
+            var trimmed = false;
+
+            for (var i = 0; i < crossings.Count; i++)
+            {
+                if (crossings[i] is not { } entry || ReferenceEquals(entry, Settled) ||
+                    Math.Abs(Math.Log(entry.CrossingScale / scale)) <= (CrossingKeepSteps + 0.5) * step ||
+                    _zoomFrames - _crossingZoomUse![i] < CrossingKeepFrames)
+                {
+                    continue;
+                }
+
+                Version++;
+                crossings[i] = null;
+                entry.Dispose();
+                trimmed = true;
+            }
+
+            if (trimmed)
+            {
+                Recharge();
+            }
+        }
+
+        /// <summary>Records that the run's current zoom frame draws <paramref name="sprites"/>, a crossing set it holds.</summary>
+        public void MarkCrossingDrawn(TransformedGlyphSprites sprites)
+        {
+            if (_crossings is not { } crossings)
+            {
+                return;
+            }
+
+            var index = crossings.IndexOf(sprites);
+
+            if (index >= 0)
+            {
+                _crossingZoomUse![index] = _zoomFrames;
+            }
         }
 
         private void Track()
