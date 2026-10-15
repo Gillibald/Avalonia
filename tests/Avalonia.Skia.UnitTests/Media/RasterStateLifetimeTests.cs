@@ -244,6 +244,34 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Shared_Atlases_Of_One_Application_Are_Out_Of_Reach_Of_The_Next()
+        {
+            const int owner = 1 << 30;
+            var key = new GlyphMaskKey(3, GlyphMaskKey.QuantizeScale(16), 0, GlyphMaskMode.Antialiased, false, false);
+            GlyphMaskAtlas first;
+
+            using (TextTestApplication.Enter())
+            {
+                // An atlas of several typefaces, as a GPU context registration makes one.
+                first = new GlyphMaskAtlas(residentPages: false);
+
+                Assert.True(first.TryAdd(owner, key, GlyphMaskAtlas.Uncorrected,
+                    new GlyphMask(new byte[16], 4, 4, 0, 0), first.Tick(), out _));
+            }
+
+            using (TextTestApplication.Enter())
+            {
+                Assert.DoesNotContain(first, GlyphMaskAtlas.GetSharedAtlases());
+
+                GlyphMaskAtlas.RetireEverywhere(owner);
+
+                Assert.Equal(1, first.Count);
+            }
+
+            GC.KeepAlive(first);
+        }
+
         /// <summary>Draws ten frames of a run zooming on a CPU surface, through one drawing context.</summary>
         private static void ZoomOnRaster(GlyphTypeface typeface)
         {
