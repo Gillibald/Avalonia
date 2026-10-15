@@ -199,6 +199,50 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Glyph_Cache_Budget_Is_Released_With_Application()
+        {
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
+            {
+                DrawText(typeface);
+
+                Assert.NotEqual(0, GlyphCacheBudget.Shared.UsedBytes);
+                Assert.NotEqual(0, GlyphCacheBudget.Shared.Frame);
+            }
+
+            using (WideRunMaskTests.CreateEnvironment(out _))
+            {
+                var budget = GlyphCacheBudget.Shared;
+
+                Assert.Equal(0, budget.UsedBytes);
+                Assert.Equal(0, budget.Frame);
+                Assert.Equal(GlyphCacheBudget.DefaultsFor(TextRasterizationDefaults.CurrentPlatform()).Limit,
+                    budget.LimitBytes);
+            }
+        }
+
+        [Fact]
+        public void A_Glyph_Cache_Limit_Set_In_One_Application_Is_Not_Seen_By_The_Next()
+        {
+            try
+            {
+                using (TextTestApplication.Enter())
+                {
+                    FailingSetup(() => GlyphCacheBudget.Shared.SetLimit(GlyphCacheBudget.MinimumLimitBytes));
+                }
+
+                using (TextTestApplication.Enter())
+                {
+                    Assert.Equal(GlyphCacheBudget.DefaultsFor(TextRasterizationDefaults.CurrentPlatform()).Limit,
+                        GlyphCacheBudget.Shared.LimitBytes);
+                }
+            }
+            finally
+            {
+                GlyphCacheBudget.Shared.FollowOptions();
+            }
+        }
+
         /// <summary>Draws ten frames of a run zooming on a CPU surface, through one drawing context.</summary>
         private static void ZoomOnRaster(GlyphTypeface typeface)
         {
