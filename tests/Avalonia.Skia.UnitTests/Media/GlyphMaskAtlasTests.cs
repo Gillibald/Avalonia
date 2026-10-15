@@ -557,6 +557,46 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void Filling_A_Page_Allocates_At_Most_Twice_Its_Pixels()
+        {
+            // One shelf per mask: the page grows with every entry until it reaches its full height.
+            // Each growth copies the page into a new array, so the arrays a filling page leaves
+            // behind are garbage a zoom that keeps laying out new scales makes in every frame.
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var atlas = new GlyphMaskAtlas(budget);
+            var random = new Random(43);
+            var masks = new GlyphMask[(GlyphMaskAtlas.MaxPageHeight - 2) / 41];
+
+            for (var i = 0; i < masks.Length; i++)
+            {
+                masks[i] = CreateMask(random, 900, 40);
+            }
+
+            GlyphAtlasSlot slot = default;
+            long allocated;
+
+            using (budget.BeginFrame())
+            {
+                var tick = atlas.Tick();
+                var before = ThreadAllocations.Start();
+
+                for (var i = 0; i < masks.Length; i++)
+                {
+                    Assert.True(atlas.TryAdd(Key(i), masks[i], tick, out slot));
+                }
+
+                allocated = ThreadAllocations.Since(before);
+            }
+
+            var page = slot.Page!;
+
+            Assert.Single(atlas.GetPages());
+            Assert.Equal(GlyphMaskAtlas.MaxPageHeight, page.Height);
+            Assert.True(allocated <= 2L * page.Pixels.Length,
+                $"filling a page of {page.Pixels.Length} bytes allocated {allocated} bytes");
+        }
+
+        [Fact]
         public void Rgba_Pages_Charge_Four_Bytes_Per_Texel_And_Eviction_Credits_Them()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
