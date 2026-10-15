@@ -25,6 +25,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>How this thread draws frames of runs whose transform keeps changing.</summary>
         public MotionRasterBudget Motion { get; }
 
+        private MaskGlyphRunRenderer.TransientGlyphScratch? _transient;
+
+        /// <summary>
+        /// The buffers this thread rasterizes the glyph masks of animated frames into, made on the
+        /// first such frame.
+        /// </summary>
+        public MaskGlyphRunRenderer.TransientGlyphScratch Transient => _transient ??= new();
+
         /// <summary>
         /// The draws made on this thread that showed a run other than a draw under a held transform
         /// shows it, while the run's transform changes from draw to draw: a bilinear stretch of an
