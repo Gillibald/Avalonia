@@ -517,6 +517,18 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var rows = RoundUp(LeadingGutter + height);
 
+            // An atlas with a page at its full height is growing, as during a zoom that lays out
+            // scale after scale: the new page fills as well, so it starts at the full height rather
+            // than copying itself at every growth on the way there.
+            foreach (var page in _pages)
+            {
+                if (page.Height == MaxPageHeight)
+                {
+                    rows = MaxPageHeight;
+                    break;
+                }
+            }
+
             // Stamped before it is charged, so a build past the limit does not evict it.
             var fresh = new GlyphAtlasPage(rows, BytesPerPixel) { UsedHeight = LeadingGutter, LastUse = tick };
 
