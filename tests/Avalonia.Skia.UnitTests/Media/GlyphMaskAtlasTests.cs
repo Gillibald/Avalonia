@@ -453,6 +453,40 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.True(atlas.AllocatedBytes <= budget.SoftLimitBytes);
         }
 
+        /// <summary>
+        /// Every context registers atlases of its own, coverage and colour, and disposing a
+        /// typeface removes its entries from all of them.
+        /// </summary>
+        [Fact]
+        public void Retiring_A_Typeface_Reaches_Every_Registered_Atlas()
+        {
+            var typeface = GlyphAtlasBatchTests.LoadAsset("Inter-Regular.ttf");
+            var owner = typeface.MaskOwnerId;
+            var random = new Random(59);
+            var atlases = new[]
+            {
+                new GlyphMaskAtlas(residentPages: true), new GlyphMaskAtlas(),
+                new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba, residentPages: true),
+            };
+
+            foreach (var atlas in atlases)
+            {
+                var mask = atlas.Format == GlyphAtlasFormat.Rgba
+                    ? CreateColorMask(random, 10, 12)
+                    : CreateMask(random, 10, 12);
+
+                Assert.True(atlas.TryAdd(owner, Key(1), GlyphMaskAtlas.Uncorrected, mask, atlas.Tick(), out _));
+            }
+
+            typeface.Dispose();
+
+            foreach (var atlas in atlases)
+            {
+                Assert.False(atlas.TryGet(owner, Key(1), GlyphMaskAtlas.Uncorrected, atlas.Tick(), out _));
+                Assert.DoesNotContain(atlas.GetPages(), page => page.Keys.Any(key => key.Owner == owner));
+            }
+        }
+
         [Fact]
         public void Disposing_A_Typeface_Removes_Its_Atlas_Entries()
         {

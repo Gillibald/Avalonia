@@ -144,6 +144,91 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        /// <summary>
+        /// A context made after a context was lost registers atlases of its own: it draws the same
+        /// frame from pages it builds anew, and the lost context's atlas gave up its pages.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Context_Registered_After_Loss_Draws_The_Same_Frame_From_A_Fresh_Atlas(GpuBackend backend)
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var paragraph = CreateParagraph(typeface, 13);
+
+            try
+            {
+                byte[] before;
+                GlyphMaskAtlas lostAtlas;
+
+                using (var lost = TransformedAtlasTests.CreateGpu(backend, false, backendAtlases: true))
+                {
+                    lostAtlas = TransformedAtlasTests.AtlasOf(lost, typeface);
+                    Render(lost, context => DrawAll(context, paragraph));
+                    before = Render(lost, context => DrawAll(context, paragraph));
+                    lost.GrContext.AbandonContext();
+                }
+
+                using var gpu = TransformedAtlasTests.CreateGpu(backend, false, backendAtlases: true);
+                var atlas = TransformedAtlasTests.AtlasOf(gpu, typeface);
+
+                Assert.NotSame(lostAtlas, atlas);
+
+                var after = Render(gpu, context => DrawAll(context, paragraph));
+
+                TransformedAtlasTests.AssertEqual(before, after, "frame on the new context");
+                Assert.Empty(lostAtlas.GetPages());
+                Assert.NotEmpty(atlas.GetPages());
+            }
+            finally
+            {
+                DisposeAll(paragraph);
+            }
+        }
+
+        public static IEnumerable<object[]> ContextPairs()
+        {
+            yield return new object[] { GpuBackend.Vulkan, GpuBackend.Vulkan };
+            yield return new object[] { GpuBackend.NativeGl, GpuBackend.Angle };
+            yield return new object[] { GpuBackend.Angle, GpuBackend.Vulkan };
+        }
+
+        /// <summary>
+        /// Two contexts drawing in turn each draw from atlases of their own: neither makes a page
+        /// texture again because the other drew the page, and both draw the same frame.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(ContextPairs))]
+        public void Two_Live_Contexts_Draw_Identical_Frames_From_Their_Own_Atlases(GpuBackend firstBackend,
+            GpuBackend secondBackend)
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var paragraph = CreateParagraph(typeface, 13);
+
+            try
+            {
+                using var first = TransformedAtlasTests.CreateGpu(firstBackend, false, backendAtlases: true);
+                using var second = TransformedAtlasTests.CreateGpu(secondBackend, false, backendAtlases: true);
+
+                Assert.NotSame(TransformedAtlasTests.AtlasOf(first, typeface), TransformedAtlasTests.AtlasOf(second, typeface));
+
+                Render(first, context => DrawAll(context, paragraph));
+                Render(second, context => DrawAll(context, paragraph));
+
+                var created = DrawingContextImpl.PageImagesCreatedOnThread;
+                var firstFrame = Render(first, context => DrawAll(context, paragraph));
+                var secondFrame = Render(second, context => DrawAll(context, paragraph));
+                var firstAgain = Render(first, context => DrawAll(context, paragraph));
+
+                Assert.Equal(created, DrawingContextImpl.PageImagesCreatedOnThread);
+                TransformedAtlasTests.AssertEqual(firstFrame, secondFrame, "frame of the second context");
+                TransformedAtlasTests.AssertEqual(firstFrame, firstAgain, "frame of the first context again");
+            }
+            finally
+            {
+                DisposeAll(paragraph);
+            }
+        }
+
         [Fact]
         public void The_Metal_Backend_Updates_Textures_In_Place_And_Shares_One_Glyph_Atlas()
         {

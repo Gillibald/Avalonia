@@ -407,10 +407,12 @@ namespace Avalonia.Skia.UnitTests.Media
         /// updatable textures gets <paramref name="maskAtlas"/> and <paramref name="colorAtlas"/>,
         /// or atlases of its own, in place of <see cref="GlyphMaskAtlas.Shared"/> and
         /// <see cref="GlyphMaskAtlas.SharedColor"/>, so tests running in parallel never share pages.
-        /// Without <paramref name="updatableTextures"/> it registers none.
+        /// Without <paramref name="updatableTextures"/> it registers none. With
+        /// <paramref name="backendAtlases"/> it registers the textures alone, as a backend does,
+        /// and the context gets the atlases registration makes.
         /// </summary>
         internal static GpuTestContext CreateGpu(GpuBackend backend, bool software, GlyphMaskAtlas? maskAtlas = null,
-            GlyphMaskAtlas? colorAtlas = null, bool updatableTextures = true)
+            GlyphMaskAtlas? colorAtlas = null, bool updatableTextures = true, bool backendAtlases = false)
         {
             var gpu = GpuTestContext.TryCreate(backend, out var reason);
 
@@ -423,6 +425,17 @@ namespace Avalonia.Skia.UnitTests.Media
             // backend without a partial texture upload does.
             if (!updatableTextures)
             {
+                return gpu;
+            }
+
+            if (backendAtlases)
+            {
+                var feature = gpu.GetGlProcAddress is { } getGlProcAddress
+                    ? GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getGlProcAddress, gpu.GlMajorVersion)
+                    : gpu.UpdatableTextures;
+
+                SkiaUpdatableTextures.Register(gpu.GrContext, feature);
+
                 return gpu;
             }
 
