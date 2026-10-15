@@ -33,13 +33,15 @@ namespace TextStress.Measurement
             return columns;
         }
 
-        /// <summary>Reads the calling thread's ticks and span counts per phase.</summary>
+        /// <summary>Reads the calling thread's ticks and span counts per phase in the application.</summary>
         public static void Read(long[] ticks, long[] counts)
         {
+            var timers = TextRasterThreadState.TryGetCurrent()?.PhaseTimers;
+
             for (var i = 0; i < s_phases.Length; i++)
             {
-                ticks[i] = GlyphPhaseTimers.GetTicksOnThread(s_phases[i]);
-                counts[i] = GlyphPhaseTimers.GetCountOnThread(s_phases[i]);
+                ticks[i] = timers?.GetTicks(s_phases[i]) ?? 0;
+                counts[i] = timers?.GetCount(s_phases[i]) ?? 0;
             }
         }
 

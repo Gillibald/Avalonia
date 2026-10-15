@@ -784,15 +784,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// returns the entry a racing caller placed first. Returns <c>false</c> when the mask does
         /// not fit a page.
         /// </summary>
-        public bool TryAdd(in GlyphMaskKey key, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
-            => TryAdd(0, key, Uncorrected, mask, tick, out slot);
+        public bool TryAdd(in GlyphMaskKey key, GlyphMask mask, long tick, out GlyphAtlasSlot slot,
+            TextRasterThreadState? raster = null)
+            => TryAdd(0, key, Uncorrected, mask, tick, out slot, raster);
 
         /// <summary>
         /// Places <paramref name="mask"/> under <paramref name="key"/> of owner 0 and
         /// <paramref name="bucket"/>, its coverage corrected by that bucket's table.
         /// </summary>
-        public bool TryAdd(in GlyphMaskKey key, int bucket, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
-            => TryAdd(0, key, bucket, mask, tick, out slot);
+        public bool TryAdd(in GlyphMaskKey key, int bucket, GlyphMask mask, long tick, out GlyphAtlasSlot slot,
+            TextRasterThreadState? raster = null)
+            => TryAdd(0, key, bucket, mask, tick, out slot, raster);
 
         /// <summary>
         /// Places <paramref name="mask"/>, rasterized by <paramref name="owner"/>, under
@@ -803,14 +805,17 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// channels, stored in RGBA order and never corrected; an A8 atlas takes coverage masks.
         /// </summary>
         public bool TryAdd(int owner, in GlyphMaskKey key, int bucket, GlyphMask mask, long tick,
-            out GlyphAtlasSlot slot)
-            => TryAdd(new GlyphAtlasEntryKey(owner, key, bucket), mask, tick, out slot);
+            out GlyphAtlasSlot slot, TextRasterThreadState? raster = null)
+            => TryAdd(new GlyphAtlasEntryKey(owner, key, bucket), mask, tick, out slot, raster);
 
         /// <summary>
         /// Places <paramref name="mask"/> under <paramref name="entry"/>, as
-        /// <see cref="TryAdd(int, in GlyphMaskKey, int, GlyphMask, long, out GlyphAtlasSlot)"/> does.
+        /// <see cref="TryAdd(int, in GlyphMaskKey, int, GlyphMask, long, out GlyphAtlasSlot, TextRasterThreadState)"/>
+        /// does. The write is timed in <paramref name="raster"/>, the drawing thread's text raster
+        /// state, or the current application's when omitted.
         /// </summary>
-        public bool TryAdd(in GlyphAtlasEntryKey entry, GlyphMask mask, long tick, out GlyphAtlasSlot slot)
+        public bool TryAdd(in GlyphAtlasEntryKey entry, GlyphMask mask, long tick, out GlyphAtlasSlot slot,
+            TextRasterThreadState? raster = null)
         {
             if (!mask.IsEmpty && (!Fits(mask.Width, mask.Height) || mask.Channels != BytesPerPixel))
             {
@@ -840,11 +845,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return true;
                 }
 
-                var timer = GlyphPhaseTimers.Start();
+                var timers = (raster ?? TextRasterThreadState.TryGetCurrent())?.PhaseTimers;
+                var timer = GlyphPhaseTimers.Start(timers);
                 var (page, x, y, shelfHeight) = Place(mask.Width + 1, mask.Height + 1, tick);
 
                 Write(page, mask, x, y, shelfHeight, bucket);
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasWrite, timer);
+                timers?.Stop(GlyphTimerPhase.AtlasWrite, timer);
                 page.Keys.Add(entry);
                 page.LastUse = tick;
 

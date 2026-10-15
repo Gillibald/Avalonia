@@ -24,6 +24,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             _threads = new ThreadLocal<TextRasterThreadState>(() => new TextRasterThreadState(this));
         }
 
+        /// <summary>The diagnostics switches of the application.</summary>
+        public TextRasterDiagnostics Diagnostics { get; } = new();
+
         /// <summary>Whether the owner has disposed the services.</summary>
         public bool IsDisposed => _disposed;
 

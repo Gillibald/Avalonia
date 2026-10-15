@@ -418,7 +418,7 @@ namespace Avalonia.Skia
                 return current;
             }
 
-            var timer = GlyphPhaseTimers.Start();
+            var timer = GlyphPhaseTimers.Start(PhaseTimers);
 
             if (page.Realized is not null)
             {
@@ -438,7 +438,7 @@ namespace Avalonia.Skia
             else if (page.IsResident)
             {
                 // The backend refused the texture after the page handed it its writes.
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
+                PhaseTimers?.Stop(GlyphTimerPhase.PageRewrap, timer);
                 page.Atlas?.Discard(page);
                 return null;
             }
@@ -449,7 +449,7 @@ namespace Avalonia.Skia
                 page.RealizedVersion = page.Version;
             }
 
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
+            PhaseTimers?.Stop(GlyphTimerPhase.PageRewrap, timer);
 
             return image;
         }
@@ -468,7 +468,7 @@ namespace Avalonia.Skia
         /// context uploads before anything else can make the GPU run its draws: when it ends,
         /// when the graphics API is leased, and when a caller flushes it to read the surface.
         /// </summary>
-        private static void UploadPendingPageTextures()
+        private void UploadPendingPageTextures()
         {
             if (t_pendingPageTextures is not { Count: > 0 } pending)
             {
@@ -483,17 +483,17 @@ namespace Avalonia.Skia
             pending.Clear();
         }
 
-        private static void UploadPageTexture(GlyphAtlasPage page, GlyphPageTexture texture)
+        private void UploadPageTexture(GlyphAtlasPage page, GlyphPageTexture texture)
         {
             if (!texture.UpdatePending)
             {
                 return;
             }
 
-            var timer = GlyphPhaseTimers.Start();
+            var timer = GlyphPhaseTimers.Start(PhaseTimers);
 
             texture.Update(page);
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.PageRewrap, timer);
+            PhaseTimers?.Stop(GlyphTimerPhase.PageRewrap, timer);
         }
 
         /// <summary>The image this context draws <paramref name="page"/> from at its current version; for tests.</summary>
@@ -596,24 +596,24 @@ namespace Avalonia.Skia
 
             public SKImage Image { get; }
 
-            /// <summary>Made on first use: only batches drawn from kept vertices sample the page through it.</summary>
-            public SKShader Shader => _shader ?? CreateShader();
-
-            private SKShader CreateShader()
+            // Made on first use: only batches drawn from kept vertices sample the page through it.
+            private SKShader CreateShader(GlyphPhaseTimers? timers)
             {
-                var timer = GlyphPhaseTimers.Start();
+                var timer = GlyphPhaseTimers.Start(timers);
 
                 _shader = Image.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, s_nearest);
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.PageShader, timer);
+                timers?.Stop(GlyphTimerPhase.PageShader, timer);
 
                 return _shader;
             }
 
             /// <summary>
             /// The paint batches drawn from kept vertices sample the page with, made on first use
-            /// and kept with the image; each draw sets its colour.
+            /// and kept with the image; each draw sets its colour. Making it is timed in
+            /// <paramref name="timers"/>.
             /// </summary>
-            public SKPaint Paint => _paint ??= new SKPaint { Shader = Shader };
+            public SKPaint GetPaint(GlyphPhaseTimers? timers)
+                => _paint ??= new SKPaint { Shader = _shader ?? CreateShader(timers) };
 
             private SKShader? _bilinearShader;
             private SKPaint? _bilinearPaint;

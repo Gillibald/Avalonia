@@ -77,9 +77,11 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// Opt-in phase timers of glyph drawing, for profiling tools: per-thread running totals of
-    /// the elapsed time and the number of timed spans of each <see cref="GlyphTimerPhase"/>.
-    /// Off by default; while off a probe is one test of a static field.
+    /// Opt-in phase timers of glyph drawing on one thread of one application, for profiling tools:
+    /// running totals of the elapsed time and the number of timed spans of each
+    /// <see cref="GlyphTimerPhase"/> (<see cref="TextRasterThreadState.PhaseTimers"/>). Off by default
+    /// (<see cref="TextRasterDiagnostics.PhaseTimersEnabled"/>); while off a probe is one test of a
+    /// field.
     /// </summary>
     /// <remarks>
     /// Spans are read with <see cref="Stopwatch.GetTimestamp"/>, about 15 ns per read. The
@@ -88,42 +90,34 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// Windows, so a single span is only good to 100 ns, but the boundaries of spans fall at
     /// random within a tick and a mean over many spans has no such error. Spans are wall time:
     /// a span in which the thread was descheduled or blocked counts that time too. A probe
-    /// pair adds <see cref="ProbeTicks"/> to the phase it times and to every phase around it.
+    /// pair adds <see cref="TextRasterDiagnostics.ProbeTicks"/> to the phase it times and to every
+    /// phase around it.
     /// </remarks>
-    internal static class GlyphPhaseTimers
+    internal sealed class GlyphPhaseTimers
     {
-        // A constant rather than the enum's values: the first probe of a process runs the type
-        // initializer, and enum reflection there would allocate inside whatever is being measured.
+        // A constant rather than the enum's values: enum reflection allocates.
         private const int PhaseCount = (int)GlyphTimerPhase.Present + 1;
 
-        private static bool s_enabled;
+        private readonly TextRasterDiagnostics? _diagnostics;
+        private readonly long[] _ticks = new long[PhaseCount];
+        private readonly long[] _counts = new long[PhaseCount];
 
-        [ThreadStatic]
-        private static long[]? t_ticks;
-
-        [ThreadStatic]
-        private static long[]? t_counts;
-
-        /// <summary>Whether probes record. Set before the spans to measure begin; spans already running when it changes are dropped.</summary>
-        public static bool Enabled
+        /// <param name="diagnostics">The application's switch, or <c>null</c> for timers that never record.</param>
+        internal GlyphPhaseTimers(TextRasterDiagnostics? diagnostics)
         {
-            get => s_enabled;
-            set => s_enabled = value;
+            _diagnostics = diagnostics;
         }
 
         /// <summary>Ticks per second of the recorded totals.</summary>
         public static long Frequency => Stopwatch.Frequency;
 
-        /// <summary>The mean ticks an empty probe pair records, from <see cref="Calibrate"/>; 0 before it runs.</summary>
-        public static double ProbeTicks { get; private set; }
-
         /// <summary>The start of a span: a timestamp while enabled, otherwise 0, which the matching <see cref="Stop"/> ignores.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static long Start() => s_enabled ? Stopwatch.GetTimestamp() : 0;
+        public long Start() => _diagnostics is { PhaseTimersEnabled: true } ? Stopwatch.GetTimestamp() : 0;
 
-        /// <summary>Ends a span begun by <see cref="Start"/> and adds it to <paramref name="phase"/>.</summary>
+        /// <summary>Ends a span begun by <see cref="Start()"/> and adds it to <paramref name="phase"/>.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void Stop(GlyphTimerPhase phase, long start)
+        public void Stop(GlyphTimerPhase phase, long start)
         {
             if (start != 0)
             {
@@ -131,43 +125,44 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void Record(GlyphTimerPhase phase, long start)
-        {
-            var elapsed = Stopwatch.GetTimestamp() - start;
+        /// <summary>A span start of timers that may be absent: 0 without timers.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long Start(GlyphPhaseTimers? timers) => timers?.Start() ?? 0;
 
-            (t_ticks ??= new long[PhaseCount])[(int)phase] += elapsed;
-            (t_counts ??= new long[PhaseCount])[(int)phase]++;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void Record(GlyphTimerPhase phase, long start)
+        {
+            _ticks[(int)phase] += Stopwatch.GetTimestamp() - start;
+            _counts[(int)phase]++;
         }
 
-        /// <summary>The ticks recorded for <paramref name="phase"/> on the calling thread.</summary>
-        public static long GetTicksOnThread(GlyphTimerPhase phase) => t_ticks?[(int)phase] ?? 0;
+        /// <summary>The ticks recorded for <paramref name="phase"/>.</summary>
+        public long GetTicks(GlyphTimerPhase phase) => _ticks[(int)phase];
 
-        /// <summary>The spans recorded for <paramref name="phase"/> on the calling thread.</summary>
-        public static long GetCountOnThread(GlyphTimerPhase phase) => t_counts?[(int)phase] ?? 0;
+        /// <summary>The spans recorded for <paramref name="phase"/>.</summary>
+        public long GetCount(GlyphTimerPhase phase) => _counts[(int)phase];
 
         /// <summary>
-        /// Measures what an empty probe pair records into <see cref="ProbeTicks"/>, timing
-        /// <paramref name="pairs"/> pairs; the thread's own totals are left as they were.
+        /// Measures the mean ticks an empty probe pair records, timing <paramref name="pairs"/>
+        /// pairs whether or not recording is on; the totals are left as they were.
         /// </summary>
-        public static void Calibrate(int pairs = 1_000_000)
+        internal double MeasureProbe(int pairs)
         {
-            var wasEnabled = s_enabled;
-            var phase = GlyphTimerPhase.GlyphRun;
-            var ticks = GetTicksOnThread(phase);
-            var count = GetCountOnThread(phase);
-
-            s_enabled = true;
+            const GlyphTimerPhase phase = GlyphTimerPhase.GlyphRun;
+            var ticks = _ticks[(int)phase];
+            var count = _counts[(int)phase];
 
             for (var i = 0; i < pairs; i++)
             {
-                Stop(phase, Start());
+                Stop(phase, Stopwatch.GetTimestamp());
             }
 
-            ProbeTicks = (double)(GetTicksOnThread(phase) - ticks) / pairs;
-            t_ticks![(int)phase] = ticks;
-            t_counts![(int)phase] = count;
-            s_enabled = wasEnabled;
+            var probe = (double)(_ticks[(int)phase] - ticks) / pairs;
+
+            _ticks[(int)phase] = ticks;
+            _counts[(int)phase] = count;
+
+            return probe;
         }
     }
 }

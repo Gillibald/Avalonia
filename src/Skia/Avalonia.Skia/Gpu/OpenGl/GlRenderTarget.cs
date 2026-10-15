@@ -30,6 +30,9 @@ namespace Avalonia.Skia
             private readonly SKSurface _surface;
             private readonly IGlPlatformSurfaceRenderingSession _glSession;
 
+            // The render thread's phase timers, resolved once per rendering session.
+            private readonly GlyphPhaseTimers? _timers = TextRasterThreadState.TryGetCurrent()?.PhaseTimers;
+
             public GlGpuSession(GRContext grContext,
                 GRBackendRenderTarget backendRenderTarget,
                 SKSurface surface,
@@ -44,18 +47,18 @@ namespace Avalonia.Skia
             }
             public void Dispose()
             {
-                var flushTimer = GlyphPhaseTimers.Start();
+                var flushTimer = GlyphPhaseTimers.Start(_timers);
 
                 _surface.Canvas.Flush();
                 _surface.Dispose();
                 _backendRenderTarget.Dispose();
                 GrContext.Flush();
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.SurfaceFlush, flushTimer);
+                _timers?.Stop(GlyphTimerPhase.SurfaceFlush, flushTimer);
 
-                var presentTimer = GlyphPhaseTimers.Start();
+                var presentTimer = GlyphPhaseTimers.Start(_timers);
 
                 _glSession.Dispose();
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.Present, presentTimer);
+                _timers?.Stop(GlyphTimerPhase.Present, presentTimer);
             }
             
             public GRSurfaceOrigin SurfaceOrigin { get; }

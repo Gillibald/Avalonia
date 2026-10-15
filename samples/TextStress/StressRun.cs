@@ -17,8 +17,11 @@ namespace TextStress
 
             if (options.PhaseTimers)
             {
-                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Calibrate();
-                Avalonia.Media.Fonts.Rasterization.GlyphPhaseTimers.Enabled = true;
+                // The application's font manager owns the switch; the platform setup takes this one.
+                var services = Avalonia.Media.FontManager.Current.RasterServices;
+
+                services.Diagnostics.Calibrate(services.ForCurrentThread());
+                services.Diagnostics.PhaseTimersEnabled = true;
             }
 
             // The Skia options are bound in the application's locator, where the platform setup

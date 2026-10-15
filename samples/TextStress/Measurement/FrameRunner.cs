@@ -467,9 +467,11 @@ namespace TextStress.Measurement
 
             yield return ("job", _options.GetString("job", ""));
             yield return ("thread_clock", ThreadClock.Description);
-            yield return ("phase_timers", GlyphPhaseTimers.Enabled
+            var diagnostics = GlyphRasterServices.Current.Diagnostics;
+
+            yield return ("phase_timers", diagnostics.PhaseTimersEnabled
                 ? FormattableString.Invariant(
-                    $"on, stopwatch at {GlyphPhaseTimers.Frequency} Hz, probe pair {PhaseTimes.TicksToMicroseconds(1) * GlyphPhaseTimers.ProbeTicks * 1000:F1} ns")
+                    $"on, stopwatch at {GlyphPhaseTimers.Frequency} Hz, probe pair {PhaseTimes.TicksToMicroseconds(1) * diagnostics.ProbeTicks * 1000:F1} ns")
                 : "off");
             yield return ("ui_thread", Environment.CurrentManagedThreadId.ToString(CultureInfo.InvariantCulture));
             yield return ("scenario", _scenario.Name);

@@ -159,8 +159,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// so hot callers can use a static build delegate — the compose loop must not allocate a
         /// closure per glyph.
         /// </summary>
+        /// <param name="key">The mask's key.</param>
+        /// <param name="state">The state <paramref name="build"/> takes.</param>
+        /// <param name="build">Builds the mask on a miss.</param>
+        /// <param name="raster">
+        /// The text raster state of the drawing thread, which a miss is timed in; the current
+        /// application's when omitted.
+        /// </param>
         public GlyphMask GetOrBuild<TState>(in TKey key, TState state,
-            Func<TKey, TState, GlyphMask> build)
+            Func<TKey, TState, GlyphMask> build, TextRasterThreadState? raster = null)
         {
             if (_entries.TryGetValue(key, out var entry) && Volatile.Read(ref entry.Mask) is { } hit)
             {
@@ -171,10 +178,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             GlyphRasterDiagnostics.CountMaskCacheMiss();
 
-            var timer = GlyphPhaseTimers.Start();
+            var timers = (raster ?? TextRasterThreadState.TryGetCurrent())?.PhaseTimers;
+            var timer = GlyphPhaseTimers.Start(timers);
             var built = build(key, state) ?? GlyphMask.Empty;
 
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.Rasterize, timer);
+            timers?.Stop(GlyphTimerPhase.Rasterize, timer);
 
             lock (_lock)
             {

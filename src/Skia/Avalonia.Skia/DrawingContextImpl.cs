@@ -130,7 +130,7 @@ namespace Avalonia.Skia
             public ISkiaSharpApiLease Lease()
             {
                 _context.PrepareCanvas(GlyphBatchFlushReason.Other);
-                UploadPendingPageTextures();
+                _context.UploadPendingPageTextures();
                 return new ApiLease(_context);
             }
 
@@ -463,6 +463,16 @@ namespace Avalonia.Skia
         /// </remarks>
         internal TextRasterThreadState RasterState
             => _rasterState ??= (_rasterServices ??= GlyphRasterServices.Current).ForCurrentThread();
+
+        /// <summary>
+        /// The <see cref="RasterState"/> of the context, or <c>null</c> when its application has no
+        /// font manager, for what draws whether or not managed text does.
+        /// </summary>
+        private TextRasterThreadState? TryGetRasterState()
+            => _rasterState ??= (_rasterServices ??= GlyphRasterServices.TryGetCurrent())?.ForCurrentThread();
+
+        /// <summary>The phase timers glyph drawing on this context records in, when there are any.</summary>
+        private GlyphPhaseTimers? PhaseTimers => TryGetRasterState()?.PhaseTimers;
 
         private GlyphTargetSurface DescribeTargetSurface()
             => new(
@@ -1051,10 +1061,10 @@ namespace Avalonia.Skia
         /// <inheritdoc />
         public void DrawGlyphRun(IBrush? foreground, IGlyphRunImpl glyphRun)
         {
-            var timer = GlyphPhaseTimers.Start();
+            var timer = GlyphPhaseTimers.Start(PhaseTimers);
 
             DrawGlyphRunCore(foreground, glyphRun);
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.GlyphRun, timer);
+            PhaseTimers?.Stop(GlyphTimerPhase.GlyphRun, timer);
         }
 
         /// <summary>
@@ -1119,11 +1129,11 @@ namespace Avalonia.Skia
             // triage rejects this draw (transform class, size, foreground kind).
             if (glyphRun is ManagedGlyphRunImpl managedRun)
             {
-                var maskTimer = GlyphPhaseTimers.Start();
+                var maskTimer = GlyphPhaseTimers.Start(PhaseTimers);
                 var drawn = MaskGlyphRunRenderer.TryDraw(this, managedRun, foreground,
                     effectiveTextOptions.TextRenderingMode, effectiveTextOptions.TextHintingMode);
 
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.MaskRunDraw, maskTimer);
+                PhaseTimers?.Stop(GlyphTimerPhase.MaskRunDraw, maskTimer);
 
                 if (drawn)
                 {
@@ -1246,7 +1256,7 @@ namespace Avalonia.Skia
             // included (Skia's skew slants them). Text layout splits colour glyphs out of the
             // run before it gets here, so only a direct glyph run draw of an oblique colour
             // face shows the slant; see ColorGlyphRunSplitter.
-            var setupTimer = GlyphPhaseTimers.Start();
+            var setupTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
             using (var paintWrapper = CreatePaint(_fillPaint, foreground, glyphRun.Bounds))
             {
@@ -1254,13 +1264,13 @@ namespace Avalonia.Skia
 
                 var textBlob = glyphRunImpl.GetTextBlob(effectiveTextOptions, RenderOptions);
 
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.BackendTextSetup, setupTimer);
+                PhaseTimers?.Stop(GlyphTimerPhase.BackendTextSetup, setupTimer);
 
-                var drawTimer = GlyphPhaseTimers.Start();
+                var drawTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
                 Canvas.DrawText(textBlob, (float)glyphRun.BaselineOrigin.X,
                     (float)glyphRun.BaselineOrigin.Y, paintWrapper.Paint);
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.BackendDrawText, drawTimer);
+                PhaseTimers?.Stop(GlyphTimerPhase.BackendDrawText, drawTimer);
             }
         }
 

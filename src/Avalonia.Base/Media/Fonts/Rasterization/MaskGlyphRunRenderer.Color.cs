@@ -44,11 +44,12 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!cached)
             {
-                var timer = GlyphPhaseTimers.Start();
+                var raster = context.RasterState;
+                var timer = raster.PhaseTimers.Start();
 
-                sprites = BuildUprightColorSprites(run, key, scaleX, scaleY, foreground);
+                sprites = BuildUprightColorSprites(raster, run, key, scaleX, scaleY, foreground);
                 state.Add(sprites);
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
+                raster.PhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
             }
 
             if (sprites.DeclinesColorAtlas)
@@ -92,13 +93,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// and placements <see cref="Compose"/> uses. A run whose content cannot draw from the atlas
         /// gets an empty set that keeps its run mask.
         /// </summary>
-        private static TransformedGlyphSprites BuildUprightColorSprites(ManagedGlyphRunImpl run, in RunMaskKey key,
-            float scaleX, float scaleY, Color foreground)
+        private static TransformedGlyphSprites BuildUprightColorSprites(TextRasterThreadState raster,
+            ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY, Color foreground)
         {
             var typeface = run.GlyphTypeface;
             var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
             var oblique = (typeface.FontSimulations & FontSimulations.Oblique) != 0;
-            var content = new ColorGlyphContent(typeface, key, embolden, oblique);
+            var content = new ColorGlyphContent(raster, typeface, key, embolden, oblique);
             var count = run.GlyphCount;
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
@@ -238,9 +239,12 @@ namespace Avalonia.Media.Fonts.Rasterization
             private readonly BitmapStrike _strike;
             private readonly float _strikeScale;
             private readonly GlyphPathBuilder _scratch;
+            private readonly TextRasterThreadState _raster;
 
-            public ColorGlyphContent(GlyphTypeface typeface, in RunMaskKey key, ushort embolden, bool oblique)
+            public ColorGlyphContent(TextRasterThreadState raster, GlyphTypeface typeface, in RunMaskKey key,
+                ushort embolden, bool oblique)
             {
+                _raster = raster;
                 _typeface = typeface;
                 _key = key;
                 _embolden = embolden;
@@ -426,7 +430,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
             }
 
-            private GlyphMask GetMask(in GlyphMaskKey key) => _typeface.MaskCache.GetOrBuild(key, (_typeface, _scratch), s_buildMask);
+            private GlyphMask GetMask(in GlyphMaskKey key)
+                => _typeface.MaskCache.GetOrBuild(key, (_typeface, _scratch), s_buildMask, _raster);
 
             // Colour layers are never simulated.
             private GlyphMask GetLayerMask(ushort glyph, byte phase)

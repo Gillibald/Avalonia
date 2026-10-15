@@ -497,7 +497,7 @@ namespace Avalonia.Skia
                 return;
             }
 
-            var batchTimer = GlyphPhaseTimers.Start();
+            var batchTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
             CountBatchDrawn(reason, batch.RunCount);
 
@@ -517,14 +517,14 @@ namespace Avalonia.Skia
             var freshImage = t_pageImagesCreated != imagesCreated;
 
             var colored = batch.HasMixedColors;
-            var verticesTimer = GlyphPhaseTimers.Start();
+            var verticesTimer = GlyphPhaseTimers.Start(PhaseTimers);
             var fromVertices = first.Backend.TryGetBatchVertices(runs, count, spriteCount, colored,
                 colored && batch.HasTranslucentColors, out var vertices, out var built);
 
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchVertices, verticesTimer);
+            PhaseTimers?.Stop(GlyphTimerPhase.BatchVertices, verticesTimer);
 
-            var setupTimer = GlyphPhaseTimers.Start();
-            var paint = fromVertices ? image.Paint : SKPaintCache.Shared.Get();
+            var setupTimer = GlyphPhaseTimers.Start(PhaseTimers);
+            var paint = fromVertices ? image.GetPaint(PhaseTimers) : SKPaintCache.Shared.Get();
             var draws = 1;
             SKRect[]? mergedSources = null;
             SKRotationScaleMatrix[]? mergedPlacements = null;
@@ -578,9 +578,9 @@ namespace Avalonia.Skia
                 SetDeviceTransform(Matrix.Identity);
             }
 
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawSetup, setupTimer);
+            PhaseTimers?.Stop(GlyphTimerPhase.DrawSetup, setupTimer);
 
-            var drawTimer = GlyphPhaseTimers.Start();
+            var drawTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
             if (fromVertices)
             {
@@ -617,10 +617,10 @@ namespace Avalonia.Skia
                 t_atlasGeometry += spriteCount;
             }
 
-            GlyphPhaseTimers.Stop(freshImage ? GlyphTimerPhase.NativeDrawFresh : GlyphTimerPhase.NativeDraw,
+            PhaseTimers?.Stop(freshImage ? GlyphTimerPhase.NativeDrawFresh : GlyphTimerPhase.NativeDraw,
                 drawTimer);
 
-            var teardownTimer = GlyphPhaseTimers.Start();
+            var teardownTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
             if (!fromVertices)
             {
@@ -628,7 +628,7 @@ namespace Avalonia.Skia
             }
 
             transient?.Dispose();
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.DrawTeardown, teardownTimer);
+            PhaseTimers?.Stop(GlyphTimerPhase.DrawTeardown, teardownTimer);
             t_atlasDraws += draws;
 
             RecyclePendingBatch(batch, batchTimer);
@@ -648,11 +648,11 @@ namespace Avalonia.Skia
         }
 
         /// <summary>Returns a drawn batch to the pool.</summary>
-        private static void RecyclePendingBatch(PendingGlyphBatch batch, long batchTimer)
+        private void RecyclePendingBatch(PendingGlyphBatch batch, long batchTimer)
         {
             batch.Clear();
             (t_pendingBatches ??= new Stack<PendingGlyphBatch>()).Push(batch);
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
+            PhaseTimers?.Stop(GlyphTimerPhase.BatchDraw, batchTimer);
         }
 
         /// <summary>
@@ -678,7 +678,7 @@ namespace Avalonia.Skia
         /// </remarks>
         private void DrawPendingStretchedBatch(PendingGlyphBatch batch, GlyphBatchFlushReason reason)
         {
-            var batchTimer = GlyphPhaseTimers.Start();
+            var batchTimer = GlyphPhaseTimers.Start(PhaseTimers);
 
             CountBatchDrawn(reason, batch.RunCount);
 

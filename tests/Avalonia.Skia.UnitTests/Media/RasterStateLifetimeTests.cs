@@ -134,27 +134,19 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Phase_Timers_Switched_On_Do_Not_Record_In_The_Next_Application()
         {
-            var enabled = GlyphPhaseTimers.Enabled;
-
-            try
+            using (TextTestApplication.Enter())
             {
-                using (TextTestApplication.Enter())
-                {
-                    FailingSetup(() => GlyphPhaseTimers.Enabled = true);
-                }
-
-                using (WideRunMaskTests.CreateEnvironment(out var typeface))
-                {
-                    var before = GlyphPhaseTimers.GetCountOnThread(GlyphTimerPhase.GlyphRun);
-
-                    DrawText(typeface);
-
-                    Assert.Equal(before, GlyphPhaseTimers.GetCountOnThread(GlyphTimerPhase.GlyphRun));
-                }
+                FailingSetup(() => GlyphRasterServices.Current.Diagnostics.PhaseTimersEnabled = true);
             }
-            finally
+
+            using (WideRunMaskTests.CreateEnvironment(out var typeface))
             {
-                GlyphPhaseTimers.Enabled = enabled;
+                var timers = GlyphRasterServices.Current.ForCurrentThread().PhaseTimers;
+                var before = timers.GetCount(GlyphTimerPhase.GlyphRun);
+
+                DrawText(typeface);
+
+                Assert.Equal(before, timers.GetCount(GlyphTimerPhase.GlyphRun));
             }
         }
 

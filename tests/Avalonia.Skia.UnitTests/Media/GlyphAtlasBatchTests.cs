@@ -1292,19 +1292,20 @@ namespace Avalonia.Skia.UnitTests.Media
             var runs = CreateParagraph(typeface, 4, 13, new Point(6.3, 4));
             var phases = Enum.GetValues<GlyphTimerPhase>();
 
-            long[] Counts() => phases.Select(GlyphPhaseTimers.GetCountOnThread).ToArray();
+            var services = GlyphRasterServices.Current;
+            var timers = services.ForCurrentThread().PhaseTimers;
+
+            long[] Counts() => phases.Select(timers.GetCount).ToArray();
 
             long Delta(long[] before, long[] after, GlyphTimerPhase phase) =>
                 after[(int)phase] - before[(int)phase];
 
             void Draw(DrawingContextImpl context) => DrawAll(context, runs, Brushes.Black);
 
-            var wasEnabled = GlyphPhaseTimers.Enabled;
+            services.Diagnostics.PhaseTimersEnabled = true;
 
             try
             {
-                GlyphPhaseTimers.Enabled = true;
-
                 var batches = DrawingContextImpl.BatchesDrawnOnThread;
                 var cold = Counts();
 
@@ -1334,14 +1335,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Equal(Delta(warm, after, GlyphTimerPhase.BatchDraw), Delta(warm, after, GlyphTimerPhase.NativeDraw));
                 Assert.Equal(0, Delta(warm, after, GlyphTimerPhase.BackendDrawText));
 
-                GlyphPhaseTimers.Enabled = false;
+                services.Diagnostics.PhaseTimersEnabled = false;
                 Render(gpu, Draw, batched: true, out _);
 
                 Assert.Equal(after, Counts());
             }
             finally
             {
-                GlyphPhaseTimers.Enabled = wasEnabled;
                 DisposeAll(runs);
             }
         }

@@ -108,6 +108,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
 
+            using var app = TextTestApplication.Enter();
             var typeface = LoadTypeface();
 
             using var run = CreateRun(typeface, "HHH", emSize: 24);
@@ -144,6 +145,8 @@ namespace Avalonia.Skia.UnitTests.Media
             using var gpu = GpuHarness.TryCreate(backend, out var reason);
 
             Assert.SkipWhen(gpu is null, $"No usable {backend} context: {reason}");
+
+            using var app = TextTestApplication.Enter();
 
             const int frames = 40;
             const double emSize = 16;

@@ -211,7 +211,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (transformedContext is null)
             {
-                DrawPerGlyph(context, surface, typeface, sprites, EnsureMasks(typeface, sprites), originX, originY, tint);
+                DrawPerGlyph(context, surface, typeface, sprites,
+                    EnsureMasks(TextRasterThreadState.Of(context), typeface, sprites), originX, originY, tint);
             }
             else if (surface.RasterTarget == GlyphRasterTarget.Raster)
             {
@@ -351,7 +352,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private static void DrawOnRaster(IDrawingContextImpl context, ITransformedGlyphContext rasterContext,
             in GlyphTargetSurface surface, GlyphTypeface typeface, TransformedGlyphSprites sprites, int originX, int originY, uint tint)
         {
-            var masks = EnsureMasks(typeface, sprites);
+            var masks = EnsureMasks(rasterContext.RasterState, typeface, sprites);
 
             if (!rasterContext.TryGetBlitTarget(out var target))
             {
@@ -401,7 +402,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// The glyph masks of a sprite set, fetched from the glyph mask cache once and held by
         /// the set. A mask over the cache's entry bound is built for this set alone.
         /// </summary>
-        private static GlyphMask[] EnsureMasks(GlyphTypeface typeface, TransformedGlyphSprites sprites)
+        private static GlyphMask[] EnsureMasks(TextRasterThreadState raster, GlyphTypeface typeface,
+            TransformedGlyphSprites sprites)
         {
             if (sprites.Masks is { } existing)
             {
@@ -426,7 +428,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var key = sprites.GetGlyphKey(i);
 
                 masks[i] = laidOut[i].Width * laidOut[i].Height <= GlyphMaskCache.MaxEntryBytes
-                    ? cache.GetOrBuild(key, state, s_buildMask)
+                    ? cache.GetOrBuild(key, state, s_buildMask, raster)
                     : GlyphMasks.Build(typeface, scratch, key);
             }
 
@@ -643,10 +645,11 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return null;
             }
 
-            var timer = GlyphPhaseTimers.Start();
+            var timers = context.RasterState.PhaseTimers;
+            var timer = timers.Start();
             var built = BuildAtlasBatches(context, typeface, atlas, colorAtlas, sprites, bucket);
 
-            GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasBatchBuild, timer);
+            timers.Stop(GlyphTimerPhase.AtlasBatchBuild, timer);
 
             return built ? sprites.Batches! : null;
         }
@@ -657,6 +660,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             var tick = atlas.Tick();
             var colorTick = colorAtlas?.Tick() ?? tick;
+            var timers = context.RasterState.PhaseTimers;
 
             foreach (var batch in batches)
             {
@@ -673,10 +677,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                     _ => foregroundArgb,
                 };
 
-                var timer = GlyphPhaseTimers.Start();
+                var timer = timers.Start();
 
                 context.DrawAtlasBatch(batch, placement, tint, bilinear);
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.AtlasAppend, timer);
+                timers.Stop(GlyphTimerPhase.AtlasAppend, timer);
             }
         }
 
@@ -710,6 +714,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var count = sprites.Count;
             var builder = t_batchBuilder ??= new GlyphAtlasBatchBuilder();
             var scratch = t_scratch ??= new GlyphPathBuilder();
+            var raster = context.RasterState;
             const int maxEntryBytes = GlyphMaskCache.MaxEntryBytes;
             ColorGlyphContent? content = null;
             List<(GlyphAtlasPage, GlyphAtlasSprite)>? placedColor = null;
@@ -724,8 +729,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                     if (sprite.Kind == TransformedSpriteKind.Color)
                     {
-                        if (!TryPlaceColorSprite(typeface, colorAtlas!, colorOwner, colorTick, sprites, i, ref content,
-                                out var colorSlot))
+                        if (!TryPlaceColorSprite(raster, typeface, colorAtlas!, colorOwner, colorTick, sprites, i,
+                                ref content, out var colorSlot))
                         {
                             sprites.DeclinesColorAtlas = true;
                             builder.Abandon();
@@ -762,7 +767,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                             // transformed ones and those a moving run lays out are rasterized for the
                             // atlas alone.
                             var mask = sprites.IsUpright && !sprites.IsAtlasOnly
-                                ? typeface.MaskCache.GetOrBuild(key, (typeface, scratch), s_buildMask)
+                                ? typeface.MaskCache.GetOrBuild(key, (typeface, scratch), s_buildMask, raster)
                                 : typeface.MaskCache.TryGet(key, out var cached)
                                     ? cached
                                     : sprites.IsUpright
@@ -775,7 +780,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                             }
 
                             if (mask.Width * mask.Height > maxEntryBytes ||
-                                !atlas.TryAdd(owner, key, spriteBucket, mask, tick, out slot))
+                                !atlas.TryAdd(owner, key, spriteBucket, mask, tick, out slot, raster))
                             {
                                 builder.AddStandalone(new GlyphAtlasBatch(null, i, 1, sprite.Kind, sprite.Color,
                                     context.CreateAtlasBatch(
@@ -825,9 +830,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// makes and places it. Returns <c>false</c> when its pixels cannot be made, do not match
         /// the sprite's placement, or do not fit a page.
         /// </summary>
-        private static bool TryPlaceColorSprite(GlyphTypeface typeface, GlyphMaskAtlas colorAtlas, int owner,
-            long tick, TransformedGlyphSprites sprites, int index, ref ColorGlyphContent? content,
-            out GlyphAtlasSlot slot)
+        private static bool TryPlaceColorSprite(TextRasterThreadState raster, GlyphTypeface typeface,
+            GlyphMaskAtlas colorAtlas, int owner, long tick, TransformedGlyphSprites sprites, int index,
+            ref ColorGlyphContent? content, out GlyphAtlasSlot slot)
         {
             var entry = GetColorEntryKey(owner, typeface, sprites, index);
 
@@ -838,7 +843,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             ref readonly var sprite = ref sprites.Sprites[index];
 
-            content ??= new ColorGlyphContent(typeface, sprites.Key, sprites.EmboldenQ, sprites.Oblique);
+            content ??= new ColorGlyphContent(raster, typeface, sprites.Key, sprites.EmboldenQ, sprites.Oblique);
 
             if (content.BuildPixels(sprite) is not { } pixels || pixels.Width != sprite.Width ||
                 pixels.Height != sprite.Height)
@@ -846,7 +851,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            return colorAtlas.TryAdd(entry, pixels, tick, out slot);
+            return colorAtlas.TryAdd(entry, pixels, tick, out slot, raster);
         }
 
         /// <summary>

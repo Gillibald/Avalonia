@@ -89,6 +89,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             var tuning = GlyphRasterTuning.Of(context);
+            var raster = TextRasterThreadState.Of(context);
 
             var scaleX = transform.M11;
             var scaleY = transform.M22;
@@ -486,7 +487,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 : 0;
 
             if (zooming && blendsCoverage && !hit && PrefersRasterizingZoom(run, transform, tuning) &&
-                TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
+                TryBuildCoverage(raster, run, coverageKey, (float)scaleX, (float)scaleY, transient: true, out var frameCoverage))
             {
                 if (frameCoverage is null)
                 {
@@ -511,7 +512,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 settled.Transform.TryInvert(out var inverse) &&
                 (surface.RasterTarget == GlyphRasterTarget.SoftwareGpu || IsWithinStretchBand(inverse * transform)) &&
                 (cache.TryGet(settled.Key, out var settledMask) ||
-                 blendsCoverage && TryComposeSettled(run, settled, maxSize, out settledMask)))
+                 blendsCoverage && TryComposeSettled(raster, run, settled, maxSize, out settledMask)))
             {
                 DrawStretchedRunMask(context, zoomContext!, surface, settledMask, settled, inverse * transform, mode,
                     alphaContext, alpha, solid.Color);
@@ -530,7 +531,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!hit && blendsCoverage)
             {
-                if (!TryBuildCoverage(run, coverageKey, (float)scaleX, (float)scaleY, transient: false, out var coverage))
+                if (!TryBuildCoverage(raster, run, coverageKey, (float)scaleX, (float)scaleY, transient: false, out var coverage))
                 {
                     // More glyphs ink one pixel than the coverage records: the pre-tinted mask.
                     blendsCoverage = false;
@@ -561,13 +562,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // the same pixels, so a mask composed for one context draws correctly on another.
                 var composed = mode == GlyphMaskMode.Subpixel
                     ? alphaContext is null
-                        ? ComposeLcdPayload(run, key, (float)scaleX, (float)scaleY, maxSize, lcdGeometry,
+                        ? ComposeLcdPayload(raster, run, key, (float)scaleX, (float)scaleY, maxSize, lcdGeometry,
                             alpha, solid.Color.R, solid.Color.G, solid.Color.B)
-                        : ComposeLcdMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize, lcdGeometry)
+                        : ComposeLcdMask(raster, run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize, lcdGeometry)
                     : alphaContext is null
-                        ? Compose(run, key, (float)scaleX, (float)scaleY, maxSize,
+                        ? Compose(raster, run, key, (float)scaleX, (float)scaleY, maxSize,
                             Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B), out declined)
-                        : ComposeAlphaMask(run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize);
+                        : ComposeAlphaMask(raster, run, key, alphaContext, (float)scaleX, (float)scaleY, maxSize);
 
                 if (declined)
                 {
@@ -669,12 +670,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// run's coverage, for a zoom gesture to stretch. Returns <c>false</c> for a run without
         /// ink.
         /// </summary>
-        private static bool TryComposeSettled(ManagedGlyphRunImpl run, in SettledRunMask settled, int maxSize,
-            out RunMask settledMask)
+        private static bool TryComposeSettled(TextRasterThreadState raster, ManagedGlyphRunImpl run,
+            in SettledRunMask settled, int maxSize, out RunMask settledMask)
         {
             settledMask = null!;
 
-            var composed = Compose(run, settled.Key, (float)settled.Transform.M11, (float)settled.Transform.M22,
+            var composed = Compose(raster, run, settled.Key, (float)settled.Transform.M11, (float)settled.Transform.M22,
                 maxSize, null, out _);
 
             if (composed is null)
@@ -783,8 +784,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// used and how large the coverage is, and in the typeface's mask cache how many of
         /// those pixels it had to rasterize.
         /// </summary>
-        private static bool TryBuildCoverage(ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY,
-            bool transient, out RunCoverage? coverage)
+        private static bool TryBuildCoverage(TextRasterThreadState raster, ManagedGlyphRunImpl run, in RunMaskKey key,
+            float scaleX, float scaleY, bool transient, out RunCoverage? coverage)
         {
             var typeface = run.GlyphTypeface;
             var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
@@ -815,7 +816,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         ? new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
                         : new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong);
 
-                    masks[i] = maskCache.GetOrBuild(glyphKey, state, s_buildCountedMask);
+                    masks[i] = maskCache.GetOrBuild(glyphKey, state, s_buildCountedMask, raster);
                     used += masks[i].Width * masks[i].Height;
 
                     pens[i] = CentredPen(in key, relativeX, masks[i], penX);
@@ -893,13 +894,14 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (!state.TryGet(gridKey, out var sprites))
             {
                 var start = MotionRasterBudget.Start();
-                var timer = GlyphPhaseTimers.Start();
+                var timers = context.RasterState.PhaseTimers;
+                var timer = timers.Start();
 
                 sprites = gridKey.SnapsPens
-                    ? BuildUprightSprites(run, gridKey, (float)grid, (float)grid)
+                    ? BuildUprightSprites(context.RasterState, run, gridKey, (float)grid, (float)grid)
                     : BuildAtlasOnlySprites(context, run, gridKey, (float)grid, (float)grid, foregroundArgb);
                 state.AddCrossing(sprites, grid);
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
+                timers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
                 MotionRasterBudget.Charge(run, start, context.RasterTuning);
             }
 
@@ -936,14 +938,15 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (!state.TryGet(key, out var sprites))
             {
-                var timer = GlyphPhaseTimers.Start();
+                var timers = context.RasterState.PhaseTimers;
+                var timer = timers.Start();
 
                 sprites = atlasOnly && !key.SnapsPens
                     ? BuildAtlasOnlySprites(context, run, key, scaleX, scaleY, foregroundArgb)
-                    : BuildUprightSprites(run, key, scaleX, scaleY);
+                    : BuildUprightSprites(context.RasterState, run, key, scaleX, scaleY);
                 state.Add(sprites);
 
-                GlyphPhaseTimers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
+                timers.Stop(GlyphTimerPhase.SpriteSetBuild, timer);
             }
 
             state.Settle(sprites, transform, originX, originY);
@@ -957,8 +960,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// pixel, with the pens and phases the run mask compose uses, and records in the
         /// typeface's mask cache how many of the mask pixels it had to rasterize.
         /// </summary>
-        private static TransformedGlyphSprites BuildUprightSprites(ManagedGlyphRunImpl run, in RunMaskKey key,
-            float scaleX, float scaleY)
+        private static TransformedGlyphSprites BuildUprightSprites(TextRasterThreadState raster,
+            ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY)
         {
             var typeface = run.GlyphTypeface;
             var embolden = GlyphSimulation.QuantizeEmboldenOutset(typeface.FontSimulations, run.FontRenderingEmSize, key.ScaleQ);
@@ -983,7 +986,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode,
-                    key.GridFit, key.Strong, embolden, oblique), state, s_buildCountedMask);
+                    key.GridFit, key.Strong, embolden, oblique), state, s_buildCountedMask, raster);
 
                 if (mask.IsEmpty)
                 {
@@ -1027,6 +1030,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             ManagedGlyphRunImpl run, in RunMaskKey key, float scaleX, float scaleY, uint foregroundArgb)
         {
             var typeface = run.GlyphTypeface;
+            var raster = context.RasterState;
             var atlas = context.MaskAtlas ?? typeface.MaskAtlas;
             var owner = context.MaskAtlas is null ? 0 : typeface.MaskOwnerId;
             var bucket = GetBucket(foregroundArgb);
@@ -1070,10 +1074,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                     {
                         if (!maskCache.TryGet(glyphKey, out var mask))
                         {
-                            var timer = GlyphPhaseTimers.Start();
+                            var timer = raster.PhaseTimers.Start();
 
                             mask = GlyphMasks.BuildUprightTransient(typeface, scratch, glyphKey, out rented);
-                            GlyphPhaseTimers.Stop(GlyphTimerPhase.Rasterize, timer);
+                            raster.PhaseTimers.Stop(GlyphTimerPhase.Rasterize, timer);
                             rasterized += mask.Width * mask.Height;
                         }
 
@@ -1081,7 +1085,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         // the batches are built; an empty one is remembered as no ink.
                         if (mask.IsEmpty || mask.Width * mask.Height <= GlyphMaskCache.MaxEntryBytes)
                         {
-                            atlas.TryAdd(owner, glyphKey, bucket, mask, tick, out _);
+                            atlas.TryAdd(owner, glyphKey, bucket, mask, tick, out _, raster);
                         }
 
                         if (mask.IsEmpty)
@@ -1411,7 +1415,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// the Plus pass the premultiplied tinted coverage. Keyed by tint like the pre-tinted
         /// grayscale floor, so a foreground change recomposes.
         /// </summary>
-        private static RunMask? ComposeLcdPayload(ManagedGlyphRunImpl run, RunMaskKey key,
+        private static RunMask? ComposeLcdPayload(TextRasterThreadState raster, ManagedGlyphRunImpl run, RunMaskKey key,
             float scaleX, float scaleY, int maxSize, LcdMaskGeometry geometry, byte alpha, byte r, byte g, byte b)
         {
             var typeface = run.GlyphTypeface;
@@ -1437,7 +1441,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
-                    state, s_buildMask);
+                    state, s_buildMask, raster);
 
                 UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
             }
@@ -1477,7 +1481,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                         var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
-                            state, s_buildMask);
+                            state, s_buildMask, raster);
 
                         RunMaskComposer.ComposeLcd(mask, penX - chunkX, penY - minY,
                             geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
@@ -1538,7 +1542,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// in alpha, realized as a backend mask and blended per channel at draw time. Only
         /// reachable for COLR-free typefaces on LCD-eligible contexts.
         /// </summary>
-        private static RunMask? ComposeLcdMask(ManagedGlyphRunImpl run, RunMaskKey key,
+        private static RunMask? ComposeLcdMask(TextRasterThreadState raster, ManagedGlyphRunImpl run, RunMaskKey key,
             IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, int maxSize, LcdMaskGeometry geometry)
         {
             var typeface = run.GlyphTypeface;
@@ -1564,7 +1568,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
-                    state, s_buildMask);
+                    state, s_buildMask, raster);
 
                 UnionMask(mask, penX, penY, ref minX, ref minY, ref maxX, ref maxY);
             }
@@ -1596,7 +1600,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                         var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
-                            state, s_buildMask);
+                            state, s_buildMask, raster);
 
                         RunMaskComposer.ComposeLcd(mask, penX - chunkX, penY - minY,
                             geometry == LcdMaskGeometry.BgrHorizontal, span, width, height);
@@ -1626,7 +1630,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// The alpha-context compose: coverage only, into a pooled staging buffer realized as a
         /// backend mask. Only reachable for COLR-free typefaces, so no layer expansion here.
         /// </summary>
-        private static RunMask? ComposeAlphaMask(ManagedGlyphRunImpl run, RunMaskKey key,
+        private static RunMask? ComposeAlphaMask(TextRasterThreadState raster, ManagedGlyphRunImpl run, RunMaskKey key,
             IAlphaGlyphMaskContext alphaContext, float scaleX, float scaleY, int maxSize)
         {
             var typeface = run.GlyphTypeface;
@@ -1652,7 +1656,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                 var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
-                    state, s_buildMask);
+                    state, s_buildMask, raster);
 
                 UnionMask(mask, CentredPen(in key, relativeX, mask, penX), penY,
                     ref minX, ref minY, ref maxX, ref maxY);
@@ -1685,7 +1689,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         var penY = (int)MathF.Round(positions[i * 2 + 1] * scaleY);
 
                         var mask = maskCache.GetOrBuild(new GlyphMaskKey(indices[i], key.GlyphScaleQ, glyphPhase, key.Mode, key.GridFit, key.Strong, embolden, oblique),
-                            state, s_buildMask);
+                            state, s_buildMask, raster);
 
                         RunMaskComposer.ComposeAlpha(mask, CentredPen(in key, relativeX, mask, penX) - chunkX,
                             penY - minY, span, width, height);
@@ -1715,8 +1719,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// foreground sentinel. Returns <c>null</c> for a run without ink, and sets
         /// <paramref name="declined"/> when a v1 glyph cannot draw from a colour mask at this size.
         /// </summary>
-        private static unsafe RunMask? Compose(ManagedGlyphRunImpl run, RunMaskKey key, float scaleX, float scaleY,
-            int maxSize, Color? foreground, out bool declined)
+        private static unsafe RunMask? Compose(TextRasterThreadState raster, ManagedGlyphRunImpl run, RunMaskKey key,
+            float scaleX, float scaleY, int maxSize, Color? foreground, out bool declined)
         {
             declined = false;
 
@@ -1785,7 +1789,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             GlyphMask GetMask(ushort glyph, byte phase, bool simulate)
                 => maskCache.GetOrBuild(simulate
                     ? new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong, embolden, oblique)
-                    : new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong), state, s_buildMask);
+                    : new GlyphMaskKey(glyph, key.GlyphScaleQ, phase, key.Mode, key.GridFit, key.Strong), state, s_buildMask, raster);
 
             // Two passes over the same (glyph → v0 layers) expansion: the first unions the
             // placements, the second composes. The second pass refetches every mask through the
