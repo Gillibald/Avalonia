@@ -52,6 +52,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             var runs = CreateParagraph(typeface, 10, 28);
 
+            // The sweep starts from an empty cache: what earlier tests left in the shared budget
+            // would otherwise decide how many of its masks stay within the limit.
+            GlyphCacheBudget.Shared.TrimForMemoryPressure();
+
             // Two frames per scale, as a zoom that holds at every step draws: a held scale
             // rasterizes its glyph masks, where a zoom moving every frame stretches the last
             // settled raster instead.

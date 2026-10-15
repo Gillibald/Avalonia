@@ -537,7 +537,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (y + height > page.Height)
             {
-                var rows = Math.Min(MaxPageHeight, RoundUp(y + height));
+                // Growth copies the page into a new array, so a page at least doubles: the arrays
+                // a page leaves behind while it fills add up to less than its own size, where
+                // growing by the rows a shelf needs would copy the page once per shelf.
+                var rows = Math.Min(MaxPageHeight, Math.Max(RoundUp(y + height), page.Height * 2));
                 var before = page.Pixels.Length;
 
                 page.Grow(rows);
