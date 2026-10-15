@@ -12,8 +12,8 @@ comparison against the reference variant (--ref, default base):
 - render-thread counters as totals per pass, with every counter that differs from the reference;
 - memory peaks: glyph atlas, glyph cache budget, private bytes, render-thread allocations;
 - a keep-rule verdict per job: 'better' or 'worse' when the variant's pass range of p50, p95 or
-  frames over 8.3 ms lies below or above the reference's by more than 2 % (at least 0.02 ms, one
-  frame for the counts), 'within' otherwise,
+  frames over 8.3 ms lies below or above the reference's by more than the gap two launches of
+  one build show (2 % for p50, 6 % for p95, one frame for the counts), 'within' otherwise,
   'memory worse' when its lowest peak exceeds the reference's highest by more than 2 % (only
   between runs that both have the content presets; a run from an older build is 'not
   comparable'), and
@@ -556,11 +556,12 @@ def rng(values, digits=2):
 
 
 def time_verdict(b, t):
-    """Disjoint pass ranges, by more than the gap separate processes show without any change:
-    2 % or 0.02 ms for times, one frame for counts of slow frames. Two passes give a narrow
-    range, and launches of one build differ by about that much."""
+    """Disjoint pass ranges, by more than the gap separate processes of one build show without
+    any change: 2 % (at least 0.02 ms) for p50, 6 % (at least 0.05 ms) for p95, one frame for
+    counts of slow frames. Two passes give a narrow range; two launches of one build on ANGLE
+    differed by up to 2 % in p50 and 5 % in p95."""
     out = []
-    for k, relative, absolute in (("p50", 0.02, 0.02), ("p95", 0.02, 0.02), ("o8", 0, 1)):
+    for k, relative, absolute in (("p50", 0.02, 0.02), ("p95", 0.06, 0.05), ("o8", 0, 1)):
         bl, bh = min(x[k] for x in b), max(x[k] for x in b)
         tl, th = min(x[k] for x in t), max(x[k] for x in t)
         if tl > bh + max(absolute, relative * bh):
