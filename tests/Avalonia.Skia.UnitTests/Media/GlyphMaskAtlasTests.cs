@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia.Media.Fonts.Rasterization;
 using Xunit;
 
@@ -662,6 +663,59 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(0, atlas.AllocatedBytes);
             Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
             Assert.False(atlas.TryGet(Key(1), atlas.Tick(), out _));
+        }
+
+        /// <summary>
+        /// A page is charged its allocated rows, whatever holds its texels: the budget's limits and
+        /// eviction order depend on those numbers.
+        /// </summary>
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void Pages_Charge_Their_Allocated_Rows_Through_Growth_And_Eviction(bool rgba)
+        {
+            var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+            var atlas = new GlyphMaskAtlas(budget, format: rgba ? GlyphAtlasFormat.Rgba : GlyphAtlasFormat.Alpha8);
+            var charges = ChargesThroughGrowth(atlas, budget, new Random(61));
+
+            Assert.True(charges.Distinct().Count() > 2, "the page did not grow");
+            Assert.All(atlas.GetPages(), page => Assert.Equal((long)page.RowBytes * page.Height, page.ChargedBytes));
+
+            var held = atlas.AllocatedBytes + atlas.IndexBytes;
+
+            Assert.Equal(held, budget.BytesOf(GlyphCachePoolKind.Atlas));
+            Assert.Equal(held, ((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue));
+            Assert.Equal(0, atlas.AllocatedBytes);
+            Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));
+        }
+
+        /// <summary>
+        /// Adds masks one shelf at a time until the atlas has two pages, and returns what the
+        /// atlas pool was charged after each add, checked against the pages' rows.
+        /// </summary>
+        internal static List<long> ChargesThroughGrowth(GlyphMaskAtlas atlas, GlyphCacheBudget budget, Random random)
+        {
+            var charges = new List<long>();
+
+            for (var i = 0; atlas.GetPages().Length < 2; i++)
+            {
+                using (budget.BeginFrame())
+                {
+                    var mask = atlas.Format == GlyphAtlasFormat.Rgba
+                        ? CreateColorMask(random, 600, 50)
+                        : CreateMask(random, 900, 50);
+
+                    Assert.True(atlas.TryAdd(Key(i), mask, atlas.Tick(), out _));
+                }
+
+                var rows = atlas.GetPages().Sum(page => (long)page.RowBytes * page.Height);
+
+                Assert.Equal(rows, atlas.AllocatedBytes);
+                Assert.Equal(rows + atlas.IndexBytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
+                charges.Add(budget.BytesOf(GlyphCachePoolKind.Atlas));
+            }
+
+            return charges;
         }
 
         // For each RGBA channel, the BGRA channel holding it.

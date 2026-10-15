@@ -92,6 +92,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The allocated rows.</summary>
         public int Height { get; private set; }
 
+        /// <summary>
+        /// The bytes the page is charged to the glyph cache budget: its allocated rows at
+        /// <see cref="RowBytes"/> each.
+        /// </summary>
+        public long ChargedBytes => (long)RowBytes * Height;
+
+        /// <summary>The bytes of CPU memory the page holds for its texels.</summary>
+        internal long CpuBytes => Pixels.Length;
+
         /// <summary>The rows taken by shelves.</summary>
         internal int UsedHeight { get; set; }
 
@@ -153,6 +162,10 @@ namespace Avalonia.Media.Fonts.Rasterization
                 _writtenBottom = Math.Max(_writtenBottom, y + height);
             }
         }
+
+        /// <summary>The texels of row <paramref name="y"/> from column <paramref name="x"/> on, for the atlas to write.</summary>
+        internal Span<byte> TexelRow(int x, int y, int texels)
+            => Pixels.AsSpan(y * RowBytes + x * BytesPerPixel, texels * BytesPerPixel);
 
         internal void Grow(int height)
         {
@@ -240,6 +253,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
+        private long _cpuBytes;
         private long _indexBytes;
         private long _evictions;
 
@@ -286,11 +300,11 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
         }
 
-        /// <summary>Bytes of all page arrays.</summary>
+        /// <summary>The bytes the pages are charged, <see cref="GlyphAtlasPage.ChargedBytes"/> each.</summary>
         public long AllocatedBytes => Interlocked.Read(ref _allocated);
 
         /// <summary>Bytes of CPU memory the atlas holds for the pixels of its pages; for diagnostics.</summary>
-        public long CpuBytes => Interlocked.Read(ref _allocated);
+        public long CpuBytes => Interlocked.Read(ref _cpuBytes);
 
         /// <summary>
         /// Whether atlases of contexts that update page textures in place keep no CPU copy of
@@ -559,8 +573,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             var fresh = new GlyphAtlasPage(rows, BytesPerPixel) { UsedHeight = LeadingGutter, LastUse = tick };
 
             _pages.Add(fresh);
-            Interlocked.Add(ref _allocated, fresh.Pixels.Length);
-            _handle.Charge(fresh.Pixels.Length);
+            Interlocked.Add(ref _allocated, fresh.ChargedBytes);
+            Interlocked.Add(ref _cpuBytes, fresh.CpuBytes);
+            _handle.Charge(fresh.ChargedBytes);
 
             return (fresh, LeadingGutter, OpenShelf(fresh, width, height, tick));
         }
@@ -579,11 +594,13 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // a page leaves behind while it fills add up to less than its own size, where
                 // growing by the rows a shelf needs would copy the page once per shelf.
                 var rows = Math.Min(MaxPageHeight, Math.Max(RoundUp(y + height), page.Height * 2));
-                var before = page.Pixels.Length;
+                var charged = page.ChargedBytes;
+                var cpu = page.CpuBytes;
 
                 page.Grow(rows);
-                Interlocked.Add(ref _allocated, page.Pixels.Length - before);
-                _handle.Charge(page.Pixels.Length - before);
+                Interlocked.Add(ref _allocated, page.ChargedBytes - charged);
+                Interlocked.Add(ref _cpuBytes, page.CpuBytes - cpu);
+                _handle.Charge(page.ChargedBytes - charged);
             }
 
             page.Shelves.Add((y, height, LeadingGutter + width));
@@ -607,6 +624,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 _pages.Clear();
                 _emptied.Clear();
                 Interlocked.Exchange(ref _allocated, 0);
+                Interlocked.Exchange(ref _cpuBytes, 0);
                 Interlocked.Exchange(ref _indexBytes, 0);
             }
 
@@ -665,17 +683,20 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var index = (long)page.Keys.Count * IndexEntryBytes;
 
+            var charged = page.ChargedBytes;
+
             _pages.Remove(page);
-            Interlocked.Add(ref _allocated, -page.Pixels.Length);
+            Interlocked.Add(ref _allocated, -charged);
+            Interlocked.Add(ref _cpuBytes, -page.CpuBytes);
             Interlocked.Add(ref _indexBytes, -index);
-            _handle.Credit(page.Pixels.Length + index);
+            _handle.Credit(charged + index);
             Interlocked.Increment(ref _evictions);
 
             page.IsEvicted = true;
             page.Realized?.Dispose();
             page.Realized = null;
 
-            return page.Pixels.Length + index;
+            return charged + index;
         }
 
         /// <summary>Charges the index for <paramref name="entries"/> more entries, or credits it for fewer.</summary>
@@ -697,8 +718,6 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static void Write(GlyphAtlasPage page, GlyphMask mask, int x, int y, int bucket)
         {
-            var pixels = page.Pixels;
-
             if (page.BytesPerPixel == 4)
             {
                 WriteRgba(page, mask, x, y);
@@ -708,7 +727,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             for (var row = 0; row < mask.Height; row++)
             {
                 var source = mask.Alpha.AsSpan(row * mask.Width, mask.Width);
-                var target = pixels.AsSpan((y + row) * PageWidth + x, mask.Width);
+                var target = page.TexelRow(x, y + row, mask.Width);
 
                 if (bucket == Uncorrected)
                 {
@@ -728,13 +747,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Copies a premultiplied BGRA mask onto an RGBA page, swapping red and blue.</summary>
         private static void WriteRgba(GlyphAtlasPage page, GlyphMask mask, int x, int y)
         {
-            var pixels = page.Pixels;
-            var rowBytes = page.RowBytes;
-
             for (var row = 0; row < mask.Height; row++)
             {
                 var source = mask.Alpha.AsSpan(row * mask.Width * 4, mask.Width * 4);
-                var target = pixels.AsSpan((y + row) * rowBytes + x * 4, mask.Width * 4);
+                var target = page.TexelRow(x, y + row, mask.Width);
 
                 for (var i = 0; i < source.Length; i += 4)
                 {
