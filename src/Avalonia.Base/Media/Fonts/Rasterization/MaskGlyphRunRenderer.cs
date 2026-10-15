@@ -969,7 +969,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
             var state = (typeface, scratch);
-            var laidOut = new TransformedSprite[count];
+            var laidOut = RentLaidOut(count);
             var placed = 0;
             long used = 0;
 
@@ -1006,12 +1006,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             maskCache.RecordUse(used, t_rasterizedPixels, key.GridFit);
 
-            if (placed != count)
-            {
-                Array.Resize(ref laidOut, placed);
-            }
-
-            return new TransformedGlyphSprites(key, embolden, oblique, laidOut) { IsUpright = true };
+            return new TransformedGlyphSprites(key, embolden, oblique, KeepLaidOut(laidOut, placed)) { IsUpright = true };
         }
 
         /// <summary>
@@ -1042,7 +1037,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
-            var laidOut = new TransformedSprite[count];
+            var laidOut = RentLaidOut(count);
             var placed = 0;
             long used = 0;
             long rasterized = 0;
@@ -1119,12 +1114,49 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             maskCache.RecordUse(used, rasterized, key.GridFit);
 
-            if (placed != count)
+            return new TransformedGlyphSprites(key, embolden, oblique, KeepLaidOut(laidOut, placed))
             {
-                Array.Resize(ref laidOut, placed);
+                IsUpright = true, IsAtlasOnly = true,
+            };
+        }
+
+        // Runs up to this many glyphs lay their sprites out in the thread's buffer.
+        private const int MaxLaidOutScratch = 4096;
+
+        [ThreadStatic]
+        private static TransformedSprite[]? t_laidOut;
+
+        /// <summary>
+        /// A buffer for laying out <paramref name="count"/> sprites: the thread's, unless the run
+        /// is too long to keep one for. <see cref="KeepLaidOut"/> copies out what a set keeps.
+        /// </summary>
+        private static TransformedSprite[] RentLaidOut(int count)
+        {
+            if (count > MaxLaidOutScratch)
+            {
+                return new TransformedSprite[count];
             }
 
-            return new TransformedGlyphSprites(key, embolden, oblique, laidOut) { IsUpright = true, IsAtlasOnly = true };
+            var buffer = t_laidOut;
+
+            if (buffer is null || buffer.Length < count)
+            {
+                t_laidOut = buffer = new TransformedSprite[Math.Min(MaxLaidOutScratch,
+                    Math.Max(count, (buffer?.Length ?? 0) * 2))];
+            }
+
+            return buffer;
+        }
+
+        /// <summary>The first <paramref name="placed"/> sprites of a buffer from <see cref="RentLaidOut"/>, in an array of their own length.</summary>
+        private static TransformedSprite[] KeepLaidOut(TransformedSprite[] laidOut, int placed)
+        {
+            if (placed == laidOut.Length && !ReferenceEquals(laidOut, t_laidOut))
+            {
+                return laidOut;
+            }
+
+            return placed == 0 ? Array.Empty<TransformedSprite>() : laidOut.AsSpan(0, placed).ToArray();
         }
 
         /// <summary>

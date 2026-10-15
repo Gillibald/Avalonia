@@ -1002,6 +1002,28 @@ namespace Avalonia.Skia
                 _batchColored = colored;
             }
 
+            // The bytes of vertex arrays a thread keeps for reuse, and the largest part whose
+            // arrays it keeps.
+            private const long MaxKeptVertexArrayBytes = 512 * 1024;
+            private const long MaxKeptVertexPartBytes = MaxKeptVertexArrayBytes / 4;
+
+            // Per sprite: four positions and four texture coordinates of 8 bytes, six 16-bit
+            // indices, and four colours of 4 bytes when the vertices carry them.
+            private const int VertexArrayBytesPerSprite = 76;
+            private const int VertexColorBytesPerSprite = 16;
+
+            // Vertex arrays by sprite count, reused: SKVertices.CreateCopy copies whole arrays, so
+            // each part needs arrays of exactly its length, and a zoom builds the vertices of the
+            // same runs at every crossing.
+            [ThreadStatic]
+            private static Dictionary<int, VertexArrays>? t_vertexArrays;
+
+            [ThreadStatic]
+            private static long t_vertexArrayBytes;
+
+            [ThreadStatic]
+            private static BatchedRun[]? t_singleRun;
+
             private static SKVertices[] BuildVertices(BatchedRun[] runs, int count, int spriteCount, bool colored)
             {
                 var parts = new SKVertices[(spriteCount + MaxSpritesPerVertices - 1) / MaxSpritesPerVertices];
@@ -1013,10 +1035,10 @@ namespace Avalonia.Skia
                 for (var part = 0; part < parts.Length; part++)
                 {
                     var sprites = Math.Min(remaining, MaxSpritesPerVertices);
-                    var positions = new SKPoint[sprites * 4];
-                    var coordinates = new SKPoint[sprites * 4];
-                    var indices = new ushort[sprites * 6];
-                    var colors = colored ? new SKColor[sprites * 4] : null;
+                    var arrays = GetVertexArrays(sprites, colored);
+                    var positions = arrays.Positions;
+                    var coordinates = arrays.Coordinates;
+                    var colors = colored ? arrays.Colors : null;
 
                     for (var i = 0; i < sprites; i++)
                     {
@@ -1049,23 +1071,92 @@ namespace Avalonia.Skia
                             colors.AsSpan(v, 4).Fill(runs[run].Color);
                         }
 
-                        var index = i * 6;
-
-                        indices[index] = (ushort)v;
-                        indices[index + 1] = (ushort)(v + 1);
-                        indices[index + 2] = (ushort)(v + 2);
-                        indices[index + 3] = (ushort)(v + 1);
-                        indices[index + 4] = (ushort)(v + 3);
-                        indices[index + 5] = (ushort)(v + 2);
-
                         sprite++;
                     }
 
-                    parts[part] = SKVertices.CreateCopy(SKVertexMode.Triangles, positions, coordinates, colors, indices);
+                    parts[part] = SKVertices.CreateCopy(SKVertexMode.Triangles, positions, coordinates, colors,
+                        arrays.Indices);
                     remaining -= sprites;
                 }
 
                 return parts;
+            }
+
+            /// <summary>
+            /// Vertex arrays for a part of exactly <paramref name="sprites"/> sprites, with colours
+            /// when <paramref name="colored"/>, reused from the thread's arrays when it keeps some of
+            /// that length. Their indices are filled; positions, coordinates and colours are the
+            /// caller's to fill.
+            /// </summary>
+            private static VertexArrays GetVertexArrays(int sprites, bool colored)
+            {
+                var bytes = sprites * (long)(VertexArrayBytesPerSprite + (colored ? VertexColorBytesPerSprite : 0));
+
+                if (bytes > MaxKeptVertexPartBytes)
+                {
+                    return new VertexArrays(sprites, colored);
+                }
+
+                var kept = t_vertexArrays ??= new Dictionary<int, VertexArrays>();
+
+                if (kept.TryGetValue(sprites, out var arrays) && (!colored || arrays.Colors is not null))
+                {
+                    return arrays;
+                }
+
+                // Lengths a relayout met once do not pile up.
+                if (t_vertexArrayBytes + bytes > MaxKeptVertexArrayBytes)
+                {
+                    kept.Clear();
+                    t_vertexArrayBytes = 0;
+                }
+
+                if (kept.TryGetValue(sprites, out arrays))
+                {
+                    arrays.Colors = new SKColor[sprites * 4];
+                    t_vertexArrayBytes += sprites * (long)VertexColorBytesPerSprite;
+
+                    return arrays;
+                }
+
+                arrays = new VertexArrays(sprites, colored);
+                kept.Add(sprites, arrays);
+                t_vertexArrayBytes += bytes;
+
+                return arrays;
+            }
+
+            private sealed class VertexArrays
+            {
+                public VertexArrays(int sprites, bool colored)
+                {
+                    Positions = new SKPoint[sprites * 4];
+                    Coordinates = new SKPoint[sprites * 4];
+                    Indices = new ushort[sprites * 6];
+                    Colors = colored ? new SKColor[sprites * 4] : null;
+
+                    // Two triangles per sprite quad, the same for every part.
+                    for (var i = 0; i < sprites; i++)
+                    {
+                        var v = i * 4;
+                        var index = i * 6;
+
+                        Indices[index] = (ushort)v;
+                        Indices[index + 1] = (ushort)(v + 1);
+                        Indices[index + 2] = (ushort)(v + 2);
+                        Indices[index + 3] = (ushort)(v + 1);
+                        Indices[index + 4] = (ushort)(v + 3);
+                        Indices[index + 5] = (ushort)(v + 2);
+                    }
+                }
+
+                public SKPoint[] Positions { get; }
+
+                public SKPoint[] Coordinates { get; }
+
+                public ushort[] Indices { get; }
+
+                public SKColor[]? Colors { get; set; }
             }
 
             /// <summary>
@@ -1098,8 +1189,26 @@ namespace Avalonia.Skia
             /// after frame, and drawing them from vertices skips building their quads each time.
             /// </summary>
             public SKVertices[] GetStretchVertices(SKColor color)
-                => _stretchVertices ??= BuildVertices(new[] { new BatchedRun(this, 0, 0, color) }, 1, Sources.Length,
-                    colored: false);
+            {
+                if (_stretchVertices is { } kept)
+                {
+                    return kept;
+                }
+
+                var single = t_singleRun ??= new BatchedRun[1];
+
+                single[0] = new BatchedRun(this, 0, 0, color);
+
+                try
+                {
+                    return _stretchVertices = BuildVertices(single, 1, Sources.Length, colored: false);
+                }
+                finally
+                {
+                    // The thread's array must not keep this batch alive.
+                    single[0] = default;
+                }
+            }
 
             private void ReleaseVertices()
             {
