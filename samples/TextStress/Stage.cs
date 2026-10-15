@@ -29,7 +29,7 @@ namespace TextStress
         /// <summary>The exit code of a run whose top level offered less than the content area and the strip.</summary>
         public const int ContentFailedExitCode = 4;
 
-        public const double StripHeight = 48;
+        public const double StripHeight = 64;
 
         private readonly TopLevel _topLevel;
         private readonly RunOptions _options;

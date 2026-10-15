@@ -31,8 +31,8 @@ namespace TextStress
     /// </remarks>
     internal sealed class SetupLabel
     {
-        private const double ProgressFontSize = 20;
-        private const double DetailFontSize = 12;
+        private const double ProgressFontSize = 28;
+        private const double DetailFontSize = 16;
 
         private SetupLabel(string? progress, IReadOnlyList<string> lines, string stripProgress,
             string stripLabel, string stripDetail, Color labelColor)
@@ -326,6 +326,7 @@ namespace TextStress
         public RenderTargetBitmap RenderStrip(Size size, double scaling)
         {
             const double padding = 6;
+            const double verticalPadding = 3;
             const double chipPadding = 4;
             var typeface = new Typeface(FontFamily.Default);
             var bold = new Typeface(FontFamily.Default, FontStyle.Normal, FontWeight.SemiBold);
@@ -337,7 +338,7 @@ namespace TextStress
                 chipWidth + detail.WidthIncludingTrailingWhitespace);
             var contentHeight = progress.Height + detail.Height;
             var fit = Math.Min(1, Math.Min((size.Width - 2 * padding) / contentWidth,
-                (size.Height - 2 * padding) / contentHeight));
+                (size.Height - 2 * verticalPadding) / contentHeight));
 
             var pixels = PixelSize.FromSize(size, scaling);
             var bitmap = new RenderTargetBitmap(pixels, new Vector(96 * scaling, 96 * scaling));

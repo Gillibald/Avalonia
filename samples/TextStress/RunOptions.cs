@@ -78,13 +78,13 @@ namespace TextStress
 
         /// <summary>
         /// Content area sizes in DIP. Desktop plus the status strip fits the client area a laptop
-        /// gives a 1280x800 window (about 1280x795 on macOS); phone plus the strip fits between the
-        /// system bars of a 1080x2400 portrait phone at density 2.8125 (about 384x775 DIP).
+        /// gives a 1280x800 window (about 1280x795 on macOS); phone plus the strip (704 DIP) fits between
+        /// the system bars of practically every phone in portrait, down to 360x740 DIP screens.
         /// </summary>
         private static readonly Dictionary<string, (double Width, double Height)> s_presets = new()
         {
             ["desktop"] = (1280, 720),
-            ["phone"] = (360, 720)
+            ["phone"] = (360, 640)
         };
 
         /// <summary>
@@ -227,7 +227,7 @@ namespace TextStress
             "  --atlas-cpu-copy on|off   whether glyph atlas pages of contexts with updatable textures keep a\n" +
             "    CPU copy of their pixels (default: built-in)\n" +
             "  --settle-ms N   after the last frame, wait N ms without frames and log the glyph cache budget\n" +
-            "  --preset desktop|phone   content area the scene lays out in: desktop 1280x720 DIP, phone 360x720\n" +
+            "  --preset desktop|phone   content area the scene lays out in: desktop 1280x720 DIP, phone 360x640\n" +
             "    DIP (default: desktop; Android: phone, desktop on tablets); a run fails (exit 4) when the\n" +
             "    window or the safe area offers less than the content area plus the status strip\n" +
             "  --width N --height N   content area size in DIP instead of the preset's (recorded as custom)\n" +
