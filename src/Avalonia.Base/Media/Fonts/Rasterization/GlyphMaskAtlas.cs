@@ -779,6 +779,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     Correct(source, target, bucket);
                 }
+
+                page.Ink?.Mark(x, y + row, target, 1);
             }
 
             page.MarkWritten(x, y, mask.Width, mask.Height);
@@ -801,6 +803,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                     target[i + 2] = source[i];
                     target[i + 3] = source[i + 3];
                 }
+
+                page.Ink?.Mark(x, y + row, target, 4);
             }
 
             page.MarkWritten(x, y, mask.Width, mask.Height);
