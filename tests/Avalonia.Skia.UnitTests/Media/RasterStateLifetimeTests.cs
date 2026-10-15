@@ -101,6 +101,48 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        [Fact]
+        public void Skia_Text_Seams_Do_Not_Outlive_Application()
+        {
+            var pendingBatches = DrawingContextImpl.MaxPendingBatches;
+            var stretchVertices = DrawingContextImpl.StretchVerticesMinSprites;
+            var resident = GlyphMaskAtlas.ResidentPages;
+            var tint = TextTierDiagnostics.TintTiers;
+            var count = TextTierDiagnostics.CountTiers;
+
+            try
+            {
+                using (TextTestApplication.Enter())
+                {
+                    FailingSetup(() =>
+                    {
+                        DrawingContextImpl.MaxPendingBatches = 1;
+                        DrawingContextImpl.StretchVerticesMinSprites = 99;
+                        GlyphMaskAtlas.ResidentPages = false;
+                        TextTierDiagnostics.TintTiers = true;
+                        TextTierDiagnostics.CountTiers = true;
+                    });
+                }
+
+                using (TextTestApplication.Enter())
+                {
+                    Assert.Equal(32, DrawingContextImpl.MaxPendingBatches);
+                    Assert.Equal(4, DrawingContextImpl.StretchVerticesMinSprites);
+                    Assert.True(GlyphMaskAtlas.ResidentPages);
+                    Assert.False(TextTierDiagnostics.TintTiers);
+                    Assert.False(TextTierDiagnostics.CountTiers);
+                }
+            }
+            finally
+            {
+                DrawingContextImpl.MaxPendingBatches = pendingBatches;
+                DrawingContextImpl.StretchVerticesMinSprites = stretchVertices;
+                GlyphMaskAtlas.ResidentPages = resident;
+                TextTierDiagnostics.TintTiers = tint;
+                TextTierDiagnostics.CountTiers = count;
+            }
+        }
+
         /// <summary>The tuning a drawing context created now draws text with.</summary>
         private static GlyphRasterTuning TuningOfNewContext()
         {
