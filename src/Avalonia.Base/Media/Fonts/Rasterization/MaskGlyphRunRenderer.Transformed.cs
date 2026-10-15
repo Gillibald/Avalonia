@@ -50,7 +50,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // decoder the native path keeps the run, as it keeps a typeface without outlines.
             var strikes = typeface.BitmapSource is not null && HasStrikeImage(run);
 
-            if (strikes && AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is null ||
+            if (strikes && typeface.BitmapGlyphDecoder is null ||
                 typeface.BitmapSource is not null && !strikes ||
                 typeface.OutlineType == GlyphOutlineType.None && !strikes)
             {
@@ -905,6 +905,10 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
 
+            // Strike images need a decoder, resolved once for the run.
+            var strikes = colorGlyphs && typeface.BitmapSource is not null &&
+                          typeface.BitmapGlyphDecoder is not null;
+
             var m11 = (float)transform.M11;
             var m12 = (float)transform.M12;
             var m21 = (float)transform.M21;
@@ -960,7 +964,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         Color = colorKey.HasForeground ? colorKey.Foreground : 0,
                     };
                 }
-                else if (colorGlyphs && ColorGlyphMasks.IsStrikeGlyph(typeface, indices[i]))
+                else if (strikes && ColorGlyphMasks.HasStrikeImage(typeface, indices[i]))
                 {
                     // A bitmap strike: its image resampled under the transform, a colour atlas entry.
                     if (!ColorGlyphMasks.TryGetStrikePlacement(typeface, indices[i], key.ScaleQ, phaseX, key.Transform,

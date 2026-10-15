@@ -80,6 +80,39 @@ namespace Avalonia.Media
         private Fonts.Rasterization.GlyphMaskCache? _glyphMaskCache;
         private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>? _colorMaskCache;
         private Fonts.Rasterization.ColorFallbackImageCache? _colorFallbackImages;
+        private Fonts.Rasterization.StrikeInkBoxes? _strikeInkBoxes;
+
+        /// <summary>
+        /// The boxes this typeface's glyphs' strike images cover, measured once per glyph;
+        /// <c>null</c> for a typeface without bitmap strikes.
+        /// </summary>
+        internal Fonts.Rasterization.StrikeInkBoxes? StrikeInkBoxes =>
+            BitmapSource is { } bitmaps
+                ? _strikeInkBoxes ?? Interlocked.CompareExchange(ref _strikeInkBoxes,
+                    new Fonts.Rasterization.StrikeInkBoxes(bitmaps), null) ?? _strikeInkBoxes
+                : null;
+
+        private Fonts.Rasterization.IBitmapGlyphDecoder? _bitmapGlyphDecoder;
+        private volatile bool _bitmapGlyphDecoderResolved;
+
+        /// <summary>
+        /// The decoder of this typeface's bitmap strike images, or <c>null</c> without one,
+        /// resolved on first use and kept: the platform render services, the decoder among them,
+        /// are fixed for the process.
+        /// </summary>
+        internal Fonts.Rasterization.IBitmapGlyphDecoder? BitmapGlyphDecoder
+        {
+            get
+            {
+                if (!_bitmapGlyphDecoderResolved)
+                {
+                    _bitmapGlyphDecoder = AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>();
+                    _bitmapGlyphDecoderResolved = true;
+                }
+
+                return _bitmapGlyphDecoder;
+            }
+        }
         private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
         private int _maskOwnerId;
         private static int s_lastMaskOwnerId;

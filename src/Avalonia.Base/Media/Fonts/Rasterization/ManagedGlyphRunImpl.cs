@@ -196,17 +196,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             Rect? ink = Bounds;
 
-            if (_glyphTypeface.BitmapSource is { } bitmaps && bitmaps.StrikeCount > 0)
+            if (_glyphTypeface.BitmapSource is { } bitmaps && bitmaps.StrikeCount > 0 &&
+                _glyphTypeface.StrikeInkBoxes is { } boxes)
             {
-                var smallest = int.MaxValue;
-
-                for (var s = 0; s < bitmaps.StrikeCount; s++)
-                {
-                    smallest = Math.Min(smallest, bitmaps.GetStrike(s).PpemY);
-                }
-
-                var fade = smallest > 0 ? 0.5 * FontRenderingEmSize / smallest : 0;
-
                 for (var i = 0; i < _count && ink is { } union; i++)
                 {
                     if (!bitmaps.HasGlyphImage(_indices[i]))
@@ -214,37 +206,17 @@ namespace Avalonia.Media.Fonts.Rasterization
                         continue;
                     }
 
+                    if (!boxes.TryGet(_indices[i], out var box))
+                    {
+                        ink = null;
+                        break;
+                    }
+
                     var penX = BaselineOrigin.X + _positions[i * 2];
                     var penY = BaselineOrigin.Y + _positions[i * 2 + 1];
 
-                    for (var s = 0; s < bitmaps.StrikeCount; s++)
-                    {
-                        var strike = bitmaps.GetStrike(s);
-
-                        if (strike.PpemY == 0)
-                        {
-                            continue;
-                        }
-
-                        if (!bitmaps.TryGetImageBounds(strike, _indices[i], out var image))
-                        {
-                            // A strike holds an image of unknown size: no box bounds it.
-                            if (bitmaps.HasGlyphImage(_indices[i]))
-                            {
-                                union = default;
-                                ink = null;
-                                break;
-                            }
-
-                            continue;
-                        }
-
-                        var dipsPerPixel = FontRenderingEmSize / strike.PpemY;
-
-                        union = union.Union(new Rect(penX + image.X * dipsPerPixel, penY + image.Y * dipsPerPixel,
-                            image.Width * dipsPerPixel, image.Height * dipsPerPixel).Inflate(fade));
-                        ink = union;
-                    }
+                    ink = union.Union(new Rect(penX + box.X * FontRenderingEmSize, penY + box.Y * FontRenderingEmSize,
+                        box.Width * FontRenderingEmSize, box.Height * FontRenderingEmSize));
                 }
             }
 

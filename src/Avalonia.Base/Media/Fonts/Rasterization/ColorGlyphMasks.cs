@@ -41,9 +41,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// a decoder is available.
         /// </summary>
         public static bool IsStrikeGlyph(GlyphTypeface typeface, ushort glyph)
+            => HasStrikeImage(typeface, glyph) && typeface.BitmapGlyphDecoder is not null;
+
+        /// <summary>
+        /// Whether <paramref name="glyph"/> has an image in some strike and no COLR v1 paint graph:
+        /// a strike glyph wherever a decoder is available (<see cref="IsStrikeGlyph"/>).
+        /// </summary>
+        public static bool HasStrikeImage(GlyphTypeface typeface, ushort glyph)
             => typeface.BitmapSource is { } bitmaps && bitmaps.HasGlyphImage(glyph) &&
-               !(typeface.ColorTable is { HasV1Data: true } colr && ColorGlyphRunSplitter.IsV1Glyph(typeface, colr, glyph)) &&
-               AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is not null;
+               !(typeface.ColorTable is { HasV1Data: true } colr && ColorGlyphRunSplitter.IsV1Glyph(typeface, colr, glyph));
 
         /// <summary>
         /// Resolves the key and the placement of the colour mask that bitmap glyph
@@ -174,7 +180,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (IsStrikeGlyph(typeface, key.Glyph))
             {
-                return AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is { } decoder
+                return typeface.BitmapGlyphDecoder is { } decoder
                     ? BuildStrike(typeface, decoder, key)
                     : null;
             }
@@ -221,7 +227,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (IsStrikeGlyph(typeface, key.Glyph))
             {
-                if (AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is not { } decoder)
+                if (typeface.BitmapGlyphDecoder is not { } decoder)
                 {
                     return null;
                 }
@@ -338,7 +344,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             if (!bitmaps.TryGetImageBounds(strike, key.Glyph, out var image))
             {
                 // A size known only from the image itself: decode it, as drawing it will.
-                if (AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is not { } decoder ||
+                if (typeface.BitmapGlyphDecoder is not { } decoder ||
                     !bitmaps.TryGetPlacement(strike, key.Glyph, decoder, out var placement))
                 {
                     return false;
