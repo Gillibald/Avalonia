@@ -305,7 +305,7 @@ namespace Avalonia.Media.Fonts
         /// sbix or CBDT bitmaps, or hvgl outlines where the system has the renderer for them.
         /// Answers are kept per file and face, which never change while the process runs.
         /// </summary>
-        private static bool IsDrawable(SystemFontFace face)
+        internal static bool IsDrawable(SystemFontFace face)
         {
             var key = (face.FilePath ?? string.Empty, face.FaceIndex);
 
@@ -835,7 +835,7 @@ namespace Avalonia.Media.Fonts
         /// glyph typeface reports them. Kept per file and face, which never change while the
         /// process runs; <see langword="false"/> for faces of variable fonts and unreadable files.
         /// </summary>
-        private static bool TryGetStaticFaceProperties(string filePath, int faceIndex,
+        internal static bool TryGetStaticFaceProperties(string filePath, int faceIndex,
             out (FontWeight Weight, FontStyle Style, FontStretch Stretch) properties)
         {
             var key = (filePath, faceIndex);

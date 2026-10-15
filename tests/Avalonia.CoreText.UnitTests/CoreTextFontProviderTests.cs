@@ -352,6 +352,42 @@ namespace Avalonia.CoreText.UnitTests
             Assert.NotNull(bold.AxisValues);
             Assert.Equal(700f, bold.AxisValues[OpenTypeTag.Parse("wght")]);
         }
+
+        [Fact]
+        public void Facts_Read_From_A_Font_File_Do_Not_Outlive_The_Provider()
+        {
+            var path = Path.Combine(Path.GetTempPath(), $"avalonia-coretext-test-{Guid.NewGuid():N}.ttf");
+
+            try
+            {
+                using (var source = SfntNameReaderTests.OpenResource("Inter-Regular.ttf"))
+                using (var target = File.Create(path))
+                {
+                    source.CopyTo(target);
+                }
+
+                var face = new SystemFontFace("Inter", FontStyle.Normal, FontWeight.Normal, FontStretch.Normal, path, 0);
+
+                using (new CoreTextFontProvider())
+                {
+                    Assert.True(CoreTextFontProvider.IsDrawable(face));
+                    Assert.True(CoreTextFontProvider.TryGetStaticFaceProperties(path, 0, out _));
+                }
+
+                // The file is replaced by one the font system cannot load.
+                File.WriteAllBytes(path, new byte[64]);
+
+                using (new CoreTextFontProvider())
+                {
+                    Assert.False(CoreTextFontProvider.IsDrawable(face));
+                    Assert.False(CoreTextFontProvider.TryGetStaticFaceProperties(path, 0, out _));
+                }
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
     }
 
     public class CTMappingTests
@@ -484,7 +520,7 @@ namespace Avalonia.CoreText.UnitTests
             return face!;
         }
 
-        private static Stream OpenResource(string resourceName)
+        internal static Stream OpenResource(string resourceName)
         {
             var stream = typeof(SfntNameReaderTests).Assembly.GetManifestResourceStream(resourceName);
 
