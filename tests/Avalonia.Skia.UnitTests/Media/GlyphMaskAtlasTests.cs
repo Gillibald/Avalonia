@@ -655,8 +655,9 @@ namespace Avalonia.Skia.UnitTests.Media
             var bytes = (long)GlyphMaskAtlas.PageWidth * 4 * page.Height;
 
             Assert.Equal(bytes, atlas.AllocatedBytes);
-            Assert.Equal(bytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
-            Assert.Equal(bytes, ((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue));
+            Assert.Equal(bytes + GlyphMaskAtlas.IndexEntryBytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
+            Assert.Equal(bytes + GlyphMaskAtlas.IndexEntryBytes,
+                ((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue));
             Assert.True(page.IsEvicted);
             Assert.Equal(0, atlas.AllocatedBytes);
             Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.Atlas));

@@ -243,10 +243,11 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(budget.BytesOf(GlyphCachePoolKind.Atlas) >= atlas.AllocatedBytes);
 
                 var charged = budget.BytesOf(GlyphCachePoolKind.Atlas);
+                var held = atlas.AllocatedBytes + atlas.IndexBytes;
 
-                Assert.Equal(atlas.AllocatedBytes, ((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue));
+                Assert.Equal(held, ((IGlyphCachePool)atlas).EvictOldest(long.MaxValue, long.MaxValue));
                 Assert.True(page.IsEvicted);
-                Assert.Equal(charged - page.Pixels.Length, budget.BytesOf(GlyphCachePoolKind.Atlas));
+                Assert.Equal(charged - held, budget.BytesOf(GlyphCachePoolKind.Atlas));
 
                 // The runs place their glyphs again and draw the same pixels.
                 var again = Measure(() => Render(gpu, runs), out var after);

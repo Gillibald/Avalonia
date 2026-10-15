@@ -814,10 +814,23 @@ namespace Avalonia.Skia
         }
 
         /// <summary>The exact-length sprite arrays of one batch, plus its own image for a standalone glyph.</summary>
-        internal sealed partial class SkiaGlyphAtlasBatch : IDisposable
+        internal sealed partial class SkiaGlyphAtlasBatch : IGlyphAtlasBatchBackend
         {
             // Four vertices per sprite, addressed by 16-bit indices.
             private const int MaxSpritesPerVertices = (ushort.MaxValue + 1) / 4;
+
+            // This object and the headers of its two sprite arrays. A heap probe of 5000 batches
+            // of 1, 10 and 40 sprites measured 248 bytes for one sprite and 32 per further one,
+            // with the 56 bytes of the GlyphAtlasBatch that holds it.
+            private const int ObjectBytes = 160;
+
+            // One part of kept vertices: the managed SKVertices with its handle registration and
+            // the part array (112 bytes by the same probe), and Skia's vertex block header.
+            private const int VerticesPartBytes = 112 + 80;
+
+            // Per sprite in Skia's vertex block: four positions and four texture coordinates of
+            // 8 bytes and six 16-bit indices.
+            private const int VertexBytesPerSprite = 76;
 
             // Vertex positions are floats: offsets this far apart still add up exactly.
             private const int MaxRelativeOffset = 1 << 22;
@@ -1053,6 +1066,27 @@ namespace Avalonia.Skia
                 }
 
                 return parts;
+            }
+
+            /// <summary>
+            /// The bytes the batch keeps: its sprite arrays, a standalone image, and once drawn
+            /// stretched the vertices such a draw keeps when the batch has enough sprites for them
+            /// (<see cref="StretchVerticesMinSprites"/>). Vertices of merged batches
+            /// (<see cref="TryGetBatchVertices"/>) are left out: they belong to whichever runs
+            /// a static frame merges.
+            /// </summary>
+            public long KeptBytes(bool stretched)
+            {
+                var bytes = ObjectBytes + Sources.Length * 32L + (Image?.Info.BytesSize64 ?? 0);
+
+                if (stretched && Image is null && Sources.Length >= StretchVerticesMinSprites)
+                {
+                    var parts = (Sources.Length + MaxSpritesPerVertices - 1) / MaxSpritesPerVertices;
+
+                    bytes += parts * (long)VerticesPartBytes + Sources.Length * (long)VertexBytesPerSprite;
+                }
+
+                return bytes;
             }
 
             /// <summary>Whether <see cref="GetStretchVertices"/> has built the vertices.</summary>

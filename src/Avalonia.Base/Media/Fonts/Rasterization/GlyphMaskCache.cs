@@ -39,6 +39,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public const int MaxEntryBytes = 512 * 1024;
 
+        /// <summary>
+        /// The bytes an entry keeps beside its mask's <see cref="GlyphMask.ByteCost"/>, charged
+        /// with it: the entry, the dictionary node and bucket, and the rest of the mask object and
+        /// array headers. A heap probe of 10 000 to 100 000 one-pixel masks, compared after a full
+        /// collection, measured 245 to 251 bytes per entry, 196 to 202 beyond the ByteCost.
+        /// </summary>
+        internal const int EntryOverheadBytes = 200;
+
         private readonly ConcurrentDictionary<TKey, Entry> _entries = new();
         private readonly object _lock = new();
         private readonly GlyphCacheBudget _clock;
@@ -60,7 +68,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Number of cached masks.</summary>
         public int Count => _entries.Count;
 
-        /// <summary>Total retained mask bytes.</summary>
+        /// <summary>
+        /// Total bytes charged for the cached masks: their <see cref="GlyphMask.ByteCost"/> and
+        /// <see cref="EntryOverheadBytes"/> each.
+        /// </summary>
         public long TotalCost => Interlocked.Read(ref _totalCost);
 
         /// <summary>Masks evicted for the glyph cache budget since construction; for diagnostics and tests.</summary>
@@ -178,8 +189,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 Volatile.Write(ref entry.Mask, built);
                 RingAdd(entry);
-                Interlocked.Add(ref _totalCost, built.ByteCost);
-                _handle.Charge(built.ByteCost);
+
+                var cost = CostOf(built);
+
+                Interlocked.Add(ref _totalCost, cost);
+                _handle.Charge(cost);
 
                 return built;
             }
@@ -197,7 +211,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     RingRemove(entry);
 
-                    var cost = Volatile.Read(ref entry.Mask)!.ByteCost;
+                    var cost = CostOf(Volatile.Read(ref entry.Mask)!);
 
                     Interlocked.Add(ref _totalCost, -cost);
                     _handle.Credit(cost);
@@ -236,7 +250,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 while (freed < bytes && SelectVictim(usedBefore) is { } victim)
                 {
-                    var cost = Volatile.Read(ref victim.Mask)!.ByteCost;
+                    var cost = CostOf(Volatile.Read(ref victim.Mask)!);
 
                     Interlocked.Add(ref _totalCost, -cost);
                     freed += cost;
@@ -254,6 +268,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             return freed;
         }
+
+        private static long CostOf(GlyphMask mask) => mask.ByteCost + EntryOverheadBytes;
 
         private void RingAdd(Entry entry)
         {

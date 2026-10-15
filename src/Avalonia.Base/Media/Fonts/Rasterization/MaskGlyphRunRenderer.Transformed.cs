@@ -538,6 +538,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             t_stretchedDraws++;
             DrawBatches(context, atlas, colorAtlas, batches, placement, foregroundArgb, bilinear: true);
+            settled.MarkDrawnStretched();
 
             return true;
         }

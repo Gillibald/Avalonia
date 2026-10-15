@@ -73,7 +73,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void A_Mask_Used_In_The_Current_Frame_Survives_Eviction()
         {
-            var cost = MakeMask().ByteCost;
+            var cost = MakeMask().ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(cost * 3);
             var cache = new GlyphMaskCache(budget);
 
@@ -108,7 +108,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void The_Mask_Drawn_Longest_Ago_Is_Evicted_First()
         {
-            var cost = MakeMask().ByteCost;
+            var cost = MakeMask().ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(cost * 3);
             var cache = new GlyphMaskCache(budget);
 

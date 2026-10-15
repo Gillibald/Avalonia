@@ -164,7 +164,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 
             var pages = atlas.AllocatedBytes;
 
-            budget.SetLimit(pages + 16 * Kb);
+            budget.SetLimit(budget.BytesOf(GlyphCachePoolKind.Atlas) + 16 * Kb);
             Frames(budget, 1);
 
             Assert.Equal(pages, atlas.AllocatedBytes);
@@ -175,7 +175,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void The_Previous_Frame_Is_Kept_Up_To_A_Quarter_Over_The_Limit()
         {
             const long limit = 1024 * Kb;
-            var mask = MakeMask(32).ByteCost;
+            var mask = MakeMask(32).ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(limit);
             var cache = new GlyphMaskCache(budget);
 
@@ -204,7 +204,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void The_Previous_Frame_Is_Trimmed_To_A_Quarter_Over_The_Limit()
         {
             const long limit = 1024 * Kb;
-            var mask = MakeMask(32).ByteCost;
+            var mask = MakeMask(32).ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(limit);
             var cache = new GlyphMaskCache(budget);
 
@@ -225,7 +225,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void A_Frame_Past_Half_Over_The_Limit_Evicts_Earlier_Frames_Of_Its_Own_Pool()
         {
             const long limit = 1024 * Kb;
-            var mask = MakeMask(32).ByteCost;
+            var mask = MakeMask(32).ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(limit);
             var cache = new GlyphMaskCache(budget);
             var glyph = 0;
@@ -254,7 +254,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         public void A_Frame_Past_The_Limit_Evicts_What_No_Recent_Frame_Drew_From_Its_Own_Pool()
         {
             const long limit = 1024 * Kb;
-            var mask = MakeMask(32).ByteCost;
+            var mask = MakeMask(32).ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(limit);
             var cache = new GlyphMaskCache(budget);
             var glyph = 0;

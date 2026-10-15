@@ -219,6 +219,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>The <see cref="GlyphAtlasEntryKey.Bucket"/> of a colour atlas entry of <paramref name="entry"/>.</summary>
         public static int ColorEntryBucket(ColorAtlasEntry entry) => Uncorrected - (int)entry;
 
+        /// <summary>
+        /// The bytes the index keeps per entry and charges to the budget: the dictionary entry of
+        /// its key and slot, the page's key list entry, and the growth slack of both. A heap probe
+        /// of 10 000 to 100 000 one-pixel entries, compared after a full collection, measured 152
+        /// to 218 bytes per entry, depending on where the dictionary and lists stood in their
+        /// growth; a glyph of small text takes about as many bytes of page.
+        /// </summary>
+        internal const int IndexEntryBytes = 192;
+
         private const int RowQuantum = 64;
 
         // The empty column left of every shelf and the empty row above a page's first shelf.
@@ -231,6 +240,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private readonly GlyphCacheBudget _clock;
         private readonly GlyphCachePoolHandle _handle;
         private long _allocated;
+        private long _indexBytes;
         private long _evictions;
 
         /// <param name="budget">
@@ -278,6 +288,9 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>Bytes of all page arrays.</summary>
         public long AllocatedBytes => Interlocked.Read(ref _allocated);
+
+        /// <summary>Bytes charged for the index of the entries, <see cref="IndexEntryBytes"/> each.</summary>
+        public long IndexBytes => Interlocked.Read(ref _indexBytes);
 
         /// <summary>Pages dropped to stay within the budget since construction.</summary>
         public long Evictions => Interlocked.Read(ref _evictions);
@@ -355,6 +368,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     _slots.Remove(key);
                 }
+
+                ChargeIndex(-retired.Count);
 
                 foreach (var page in _pages)
                 {
@@ -469,6 +484,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 {
                     slot = default;
                     _slots.Add(entry, slot);
+                    ChargeIndex(1);
                     return true;
                 }
 
@@ -482,6 +498,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 slot = new GlyphAtlasSlot(page, x, y, mask.Width, mask.Height, mask.Left, mask.Top);
                 _slots.Add(entry, slot);
+                ChargeIndex(1);
 
                 return true;
             }
@@ -581,6 +598,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 _pages.Clear();
                 _emptied.Clear();
                 Interlocked.Exchange(ref _allocated, 0);
+                Interlocked.Exchange(ref _indexBytes, 0);
             }
 
             _handle.Release();
@@ -605,8 +623,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 while (freed < bytes && LeastRecentlyUsed(usedBefore) is { } victim)
                 {
-                    freed += victim.Pixels.Length;
-                    Evict(victim);
+                    freed += Evict(victim);
                 }
             }
 
@@ -629,21 +646,44 @@ namespace Avalonia.Media.Fonts.Rasterization
             return victim;
         }
 
-        private void Evict(GlyphAtlasPage page)
+        /// <summary>Drops a page and its entries; returns the bytes credited.</summary>
+        private long Evict(GlyphAtlasPage page)
         {
             foreach (var key in page.Keys)
             {
                 _slots.Remove(key);
             }
 
+            var index = (long)page.Keys.Count * IndexEntryBytes;
+
             _pages.Remove(page);
             Interlocked.Add(ref _allocated, -page.Pixels.Length);
-            _handle.Credit(page.Pixels.Length);
+            Interlocked.Add(ref _indexBytes, -index);
+            _handle.Credit(page.Pixels.Length + index);
             Interlocked.Increment(ref _evictions);
 
             page.IsEvicted = true;
             page.Realized?.Dispose();
             page.Realized = null;
+
+            return page.Pixels.Length + index;
+        }
+
+        /// <summary>Charges the index for <paramref name="entries"/> more entries, or credits it for fewer.</summary>
+        private void ChargeIndex(int entries)
+        {
+            var bytes = (long)entries * IndexEntryBytes;
+
+            Interlocked.Add(ref _indexBytes, bytes);
+
+            if (bytes > 0)
+            {
+                _handle.Charge(bytes);
+            }
+            else
+            {
+                _handle.Credit(-bytes);
+            }
         }
 
         private static void Write(GlyphAtlasPage page, GlyphMask mask, int x, int y, int bucket)

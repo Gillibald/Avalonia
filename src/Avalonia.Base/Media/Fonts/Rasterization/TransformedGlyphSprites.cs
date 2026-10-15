@@ -84,6 +84,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// </summary>
     internal sealed class GlyphAtlasBatch : IDisposable
     {
+        // The batch object: header and fields.
+        private const int ObjectBytes = 56;
+
         public GlyphAtlasBatch(GlyphAtlasPage? page, int start, int count, TransformedSpriteKind kind, uint color,
             IDisposable backend)
         {
@@ -118,6 +121,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// no pixel in common, so they may be drawn in either order.
         /// </summary>
         public object? DisjointRun { get; init; }
+
+        /// <summary>
+        /// The bytes the batch keeps, with what a stretched draw keeps across frames when
+        /// <paramref name="stretched"/>. A backend that does not tell is taken to keep a source
+        /// rectangle and a placement per sprite, four floats each.
+        /// </summary>
+        public long KeptBytes(bool stretched)
+            => ObjectBytes + (Backend is IGlyphAtlasBatchBackend backend ? backend.KeptBytes(stretched) : Count * 32L);
 
         public void Dispose() => Backend.Dispose();
     }
@@ -254,13 +265,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (_bucketBatches is { } slots)
                 {
-                    // The backend holds a source rectangle and a placement per sprite, four
-                    // floats each.
                     foreach (var slot in slots)
                     {
                         foreach (var batch in slot.Batches ?? Array.Empty<GlyphAtlasBatch>())
                         {
-                            cost += batch.Count * 32L;
+                            cost += batch.KeptBytes(slot.Stretched);
                         }
                     }
                 }
@@ -364,6 +373,21 @@ namespace Avalonia.Media.Fonts.Rasterization
             Owner?.Recharge();
         }
 
+        /// <summary>
+        /// Records that the batches last built or drawn were drawn stretched, after which a
+        /// backend may keep more for them across frames (vertices), and charges that.
+        /// </summary>
+        internal void MarkDrawnStretched()
+        {
+            if (_bucketBatches is not { } slots || slots[_current].Batches is null || slots[_current].Stretched)
+            {
+                return;
+            }
+
+            slots[_current] = slots[_current] with { Stretched = true };
+            Owner?.Recharge();
+        }
+
         internal void SetFallbackImages(IDisposable?[] images, uint tint)
         {
             DisposeFallbackImages();
@@ -452,7 +476,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         }
 
         private readonly record struct BucketBatches(int Bucket, GlyphMaskAtlas? Atlas, GlyphMaskAtlas? ColorAtlas,
-            GlyphAtlasBatch[]? Batches);
+            GlyphAtlasBatch[]? Batches, bool Stretched = false);
     }
 
     /// <summary>

@@ -30,6 +30,19 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal readonly record struct GlyphAtlasSprite(int SourceX, int SourceY, int Width, int Height, int X, int Y);
 
     /// <summary>
+    /// The realized sprite arrays of an atlas batch (<see cref="ITransformedGlyphContext.CreateAtlasBatch"/>)
+    /// that tell the glyph cache budget what they keep.
+    /// </summary>
+    internal interface IGlyphAtlasBatchBackend : IDisposable
+    {
+        /// <summary>
+        /// The bytes the backend keeps for the batch; with <paramref name="stretched"/>, including
+        /// what it keeps across frames once the batch has been drawn stretched.
+        /// </summary>
+        long KeptBytes(bool stretched);
+    }
+
+    /// <summary>
     /// The backend services the transformed text tier draws through.
     /// </summary>
     internal interface ITransformedGlyphContext : IGlyphTargetContext

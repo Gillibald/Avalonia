@@ -82,7 +82,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         }
 
         [Fact]
-        public void Atlas_Pages_Are_Charged_As_They_Are_Allocated()
+        public void Atlas_Pages_And_Entries_Are_Charged_As_They_Are_Added()
         {
             var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
             var atlas = new GlyphMaskAtlas(budget);
@@ -94,8 +94,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
             }
 
             Assert.True(atlas.AllocatedBytes > 0);
-            Assert.Equal(atlas.AllocatedBytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
-            Assert.Equal(atlas.AllocatedBytes, budget.UsedBytes);
+            Assert.Equal(199L * GlyphMaskAtlas.IndexEntryBytes, atlas.IndexBytes);
+            Assert.Equal(atlas.AllocatedBytes + atlas.IndexBytes, budget.BytesOf(GlyphCachePoolKind.Atlas));
+            Assert.Equal(atlas.AllocatedBytes + atlas.IndexBytes, budget.UsedBytes);
         }
 
         [Fact]

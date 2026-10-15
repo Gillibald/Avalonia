@@ -129,7 +129,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void Eviction_Keeps_Total_Cost_Under_The_Budget()
         {
-            var cost = MakeMask().ByteCost;
+            var cost = MakeMask().ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(cost * 3);
             var cache = new GlyphMaskCache(budget);
 
@@ -153,7 +153,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void A_Touched_Entry_Survives_Eviction_Pressure()
         {
-            var cost = MakeMask().ByteCost;
+            var cost = MakeMask().ByteCost + GlyphMaskCache.EntryOverheadBytes;
             var budget = new GlyphCacheBudget(cost * 3);
             var cache = new GlyphMaskCache(budget);
 

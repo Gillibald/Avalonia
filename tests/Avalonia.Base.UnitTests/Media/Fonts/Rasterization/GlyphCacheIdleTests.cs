@@ -129,7 +129,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 
             using (budget.BeginFrame())
             {
-                for (var glyph = 0; glyph < 600 * Kb / MakeMask(32).ByteCost; glyph++)
+                for (var glyph = 0; glyph < 600 * Kb / (MakeMask(32).ByteCost + GlyphMaskCache.EntryOverheadBytes); glyph++)
                 {
                     settled.GetOrBuild(Key(glyph), static _ => MakeMask(32));
                 }
