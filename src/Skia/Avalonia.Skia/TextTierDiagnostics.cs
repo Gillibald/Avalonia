@@ -13,24 +13,6 @@ namespace Avalonia.Skia
     /// </summary>
     internal static class TextTierDiagnostics
     {
-        /// <summary>The <see cref="SkiaTextCounters.MaskTierDraws"/> of the calling thread.</summary>
-        public static long MaskTierDraws => SkiaTextCounters.TryGetCurrent()?.MaskTierDraws ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.TransformedMaskTierDraws"/> of the calling thread.</summary>
-        public static long TransformedMaskTierDraws => SkiaTextCounters.TryGetCurrent()?.TransformedMaskTierDraws ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.BlobTierDraws"/> of the calling thread.</summary>
-        public static long BlobTierDraws => SkiaTextCounters.TryGetCurrent()?.BlobTierDraws ?? 0;
-
-        /// <summary>Starts the tier counters of the calling thread at zero.</summary>
-        public static void ResetCounters()
-        {
-            if (SkiaTextCounters.TryGetCurrent() is { } counters)
-            {
-                counters.MaskTierDraws = counters.TransformedMaskTierDraws = counters.BlobTierDraws = 0;
-            }
-        }
-
         public static readonly SKColor MaskTierColor = new(0x22, 0xAA, 0x22, 0x46);
         public static readonly SKColor TransformedMaskTierColor = new(0x22, 0x66, 0xDD, 0x46);
         public static readonly SKColor BlobTierColor = new(0xDD, 0x88, 0x22, 0x46);

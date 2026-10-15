@@ -122,7 +122,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     var masks = typeface.MaskCache.Count;
                     var stretched = TextTestApplication.ThreadState.StretchedDraws;
-                    var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                    var rasterized = TextTestApplication.Counters.GlyphRasterizations;
 
                     Draw(context, runs, 1 + frame * 0.013);
 
@@ -132,7 +132,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }
 
                     if (TextTestApplication.ThreadState.StretchedDraws == stretched &&
-                        GlyphRasterDiagnostics.GlyphRasterizationsOnThread > rasterized)
+                        TextTestApplication.Counters.GlyphRasterizations > rasterized)
                     {
                         sharp++;
                     }
@@ -167,13 +167,13 @@ namespace Avalonia.Skia.UnitTests.Media
             try
             {
                 var revisit = ZoomAwayFromACrossing(context, runs, typeface);
-                var builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
-                var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                var builds = TextTestApplication.Counters.SpriteSetBuilds;
+                var rasterized = TextTestApplication.Counters.GlyphRasterizations;
 
                 Draw(context, runs, revisit);
 
-                Assert.Equal(1, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
-                Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterized);
+                Assert.Equal(1, TextTestApplication.Counters.SpriteSetBuilds - builds);
+                Assert.Equal(0, TextTestApplication.Counters.GlyphRasterizations - rasterized);
             }
             finally
             {

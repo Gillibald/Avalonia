@@ -90,14 +90,17 @@ namespace TextShowcase.Diagnostics
 
             _ = batch.Processed.ContinueWith(_ =>
             {
-                mask = TextTierDiagnostics.MaskTierDraws;
-                transformed = TextTierDiagnostics.TransformedMaskTierDraws;
-                fallback = TextTierDiagnostics.BlobTierDraws;
-                atlas = DrawingContextImpl.AtlasDrawsOnThread;
-                batches = DrawingContextImpl.BatchesDrawnOnThread;
-                uploads = DrawingContextImpl.PageImagesCreatedOnThread;
-                updates = DrawingContextImpl.PageTextureUpdatesOnThread;
-                rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                var raster = GlyphRasterServices.Current.ForCurrentThread();
+                var skia = SkiaTextCounters.Of(raster);
+
+                mask = skia.MaskTierDraws;
+                transformed = skia.TransformedMaskTierDraws;
+                fallback = skia.BlobTierDraws;
+                atlas = skia.AtlasDraws;
+                batches = skia.BatchesDrawn;
+                uploads = skia.PageImagesCreated;
+                updates = skia.PageTextureUpdates;
+                rasterizations = raster.Counters.GlyphRasterizations;
                 start = Stopwatch.GetTimestamp();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
@@ -105,15 +108,18 @@ namespace TextShowcase.Diagnostics
             {
                 var end = Stopwatch.GetTimestamp();
 
+                var raster = GlyphRasterServices.Current.ForCurrentThread();
+                var skia = SkiaTextCounters.Of(raster);
+
                 reading.RenderMs = start == 0 ? double.NaN : (end - start) * 1000.0 / Stopwatch.Frequency;
-                reading.MaskTierDraws = TextTierDiagnostics.MaskTierDraws - mask;
-                reading.TransformedTierDraws = TextTierDiagnostics.TransformedMaskTierDraws - transformed;
-                reading.FallbackTierDraws = TextTierDiagnostics.BlobTierDraws - fallback;
-                reading.AtlasDraws = DrawingContextImpl.AtlasDrawsOnThread - atlas;
-                reading.BatchesDrawn = DrawingContextImpl.BatchesDrawnOnThread - batches;
-                reading.PageUploads = DrawingContextImpl.PageImagesCreatedOnThread - uploads;
-                reading.PageTextureUpdates = DrawingContextImpl.PageTextureUpdatesOnThread - updates;
-                reading.Rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterizations;
+                reading.MaskTierDraws = skia.MaskTierDraws - mask;
+                reading.TransformedTierDraws = skia.TransformedMaskTierDraws - transformed;
+                reading.FallbackTierDraws = skia.BlobTierDraws - fallback;
+                reading.AtlasDraws = skia.AtlasDraws - atlas;
+                reading.BatchesDrawn = skia.BatchesDrawn - batches;
+                reading.PageUploads = skia.PageImagesCreated - uploads;
+                reading.PageTextureUpdates = skia.PageTextureUpdates - updates;
+                reading.Rasterizations = raster.Counters.GlyphRasterizations - rasterizations;
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
             // Back on the UI thread: process-wide readings, then publish.

@@ -2,7 +2,7 @@ namespace Avalonia.Skia
 {
     /// <summary>
     /// The clip a batched glyph run is drawn under, as counted by
-    /// <see cref="DrawingContextImpl.GetClippedRunsOnThread"/>: the kind of the innermost clip
+    /// <see cref="SkiaTextCounters.GetClippedRuns"/>: the kind of the innermost clip
     /// pushed on the drawing context.
     /// </summary>
     internal enum GlyphRunClipKind

@@ -357,16 +357,16 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 DrawText(typeface);
 
-                Assert.NotEqual(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
-                Assert.NotEqual(0, GlyphRasterDiagnostics.MaskCacheMissesOnThread);
-                Assert.NotEqual(0, TextTierDiagnostics.MaskTierDraws);
+                Assert.NotEqual(0, TextTestApplication.Counters.GlyphRasterizations);
+                Assert.NotEqual(0, TextTestApplication.Counters.MaskCacheMisses);
+                Assert.NotEqual(0, TextTestApplication.SkiaCounters.MaskTierDraws);
             }
 
             using (TextTestApplication.Enter())
             {
-                Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
-                Assert.Equal(0, GlyphRasterDiagnostics.MaskCacheMissesOnThread);
-                Assert.Equal(0, TextTierDiagnostics.MaskTierDraws);
+                Assert.Equal(0, TextTestApplication.Counters.GlyphRasterizations);
+                Assert.Equal(0, TextTestApplication.Counters.MaskCacheMisses);
+                Assert.Equal(0, TextTestApplication.SkiaCounters.MaskTierDraws);
             }
         }
 

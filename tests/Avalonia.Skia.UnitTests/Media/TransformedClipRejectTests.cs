@@ -59,9 +59,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
-                var rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
-                var colorMasks = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
+                var builds = TextTestApplication.Counters.SpriteSetBuilds;
+                var rasterizations = TextTestApplication.Counters.GlyphRasterizations;
+                var colorMasks = TextTestApplication.Counters.ColorMaskRasterizations;
 
                 var pixels = Render(gpu, context =>
                 {
@@ -74,9 +74,9 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.PopClip();
                 });
 
-                Assert.Equal(0, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
-                Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterizations);
-                Assert.Equal(0, GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - colorMasks);
+                Assert.Equal(0, TextTestApplication.Counters.SpriteSetBuilds - builds);
+                Assert.Equal(0, TextTestApplication.Counters.GlyphRasterizations - rasterizations);
+                Assert.Equal(0, TextTestApplication.Counters.ColorMaskRasterizations - colorMasks);
                 Assert.All(pixels, b => Assert.Equal(255, b));
             }
             finally
@@ -106,9 +106,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
-                var rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
-                var colorMasks = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
+                var builds = TextTestApplication.Counters.SpriteSetBuilds;
+                var rasterizations = TextTestApplication.Counters.GlyphRasterizations;
+                var colorMasks = TextTestApplication.Counters.ColorMaskRasterizations;
 
                 var pixels = Render(gpu, context =>
                 {
@@ -120,9 +120,9 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.PopClip();
                 });
 
-                Assert.Equal(0, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
-                Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterizations);
-                Assert.Equal(0, GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - colorMasks);
+                Assert.Equal(0, TextTestApplication.Counters.SpriteSetBuilds - builds);
+                Assert.Equal(0, TextTestApplication.Counters.GlyphRasterizations - rasterizations);
+                Assert.Equal(0, TextTestApplication.Counters.ColorMaskRasterizations - colorMasks);
                 Assert.All(pixels, b => Assert.Equal(255, b));
             }
             finally

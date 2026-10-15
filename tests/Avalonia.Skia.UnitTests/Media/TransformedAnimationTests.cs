@@ -748,7 +748,7 @@ namespace Avalonia.Skia.UnitTests.Media
             for (var frame = 0; frame < scales.Count; frame++)
             {
                 var scale = scales[frame];
-                var before = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                var before = TextTestApplication.Counters.GlyphRasterizations;
 
                 context.Transform = rotated
                     ? ZoomRotation(scale)
@@ -756,7 +756,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 context.DrawGlyphRun(Brushes.Black, run);
                 context.FlushGlyphBatch();
 
-                if (GlyphRasterDiagnostics.GlyphRasterizationsOnThread != before)
+                if (TextTestApplication.Counters.GlyphRasterizations != before)
                 {
                     rasterizing.Add(frame);
                 }
@@ -1009,7 +1009,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     glyphMasks = typeface.MaskCache.Count;
                     runMasks = run.RunMasks.Count;
-                    rasterizations = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                    rasterizations = TextTestApplication.Counters.GlyphRasterizations;
                 }
             }
 
@@ -1019,7 +1019,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 // A hardware GPU and a CPU surface rasterize every time the zoom leaves the
                 // stretch band.
-                Assert.True(GlyphRasterDiagnostics.GlyphRasterizationsOnThread > rasterizations);
+                Assert.True(TextTestApplication.Counters.GlyphRasterizations > rasterizations);
                 return;
             }
 

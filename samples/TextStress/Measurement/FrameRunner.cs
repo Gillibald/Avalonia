@@ -227,12 +227,14 @@ namespace TextStress.Measurement
                 sample.RenderStartThread = Environment.CurrentManagedThreadId;
                 sample.RenderCpuStart = ThreadClock.NowMs();
                 sample.RenderAllocStart = GC.GetAllocatedBytesForCurrentThread();
-                sample.AtlasDrawsStart = DrawingContextImpl.AtlasDrawsOnThread;
-                sample.PageUploadsStart = DrawingContextImpl.PageImagesCreatedOnThread;
-                sample.AtlasGeometryStart = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var skia = SkiaTextCounters.Of(GlyphRasterServices.Current.ForCurrentThread());
+
+                sample.AtlasDrawsStart = skia.AtlasDraws;
+                sample.PageUploadsStart = skia.PageImagesCreated;
+                sample.AtlasGeometryStart = skia.AtlasGeometrySubmitted;
                 RenderCounters.Read(sample.CountersStart);
                 PhaseTimes.Read(sample.PhaseTicksStart, sample.PhaseCountsStart);
-                DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
+                skia.TakeMaxRunsPerBatch();
                 sample.RenderStart = Stopwatch.GetTimestamp();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
@@ -242,12 +244,14 @@ namespace TextStress.Measurement
                 sample.RenderEndThread = Environment.CurrentManagedThreadId;
                 sample.RenderCpuEnd = ThreadClock.NowMs();
                 sample.RenderAllocEnd = GC.GetAllocatedBytesForCurrentThread();
-                sample.AtlasDrawsEnd = DrawingContextImpl.AtlasDrawsOnThread;
-                sample.PageUploadsEnd = DrawingContextImpl.PageImagesCreatedOnThread;
-                sample.AtlasGeometryEnd = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var skia = SkiaTextCounters.Of(GlyphRasterServices.Current.ForCurrentThread());
+
+                sample.AtlasDrawsEnd = skia.AtlasDraws;
+                sample.PageUploadsEnd = skia.PageImagesCreated;
+                sample.AtlasGeometryEnd = skia.AtlasGeometrySubmitted;
                 RenderCounters.Read(sample.CountersEnd);
                 PhaseTimes.Read(sample.PhaseTicksEnd, sample.PhaseCountsEnd);
-                sample.MaxRunsPerBatch = DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
+                sample.MaxRunsPerBatch = skia.TakeMaxRunsPerBatch();
                 rendered.TrySetResult();
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 

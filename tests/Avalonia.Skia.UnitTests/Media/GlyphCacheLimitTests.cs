@@ -81,11 +81,11 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(typeface.MaskCache.TotalCost > 8 * 1024 * 1024,
                     $"the sweep made only {typeface.MaskCache.TotalCost} bytes of masks");
 
-                var misses = GlyphRasterDiagnostics.MaskCacheMissesOnThread;
+                var misses = TextTestApplication.Counters.MaskCacheMisses;
 
                 Sweep();
 
-                Assert.Equal(0, GlyphRasterDiagnostics.MaskCacheMissesOnThread - misses);
+                Assert.Equal(0, TextTestApplication.Counters.MaskCacheMisses - misses);
             }
             finally
             {
@@ -136,12 +136,12 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.DrawGlyphRun(Brushes.Black, run);
                 }
 
-                var before = GlyphRasterDiagnostics.MaskCacheMissesOnThread + GlyphRasterDiagnostics.AtlasMissesOnThread;
+                var before = TextTestApplication.Counters.MaskCacheMisses + TextTestApplication.Counters.AtlasMisses;
 
                 context.Transform = Matrix.Identity;
                 context.DrawGlyphRun(Brushes.Black, label);
                 context.FlushGlyphBatch();
-                labelMisses += GlyphRasterDiagnostics.MaskCacheMissesOnThread + GlyphRasterDiagnostics.AtlasMissesOnThread -
+                labelMisses += TextTestApplication.Counters.MaskCacheMisses + TextTestApplication.Counters.AtlasMisses -
                     before;
             }
 
@@ -323,14 +323,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 Frame();
                 Frame();
 
-                var misses = GlyphRasterDiagnostics.AtlasMissesOnThread;
+                var misses = TextTestApplication.Counters.AtlasMisses;
 
                 for (var i = 0; i < 5; i++)
                 {
                     Frame();
                 }
 
-                Assert.Equal(0, GlyphRasterDiagnostics.AtlasMissesOnThread - misses);
+                Assert.Equal(0, TextTestApplication.Counters.AtlasMisses - misses);
                 Assert.True(workingSet > before, "the frames held nothing");
             }
             finally

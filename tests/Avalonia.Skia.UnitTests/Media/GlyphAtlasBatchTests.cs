@@ -512,10 +512,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 var drawnWhileAppending = 0;
                 var batched = Render(gpu, context =>
                 {
-                    var before = DrawingContextImpl.AtlasDrawsOnThread;
+                    var before = TextTestApplication.SkiaCounters.AtlasDraws;
 
                     Draw(context);
-                    drawnWhileAppending = DrawingContextImpl.AtlasDrawsOnThread - before;
+                    drawnWhileAppending = TextTestApplication.SkiaCounters.AtlasDraws - before;
                 }, batched: true, out var draws);
 
                 // A run may join its batch only while fewer than the limit of other runs are
@@ -570,9 +570,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, out _);
 
-                var before = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange);
+                var before = TextTestApplication.SkiaCounters.GetFlushes(GlyphBatchFlushReason.PageChange);
                 var batched = Render(gpu, Draw, batched: true, out _);
-                var flushes = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange) - before;
+                var flushes = TextTestApplication.SkiaCounters.GetFlushes(GlyphBatchFlushReason.PageChange) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, batched, "a run over a cell of a long batch");
                 // The second page's run draws the first page's batch, the last run the second's.
@@ -731,10 +731,11 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Equal(2, TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length);
 
                 var cold = Render(gpu, Draw, batched: true, out _);
-                var pageChanges = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange);
+                var pageChanges = TextTestApplication.SkiaCounters.GetFlushes(GlyphBatchFlushReason.PageChange);
                 var warm = Render(gpu, Draw, batched: true, out var draws);
 
-                pageChanges = DrawingContextImpl.GetFlushesOnThread(GlyphBatchFlushReason.PageChange) - pageChanges;
+                pageChanges = TextTestApplication.SkiaCounters.GetFlushes(GlyphBatchFlushReason.PageChange) -
+                    pageChanges;
 
                 TransformedAtlasTests.AssertEqual(expected, cold, "lines on two pages");
                 TransformedAtlasTests.AssertEqual(expected, warm, "warm lines on two pages");
@@ -947,11 +948,11 @@ namespace Avalonia.Skia.UnitTests.Media
                     Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out _);
                 }
 
-                var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var before = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted;
                 var warm = Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out var draws);
 
                 Assert.Equal(1, draws);
-                Assert.Equal(0, DrawingContextImpl.AtlasGeometrySubmittedOnThread - before);
+                Assert.Equal(0, TextTestApplication.SkiaCounters.AtlasGeometrySubmitted - before);
                 TransformedAtlasTests.AssertEqual(expected, warm, "warm frame");
             }
             finally
@@ -981,9 +982,9 @@ namespace Avalonia.Skia.UnitTests.Media
                     Render(gpu, context => Draw(context, frame * 7), batched: true, out _);
                 }
 
-                var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var before = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted;
                 var scrolled = Render(gpu, context => Draw(context, 40), batched: true, out _);
-                var submitted = DrawingContextImpl.AtlasGeometrySubmittedOnThread - before;
+                var submitted = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted - before;
                 var expected = Render(gpu, context => Draw(context, 40), batched: false, out _);
 
                 Assert.Equal(0, submitted);
@@ -1169,14 +1170,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var before = DrawingContextImpl.PageImagesCreatedOnThread;
+                var before = TextTestApplication.SkiaCounters.PageImagesCreated;
 
                 Render(gpu, context => DrawAll(context, runs, Brushes.Black), batched: true, out _);
 
                 var pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
 
                 Assert.Equal(1, pages);
-                Assert.Equal(pages, DrawingContextImpl.PageImagesCreatedOnThread - before);
+                Assert.Equal(pages, TextTestApplication.SkiaCounters.PageImagesCreated - before);
             }
             finally
             {
@@ -1218,10 +1219,10 @@ namespace Avalonia.Skia.UnitTests.Media
             var reasons = Enum.GetValues<GlyphBatchFlushReason>();
 
             (long[] Batches, long[] Flushes, long Runs, long Drawn, long PageBytes) Read() => (
-                reasons.Select(DrawingContextImpl.GetBatchesFlushedOnThread).ToArray(),
-                reasons.Select(DrawingContextImpl.GetFlushesOnThread).ToArray(),
-                DrawingContextImpl.BatchedRunsOnThread, DrawingContextImpl.BatchesDrawnOnThread,
-                DrawingContextImpl.PageImageBytesOnThread);
+                reasons.Select(TextTestApplication.SkiaCounters.GetBatchesFlushed).ToArray(),
+                reasons.Select(TextTestApplication.SkiaCounters.GetFlushes).ToArray(),
+                TextTestApplication.SkiaCounters.BatchedRuns, TextTestApplication.SkiaCounters.BatchesDrawn,
+                TextTestApplication.SkiaCounters.PageImageBytes);
 
             try
             {
@@ -1235,7 +1236,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(warm.PageBytes - cold.PageBytes >= 2L * GlyphMaskAtlas.PageWidth,
                     $"the cold frame uploaded {warm.PageBytes - cold.PageBytes} page bytes");
 
-                DrawingContextImpl.TakeMaxRunsPerBatchOnThread();
+                TextTestApplication.SkiaCounters.TakeMaxRunsPerBatch();
                 Render(gpu, Draw, batched: true, out _);
 
                 var after = Read();
@@ -1269,7 +1270,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     }, batches);
                 Assert.Equal(SkiaVertexColorPrecision.IsExact(gpu.GrContext) ? 4 : 5, after.Drawn - warm.Drawn);
                 Assert.Equal(7, after.Runs - warm.Runs);
-                Assert.Equal(3, DrawingContextImpl.TakeMaxRunsPerBatchOnThread());
+                Assert.Equal(3, TextTestApplication.SkiaCounters.TakeMaxRunsPerBatch());
                 Assert.Equal(0, after.PageBytes - warm.PageBytes);
             }
             finally
@@ -1306,7 +1307,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var batches = DrawingContextImpl.BatchesDrawnOnThread;
+                var batches = TextTestApplication.SkiaCounters.BatchesDrawn;
                 var cold = Counts();
 
                 Render(gpu, Draw, batched: true, out _);
@@ -1319,7 +1320,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.True(Delta(cold, warm, GlyphTimerPhase.Rasterize) > 0);
                 Assert.True(Delta(cold, warm, GlyphTimerPhase.AtlasWrite) > 0);
                 Assert.Equal(1, Delta(cold, warm, GlyphTimerPhase.PageRewrap));
-                Assert.Equal(DrawingContextImpl.BatchesDrawnOnThread - batches,
+                Assert.Equal(TextTestApplication.SkiaCounters.BatchesDrawn - batches,
                     Delta(cold, warm, GlyphTimerPhase.BatchDraw));
                 Assert.Equal(1, Delta(cold, warm, GlyphTimerPhase.NativeDrawFresh));
 
@@ -1685,13 +1686,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 // scales and meets their crossings only through the grid.
                 for (var step = 1; step <= 21; step++)
                 {
-                    var before = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                    var before = TextTestApplication.Counters.SpriteSetBuilds;
 
                     Draw(1.37 + 0.03 * step);
 
                     if (step >= TransformChurnGuard.Threshold)
                     {
-                        builds += GlyphRasterDiagnostics.SpriteSetBuildsOnThread - before;
+                        builds += TextTestApplication.Counters.SpriteSetBuilds - before;
                     }
                 }
 
@@ -1734,11 +1735,11 @@ namespace Avalonia.Skia.UnitTests.Media
                         Render(gpu, context => DrawZoomed(context, runs, Scale(frame)), true, out _);
                     }
 
-                    var before = DrawingContextImpl.PageImagesReplacedOnThread + DrawingContextImpl.PageTextureUpdatesOnThread;
+                    var counters = TextTestApplication.SkiaCounters;
+                    var before = counters.PageImagesReplaced + counters.PageTextureUpdates;
 
                     batched = Render(gpu, context => DrawZoomed(context, runs, Scale(crossing)), true, out _);
-                    refreshes = DrawingContextImpl.PageImagesReplacedOnThread + DrawingContextImpl.PageTextureUpdatesOnThread -
-                        before;
+                    refreshes = counters.PageImagesReplaced + counters.PageTextureUpdates - before;
                     pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
                 }
                 finally
@@ -1802,12 +1803,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 {
                     Render(gpu, context => context.DrawGlyphRun(Brushes.Black, runs[0]), true, out _);
 
-                    var before = DrawingContextImpl.PageImagesCreatedOnThread +
-                                 DrawingContextImpl.PageTextureUpdatesOnThread;
+                    var before = TextTestApplication.SkiaCounters.PageImagesCreated +
+                                 TextTestApplication.SkiaCounters.PageTextureUpdates;
 
                     uploaded = Render(gpu, context => DrawInFractionalClips(context, runs), true, out _);
-                    refreshes = DrawingContextImpl.PageImagesCreatedOnThread +
-                                DrawingContextImpl.PageTextureUpdatesOnThread - before;
+                    refreshes = TextTestApplication.SkiaCounters.PageImagesCreated +
+                                TextTestApplication.SkiaCounters.PageTextureUpdates - before;
                     pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
                 }
                 finally
@@ -1911,14 +1912,14 @@ namespace Avalonia.Skia.UnitTests.Media
                         Render(gpu, context => DrawZoomedInClips(context, runs, Scale(frame), em, origin), true, out _);
                     }
 
-                    var before = DrawingContextImpl.PageImagesCreatedOnThread +
-                                 DrawingContextImpl.PageTextureUpdatesOnThread;
+                    var before = TextTestApplication.SkiaCounters.PageImagesCreated +
+                                 TextTestApplication.SkiaCounters.PageTextureUpdates;
                     var stretchedBefore = TextTestApplication.ThreadState.StretchedDraws;
 
                     batched = Render(gpu, context => DrawZoomedInClips(context, runs, Scale(crossing), em, origin),
                         true, out _);
-                    refreshes = DrawingContextImpl.PageImagesCreatedOnThread +
-                                DrawingContextImpl.PageTextureUpdatesOnThread - before;
+                    refreshes = TextTestApplication.SkiaCounters.PageImagesCreated +
+                                TextTestApplication.SkiaCounters.PageTextureUpdates - before;
                     stretched = TextTestApplication.ThreadState.StretchedDraws - stretchedBefore;
                     pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
                 }
@@ -2059,13 +2060,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 for (var frame = 0; frame < frames; frame++)
                 {
-                    var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                    var before = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted;
                     var stretched = TextTestApplication.ThreadState.StretchedDraws;
 
                     batched.Add(Render(gpu, context => DrawZoomed(context, new[] { run }, Scale(frame)), true, out _));
                     geometry.Add(TextTestApplication.ThreadState.StretchedDraws == stretched
                         ? -1
-                        : DrawingContextImpl.AtlasGeometrySubmittedOnThread - before);
+                        : TextTestApplication.SkiaCounters.AtlasGeometrySubmitted - before);
                 }
             }
 
@@ -2112,13 +2113,13 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 long Draw(double scale)
                 {
-                    var before = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                    var before = TextTestApplication.Counters.SpriteSetBuilds;
 
                     context.Transform = Matrix.CreateScale(scale, scale);
                     DrawAll(context, runs, Brushes.Black);
                     context.FlushGlyphBatch();
 
-                    return GlyphRasterDiagnostics.SpriteSetBuildsOnThread - before;
+                    return TextTestApplication.Counters.SpriteSetBuilds - before;
                 }
 
                 for (var step = 0; step <= 400; step++)
@@ -2159,14 +2160,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var start = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                var start = TextTestApplication.Counters.SpriteSetBuilds;
                 long builds = 0;
 
                 for (var step = 0; step < 5 * 60; step++)
                 {
                     if (step == 2 * 60)
                     {
-                        builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                        builds = TextTestApplication.Counters.SpriteSetBuilds;
 
                         Assert.True(builds - start >= 4 * runs.Length, $"{builds - start} sprite sets laid out");
                     }
@@ -2178,7 +2179,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.FlushGlyphBatch();
                 }
 
-                Assert.Equal(0, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
+                Assert.Equal(0, TextTestApplication.Counters.SpriteSetBuilds - builds);
             }
             finally
             {
@@ -2220,17 +2221,17 @@ namespace Avalonia.Skia.UnitTests.Media
                 }
 
                 var grid = MaskGlyphRunRenderer.CrossingScale(Scale(crossings[0]), 1);
-                var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
-                var batches = DrawingContextImpl.BatchesDrawnOnThread;
+                var rasterized = TextTestApplication.Counters.GlyphRasterizations;
+                var batches = TextTestApplication.SkiaCounters.BatchesDrawn;
                 var stretched = TextTestApplication.ThreadState.StretchedDraws;
 
                 context.Transform = Matrix.CreateScale(grid, grid);
                 DrawAll(context, runs, Brushes.Black);
                 context.FlushGlyphBatch();
 
-                Assert.Equal(rasterized, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
+                Assert.Equal(rasterized, TextTestApplication.Counters.GlyphRasterizations);
                 Assert.Equal(stretched, TextTestApplication.ThreadState.StretchedDraws);
-                Assert.Equal(1, DrawingContextImpl.BatchesDrawnOnThread - batches);
+                Assert.Equal(1, TextTestApplication.SkiaCounters.BatchesDrawn - batches);
             }
             finally
             {
@@ -2261,17 +2262,17 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var geometry = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var geometry = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted;
                 var expected = Render(gpu, DrawFrames, batched: false, out _);
-                var sprites = DrawingContextImpl.AtlasGeometrySubmittedOnThread - geometry;
+                var sprites = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted - geometry;
                 var drawnWhileAppending = 0;
 
                 var actual = Render(gpu, context =>
                 {
-                    var before = DrawingContextImpl.AtlasDrawsOnThread;
+                    var before = TextTestApplication.SkiaCounters.AtlasDraws;
 
                     DrawFrames(context);
-                    drawnWhileAppending = DrawingContextImpl.AtlasDrawsOnThread - before;
+                    drawnWhileAppending = TextTestApplication.SkiaCounters.AtlasDraws - before;
                 }, batched: true, out var draws);
 
                 Assert.True(sprites > 3 * MaxSpritesPerAtlasDraw, $"the frames drew only {sprites} sprites");
@@ -2303,10 +2304,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
             try
             {
-                var geometry = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
+                var geometry = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted;
                 var batched = Render(gpu, context => context.DrawGlyphRun(brush, run), batched: true,
                     out var batchedDraws);
-                var sprites = DrawingContextImpl.AtlasGeometrySubmittedOnThread - geometry;
+                var sprites = TextTestApplication.SkiaCounters.AtlasGeometrySubmitted - geometry;
                 var unbatched = Render(gpu, context => context.DrawGlyphRun(brush, run), batched: false,
                     out var unbatchedDraws);
                 var expected = Render(gpu, context => DrawAll(context, stretches, brush), batched: false, out _);
@@ -2787,7 +2788,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using var surface = SKSurface.Create(gpu.GrContext, true, info);
 
-            var before = DrawingContextImpl.AtlasDrawsOnThread;
+            var before = TextTestApplication.SkiaCounters.AtlasDraws;
 
             using (var context = TransformedAtlasTests.CreateContext(gpu, surface))
             {
@@ -2796,7 +2797,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 draw(context);
             }
 
-            atlasDraws = DrawingContextImpl.AtlasDrawsOnThread - before;
+            atlasDraws = TextTestApplication.SkiaCounters.AtlasDraws - before;
 
             gpu.GrContext.Flush();
 

@@ -565,7 +565,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // The sprite sets the frame laid out; its glyph masks may come from the mask cache.
             long Draw(double scale)
             {
-                var before = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
+                var before = TextTestApplication.Counters.SpriteSetBuilds;
 
                 output.Frame(context =>
                 {
@@ -573,7 +573,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.DrawGlyphRun(Brushes.Black, runs.All[0]);
                 });
 
-                return GlyphRasterDiagnostics.SpriteSetBuildsOnThread - before;
+                return TextTestApplication.Counters.SpriteSetBuilds - before;
             }
 
             var crossing = 0.0;

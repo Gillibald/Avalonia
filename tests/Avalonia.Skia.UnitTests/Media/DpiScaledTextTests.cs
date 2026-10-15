@@ -157,15 +157,15 @@ namespace Avalonia.Skia.UnitTests.Media
                 // The second frame of each is warm: every glyph is in the atlas already.
                 Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
 
-                var draws = DrawingContextImpl.AtlasDrawsOnThread;
+                var draws = TextTestApplication.SkiaCounters.AtlasDraws;
                 var expected = Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
-                var expectedDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+                var expectedDraws = TextTestApplication.SkiaCounters.AtlasDraws - draws;
 
                 Render(Target.NativeGl, gpu, 192, Matrix.Identity, Draw);
 
-                draws = DrawingContextImpl.AtlasDrawsOnThread;
+                draws = TextTestApplication.SkiaCounters.AtlasDraws;
                 var actual = Render(Target.NativeGl, gpu, 192, Matrix.Identity, Draw);
-                var actualDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+                var actualDraws = TextTestApplication.SkiaCounters.AtlasDraws - draws;
 
                 Assert.Equal(1, expectedDraws);
                 Assert.Equal(expectedDraws, actualDraws);
@@ -380,16 +380,16 @@ namespace Avalonia.Skia.UnitTests.Media
                 // runs are counted as they are recorded into its picture.
                 Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
 
-                var draws = DrawingContextImpl.AtlasDrawsOnThread;
+                var draws = TextTestApplication.SkiaCounters.AtlasDraws;
                 var expected = Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), Draw);
-                var expectedDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+                var expectedDraws = TextTestApplication.SkiaCounters.AtlasDraws - draws;
 
                 Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2), context => context.FillRectangle(brush, tile));
 
-                draws = DrawingContextImpl.AtlasDrawsOnThread;
+                draws = TextTestApplication.SkiaCounters.AtlasDraws;
                 var actual = Render(Target.NativeGl, gpu, 96, Matrix.CreateScale(2, 2),
                     context => context.FillRectangle(brush, tile));
-                var actualDraws = DrawingContextImpl.AtlasDrawsOnThread - draws;
+                var actualDraws = TextTestApplication.SkiaCounters.AtlasDraws - draws;
 
                 Assert.Equal(1, expectedDraws);
                 Assert.Equal(expectedDraws, actualDraws);

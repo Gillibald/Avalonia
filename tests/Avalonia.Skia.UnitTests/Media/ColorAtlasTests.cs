@@ -363,17 +363,17 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static Counts Measure(Func<byte[]> render, out byte[] pixels)
         {
-            var draws = DrawingContextImpl.AtlasDrawsOnThread;
-            var placements = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
-            var rasterizations = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
-            var vectorDraws = GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread;
+            var draws = TextTestApplication.SkiaCounters.AtlasDraws;
+            var placements = TextTestApplication.Counters.AtlasPlacements;
+            var rasterizations = TextTestApplication.Counters.ColorMaskRasterizations;
+            var vectorDraws = TextTestApplication.Counters.ColorGlyphVectorDraws;
 
             pixels = render();
 
-            return new Counts(DrawingContextImpl.AtlasDrawsOnThread - draws,
-                GlyphRasterDiagnostics.AtlasPlacementsOnThread - placements,
-                GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - rasterizations,
-                GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread - vectorDraws);
+            return new Counts(TextTestApplication.SkiaCounters.AtlasDraws - draws,
+                TextTestApplication.Counters.AtlasPlacements - placements,
+                TextTestApplication.Counters.ColorMaskRasterizations - rasterizations,
+                TextTestApplication.Counters.ColorGlyphVectorDraws - vectorDraws);
         }
 
         internal static GpuTestContext CreateGpu(GpuBackend backend, bool updatable, GlyphMaskAtlas? colorAtlas = null)

@@ -177,22 +177,14 @@ namespace Avalonia.Skia.UnitTests.Media
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
             AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
-            TextTierDiagnostics.ResetCounters();
 
-            try
-            {
-                var pixels = RenderOnRaster(transform, context => context.DrawGlyphRun(CreateGradient(), run));
+            var pixels = RenderOnRaster(transform, context => context.DrawGlyphRun(CreateGradient(), run));
 
-                // Non-solid brushes have no managed tier yet, so each outline stretch takes the
-                // native path on its own while the v1 glyph between them draws its paint graph.
-                Assert.Equal(2, TextTierDiagnostics.BlobTierDraws);
-                Assert.Null(impl.NativeTextArtifact);
-                Assert.True(CountRed(pixels) > 8, "the v1 glyph's paint graph did not draw");
-            }
-            finally
-            {
-                TextTierDiagnostics.ResetCounters();
-            }
+            // Non-solid brushes have no managed tier yet, so each outline stretch takes the
+            // native path on its own while the v1 glyph between them draws its paint graph.
+            Assert.Equal(2, TextTestApplication.SkiaCounters.BlobTierDraws);
+            Assert.Null(impl.NativeTextArtifact);
+            Assert.True(CountRed(pixels) > 8, "the v1 glyph's paint graph did not draw");
         }
 
         private static byte[] AssertDirectDrawMatchesDrawings(GlyphTypeface typeface, ushort v1Glyph,
@@ -204,21 +196,11 @@ namespace Avalonia.Skia.UnitTests.Media
             var impl = (ManagedGlyphRunImpl)run.PlatformImpl.Item;
 
             AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
-            TextTierDiagnostics.ResetCounters();
 
-            byte[] actual;
+            var actual = render(context => context.DrawGlyphRun(brush, run));
 
-            try
-            {
-                actual = render(context => context.DrawGlyphRun(brush, run));
-
-                Assert.Equal(0, TextTierDiagnostics.BlobTierDraws);
-                Assert.Null(impl.NativeTextArtifact);
-            }
-            finally
-            {
-                TextTierDiagnostics.ResetCounters();
-            }
+            Assert.Equal(0, TextTestApplication.SkiaCounters.BlobTierDraws);
+            Assert.Null(impl.NativeTextArtifact);
 
             var expected = render(context =>
             {

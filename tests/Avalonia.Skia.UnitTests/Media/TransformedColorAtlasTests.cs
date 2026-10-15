@@ -328,15 +328,15 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static Counts Measure(Func<byte[]> render, out byte[] pixels)
         {
-            var rasterizations = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
-            var vectorDraws = GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread;
-            var placements = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
+            var rasterizations = TextTestApplication.Counters.ColorMaskRasterizations;
+            var vectorDraws = TextTestApplication.Counters.ColorGlyphVectorDraws;
+            var placements = TextTestApplication.Counters.AtlasPlacements;
 
             pixels = render();
 
-            return new Counts(GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - rasterizations,
-                GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread - vectorDraws,
-                GlyphRasterDiagnostics.AtlasPlacementsOnThread - placements);
+            return new Counts(TextTestApplication.Counters.ColorMaskRasterizations - rasterizations,
+                TextTestApplication.Counters.ColorGlyphVectorDraws - vectorDraws,
+                TextTestApplication.Counters.AtlasPlacements - placements);
         }
 
         /// <summary>

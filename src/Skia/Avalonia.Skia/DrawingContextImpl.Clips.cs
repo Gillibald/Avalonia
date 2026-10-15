@@ -724,13 +724,6 @@ namespace Avalonia.Skia
                    Math.Abs(device.Bottom - bottom) <= PixelAlignmentTolerance;
         }
 
-        /// <summary>The <see cref="SkiaTextCounters.GetClippedRuns"/> of the calling thread.</summary>
-        internal static long GetClippedRunsOnThread(GlyphRunClipKind kind, bool inside) =>
-            SkiaTextCounters.TryGetCurrent()?.GetClippedRuns(kind, inside) ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.RunsInsideEveryClip"/> of the calling thread.</summary>
-        internal static long RunsInsideEveryClipOnThread => SkiaTextCounters.TryGetCurrent()?.RunsInsideEveryClip ?? 0;
-
         /// <summary>Counts a batched run covering <paramref name="bounds"/> in device pixels against the clips.</summary>
         private void CountClippedRun(SKRect bounds)
         {

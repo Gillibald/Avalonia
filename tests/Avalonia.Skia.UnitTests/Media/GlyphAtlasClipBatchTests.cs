@@ -195,9 +195,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "batched frame");
                 Assert.Equal(2, flushed);
@@ -383,9 +383,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) -
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation) -
                               before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "batched frame");
@@ -451,9 +451,9 @@ namespace Avalonia.Skia.UnitTests.Media
             var kinds = Enum.GetValues<GlyphRunClipKind>();
 
             (long[] Inside, long[] Crossing, long Everywhere) Read() => (
-                kinds.Select(k => DrawingContextImpl.GetClippedRunsOnThread(k, inside: true)).ToArray(),
-                kinds.Select(k => DrawingContextImpl.GetClippedRunsOnThread(k, inside: false)).ToArray(),
-                DrawingContextImpl.RunsInsideEveryClipOnThread);
+                kinds.Select(k => TextTestApplication.SkiaCounters.GetClippedRuns(k, inside: true)).ToArray(),
+                kinds.Select(k => TextTestApplication.SkiaCounters.GetClippedRuns(k, inside: false)).ToArray(),
+                TextTestApplication.SkiaCounters.RunsInsideEveryClip);
 
             try
             {
@@ -548,7 +548,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.SkipWhen(surface is null, "GPU surface creation failed.");
 
-            var before = DrawingContextImpl.AtlasDrawsOnThread;
+            var before = TextTestApplication.SkiaCounters.AtlasDraws;
 
             using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
                    {
@@ -563,7 +563,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 draw(context);
             }
 
-            atlasDraws = DrawingContextImpl.AtlasDrawsOnThread - before;
+            atlasDraws = TextTestApplication.SkiaCounters.AtlasDraws - before;
 
             gpu.GrContext.Flush();
 

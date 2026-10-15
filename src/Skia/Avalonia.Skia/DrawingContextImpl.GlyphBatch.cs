@@ -745,23 +745,6 @@ namespace Avalonia.Skia
             RecyclePendingBatch(batch, batchTimer);
         }
 
-        /// <summary>The <see cref="SkiaTextCounters.GetBatchesFlushed"/> of the calling thread.</summary>
-        internal static long GetBatchesFlushedOnThread(GlyphBatchFlushReason reason) =>
-            SkiaTextCounters.TryGetCurrent()?.GetBatchesFlushed(reason) ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.GetFlushes"/> of the calling thread.</summary>
-        internal static long GetFlushesOnThread(GlyphBatchFlushReason reason) =>
-            SkiaTextCounters.TryGetCurrent()?.GetFlushes(reason) ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.BatchedRuns"/> of the calling thread.</summary>
-        internal static long BatchedRunsOnThread => SkiaTextCounters.TryGetCurrent()?.BatchedRuns ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.BatchesDrawn"/> of the calling thread.</summary>
-        internal static long BatchesDrawnOnThread => SkiaTextCounters.TryGetCurrent()?.BatchesDrawn ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.TakeMaxRunsPerBatch"/> of the calling thread.</summary>
-        internal static int TakeMaxRunsPerBatchOnThread() => SkiaTextCounters.TryGetCurrent()?.TakeMaxRunsPerBatch() ?? 0;
-
         /// <summary>
         /// The runs of one page waiting to be drawn together, in one colour or in several, with
         /// each run's device bounds for the overlap test against other pending batches.

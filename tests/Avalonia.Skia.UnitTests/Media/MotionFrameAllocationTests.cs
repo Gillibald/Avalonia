@@ -193,8 +193,8 @@ namespace Avalonia.Skia.UnitTests.Media
                         Frame(1 + 0.01 * step);
                     }
 
-                    var builds = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
-                    var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
+                    var builds = TextTestApplication.Counters.SpriteSetBuilds;
+                    var rasterized = TextTestApplication.Counters.GlyphRasterizations;
                     var before = ThreadAllocations.Start();
 
                     Frame(revisit);
@@ -205,8 +205,8 @@ namespace Avalonia.Skia.UnitTests.Media
                     Empty();
                     allocated -= ThreadAllocations.Since(before);
 
-                    Assert.Equal(runs.Length, GlyphRasterDiagnostics.SpriteSetBuildsOnThread - builds);
-                    Assert.Equal(0, GlyphRasterDiagnostics.GlyphRasterizationsOnThread - rasterized);
+                    Assert.Equal(runs.Length, TextTestApplication.Counters.SpriteSetBuilds - builds);
+                    Assert.Equal(0, TextTestApplication.Counters.GlyphRasterizations - rasterized);
 
                     if (pass == 2)
                     {

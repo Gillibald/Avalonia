@@ -221,15 +221,15 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static Counts Measure(Func<byte[]> render, out byte[] pixels)
         {
-            var rasterizations = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
-            var replays = GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread;
-            var placements = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
+            var rasterizations = TextTestApplication.Counters.ColorMaskRasterizations;
+            var replays = TextTestApplication.Counters.ColorGlyphVectorDraws;
+            var placements = TextTestApplication.Counters.AtlasPlacements;
 
             pixels = render();
 
-            return new Counts(GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - rasterizations,
-                GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread - replays,
-                GlyphRasterDiagnostics.AtlasPlacementsOnThread - placements);
+            return new Counts(TextTestApplication.Counters.ColorMaskRasterizations - rasterizations,
+                TextTestApplication.Counters.ColorGlyphVectorDraws - replays,
+                TextTestApplication.Counters.AtlasPlacements - placements);
         }
 
         private static GlyphTypeface CreateTypeface(Font font, out ushort[] glyphs)

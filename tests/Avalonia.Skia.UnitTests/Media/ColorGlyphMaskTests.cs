@@ -400,13 +400,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static Counts Measure(Func<byte[]> render, out byte[] pixels)
         {
-            var rasterizations = GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread;
-            var vectorDraws = GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread;
+            var rasterizations = TextTestApplication.Counters.ColorMaskRasterizations;
+            var vectorDraws = TextTestApplication.Counters.ColorGlyphVectorDraws;
 
             pixels = render();
 
-            return new Counts(GlyphRasterDiagnostics.ColorMaskRasterizationsOnThread - rasterizations,
-                GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread - vectorDraws);
+            return new Counts(TextTestApplication.Counters.ColorMaskRasterizations - rasterizations,
+                TextTestApplication.Counters.ColorGlyphVectorDraws - vectorDraws);
         }
 
         private static int DistinctColorGlyphs(ushort[] glyphs, GlyphTypeface typeface)

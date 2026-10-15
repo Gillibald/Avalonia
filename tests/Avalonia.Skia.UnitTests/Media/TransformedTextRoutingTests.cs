@@ -67,34 +67,26 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(surface is null, "GPU surface creation failed.");
 
             AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
-            TextTierDiagnostics.ResetCounters();
 
-            try
+            using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
+                   {
+                       Surface = surface,
+                       GrContext = gpu.GrContext,
+                       Dpi = new Vector(96, 96),
+                   }))
             {
-                using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
-                       {
-                           Surface = surface,
-                           GrContext = gpu.GrContext,
-                           Dpi = new Vector(96, 96),
-                       }))
+                for (var frame = 0; frame < 12; frame++)
                 {
-                    for (var frame = 0; frame < 12; frame++)
-                    {
-                        context.Transform = Matrix.CreateRotation(Math.PI * (10 + frame * 2.3) / 180) *
-                            Matrix.CreateTranslation(60, 40);
-                        context.DrawGlyphRun(Brushes.Black, run);
-                    }
+                    context.Transform = Matrix.CreateRotation(Math.PI * (10 + frame * 2.3) / 180) *
+                        Matrix.CreateTranslation(60, 40);
+                    context.DrawGlyphRun(Brushes.Black, run);
                 }
-
-                gpu.GrContext.Flush();
-
-                // A hardware GPU rasterizes every animated frame into transient buffers.
-                Assert.Equal(12, TextTierDiagnostics.TransformedMaskTierDraws);
             }
-            finally
-            {
-                TextTierDiagnostics.ResetCounters();
-            }
+
+            gpu.GrContext.Flush();
+
+            // A hardware GPU rasterizes every animated frame into transient buffers.
+            Assert.Equal(12, TextTestApplication.SkiaCounters.TransformedMaskTierDraws);
         }
 
         [Fact]
@@ -118,21 +110,13 @@ namespace Avalonia.Skia.UnitTests.Media
             using var run = WideRunMaskTests.CreateRun(typeface, "Counted text", 24, new Point(8, 32));
 
             AvaloniaLocator.CurrentMutable.Bind<SkiaOptions>().ToConstant(new SkiaOptions { CountTextTiers = true });
-            TextTierDiagnostics.ResetCounters();
 
-            try
-            {
-                DrawOnRaster(run, s_rotation);
-                DrawOnRaster(run, Matrix.CreateTranslation(3, 4));
+            DrawOnRaster(run, s_rotation);
+            DrawOnRaster(run, Matrix.CreateTranslation(3, 4));
 
-                Assert.Equal(1, TextTierDiagnostics.TransformedMaskTierDraws);
-                Assert.Equal(1, TextTierDiagnostics.MaskTierDraws);
-                Assert.Equal(0, TextTierDiagnostics.BlobTierDraws);
-            }
-            finally
-            {
-                TextTierDiagnostics.ResetCounters();
-            }
+            Assert.Equal(1, TextTestApplication.SkiaCounters.TransformedMaskTierDraws);
+            Assert.Equal(1, TextTestApplication.SkiaCounters.MaskTierDraws);
+            Assert.Equal(0, TextTestApplication.SkiaCounters.BlobTierDraws);
         }
 
         [Fact]

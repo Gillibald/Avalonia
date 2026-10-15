@@ -58,9 +58,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Layer);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Layer);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Layer) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Layer) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows in and out of opacity");
                 Assert.Equal(0, flushed);
@@ -177,9 +177,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) -
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation) -
                               before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows with fills beside them");
@@ -239,9 +239,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out _);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) -
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation) -
                               before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows with fills over them");
@@ -291,9 +291,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out _);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) -
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation) -
                               before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "clipped rows with fills beside them");
@@ -344,9 +344,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows in rounded clips without radii");
                 Assert.Equal(0, flushed);
@@ -392,9 +392,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out _);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows in antialiased clips");
 
@@ -438,11 +438,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var clips = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var clips = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows in rounded clips");
-                Assert.Equal(0, DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - clips);
+                Assert.Equal(0, TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip) - clips);
 
                 if (!subpixel)
                 {
@@ -493,12 +493,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var operations = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation);
+                var counters = TextTestApplication.SkiaCounters;
+                var operations = counters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out var draws);
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rounded cards with shadows, fills and images");
-                Assert.Equal(0,
-                    DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.CanvasOperation) - operations);
+                Assert.Equal(0, counters.GetBatchesFlushed(GlyphBatchFlushReason.CanvasOperation) - operations);
 
                 if (!subpixel)
                 {
@@ -555,9 +555,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out _);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows cut by rounded corners");
 
@@ -600,9 +600,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out _);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Clip) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Clip) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows in rounded clips after a restore");
                 Assert.Equal(0, flushed);
@@ -649,9 +649,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Render(gpu, Draw, batched: true, subpixel, out _);
 
-                var before = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Layer);
+                var before = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Layer);
                 var actual = Render(gpu, Draw, batched: true, subpixel, out _);
-                var flushed = DrawingContextImpl.GetBatchesFlushedOnThread(GlyphBatchFlushReason.Layer) - before;
+                var flushed = TextTestApplication.SkiaCounters.GetBatchesFlushed(GlyphBatchFlushReason.Layer) - before;
 
                 TransformedAtlasTests.AssertEqual(expected, actual, "rows in and out of opacity layers");
 

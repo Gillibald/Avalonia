@@ -68,9 +68,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 var page = Assert.Single(TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages());
                 var keys = page.Keys.ToHashSet();
                 var height = page.Height;
-                var bytes = DrawingContextImpl.PageImageBytesOnThread;
-                var created = DrawingContextImpl.PageImagesCreatedOnThread;
-                var updates = DrawingContextImpl.PageTextureUpdatesOnThread;
+                var bytes = TextTestApplication.SkiaCounters.PageImageBytes;
+                var created = TextTestApplication.SkiaCounters.PageImagesCreated;
+                var updates = TextTestApplication.SkiaCounters.PageTextureUpdates;
 
                 Render(gpu, context =>
                 {
@@ -84,11 +84,11 @@ namespace Avalonia.Skia.UnitTests.Media
                 Assert.Equal(height, page.Height);
 
                 var written = WrittenRectangle(atlas, page, keys);
-                var uploaded = DrawingContextImpl.PageImageBytesOnThread - bytes;
+                var uploaded = TextTestApplication.SkiaCounters.PageImageBytes - bytes;
 
                 Assert.False(written.Width == 0 || written.Height == 0, "the run placed no new glyph on the page");
-                Assert.Equal(0, DrawingContextImpl.PageImagesCreatedOnThread - created);
-                Assert.Equal(updates + 1, DrawingContextImpl.PageTextureUpdatesOnThread);
+                Assert.Equal(0, TextTestApplication.SkiaCounters.PageImagesCreated - created);
+                Assert.Equal(updates + 1, TextTestApplication.SkiaCounters.PageTextureUpdates);
 
                 if (resident)
                 {
@@ -211,12 +211,12 @@ namespace Avalonia.Skia.UnitTests.Media
                 Render(first, context => DrawAll(context, paragraph));
                 Render(second, context => DrawAll(context, paragraph));
 
-                var created = DrawingContextImpl.PageImagesCreatedOnThread;
+                var created = TextTestApplication.SkiaCounters.PageImagesCreated;
                 var firstFrame = Render(first, context => DrawAll(context, paragraph));
                 var secondFrame = Render(second, context => DrawAll(context, paragraph));
                 var firstAgain = Render(first, context => DrawAll(context, paragraph));
 
-                Assert.Equal(created, DrawingContextImpl.PageImagesCreatedOnThread);
+                Assert.Equal(created, TextTestApplication.SkiaCounters.PageImagesCreated);
                 TransformedAtlasTests.AssertEqual(firstFrame, secondFrame, "frame of the second context");
                 TransformedAtlasTests.AssertEqual(firstFrame, firstAgain, "frame of the first context again");
             }
@@ -480,9 +480,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
             PageImage(gpu, page);
 
-            var updates = DrawingContextImpl.PageTextureUpdatesOnThread;
-            var bytes = DrawingContextImpl.PageImageBytesOnThread;
-            var created = DrawingContextImpl.PageImagesCreatedOnThread;
+            var updates = TextTestApplication.SkiaCounters.PageTextureUpdates;
+            var bytes = TextTestApplication.SkiaCounters.PageImageBytes;
+            var created = TextTestApplication.SkiaCounters.PageImagesCreated;
 
             Add(40);
 
@@ -501,10 +501,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
             PageImage(gpu, page);
 
-            var uploaded = DrawingContextImpl.PageImageBytesOnThread - bytes;
+            var uploaded = TextTestApplication.SkiaCounters.PageImageBytes - bytes;
 
-            Assert.Equal(created, DrawingContextImpl.PageImagesCreatedOnThread);
-            Assert.Equal(updates + 1, DrawingContextImpl.PageTextureUpdatesOnThread);
+            Assert.Equal(created, TextTestApplication.SkiaCounters.PageImagesCreated);
+            Assert.Equal(updates + 1, TextTestApplication.SkiaCounters.PageTextureUpdates);
             Assert.InRange(uploaded, entries, (long)union.Width * union.Height * page.BytesPerPixel);
         }
 
@@ -531,7 +531,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     using var gpu = TransformedAtlasTests.CreateGpu(backend, false, maskAtlas,
                         new GlyphMaskAtlas(budget, format: GlyphAtlasFormat.Rgba, residentPages: true));
-                    var before = DrawingContextImpl.PageImagesCreatedOnThread;
+                    var before = TextTestApplication.SkiaCounters.PageImagesCreated;
                     byte[] pixels;
 
                     using (budget.BeginFrame())
@@ -547,7 +547,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         });
                     }
 
-                    created = DrawingContextImpl.PageImagesCreatedOnThread - before;
+                    created = TextTestApplication.SkiaCounters.PageImagesCreated - before;
 
                     return pixels;
                 }
@@ -635,13 +635,13 @@ namespace Avalonia.Skia.UnitTests.Media
             using var surface = SKSurface.Create(gpu.GrContext, false,
                 new SKImageInfo(4, 4, SKColorType.Rgba8888, SKAlphaType.Premul));
             using var context = TransformedAtlasTests.CreateContext(gpu, surface);
-            var created = DrawingContextImpl.PageImagesCreatedOnThread;
+            var created = TextTestApplication.SkiaCounters.PageImagesCreated;
 
             var before = ThreadAllocations.Start();
             var image = context.GetAtlasPageImage(page)!;
             var allocated = ThreadAllocations.Since(before);
 
-            Assert.Equal(created + 1, DrawingContextImpl.PageImagesCreatedOnThread);
+            Assert.Equal(created + 1, TextTestApplication.SkiaCounters.PageImagesCreated);
             Assert.Equal(GlyphMaskAtlas.MaxPageHeight, image.Height);
             Assert.True(allocated < (long)GlyphMaskAtlas.PageWidth * GlyphMaskAtlas.MaxPageHeight / 16,
                 $"making the page texture allocated {allocated} bytes");
@@ -680,9 +680,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var page = slot.Page!;
             var image = PageImage(gpu, page);
-            var created = DrawingContextImpl.PageImagesCreatedOnThread;
+            var created = TextTestApplication.SkiaCounters.PageImagesCreated;
             var heightBefore = page.Height;
-            var bytes = DrawingContextImpl.PageImageBytesOnThread;
+            var bytes = TextTestApplication.SkiaCounters.PageImageBytes;
             var grew = false;
 
             while (!grew && key < 2000)
@@ -699,8 +699,8 @@ namespace Avalonia.Skia.UnitTests.Media
             }
 
             Assert.True(grew, "the page did not grow");
-            Assert.Equal(created, DrawingContextImpl.PageImagesCreatedOnThread);
-            Assert.True(DrawingContextImpl.PageImageBytesOnThread - bytes < (long)page.RowBytes * heightBefore,
+            Assert.Equal(created, TextTestApplication.SkiaCounters.PageImagesCreated);
+            Assert.True(TextTestApplication.SkiaCounters.PageImageBytes - bytes < (long)page.RowBytes * heightBefore,
                 "the page was uploaded whole again");
 
             var drawn = ReadRgbaImage(gpu, image, GlyphMaskAtlas.PageWidth, image.Height);

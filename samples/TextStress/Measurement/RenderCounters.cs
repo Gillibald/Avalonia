@@ -59,45 +59,46 @@ namespace TextStress.Measurement
         /// <summary>Reads every counter of the calling thread into <paramref name="values"/>.</summary>
         public static void Read(long[] values)
         {
+            var raster = GlyphRasterServices.Current.ForCurrentThread();
+            var counters = raster.Counters;
+            var skia = SkiaTextCounters.Of(raster);
             var i = 0;
 
             foreach (var reason in s_reasons)
             {
-                values[i++] = DrawingContextImpl.GetBatchesFlushedOnThread(reason);
+                values[i++] = skia.GetBatchesFlushed(reason);
             }
 
             foreach (var reason in s_reasons)
             {
-                values[i++] = DrawingContextImpl.GetFlushesOnThread(reason);
+                values[i++] = skia.GetFlushes(reason);
             }
 
-            values[i++] = DrawingContextImpl.BatchedRunsOnThread;
-            values[i++] = DrawingContextImpl.BatchesDrawnOnThread;
-            values[i++] = DrawingContextImpl.PageImagesReplacedOnThread;
-            values[i++] = DrawingContextImpl.PageImageBytesOnThread;
-            values[i++] = DrawingContextImpl.PageTextureUpdatesOnThread;
-            values[i++] = DrawingContextImpl.PageTextureRegionsOnThread;
-            values[i++] = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
-            values[i++] = GlyphRasterDiagnostics.MaskCacheHitsOnThread;
-            values[i++] = GlyphRasterDiagnostics.MaskCacheMissesOnThread;
-            values[i++] = GlyphRasterDiagnostics.SpriteSetBuildsOnThread;
-            values[i++] = GlyphRasterDiagnostics.AtlasBatchBuildsOnThread;
-            values[i++] = GlyphRasterDiagnostics.AtlasHitsOnThread;
-            values[i++] = GlyphRasterDiagnostics.AtlasMissesOnThread;
-            values[i++] = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
-            var raster = TextRasterThreadState.TryGetCurrent();
-
-            values[i++] = raster?.UnsettledDraws ?? 0;
-            values[i++] = raster?.StretchedDraws ?? 0;
-            values[i++] = GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread;
+            values[i++] = skia.BatchedRuns;
+            values[i++] = skia.BatchesDrawn;
+            values[i++] = skia.PageImagesReplaced;
+            values[i++] = skia.PageImageBytes;
+            values[i++] = skia.PageTextureUpdates;
+            values[i++] = skia.PageTextureRegions;
+            values[i++] = counters.GlyphRasterizations;
+            values[i++] = counters.MaskCacheHits;
+            values[i++] = counters.MaskCacheMisses;
+            values[i++] = counters.SpriteSetBuilds;
+            values[i++] = counters.AtlasBatchBuilds;
+            values[i++] = counters.AtlasHits;
+            values[i++] = counters.AtlasMisses;
+            values[i++] = counters.AtlasPlacements;
+            values[i++] = raster.UnsettledDraws;
+            values[i++] = raster.StretchedDraws;
+            values[i++] = counters.ColorGlyphVectorDraws;
 
             foreach (var kind in s_clipKinds)
             {
-                values[i++] = DrawingContextImpl.GetClippedRunsOnThread(kind, inside: true);
-                values[i++] = DrawingContextImpl.GetClippedRunsOnThread(kind, inside: false);
+                values[i++] = skia.GetClippedRuns(kind, inside: true);
+                values[i++] = skia.GetClippedRuns(kind, inside: false);
             }
 
-            values[i] = DrawingContextImpl.RunsInsideEveryClipOnThread;
+            values[i] = skia.RunsInsideEveryClip;
         }
 
         private static string Snake(string name)

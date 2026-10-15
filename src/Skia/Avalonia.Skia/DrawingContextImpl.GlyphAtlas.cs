@@ -498,27 +498,6 @@ namespace Avalonia.Skia
         /// <summary>The image this context draws <paramref name="page"/> from at its current version; for tests.</summary>
         internal SKImage? GetAtlasPageImage(GlyphAtlasPage page) => GetPageImage(page)?.Image;
 
-        /// <summary>The <see cref="SkiaTextCounters.PageImagesCreated"/> of the calling thread; for tests.</summary>
-        internal static int PageImagesCreatedOnThread => SkiaTextCounters.TryGetCurrent()?.PageImagesCreated ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.PageImagesReplaced"/> of the calling thread.</summary>
-        internal static int PageImagesReplacedOnThread => SkiaTextCounters.TryGetCurrent()?.PageImagesReplaced ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.PageImageBytes"/> of the calling thread.</summary>
-        internal static long PageImageBytesOnThread => SkiaTextCounters.TryGetCurrent()?.PageImageBytes ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.PageTextureUpdates"/> of the calling thread.</summary>
-        internal static int PageTextureUpdatesOnThread => SkiaTextCounters.TryGetCurrent()?.PageTextureUpdates ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.PageTextureRegions"/> of the calling thread.</summary>
-        internal static int PageTextureRegionsOnThread => SkiaTextCounters.TryGetCurrent()?.PageTextureRegions ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.AtlasDraws"/> of the calling thread; for tests.</summary>
-        internal static int AtlasDrawsOnThread => SkiaTextCounters.TryGetCurrent()?.AtlasDraws ?? 0;
-
-        /// <summary>The <see cref="SkiaTextCounters.AtlasGeometrySubmitted"/> of the calling thread; for tests.</summary>
-        internal static int AtlasGeometrySubmittedOnThread => SkiaTextCounters.TryGetCurrent()?.AtlasGeometrySubmitted ?? 0;
-
         private unsafe SKImage CreatePageImage(GlyphAtlasPage page)
         {
             var pixels = page.Pixels ?? throw new InvalidOperationException("A resident page has no pixels to wrap.");

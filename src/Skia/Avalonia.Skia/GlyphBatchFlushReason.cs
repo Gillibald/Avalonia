@@ -2,7 +2,7 @@ namespace Avalonia.Skia
 {
     /// <summary>
     /// Why pending glyph atlas batches were drawn before the drawing session ended them, as
-    /// counted by <see cref="DrawingContextImpl.GetBatchesFlushedOnThread"/>.
+    /// counted by <see cref="SkiaTextCounters.GetBatchesFlushed"/>.
     /// </summary>
     internal enum GlyphBatchFlushReason
     {

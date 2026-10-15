@@ -194,10 +194,10 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 var actual = Render(gpu, context =>
                 {
-                    var before = DrawingContextImpl.AtlasDrawsOnThread;
+                    var before = TextTestApplication.SkiaCounters.AtlasDraws;
 
                     DrawAll(context, runs, Brushes.Black);
-                    drawnWhileAppending = DrawingContextImpl.AtlasDrawsOnThread - before;
+                    drawnWhileAppending = TextTestApplication.SkiaCounters.AtlasDraws - before;
                 }, Mode.Batched, out var draws, atlas);
 
                 // Entries on another page would draw the batch before it grows this far.
@@ -360,7 +360,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.SkipWhen(surface is null, "GPU surface creation failed.");
 
-            var before = DrawingContextImpl.AtlasDrawsOnThread;
+            var before = TextTestApplication.SkiaCounters.AtlasDraws;
 
             using (var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo
                    {
@@ -382,7 +382,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 draw(context);
             }
 
-            atlasDraws = DrawingContextImpl.AtlasDrawsOnThread - before;
+            atlasDraws = TextTestApplication.SkiaCounters.AtlasDraws - before;
 
             gpu.GrContext.Flush();
 

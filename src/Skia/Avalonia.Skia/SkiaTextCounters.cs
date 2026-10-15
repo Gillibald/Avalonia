@@ -80,13 +80,6 @@ namespace Avalonia.Skia
                (SkiaTextCounters)(state.Counters.BackendCounters = new SkiaTextCounters());
 
         /// <summary>
-        /// The counters of the calling thread in the current application, or <c>null</c> when it has
-        /// no font manager or the thread drew nothing through Skia.
-        /// </summary>
-        public static SkiaTextCounters? TryGetCurrent()
-            => TextRasterCounters.TryGetCurrent()?.BackendCounters as SkiaTextCounters;
-
-        /// <summary>
         /// The sum of <paramref name="counter"/> over the threads of <paramref name="services"/>' application
         /// that drew through Skia, for readers on another thread than the one drawing (see
         /// <see cref="GlyphRasterServices.GetThreadStates"/>).

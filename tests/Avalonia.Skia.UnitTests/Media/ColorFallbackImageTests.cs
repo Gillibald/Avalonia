@@ -41,13 +41,13 @@ namespace Avalonia.Skia.UnitTests.Media
             var first = CreateRun(typeface, glyphs);
             var second = CreateRun(typeface, glyphs);
 
-            var images = GlyphRasterDiagnostics.ColorFallbackImagesOnThread;
+            var images = TextTestApplication.Counters.ColorFallbackImages;
             var firstPixels = Render(first);
-            var made = GlyphRasterDiagnostics.ColorFallbackImagesOnThread - images;
+            var made = TextTestApplication.Counters.ColorFallbackImages - images;
 
-            images = GlyphRasterDiagnostics.ColorFallbackImagesOnThread;
+            images = TextTestApplication.Counters.ColorFallbackImages;
             var secondPixels = Render(second);
-            var madeAgain = GlyphRasterDiagnostics.ColorFallbackImagesOnThread - images;
+            var madeAgain = TextTestApplication.Counters.ColorFallbackImages - images;
 
             Assert.Equal(glyphs.Distinct().Count(), made);
             Assert.Equal(0, madeAgain);
@@ -77,11 +77,11 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(0, budget.BytesOf(GlyphCachePoolKind.ColorFallbackImages));
 
             // Drawn again they are made again, and released with the typeface.
-            var images = GlyphRasterDiagnostics.ColorFallbackImagesOnThread;
+            var images = TextTestApplication.Counters.ColorFallbackImages;
 
             Render(CreateRun(typeface, glyphs));
 
-            Assert.Equal(1, GlyphRasterDiagnostics.ColorFallbackImagesOnThread - images);
+            Assert.Equal(1, TextTestApplication.Counters.ColorFallbackImages - images);
             Assert.True(budget.BytesOf(GlyphCachePoolKind.ColorFallbackImages) > 0);
 
             typeface.Dispose();
