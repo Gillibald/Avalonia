@@ -1015,6 +1015,26 @@ namespace Avalonia.Skia
             GlyphPhaseTimers.Stop(GlyphTimerPhase.GlyphRun, timer);
         }
 
+        /// <summary>
+        /// Draws <paramref name="run"/> through the transformed tier, noting it and the transform
+        /// it is drawn under, so the clips it is batched under can be fitted against its ink in
+        /// their own frame (<see cref="AdmitToShapeClips"/>).
+        /// </summary>
+        private bool TryDrawTransformedRun(ManagedGlyphRunImpl run, IBrush? foreground, TextRenderingMode mode)
+        {
+            _drawingRun = run;
+            _drawingRunTransform = Transform;
+
+            try
+            {
+                return MaskGlyphRunRenderer.TryDrawTransformed(this, run, foreground, mode);
+            }
+            finally
+            {
+                _drawingRun = null;
+            }
+        }
+
         private void DrawGlyphRunCore(IBrush? foreground, IGlyphRunImpl glyphRun)
         {
             CheckLease();
@@ -1086,7 +1106,7 @@ namespace Avalonia.Skia
                 // for their own reasons.
                 if (managedRun.ColorGlyphSegments is { } colorSegments)
                 {
-                    if (MaskGlyphRunRenderer.TryDrawTransformed(this, managedRun, foreground,
+                    if (TryDrawTransformedRun(managedRun, foreground,
                             effectiveTextOptions.TextRenderingMode))
                     {
                         if (TextTierDiagnostics.CountTiers)
@@ -1105,7 +1125,7 @@ namespace Avalonia.Skia
                 // The draws the upright triage rejected (rotation, skew, anisotropic scale,
                 // sizes past the upright ceiling) take transformed masks on every context.
                 // Declines fall through to the native blob.
-                if (MaskGlyphRunRenderer.TryDrawTransformed(this, managedRun, foreground,
+                if (TryDrawTransformedRun(managedRun, foreground,
                         effectiveTextOptions.TextRenderingMode))
                 {
                     if (TextTierDiagnostics.CountTiers)

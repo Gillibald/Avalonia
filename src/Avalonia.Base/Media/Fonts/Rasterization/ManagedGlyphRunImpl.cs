@@ -183,6 +183,81 @@ namespace Avalonia.Media.Fonts.Rasterization
         public Rect Bounds { get; }
 
         /// <summary>
+        /// The box any draw of the run inks inside, in the run's coordinates: <see cref="Bounds"/>
+        /// together with the images its glyphs have in every bitmap strike, scaled to the run's
+        /// size and grown by half a texel of the smallest strike, where resampling fades their
+        /// edges. <c>null</c> when an image's size is only known from decoding it.
+        /// </summary>
+        internal Rect? InkBoundsWithStrikes => _inkBoundsWithStrikesResolved
+            ? _inkBoundsWithStrikes
+            : ResolveInkBoundsWithStrikes();
+
+        private Rect? ResolveInkBoundsWithStrikes()
+        {
+            Rect? ink = Bounds;
+
+            if (_glyphTypeface.BitmapSource is { } bitmaps && bitmaps.StrikeCount > 0)
+            {
+                var smallest = int.MaxValue;
+
+                for (var s = 0; s < bitmaps.StrikeCount; s++)
+                {
+                    smallest = Math.Min(smallest, bitmaps.GetStrike(s).PpemY);
+                }
+
+                var fade = smallest > 0 ? 0.5 * FontRenderingEmSize / smallest : 0;
+
+                for (var i = 0; i < _count && ink is { } union; i++)
+                {
+                    if (!bitmaps.HasGlyphImage(_indices[i]))
+                    {
+                        continue;
+                    }
+
+                    var penX = BaselineOrigin.X + _positions[i * 2];
+                    var penY = BaselineOrigin.Y + _positions[i * 2 + 1];
+
+                    for (var s = 0; s < bitmaps.StrikeCount; s++)
+                    {
+                        var strike = bitmaps.GetStrike(s);
+
+                        if (strike.PpemY == 0)
+                        {
+                            continue;
+                        }
+
+                        if (!bitmaps.TryGetImageBounds(strike, _indices[i], out var image))
+                        {
+                            // A strike holds an image of unknown size: no box bounds it.
+                            if (bitmaps.HasGlyphImage(_indices[i]))
+                            {
+                                union = default;
+                                ink = null;
+                                break;
+                            }
+
+                            continue;
+                        }
+
+                        var dipsPerPixel = FontRenderingEmSize / strike.PpemY;
+
+                        union = union.Union(new Rect(penX + image.X * dipsPerPixel, penY + image.Y * dipsPerPixel,
+                            image.Width * dipsPerPixel, image.Height * dipsPerPixel).Inflate(fade));
+                        ink = union;
+                    }
+                }
+            }
+
+            _inkBoundsWithStrikes = ink;
+            _inkBoundsWithStrikesResolved = true;
+
+            return ink;
+        }
+
+        private Rect? _inkBoundsWithStrikes;
+        private bool _inkBoundsWithStrikesResolved;
+
+        /// <summary>
         /// The area a non-solid foreground maps over: <see cref="Bounds"/>, except on a stretch
         /// split out of a longer run, where it is the whole run's bounds.
         /// </summary>

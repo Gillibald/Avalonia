@@ -28,6 +28,11 @@ namespace Avalonia.Skia
         // The shape clips on the stack, applied or deferred.
         private int _shapeClips;
 
+        // The transformed run being drawn, and the transform it is drawn under, whose ink a turned
+        // rectangle clip is fitted against in its own frame.
+        private Avalonia.Media.Fonts.Rasterization.ManagedGlyphRunImpl? _drawingRun;
+        private Matrix _drawingRunTransform;
+
         /// <summary>
         /// Whether pixel-aligned rectangle clips wait to be applied to the canvas until something
         /// other than a batched glyph run draws under them. Glyph runs are trimmed to them
@@ -218,7 +223,9 @@ namespace Avalonia.Skia
         /// Before a run covering <paramref name="bounds"/> in device pixels is batched: marks the
         /// shape clips it does not fit, so they draw the pending runs when popped, and when one of
         /// them is still deferred, draws the pending runs and applies the deferred clips, so the
-        /// run is batched under clips on the canvas.
+        /// run is batched under clips on the canvas. A turned rectangle clip that the run's device
+        /// bounds reach past may still fit the run's ink in its own frame
+        /// (<see cref="InkFitsTurnedClip"/>).
         /// </summary>
         private void AdmitToShapeClips(in SKRect bounds)
         {
@@ -233,7 +240,7 @@ namespace Avalonia.Skia
             {
                 ref var level = ref _clipLevels[i];
 
-                if (level.IsShape && !level.Fits(bounds))
+                if (level.IsShape && !level.Fits(bounds) && !InkFitsTurnedClip(level))
                 {
                     level.Unfit = true;
                     applyDeferred |= level.Deferred;
@@ -245,6 +252,52 @@ namespace Avalonia.Skia
                 FlushGlyphBatch(GlyphBatchFlushReason.Clip);
             }
         }
+
+        /// <summary>
+        /// Whether the ink of the transformed run being drawn keeps clear of the turned rectangle
+        /// clip <paramref name="level"/>, measured in the clip's own frame: the run is drawn under
+        /// the transform the clip was pushed under, and its ink, grown by
+        /// <see cref="InkClearance"/> device pixels at the transform's smallest scale, lies inside the
+        /// clip's rectangle.
+        /// </summary>
+        /// <remarks>
+        /// A pixel the run inks overlaps its ink box mapped to the device, so its centre lies within
+        /// half a diagonal of it. Grown by <see cref="InkClearance"/>, the box keeps every such centre
+        /// at least a pixel and a half inside the clip's edges, where the clip covers the pixel
+        /// fully, antialiased or not, so the run draws the same pixels without the clip.
+        /// </remarks>
+        private bool InkFitsTurnedClip(in ClipLevel level)
+        {
+            if (!level.HasEdges || _drawingRun is not { } run || level.Transform != _drawingRunTransform ||
+                run.InkBoundsWithStrikes is not { } ink)
+            {
+                return false;
+            }
+
+            var device = ToDevice(level.Transform);
+            var sum = device.M11 * device.M11 + device.M12 * device.M12 + device.M21 * device.M21 +
+                      device.M22 * device.M22;
+            var determinant = device.M11 * device.M22 - device.M12 * device.M21;
+            var smallest = Math.Sqrt(Math.Max(0, (sum - Math.Sqrt(Math.Max(0, sum * sum - 4 * determinant * determinant))) / 2));
+
+            if (!(smallest > 0))
+            {
+                return false;
+            }
+
+            var grown = ink.Inflate(InkClearance / smallest);
+            var clip = level.Local;
+
+            return clip.Left <= grown.Left && clip.Top <= grown.Top && grown.Right <= clip.Right &&
+                   grown.Bottom <= clip.Bottom;
+        }
+
+        /// <summary>
+        /// How far, in device pixels, a run's ink box keeps from a turned clip's edges to fit it:
+        /// a pixel and a half for full coverage, plus half a pixel diagonal from an inked pixel's
+        /// centre to the box, with room for the rounding of pen phases.
+        /// </summary>
+        private const double InkClearance = 2.5;
 
         /// <summary>
         /// Whether applying the deferred clips to the canvas leaves every pending run's pixels as
