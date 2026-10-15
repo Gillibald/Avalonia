@@ -436,18 +436,19 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void A_Failed_Scene_Estimated_Past_Twice_The_Budget_Is_Tried_Once_When_The_Hold_Reaches_Its_Longest(
+        public void A_Failed_Scene_Estimated_Past_Twice_The_Budget_Is_Tried_Once_When_The_Hold_Reaches_Four_Times_The_First(
             Target target)
         {
             // Three runs and room for two: the first moving frame tries and runs out, and every frame
             // after it costs twice as much per glyph, which estimates the scene past twice the
             // budget, as a scene first measured cold. Its holds keep doubling without a try, and the
-            // frame after the first hold of the longest length tries once more. That try runs out
-            // too, and the scene then stretches through further holds of the longest length.
+            // frame after the first hold of four times the first length tries once more, within the
+            // first gesture of a process. That try runs out too, and the scene then stretches
+            // through further holds of the longest length.
             const int moving = TransformChurnGuard.Threshold;
             const int hold = MotionRasterBudget.HoldFrames;
             const int longest = MotionRasterBudget.MaxHoldFrames;
-            var retry = moving + (hold + 1) + (2 * hold + 1) + (4 * hold + 1) + (8 * hold + 1) + (longest + 1);
+            var retry = moving + (hold + 1) + (2 * hold + 1) + (4 * hold + 1);
 
             Assert.Equal(16 * hold, longest);
 
@@ -459,21 +460,49 @@ namespace Avalonia.Skia.UnitTests.Media
 
         [Theory]
         [MemberData(nameof(Targets))]
-        public void A_Scene_Stopped_Within_Twice_The_Budget_After_A_Flat_Cost_Gets_No_Try_At_The_Longest_Hold(
+        public void A_Scene_Stopped_Within_Twice_The_Budget_After_A_Flat_Cost_Is_Tried_Once_More_And_Then_Never(
             Target target)
         {
             // The scene whose two tries ran out of budget at a flat cost needs its estimate to fit
-            // the budget itself, which it never does: past the frame a hold of the longest length
-            // would end on, it still does not try.
+            // the budget itself, which it never does. When its hold has doubled to four times the
+            // first, it is tried once more, as code still compiling may have
+            // cost both tries alike; that try runs out at the same cost, and past the frame a hold
+            // of the longest length would end on, it still does not try.
             const int moving = TransformChurnGuard.Threshold;
             const int hold = MotionRasterBudget.HoldFrames;
             const int longest = MotionRasterBudget.MaxHoldFrames;
             var second = moving + hold + 1;
+            var third = second + (2 * hold + 1) + (4 * hold + 1);
             var longestEnd = second + (2 * hold + 1) + (4 * hold + 1) + (8 * hold + 1) + (longest + 1);
 
             var tried = TriedFrames(target, longestEnd + longest + 4, _ => GlyphCost);
 
-            Assert.Equal(new[] { moving, second }, tried);
+            Assert.Equal(new[] { moving, second, third }, tried);
+        }
+
+        [Theory]
+        [MemberData(nameof(Targets))]
+        public void A_Scene_Whose_Cold_Tries_Ran_Out_At_A_Flat_Cost_Becomes_Sharp_Once_Its_Code_Runs_Warm(
+            Target target)
+        {
+            // The first tries of a process run on code still compiling, and two of them can cost
+            // alike per glyph while both cost several times the warm code. The scene is tried once
+            // more when its hold has doubled to four times the first; by
+            // then its code runs warm, at half the cost per glyph, the try fits, and every frame
+            // after it draws sharp.
+            const int moving = TransformChurnGuard.Threshold;
+            const int hold = MotionRasterBudget.HoldFrames;
+            var second = moving + hold + 1;
+            var third = second + (2 * hold + 1) + (4 * hold + 1);
+            var frames = third + 40;
+
+            var expected = new List<int> { moving, second };
+
+            expected.AddRange(Range(third, frames));
+
+            var tried = TriedFrames(target, frames, frame => frame < third ? GlyphCost : GlyphCost / 2);
+
+            Assert.Equal(expected, tried);
         }
 
         /// <summary>
