@@ -424,6 +424,63 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.InRange(uploaded, entries, (long)union.Width * union.Height * page.BytesPerPixel);
         }
 
+        /// <summary>
+        /// A resident page evicted while sprites on it wait in a pending batch keeps its texture,
+        /// and the texels staged for it, until the next frame begins: the batch draws what it
+        /// would have drawn, without a page image made for it.
+        /// </summary>
+        [Theory]
+        [MemberData(nameof(HardwareContexts))]
+        public void A_Resident_Page_Evicted_With_Pending_Sprites_Draws_From_Its_Texture(GpuBackend backend)
+        {
+            using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            var paragraph = CreateParagraph(typeface, 13);
+
+            try
+            {
+                byte[] Frame(bool evict, out int created, out GlyphMaskAtlas atlas)
+                {
+                    var budget = new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes);
+                    var maskAtlas = new GlyphMaskAtlas(budget, residentPages: true);
+
+                    atlas = maskAtlas;
+
+                    using var gpu = TransformedAtlasTests.CreateGpu(backend, false, maskAtlas,
+                        new GlyphMaskAtlas(budget, format: GlyphAtlasFormat.Rgba, residentPages: true));
+                    var before = DrawingContextImpl.PageImagesCreatedOnThread;
+                    byte[] pixels;
+
+                    using (budget.BeginFrame())
+                    {
+                        pixels = Render(gpu, context =>
+                        {
+                            DrawAll(context, paragraph);
+
+                            if (evict)
+                            {
+                                Assert.True(((IGlyphCachePool)maskAtlas).EvictOldest(long.MaxValue, long.MaxValue) > 0);
+                            }
+                        });
+                    }
+
+                    created = DrawingContextImpl.PageImagesCreatedOnThread - before;
+
+                    return pixels;
+                }
+
+                var expected = Frame(false, out var expectedCreated, out _);
+                var actual = Frame(true, out var created, out var evicted);
+
+                Assert.Empty(evicted.GetPages());
+                TransformedAtlasTests.AssertEqual(expected, actual, "frame drawn after its page was evicted");
+                Assert.Equal(expectedCreated, created);
+            }
+            finally
+            {
+                DisposeAll(paragraph);
+            }
+        }
+
         public static IEnumerable<object[]> ColorPageContexts()
         {
             foreach (var backend in new[] { GpuBackend.NativeGl, GpuBackend.Angle, GpuBackend.Metal, GpuBackend.Vulkan })
