@@ -188,14 +188,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 ZoomOnRaster(typeface);
 
-                Assert.NotEqual(0, MaskGlyphRunRenderer.UnsettledDraws);
-                Assert.NotEqual(0, GlyphRasterCost.TicksOnThread);
+                Assert.NotEqual(0, TextTestApplication.ThreadState.UnsettledDraws);
+                Assert.NotEqual(0, TextTestApplication.ThreadState.RasterTicks);
             }
 
             using (WideRunMaskTests.CreateEnvironment(out _))
             {
-                Assert.Equal(0, MaskGlyphRunRenderer.UnsettledDraws);
-                Assert.Equal(0, GlyphRasterCost.TicksOnThread);
+                Assert.Equal(0, TextTestApplication.ThreadState.UnsettledDraws);
+                Assert.Equal(0, TextTestApplication.ThreadState.RasterTicks);
             }
         }
 

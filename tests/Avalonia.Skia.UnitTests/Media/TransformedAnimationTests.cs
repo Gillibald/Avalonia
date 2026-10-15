@@ -251,13 +251,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var frame = 0; frame < 10; frame++)
             {
-                var before = MaskGlyphRunRenderer.UnsettledDraws;
+                var before = TextTestApplication.ThreadState.UnsettledDraws;
 
                 context.Transform = At(Math.Min(frame, 7));
                 context.DrawGlyphRun(Brushes.Black, run);
                 context.FlushGlyphBatch();
 
-                if (MaskGlyphRunRenderer.UnsettledDraws != before)
+                if (TextTestApplication.ThreadState.UnsettledDraws != before)
                 {
                     counted.Add(frame);
                 }

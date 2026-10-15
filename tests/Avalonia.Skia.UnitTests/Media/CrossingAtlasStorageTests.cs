@@ -121,7 +121,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 for (var frame = 0; frame < 30; frame++)
                 {
                     var masks = typeface.MaskCache.Count;
-                    var stretched = MaskGlyphRunRenderer.StretchedDraws;
+                    var stretched = TextTestApplication.ThreadState.StretchedDraws;
                     var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
 
                     Draw(context, runs, 1 + frame * 0.013);
@@ -131,7 +131,7 @@ namespace Avalonia.Skia.UnitTests.Media
                         continue;
                     }
 
-                    if (MaskGlyphRunRenderer.StretchedDraws == stretched &&
+                    if (TextTestApplication.ThreadState.StretchedDraws == stretched &&
                         GlyphRasterDiagnostics.GlyphRasterizationsOnThread > rasterized)
                     {
                         sharp++;

@@ -39,14 +39,19 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Builds the mask <paramref name="key"/> describes. The key's simulation is applied, not
         /// the typeface's, so a face and its simulated variants build interchangeable masks.
         /// </summary>
-        public static GlyphMask Build(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
+        /// <remarks>
+        /// The time a rasterization takes is added to <paramref name="raster"/>, the drawing
+        /// thread's text raster state, or the current application's when omitted.
+        /// </remarks>
+        public static GlyphMask Build(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            TextRasterThreadState? raster = null)
         {
             if (key.IsTransformed)
             {
-                return BuildTransformed(typeface, scratch, key);
+                return BuildTransformed(typeface, scratch, key, raster);
             }
 
-            return BuildUprightTimed(typeface, scratch, key, transient: false, out _);
+            return BuildUprightTimed(typeface, scratch, key, transient: false, out _, raster);
         }
 
         /// <summary>
@@ -57,15 +62,15 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <c>null</c> when the mask owns its buffer (empty, or a stripe mask).
         /// </summary>
         internal static GlyphMask BuildUprightTransient(GlyphTypeface typeface, GlyphPathBuilder scratch,
-            in GlyphMaskKey key, out byte[]? rented)
+            in GlyphMaskKey key, out byte[]? rented, TextRasterThreadState? raster = null)
         {
             Debug.Assert(!key.IsTransformed);
 
-            return BuildUprightTimed(typeface, scratch, key, transient: true, out rented);
+            return BuildUprightTimed(typeface, scratch, key, transient: true, out rented, raster);
         }
 
         private static GlyphMask BuildUprightTimed(GlyphTypeface typeface, GlyphPathBuilder scratch,
-            in GlyphMaskKey key, bool transient, out byte[]? rented)
+            in GlyphMaskKey key, bool transient, out byte[]? rented, TextRasterThreadState? raster)
         {
             var start = Stopwatch.GetTimestamp();
             var mask = BuildUpright(typeface, scratch, key, transient, out rented);
@@ -73,10 +78,25 @@ namespace Avalonia.Media.Fonts.Rasterization
             // Stripe masks rasterize three samples per pixel, a cost no moving text pays.
             if (!mask.IsEmpty && key.Mode != GlyphMaskMode.Subpixel)
             {
-                typeface.MaskCache.RasterCostOf(key.GridFit).Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
+                RecordRasterTime(typeface, key, Stopwatch.GetTimestamp() - start, raster);
             }
 
             return mask;
+        }
+
+        /// <summary>
+        /// Records that rasterizing <paramref name="key"/> took <paramref name="ticks"/>: in the
+        /// typeface's cost per glyph, and in the raster time of the drawing thread's frame.
+        /// </summary>
+        private static void RecordRasterTime(GlyphTypeface typeface, in GlyphMaskKey key, long ticks,
+            TextRasterThreadState? raster)
+        {
+            typeface.MaskCache.RasterCostOf(key.GridFit).Record(key.PixelsPerEm, ticks);
+
+            if ((raster ?? TextRasterThreadState.TryGetCurrent()) is { } state)
+            {
+                state.RasterTicks += ticks;
+            }
         }
 
         private static GlyphMask BuildUpright(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
@@ -240,7 +260,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// the key's simulation applied through <see cref="GlyphSimulation"/> like the upright
         /// builder does. Unhinted: grid fitting assumes an upright pixel grid.
         /// </summary>
-        internal static GlyphMask BuildTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key)
+        internal static GlyphMask BuildTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
+            TextRasterThreadState? raster = null)
         {
             if (!TryGetTransformedPlacement(typeface, key, out var left, out var top, out var width, out var height) ||
                 width > MaxMaskSize || height > MaxMaskSize)
@@ -250,7 +271,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var alpha = new byte[width * height];
 
-            return RasterizeTransformed(typeface, scratch, key, left, top, width, height, alpha, width)
+            return RasterizeTransformed(typeface, scratch, key, left, top, width, height, alpha, width, raster)
                 ? new GlyphMask(alpha, width, height, left, top)
                 : GlyphMask.Empty;
         }
@@ -262,7 +283,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// is <c>null</c> when the mask is empty.
         /// </summary>
         internal static GlyphMask BuildTransient(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
-            out byte[]? rented)
+            out byte[]? rented, TextRasterThreadState? raster = null)
         {
             rented = null;
 
@@ -274,7 +295,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var buffer = ArrayPool<byte>.Shared.Rent(width * height);
 
-            if (!RasterizeTransformed(typeface, scratch, key, left, top, width, height, buffer, width))
+            if (!RasterizeTransformed(typeface, scratch, key, left, top, width, height, buffer, width, raster))
             {
                 ArrayPool<byte>.Shared.Return(buffer);
                 return GlyphMask.Empty;
@@ -359,7 +380,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Returns <c>false</c>, leaving the destination untouched, when the glyph has no outline.
         /// </summary>
         internal static bool RasterizeTransformed(GlyphTypeface typeface, GlyphPathBuilder scratch, in GlyphMaskKey key,
-            int left, int top, int width, int height, Span<byte> destination, int stride)
+            int left, int top, int width, int height, Span<byte> destination, int stride,
+            TextRasterThreadState? raster = null)
         {
             var start = Stopwatch.GetTimestamp();
 
@@ -368,7 +390,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            typeface.MaskCache.RasterCostOf(key.GridFit).Record(key.PixelsPerEm, Stopwatch.GetTimestamp() - start);
+            RecordRasterTime(typeface, key, Stopwatch.GetTimestamp() - start, raster);
 
             return true;
         }

@@ -153,7 +153,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 // Colour masks made for one frame of an animation would never be drawn again.
                 if (colorGlyphs)
                 {
-                    t_stretchedDraws++;
+                    raster.StretchedDraws++;
 
                     return false;
                 }
@@ -413,7 +413,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var cache = typeface.MaskCache;
             var scratch = t_scratch ??= new GlyphPathBuilder();
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
             var laidOut = sprites.Sprites;
             var masks = new GlyphMask[laidOut.Length];
 
@@ -430,7 +430,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 masks[i] = laidOut[i].Width * laidOut[i].Height <= GlyphMaskCache.MaxEntryBytes
                     ? cache.GetOrBuild(key, state, s_buildMask, raster)
-                    : GlyphMasks.Build(typeface, scratch, key);
+                    : GlyphMasks.Build(typeface, scratch, key, raster);
             }
 
             sprites.Masks = masks;
@@ -571,7 +571,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             var placement = Matrix.CreateTranslation(state.SettledOriginX, state.SettledOriginY) * inverse * transform;
 
-            t_stretchedDraws++;
+            context.RasterState.StretchedDraws++;
             DrawBatches(context, atlas, colorAtlas, batches, placement, foregroundArgb, bilinear: true);
             settled.MarkDrawnStretched();
 
@@ -768,12 +768,12 @@ namespace Avalonia.Media.Fonts.Rasterization
                             // transformed ones and those a moving run lays out are rasterized for the
                             // atlas alone.
                             var mask = sprites.IsUpright && !sprites.IsAtlasOnly
-                                ? typeface.MaskCache.GetOrBuild(key, (typeface, scratch), s_buildMask, raster)
+                                ? typeface.MaskCache.GetOrBuild(key, (typeface, scratch, raster), s_buildMask, raster)
                                 : typeface.MaskCache.TryGet(key, out var cached)
                                     ? cached
                                     : sprites.IsUpright
-                                        ? GlyphMasks.BuildUprightTransient(typeface, scratch, key, out rented)
-                                        : GlyphMasks.BuildTransient(typeface, scratch, key, out rented);
+                                        ? GlyphMasks.BuildUprightTransient(typeface, scratch, key, out rented, raster)
+                                        : GlyphMasks.BuildTransient(typeface, scratch, key, out rented, raster);
 
                             if (mask.IsEmpty)
                             {

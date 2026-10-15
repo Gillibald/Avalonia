@@ -45,8 +45,8 @@ namespace Avalonia.Media.Fonts.Rasterization
                 if (context.TargetSurface.RasterTarget == GlyphRasterTarget.Raster &&
                     context.TryGetBlitTarget(out var target))
                 {
-                    BlendTransient(target, run.GlyphTypeface, path, scratch, glyphs, originX, originY,
-                        RunMaskComposer.MakeTint(alpha, color.R, color.G, color.B));
+                    BlendTransient(context.RasterState, target, run.GlyphTypeface, path, scratch, glyphs, originX,
+                        originY, RunMaskComposer.MakeTint(alpha, color.R, color.G, color.B));
                 }
                 else
                 {
@@ -68,8 +68,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// earlier run of the frame already did. Returns <c>false</c> for a glyph without an
         /// outline.
         /// </summary>
-        private static bool TryGetCoverage(GlyphTypeface typeface, GlyphPathBuilder path, TransientGlyphScratch scratch,
-            in TransformedGlyphItem item, out int offset)
+        private static bool TryGetCoverage(TextRasterThreadState raster, GlyphTypeface typeface, GlyphPathBuilder path,
+            TransientGlyphScratch scratch, in TransformedGlyphItem item, out int offset)
         {
             if (!scratch.ArenaSlots.TryGetValue(item.Key, out offset))
             {
@@ -78,7 +78,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 offset = scratch.AllocateArena(size);
 
                 if (!GlyphMasks.RasterizeTransformed(typeface, path, item.Key, item.Left, item.Top, item.Width,
-                        item.Height, scratch.Arena.AsSpan(offset, size), item.Width))
+                        item.Height, scratch.Arena.AsSpan(offset, size), item.Width, raster))
                 {
                     offset = -1;
                 }
@@ -93,9 +93,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// Blends each glyph mask of the run from the scratch arena into the surface with the
         /// arithmetic of the static raster path.
         /// </summary>
-        private static void BlendTransient(in GlyphBlitTarget target, GlyphTypeface typeface, GlyphPathBuilder path,
-            TransientGlyphScratch scratch, ReadOnlySpan<TransformedGlyphItem> glyphs, int originX, int originY,
-            uint tint)
+        private static void BlendTransient(TextRasterThreadState raster, in GlyphBlitTarget target,
+            GlyphTypeface typeface, GlyphPathBuilder path, TransientGlyphScratch scratch,
+            ReadOnlySpan<TransformedGlyphItem> glyphs, int originX, int originY, uint tint)
         {
             var table = MaskGamma.GetTableForPremulBgra(tint);
 
@@ -103,7 +103,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 ref readonly var item = ref glyphs[i];
 
-                if (!TryGetCoverage(typeface, path, scratch, item, out var offset))
+                if (!TryGetCoverage(raster, typeface, path, scratch, item, out var offset))
                 {
                     continue;
                 }
@@ -166,7 +166,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         scratch.TryPlace(item.Width, item.Height, out slotX, out slotY);
                     }
 
-                    if (TryGetCoverage(typeface, path, scratch, item, out var offset))
+                    if (TryGetCoverage(context.RasterState, typeface, path, scratch, item, out var offset))
                     {
                         for (var row = 0; row < item.Height; row++)
                         {

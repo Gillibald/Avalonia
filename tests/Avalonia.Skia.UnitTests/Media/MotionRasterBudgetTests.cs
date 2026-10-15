@@ -87,7 +87,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var frame = 0; frame < 16; frame++)
             {
-                var unsettled = MaskGlyphRunRenderer.StretchedDraws;
+                var unsettled = TextTestApplication.ThreadState.StretchedDraws;
                 var drawn = output.Frame(context =>
                 {
                     context.Transform = At(motion, frame);
@@ -97,7 +97,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 // A sharp frame is what a static frame at the transform draws without hinting, once
                 // the motion is recognized: a moving run's glyphs keep their shapes from one scale
                 // to the next. The frames before draw as static frames.
-                Assert.True(unsettled == MaskGlyphRunRenderer.StretchedDraws, $"{target} {motion} frame {frame} stretched");
+                Assert.True(unsettled == TextTestApplication.ThreadState.StretchedDraws, $"{target} {motion} frame {frame} stretched");
 
                 using var fresh = WideRunMaskTests.CreateRun(typeface, Text, 18, new Point(8.37, 32.61));
 
@@ -131,7 +131,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             for (var frame = 0; frame < 16; frame++)
             {
-                var before = MaskGlyphRunRenderer.StretchedDraws;
+                var before = TextTestApplication.ThreadState.StretchedDraws;
 
                 output.Frame(context =>
                 {
@@ -139,7 +139,7 @@ namespace Avalonia.Skia.UnitTests.Media
                     context.DrawGlyphRun(Brushes.Black, animated);
                 });
 
-                if (MaskGlyphRunRenderer.StretchedDraws != before)
+                if (TextTestApplication.ThreadState.StretchedDraws != before)
                 {
                     stretched.Add(frame);
                 }
@@ -776,12 +776,12 @@ namespace Avalonia.Skia.UnitTests.Media
                             continue;
                         }
 
-                        var before = MaskGlyphRunRenderer.StretchedDraws;
+                        var before = TextTestApplication.ThreadState.StretchedDraws;
 
                         context.Transform = At(motion, at, 40 * i);
                         context.DrawGlyphRun(Brushes.Black, runs[i]);
 
-                        if (MaskGlyphRunRenderer.StretchedDraws != before)
+                        if (TextTestApplication.ThreadState.StretchedDraws != before)
                         {
                             stretched[i].Add(current);
                         }

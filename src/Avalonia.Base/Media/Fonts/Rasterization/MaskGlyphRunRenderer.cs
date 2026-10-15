@@ -42,30 +42,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static GlyphPathBuilder? t_scratch;
 
-        [ThreadStatic]
-        private static int t_stretchedDraws;
-
-        [ThreadStatic]
-        private static int t_unhintedMotionDraws;
-
-        /// <summary>
-        /// The draws made on this thread that showed a run other than a draw under a held
-        /// transform shows it, while the run's transform changes from draw to draw: a bilinear
-        /// stretch of an earlier raster, colour glyphs replayed as vectors, or glyphs rasterized
-        /// unhinted where a static draw grid-fits them. Such a run draws as a static draw does on
-        /// its first draw under an unchanged transform, so a renderer that draws only what changed
-        /// must draw it once more after the motion stops (see <c>ServerCompositionTarget</c>).
-        /// </summary>
-        internal static int UnsettledDraws => t_stretchedDraws + t_unhintedMotionDraws;
-
-        /// <summary>
-        /// The draws of <see cref="UnsettledDraws"/> that stretched an earlier raster or replayed
-        /// colour glyphs as vectors, rather than rasterizing the frame.
-        /// </summary>
-        internal static int StretchedDraws => t_stretchedDraws;
-
-        private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder), GlyphMask> s_buildMask =
-            static (key, state) => GlyphMasks.Build(state.Item1, state.Item2, key);
+        private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder, TextRasterThreadState), GlyphMask>
+            s_buildMask = static (key, state) => GlyphMasks.Build(state.Item1, state.Item2, key, state.Item3);
 
         /// <summary>
         /// Attempts to draw the run through the mask path. Returns <c>false</c> when this draw
@@ -349,7 +327,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 }
                 else
                 {
-                    t_unhintedMotionDraws++;
+                    raster.UnhintedMotionDraws++;
                 }
 
                 // The sprites are now the raster a zoom's next frames stretch.
@@ -498,7 +476,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 if (key != staticKey)
                 {
-                    t_unhintedMotionDraws++;
+                    raster.UnhintedMotionDraws++;
                 }
 
                 GlyphMaskBlitter.BlendRunCoverage(blitTarget, frameCoverage, originX + frameCoverage.OffsetX,
@@ -524,7 +502,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // them as vectors until the scale holds still.
             if (colorGlyphs && zooming && !hit)
             {
-                t_stretchedDraws++;
+                raster.StretchedDraws++;
 
                 return false;
             }
@@ -593,7 +571,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (key != staticKey)
             {
-                t_unhintedMotionDraws++;
+                raster.UnhintedMotionDraws++;
             }
 
             if (blendsCoverage)
@@ -765,10 +743,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static long t_rasterizedPixels;
 
-        private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder), GlyphMask> s_buildCountedMask =
-            static (key, state) =>
+        private static readonly Func<GlyphMaskKey, (GlyphTypeface, GlyphPathBuilder, TextRasterThreadState), GlyphMask>
+            s_buildCountedMask = static (key, state) =>
             {
-                var mask = GlyphMasks.Build(state.Item1, state.Item2, key);
+                var mask = GlyphMasks.Build(state.Item1, state.Item2, key, state.Item3);
 
                 t_rasterizedPixels += mask.Width * mask.Height;
 
@@ -797,7 +775,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
             var masks = ArrayPool<GlyphMask>.Shared.Rent(Math.Max(1, count));
             var pens = ArrayPool<int>.Shared.Rent(Math.Max(2, count * 2));
             long used = 0;
@@ -972,7 +950,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
             var laidOut = RentLaidOut(count);
             var placed = 0;
             long used = 0;
@@ -1076,7 +1054,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                         {
                             var timer = raster.PhaseTimers.Start();
 
-                            mask = GlyphMasks.BuildUprightTransient(typeface, scratch, glyphKey, out rented);
+                            mask = GlyphMasks.BuildUprightTransient(typeface, scratch, glyphKey, out rented, raster);
                             raster.PhaseTimers.Stop(GlyphTimerPhase.Rasterize, timer);
                             rasterized += mask.Width * mask.Height;
                         }
@@ -1269,7 +1247,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var oldTransform = context.Transform;
             var straightTint = ((uint)alpha << 24) | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B;
 
-            t_stretchedDraws++;
+            stretchContext.RasterState.StretchedDraws++;
             context.Transform = surface.DevicePixels;
 
             foreach (var part in runMask.Parts)
@@ -1427,7 +1405,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
 
             var minX = int.MaxValue;
             var minY = int.MaxValue;
@@ -1554,7 +1532,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
 
             var minX = int.MaxValue;
             var minY = int.MaxValue;
@@ -1642,7 +1620,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var indices = run.GlyphIndices;
             var positions = run.GlyphPositions;
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
 
             var minX = int.MaxValue;
             var minY = int.MaxValue;
@@ -1735,7 +1713,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             var originFraction = key.OriginPhase * (1f / GlyphMaskKey.PhaseCount);
             var colr = typeface.ColorTable;
             var cpal = typeface.ColorPaletteTable;
-            var state = (typeface, scratch);
+            var state = (typeface, scratch, raster);
             var v1Colr = colr is { HasV1Data: true } && HasColrV1Glyph(run) ? colr : null;
 
             bool IsV1(ushort glyph) => v1Colr is not null && ColorGlyphRunSplitter.IsV1Glyph(typeface, v1Colr, glyph);

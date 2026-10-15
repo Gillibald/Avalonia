@@ -203,7 +203,8 @@ internal class ServerCompositionVisualCache
         // Render to layer if needed
         if (!_dirtyRectTracker.IsEmpty)
         {
-            var unsettledDraws = MaskGlyphRunRenderer.UnsettledDraws;
+            var raster = Compositor.RasterServices?.ForCurrentThread();
+            var unsettledDraws = raster?.UnsettledDraws ?? 0;
 
             using var ctx = _layer.CreateDrawingContext();
             using (_needsFullReRender ? null : _dirtyRectTracker.BeginDraw(ctx))
@@ -213,7 +214,7 @@ internal class ServerCompositionVisualCache
                 rv = TargetVisual.Render(ctx, _dirtyRectTracker.CombinedRect, _dirtyRectTracker, renderingToBitmapCache: true);
             }
 
-            var stretched = MaskGlyphRunRenderer.UnsettledDraws != unsettledDraws;
+            var stretched = (raster?.UnsettledDraws ?? 0) != unsettledDraws;
             _holdsStretchedText = stretched || (_holdsStretchedText && !_needsFullReRender);
         }
         _needsFullReRender = false;

@@ -1913,13 +1913,13 @@ namespace Avalonia.Skia.UnitTests.Media
 
                     var before = DrawingContextImpl.PageImagesCreatedOnThread +
                                  DrawingContextImpl.PageTextureUpdatesOnThread;
-                    var stretchedBefore = MaskGlyphRunRenderer.StretchedDraws;
+                    var stretchedBefore = TextTestApplication.ThreadState.StretchedDraws;
 
                     batched = Render(gpu, context => DrawZoomedInClips(context, runs, Scale(crossing), em, origin),
                         true, out _);
                     refreshes = DrawingContextImpl.PageImagesCreatedOnThread +
                                 DrawingContextImpl.PageTextureUpdatesOnThread - before;
-                    stretched = MaskGlyphRunRenderer.StretchedDraws - stretchedBefore;
+                    stretched = TextTestApplication.ThreadState.StretchedDraws - stretchedBefore;
                     pages = TransformedAtlasTests.AtlasOf(gpu, typeface).GetPages().Length;
                 }
                 finally
@@ -2007,13 +2007,13 @@ namespace Avalonia.Skia.UnitTests.Media
                 for (var step = 0; step <= 160; step++)
                 {
                     var scale = step <= 80 ? 1 + 0.01 * step : 1.8 - 0.01 * (step - 80);
-                    var before = MaskGlyphRunRenderer.StretchedDraws;
+                    var before = TextTestApplication.ThreadState.StretchedDraws;
 
                     context.Transform = Matrix.CreateScale(scale, scale);
                     DrawAll(context, runs, Brushes.Black);
                     context.FlushGlyphBatch();
 
-                    if (MaskGlyphRunRenderer.StretchedDraws == before || state.Settled is not { IsCrossing: true })
+                    if (TextTestApplication.ThreadState.StretchedDraws == before || state.Settled is not { IsCrossing: true })
                     {
                         continue;
                     }
@@ -2060,10 +2060,10 @@ namespace Avalonia.Skia.UnitTests.Media
                 for (var frame = 0; frame < frames; frame++)
                 {
                     var before = DrawingContextImpl.AtlasGeometrySubmittedOnThread;
-                    var stretched = MaskGlyphRunRenderer.StretchedDraws;
+                    var stretched = TextTestApplication.ThreadState.StretchedDraws;
 
                     batched.Add(Render(gpu, context => DrawZoomed(context, new[] { run }, Scale(frame)), true, out _));
-                    geometry.Add(MaskGlyphRunRenderer.StretchedDraws == stretched
+                    geometry.Add(TextTestApplication.ThreadState.StretchedDraws == stretched
                         ? -1
                         : DrawingContextImpl.AtlasGeometrySubmittedOnThread - before);
                 }
@@ -2222,14 +2222,14 @@ namespace Avalonia.Skia.UnitTests.Media
                 var grid = MaskGlyphRunRenderer.CrossingScale(Scale(crossings[0]), 1);
                 var rasterized = GlyphRasterDiagnostics.GlyphRasterizationsOnThread;
                 var batches = DrawingContextImpl.BatchesDrawnOnThread;
-                var stretched = MaskGlyphRunRenderer.StretchedDraws;
+                var stretched = TextTestApplication.ThreadState.StretchedDraws;
 
                 context.Transform = Matrix.CreateScale(grid, grid);
                 DrawAll(context, runs, Brushes.Black);
                 context.FlushGlyphBatch();
 
                 Assert.Equal(rasterized, GlyphRasterDiagnostics.GlyphRasterizationsOnThread);
-                Assert.Equal(stretched, MaskGlyphRunRenderer.StretchedDraws);
+                Assert.Equal(stretched, TextTestApplication.ThreadState.StretchedDraws);
                 Assert.Equal(1, DrawingContextImpl.BatchesDrawnOnThread - batches);
             }
             finally

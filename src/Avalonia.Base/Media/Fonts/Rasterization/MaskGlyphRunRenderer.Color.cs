@@ -431,7 +431,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             private GlyphMask GetMask(in GlyphMaskKey key)
-                => _typeface.MaskCache.GetOrBuild(key, (_typeface, _scratch), s_buildMask, _raster);
+                => _typeface.MaskCache.GetOrBuild(key, (_typeface, _scratch, _raster), s_buildMask, _raster);
 
             // Colour layers are never simulated.
             private GlyphMask GetLayerMask(ushort glyph, byte phase)

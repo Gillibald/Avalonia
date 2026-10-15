@@ -85,8 +85,10 @@ namespace TextStress.Measurement
             values[i++] = GlyphRasterDiagnostics.AtlasHitsOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasMissesOnThread;
             values[i++] = GlyphRasterDiagnostics.AtlasPlacementsOnThread;
-            values[i++] = MaskGlyphRunRenderer.UnsettledDraws;
-            values[i++] = MaskGlyphRunRenderer.StretchedDraws;
+            var raster = TextRasterThreadState.TryGetCurrent();
+
+            values[i++] = raster?.UnsettledDraws ?? 0;
+            values[i++] = raster?.StretchedDraws ?? 0;
             values[i++] = GlyphRasterDiagnostics.ColorGlyphVectorDrawsOnThread;
 
             foreach (var kind in s_clipKinds)

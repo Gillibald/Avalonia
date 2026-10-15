@@ -63,6 +63,9 @@ namespace Avalonia.Skia.UnitTests
             return application;
         }
 
+        /// <summary>The text raster state of the calling thread in the current application.</summary>
+        public static TextRasterThreadState ThreadState => GlyphRasterServices.Current.ForCurrentThread();
+
         /// <summary>Binds what this assembly's expectations were recorded under into the current scope.</summary>
         public static void BindDefaults()
         {

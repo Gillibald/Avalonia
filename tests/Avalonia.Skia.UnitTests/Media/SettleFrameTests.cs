@@ -121,7 +121,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var harness = environment.CreateHarness();
 
             var text = harness.AddRun(run);
-            var stretched = MaskGlyphRunRenderer.StretchedDraws;
+            var stretched = TextTestApplication.ThreadState.StretchedDraws;
 
             for (var frame = 0; frame < MotionFrames; frame++)
             {
@@ -129,7 +129,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 harness.Services.RunJobs();
             }
 
-            Assert.Equal(stretched, MaskGlyphRunRenderer.StretchedDraws);
+            Assert.Equal(stretched, TextTestApplication.ThreadState.StretchedDraws);
 
             var rendered = harness.Renders;
 
@@ -222,7 +222,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var harness = environment.CreateHarness();
 
             var text = harness.AddCachedRun(run, out _);
-            var stretched = MaskGlyphRunRenderer.UnsettledDraws;
+            var stretched = TextTestApplication.ThreadState.UnsettledDraws;
 
             for (var frame = 0; frame < MotionFrames; frame++)
             {
@@ -234,7 +234,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // target here; a rotation there draws sharp in every frame.
             if (motion == Motion.Zoom)
             {
-                Assert.NotEqual(stretched, MaskGlyphRunRenderer.UnsettledDraws);
+                Assert.NotEqual(stretched, TextTestApplication.ThreadState.UnsettledDraws);
             }
 
             var rendered = harness.Renders;
@@ -262,7 +262,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             harness.AddCachedRun(run, out var cache);
 
-            var stretched = MaskGlyphRunRenderer.UnsettledDraws;
+            var stretched = TextTestApplication.ThreadState.UnsettledDraws;
 
             for (var frame = 0; frame < MotionFrames; frame++)
             {
@@ -272,7 +272,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             harness.TickUntilIdle();
 
-            Assert.Equal(stretched, MaskGlyphRunRenderer.UnsettledDraws);
+            Assert.Equal(stretched, TextTestApplication.ThreadState.UnsettledDraws);
             TransformedAtlasTests.AssertEqual(expected, harness.Read(), $"{target} {motion}");
             harness.AssertIdle();
         }

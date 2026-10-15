@@ -34,10 +34,6 @@ namespace Avalonia.Rendering.Composition.Server
         private bool _fullRedrawRequested;
         private bool _disposed;
 
-        // Resolved on the first frame that finds them, through the locator: the application's
-        // font manager owns them, and a target renders for one application.
-        private GlyphRasterServices? _rasterServices;
-
         /// <summary>
         /// Render passes since the last frame that drew text stretched from another transform's
         /// raster; -1 while no such text is left on screen.
@@ -250,10 +246,10 @@ namespace Avalonia.Rendering.Composition.Server
             }
             
             // The text raster state of the application this target renders for, on this thread.
-            var raster = (_rasterServices ??= GlyphRasterServices.TryGetCurrent())?.ForCurrentThread();
-            var unsettledDraws = MaskGlyphRunRenderer.UnsettledDraws;
+            var raster = _compositor.RasterServices?.ForCurrentThread();
+            var unsettledDraws = raster?.UnsettledDraws ?? 0;
             var renderStart = Stopwatch.GetTimestamp();
-            var rasterStart = GlyphRasterCost.TicksOnThread;
+            var rasterStart = raster?.RasterTicks ?? 0;
 
             IsDrawingSettleFrame = settleFrame;
 
@@ -322,7 +318,7 @@ namespace Avalonia.Rendering.Composition.Server
                 // the settle frame itself: text it still stretches does not settle by being drawn
                 // again (a run drawn under two transforms in one frame never repeats its transform
                 // from one draw to the next), so it asks for no further frame.
-                if (MaskGlyphRunRenderer.UnsettledDraws != unsettledDraws)
+                if ((raster?.UnsettledDraws ?? 0) != unsettledDraws)
                     _ticksSinceUnsettledText = settleFrame ? -1 : 0;
                 else if (fullRedraw)
                     _ticksSinceUnsettledText = -1;
@@ -334,8 +330,7 @@ namespace Avalonia.Rendering.Composition.Server
             IsDrawingSettleFrame = false;
 
             // The time this frame spent outside text sizes the motion budget of the next ones.
-            raster?.Motion.FrameRendered(Stopwatch.GetTimestamp() - renderStart,
-                GlyphRasterCost.TicksOnThread - rasterStart);
+            raster?.Motion.FrameRendered(Stopwatch.GetTimestamp() - renderStart, raster.RasterTicks - rasterStart);
         }
 
         void RenderRootToContextWithClip(IDrawingContextImpl context, ServerCompositionVisual root)

@@ -290,11 +290,15 @@ namespace TextStress
                 ? Us(intervalOver)
                 : Us(MotionRasterBudget.FrameIntervalMicroseconds(tuning)) + " built-in";
 
-            var renderer = typeof(MotionRasterBudget).Assembly
-                .GetType("Avalonia.Media.Fonts.Rasterization.MaskGlyphRunRenderer");
+            var assembly = typeof(MotionRasterBudget).Assembly;
+            var renderer = assembly.GetType("Avalonia.Media.Fonts.Rasterization.MaskGlyphRunRenderer");
+            var state = assembly.GetType("Avalonia.Media.Fonts.Rasterization.TextRasterThreadState");
+
+            // Builds before the per-thread raster state counted unhinted draws in the renderer.
             var hinting = renderer is null
                 ? "unknown"
-                : renderer.GetField("t_unhintedMotionDraws", BindingFlags.NonPublic | BindingFlags.Static) is null
+                : renderer.GetField("t_unhintedMotionDraws", BindingFlags.NonPublic | BindingFlags.Static) is null &&
+                  state?.GetField("UnhintedMotionDraws") is null
                     ? "hinted"
                     : "unhinted";
 
