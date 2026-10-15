@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Xunit;
+using Avalonia.UnitTests;
 
 namespace Avalonia.Base.UnitTests.Media
 {
@@ -20,8 +21,13 @@ namespace Avalonia.Base.UnitTests.Media
     /// integer-coordinate fonts the match is exact; CFF2 blends evaluate with float region scalers, so a
     /// small tolerance absorbs sub-unit rounding at the variation point.
     /// </remarks>
-    public class CffGlyphBoundsTests
+    public class CffGlyphBoundsTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         // CffTest / CidTest are synthetic; SourceCodePro and AdobeVFPrototype are shipping Adobe fonts
         // (a plain CFF and a CFF2 variable font respectively), embedded from the render-test assets.
         private const string CffAsset = "resm:Avalonia.Base.UnitTests.Assets.CffTest.otf?assembly=Avalonia.Base.UnitTests";

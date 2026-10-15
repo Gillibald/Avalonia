@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Tables.Colr;
@@ -17,8 +18,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
     /// <see cref="SyntheticFont"/>, then drives the (formerly) crashing path through the public API
     /// and asserts it no longer throws.
     /// </remarks>
-    public class ColrDecyclerCharacterizationTests
+    public class ColrDecyclerCharacterizationTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void SelfReferential_ColrGlyph_Does_Not_Throw_From_GetGlyphDrawing()
         {

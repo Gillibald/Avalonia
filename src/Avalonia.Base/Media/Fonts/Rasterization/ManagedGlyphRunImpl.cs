@@ -39,6 +39,9 @@ namespace Avalonia.Media.Fonts.Rasterization
         private TransformChurnGuard? _uprightChurn;
         private long _lastDrawnFrame;
         private int _lastDrawnThread;
+
+        // The budget whose frame last drew the run, which its render state is released through.
+        private GlyphCacheBudget? _lastDrawnBudget;
         private int _drawingReferences;
         private int _disposeState;
         private bool _disposed;
@@ -245,13 +248,14 @@ namespace Avalonia.Media.Fonts.Rasterization
         internal ReadOnlySpan<float> GlyphPositions => _positions.AsSpan(0, _count * 2);
 
         /// <summary>The per-run composed-mask cache; created on first use by the renderer.</summary>
-        internal RunMaskCache RunMasks => _runMasks ??= new RunMaskCache();
+        internal RunMaskCache RunMasks => _runMasks ??= new RunMaskCache(GlyphTypeface.CacheBudget);
 
         /// <summary>
         /// The sprite sets of rotated, skewed or anisotropically scaled draws: glyph mask
         /// placements drawn straight from the shared glyph storage.
         /// </summary>
-        internal TransformedRunState TransformedSprites => _transformedSprites ??= new TransformedRunState();
+        internal TransformedRunState TransformedSprites =>
+            _transformedSprites ??= new TransformedRunState(GlyphTypeface.CacheBudget);
 
         /// <summary>Recognizes an animated transform so its masks stay out of the caches.</summary>
         internal TransformChurnGuard TransformChurn => _transformChurn ??= new TransformChurnGuard();
@@ -598,8 +602,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Records that a frame draws the run, which keeps its state until that frame ends.</summary>
         internal void MarkDrawn()
         {
+            var budget = GlyphTypeface.CacheBudget;
+
             _lastDrawnThread = Environment.CurrentManagedThreadId;
-            Volatile.Write(ref _lastDrawnFrame, GlyphCacheBudget.Shared.Frame);
+            _lastDrawnBudget = budget;
+            Volatile.Write(ref _lastDrawnFrame, budget.Frame);
         }
 
         /// <summary>
@@ -628,7 +635,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         private void ReleaseRenderState()
         {
-            var budget = GlyphCacheBudget.Shared;
+            var budget = _lastDrawnBudget;
             var lastDrawn = Volatile.Read(ref _lastDrawnFrame);
             var thread = _lastDrawnThread;
 
@@ -636,8 +643,8 @@ namespace Avalonia.Media.Fonts.Rasterization
             UprightDecision = null;
             SettledUpright = null;
 
-            budget.ReleaseRunState(Interlocked.Exchange(ref _runMasks, null), lastDrawn, thread);
-            budget.ReleaseRunState(Interlocked.Exchange(ref _transformedSprites, null), lastDrawn, thread);
+            ReleaseRunState(budget, Interlocked.Exchange(ref _runMasks, null), lastDrawn, thread);
+            ReleaseRunState(budget, Interlocked.Exchange(ref _transformedSprites, null), lastDrawn, thread);
 
             // The stretches between colour glyphs are drawn as runs of their own whenever this
             // run is, and keep their state the same way.
@@ -648,6 +655,21 @@ namespace Avalonia.Media.Fonts.Rasterization
                     item.Run?.ReleaseRenderState();
                 }
             }
+        }
+
+        /// <summary>
+        /// Hands <paramref name="state"/> to <paramref name="budget"/>, the budget whose frame last
+        /// drew the run, to dispose once that frame ends; a run no frame drew disposes it at once.
+        /// </summary>
+        private static void ReleaseRunState(GlyphCacheBudget? budget, IDisposable? state, long lastDrawn, int thread)
+        {
+            if (budget is null)
+            {
+                state?.Dispose();
+                return;
+            }
+
+            budget.ReleaseRunState(state, lastDrawn, thread);
         }
 
         public virtual void Dispose()
@@ -661,7 +683,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             ReleaseRenderState();
 
-            GlyphCacheBudget.Shared.ReleaseRunState(Interlocked.Exchange(ref NativeTextArtifact, null),
+            ReleaseRunState(_lastDrawnBudget, Interlocked.Exchange(ref NativeTextArtifact, null),
                 Volatile.Read(ref _lastDrawnFrame), _lastDrawnThread);
 
             // Disposing the stretches releases their state the same way.

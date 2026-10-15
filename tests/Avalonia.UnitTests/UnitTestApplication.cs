@@ -105,9 +105,10 @@ namespace Avalonia.UnitTests
             }
             else
             {
-                // This is a hack to make tests work, we need to refactor the way font manager is registered
-                // See https://github.com/AvaloniaUI/Avalonia/issues/10081
-                AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant((FontManager)null!);
+                // A font manager of the test's own, without system fonts, which owns what managed text
+                // keeps for the application and is disposed with it. It hides a font manager an
+                // enclosing scope registered, as FontManager.Current would otherwise create one here.
+                AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(new FontManager());
             }
             var theme = Services.Theme?.Invoke();
 

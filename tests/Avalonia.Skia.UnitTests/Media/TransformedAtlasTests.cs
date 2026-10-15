@@ -405,7 +405,8 @@ namespace Avalonia.Skia.UnitTests.Media
         /// <summary>
         /// A test GPU context registered as the backends register theirs. A context with
         /// updatable textures gets <paramref name="maskAtlas"/> and <paramref name="colorAtlas"/>,
-        /// or atlases of its own, resident as the backends make them.
+        /// or atlases the registration makes for each application that draws on it, resident as
+        /// the backends make them.
         /// Without <paramref name="updatableTextures"/> it registers none. With
         /// <paramref name="backendAtlases"/> it registers the textures alone, as a backend does,
         /// and the context gets the atlases registration makes.
@@ -443,12 +444,11 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 SkiaUpdatableTextures.Register(gpu.GrContext,
                     GlUpdatableTextureFeature.TryCreate(gpu.GrContext, getProcAddress, gpu.GlMajorVersion),
-                    maskAtlas ?? CreateMaskAtlas(), colorAtlas ?? CreateColorAtlas());
+                    maskAtlas, colorAtlas);
             }
             else if (gpu.UpdatableTextures is { } textures)
             {
-                SkiaUpdatableTextures.Register(gpu.GrContext, textures, maskAtlas ?? CreateMaskAtlas(),
-                    colorAtlas ?? CreateColorAtlas());
+                SkiaUpdatableTextures.Register(gpu.GrContext, textures, maskAtlas, colorAtlas);
             }
 
             return gpu;
@@ -464,7 +464,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>The atlas the contexts of <paramref name="gpu"/> place the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
-            => SkiaUpdatableTextures.Get(gpu.GrContext)?.MaskAtlas ?? typeface.MaskAtlas;
+            => SkiaUpdatableTextures.Get(gpu.GrContext)?.MaskAtlasFor(GlyphRasterServices.Current) ?? typeface.MaskAtlas;
 
         /// <summary>The atlas <paramref name="context"/> places the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(ITransformedGlyphContext context, GlyphTypeface typeface)

@@ -65,16 +65,22 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// The accountant of every glyph cache in the process: each cache registers as a pool and
-    /// charges the bytes it adds and credits the bytes it drops, so <see cref="UsedBytes"/> is the
-    /// memory all glyph caches hold together, and one limit (<see cref="LimitBytes"/>) bounds
-    /// them all.
+    /// The accountant of every glyph cache of an application (<see cref="GlyphRasterServices.Budget"/>):
+    /// each cache registers as a pool and charges the bytes it adds and credits the bytes it drops,
+    /// so <see cref="UsedBytes"/> is the memory all glyph caches hold together, and one limit
+    /// (<see cref="LimitBytes"/>) bounds them all.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Pools keep their own data structures and locks; the budget only counts and picks victims.
     /// A pool that the GC collects without releasing its handle (a typeface nobody disposed) is
     /// credited by <see cref="SweepCollectedPools"/>.
+    /// </para>
+    /// <para>
+    /// Disposing the budget, with the application that owns it, stops its idle timer and releases
+    /// every pool: the typefaces whose caches it accounts for drop them, and build them again
+    /// against the next application's budget when they draw again. What a pool charges after that
+    /// counts nowhere, and frames begun after it are not frames of the budget.
     /// </para>
     /// <para>
     /// Recency is counted in frames. A drawing context that is not drawn inside another on its
@@ -128,9 +134,9 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// frame is drawn leaves them to the next frame start.
     /// </para>
     /// </remarks>
-    internal sealed class GlyphCacheBudget
+    internal sealed class GlyphCacheBudget : IDisposable
     {
-        /// <summary>The limit of <see cref="Shared"/> on desktop platforms.</summary>
+        /// <summary>The default limit on desktop platforms.</summary>
         public const long DefaultLimitBytes = 64L * 1024 * 1024;
 
         /// <summary>The smallest limit an application can set.</summary>
@@ -200,6 +206,10 @@ namespace Avalonia.Media.Fonts.Rasterization
         private volatile bool _pendingPressureTrim;
         private long _lastFrameEnd;
         private long _retain;
+        private volatile bool _disposed;
+
+        // The typefaces whose caches this budget accounts for, told to drop them when it is disposed.
+        private readonly List<WeakReference<GlyphTypeface>> _typefaces = new();
 
         public GlyphCacheBudget(long limitBytes)
             : this(limitBytes, null, null)
@@ -255,14 +265,6 @@ namespace Avalonia.Media.Fonts.Rasterization
                 _ => (16 * mb, 8 * mb),
             };
         }
-
-        /// <summary>
-        /// The budget of every glyph cache the process creates, limited by
-        /// <see cref="FontManagerOptions.GlyphCacheLimitBytes"/> or the platform default.
-        /// </summary>
-        public static GlyphCacheBudget Shared { get; } =
-            new(static () => AvaloniaLocator.Current.GetService<FontManagerOptions>(),
-                TextRasterizationDefaults.CurrentPlatform());
 
         /// <summary>The composed run masks of every run charged to this budget.</summary>
         public RunMaskPool RunMasks { get; }
@@ -383,6 +385,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public GlyphCacheFrame BeginFrame(object? source = null)
         {
+            if (_disposed)
+            {
+                return default;
+            }
+
             var thread = Environment.CurrentManagedThreadId;
             long frame;
             int id;
@@ -679,6 +686,11 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private void OnIdleTimer()
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             var idle = _clock() - TimeSpan.FromTicks(Interlocked.Read(ref _lastFrameEnd));
 
             if (idle < IdleDelay)
@@ -1074,10 +1086,99 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             lock (_poolsLock)
             {
-                _pools.Add(handle);
+                if (_disposed)
+                {
+                    // Charges of a cache made after the application ended count nowhere.
+                    handle.MarkReleased();
+                }
+                else
+                {
+                    _pools.Add(handle);
+                }
             }
 
             return handle;
+        }
+
+        /// <summary>Whether the owner has disposed the budget.</summary>
+        public bool IsDisposed => _disposed;
+
+        /// <summary>
+        /// Records that <paramref name="typeface"/> charges its caches to this budget, so disposing
+        /// the budget makes it drop them.
+        /// </summary>
+        internal void Bind(GlyphTypeface typeface)
+        {
+            lock (_poolsLock)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _typefaces.RemoveAll(static reference => !reference.TryGetTarget(out _));
+                _typefaces.Add(new WeakReference<GlyphTypeface>(typeface));
+            }
+        }
+
+        /// <summary>
+        /// Ends the budget with the application that owns it: the idle timer stops, the bound
+        /// typefaces drop their caches, and every pool is credited and released. A frame open on
+        /// another thread meanwhile keeps drawing from what it holds; what it charges counts nowhere.
+        /// </summary>
+        public void Dispose()
+        {
+            var typefaces = new List<GlyphTypeface>();
+            GlyphCachePoolHandle[] pools;
+            ReleasedRunState[] heldBack;
+
+            lock (_gate)
+            lock (_poolsLock)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+
+                foreach (var reference in _typefaces)
+                {
+                    if (reference.TryGetTarget(out var typeface))
+                    {
+                        typefaces.Add(typeface);
+                    }
+                }
+
+                _typefaces.Clear();
+                pools = _pools.ToArray();
+            }
+
+            (_idleTimer as IDisposable)?.Dispose();
+
+            lock (_frameLock)
+            {
+                _frameListeners.Clear();
+                heldBack = _releasedRunState.ToArray();
+                _releasedRunState.Clear();
+                Volatile.Write(ref _releasedRunStateCount, 0);
+            }
+
+            // Run state held back for frames that were open: no frame of this budget draws again.
+            foreach (var released in heldBack)
+            {
+                released.State.Dispose();
+            }
+
+            foreach (var typeface in typefaces)
+            {
+                typeface.DropGlyphCaches(this);
+            }
+
+            foreach (var pool in pools)
+            {
+                pool.Release();
+            }
         }
 
         /// <summary>The bytes charged by the live pools of <paramref name="kind"/>; for diagnostics and tests.</summary>
@@ -1178,16 +1279,22 @@ namespace Avalonia.Media.Fonts.Rasterization
     /// An <see cref="IGlyphCacheIdleTimer"/> on one thread-pool timer, made on first use and
     /// rescheduled after that, so arming it from a frame allocates nothing.
     /// </summary>
-    internal sealed class ThreadPoolIdleTimer : IGlyphCacheIdleTimer
+    internal sealed class ThreadPoolIdleTimer : IGlyphCacheIdleTimer, IDisposable
     {
         private readonly object _lock = new();
         private Timer? _timer;
         private Action? _callback;
+        private bool _disposed;
 
         public void Schedule(TimeSpan delay, Action callback)
         {
             lock (_lock)
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
                 _callback = callback;
                 _timer ??= new Timer(static state => ((ThreadPoolIdleTimer)state!).Fire(), this,
                     Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
@@ -1205,6 +1312,18 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             callback?.Invoke();
+        }
+
+        /// <summary>Stops the timer; a callback it already started finishes, and none follows.</summary>
+        public void Dispose()
+        {
+            lock (_lock)
+            {
+                _disposed = true;
+                _callback = null;
+                _timer?.Dispose();
+                _timer = null;
+            }
         }
     }
 
@@ -1321,6 +1440,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             Interlocked.Add(ref _bytes, -bytes);
             Budget.Add(-bytes);
         }
+
+        /// <summary>Makes the handle of a pool registered with a disposed budget count nothing.</summary>
+        internal void MarkReleased() => _released = true;
 
         /// <summary>Credits everything the pool holds and removes it from the budget.</summary>
         public void Release()

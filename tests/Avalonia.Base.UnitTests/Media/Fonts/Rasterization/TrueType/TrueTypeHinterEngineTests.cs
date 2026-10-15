@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.UnitTests;
 using Xunit;
@@ -10,8 +11,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// text runs v40, Strong grayscale and LCD text and every bi-level build run the classic
     /// engine.
     /// </summary>
-    public class TrueTypeHinterEngineTests
+    public class TrueTypeHinterEngineTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const string NotoMonoUri =
             "resm:Avalonia.Base.UnitTests.Assets.NotoMono-Regular.ttf?assembly=Avalonia.Base.UnitTests";
 

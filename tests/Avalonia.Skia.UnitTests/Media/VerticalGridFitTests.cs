@@ -12,8 +12,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// overshoot flattening, and the payoff — the x-height top of a mask renders as one hard
     /// row where the unwarped rasterization smears it across two.
     /// </summary>
-    public class VerticalGridFitTests
+    public class VerticalGridFitTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void Zones_Are_Measured_In_The_Expected_Order()
         {

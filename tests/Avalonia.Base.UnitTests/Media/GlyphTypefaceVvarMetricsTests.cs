@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Platform;
 using Xunit;
+using Avalonia.UnitTests;
 
 namespace Avalonia.Base.UnitTests.Media
 {
@@ -14,8 +15,13 @@ namespace Avalonia.Base.UnitTests.Media
     /// batch variant so vertical metrics on a varied typeface reflect the active
     /// variation point.
     /// </summary>
-    public class GlyphTypefaceVvarMetricsTests
+    public class GlyphTypefaceVvarMetricsTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const string AdobeBlankAsset =
             "resm:Avalonia.Base.UnitTests.Assets.AdobeBlank2VF.ttf?assembly=Avalonia.Base.UnitTests";
 

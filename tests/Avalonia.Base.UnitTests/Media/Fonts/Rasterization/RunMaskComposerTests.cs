@@ -6,8 +6,13 @@ using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 {
-    public class RunMaskComposerTests
+    public class RunMaskComposerTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private static GlyphTypeface LoadInter()
         {
             var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterRegular).TryCreateGlyphTypeface();

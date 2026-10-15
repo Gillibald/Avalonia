@@ -14,8 +14,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// defect, not test flakiness; a mismatch after an engine change is a behavior change
     /// that needs deliberate re-pinning.
     /// </summary>
-    public class TrueTypeDeterminismTests
+    public class TrueTypeDeterminismTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         [Theory]
         [InlineData('H', 9f, false, "35A0AD64E0674406")]
         [InlineData('H', 16f, false, "068D66B9833EEDA7")]

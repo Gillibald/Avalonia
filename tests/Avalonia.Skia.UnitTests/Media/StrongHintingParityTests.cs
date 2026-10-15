@@ -6,8 +6,13 @@ using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
-    public class StrongHintingParityTests
+    public class StrongHintingParityTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         /// <summary>
         /// Strong runs the font's complete program for y, the classic engine FreeType ships as
         /// v35. Arial's programs branch on the engine version GETINFO reports and round its

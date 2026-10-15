@@ -13,8 +13,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// A simulated glyph typeface reports the outlines and ink bounds of its simulations, while its
     /// advances and font metrics stay those of the unsimulated face.
     /// </summary>
-    public class SimulatedGlyphMetricsTests
+    public class SimulatedGlyphMetricsTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         private const string DejaVuSansUri =
             "resm:Avalonia.Skia.UnitTests.Fonts.DejaVuSans.ttf?assembly=Avalonia.Skia.UnitTests";
 

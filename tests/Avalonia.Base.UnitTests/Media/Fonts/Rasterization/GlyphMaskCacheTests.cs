@@ -8,8 +8,13 @@ using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 {
-    public class GlyphMaskCacheTests
+    public class GlyphMaskCacheTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private static GlyphMask MakeMask(int side = 10)
             => new(new byte[side * side], side, side, 0, 0);
 

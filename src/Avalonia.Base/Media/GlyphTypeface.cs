@@ -2645,6 +2645,9 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphCacheBudget? _cacheBudget;
 
+        // The budget this instance's own caches were made against, which drops them when it ends.
+        private Fonts.Rasterization.GlyphCacheBudget? _cachesBudget;
+
         /// <summary>Unlinks the glyph caches of a typeface that draws no more and credits their bytes.</summary>
         private void ReleaseGlyphCaches()
         {
@@ -2658,15 +2661,57 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// The budget this typeface's glyph caches are charged to: <see cref="Fonts.Rasterization.GlyphCacheBudget.Shared"/>
-        /// unless set before the first cache is created, which tests do to measure one typeface
-        /// alone. Variation instances and simulated variants use their source's.
+        /// The budget this typeface's glyph caches are charged to: the budget of the current
+        /// application's raster services when the first cache is created, unless set before, which
+        /// tests do to measure one typeface alone. Variation instances and simulated variants use
+        /// their source's. When that application ends its budget makes the typeface drop its caches,
+        /// and the next cache binds to the application current then.
         /// </summary>
+        /// <exception cref="InvalidOperationException">The current application has no font manager.</exception>
         internal Fonts.Rasterization.GlyphCacheBudget CacheBudget
         {
             get => _cacheBudget ?? _sourceTypeface?.CacheBudget ?? _simulationSource?.CacheBudget ??
-                Fonts.Rasterization.GlyphCacheBudget.Shared;
+                BindCacheBudget();
             set => _cacheBudget = value;
+        }
+
+        private Fonts.Rasterization.GlyphCacheBudget BindCacheBudget()
+        {
+            var budget = Fonts.Rasterization.GlyphRasterServices.Current.Budget;
+
+            return Interlocked.CompareExchange(ref _cacheBudget, budget, null) ?? budget;
+        }
+
+        /// <summary>
+        /// The budget a cache of this instance is made against, registering the instance with it so
+        /// that it drops its caches when the budget ends.
+        /// </summary>
+        private Fonts.Rasterization.GlyphCacheBudget BudgetForNewCache()
+        {
+            var budget = CacheBudget;
+
+            if (Interlocked.Exchange(ref _cachesBudget, budget) != budget)
+            {
+                budget.Bind(this);
+            }
+
+            return budget;
+        }
+
+        /// <summary>
+        /// Drops the caches this instance made against <paramref name="budget"/>, which ends with
+        /// its application; the next draw makes them again against the budget current then.
+        /// Payloads are unlinked, never disposed, so runs drawing from them keep what they hold.
+        /// </summary>
+        internal void DropGlyphCaches(Fonts.Rasterization.GlyphCacheBudget budget)
+        {
+            if (Interlocked.CompareExchange(ref _cachesBudget, null, budget) != budget)
+            {
+                return;
+            }
+
+            Interlocked.CompareExchange(ref _cacheBudget, null, budget);
+            ReleaseGlyphCaches();
         }
 
         private GlyphCache GetOrCreateGlyphCache()
@@ -2677,7 +2722,7 @@ namespace Avalonia.Media
             // instance's ink box comes from interpreting the gvar-deformed outline, which is exactly
             // the expensive-to-recompute box the retention flag exists to keep.
             var created = new GlyphCache(retainOutlineBounds: RetainsGlyphBounds, budgetBytes: int.MaxValue,
-                budget: CacheBudget);
+                budget: BudgetForNewCache());
 
             // First publisher wins; later racers reuse it.
             return Interlocked.CompareExchange(ref _glyphCache, created, null) ?? created;
@@ -2876,7 +2921,7 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.TrueType.TrueTypeHinterCache GetOrCreateTrueTypeHinters()
         {
-            var created = new Fonts.Rasterization.TrueType.TrueTypeHinterCache(CacheBudget, TrueTypeHinterBytes);
+            var created = new Fonts.Rasterization.TrueType.TrueTypeHinterCache(BudgetForNewCache(), TrueTypeHinterBytes);
 
             return Interlocked.CompareExchange(ref _trueTypeHinters, created, null) ?? created;
         }
@@ -2991,21 +3036,21 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.ColorFallbackImageCache GetOrCreateColorFallbackImages()
         {
-            var created = new Fonts.Rasterization.ColorFallbackImageCache(CacheBudget);
+            var created = new Fonts.Rasterization.ColorFallbackImageCache(BudgetForNewCache());
 
             return Interlocked.CompareExchange(ref _colorFallbackImages, created, null) ?? created;
         }
 
         private Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey> GetOrCreateColorMaskCache()
         {
-            var created = new Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>(CacheBudget);
+            var created = new Fonts.Rasterization.GlyphMaskCache<Fonts.Rasterization.ColorGlyphMaskKey>(BudgetForNewCache());
 
             return Interlocked.CompareExchange(ref _colorMaskCache, created, null) ?? created;
         }
 
         private Fonts.Rasterization.GlyphMaskCache GetOrCreateGlyphMaskCache()
         {
-            var created = new Fonts.Rasterization.GlyphMaskCache(CacheBudget);
+            var created = new Fonts.Rasterization.GlyphMaskCache(BudgetForNewCache());
 
             return Interlocked.CompareExchange(ref _glyphMaskCache, created, null) ?? created;
         }
@@ -3013,7 +3058,7 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphMaskAtlas GetOrCreateGlyphMaskAtlas()
         {
-            var created = new Fonts.Rasterization.GlyphMaskAtlas(CacheBudget, perTypeface: true);
+            var created = new Fonts.Rasterization.GlyphMaskAtlas(BudgetForNewCache(), perTypeface: true);
 
             return Interlocked.CompareExchange(ref _glyphMaskAtlas, created, null) ?? created;
         }

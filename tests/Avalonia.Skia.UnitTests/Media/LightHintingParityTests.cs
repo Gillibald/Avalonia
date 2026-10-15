@@ -6,8 +6,13 @@ using Xunit;
 
 namespace Avalonia.Skia.UnitTests.Media
 {
-    public class LightHintingParityTests
+    public class LightHintingParityTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         /// <summary>
         /// Light hints like FreeType's v40 interpreter, whose IUP derives the interpolation
         /// scale with FT_DivFix and applies it with FT_MulFix, both rounding to nearest. The

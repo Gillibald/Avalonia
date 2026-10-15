@@ -19,8 +19,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// (catching flipped axes, misplaced masks, broken winding), deliberately looser than the
     /// typical measured deltas.
     /// </summary>
-    public class GlyphRasterizerComparisonTests
+    public class GlyphRasterizerComparisonTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         private static readonly float[] s_sizes = { 9f, 12f, 16f, 24f, 48f, 96f };
         private static readonly float[] s_phases = { 0f, 0.25f, 0.5f, 0.75f };
         private const int Apron = 2;

@@ -12,8 +12,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// 2.13.2's v35 FT_LOAD_TARGET_MONO on-curve x extremes for the same glyphs; Segoe UI
     /// branches on GETINFO, so it reads which engine the interpreter reports.
     /// </summary>
-    public class BiLevelHintingParityTests
+    public class BiLevelHintingParityTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Theory]
         [InlineData("segoeui.ttf", 9, 'm', 1.0, 6.0)]
         [InlineData("segoeui.ttf", 12, 'm', 1.0, 10.0)]

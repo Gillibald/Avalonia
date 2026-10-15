@@ -15,8 +15,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// fixed seed so failures reproduce; set TRUETYPE_FUZZ=&lt;iterations&gt; for a longer
     /// soak with fresh randomness per run.
     /// </summary>
-    public class TrueTypeFuzzTests
+    public class TrueTypeFuzzTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const int CommittedIterations = 150;
         private const int Seed = 20260817;
 

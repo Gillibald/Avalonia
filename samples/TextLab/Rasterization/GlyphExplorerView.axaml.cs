@@ -240,7 +240,7 @@ namespace TextLab
             var blobDraws = System.Threading.Interlocked.Read(ref Avalonia.Skia.TextTierDiagnostics.BlobTierDraws);
 
             _hudText.Text = FormattableString.Invariant(
-                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB; all glyph caches {GlyphCacheBudget.Shared.UsedBytes / 1024} KB of {GlyphCacheBudget.Shared.LimitBytes / 1024} KB{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, blob {blobDraws}");
+                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB; all glyph caches {GlyphRasterServices.Current.Budget.UsedBytes / 1024} KB of {GlyphRasterServices.Current.Budget.LimitBytes / 1024} KB{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, blob {blobDraws}");
         }
 
         private void RebuildList()

@@ -12,8 +12,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
     /// expectation comes from geometry: the upright unhinted mask, exact quarter turns of it,
     /// the area of the flattened outline, and the typeface's own oblique simulation.
     /// </summary>
-    public class TransformedGlyphMaskTests
+    public class TransformedGlyphMaskTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const string Glyphs = "gHaR@&%";
 
         [Theory]

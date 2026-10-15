@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
@@ -12,8 +13,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
     /// hints exactly like its source face and shares the source's simulation-independent
     /// rasterization state.
     /// </summary>
-    public class SimulatedVariantRasterizationTests
+    public class SimulatedVariantRasterizationTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const float PixelsPerEm = 16f;
 
         // Noto Mono carries a full ttfautohint program set, so the bytecode hinter runs.

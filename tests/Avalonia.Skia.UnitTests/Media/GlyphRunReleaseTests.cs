@@ -35,7 +35,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var surface = CreateSurface();
-            var budget = GlyphCacheBudget.Shared;
+            var budget = GlyphRasterServices.Current.Budget;
             var run = WideRunMaskTests.CreateRun(typeface, "Render data owns what a run draws", 18, new Point(8.3, 40.2));
             using var reference = RefCountable.Create<IGlyphRunImpl>(run);
 
@@ -72,7 +72,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
                 using var surface = SKSurface.Create(gpu.GrContext, true,
                     new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
-                var budget = GlyphCacheBudget.Shared;
+                var budget = GlyphRasterServices.Current.Budget;
                 var run = WideRunMaskTests.CreateRun(typeface, "Upright sprites from the atlas", 18, new Point(8.3, 40.2));
                 using var reference = RefCountable.Create<IGlyphRunImpl>(run);
 
@@ -108,7 +108,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
                 using var surface = CreateSurface();
-                var budget = GlyphCacheBudget.Shared;
+                var budget = GlyphRasterServices.Current.Budget;
                 var run = WideRunMaskTests.CreateRun(typeface, "Recorded again before the old goes", 18, new Point(8.3, 40.2));
                 using var reference = RefCountable.Create<IGlyphRunImpl>(run);
 
@@ -143,7 +143,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
                 using var surface = CreateSurface();
-                var budget = GlyphCacheBudget.Shared;
+                var budget = GlyphRasterServices.Current.Budget;
                 var run = WideRunMaskTests.CreateRun(typeface, "Disposed while its frame is open", 18, new Point(8.3, 40.2));
 
                 DropEarlierFrames();
@@ -178,7 +178,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
                 using var surface = CreateSurface();
-                var budget = GlyphCacheBudget.Shared;
+                var budget = GlyphRasterServices.Current.Budget;
                 var run = WideRunMaskTests.CreateRun(typeface, "Disposed by the user interface", 18, new Point(8.3, 40.2));
 
                 DropEarlierFrames();
@@ -214,7 +214,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
                 using var surface = CreateSurface();
-                var budget = GlyphCacheBudget.Shared;
+                var budget = GlyphRasterServices.Current.Budget;
                 var run = WideRunMaskTests.CreateRun(typeface, "Released once, whoever goes last", 18, new Point(8.3, 40.2));
                 var reference = RefCountable.Create<IGlyphRunImpl>(run);
 
@@ -265,7 +265,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 first.DisposeResources();
                 first.Dispose();
 
-                using (GlyphCacheBudget.Shared.BeginFrame())
+                using (GlyphRasterServices.Current.Budget.BeginFrame())
                 {
                 }
 
@@ -355,7 +355,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             for (var i = 0; i <= GlyphCacheBudget.IdleFrames; i++)
             {
-                using (GlyphCacheBudget.Shared.BeginFrame())
+                using (GlyphRasterServices.Current.Budget.BeginFrame())
                 {
                 }
             }

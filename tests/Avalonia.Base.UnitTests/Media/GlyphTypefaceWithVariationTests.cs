@@ -10,8 +10,13 @@ using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media
 {
-    public class GlyphTypefaceWithVariationTests
+    public class GlyphTypefaceWithVariationTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const string InterRegularAsset =
             "resm:Avalonia.Base.UnitTests.Assets.Inter-Regular.ttf?assembly=Avalonia.Base.UnitTests";
 

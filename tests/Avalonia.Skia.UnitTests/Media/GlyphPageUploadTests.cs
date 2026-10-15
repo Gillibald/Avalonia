@@ -13,8 +13,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// since the last draw into it. The page's pixel array stays the source of truth: whatever
     /// was uploaded, the texture must hold exactly those pixels.
     /// </summary>
-    public class GlyphPageUploadTests
+    public class GlyphPageUploadTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         private const int Width = 520;
         private const int Height = 360;
 
@@ -229,8 +234,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(gpu is null, $"No usable Metal context: {reason}");
 
             Assert.NotNull(gpu!.UpdatableTextures);
-            Assert.NotNull(gpu.BackendMaskAtlas);
-            Assert.True(gpu.BackendMaskAtlas!.Resident);
+            Assert.NotNull(gpu.BackendRegistration);
+            Assert.True(gpu.BackendRegistration!.ResidentPages);
         }
 
         [Fact]
@@ -241,8 +246,8 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.SkipWhen(gpu is null, $"No usable Vulkan context: {reason}");
 
             Assert.NotNull(gpu!.UpdatableTextures);
-            Assert.NotNull(gpu.BackendMaskAtlas);
-            Assert.True(gpu.BackendMaskAtlas!.Resident);
+            Assert.NotNull(gpu.BackendRegistration);
+            Assert.True(gpu.BackendRegistration!.ResidentPages);
         }
 
         public static IEnumerable<object[]> UpdatableTextureContexts()

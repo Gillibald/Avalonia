@@ -1,3 +1,4 @@
+using System;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -9,8 +10,13 @@ namespace Avalonia.Base.UnitTests.Media
     /// handed out lock-free and can escape into retained compositor render data that outlives the
     /// typeface, so disposing them would risk a use-after-free.
     /// </summary>
-    public class GlyphTypefaceLifecycleTests
+    public class GlyphTypefaceLifecycleTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void Dispose_Unlinks_The_Glyph_Cache_Without_Disposing_Its_Payloads()
         {

@@ -18,8 +18,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// from their pages in as few calls as A8 text, and the pixels are the run masks' wherever the
     /// glyphs of a run share no ink.
     /// </summary>
-    public class ColorAtlasTests
+    public class ColorAtlasTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         private const int Width = 560;
         private const int Height = 300;
         private const double EmSize = 32;
@@ -389,7 +394,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         internal static GlyphMaskAtlas ColorAtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
-            => SkiaUpdatableTextures.Get(gpu.GrContext)!.ColorAtlas;
+            => SkiaUpdatableTextures.Get(gpu.GrContext)!.ColorAtlasFor(GlyphRasterServices.Current);
 
         internal static IDisposable CreateEnvironment()
         {

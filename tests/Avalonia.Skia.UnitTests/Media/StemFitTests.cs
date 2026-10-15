@@ -13,8 +13,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// curves and diagonals, where snapping would distort, stay byte-identical to the
     /// unsnapped build. Grayscale and subpixel Strong leave x natural.
     /// </summary>
-    public class StemFitTests
+    public class StemFitTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void Curves_And_Diagonals_Are_Untouched()
         {

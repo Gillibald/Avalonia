@@ -13,7 +13,8 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
     /// its last use, so the budget evicts the images drawn longest ago along with the rest of the
     /// glyph caches. A thread that still holds an evicted image keeps using it; the next request
     /// decodes it again. The cache joins the budget on its first image, because the typeface's
-    /// budget can still change after its tables load.
+    /// budget can still change after its tables load. When that budget ends with its application,
+    /// the images go and the cache joins the typeface's next budget on its next image.
     /// </remarks>
     internal sealed class DecodedBitmapCache : IGlyphCachePool
     {
@@ -34,6 +35,8 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
         {
             lock (_images)
             {
+                LeaveEndedBudget();
+
                 if (_images.TryGetValue(key, out var entry))
                 {
                     entry.LastUse = _clock!.Frame;
@@ -59,6 +62,8 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
                     return;
                 }
 
+                LeaveEndedBudget();
+
                 if (_handle is null)
                 {
                     _clock = _owner.CacheBudget;
@@ -67,6 +72,17 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
 
                 _images.Add(key, new Entry(image) { LastUse = _clock!.Frame });
                 _handle.Charge(image.Bitmap.Bgra.Length);
+            }
+        }
+
+        /// <summary>Drops the images kept for a budget that has ended. Called under the lock.</summary>
+        private void LeaveEndedBudget()
+        {
+            if (_clock is { IsDisposed: true })
+            {
+                _images.Clear();
+                _clock = null;
+                _handle = null;
             }
         }
 

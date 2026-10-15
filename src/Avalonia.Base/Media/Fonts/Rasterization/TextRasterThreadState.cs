@@ -13,6 +13,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         {
             Services = services;
             PhaseTimers = new GlyphPhaseTimers(services.Diagnostics);
+            Motion = new MotionRasterBudget(services.Budget);
         }
 
         /// <summary>The services this state belongs to.</summary>
@@ -22,7 +23,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphPhaseTimers PhaseTimers { get; }
 
         /// <summary>How this thread draws frames of runs whose transform keeps changing.</summary>
-        public MotionRasterBudget Motion { get; } = new();
+        public MotionRasterBudget Motion { get; }
 
         /// <summary>
         /// The draws made on this thread that showed a run other than a draw under a held transform

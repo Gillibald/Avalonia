@@ -45,8 +45,9 @@ namespace Avalonia.Skia
         private bool _disposed;
         private GRContext? _grContext;
         private readonly GlyphRasterTarget _glyphRasterTarget;
-        private readonly GlyphMaskAtlas? _maskAtlas;
-        private readonly GlyphMaskAtlas? _colorAtlas;
+        private readonly SkiaUpdatableTextures.Registration? _registration;
+        private GlyphMaskAtlas? _maskAtlas;
+        private GlyphMaskAtlas? _colorAtlas;
         private readonly GlyphCacheFrame _glyphCacheFrame;
         public GRContext? GrContext => _grContext;
         private readonly ISkiaGpu? _gpu;
@@ -250,10 +251,7 @@ namespace Avalonia.Skia
 
             // Only a context that updates part of a page in place shares one atlas between
             // typefaces.
-            var registration = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext);
-
-            _maskAtlas = registration?.MaskAtlas;
-            _colorAtlas = registration?.ColorAtlas;
+            _registration = _grContext is null ? null : SkiaUpdatableTextures.Get(_grContext);
             _foldsTranslucentColors = _grContext is not null && SkiaVertexColorPrecision.IsExact(_grContext);
 
             if (createInfo.ScaleDrawingToDpi && !createInfo.Dpi.NearlyEquals(SkiaPlatform.DefaultDpi))
@@ -290,7 +288,7 @@ namespace Avalonia.Skia
 
             // Last, so a constructor that throws leaves no frame open. A context drawn inside
             // another on this thread (a layer, an offscreen surface) belongs to that frame.
-            _glyphCacheFrame = GlyphCacheBudget.Shared.BeginFrame();
+            _glyphCacheFrame = _rasterServices?.Budget.BeginFrame() ?? default;
         }
         
         /// <summary>
@@ -419,9 +417,12 @@ namespace Avalonia.Skia
         /// <inheritdoc cref="GlyphTargetSurface.RasterTarget"/>
         internal GlyphRasterTarget GlyphRasterTarget => _glyphRasterTarget;
 
-        GlyphMaskAtlas? ITransformedGlyphContext.MaskAtlas => _maskAtlas;
+        // The registration's atlases of the context's application, asked for once per context.
+        GlyphMaskAtlas? ITransformedGlyphContext.MaskAtlas
+            => _registration is null ? null : _maskAtlas ??= _registration.MaskAtlasFor(RasterState.Services);
 
-        GlyphMaskAtlas? ITransformedGlyphContext.ColorAtlas => _colorAtlas;
+        GlyphMaskAtlas? ITransformedGlyphContext.ColorAtlas
+            => _registration is null ? null : _colorAtlas ??= _registration.ColorAtlasFor(RasterState.Services);
 
         // Described once per context: every text run asks, and the maximum texture size is a
         // native call.

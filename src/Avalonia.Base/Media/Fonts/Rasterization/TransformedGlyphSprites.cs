@@ -516,11 +516,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         private bool _disposed;
 
         /// <param name="budget">
-        /// The budget the sprite sets are charged to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// The budget the sprite sets are charged to; the current application's (<see cref="GlyphRasterServices.Budget"/>) when omitted.
         /// </param>
         public TransformedRunState(GlyphCacheBudget? budget = null)
         {
-            _budget = budget ?? GlyphCacheBudget.Shared;
+            _budget = budget ?? GlyphRasterServices.Current.Budget;
         }
 
         /// <summary>The number of cached sprite sets; for diagnostics and tests.</summary>

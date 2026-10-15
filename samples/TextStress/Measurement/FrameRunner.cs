@@ -117,7 +117,7 @@ namespace TextStress.Measurement
                     environmentWritten = true;
                 }
 
-                GlyphCacheBudget.Shared.ResetPeak();
+                GlyphRasterServices.Current.Budget.ResetPeak();
                 var interactive = _options.Frames <= 0;
                 var total = _options.Warmup + _options.Frames;
                 var previous = new FrameSample();
@@ -339,7 +339,7 @@ namespace TextStress.Measurement
                 }
             }
 
-            var budget = GlyphCacheBudget.Shared;
+            var budget = GlyphRasterServices.Current.Budget;
             target.BudgetUsedBytes = budget.UsedBytes;
             target.BudgetPeakBytes = budget.PeakBytes;
             target.BudgetEvictedBytes = budget.EvictedBytes;
@@ -382,7 +382,7 @@ namespace TextStress.Measurement
         /// <summary>The glyph cache budget's limits and the bytes each pool kind holds, in MB.</summary>
         private static string DescribeBudget()
         {
-            var budget = GlyphCacheBudget.Shared;
+            var budget = GlyphRasterServices.Current.Budget;
             var line = new System.Text.StringBuilder();
 
             line.Append(FormattableString.Invariant(
@@ -498,7 +498,7 @@ namespace TextStress.Measurement
             yield return ("warmup", _options.Warmup.ToString(CultureInfo.InvariantCulture));
             yield return ("prewarm_ms", _options.PrewarmMs.ToString(CultureInfo.InvariantCulture));
             yield return ("glyph_cache_limit_mb",
-                (GlyphCacheBudget.Shared.LimitBytes / 1048576.0).ToString(CultureInfo.InvariantCulture));
+                (GlyphRasterServices.Current.Budget.LimitBytes / 1048576.0).ToString(CultureInfo.InvariantCulture));
             yield return ("heap_read_period", s_heapReadPeriod.ToString(CultureInfo.InvariantCulture));
 
             foreach (var entry in StressLog.HostEnvironment)

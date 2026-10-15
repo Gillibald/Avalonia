@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Media;
 using Avalonia.UnitTests;
 using Xunit;
@@ -10,8 +11,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
     /// outline tables' bounds path (the <c>glyf</c> header / a <c>BoundsGeometryContext</c> interpret
     /// pass) rather than by building geometry — so neither path needs a geometry backend.
     /// </summary>
-    public class ColrRenderingCharacterizationTests
+    public class ColrRenderingCharacterizationTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void Clipped_V1_Glyph_Derives_Bounds_From_The_Clip_Box()
         {

@@ -56,7 +56,7 @@ namespace Avalonia.Skia.UnitTests.Media
             GrContext = vulkan.GrContext;
             UpdatableTextures = (ISkiaUpdatableTextureFeature?)vulkan.TryGetFeature(typeof(ISkiaUpdatableTextureFeature));
 
-            BackendMaskAtlas = SkiaUpdatableTextures.Get(GrContext)?.MaskAtlas;
+            BackendRegistration = SkiaUpdatableTextures.Get(GrContext);
 
             // Like the GL contexts, the context starts unregistered; tests register it with an
             // atlas of their own.
@@ -73,7 +73,7 @@ namespace Avalonia.Skia.UnitTests.Media
             GrContext = metal.GrContext;
             UpdatableTextures = (ISkiaUpdatableTextureFeature?)metal.TryGetFeature(typeof(ISkiaUpdatableTextureFeature));
 
-            BackendMaskAtlas = SkiaUpdatableTextures.Get(GrContext)?.MaskAtlas;
+            BackendRegistration = SkiaUpdatableTextures.Get(GrContext);
 
             // Like the GL contexts, the context starts unregistered; tests register it with an
             // atlas of their own.
@@ -94,8 +94,8 @@ namespace Avalonia.Skia.UnitTests.Media
         /// </summary>
         public ISkiaUpdatableTextureFeature? UpdatableTextures { get; }
 
-        /// <summary>The glyph mask atlas the backend GPU object registered for its context, if any.</summary>
-        public GlyphMaskAtlas? BackendMaskAtlas { get; }
+        /// <summary>The registration the backend GPU object made for its context, if any.</summary>
+        public SkiaUpdatableTextures.Registration? BackendRegistration { get; }
 
         /// <summary>Resolves GL entry points of a GL context; <c>null</c> for other backends.</summary>
         public Func<string, IntPtr>? GetGlProcAddress { get; }

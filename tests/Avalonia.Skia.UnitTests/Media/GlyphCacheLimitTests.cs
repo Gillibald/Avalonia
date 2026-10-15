@@ -45,16 +45,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static void ZoomRevisit(GpuBackend backend)
         {
-            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var surface = SKSurface.Create(gpu.GrContext, true,
                 new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             var runs = CreateParagraph(typeface, 10, 28);
-
-            // The sweep starts from an empty cache: what earlier tests left in the shared budget
-            // would otherwise decide how many of its masks stay within the limit.
-            GlyphCacheBudget.Shared.TrimForMemoryPressure();
 
             // Two frames per scale, as a zoom that holds at every step draws: a held scale
             // rasterizes its glyph masks, where a zoom moving every frame stretches the last
@@ -114,9 +110,9 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static void LabelDuringZoom(GpuBackend? backend)
         {
-            using var limit = LimitScope.Set(2 * 1024 * 1024);
             using var gpu = backend is { } gpuBackend ? TransformedAtlasTests.CreateGpu(gpuBackend, false) : null;
             using var scope = WideRunMaskTests.CreateEnvironment(out var labelFace);
+            using var limit = LimitScope.Set(2 * 1024 * 1024);
             using var surface = gpu is null
                 ? SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul))
                 : SKSurface.Create(gpu.GrContext, true, new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
@@ -183,8 +179,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static void TrimAfterFrames()
         {
-            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul));
             var runs = CreateParagraph(typeface, 12, 14);
 
@@ -225,11 +221,11 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static void StaticWorkingSet()
         {
-            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul));
             var runs = CreateParagraph(typeface, 12, 14);
-            var budget = GlyphCacheBudget.Shared;
+            var budget = GlyphRasterServices.Current.Budget;
 
             void Frame()
             {
@@ -289,13 +285,13 @@ namespace Avalonia.Skia.UnitTests.Media
         /// </summary>
         private static void PinnedWorkingSet(GpuBackend backend, int limitPercent)
         {
-            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var gpu = TransformedAtlasTests.CreateGpu(backend, false);
             using var scope = WideRunMaskTests.CreateEnvironment(out var typeface);
+            using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var surface = SKSurface.Create(gpu.GrContext, true,
                 new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             var runs = CreateGlyphSweep(typeface, 20);
-            var budget = GlyphCacheBudget.Shared;
+            var budget = GlyphRasterServices.Current.Budget;
 
             void Frame()
             {
@@ -378,7 +374,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// </summary>
         private static void DropEarlierFrames()
         {
-            var budget = GlyphCacheBudget.Shared;
+            var budget = GlyphRasterServices.Current.Budget;
             var limit = budget.LimitBytes;
 
             for (var i = 0; i <= GlyphCacheBudget.IdleFrames; i++)
@@ -442,17 +438,26 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
-        /// <summary>Sets the process-wide limit for a test, then lets it follow the options again.</summary>
+        /// <summary>
+        /// Sets the limit of the current application's budget for a test, then lets it follow the
+        /// options again.
+        /// </summary>
         private sealed class LimitScope : IDisposable
         {
+            private readonly GlyphCacheBudget _budget;
+
+            private LimitScope(GlyphCacheBudget budget) => _budget = budget;
+
             public static LimitScope Set(long limit)
             {
-                GlyphCacheBudget.Shared.SetLimit(limit);
+                var budget = GlyphRasterServices.Current.Budget;
 
-                return new LimitScope();
+                budget.SetLimit(limit);
+
+                return new LimitScope(budget);
             }
 
-            public void Dispose() => GlyphCacheBudget.Shared.FollowOptions();
+            public void Dispose() => _budget.FollowOptions();
         }
     }
 }

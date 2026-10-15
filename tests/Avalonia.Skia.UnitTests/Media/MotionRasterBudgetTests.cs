@@ -680,7 +680,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             // Frames of 5 ms with 1 ms of text: 4 ms outside text, whatever came before, and
             // moved only part of the way by one slow frame.
-            var budget = new MotionRasterBudget();
+            var budget = new MotionRasterBudget(new GlyphCacheBudget(GlyphCacheBudget.DefaultLimitBytes));
 
             for (var frame = 0; frame < 60; frame++)
             {

@@ -57,11 +57,11 @@ namespace Avalonia.Media.Fonts.Rasterization
         private long _evictions;
 
         /// <param name="budget">
-        /// The budget the cache charges its masks to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// The budget the cache charges its masks to; the current application's (<see cref="GlyphRasterServices.Budget"/>) when omitted.
         /// </param>
         public GlyphMaskCache(GlyphCacheBudget? budget = null)
         {
-            _clock = budget ?? GlyphCacheBudget.Shared;
+            _clock = budget ?? GlyphRasterServices.Current.Budget;
             _handle = _clock.Register(GlyphCachePoolKind.Masks, this, perTypeface: true);
         }
 
@@ -378,7 +378,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     internal sealed class GlyphMaskCache : GlyphMaskCache<GlyphMaskKey>
     {
         /// <param name="budget">
-        /// The budget the cache charges its masks to; <see cref="GlyphCacheBudget.Shared"/> when omitted.
+        /// The budget the cache charges its masks to; the current application's (<see cref="GlyphRasterServices.Budget"/>) when omitted.
         /// </param>
         public GlyphMaskCache(GlyphCacheBudget? budget = null)
             : base(budget)

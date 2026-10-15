@@ -91,6 +91,14 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         private static readonly double s_microsecondsPerTick = 1e6 / Stopwatch.Frequency;
 
+        private readonly GlyphCacheBudget _frames;
+
+        /// <param name="frames">The budget whose frames the decisions follow, the application's.</param>
+        public MotionRasterBudget(GlyphCacheBudget frames)
+        {
+            _frames = frames;
+        }
+
         private long _frame;
         private double _spent;
         private double _estimate;
@@ -160,7 +168,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         public void FrameRendered(long elapsedTicks, long rasterTicks)
         {
-            var frame = GlyphCacheBudget.Shared.CurrentThreadFrame;
+            var frame = _frames.CurrentThreadFrame;
 
             if (frame == 0 || frame != _frame)
             {
@@ -338,7 +346,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// </summary>
         private long BeginFrame(GlyphRasterTuning tuning)
         {
-            var frame = GlyphCacheBudget.Shared.CurrentThreadFrame;
+            var frame = _frames.CurrentThreadFrame;
 
             if (frame != _frame || frame == 0)
             {

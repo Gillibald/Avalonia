@@ -15,8 +15,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// hints the same sizes through the typeface's hinters and gets exactly the masks a single
     /// thread builds.
     /// </summary>
-    public class TrueTypeConcurrentHintingTests
+    public class TrueTypeConcurrentHintingTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const int Threads = 8;
 
         [Theory]

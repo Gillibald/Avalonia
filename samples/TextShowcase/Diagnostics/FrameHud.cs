@@ -119,7 +119,7 @@ namespace TextShowcase.Diagnostics
             // Back on the UI thread: process-wide readings, then publish.
             _ = batch.Rendered.ContinueWith(_ =>
             {
-                reading.GlyphCacheBytes = GlyphCacheBudget.Shared.UsedBytes;
+                reading.GlyphCacheBytes = GlyphRasterServices.Current.Budget.UsedBytes;
                 foreach (var atlas in GlyphMaskAtlas.GetSharedAtlases())
                 {
                     if (atlas.Format == GlyphAtlasFormat.Alpha8)

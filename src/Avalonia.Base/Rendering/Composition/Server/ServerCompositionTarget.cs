@@ -224,7 +224,7 @@ namespace Avalonia.Rendering.Composition.Server
                                  && _renderTarget.Properties.IsSuitableForDirectRendering);
 
             // Everything this pass draws, the layer and the target, is one frame of the glyph caches.
-            using var glyphCacheFrame = GlyphCacheBudget.Shared.BeginFrame(this);
+            using var glyphCacheFrame = _compositor.RasterServices?.Budget.BeginFrame(this) ?? default;
 
             IDrawingContextImpl renderTargetContext;
             RenderTargetDrawingContextProperties properties;

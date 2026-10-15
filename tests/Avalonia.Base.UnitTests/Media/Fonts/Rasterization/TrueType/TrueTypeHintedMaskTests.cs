@@ -13,8 +13,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// own programs, ineligible fonts stay on the auto-hinter, and a control program that
     /// disables hinting renders unfitted outlines.
     /// </summary>
-    public class TrueTypeHintedMaskTests
+    public class TrueTypeHintedMaskTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const float PixelsPerEm = 16f;
 
         // The embedded Inter asset is an uninstructed build; Noto Mono carries the full

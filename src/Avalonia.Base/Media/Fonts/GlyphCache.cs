@@ -81,7 +81,7 @@ namespace Avalonia.Media.Fonts
         /// </param>
         /// <param name="policy">The eviction policy; CLOCK when omitted.</param>
         /// <param name="budget">
-        /// The budget the cache charges its geometry to; <see cref="Rasterization.GlyphCacheBudget.Shared"/>
+        /// The budget the cache charges its geometry to; the current application's (<see cref="Rasterization.GlyphRasterServices.Budget"/>)
         /// when omitted.
         /// </param>
         public GlyphCache(bool retainOutlineBounds = false, int budgetBytes = DefaultBudgetBytes,
@@ -90,7 +90,7 @@ namespace Avalonia.Media.Fonts
             _retainOutlineBounds = retainOutlineBounds;
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
             _policy = policy ?? new ClockEvictionPolicy();
-            _clock = budget ?? Rasterization.GlyphCacheBudget.Shared;
+            _clock = budget ?? Rasterization.GlyphRasterServices.Current.Budget;
             _handle = _clock.Register(Rasterization.GlyphCachePoolKind.Outlines, this, perTypeface: true);
         }
 

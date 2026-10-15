@@ -19,8 +19,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// Windows-gated - Bahnschrift hints without cvar (default CVT, spec-conformant) and
     /// Segoe UI Variable carries a real cvar, so both integration halves run.
     /// </summary>
-    public class TrueTypeVariationHintingTests
+    public class TrueTypeVariationHintingTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         [Theory]
         [InlineData(@"C:\Windows\Fonts\bahnschrift.ttf")]
         [InlineData(@"C:\Windows\Fonts\SegUIVar.ttf")]

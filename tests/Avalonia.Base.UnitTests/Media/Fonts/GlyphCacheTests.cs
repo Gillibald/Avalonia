@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Xunit;
+using Avalonia.UnitTests;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts
 {
@@ -12,8 +13,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
     /// a heavy, lazily-built, evictable geometry. Exercised in isolation — geometry payloads are plain
     /// objects, so no font, geometry backend, or render interface is needed.
     /// </summary>
-    public class GlyphCacheTests
+    public class GlyphCacheTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private static BuiltGeometry Built(int cost, object? payload = null,
             GlyphPayloadKind kind = GlyphPayloadKind.Outline, ushort[]? dependencies = null)
             => new(payload ?? new object(), cost, kind, dependencies ?? Array.Empty<ushort>(),

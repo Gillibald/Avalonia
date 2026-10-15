@@ -43,7 +43,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static void DrawWithLayer()
         {
-            var budget = GlyphCacheBudget.Shared;
+            using var app = TextTestApplication.Enter();
+            var budget = GlyphRasterServices.Current.Budget;
             var info = new SKImageInfo(64, 64, SKColorType.Bgra8888, SKAlphaType.Premul);
 
             using var surface = SKSurface.Create(info);

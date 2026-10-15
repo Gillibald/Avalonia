@@ -15,8 +15,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// offsets and instruction streams; upem 2048 at 16 px/em, scale 0.5) plus real-font
     /// smoke through Inter's own embedded programs.
     /// </summary>
-    public class TrueTypeGlyphHinterTests
+    public class TrueTypeGlyphHinterTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private static TrueTypeSizeState CreateState(int maxTwilightPoints = 8)
         {
             var state = TrueTypeSizeState.Create(

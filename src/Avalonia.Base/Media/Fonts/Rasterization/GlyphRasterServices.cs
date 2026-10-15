@@ -22,7 +22,23 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphRasterServices()
         {
             _threads = new ThreadLocal<TextRasterThreadState>(() => new TextRasterThreadState(this));
+            Budget = new GlyphCacheBudget(static () => AvaloniaLocator.Current.GetService<FontManagerOptions>(),
+                TextRasterizationDefaults.CurrentPlatform());
         }
+
+        /// <summary>
+        /// The budget of every glyph cache of the application, limited by
+        /// <see cref="FontManagerOptions.GlyphCacheLimitBytes"/> or the platform default.
+        /// </summary>
+        public GlyphCacheBudget Budget { get; }
+
+        private LcdRunAtlas? _lcdAtlas;
+
+        /// <summary>The atlas the hardware GPU contexts of the application place their subpixel run masks in.</summary>
+        public LcdRunAtlas LcdAtlas
+            => Volatile.Read(ref _lcdAtlas) ??
+               Interlocked.CompareExchange(ref _lcdAtlas, new LcdRunAtlas(Budget), null) ??
+               _lcdAtlas!;
 
         /// <summary>The diagnostics switches of the application.</summary>
         public TextRasterDiagnostics Diagnostics { get; } = new();
@@ -72,6 +88,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             _disposed = true;
             _threads.Dispose();
+            Budget.Dispose();
         }
     }
 }

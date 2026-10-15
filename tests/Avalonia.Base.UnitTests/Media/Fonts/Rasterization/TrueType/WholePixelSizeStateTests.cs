@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.UnitTests;
@@ -10,8 +11,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
     /// the rounded ppem's, so its programs run against the outline and control values of the
     /// size MPPEM reports. Without the bit the size state keeps the fractional scale.
     /// </summary>
-    public class WholePixelSizeStateTests
+    public class WholePixelSizeStateTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = UnitTestApplication.Start();
+
+        public void Dispose() => _application.Dispose();
+
         private const string NotoMonoUri =
             "resm:Avalonia.Base.UnitTests.Assets.NotoMono-Regular.ttf?assembly=Avalonia.Base.UnitTests";
 

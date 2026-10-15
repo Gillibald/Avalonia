@@ -113,7 +113,8 @@ namespace Avalonia.Media
         /// render backend and are not affected.
         /// </para>
         /// </remarks>
-        public static void TrimGlyphCaches() => Fonts.Rasterization.GlyphCacheBudget.Shared.TrimForMemoryPressure();
+        public static void TrimGlyphCaches()
+            => AvaloniaLocator.Current.GetService<FontManager>()?._rasterServices?.Budget.TrimForMemoryPressure();
 
         /// <summary>
         /// The state of managed glyph rasterization this application keeps, created on first use

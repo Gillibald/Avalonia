@@ -13,8 +13,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// hints exactly like 15 px and 15.5 px like 16 px. The expected values are FreeType 2.13.2's
     /// v40 outlines for the shipped fonts (bit 3 honoured), on-curve extremes in 26.6 pixels.
     /// </summary>
-    public class FractionalPpemHintingTests
+    public class FractionalPpemHintingTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Theory]
         [InlineData("msyh.ttc", 0, '\u9F8D', 120, 30720, 12, 946, -69, 768)]
         [InlineData("msyh.ttc", 0, '\u9F8D', 123, 30720, 12, 946, -69, 768)]

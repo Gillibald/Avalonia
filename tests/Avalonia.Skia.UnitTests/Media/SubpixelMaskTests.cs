@@ -12,8 +12,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// Subpixel (LCD) glyph mask generation: three filtered stripe channels per final pixel,
     /// geometry-agnostic RGB order, energy matching the grayscale mask of the same glyph.
     /// </summary>
-    public class SubpixelMaskTests
+    public class SubpixelMaskTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void A_Subpixel_Mask_Has_Three_Channels_And_The_Wider_Apron()
         {

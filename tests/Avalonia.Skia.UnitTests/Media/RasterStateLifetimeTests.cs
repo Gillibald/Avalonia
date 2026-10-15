@@ -163,7 +163,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
-            using (GlyphCacheBudget.Shared.BeginFrame())
+            using (GlyphRasterServices.Current.Budget.BeginFrame())
             {
                 // The try runs out of budget: moving runs stretch for the hold that follows.
                 Assert.False(GlyphRasterServices.Current.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, tight));
@@ -171,7 +171,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
-            using (GlyphCacheBudget.Shared.BeginFrame())
+            using (GlyphRasterServices.Current.Budget.BeginFrame())
             {
                 Assert.True(GlyphRasterServices.Current.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, ample));
             }
@@ -202,17 +202,25 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void Glyph_Cache_Budget_Is_Released_With_Application()
         {
+            GlyphCacheBudget first;
+
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             {
                 DrawText(typeface);
 
-                Assert.NotEqual(0, GlyphCacheBudget.Shared.UsedBytes);
-                Assert.NotEqual(0, GlyphCacheBudget.Shared.Frame);
+                first = GlyphRasterServices.Current.Budget;
+
+                Assert.NotEqual(0, first.UsedBytes);
+                Assert.NotEqual(0, first.Frame);
             }
+
+            // The application's end released every pool and stopped the idle trim.
+            Assert.True(first.IsDisposed);
+            Assert.Equal(0, first.UsedBytes);
 
             using (WideRunMaskTests.CreateEnvironment(out _))
             {
-                var budget = GlyphCacheBudget.Shared;
+                var budget = GlyphRasterServices.Current.Budget;
 
                 Assert.Equal(0, budget.UsedBytes);
                 Assert.Equal(0, budget.Frame);
@@ -224,22 +232,15 @@ namespace Avalonia.Skia.UnitTests.Media
         [Fact]
         public void A_Glyph_Cache_Limit_Set_In_One_Application_Is_Not_Seen_By_The_Next()
         {
-            try
+            using (TextTestApplication.Enter())
             {
-                using (TextTestApplication.Enter())
-                {
-                    FailingSetup(() => GlyphCacheBudget.Shared.SetLimit(GlyphCacheBudget.MinimumLimitBytes));
-                }
-
-                using (TextTestApplication.Enter())
-                {
-                    Assert.Equal(GlyphCacheBudget.DefaultsFor(TextRasterizationDefaults.CurrentPlatform()).Limit,
-                        GlyphCacheBudget.Shared.LimitBytes);
-                }
+                FailingSetup(() => GlyphRasterServices.Current.Budget.SetLimit(GlyphCacheBudget.MinimumLimitBytes));
             }
-            finally
+
+            using (TextTestApplication.Enter())
             {
-                GlyphCacheBudget.Shared.FollowOptions();
+                Assert.Equal(GlyphCacheBudget.DefaultsFor(TextRasterizationDefaults.CurrentPlatform()).Limit,
+                    GlyphRasterServices.Current.Budget.LimitBytes);
             }
         }
 

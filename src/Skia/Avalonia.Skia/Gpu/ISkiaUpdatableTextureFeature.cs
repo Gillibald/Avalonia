@@ -77,7 +77,8 @@ namespace Avalonia.Skia
         /// <param name="context">The context drawing the textures.</param>
         /// <param name="feature">The context's updatable textures, if it has them.</param>
         /// <param name="maskAtlas">
-        /// The atlas of the context's glyph masks, or <c>null</c> for one made for the context,
+        /// The atlas of the context's glyph masks, or <c>null</c> for one made for the context in
+        /// each application that draws on it, charged to that application's glyph cache budget,
         /// whose pages keep no CPU copy when <paramref name="residentPages"/> is on. The
         /// atlas holds the masks of every typeface: its pages change whenever any typeface adds a
         /// glyph, which costs a context with updatable textures what was written only, so
@@ -107,10 +108,7 @@ namespace Avalonia.Skia
                 }
                 else
                 {
-                    s_registrations.AddOrUpdate(context, new Registration(feature,
-                        maskAtlas ?? new GlyphMaskAtlas(residentPages: residentPages),
-                        colorAtlas ?? new GlyphMaskAtlas(format: GlyphAtlasFormat.Rgba, residentPages: residentPages),
-                        ownsMaskAtlas: maskAtlas is null, ownsColorAtlas: colorAtlas is null));
+                    s_registrations.AddOrUpdate(context, new Registration(feature, maskAtlas, colorAtlas, residentPages));
                 }
             }
 
@@ -125,41 +123,89 @@ namespace Avalonia.Skia
         // A disposed context has no handle left to ask; its owner abandons it first.
         public static bool IsLost(GRContext context) => context.Handle == IntPtr.Zero || context.IsAbandoned;
 
-        /// <summary>The updatable textures of one context and the atlases its glyph masks go to.</summary>
+        /// <summary>
+        /// The updatable textures of one context and the atlases its glyph masks go to. Atlases the
+        /// registration was not given are made for the application whose drawing contexts first ask
+        /// for them, charged to its glyph cache budget, and made again for the next application.
+        /// </summary>
         internal sealed class Registration
         {
-            private readonly bool _ownsMaskAtlas;
-            private readonly bool _ownsColorAtlas;
+            private readonly object _lock = new();
+            private readonly GlyphMaskAtlas? _maskAtlas;
+            private readonly GlyphMaskAtlas? _colorAtlas;
+            private GlyphRasterServices? _services;
+            private GlyphMaskAtlas? _ownMaskAtlas;
+            private GlyphMaskAtlas? _ownColorAtlas;
 
-            public Registration(ISkiaUpdatableTextureFeature feature, GlyphMaskAtlas maskAtlas, GlyphMaskAtlas colorAtlas,
-                bool ownsMaskAtlas = false, bool ownsColorAtlas = false)
+            /// <param name="feature">The context's updatable textures.</param>
+            /// <param name="maskAtlas">The atlas of the context's glyph masks, or <c>null</c> to make one per application.</param>
+            /// <param name="colorAtlas">The atlas of its colour glyph content, or <c>null</c> to make one per application.</param>
+            /// <param name="residentPages">Whether atlases made here keep no CPU copy of their pages.</param>
+            public Registration(ISkiaUpdatableTextureFeature feature, GlyphMaskAtlas? maskAtlas,
+                GlyphMaskAtlas? colorAtlas, bool residentPages)
             {
                 Feature = feature;
-                MaskAtlas = maskAtlas;
-                ColorAtlas = colorAtlas;
-                _ownsMaskAtlas = ownsMaskAtlas;
-                _ownsColorAtlas = ownsColorAtlas;
+                _maskAtlas = maskAtlas;
+                _colorAtlas = colorAtlas;
+                ResidentPages = residentPages;
+            }
+
+            public ISkiaUpdatableTextureFeature Feature { get; }
+
+            /// <summary>Whether the atlases made for the registration keep no CPU copy of their pages.</summary>
+            public bool ResidentPages { get; }
+
+            /// <summary>The atlas glyph masks drawn for <paramref name="services"/>' application go to.</summary>
+            public GlyphMaskAtlas MaskAtlasFor(GlyphRasterServices services)
+            {
+                lock (_lock)
+                {
+                    return _maskAtlas ?? EnsureOwnAtlases(services).Mask;
+                }
+            }
+
+            /// <summary>The atlas colour glyph content drawn for <paramref name="services"/>' application goes to.</summary>
+            public GlyphMaskAtlas ColorAtlasFor(GlyphRasterServices services)
+            {
+                lock (_lock)
+                {
+                    return _colorAtlas ?? EnsureOwnAtlases(services).Color;
+                }
             }
 
             /// <summary>Releases the atlases made for the registration: their pages and budget charges go.</summary>
             public void ReleaseOwnedAtlases()
             {
-                if (_ownsMaskAtlas)
+                lock (_lock)
                 {
-                    MaskAtlas.Release();
-                }
-
-                if (_ownsColorAtlas)
-                {
-                    ColorAtlas.Release();
+                    ReleaseOwn();
                 }
             }
 
-            public ISkiaUpdatableTextureFeature Feature { get; }
+            // Called under the lock.
+            private (GlyphMaskAtlas Mask, GlyphMaskAtlas Color) EnsureOwnAtlases(GlyphRasterServices services)
+            {
+                if (_services != services || services.IsDisposed || _ownMaskAtlas is null || _ownColorAtlas is null)
+                {
+                    ReleaseOwn();
+                    _services = services;
+                    _ownMaskAtlas = new GlyphMaskAtlas(services.Budget, residentPages: ResidentPages);
+                    _ownColorAtlas = new GlyphMaskAtlas(services.Budget, format: GlyphAtlasFormat.Rgba,
+                        residentPages: ResidentPages);
+                }
 
-            public GlyphMaskAtlas MaskAtlas { get; }
+                return (_ownMaskAtlas, _ownColorAtlas);
+            }
 
-            public GlyphMaskAtlas ColorAtlas { get; }
+            // Called under the lock.
+            private void ReleaseOwn()
+            {
+                _ownMaskAtlas?.Release();
+                _ownColorAtlas?.Release();
+                _ownMaskAtlas = null;
+                _ownColorAtlas = null;
+                _services = null;
+            }
         }
     }
 }

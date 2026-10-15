@@ -11,8 +11,13 @@ namespace Avalonia.Skia.UnitTests.Media
     /// hold their masks exactly, keep empty gutters for bilinear sampling, and the glyph cache
     /// budget evicts the page used least recently first.
     /// </summary>
-    public class GlyphMaskAtlasTests
+    public class GlyphMaskAtlasTests : IDisposable
     {
+        // The application every test of the class draws text in.
+        private readonly IDisposable _application = TextTestApplication.Enter();
+
+        public void Dispose() => _application.Dispose();
+
         [Fact]
         public void Entries_Hold_Their_Masks_With_Empty_Gutters()
         {
