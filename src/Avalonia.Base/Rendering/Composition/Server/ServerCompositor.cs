@@ -46,15 +46,15 @@ namespace Avalonia.Rendering.Composition.Server
         public ReadbackIndices Readback { get; } = new();
         
         private int _ticksSinceLastCommit;
-        private Media.Fonts.Rasterization.GlyphRasterServices? _rasterServices;
+        private Media.GlyphRasterizationContext? _rasterizationContext;
 
         /// <summary>
-        /// The managed text raster services of the application this compositor renders for,
+        /// The glyph rasterization context of the application this compositor renders for,
         /// resolved through the locator on first use from the render thread; <c>null</c> while the
-        /// application has no font manager.
+        /// application has none.
         /// </summary>
-        internal Media.Fonts.Rasterization.GlyphRasterServices? RasterServices
-            => _rasterServices ??= Media.Fonts.Rasterization.GlyphRasterServices.TryGetCurrent();
+        internal Media.GlyphRasterizationContext? RasterizationContext
+            => _rasterizationContext ??= Media.GlyphRasterizationContext.Current;
         private const int CommitGraceTicks = 10;
 
         public ServerCompositor(IRenderLoop renderLoop, IPlatformGraphics? platformGraphics,

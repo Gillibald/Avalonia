@@ -464,7 +464,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
         /// <summary>The atlas the contexts of <paramref name="gpu"/> place the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
-            => SkiaUpdatableTextures.Get(gpu.GrContext)?.MaskAtlasFor(GlyphRasterServices.Current) ?? typeface.MaskAtlas;
+            => SkiaUpdatableTextures.Get(gpu.GrContext)?.MaskAtlasFor(GlyphRasterizationContext.Required) ?? typeface.MaskAtlas;
 
         /// <summary>The atlas <paramref name="context"/> places the masks of <paramref name="typeface"/> in.</summary>
         internal static GlyphMaskAtlas AtlasOf(ITransformedGlyphContext context, GlyphTypeface typeface)

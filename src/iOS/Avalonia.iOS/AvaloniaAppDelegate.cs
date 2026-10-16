@@ -136,10 +136,10 @@ namespace Avalonia.iOS
 
             // A suspended app is the first the system terminates for memory; glyphs rasterize
             // again when it returns.
-            Media.FontManager.TrimGlyphCaches();
+            Media.GlyphRasterizationContext.Current?.TrimCaches();
         }
 
-        private void OnMemoryWarning(NSNotification notification) => Media.FontManager.TrimGlyphCaches();
+        private void OnMemoryWarning(NSNotification notification) => Media.GlyphRasterizationContext.Current?.TrimCaches();
 
         private void OnLeavingBackground(NSNotification notification)
         {

@@ -15,15 +15,6 @@ namespace TextStress
         {
             ThreadClock.Calibrate();
 
-            if (options.PhaseTimers)
-            {
-                // The application's font manager owns the switch; the platform setup takes this one.
-                var services = Avalonia.Media.FontManager.Current.RasterServices;
-
-                services.Diagnostics.Calibrate(services.ForCurrentThread());
-                services.Diagnostics.PhaseTimersEnabled = true;
-            }
-
             // The Skia options are bound in the application's locator, where the platform setup
             // finds them; they reach every drawing context it creates.
             var skiaOptions = new Avalonia.SkiaOptions();
@@ -101,6 +92,13 @@ namespace TextStress
         public static async Task<int> RunAsync(TopLevel topLevel, RunOptions options)
         {
             ResultWriter? writer = null;
+
+            // The glyph rasterization context the platform setup registered owns the switch.
+            if (options.PhaseTimers && GlyphRasterizationContext.Current is { } context)
+            {
+                context.Diagnostics.Calibrate(context.ForCurrentThread());
+                context.Diagnostics.PhaseTimersEnabled = true;
+            }
 
             try
             {

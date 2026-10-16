@@ -284,11 +284,11 @@ namespace Avalonia.Skia
             TintsTextTiers = options?.TintTextTiers ?? false;
             CountsTextTiers = options?.CountTextTiers ?? false;
 
-            _rasterServices = GlyphRasterServices.TryGetCurrent();
+            _rasterizationContext = GlyphRasterizationContext.Current;
 
             // Last, so a constructor that throws leaves no frame open. A context drawn inside
             // another on this thread (a layer, an offscreen surface) belongs to that frame.
-            _glyphCacheFrame = _rasterServices?.Budget.BeginFrame() ?? default;
+            _glyphCacheFrame = _rasterizationContext?.Budget.BeginFrame() ?? default;
         }
         
         /// <summary>
@@ -419,10 +419,10 @@ namespace Avalonia.Skia
 
         // The registration's atlases of the context's application, asked for once per context.
         GlyphMaskAtlas? ITransformedGlyphContext.MaskAtlas
-            => _registration is null ? null : _maskAtlas ??= _registration.MaskAtlasFor(RasterState.Services);
+            => _registration is null ? null : _maskAtlas ??= _registration.MaskAtlasFor(RasterState.Context);
 
         GlyphMaskAtlas? ITransformedGlyphContext.ColorAtlas
-            => _registration is null ? null : _colorAtlas ??= _registration.ColorAtlasFor(RasterState.Services);
+            => _registration is null ? null : _colorAtlas ??= _registration.ColorAtlasFor(RasterState.Context);
 
         // Described once per context: every text run asks, and the maximum texture size is a
         // native call.
@@ -431,7 +431,7 @@ namespace Avalonia.Skia
         private GlyphTargetSurface? _targetSurface;
 
         // Resolved once per context: a context draws for the application it was created in.
-        private GlyphRasterServices? _rasterServices;
+        private GlyphRasterizationContext? _rasterizationContext;
         private GlyphRasterTuning? _rasterTuning;
         private TextRasterThreadState? _rasterState;
 
@@ -459,18 +459,18 @@ namespace Avalonia.Skia
 
         /// <inheritdoc cref="IGlyphTargetContext.RasterState"/>
         /// <remarks>
-        /// Taken on first use, on the thread that draws. An application whose font manager was
-        /// registered only after the context was created is found then.
+        /// Taken on first use, on the thread that draws. An application whose glyph rasterization
+        /// context was registered only after the drawing context was created is found then.
         /// </remarks>
         internal TextRasterThreadState RasterState
-            => _rasterState ??= (_rasterServices ??= GlyphRasterServices.Current).ForCurrentThread();
+            => _rasterState ??= (_rasterizationContext ??= GlyphRasterizationContext.Required).ForCurrentThread();
 
         /// <summary>
         /// The <see cref="RasterState"/> of the context, or <c>null</c> when its application has no
-        /// font manager, for what draws whether or not managed text does.
+        /// glyph rasterization context, for what draws whether or not managed text does.
         /// </summary>
         private TextRasterThreadState? TryGetRasterState()
-            => _rasterState ??= (_rasterServices ??= GlyphRasterServices.TryGetCurrent())?.ForCurrentThread();
+            => _rasterState ??= (_rasterizationContext ??= GlyphRasterizationContext.Current)?.ForCurrentThread();
 
         /// <summary>The phase timers glyph drawing on this context records in, when there are any.</summary>
         private GlyphPhaseTimers? PhaseTimers => TryGetRasterState()?.PhaseTimers;
@@ -479,7 +479,7 @@ namespace Avalonia.Skia
 
         /// <summary>
         /// The Skia text counters of the context's raster state, or of the context alone when its
-        /// application has no font manager.
+        /// application has no glyph rasterization context.
         /// </summary>
         internal SkiaTextCounters Counters
             => _counters ??= TryGetRasterState() is { } state ? SkiaTextCounters.Of(state) : new SkiaTextCounters();

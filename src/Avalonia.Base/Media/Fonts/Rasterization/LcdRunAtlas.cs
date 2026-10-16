@@ -137,13 +137,13 @@ namespace Avalonia.Media.Fonts.Rasterization
         private long _evictions;
 
         /// <param name="budget">
-        /// The budget the atlas charges its pages to; the current application's (<see cref="GlyphRasterServices.Budget"/>) when omitted.
+        /// The budget the atlas charges its pages to; the current application's (<see cref="GlyphRasterizationContext.Budget"/>) when omitted.
         /// </param>
         /// <param name="maxPageHeight">The row limit of a page, at most <see cref="MaxPageHeight"/>.</param>
         public LcdRunAtlas(GlyphCacheBudget? budget = null, int maxPageHeight = MaxPageHeight)
         {
             _maxPageHeight = Math.Clamp(maxPageHeight, RowQuantum, MaxPageHeight);
-            _clock = budget ?? GlyphRasterServices.Current.Budget;
+            _clock = budget ?? GlyphRasterizationContext.Required.Budget;
             _handle = _clock.Register(GlyphCachePoolKind.LcdAtlas, this);
         }
 

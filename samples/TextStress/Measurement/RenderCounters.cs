@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Skia;
 
@@ -59,7 +60,7 @@ namespace TextStress.Measurement
         /// <summary>Reads every counter of the calling thread into <paramref name="values"/>.</summary>
         public static void Read(long[] values)
         {
-            var raster = GlyphRasterServices.Current.ForCurrentThread();
+            var raster = GlyphRasterizationContext.Required.ForCurrentThread();
             var counters = raster.Counters;
             var skia = SkiaTextCounters.Of(raster);
             var i = 0;

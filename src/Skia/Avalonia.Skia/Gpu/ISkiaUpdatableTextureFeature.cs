@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 
@@ -136,7 +137,7 @@ namespace Avalonia.Skia
             private readonly object _lock = new();
             private readonly GlyphMaskAtlas? _maskAtlas;
             private readonly GlyphMaskAtlas? _colorAtlas;
-            private GlyphRasterServices? _services;
+            private GlyphRasterizationContext? _context;
             private GlyphMaskAtlas? _ownMaskAtlas;
             private GlyphMaskAtlas? _ownColorAtlas;
             private LcdRunAtlas? _lcdAtlas;
@@ -165,33 +166,33 @@ namespace Avalonia.Skia
             /// </summary>
             public DrawingContextImpl.PageTextureSet PageTextures { get; } = new();
 
-            /// <summary>The atlas glyph masks drawn for <paramref name="services"/>' application go to.</summary>
-            public GlyphMaskAtlas MaskAtlasFor(GlyphRasterServices services)
+            /// <summary>The atlas glyph masks drawn for <paramref name="context"/>' application go to.</summary>
+            public GlyphMaskAtlas MaskAtlasFor(GlyphRasterizationContext context)
             {
                 lock (_lock)
                 {
-                    return _maskAtlas ?? EnsureOwnAtlases(services).Mask;
+                    return _maskAtlas ?? EnsureOwnAtlases(context).Mask;
                 }
             }
 
-            /// <summary>The atlas colour glyph content drawn for <paramref name="services"/>' application goes to.</summary>
-            public GlyphMaskAtlas ColorAtlasFor(GlyphRasterServices services)
+            /// <summary>The atlas colour glyph content drawn for <paramref name="context"/>' application goes to.</summary>
+            public GlyphMaskAtlas ColorAtlasFor(GlyphRasterizationContext context)
             {
                 lock (_lock)
                 {
-                    return _colorAtlas ?? EnsureOwnAtlases(services).Color;
+                    return _colorAtlas ?? EnsureOwnAtlases(context).Color;
                 }
             }
 
             /// <summary>
-            /// The atlas the subpixel run masks drawn on the context for <paramref name="services"/>'
+            /// The atlas the subpixel run masks drawn on the context for <paramref name="context"/>'
             /// application go to, made for that application.
             /// </summary>
-            public LcdRunAtlas LcdAtlasFor(GlyphRasterServices services)
+            public LcdRunAtlas LcdAtlasFor(GlyphRasterizationContext context)
             {
                 lock (_lock)
                 {
-                    EnsureOwnAtlases(services);
+                    EnsureOwnAtlases(context);
 
                     return _lcdAtlas!;
                 }
@@ -207,16 +208,16 @@ namespace Avalonia.Skia
             }
 
             // Called under the lock.
-            private (GlyphMaskAtlas Mask, GlyphMaskAtlas Color) EnsureOwnAtlases(GlyphRasterServices services)
+            private (GlyphMaskAtlas Mask, GlyphMaskAtlas Color) EnsureOwnAtlases(GlyphRasterizationContext context)
             {
-                if (_services != services || services.IsDisposed || _ownMaskAtlas is null || _ownColorAtlas is null)
+                if (_context != context || context.IsDisposed || _ownMaskAtlas is null || _ownColorAtlas is null)
                 {
                     ReleaseOwn();
-                    _services = services;
-                    _ownMaskAtlas = new GlyphMaskAtlas(services.Budget, residentPages: ResidentPages);
-                    _ownColorAtlas = new GlyphMaskAtlas(services.Budget, format: GlyphAtlasFormat.Rgba,
+                    _context = context;
+                    _ownMaskAtlas = new GlyphMaskAtlas(context.Budget, residentPages: ResidentPages);
+                    _ownColorAtlas = new GlyphMaskAtlas(context.Budget, format: GlyphAtlasFormat.Rgba,
                         residentPages: ResidentPages);
-                    _lcdAtlas = new LcdRunAtlas(services.Budget);
+                    _lcdAtlas = new LcdRunAtlas(context.Budget);
                 }
 
                 return (_ownMaskAtlas, _ownColorAtlas);
@@ -231,7 +232,7 @@ namespace Avalonia.Skia
                 _ownMaskAtlas = null;
                 _ownColorAtlas = null;
                 _lcdAtlas = null;
-                _services = null;
+                _context = null;
             }
         }
     }

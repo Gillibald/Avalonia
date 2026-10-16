@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Threading;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting.Unicode;
@@ -31,8 +30,6 @@ namespace Avalonia.Media
         private string? _defaultFamilyNameOverride;
         private volatile bool _optionsResolved;
         private FontFamily? _defaultFontFamily;
-        private Fonts.Rasterization.GlyphRasterServices? _rasterServices;
-        private volatile bool _disposed;
 
         [Obsolete("The platform font manager seam is replaced by ISystemFontProvider; the argument is ignored. Register a system font collection instead.")]
         public FontManager(IFontManagerImpl platformImpl) : this()
@@ -95,61 +92,10 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Releases the memory that the glyph caches of <see cref="TextRasterizationMode.Managed"/>
-        /// rasterization hold beyond what the frames being drawn use: rasterized glyph masks,
-        /// glyph atlas pages, composed run masks, hinting state and glyph outlines.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// Call it when the application learns that memory is low, for example from a signal of
-        /// its own; the platforms that report memory pressure or a move to the background call it
-        /// already. Text drawn afterwards rasterizes its glyphs again, so calling it while text
-        /// is animating costs frame time.
-        /// </para>
-        /// <para>
-        /// Safe to call from any thread. Atlas pages and per-run masks that a frame on another
-        /// thread may be drawing from at the time are released when the next frame begins. The
-        /// glyph caches of <see cref="TextRasterizationMode.Backend"/> rasterization belong to the
-        /// render backend and are not affected.
-        /// </para>
-        /// </remarks>
-        public static void TrimGlyphCaches()
-            => AvaloniaLocator.Current.GetService<FontManager>()?._rasterServices?.Budget.TrimForMemoryPressure();
-
-        /// <summary>
         /// The registry of the font file data the application's faces share; it holds no reference of
         /// its own, so it needs no disposal.
         /// </summary>
         internal FontFileCache FileCache { get; } = new();
-
-        /// <summary>
-        /// The state of managed glyph rasterization this application keeps, created on first use
-        /// from any thread and disposed with the font manager.
-        /// </summary>
-        internal Fonts.Rasterization.GlyphRasterServices RasterServices
-            => Volatile.Read(ref _rasterServices) ?? CreateRasterServices();
-
-        private Fonts.Rasterization.GlyphRasterServices CreateRasterServices()
-        {
-            var created = new Fonts.Rasterization.GlyphRasterServices();
-            var winner = Interlocked.CompareExchange(ref _rasterServices, created, null);
-
-            if (winner is not null)
-            {
-                created.Dispose();
-
-                return winner;
-            }
-
-            // A render thread may ask after the font manager was disposed: what it creates then
-            // holds nothing that outlives it.
-            if (_disposed)
-            {
-                created.Dispose();
-            }
-
-            return created;
-        }
 
         /// <summary>
         ///     Gets the system's default font family.
@@ -610,14 +556,10 @@ namespace Avalonia.Media
 
         void IDisposable.Dispose()
         {
-            _disposed = true;
-
             foreach (var pair in _fontCollections)
                 pair.Value.Dispose();
 
             _fontCollections.Clear();
-
-            Interlocked.Exchange(ref _rasterServices, null)?.Dispose();
         }
     }
 }

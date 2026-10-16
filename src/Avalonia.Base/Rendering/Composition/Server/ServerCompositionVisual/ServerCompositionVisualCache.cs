@@ -203,7 +203,7 @@ internal class ServerCompositionVisualCache
         // Render to layer if needed
         if (!_dirtyRectTracker.IsEmpty)
         {
-            var raster = Compositor.RasterServices?.ForCurrentThread();
+            var raster = Compositor.RasterizationContext?.ForCurrentThread();
             var unsettledDraws = raster?.UnsettledDraws ?? 0;
 
             using var ctx = _layer.CreateDrawingContext();

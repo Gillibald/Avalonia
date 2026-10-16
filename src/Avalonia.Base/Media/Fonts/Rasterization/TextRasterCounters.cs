@@ -50,7 +50,8 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// The counters of the calling thread in the current application, or <c>null</c> when it has
-        /// no font manager. For code that has no raster state at hand; drawing code passes its own.
+        /// no glyph rasterization context. For code that has no raster state at hand; drawing code
+        /// passes its own.
         /// </summary>
         public static TextRasterCounters? TryGetCurrent() => TextRasterThreadState.TryGetCurrent()?.Counters;
     }

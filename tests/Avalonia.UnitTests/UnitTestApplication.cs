@@ -53,6 +53,7 @@ namespace Avalonia.UnitTests
 
                 (AvaloniaLocator.Current.GetService<IToolTipService>() as ToolTipService)?.Dispose();
                 (AvaloniaLocator.Current.GetService<FontManager>() as IDisposable)?.Dispose();
+                AvaloniaLocator.Current.GetService<GlyphRasterizationContext>()?.Dispose();
                 (AvaloniaLocator.Current.GetService<IInputManager>() as IDisposable)?.Dispose();
 
                 Dispatcher.ResetForUnitTests();
@@ -84,6 +85,7 @@ namespace Avalonia.UnitTests
                 .Bind<IKeyboardNavigationHandler?>().ToFunc(Services.KeyboardNavigation ?? (() => null))
                 .Bind<IRuntimePlatform?>().ToConstant(Services.Platform)
                 .Bind<IPlatformRenderInterface?>().ToConstant(Services.RenderInterface)
+                .Bind<GlyphRasterizationContext>().ToConstant(new GlyphRasterizationContext())
                 .Bind<ITextShaperImpl?>().ToConstant(Services.TextShaperImpl)
                 .Bind<ICursorFactory?>().ToConstant(Services.StandardCursorFactory)
                 .Bind<IWindowingPlatform?>().ToConstant(Services.WindowingPlatform)
@@ -105,9 +107,9 @@ namespace Avalonia.UnitTests
             }
             else
             {
-                // A font manager of the test's own, without system fonts, which owns what managed text
-                // keeps for the application and is disposed with it. It hides a font manager an
-                // enclosing scope registered, as FontManager.Current would otherwise create one here.
+                // A font manager of the test's own, without system fonts, which shares font file data
+                // for the application and is disposed with it. It hides a font manager an enclosing
+                // scope registered, as FontManager.Current would otherwise create one here.
                 AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(new FontManager());
             }
             var theme = Services.Theme?.Invoke();

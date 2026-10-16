@@ -7,45 +7,45 @@ using Xunit;
 namespace Avalonia.Skia.UnitTests.Media
 {
     /// <summary>
-    /// What managed text keeps across frames belongs to the application's font manager: one state
+    /// What managed text keeps across frames belongs to the application.s glyph rasterization context: one state
     /// per thread, a new one per application, and drawing contexts take the state and tuning of the
     /// application they are created in.
     /// </summary>
-    public class GlyphRasterServicesTests
+    public class GlyphRasterizationContextTests
     {
         [Fact]
         public void Each_Thread_Of_An_Application_Has_One_State()
         {
             using var app = TextTestApplication.Enter();
-            var services = GlyphRasterServices.Current;
-            var here = services.ForCurrentThread();
+            var rasterization = GlyphRasterizationContext.Required;
+            var here = rasterization.ForCurrentThread();
             TextRasterThreadState? other = null;
-            var thread = new Thread(() => other = services.ForCurrentThread());
+            var thread = new Thread(() => other = rasterization.ForCurrentThread());
 
             thread.Start();
             thread.Join();
 
-            Assert.Same(here, services.ForCurrentThread());
+            Assert.Same(here, rasterization.ForCurrentThread());
             Assert.NotSame(here, other);
-            Assert.Same(services, here.Services);
+            Assert.Same(rasterization, here.Context);
         }
 
         [Fact]
-        public void A_New_Application_Has_New_Services()
+        public void A_New_Application_Has_A_New_Context()
         {
-            GlyphRasterServices first;
+            GlyphRasterizationContext first;
 
             using (TextTestApplication.Enter())
             {
-                first = GlyphRasterServices.Current;
+                first = GlyphRasterizationContext.Required;
             }
 
             Assert.True(first.IsDisposed);
 
             using (TextTestApplication.Enter())
             {
-                Assert.NotSame(first, GlyphRasterServices.Current);
-                Assert.False(GlyphRasterServices.Current.IsDisposed);
+                Assert.NotSame(first, GlyphRasterizationContext.Required);
+                Assert.False(GlyphRasterizationContext.Required.IsDisposed);
             }
         }
 
@@ -59,7 +59,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
             var target = (IGlyphTargetContext)context;
 
-            Assert.Same(GlyphRasterServices.Current.ForCurrentThread(), target.RasterState);
+            Assert.Same(GlyphRasterizationContext.Required.ForCurrentThread(), target.RasterState);
             Assert.Same(tuning, target.RasterTuning);
         }
     }

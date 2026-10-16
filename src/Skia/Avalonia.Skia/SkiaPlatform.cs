@@ -1,3 +1,4 @@
+using Avalonia.Media;
 using Avalonia.Platform;
 
 namespace Avalonia.Skia
@@ -20,8 +21,10 @@ namespace Avalonia.Skia
             var renderInterface = new PlatformRenderInterface(options.MaxGpuResourceSizeBytes, options.UseStencilBuffers,
                 options.ResidentGlyphPages);
 
+            // The application's managed glyph rasterization state lives as long as its render setup.
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(renderInterface)
+                .Bind<Media.GlyphRasterizationContext>().ToConstant(new Media.GlyphRasterizationContext())
                 .Bind<Media.Fonts.Rasterization.IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
         }
 

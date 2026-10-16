@@ -8,8 +8,8 @@ namespace Avalonia.Skia.UnitTests
 {
     /// <summary>
     /// The application scopes of this assembly's tests. Each binds what the expectations here were
-    /// recorded under, and a font manager that owns what managed text keeps across frames; leaving
-    /// the scope disposes the font manager, as an application's shutdown would.
+    /// recorded under, and a glyph rasterization context that owns what managed text keeps across
+    /// frames; leaving the scope disposes it, as an application's shutdown would.
     /// </summary>
     internal static class TextTestApplication
     {
@@ -31,13 +31,18 @@ namespace Avalonia.Skia.UnitTests
         public static TextRasterizationDefaults RasterizationDefaults { get; } =
             new(TextRasterizationMode.Managed, unspecifiedRendersSubpixel: true);
 
-        /// <summary>Enters a locator scope with a new font manager and this assembly's bindings.</summary>
+        /// <summary>
+        /// Enters a locator scope with a new font manager, a glyph rasterization context and this
+        /// assembly's bindings.
+        /// </summary>
         public static IDisposable Enter()
         {
             var scope = AvaloniaLocator.EnterScope();
             var fontManager = new FontManager();
+            var context = new GlyphRasterizationContext();
 
             AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(fontManager);
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationContext>().ToConstant(context);
             BindDefaults();
 
             return Disposable.Create(() =>
@@ -49,6 +54,7 @@ namespace Avalonia.Skia.UnitTests
                 }
 
                 ((IDisposable)fontManager).Dispose();
+                context.Dispose();
                 scope.Dispose();
             });
         }
@@ -64,7 +70,7 @@ namespace Avalonia.Skia.UnitTests
         }
 
         /// <summary>The text raster state of the calling thread in the current application.</summary>
-        public static TextRasterThreadState ThreadState => GlyphRasterServices.Current.ForCurrentThread();
+        public static TextRasterThreadState ThreadState => GlyphRasterizationContext.Required.ForCurrentThread();
 
         /// <summary>The managed rasterization counters of the calling thread in the current application.</summary>
         public static TextRasterCounters Counters => ThreadState.Counters;

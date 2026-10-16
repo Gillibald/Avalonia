@@ -78,7 +78,7 @@ namespace TextShowcase.Scenes
 
                 last = time;
 
-                var atlas = Array.Find(GlyphRasterServices.Current.Budget.GetSharedAtlases(),
+                var atlas = Array.Find(GlyphRasterizationContext.Required.Budget.GetSharedAtlases(),
                     candidate => candidate.Format == GlyphAtlasFormat.Alpha8 && candidate.GetPages().Length > 0);
                 var atlasPages = atlas?.GetPages() ?? Array.Empty<GlyphAtlasPage>();
 

@@ -231,7 +231,7 @@ namespace TextLab
         /// <summary>The glyph runs each tier drew, on every thread that drew for the application.</summary>
         private static (long Mask, long Transformed, long Blob) ReadTierDraws()
         {
-            var services = GlyphRasterServices.Current;
+            var services = GlyphRasterizationContext.Required;
 
             return (Avalonia.Skia.SkiaTextCounters.Sum(services, c => c.MaskTierDraws),
                 Avalonia.Skia.SkiaTextCounters.Sum(services, c => c.TransformedMaskTierDraws),
@@ -254,7 +254,7 @@ namespace TextLab
             var blobDraws = tiers.Blob - _tierBaseline.Blob;
 
             _hudText.Text = FormattableString.Invariant(
-                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB; all glyph caches {GlyphRasterServices.Current.Budget.UsedBytes / 1024} KB of {GlyphRasterServices.Current.Budget.LimitBytes / 1024} KB{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, blob {blobDraws}");
+                $"mask cache: {cache.Count} masks, {cache.TotalCost / 1024} KB; all glyph caches {GlyphRasterizationContext.Required.Budget.UsedBytes / 1024} KB of {GlyphRasterizationContext.Required.Budget.LimitBytes / 1024} KB{Environment.NewLine}tier draws: masks {maskDraws}, transformed masks {transformedDraws}, blob {blobDraws}");
         }
 
         private void RebuildList()

@@ -38,7 +38,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 var path = t_scratch ??= new GlyphPathBuilder();
                 var glyphs = items.AsSpan(0, count);
 
-                scratch.BeginDraw(run.GlyphTypeface, key, raster.Services.Budget.Frame);
+                scratch.BeginDraw(run.GlyphTypeface, key, raster.Context.Budget.Frame);
 
                 if (context.TargetSurface.RasterTarget == GlyphRasterTarget.Raster &&
                     context.TryGetBlitTarget(out var target))

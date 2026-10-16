@@ -396,7 +396,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         internal static GlyphMaskAtlas ColorAtlasOf(GpuTestContext gpu, GlyphTypeface typeface)
-            => SkiaUpdatableTextures.Get(gpu.GrContext)!.ColorAtlasFor(GlyphRasterServices.Current);
+            => SkiaUpdatableTextures.Get(gpu.GrContext)!.ColorAtlasFor(GlyphRasterizationContext.Required);
 
         internal static IDisposable CreateEnvironment()
         {

@@ -36,7 +36,7 @@ namespace Avalonia.Skia
         /// </summary>
         internal LcdRunAtlas LcdAtlas
         {
-            get => _lcdAtlas ??= _registration?.LcdAtlasFor(RasterState.Services) ?? RasterState.Services.LcdAtlas;
+            get => _lcdAtlas ??= _registration?.LcdAtlasFor(RasterState.Context) ?? RasterState.Context.LcdAtlas;
             set => _lcdAtlas = value;
         }
 

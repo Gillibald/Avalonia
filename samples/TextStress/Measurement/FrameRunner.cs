@@ -117,7 +117,7 @@ namespace TextStress.Measurement
                     environmentWritten = true;
                 }
 
-                GlyphRasterServices.Current.Budget.ResetPeak();
+                GlyphRasterizationContext.Required.Budget.ResetPeak();
                 var interactive = _options.Frames <= 0;
                 var total = _options.Warmup + _options.Frames;
                 var previous = new FrameSample();
@@ -227,7 +227,7 @@ namespace TextStress.Measurement
                 sample.RenderStartThread = Environment.CurrentManagedThreadId;
                 sample.RenderCpuStart = ThreadClock.NowMs();
                 sample.RenderAllocStart = GC.GetAllocatedBytesForCurrentThread();
-                var skia = SkiaTextCounters.Of(GlyphRasterServices.Current.ForCurrentThread());
+                var skia = SkiaTextCounters.Of(GlyphRasterizationContext.Required.ForCurrentThread());
 
                 sample.AtlasDrawsStart = skia.AtlasDraws;
                 sample.PageUploadsStart = skia.PageImagesCreated;
@@ -244,7 +244,7 @@ namespace TextStress.Measurement
                 sample.RenderEndThread = Environment.CurrentManagedThreadId;
                 sample.RenderCpuEnd = ThreadClock.NowMs();
                 sample.RenderAllocEnd = GC.GetAllocatedBytesForCurrentThread();
-                var skia = SkiaTextCounters.Of(GlyphRasterServices.Current.ForCurrentThread());
+                var skia = SkiaTextCounters.Of(GlyphRasterizationContext.Required.ForCurrentThread());
 
                 sample.AtlasDrawsEnd = skia.AtlasDraws;
                 sample.PageUploadsEnd = skia.PageImagesCreated;
@@ -299,7 +299,7 @@ namespace TextStress.Measurement
             // own, others in each face's own atlas.
             var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
 
-            foreach (var shared in GlyphRasterServices.Current.Budget.GetSharedAtlases())
+            foreach (var shared in GlyphRasterizationContext.Required.Budget.GetSharedAtlases())
             {
                 var sharedPages = shared.GetPages().Length;
 
@@ -343,13 +343,13 @@ namespace TextStress.Measurement
                 }
             }
 
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
             target.BudgetUsedBytes = budget.UsedBytes;
             target.BudgetPeakBytes = budget.PeakBytes;
             target.BudgetEvictedBytes = budget.EvictedBytes;
 
             // Process-wide readings on the UI thread: the tier counts of every thread that drew.
-            var services = GlyphRasterServices.Current;
+            var services = GlyphRasterizationContext.Required;
 
             target.TierMask = SkiaTextCounters.Sum(services, c => c.MaskTierDraws);
             target.TierTransformed = SkiaTextCounters.Sum(services, c => c.TransformedMaskTierDraws);
@@ -389,7 +389,7 @@ namespace TextStress.Measurement
         /// <summary>The glyph cache budget's limits and the bytes each pool kind holds, in MB.</summary>
         private static string DescribeBudget()
         {
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
             var line = new System.Text.StringBuilder();
 
             line.Append(FormattableString.Invariant(
@@ -474,7 +474,7 @@ namespace TextStress.Measurement
 
             yield return ("job", _options.GetString("job", ""));
             yield return ("thread_clock", ThreadClock.Description);
-            var diagnostics = GlyphRasterServices.Current.Diagnostics;
+            var diagnostics = GlyphRasterizationContext.Required.Diagnostics;
 
             yield return ("phase_timers", diagnostics.PhaseTimersEnabled
                 ? FormattableString.Invariant(
@@ -505,7 +505,7 @@ namespace TextStress.Measurement
             yield return ("warmup", _options.Warmup.ToString(CultureInfo.InvariantCulture));
             yield return ("prewarm_ms", _options.PrewarmMs.ToString(CultureInfo.InvariantCulture));
             yield return ("glyph_cache_limit_mb",
-                (GlyphRasterServices.Current.Budget.LimitBytes / 1048576.0).ToString(CultureInfo.InvariantCulture));
+                (GlyphRasterizationContext.Required.Budget.LimitBytes / 1048576.0).ToString(CultureInfo.InvariantCulture));
             yield return ("heap_read_period", s_heapReadPeriod.ToString(CultureInfo.InvariantCulture));
 
             foreach (var entry in StressLog.HostEnvironment)

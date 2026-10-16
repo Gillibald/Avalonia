@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.ExceptionServices;
 using System.Threading;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using SkiaSharp;
 using Xunit;
@@ -44,7 +45,7 @@ namespace Avalonia.Skia.UnitTests.Media
         private static void DrawWithLayer()
         {
             using var app = TextTestApplication.Enter();
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
             var info = new SKImageInfo(64, 64, SKColorType.Bgra8888, SKAlphaType.Premul);
 
             using var surface = SKSurface.Create(info);

@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 
 namespace Avalonia.Skia
@@ -80,15 +81,15 @@ namespace Avalonia.Skia
                (SkiaTextCounters)(state.Counters.BackendCounters = new SkiaTextCounters());
 
         /// <summary>
-        /// The sum of <paramref name="counter"/> over the threads of <paramref name="services"/>' application
+        /// The sum of <paramref name="counter"/> over the threads of <paramref name="context"/>' application
         /// that drew through Skia, for readers on another thread than the one drawing (see
-        /// <see cref="GlyphRasterServices.GetThreadStates"/>).
+        /// <see cref="GlyphRasterizationContext.GetThreadStates"/>).
         /// </summary>
-        public static long Sum(GlyphRasterServices services, Func<SkiaTextCounters, long> counter)
+        public static long Sum(GlyphRasterizationContext context, Func<SkiaTextCounters, long> counter)
         {
             long sum = 0;
 
-            foreach (var state in services.GetThreadStates())
+            foreach (var state in context.GetThreadStates())
             {
                 if (state.Counters.BackendCounters is SkiaTextCounters counters)
                 {

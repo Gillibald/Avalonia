@@ -726,7 +726,7 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         /// <summary>The frames in which a moving run of this thread's application drew sharp, a running total.</summary>
-        private static int ThreadTriedFrames => GlyphRasterServices.Current.ForCurrentThread().Motion.TriedFrames;
+        private static int ThreadTriedFrames => GlyphRasterizationContext.Required.ForCurrentThread().Motion.TriedFrames;
 
         /// <summary>The frames from <paramref name="from"/> up to, not including, <paramref name="to"/>.</summary>
         private static List<int> Range(int from, int to)

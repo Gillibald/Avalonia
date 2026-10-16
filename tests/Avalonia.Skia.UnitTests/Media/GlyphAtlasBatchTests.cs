@@ -1293,7 +1293,7 @@ namespace Avalonia.Skia.UnitTests.Media
             var runs = CreateParagraph(typeface, 4, 13, new Point(6.3, 4));
             var phases = Enum.GetValues<GlyphTimerPhase>();
 
-            var services = GlyphRasterServices.Current;
+            var services = GlyphRasterizationContext.Required;
             var timers = services.ForCurrentThread().PhaseTimers;
 
             long[] Counts() => phases.Select(timers.GetCount).ToArray();

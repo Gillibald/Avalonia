@@ -2,7 +2,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
     /// The diagnostics switches of an application's managed glyph rasterization, for profiling
-    /// tools (<see cref="GlyphRasterServices.Diagnostics"/>). What they record is kept per thread
+    /// tools (<see cref="GlyphRasterizationContext.Diagnostics"/>). What they record is kept per thread
     /// (<see cref="TextRasterThreadState"/>).
     /// </summary>
     internal sealed class TextRasterDiagnostics

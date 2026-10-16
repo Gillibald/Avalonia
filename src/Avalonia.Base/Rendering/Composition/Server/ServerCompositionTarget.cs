@@ -224,7 +224,7 @@ namespace Avalonia.Rendering.Composition.Server
                                  && _renderTarget.Properties.IsSuitableForDirectRendering);
 
             // Everything this pass draws, the layer and the target, is one frame of the glyph caches.
-            using var glyphCacheFrame = _compositor.RasterServices?.Budget.BeginFrame(this) ?? default;
+            using var glyphCacheFrame = _compositor.RasterizationContext?.Budget.BeginFrame(this) ?? default;
 
             IDrawingContextImpl renderTargetContext;
             RenderTargetDrawingContextProperties properties;
@@ -246,7 +246,7 @@ namespace Avalonia.Rendering.Composition.Server
             }
             
             // The text raster state of the application this target renders for, on this thread.
-            var raster = _compositor.RasterServices?.ForCurrentThread();
+            var raster = _compositor.RasterizationContext?.ForCurrentThread();
             var unsettledDraws = raster?.UnsettledDraws ?? 0;
             var renderStart = Stopwatch.GetTimestamp();
             var rasterStart = raster?.RasterTicks ?? 0;

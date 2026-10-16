@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Rendering.Composition;
 using Avalonia.Rendering.Composition.Transport;
@@ -90,7 +91,7 @@ namespace TextShowcase.Diagnostics
 
             _ = batch.Processed.ContinueWith(_ =>
             {
-                var raster = GlyphRasterServices.Current.ForCurrentThread();
+                var raster = GlyphRasterizationContext.Required.ForCurrentThread();
                 var skia = SkiaTextCounters.Of(raster);
 
                 mask = skia.MaskTierDraws;
@@ -108,7 +109,7 @@ namespace TextShowcase.Diagnostics
             {
                 var end = Stopwatch.GetTimestamp();
 
-                var raster = GlyphRasterServices.Current.ForCurrentThread();
+                var raster = GlyphRasterizationContext.Required.ForCurrentThread();
                 var skia = SkiaTextCounters.Of(raster);
 
                 reading.RenderMs = start == 0 ? double.NaN : (end - start) * 1000.0 / Stopwatch.Frequency;
@@ -125,8 +126,8 @@ namespace TextShowcase.Diagnostics
             // Back on the UI thread: process-wide readings, then publish.
             _ = batch.Rendered.ContinueWith(_ =>
             {
-                reading.GlyphCacheBytes = GlyphRasterServices.Current.Budget.UsedBytes;
-                foreach (var atlas in GlyphRasterServices.Current.Budget.GetSharedAtlases())
+                reading.GlyphCacheBytes = GlyphRasterizationContext.Required.Budget.UsedBytes;
+                foreach (var atlas in GlyphRasterizationContext.Required.Budget.GetSharedAtlases())
                 {
                     if (atlas.Format == GlyphAtlasFormat.Alpha8)
                     {

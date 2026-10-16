@@ -136,12 +136,12 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using (TextTestApplication.Enter())
             {
-                FailingSetup(() => GlyphRasterServices.Current.Diagnostics.PhaseTimersEnabled = true);
+                FailingSetup(() => GlyphRasterizationContext.Required.Diagnostics.PhaseTimersEnabled = true);
             }
 
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             {
-                var timers = GlyphRasterServices.Current.ForCurrentThread().PhaseTimers;
+                var timers = GlyphRasterizationContext.Required.ForCurrentThread().PhaseTimers;
                 var before = timers.GetCount(GlyphTimerPhase.GlyphRun);
 
                 DrawText(typeface);
@@ -163,17 +163,17 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
-            using (GlyphRasterServices.Current.Budget.BeginFrame())
+            using (GlyphRasterizationContext.Required.Budget.BeginFrame())
             {
                 // The try runs out of budget: moving runs stretch for the hold that follows.
-                Assert.False(GlyphRasterServices.Current.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, tight));
+                Assert.False(GlyphRasterizationContext.Required.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, tight));
             }
 
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
-            using (GlyphRasterServices.Current.Budget.BeginFrame())
+            using (GlyphRasterizationContext.Required.Budget.BeginFrame())
             {
-                Assert.True(GlyphRasterServices.Current.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, ample));
+                Assert.True(GlyphRasterizationContext.Required.ForCurrentThread().Motion.PrefersSharp(run, 15, 1, ample));
             }
         }
 
@@ -208,7 +208,7 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 DrawText(typeface);
 
-                first = GlyphRasterServices.Current.Budget;
+                first = GlyphRasterizationContext.Required.Budget;
 
                 Assert.NotEqual(0, first.UsedBytes);
                 Assert.NotEqual(0, first.Frame);
@@ -220,7 +220,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using (WideRunMaskTests.CreateEnvironment(out _))
             {
-                var budget = GlyphRasterServices.Current.Budget;
+                var budget = GlyphRasterizationContext.Required.Budget;
 
                 Assert.Equal(0, budget.UsedBytes);
                 Assert.Equal(0, budget.Frame);
@@ -234,13 +234,13 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             using (TextTestApplication.Enter())
             {
-                FailingSetup(() => GlyphRasterServices.Current.Budget.SetLimit(GlyphCacheBudget.MinimumLimitBytes));
+                FailingSetup(() => GlyphRasterizationContext.Required.Budget.SetLimit(GlyphCacheBudget.MinimumLimitBytes));
             }
 
             using (TextTestApplication.Enter())
             {
                 Assert.Equal(GlyphCacheBudget.DefaultsFor(TextRasterizationDefaults.CurrentPlatform()).Limit,
-                    GlyphRasterServices.Current.Budget.LimitBytes);
+                    GlyphRasterizationContext.Required.Budget.LimitBytes);
             }
         }
 
@@ -262,7 +262,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             using (TextTestApplication.Enter())
             {
-                var budget = GlyphRasterServices.Current.Budget;
+                var budget = GlyphRasterizationContext.Required.Budget;
 
                 Assert.DoesNotContain(first, budget.GetSharedAtlases());
 
@@ -317,7 +317,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var app = WideRunMaskTests.CreateEnvironment(out var typeface);
             using var animated = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61));
             using var next = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 18, new Point(8.37, 32.61));
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
 
             using (budget.BeginFrame())
             {
@@ -372,6 +372,7 @@ namespace Avalonia.Skia.UnitTests.Media
             finally
             {
                 typeface.Dispose();
+                GlyphRasterizationContext.Current?.Dispose();
             }
         }
 

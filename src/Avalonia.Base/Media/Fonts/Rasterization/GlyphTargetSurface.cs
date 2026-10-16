@@ -77,8 +77,8 @@ namespace Avalonia.Media.Fonts.Rasterization
         GlyphTargetSurface TargetSurface { get; }
 
         /// <summary>
-        /// The text raster state of the thread drawing this context, of the services of the
-        /// application the context was created in.
+        /// The text raster state of the thread drawing this context, of the glyph rasterization
+        /// context of the application the context was created in.
         /// </summary>
         TextRasterThreadState RasterState { get; }
 

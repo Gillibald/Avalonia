@@ -167,8 +167,9 @@ static class TestRenderHelper
 
 
     /// <summary>
-    /// Starts a test's application: a locator scope with a font manager of its own and the text
-    /// rasterization defaults the expectations were recorded under. Disposing the result ends it.
+    /// Starts a test's application: a locator scope with a font manager and a glyph rasterization
+    /// context of its own and the text rasterization defaults the expectations were recorded under.
+    /// Disposing the result ends it.
     /// </summary>
     public static IDisposable BeginTest()
     {
@@ -176,8 +177,10 @@ static class TestRenderHelper
 
         var scope = AvaloniaLocator.EnterScope();
         var fontManager = new FontManager();
+        var rasterization = new GlyphRasterizationContext();
 
         AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(fontManager);
+        AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationContext>().ToConstant(rasterization);
 
         // The expectations here (goldens, ink bounds, routed tiers) are recorded against managed
         // rasterization with unspecified text rendering subpixel on display surfaces; Linux, macOS
@@ -196,6 +199,7 @@ static class TestRenderHelper
             Dispatcher.ResetForUnitTests();
 
             ((IDisposable)fontManager).Dispose();
+            rasterization.Dispose();
             scope.Dispose();
         });
     }

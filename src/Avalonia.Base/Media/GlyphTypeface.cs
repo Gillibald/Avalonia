@@ -2662,7 +2662,7 @@ namespace Avalonia.Media
 
         /// <summary>
         /// The budget this typeface's glyph caches are charged to: the budget of the current
-        /// application's raster services when the first cache is created, unless set before, which
+        /// application's glyph rasterization context when the first cache is created, unless set before, which
         /// tests do to measure one typeface alone. Variation instances and simulated variants use
         /// their source's. When that application ends its budget makes the typeface drop its caches,
         /// and the next cache binds to the application current then. A typeface used outside any
@@ -2677,7 +2677,7 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphCacheBudget BindCacheBudget()
         {
-            var budget = Fonts.Rasterization.GlyphRasterServices.TryGetCurrent()?.Budget ?? GetOwnBudget();
+            var budget = GlyphRasterizationContext.Current?.Budget ?? GetOwnBudget();
 
             return Interlocked.CompareExchange(ref _cacheBudget, budget, null) ?? budget;
         }
@@ -2730,7 +2730,7 @@ namespace Avalonia.Media
         {
             if (typeface is not null && Volatile.Read(ref typeface._maskOwnerId) is var owner and not 0 &&
                 (typeface._cachesBudget ?? typeface._cacheBudget ??
-                 Fonts.Rasterization.GlyphRasterServices.TryGetCurrent()?.Budget) is { } budget)
+                 GlyphRasterizationContext.Current?.Budget) is { } budget)
             {
                 budget.RetireEverywhere(owner);
             }

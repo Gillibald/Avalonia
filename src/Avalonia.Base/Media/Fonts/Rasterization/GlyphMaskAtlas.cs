@@ -508,7 +508,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         private long _evictions;
 
         /// <param name="budget">
-        /// The budget the atlas charges its pages to; the current application's (<see cref="GlyphRasterServices.Budget"/>) when omitted.
+        /// The budget the atlas charges its pages to; the current application's (<see cref="GlyphRasterizationContext.Budget"/>) when omitted.
         /// </param>
         /// <param name="perTypeface">Whether the atlas holds the masks of one typeface.</param>
         /// <param name="format">The texel layout of the pages.</param>
@@ -519,7 +519,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         public GlyphMaskAtlas(GlyphCacheBudget? budget = null, bool perTypeface = false,
             GlyphAtlasFormat format = GlyphAtlasFormat.Alpha8, bool residentPages = false)
         {
-            _clock = budget ?? GlyphRasterServices.Current.Budget;
+            _clock = budget ?? GlyphRasterizationContext.Required.Budget;
             _handle = _clock.Register(GlyphCachePoolKind.Atlas, this, perTypeface);
             Format = format;
             Resident = residentPages;

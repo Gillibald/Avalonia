@@ -205,7 +205,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.True(typeface.MaskCache.TotalCost > 0, "the paragraph cached no masks");
 
-                FontManager.TrimGlyphCaches();
+                GlyphRasterizationContext.Required.TrimCaches();
 
                 Assert.Equal(0, typeface.MaskCache.TotalCost);
             }
@@ -225,7 +225,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var limit = LimitScope.Set(GlyphCacheBudget.DefaultLimitBytes);
             using var surface = SKSurface.Create(new SKImageInfo(Width, Height, SKColorType.Bgra8888, SKAlphaType.Premul));
             var runs = CreateParagraph(typeface, 12, 14);
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
 
             void Frame()
             {
@@ -291,7 +291,7 @@ namespace Avalonia.Skia.UnitTests.Media
             using var surface = SKSurface.Create(gpu.GrContext, true,
                 new SKImageInfo(Width, Height, SKColorType.Rgba8888, SKAlphaType.Premul));
             var runs = CreateGlyphSweep(typeface, 20);
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
 
             void Frame()
             {
@@ -374,7 +374,7 @@ namespace Avalonia.Skia.UnitTests.Media
         /// </summary>
         private static void DropEarlierFrames()
         {
-            var budget = GlyphRasterServices.Current.Budget;
+            var budget = GlyphRasterizationContext.Required.Budget;
             var limit = budget.LimitBytes;
 
             for (var i = 0; i <= GlyphCacheBudget.IdleFrames; i++)
@@ -450,7 +450,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             public static LimitScope Set(long limit)
             {
-                var budget = GlyphRasterServices.Current.Budget;
+                var budget = GlyphRasterizationContext.Required.Budget;
 
                 budget.SetLimit(limit);
 

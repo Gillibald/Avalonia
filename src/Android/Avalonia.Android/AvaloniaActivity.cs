@@ -141,7 +141,7 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
 
         // A stopped activity's process is among the first the system kills for memory; glyphs
         // rasterize again when it returns.
-        Media.FontManager.TrimGlyphCaches();
+        Media.GlyphRasterizationContext.Current?.TrimCaches();
 
         if (OperatingSystem.IsAndroidVersionAtLeast(33))
         {
@@ -260,11 +260,11 @@ public class AvaloniaActivity : AppCompatActivity, IAvaloniaActivity
             // RunningModerate the caches stay.
             if (level >= TrimMemory.RunningLow)
             {
-                Media.FontManager.TrimGlyphCaches();
+                Media.GlyphRasterizationContext.Current?.TrimCaches();
             }
         }
 
-        public void OnLowMemory() => Media.FontManager.TrimGlyphCaches();
+        public void OnLowMemory() => Media.GlyphRasterizationContext.Current?.TrimCaches();
 
         public void OnConfigurationChanged(global::Android.Content.Res.Configuration newConfig)
         {

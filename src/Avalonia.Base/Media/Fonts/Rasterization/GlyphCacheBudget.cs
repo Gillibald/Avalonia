@@ -65,7 +65,7 @@ namespace Avalonia.Media.Fonts.Rasterization
     }
 
     /// <summary>
-    /// The accountant of every glyph cache of an application (<see cref="GlyphRasterServices.Budget"/>):
+    /// The accountant of every glyph cache of an application (<see cref="GlyphRasterizationContext.Budget"/>):
     /// each cache registers as a pool and charges the bytes it adds and credits the bytes it drops,
     /// so <see cref="UsedBytes"/> is the memory all glyph caches hold together, and one limit
     /// (<see cref="LimitBytes"/>) bounds them all.

@@ -233,7 +233,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 PrefersAlphaMasks = _inner is null, MaxRunMaskSize = MaxRunMaskSize,
             };
 
-            public TextRasterThreadState RasterState => _rasterState ??= GlyphRasterServices.Current.ForCurrentThread();
+            public TextRasterThreadState RasterState => _rasterState ??= GlyphRasterizationContext.Required.ForCurrentThread();
 
             public GlyphRasterTuning RasterTuning { get; } = GlyphRasterTuning.Current;
 

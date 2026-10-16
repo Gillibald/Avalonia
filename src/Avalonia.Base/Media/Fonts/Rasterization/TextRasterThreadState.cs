@@ -4,20 +4,20 @@ namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
     /// What managed text keeps from frame to frame for one thread of one application
-    /// (<see cref="GlyphRasterServices.ForCurrentThread"/>). Only that thread reads or writes it, so
+    /// (<see cref="GlyphRasterizationContext.ForCurrentThread"/>). Only that thread reads or writes it, so
     /// its members need no synchronization.
     /// </summary>
     internal sealed class TextRasterThreadState
     {
-        internal TextRasterThreadState(GlyphRasterServices services)
+        internal TextRasterThreadState(GlyphRasterizationContext context)
         {
-            Services = services;
-            PhaseTimers = new GlyphPhaseTimers(services.Diagnostics);
-            Motion = new MotionRasterBudget(services.Budget);
+            Context = context;
+            PhaseTimers = new GlyphPhaseTimers(context.Diagnostics);
+            Motion = new MotionRasterBudget(context.Budget);
         }
 
-        /// <summary>The services this state belongs to.</summary>
-        public GlyphRasterServices Services { get; }
+        /// <summary>The glyph rasterization context this state belongs to.</summary>
+        public GlyphRasterizationContext Context { get; }
 
         /// <summary>The phase timers of glyph drawing on this thread.</summary>
         public GlyphPhaseTimers PhaseTimers { get; }
@@ -64,10 +64,10 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         /// <summary>
         /// The state of the calling thread in the current application, or <c>null</c> when it has
-        /// no font manager. For code that draws outside a drawing context, such as tools and
-        /// tests calling into the caches directly; a drawing context hands its own state down.
+        /// no glyph rasterization context. For code that draws outside a drawing context, such as
+        /// tools and tests calling into the caches directly; a drawing context hands its own state down.
         /// </summary>
-        public static TextRasterThreadState? TryGetCurrent() => GlyphRasterServices.TryGetCurrent()?.ForCurrentThread();
+        public static TextRasterThreadState? TryGetCurrent() => GlyphRasterizationContext.Current?.ForCurrentThread();
 
         /// <summary>
         /// The state <paramref name="context"/> draws text with: its own when it is a
@@ -76,6 +76,6 @@ namespace Avalonia.Media.Fonts.Rasterization
         public static TextRasterThreadState Of(IDrawingContextImpl context)
             => context is IGlyphTargetContext target
                 ? target.RasterState
-                : GlyphRasterServices.Current.ForCurrentThread();
+                : GlyphRasterizationContext.Required.ForCurrentThread();
     }
 }
