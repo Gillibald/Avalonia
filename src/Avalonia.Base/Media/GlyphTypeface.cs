@@ -2665,9 +2665,9 @@ namespace Avalonia.Media
         /// application's raster services when the first cache is created, unless set before, which
         /// tests do to measure one typeface alone. Variation instances and simulated variants use
         /// their source's. When that application ends its budget makes the typeface drop its caches,
-        /// and the next cache binds to the application current then.
+        /// and the next cache binds to the application current then. A typeface used outside any
+        /// application, by font tooling say, gets a budget of its own, released with it.
         /// </summary>
-        /// <exception cref="InvalidOperationException">The current application has no font manager.</exception>
         internal Fonts.Rasterization.GlyphCacheBudget CacheBudget
         {
             get => _cacheBudget ?? _sourceTypeface?.CacheBudget ?? _simulationSource?.CacheBudget ??
@@ -2677,9 +2677,32 @@ namespace Avalonia.Media
 
         private Fonts.Rasterization.GlyphCacheBudget BindCacheBudget()
         {
-            var budget = Fonts.Rasterization.GlyphRasterServices.Current.Budget;
+            var budget = Fonts.Rasterization.GlyphRasterServices.TryGetCurrent()?.Budget ?? GetOwnBudget();
 
             return Interlocked.CompareExchange(ref _cacheBudget, budget, null) ?? budget;
+        }
+
+        // The budget of a typeface used outside any application; the typeface disposes it.
+        private Fonts.Rasterization.GlyphCacheBudget? _ownBudget;
+
+        private Fonts.Rasterization.GlyphCacheBudget GetOwnBudget()
+        {
+            if (Volatile.Read(ref _ownBudget) is { } own)
+            {
+                return own;
+            }
+
+            var created = new Fonts.Rasterization.GlyphCacheBudget(Fonts.Rasterization.GlyphCacheBudget
+                .DefaultsFor(TextRasterizationDefaults.CurrentPlatform()).Limit);
+
+            if (Interlocked.CompareExchange(ref _ownBudget, created, null) is { } winner)
+            {
+                created.Dispose();
+
+                return winner;
+            }
+
+            return created;
         }
 
         /// <summary>
@@ -4582,6 +4605,7 @@ namespace Avalonia.Media
             // still drawing from this face hold independent copies or keep what they hold.
             ReleaseGlyphCaches();
             _unsimulatedTypeface?.ReleaseGlyphCaches();
+            Interlocked.Exchange(ref _ownBudget, null)?.Dispose();
 
             // Cascade: the glyph typeface releases its shaper typeface unless it shares its source's,
             // its (possibly lazily created) platform typeface, and its font memory. The shaper typeface
