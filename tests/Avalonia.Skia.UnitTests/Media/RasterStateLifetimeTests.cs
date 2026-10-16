@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Platform;
@@ -275,11 +276,20 @@ namespace Avalonia.Skia.UnitTests.Media
             GC.KeepAlive(first);
         }
 
-        [Fact]
-        public void Each_Gpu_Context_Places_Subpixel_Run_Masks_In_An_Atlas_Of_Its_Own()
+        public static IEnumerable<object[]> GpuBackends()
         {
-            using var first = TransformedAtlasTests.CreateGpu(GpuBackend.NativeGl, false);
-            using var second = TransformedAtlasTests.CreateGpu(GpuBackend.Angle, false);
+            yield return new object[] { GpuBackend.NativeGl };
+            yield return new object[] { GpuBackend.Angle };
+            yield return new object[] { GpuBackend.Metal };
+            yield return new object[] { GpuBackend.Vulkan };
+        }
+
+        [Theory]
+        [MemberData(nameof(GpuBackends))]
+        public void Each_Gpu_Context_Places_Subpixel_Run_Masks_In_An_Atlas_Of_Its_Own(GpuBackend backend)
+        {
+            using var first = TransformedAtlasTests.CreateGpu(backend, false);
+            using var second = TransformedAtlasTests.CreateGpu(backend, false);
             using var app = TextTestApplication.Enter();
 
             var atlas = LcdAtlasOf(first);
@@ -288,12 +298,13 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.NotSame(atlas, LcdAtlasOf(second));
         }
 
-        [Fact]
-        public void Disposing_A_Gpu_Context_Frees_Its_Glyph_Page_Textures_At_Once()
+        [Theory]
+        [MemberData(nameof(GpuBackends))]
+        public void Disposing_A_Gpu_Context_Frees_Its_Glyph_Page_Textures_At_Once(GpuBackend backend)
         {
             SKImage texture;
 
-            using (var gpu = TransformedAtlasTests.CreateGpu(GpuBackend.NativeGl, false))
+            using (var gpu = TransformedAtlasTests.CreateGpu(backend, false))
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
             using (var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20)))
             using (var surface = SKSurface.Create(gpu.GrContext, true, new SKImageInfo(160, 32)))
