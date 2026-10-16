@@ -455,7 +455,8 @@ namespace Avalonia.Skia
         internal bool CountsTextTiers { get; }
 
         TextRasterizationDefaults IGlyphTargetContext.RasterizationDefaults
-            => _rasterizationDefaults ??= TextRasterizationDefaults.Current;
+            => _rasterizationDefaults ??= (_rasterizationContext ?? GlyphRasterizationContext.Current)?.RasterizationDefaults ??
+               TextRasterizationDefaults.ForProcess();
 
         /// <inheritdoc cref="IGlyphTargetContext.RasterState"/>
         /// <remarks>

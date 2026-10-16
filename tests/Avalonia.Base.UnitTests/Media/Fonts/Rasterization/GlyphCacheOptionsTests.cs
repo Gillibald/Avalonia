@@ -6,7 +6,7 @@ using Xunit;
 namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
 {
     /// <summary>
-    /// The glyph cache limit comes from <see cref="FontManagerOptions.GlyphCacheLimitBytes"/>, or
+    /// The glyph cache limit comes from <see cref="GlyphRasterizationOptions.GlyphCacheLimitBytes"/>, or
     /// from the platform when the application sets none, and a change applies at the next frame.
     /// </summary>
     public class GlyphCacheOptionsTests
@@ -16,7 +16,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
         [Fact]
         public void The_Limit_Set_On_FontManagerOptions_Applies_At_The_Next_Frame()
         {
-            var options = new FontManagerOptions { GlyphCacheLimitBytes = 8 * Mb };
+            var options = new GlyphRasterizationOptions { GlyphCacheLimitBytes = 8 * Mb };
             var budget = new GlyphCacheBudget(() => options, TextRasterizationPlatform.Windows);
 
             using (budget.BeginFrame())

@@ -14,7 +14,7 @@ namespace GlyphRasterDemo
                 .WithInterFont()
                 // The demo starts on the managed rasterization stack; the in-app toggle flips
                 // this at runtime for side-by-side validation against the backend stack.
-                .With(new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Managed })
+                .With(new GlyphRasterizationOptions { TextRasterizationMode = TextRasterizationMode.Managed })
                 // Registered so the tier overlay toggle can change it for the next frames.
                 .With(new SkiaOptions())
                 .LogToTrace();

@@ -55,8 +55,8 @@ namespace GlyphRasterDemo
             Reload();
         }
 
-        private static FontManagerOptions? Options
-            => AvaloniaLocator.Current.GetService<FontManagerOptions>();
+        private static GlyphRasterizationOptions? Options
+            => AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>();
 
         private void OnToggleMode(object? sender, RoutedEventArgs e)
         {
@@ -65,7 +65,7 @@ namespace GlyphRasterDemo
                 return;
             }
 
-            options.TextRasterizationMode = options.TextRasterizationMode == TextRasterizationMode.Managed
+            options.TextRasterizationMode = options.TextRasterizationMode != TextRasterizationMode.Backend
                 ? TextRasterizationMode.Backend
                 : TextRasterizationMode.Managed;
 
@@ -74,7 +74,7 @@ namespace GlyphRasterDemo
 
         private void Reload()
         {
-            _modeText.Text = $"mode: {Options?.TextRasterizationMode}";
+            _modeText.Text = $"mode: {Options?.TextRasterizationMode?.ToString() ?? "platform default"}";
 
             // Fresh visuals build fresh glyph runs, and run creation reads the mode live —
             // that is the whole validation mechanism: flip, rebuild, compare.

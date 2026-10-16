@@ -405,8 +405,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
                        renderInterface: renderInterface.Object)))
             {
-                AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(
-                    new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Backend });
+                AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(
+                    new GlyphRasterizationOptions { TextRasterizationMode = TextRasterizationMode.Backend });
 
                 using var stream = SfntFaceTestHelper.OpenAsset(InterFontUri);
 

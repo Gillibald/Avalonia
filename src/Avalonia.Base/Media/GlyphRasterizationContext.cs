@@ -13,6 +13,7 @@ namespace Avalonia.Media
     public sealed class GlyphRasterizationContext
     {
         private readonly ThreadLocal<TextRasterThreadState> _threads;
+        private readonly TextRasterizationDefaults _processDefaults = TextRasterizationDefaults.ForProcess();
         private LcdRunAtlas? _lcdAtlas;
         private volatile bool _disposed;
 
@@ -20,7 +21,7 @@ namespace Avalonia.Media
         {
             _threads = new ThreadLocal<TextRasterThreadState>(() => new TextRasterThreadState(this),
                 trackAllValues: true);
-            Budget = new GlyphCacheBudget(static () => AvaloniaLocator.Current.GetService<FontManagerOptions>(),
+            Budget = new GlyphCacheBudget(static () => AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>(),
                 TextRasterizationDefaults.CurrentPlatform());
         }
 
@@ -62,9 +63,26 @@ namespace Avalonia.Media
 
         /// <summary>
         /// The budget of every glyph cache of the application, limited by
-        /// <see cref="FontManagerOptions.GlyphCacheLimitBytes"/> or the platform default.
+        /// <see cref="GlyphRasterizationOptions.GlyphCacheLimitBytes"/> or the platform default.
         /// </summary>
         internal GlyphCacheBudget Budget { get; }
+
+        /// <summary>
+        /// The application's options, looked up on every read: the application may register them
+        /// after the rendering setup made the context.
+        /// </summary>
+        internal static GlyphRasterizationOptions? Options => AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>();
+
+        /// <summary>
+        /// What the application renders when it does not choose: the defaults bound in its locator,
+        /// else the running platform's.
+        /// </summary>
+        internal TextRasterizationDefaults RasterizationDefaults
+            => AvaloniaLocator.Current.GetService<TextRasterizationDefaults>() ?? _processDefaults;
+
+        /// <summary>The engine that rasterizes the application's glyphs.</summary>
+        internal TextRasterizationMode TextRasterizationMode
+            => Options?.TextRasterizationMode ?? RasterizationDefaults.PlatformDefault;
 
         /// <summary>
         /// The atlas the hardware GPU contexts of the application without an updatable-texture

@@ -102,8 +102,7 @@ namespace TextStress.AndroidHost
                 "resolved_mode={7} graphics={8}",
                 options.Scenario, options.Mode, options.Render, options.Pass, topLevel.ClientSize,
                 topLevel.RenderScaling, density,
-                (AvaloniaLocator.Current.GetService<FontManagerOptions>() ?? new FontManagerOptions())
-                    .TextRasterizationMode,
+                GlyphRasterizationContext.Current?.TextRasterizationMode,
                 AvaloniaLocator.Current.GetService<Avalonia.Platform.IPlatformGraphics>()?.GetType().Name
                     ?? "software"));
 

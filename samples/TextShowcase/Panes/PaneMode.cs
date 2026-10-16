@@ -8,7 +8,7 @@ namespace TextShowcase.Panes
     /// The rasterization mode of one side of the comparison, inherited down the pane's tree.
     /// </summary>
     /// <remarks>
-    /// <see cref="FontManagerOptions.TextRasterizationMode"/> is application-global and read when
+    /// <see cref="GlyphRasterizationOptions.TextRasterizationMode"/> is application-global and read when
     /// a glyph run is created: during layout (ink bounds) and render recording (the run's
     /// implementation and the colour glyph split), both on the UI thread. Once created, a run
     /// keeps its implementation, and the render thread dispatches on that implementation, never
@@ -25,7 +25,7 @@ namespace TextShowcase.Panes
             AvaloniaProperty.RegisterAttached<Visual, TextRasterizationMode?>("Mode", typeof(PaneMode),
                 inherits: true);
 
-        private static FontManagerOptions? s_options;
+        private static GlyphRasterizationOptions? s_options;
 
         public static TextRasterizationMode? GetMode(Visual visual) => visual.GetValue(ModeProperty);
 
@@ -37,18 +37,18 @@ namespace TextShowcase.Panes
         /// </summary>
         public static ModeScope Scope(Visual visual)
         {
-            var options = s_options ??= AvaloniaLocator.Current.GetService<FontManagerOptions>()
-                ?? throw new InvalidOperationException("FontManagerOptions must be registered.");
+            var options = s_options ??= AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>()
+                ?? throw new InvalidOperationException("GlyphRasterizationOptions must be registered.");
 
             return visual.GetValue(ModeProperty) is { } mode ? new ModeScope(options, mode) : default;
         }
 
         public readonly struct ModeScope : IDisposable
         {
-            private readonly FontManagerOptions? _options;
-            private readonly TextRasterizationMode _previous;
+            private readonly GlyphRasterizationOptions? _options;
+            private readonly TextRasterizationMode? _previous;
 
-            public ModeScope(FontManagerOptions options, TextRasterizationMode mode)
+            public ModeScope(GlyphRasterizationOptions options, TextRasterizationMode mode)
             {
                 _options = options;
                 _previous = options.TextRasterizationMode;

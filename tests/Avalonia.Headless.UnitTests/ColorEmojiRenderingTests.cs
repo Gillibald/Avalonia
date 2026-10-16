@@ -27,7 +27,7 @@ public class ColorEmojiRenderingTests
             return;
         }
 
-        AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+        AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(new GlyphRasterizationOptions
         {
             TextRasterizationMode = TextRasterizationMode.Managed,
         });

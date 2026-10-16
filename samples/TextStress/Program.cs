@@ -42,7 +42,7 @@ namespace TextStress
             var builder = AppBuilder.Configure<App>()
                 .UsePlatformDetect()
                 .WithInterFont()
-                .With(StressRun.CreateFontManagerOptions(options))
+                .With(StressRun.CreateGlyphRasterizationOptions(options))
                 .AfterSetup(_ => Measurement.BitmapDecodeCounter.Install())
                 .LogToTrace();
 

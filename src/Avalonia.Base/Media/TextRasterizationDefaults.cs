@@ -19,31 +19,36 @@ namespace Avalonia.Media
 
     /// <summary>
     /// What text an application renders when it does not choose: the
-    /// <see cref="TextRasterizationMode"/> when <see cref="FontManagerOptions.TextRasterizationMode"/> is
-    /// unset, and whether unspecified text renders subpixel. An application binds an instance in its
-    /// locator (<see cref="Current"/>); without one it gets the running platform's defaults as if it
-    /// renders on the GPU. A platform whose default depends on the render path (Android) binds one
-    /// once it has chosen the path, before the first glyph run is created; test applications whose
-    /// expectations were recorded against one stack bind one so they render the same on every host.
+    /// <see cref="TextRasterizationMode"/> when <see cref="GlyphRasterizationOptions.TextRasterizationMode"/>
+    /// is unset, and whether unspecified text renders subpixel. The application's
+    /// <see cref="GlyphRasterizationContext"/> takes an instance bound in its locator, else the running
+    /// platform's defaults as if it renders on the GPU (<see cref="ForProcess"/>). A platform whose
+    /// default depends on the render path (Android) binds one once it has chosen the path, before
+    /// the first glyph run is created; test applications whose expectations were recorded against
+    /// one stack bind one so they render the same on every host.
     /// </summary>
     internal sealed class TextRasterizationDefaults
     {
-        private static readonly TextRasterizationDefaults s_process = new(
-            ForPlatform(CurrentPlatform(), RuntimeInformation.ProcessArchitecture),
-            RendersSubpixelByDefault(CurrentPlatform()));
-
         public TextRasterizationDefaults(TextRasterizationMode platformDefault, bool unspecifiedRendersSubpixel)
         {
             PlatformDefault = platformDefault;
             UnspecifiedRendersSubpixel = unspecifiedRendersSubpixel;
         }
 
-        /// <summary>The defaults bound in the current locator scope, else the running platform's.</summary>
-        public static TextRasterizationDefaults Current
-            => AvaloniaLocator.Current.GetService<TextRasterizationDefaults>() ?? s_process;
+        /// <summary>The running platform's defaults, for an application that renders on the GPU.</summary>
+        public static TextRasterizationDefaults ForProcess() => new(
+            ForPlatform(CurrentPlatform(), RuntimeInformation.ProcessArchitecture),
+            RendersSubpixelByDefault(CurrentPlatform()));
 
         /// <summary>
-        /// The mode used when the application leaves <see cref="FontManagerOptions.TextRasterizationMode"/>
+        /// The defaults of the current application: its context's, or the running platform's when it
+        /// has no <see cref="GlyphRasterizationContext"/>.
+        /// </summary>
+        public static TextRasterizationDefaults OfCurrentApplication()
+            => GlyphRasterizationContext.Current?.RasterizationDefaults ?? ForProcess();
+
+        /// <summary>
+        /// The mode used when the application leaves <see cref="GlyphRasterizationOptions.TextRasterizationMode"/>
         /// unset (or registers no options).
         /// </summary>
         public TextRasterizationMode PlatformDefault { get; }

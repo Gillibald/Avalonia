@@ -38,9 +38,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 
-            var options = new FontManagerOptions();
+            var options = new GlyphRasterizationOptions();
 
-            AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(options);
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(options);
 
             var samples = new[] { "🔥", "❤️", "🌈", "🦊", "😀", "🚀", "😀🔥❤️", "A🔥B🌈C" };
             var failures = new List<string>();
@@ -90,9 +90,9 @@ namespace Avalonia.Skia.UnitTests.Media
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 
-            var options = new FontManagerOptions();
+            var options = new GlyphRasterizationOptions();
 
-            AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(options);
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(options);
 
             var samples = new[] { "😀", "🦊", "🔥", "❤️", "🌍", "👍" };
             var sizes = new[] { 24.0, 32.0, 48.0, 96.0 };
@@ -157,7 +157,7 @@ namespace Avalonia.Skia.UnitTests.Media
             (ink.X - Margin) / emSize, (ink.Y - Margin) / emSize,
             ink.Width / emSize, ink.Height / emSize);
 
-        private static Rect? RenderInkAt(string text, double emSize, FontManagerOptions options,
+        private static Rect? RenderInkAt(string text, double emSize, GlyphRasterizationOptions options,
             string? diagDir, string diagName)
         {
             options.TextRasterizationMode = TextRasterizationMode.Managed;
@@ -209,7 +209,7 @@ namespace Avalonia.Skia.UnitTests.Media
             return minX > maxX ? null : new Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
         }
 
-        private static Rect? RenderInk(string text, TextRasterizationMode mode, FontManagerOptions options,
+        private static Rect? RenderInk(string text, TextRasterizationMode mode, GlyphRasterizationOptions options,
             string? diagDir, int sampleIndex)
         {
             options.TextRasterizationMode = mode;

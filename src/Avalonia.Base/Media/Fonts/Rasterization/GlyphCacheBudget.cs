@@ -169,7 +169,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         [ThreadStatic]
         private static bool t_quiescentTrim;
 
-        private readonly Func<FontManagerOptions?>? _options;
+        private readonly Func<GlyphRasterizationOptions?>? _options;
         private readonly TextRasterizationPlatform _platform;
         private volatile bool _limitSetExplicitly;
         private readonly IGlyphCacheIdleTimer _idleTimer;
@@ -233,7 +233,7 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <param name="platform">The platform whose default limit applies when the options set none.</param>
         /// <param name="idleTimer">Schedules the trim after the last frame; a thread-pool timer when omitted.</param>
         /// <param name="clock">The time since an arbitrary start; a stopwatch when omitted.</param>
-        public GlyphCacheBudget(Func<FontManagerOptions?> options, TextRasterizationPlatform platform,
+        public GlyphCacheBudget(Func<GlyphRasterizationOptions?> options, TextRasterizationPlatform platform,
             IGlyphCacheIdleTimer? idleTimer = null, Func<TimeSpan>? clock = null)
             : this(DefaultLimitBytes, idleTimer, clock)
         {

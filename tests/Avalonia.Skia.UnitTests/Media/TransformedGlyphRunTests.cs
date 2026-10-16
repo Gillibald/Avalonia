@@ -237,7 +237,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             public GlyphRasterTuning RasterTuning { get; } = GlyphRasterTuning.Current;
 
-            public TextRasterizationDefaults RasterizationDefaults { get; } = TextRasterizationDefaults.Current;
+            public TextRasterizationDefaults RasterizationDefaults { get; } = TextRasterizationDefaults.OfCurrentApplication();
 
             private TextRasterThreadState? _rasterState;
 

@@ -220,7 +220,7 @@ namespace TextStress
             "  --pending-batches N   GPU glyph batcher's pending batch limit (default: built-in, 32)\n" +
             "  --stretch-vertices N  sprites from which a stretched run draws from kept vertices (default: built-in)\n" +
             "  --phase-timers   record the render thread's glyph phase timers (us_/n_ columns)\n" +
-            "  --glyph-cache-mb N   FontManagerOptions.GlyphCacheLimitBytes in MB (default: platform default)\n" +
+            "  --glyph-cache-mb N   GlyphRasterizationOptions.GlyphCacheLimitBytes in MB (default: platform default)\n" +
             "  --motion-budget-us N   time a GPU frame may spend rasterizing moving text sharp, in us; 0 always\n" +
             "    stretches (default: built-in)\n" +
             "  --motion-interval-us N   frame interval the motion budget assumes, in us (default: 120 Hz)\n" +

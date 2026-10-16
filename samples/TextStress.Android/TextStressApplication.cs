@@ -43,7 +43,7 @@ namespace TextStress.AndroidHost
 
             builder = base.CustomizeAppBuilder(builder)
                 .WithInterFont()
-                .With(StressRun.CreateFontManagerOptions(options));
+                .With(StressRun.CreateGlyphRasterizationOptions(options));
 
             if (options.Render != "default")
             {

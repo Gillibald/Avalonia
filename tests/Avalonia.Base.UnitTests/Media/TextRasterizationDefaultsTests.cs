@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using Avalonia.Media;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media
@@ -109,9 +110,14 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         [Fact]
-        public void Unset_Options_Report_The_Platform_Default()
+        public void Unset_Options_Leave_The_Platform_Default()
         {
-            Assert.Equal(TextRasterizationDefaults.Current.PlatformDefault, new FontManagerOptions().TextRasterizationMode);
+            using var app = UnitTestApplication.Start();
+
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(new GlyphRasterizationOptions());
+
+            Assert.Equal(TextRasterizationDefaults.ForProcess().PlatformDefault,
+                GlyphRasterizationContext.Required.TextRasterizationMode);
         }
 
         [Theory]
@@ -119,9 +125,12 @@ namespace Avalonia.Base.UnitTests.Media
         [InlineData(TextRasterizationMode.Backend)]
         public void Explicit_Option_Wins_Over_The_Platform_Default(TextRasterizationMode mode)
         {
-            var options = new FontManagerOptions { TextRasterizationMode = mode };
+            using var app = UnitTestApplication.Start();
 
-            Assert.Equal(mode, options.TextRasterizationMode);
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>()
+                .ToConstant(new GlyphRasterizationOptions { TextRasterizationMode = mode });
+
+            Assert.Equal(mode, GlyphRasterizationContext.Required.TextRasterizationMode);
         }
 
         [Theory]

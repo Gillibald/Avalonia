@@ -113,8 +113,7 @@ namespace TextStress
 
             lines.Add((tag.Length > 0 ? tag + " | " : "") + "build " + Build);
 
-            var mode = (AvaloniaLocator.Current.GetService<FontManagerOptions>() ?? new FontManagerOptions())
-                .TextRasterizationMode;
+            var mode = GlyphRasterizationContext.Current?.TextRasterizationMode;
 
             lines.Add("text " + mode + " | render " + RenderPath(options) + " | " + Runtime());
 

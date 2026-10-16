@@ -96,7 +96,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
 
                 // This assembly's applications render managed, unspecified text subpixel.
-                Assert.Equal(TextRasterizationMode.Managed, new FontManagerOptions().TextRasterizationMode);
+                Assert.Equal(TextRasterizationMode.Managed, GlyphRasterizationContext.Required.TextRasterizationMode);
                 Assert.True(((IGlyphTargetContext)context).RasterizationDefaults.UnspecifiedRendersSubpixel);
             }
         }

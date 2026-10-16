@@ -69,7 +69,7 @@ namespace TextLab
         private void Rebuild()
         {
             var family = new FontFamily(_familyName);
-            var mode = AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode;
+            var mode = GlyphRasterizationContext.Current?.TextRasterizationMode;
             var pipeline = mode == TextRasterizationMode.Backend
                 ? "the render backend's text stack"
                 : "Avalonia's managed glyph pipeline";

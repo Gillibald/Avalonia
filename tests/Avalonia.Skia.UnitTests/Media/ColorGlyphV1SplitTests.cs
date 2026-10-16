@@ -416,7 +416,7 @@ namespace Avalonia.Skia.UnitTests.Media
             // Managed is the framework default now, so backend-mode tests must opt out
             // explicitly rather than relying on unregistered options.
             AvaloniaLocator.CurrentMutable
-                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                .Bind<GlyphRasterizationOptions>().ToConstant(new GlyphRasterizationOptions
                 {
                     TextRasterizationMode = managed
                         ? TextRasterizationMode.Managed

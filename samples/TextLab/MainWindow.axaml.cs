@@ -42,7 +42,7 @@ namespace TextLab
             // glyph runs read it at creation, so affected views rebuild their runs.
             _rasterBox.ItemsSource = new[] { "Managed", "Backend" };
             _rasterBox.SelectedIndex =
-                AvaloniaLocator.Current.GetService<FontManagerOptions>()?.TextRasterizationMode ==
+                GlyphRasterizationContext.Current?.TextRasterizationMode ==
                 TextRasterizationMode.Backend ? 1 : 0;
             _rasterBox.SelectionChanged += (_, _) => OnRasterModeChanged();
             _themeToggle.IsCheckedChanged += (_, _) => OnThemeChanged();
@@ -167,7 +167,7 @@ namespace TextLab
 
         private void OnRasterModeChanged()
         {
-            if (AvaloniaLocator.Current.GetService<FontManagerOptions>() is not { } options)
+            if (AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>() is not { } options)
             {
                 return;
             }

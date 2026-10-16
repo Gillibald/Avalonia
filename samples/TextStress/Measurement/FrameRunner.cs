@@ -496,8 +496,7 @@ namespace TextStress.Measurement
             yield return ("fonts", string.Join(", ", fonts));
             yield return ("mode", _options.Mode);
             yield return ("resolved_mode",
-                (AvaloniaLocator.Current.GetService<FontManagerOptions>() ?? new FontManagerOptions())
-                .TextRasterizationMode.ToString());
+                GlyphRasterizationContext.Current?.TextRasterizationMode.ToString() ?? "none");
             yield return ("render", _options.Render);
             yield return ("pass", _options.Pass.ToString(CultureInfo.InvariantCulture));
             yield return ("seed", _options.Seed.ToString(CultureInfo.InvariantCulture));

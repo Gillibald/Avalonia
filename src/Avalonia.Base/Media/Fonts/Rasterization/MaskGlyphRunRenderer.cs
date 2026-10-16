@@ -1373,7 +1373,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     return GlyphMaskMode.Antialiased;
                 case TextRenderingMode.Unspecified when !(context is IGlyphTargetContext target
                     ? target.RasterizationDefaults
-                    : TextRasterizationDefaults.Current).UnspecifiedRendersSubpixel:
+                    : TextRasterizationDefaults.OfCurrentApplication()).UnspecifiedRendersSubpixel:
                     return GlyphMaskMode.Antialiased;
             }
 

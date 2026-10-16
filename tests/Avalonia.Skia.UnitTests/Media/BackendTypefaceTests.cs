@@ -125,8 +125,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface())
-                .Bind<FontManagerOptions>().ToConstant(
-                    new FontManagerOptions { TextRasterizationMode = TextRasterizationMode.Backend });
+                .Bind<GlyphRasterizationOptions>().ToConstant(
+                    new GlyphRasterizationOptions { TextRasterizationMode = TextRasterizationMode.Backend });
 
             return scope;
         }

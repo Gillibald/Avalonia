@@ -248,7 +248,7 @@ namespace Avalonia.Skia.UnitTests.Media
             AvaloniaLocator.CurrentMutable
                 .Bind<IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
             AvaloniaLocator.CurrentMutable
-                .Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+                .Bind<GlyphRasterizationOptions>().ToConstant(new GlyphRasterizationOptions
                 {
                     TextRasterizationMode = TextRasterizationMode.Managed,
                 });

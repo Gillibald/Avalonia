@@ -25,7 +25,7 @@ namespace Avalonia.Skia.UnitTests.Media
                 .With(renderInterface: new PlatformRenderInterface(null),
                     systemFontProvider: new SkiaFontProvider()));
 
-            AvaloniaLocator.CurrentMutable.Bind<FontManagerOptions>().ToConstant(new FontManagerOptions
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(new GlyphRasterizationOptions
             {
                 TextRasterizationMode = TextRasterizationMode.Managed,
             });

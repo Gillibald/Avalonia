@@ -4,7 +4,7 @@ namespace Avalonia.Media
     /// Selects which engine rasterizes glyphs into pixels.
     /// </summary>
     /// <remarks>
-    /// The default depends on the platform; see <see cref="FontManagerOptions.TextRasterizationMode"/>.
+    /// The default depends on the platform; see <see cref="GlyphRasterizationOptions.TextRasterizationMode"/>.
     /// An application can choose either mode on any platform.
     /// </remarks>
     public enum TextRasterizationMode

@@ -170,9 +170,9 @@ namespace TextLab
 
         private void Render()
         {
-            if (AvaloniaLocator.Current.GetService<FontManagerOptions>() is not { } options)
+            if (AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>() is not { } options)
             {
-                _statsText.Text = "FontManagerOptions not registered - cannot switch modes.";
+                _statsText.Text = "GlyphRasterizationOptions not registered - cannot switch modes.";
                 return;
             }
 
@@ -209,7 +209,7 @@ namespace TextLab
             ShowDiff(a, compareB, disposeB: _referenceB is null ? b : null);
         }
 
-        private static SKBitmap RenderSide(FontManagerOptions options, string text, string font,
+        private static SKBitmap RenderSide(GlyphRasterizationOptions options, string text, string font,
             double size, string? mode, ComboBox hintingBox, ComboBox renderingBox)
         {
             options.TextRasterizationMode = mode == "Backend"
