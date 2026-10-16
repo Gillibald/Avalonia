@@ -349,6 +349,33 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void The_Skia_Platform_Sets_Up_Managed_Text_Without_A_Font_Manager()
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            // Nothing a parent scope registered stands in for the setup under test.
+            AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant<FontManager>(null!);
+            SkiaPlatform.Initialize();
+            AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>()
+                .ToConstant(TextTestApplication.RasterizationDefaults);
+
+            var typeface = WideRunMaskTests.LoadInter();
+
+            try
+            {
+                using var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20));
+
+                DrawText(run);
+
+                Assert.NotEqual(0, run.RunMasks.Count);
+            }
+            finally
+            {
+                typeface.Dispose();
+            }
+        }
+
+        [Fact]
         public void Diagnostics_Counters_Of_A_New_Application_Start_At_Zero()
         {
             using (WideRunMaskTests.CreateEnvironment(out var typeface))
@@ -455,6 +482,13 @@ namespace Avalonia.Skia.UnitTests.Media
         private static void DrawText(GlyphTypeface typeface)
         {
             using var run = WideRunMaskTests.CreateRun(typeface, "Hamburgefonstiv", 15, new Point(4.3, 20));
+
+            DrawText(run);
+        }
+
+        /// <summary>Draws <paramref name="run"/> through a drawing context of the current application.</summary>
+        private static void DrawText(ManagedGlyphRunImpl run)
+        {
             using var surface = SKSurface.Create(new SKImageInfo(160, 32));
             using var context = new DrawingContextImpl(new DrawingContextImpl.CreateInfo { Surface = surface });
 

@@ -117,6 +117,14 @@ namespace Avalonia.Skia.UnitTests.Media
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
 
+            typeface = LoadInter();
+
+            return scope;
+        }
+
+        /// <summary>Loads Inter Regular from the render test assets, outside any application.</summary>
+        internal static GlyphTypeface LoadInter()
+        {
             var directory = new DirectoryInfo(AppContext.BaseDirectory);
 
             while (directory is not null && directory.Name != "tests")
@@ -131,9 +139,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.True(SfntFace.TryLoad(new MemoryStream(bytes), out var face));
 
-            typeface = new GlyphTypeface(face);
-
-            return scope;
+            return new GlyphTypeface(face);
         }
     }
 }
