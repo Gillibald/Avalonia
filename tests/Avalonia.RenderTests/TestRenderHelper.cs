@@ -36,6 +36,15 @@ static class TestRenderHelper
         AvaloniaLocator.CurrentMutable.Bind<ICursorFactory>().ToConstant(new NullCursorFactory());
     }
 
+    /// <summary>
+    /// Registers the platform services in the scope current at the first call, the root scope when
+    /// called before any test scope is entered; later calls do nothing.
+    /// </summary>
+    public static void RegisterPlatformServices()
+    {
+        // The static constructor does the work.
+    }
+
     private sealed class NullCursorFactory : ICursorFactory
     {
         public ICursorImpl GetCursor(StandardCursorType cursorType) => new NullCursor();
@@ -167,19 +176,17 @@ static class TestRenderHelper
 
 
     /// <summary>
-    /// Starts a test's application: a locator scope with a font manager and a glyph rasterization
-    /// context of its own and the text rasterization defaults the expectations were recorded under.
-    /// Disposing the result ends it.
+    /// Starts a test's application inside the scope of its class (<see cref="RenderTestFonts"/>): a
+    /// locator scope with a glyph rasterization context of its own and the text rasterization
+    /// defaults the expectations were recorded under. Disposing the result ends it.
     /// </summary>
     public static IDisposable BeginTest()
     {
         Dispatcher.ResetBeforeUnitTests();
 
         var scope = AvaloniaLocator.EnterScope();
-        var fontManager = new FontManager();
         var rasterization = new GlyphRasterizationContext();
 
-        AvaloniaLocator.CurrentMutable.Bind<FontManager>().ToConstant(fontManager);
         AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationContext>().ToConstant(rasterization);
 
         // The expectations here (goldens, ink bounds, routed tiers) are recorded against managed
@@ -189,16 +196,12 @@ static class TestRenderHelper
         AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(
             new TextRasterizationDefaults(TextRasterizationMode.Managed, unspecifiedRendersSubpixel: true));
 
-        // The app builder registers the render subsystem's system fonts; render tests skip the builder.
-        fontManager.AddFontCollection(new SystemFontCollection(FontManager.SystemFontsKey, new SkiaFontProvider()));
-
         return Disposable.Create(() =>
         {
             if (Dispatcher.UIThread.CheckAccess())
                 Dispatcher.UIThread.RunJobs();
             Dispatcher.ResetForUnitTests();
 
-            ((IDisposable)fontManager).Dispose();
             rasterization.Dispose();
             scope.Dispose();
         });

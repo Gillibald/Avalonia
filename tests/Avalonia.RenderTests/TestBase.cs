@@ -8,7 +8,7 @@ using Xunit;
 
 namespace Avalonia.Skia.RenderTests
 {
-    public class TestBase : IDisposable
+    public class TestBase : IDisposable, IClassFixture<RenderTestFonts>
     {
         private static string s_fontUri = "resm:Avalonia.Skia.RenderTests.Assets?assembly=Avalonia.Skia.RenderTests#Noto Mono";
 

@@ -29,7 +29,7 @@ class CrossTheoryAttribute : TheoryAttribute
     }
 }
 
-public class CrossTestBase : IDisposable
+public class CrossTestBase : IDisposable, IClassFixture<RenderTestFonts>
 {
     private readonly string _groupName;
     private readonly IDisposable _application;
