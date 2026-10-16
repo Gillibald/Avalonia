@@ -455,8 +455,13 @@ namespace Avalonia.Skia.UnitTests.Media
                     graphics = new TestGraphics(new TestSkiaGpu(gpu.GrContext));
                 }
 
+                // The compositor's application gets a rasterization context of its own; it draws with
+                // the tuning the test set on the environment's.
+                var tuning = GlyphRasterTuning.Current;
+
                 Services = new CompositorTestServices(new Size(Width, Height), new PlatformRenderInterface(), graphics,
                     surface);
+                GlyphRasterizationContext.Required.Tuning = tuning;
                 Services.TopLevel.Content = _canvas;
                 Services.RunJobs();
             }

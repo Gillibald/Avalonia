@@ -41,10 +41,27 @@ namespace TextStress
             }
 
             Avalonia.AvaloniaLocator.CurrentMutable.Bind<Avalonia.SkiaOptions>().ToConstant(skiaOptions);
+        }
 
-            // A negative value keeps the built-in budget. The tuning is bound in the application's
-            // locator, which the platform setup adds to and never replaces.
-            var tuning = Avalonia.Media.Fonts.Rasterization.GlyphRasterTuning.Current;
+        /// <summary>
+        /// Applies the run's options to the glyph rasterization context the platform setup registered;
+        /// call once the application runs, before the scenario draws.
+        /// </summary>
+        private static void ConfigureRasterization(RunOptions options)
+        {
+            if (GlyphRasterizationContext.Current is not { } context)
+            {
+                return;
+            }
+
+            if (options.PhaseTimers)
+            {
+                context.Diagnostics.Calibrate(context.ForCurrentThread());
+                context.Diagnostics.PhaseTimersEnabled = true;
+            }
+
+            // A negative value keeps the built-in budget.
+            var tuning = context.Tuning;
             var motionBudget = options.GetDouble("motion-budget-us", -1);
 
             if (motionBudget >= 0)
@@ -59,8 +76,7 @@ namespace TextStress
                 tuning = tuning with { MotionFrameIntervalMicroseconds = motionInterval };
             }
 
-            Avalonia.AvaloniaLocator.CurrentMutable.Bind<Avalonia.Media.Fonts.Rasterization.GlyphRasterTuning>()
-                .ToConstant(tuning);
+            context.Tuning = tuning;
         }
 
         /// <summary>
@@ -93,12 +109,7 @@ namespace TextStress
         {
             ResultWriter? writer = null;
 
-            // The glyph rasterization context the platform setup registered owns the switch.
-            if (options.PhaseTimers && GlyphRasterizationContext.Current is { } context)
-            {
-                context.Diagnostics.Calibrate(context.ForCurrentThread());
-                context.Diagnostics.PhaseTimersEnabled = true;
-            }
+            ConfigureRasterization(options);
 
             try
             {

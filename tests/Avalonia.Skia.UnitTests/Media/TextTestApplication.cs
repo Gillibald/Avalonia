@@ -78,10 +78,13 @@ namespace Avalonia.Skia.UnitTests
         /// <summary>The Skia text counters of the calling thread in the current application.</summary>
         public static SkiaTextCounters SkiaCounters => SkiaTextCounters.Of(ThreadState);
 
-        /// <summary>Binds what this assembly's expectations were recorded under into the current scope.</summary>
+        /// <summary>
+        /// Gives the current application what this assembly's expectations were recorded under: the
+        /// tuning of its context and the rasterization defaults bound in its scope.
+        /// </summary>
         public static void BindDefaults()
         {
-            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterTuning>().ToConstant(Tuning);
+            GlyphRasterizationContext.Required.Tuning = Tuning;
             AvaloniaLocator.CurrentMutable.Bind<TextRasterizationDefaults>().ToConstant(RasterizationDefaults);
         }
     }

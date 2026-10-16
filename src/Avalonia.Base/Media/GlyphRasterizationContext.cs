@@ -108,6 +108,12 @@ namespace Avalonia.Media
         internal IBitmapGlyphDecoder? BitmapGlyphDecoder
             => _bitmapGlyphDecoder ??= AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() as IBitmapGlyphDecoder;
 
+        /// <summary>
+        /// The tuning of the application's managed glyph rasterization; tests and benchmarks change it.
+        /// A drawing context reads it once, before it draws text.
+        /// </summary>
+        internal GlyphRasterTuning Tuning { get; set; } = GlyphRasterTuning.Default;
+
         /// <summary>The diagnostics switches of the application.</summary>
         internal TextRasterDiagnostics Diagnostics { get; } = new();
 

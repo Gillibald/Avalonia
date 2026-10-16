@@ -444,7 +444,8 @@ namespace Avalonia.Skia
         /// Read on first use, so tuning bound after the context was created and before it draws text
         /// applies.
         /// </remarks>
-        internal GlyphRasterTuning RasterTuning => _rasterTuning ??= GlyphRasterTuning.Current;
+        internal GlyphRasterTuning RasterTuning
+            => _rasterTuning ??= (_rasterizationContext ?? GlyphRasterizationContext.Current)?.Tuning ?? GlyphRasterTuning.Default;
 
         private TextRasterizationDefaults? _rasterizationDefaults;
 

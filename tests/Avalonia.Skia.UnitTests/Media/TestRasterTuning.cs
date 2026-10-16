@@ -1,37 +1,40 @@
 using System;
+using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Reactive;
 
 namespace Avalonia.Skia.UnitTests
 {
     /// <summary>
-    /// Changes the <see cref="GlyphRasterTuning"/> of the current application by binding a changed
-    /// copy into its locator scope. Drawing contexts read the tuning once, before they draw text, and
-    /// the binding ends with the scope, so nothing a test tunes reaches the next one.
+    /// Changes the <see cref="GlyphRasterTuning"/> of the current application's glyph rasterization
+    /// context. Drawing contexts read the tuning once, before they draw text, and the context ends with
+    /// the application, so nothing a test tunes reaches the next one.
     /// </summary>
     internal static class TestRasterTuning
     {
-        /// <summary>Binds the current tuning changed by <paramref name="change"/> for the rest of the scope.</summary>
+        /// <summary>Sets the current tuning changed by <paramref name="change"/> for the rest of the application.</summary>
         public static GlyphRasterTuning Set(Func<GlyphRasterTuning, GlyphRasterTuning> change)
         {
-            var tuning = change(GlyphRasterTuning.Current);
+            var context = GlyphRasterizationContext.Required;
+            var tuning = change(context.Tuning);
 
-            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterTuning>().ToConstant(tuning);
+            context.Tuning = tuning;
 
             return tuning;
         }
 
         /// <summary>
-        /// Binds the current tuning changed by <paramref name="change"/> until the returned scope is
-        /// disposed, which binds the tuning in effect before again.
+        /// Sets the current tuning changed by <paramref name="change"/> until the returned scope is
+        /// disposed, which sets the tuning in effect before again.
         /// </summary>
         public static IDisposable Change(Func<GlyphRasterTuning, GlyphRasterTuning> change)
         {
-            var previous = GlyphRasterTuning.Current;
+            var context = GlyphRasterizationContext.Required;
+            var previous = context.Tuning;
 
             Set(change);
 
-            return Disposable.Create(() => AvaloniaLocator.CurrentMutable.Bind<GlyphRasterTuning>().ToConstant(previous));
+            return Disposable.Create(() => context.Tuning = previous);
         }
     }
 }
