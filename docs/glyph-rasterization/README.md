@@ -10,13 +10,13 @@ The default depends on the platform. Managed rasterization is the default on Win
 
 ```csharp
 AppBuilder.Configure<App>()
-    .With(new FontManagerOptions
+    .With(new GlyphRasterizationOptions
     {
         TextRasterizationMode = TextRasterizationMode.Managed,   // default: per platform
     })
 ```
 
-`TextRasterizationMode` ([TextRasterizationMode.cs](../../src/Avalonia.Base/Media/TextRasterizationMode.cs)) lives on [FontManagerOptions](../../src/Avalonia.Base/Media/FontManagerOptions.cs) and is read live at glyph run creation, so tests and demos can flip it at runtime and rebuild their visual tree. The per-platform table lives in [TextRasterizationDefaults.cs](../../src/Avalonia.Base/Media/TextRasterizationDefaults.cs).
+`TextRasterizationMode` ([TextRasterizationMode.cs](../../src/Avalonia.Base/Media/TextRasterizationMode.cs)) lives on [GlyphRasterizationOptions](../../src/Avalonia.Base/Media/GlyphRasterizationOptions.cs), next to `GlyphCacheLimitBytes`, and is read live at glyph run creation, so tests and demos can flip it at runtime and rebuild their visual tree. The per-platform table lives in [TextRasterizationDefaults.cs](../../src/Avalonia.Base/Media/TextRasterizationDefaults.cs).
 
 Per-visual quality settings travel through the inherited `TextOptions` attached properties ([TextOptions.cs](../../src/Avalonia.Base/Media/TextOptions.cs)): `TextRenderingMode` (alias/antialias/subpixel), `TextHintingMode` (none/light/strong) and `BaselinePixelAlignment`. `RenderOptions.TextRenderingMode` is obsolete on this branch; use `TextOptions.TextRenderingMode` in XAML.
 
@@ -74,10 +74,11 @@ src/Avalonia.Base/Media/Fonts/Rasterization/   the backend-neutral core
     ColorGlyphRunSplitter.cs, ColorGlyphSegments.cs  COLR v1 / bitmap splits
     IBitmapGlyphDecoder.cs   image decoder seam for bitmap strikes
     ManagedGlyphRunImpl.cs   the managed glyph run implementation
-    GlyphRasterServices.cs   per-application state owned by FontManager: budget, diagnostics, per-thread state
     TextRasterThreadState.cs, TextRasterCounters.cs, GlyphPhaseTimers.cs  per-thread decisions, counters, timers
     GlyphRasterTuning.cs     internal tuning bound in the application's locator
 src/Avalonia.Base/Media/TextRasterizationDefaults.cs  per-platform default mode
+src/Avalonia.Base/Media/GlyphRasterizationContext.cs  per-application state the render setup registers: budget, diagnostics, per-thread state, bitmap glyph decoder
+src/Avalonia.Base/Media/GlyphRasterizationOptions.cs  mode and glyph cache limit, set with AppBuilder.With
 src/Avalonia.Base/Media/Fonts/SfntFace.cs      font file view: tables as slices of shared, memory-mapped file data
 src/Avalonia.Base/Media/Fonts/Tables/Colr/     COLR/CPAL parsing and painters
 src/Avalonia.Base/Media/Fonts/Tables/Bitmaps/  CBDT/CBLC, sbix, IBitmapGlyphSource

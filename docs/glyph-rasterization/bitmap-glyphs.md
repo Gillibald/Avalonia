@@ -19,7 +19,7 @@ Strike selection is the standard policy: the smallest strike with ppem at least 
 
 ## The decoder seam
 
-Tables never decode images themselves. [IBitmapGlyphDecoder](../../src/Avalonia.Base/Media/Fonts/Rasterization/IBitmapGlyphDecoder.cs) receives the raw payload and its format tag and returns premultiplied BGRA pixels. The Skia binding ([SkiaBitmapGlyphDecoder](../../src/Skia/Avalonia.Skia/SkiaBitmapGlyphDecoder.cs), registered in `SkiaPlatform.Initialize`) decodes PNG and JPEG; TIFF payloads degrade gracefully to nothing until a richer codec layer takes over the binding. When no decoder is registered, strikes are ignored entirely and the glyph renders from whatever outline or COLR data exists.
+Tables never decode images themselves. [IBitmapGlyphDecoder](../../src/Avalonia.Base/Media/Fonts/Rasterization/IBitmapGlyphDecoder.cs) receives the raw payload and its format tag and returns premultiplied BGRA pixels. The decoder is the application's render interface, taken through its `GlyphRasterizationContext` when a bitmap font first asks for a strike image: Skia's `PlatformRenderInterface` decodes PNG and JPEG through [SkiaBitmapGlyphDecoder](../../src/Skia/Avalonia.Skia/SkiaBitmapGlyphDecoder.cs); TIFF payloads degrade gracefully to nothing until a richer codec layer takes over. When the render interface decodes nothing, strikes are ignored entirely and the glyph renders from whatever outline or COLR data exists.
 
 Passing format capability through the seam rather than gating it in the tables means a future decoder upgrade (or a different backend's decoder) widens format support with zero changes here.
 

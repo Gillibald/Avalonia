@@ -4,7 +4,7 @@ This document follows one glyph run through the managed path: creation, dispatch
 
 ## Run creation
 
-`FontManagerOptions.TextRasterizationMode` is read every time a glyph run is created. In `Managed` mode, `GlyphRun` constructs a [ManagedGlyphRunImpl](../../src/Avalonia.Base/Media/Fonts/Rasterization/ManagedGlyphRunImpl.cs) directly in Avalonia.Base - backend-neutrally, without consulting the platform render interface - so every backend gets the mask-path floor without work of its own. The managed run:
+`GlyphRasterizationOptions.TextRasterizationMode` is read every time a glyph run is created. In `Managed` mode, `GlyphRun` constructs a [ManagedGlyphRunImpl](../../src/Avalonia.Base/Media/Fonts/Rasterization/ManagedGlyphRunImpl.cs) directly in Avalonia.Base - backend-neutrally, without consulting the platform render interface - so every backend gets the mask-path floor without work of its own. The managed run:
 
 - computes ink bounds from font data: outline tables for monochrome glyphs, `TryGetColorGlyphInkBounds` for color glyphs (COLR v1 clip boxes, drawing bounds or v0 layer unions), so invalidation rectangles cover color ink that exceeds the base outline box;
 - answers `GetIntersections` (text decoration ink skipping) analytically from the captured outlines, baseline-relative, matching the `SKTextBlob.GetIntercepts` contract;

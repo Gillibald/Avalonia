@@ -117,7 +117,7 @@ Everything else (layers, effects, opacity masks, region and geometry clips, othe
 
 ## Subpixel text on GPUs
 
-Hardware GPUs place whole-run subpixel masks (RGBA, alpha = channel maximum) in the process-wide [LcdRunAtlas](../../src/Avalonia.Base/Media/Fonts/Rasterization/LcdRunAtlas.cs) (pages 2048 x up to 2048). One pending LCD batch per page and tint draws with a single `DrawAtlas` through the per-tint runtime blender ([subpixel.md](subpixel.md)); entries that would overlap split the batch, because the blend reads the destination once per call. LCD pages are re-wrapped and uploaded whole when they change.
+Hardware GPUs place whole-run subpixel masks (RGBA, alpha = channel maximum) in the [LcdRunAtlas](../../src/Avalonia.Base/Media/Fonts/Rasterization/LcdRunAtlas.cs) of their GPU context registration (one per context, charged to the application budget; pages 2048 x up to 2048). One pending LCD batch per page and tint draws with a single `DrawAtlas` through the per-tint runtime blender ([subpixel.md](subpixel.md)); entries that would overlap split the batch, because the blend reads the destination once per call. LCD pages are re-wrapped and uploaded whole when they change.
 
 ## Animated and transient text
 

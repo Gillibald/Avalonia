@@ -38,7 +38,7 @@ Font discovery, matching and character fallback are a separate half of the same 
 
 ## Choosing the mode
 
-`FontManagerOptions.TextRasterizationMode` selects `Managed` or `Backend`. When it is not set, `TextRasterizationDefaults.PlatformDefault` applies:
+`GlyphRasterizationOptions.TextRasterizationMode` selects `Managed` or `Backend`. When it is not set, `TextRasterizationDefaults.PlatformDefault` applies:
 
 | Platform | Default when not set |
 |---|---|
@@ -177,7 +177,7 @@ internal readonly record struct TextureRegion(PixelRect Target, int Offset, int 
 | `RunMaskCache` | run | primary slot plus three secondaries: run coverage, pre-tinted chunks, LCD payloads, alpha masks |
 | sprite sets | run | sprites and kept geometry per luminance bucket |
 
-All of them charge one process-wide `GlyphCacheBudget`. The limit is `FontManagerOptions.GlyphCacheLimitBytes` or a per-platform default (64 MB desktop, 32 MB browser and mobile, 16 MB elsewhere); recency is counted in frames, what the open frame draws is pinned, cheap rebuilds go first, and memory pressure calls `GlyphRasterizationContext.TrimCaches()`. Details in [masks.md](masks.md#one-limit-for-every-glyph-cache).
+All of them charge the `GlyphCacheBudget` of the application's `GlyphRasterizationContext`, which the render setup (`SkiaPlatform.Initialize`) creates and registers. The limit is `GlyphRasterizationOptions.GlyphCacheLimitBytes` or a per-platform default (64 MB desktop, 32 MB browser and mobile, 16 MB elsewhere); recency is counted in frames, what the open frame draws is pinned, cheap rebuilds go first, and memory pressure calls `GlyphRasterizationContext.TrimCaches()`. Details in [masks.md](masks.md#one-limit-for-every-glyph-cache).
 
 ## Threads
 
