@@ -2664,6 +2664,13 @@ namespace Avalonia.Media
             set => _cacheBudget = value;
         }
 
+        /// <summary>
+        /// Binds the typeface to the budget of the current application's
+        /// <see cref="GlyphRasterizationContext"/>, or to a budget of its own when there is no context.
+        /// The binding holds until that budget ends: a typeface first touched before any context
+        /// exists keeps its own budget, and its caches stay outside the application's limit, even
+        /// after an application registers a context; only disposing the typeface releases it.
+        /// </summary>
         private Fonts.Rasterization.GlyphCacheBudget BindCacheBudget()
         {
             var budget = GlyphRasterizationContext.Current?.Budget ?? GetOwnBudget();
