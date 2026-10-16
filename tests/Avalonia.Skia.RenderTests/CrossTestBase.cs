@@ -32,9 +32,11 @@ class CrossTheoryAttribute : TheoryAttribute
 public class CrossTestBase : IDisposable
 {
     private readonly string _groupName;
+    private readonly IDisposable _application;
+
     public CrossTestBase(string groupName)
     {
-        TestRenderHelper.BeginTest();
+        _application = TestRenderHelper.BeginTest();
         _groupName = groupName;
     }
 
@@ -62,6 +64,6 @@ public class CrossTestBase : IDisposable
 
     public void Dispose()
     {
-        TestRenderHelper.EndTest();
+        _application.Dispose();
     }
 }

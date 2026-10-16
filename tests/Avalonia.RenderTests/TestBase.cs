@@ -23,8 +23,10 @@ namespace Avalonia.Skia.RenderTests
             var testFiles = Path.Combine(testPath, "TestFiles");
             OutputPath = Path.Combine(testFiles, "Skia", outputPath);
 
-            TestRenderHelper.BeginTest();
+            _application = TestRenderHelper.BeginTest();
         }
+
+        private readonly IDisposable _application;
 
         public string OutputPath
         {
@@ -106,6 +108,6 @@ namespace Avalonia.Skia.RenderTests
         
         private static string GetTestsDirectory() => TestRenderHelper.GetTestsDirectory();
 
-        public void Dispose() => TestRenderHelper.EndTest();
+        public void Dispose() => _application.Dispose();
     }
 }
