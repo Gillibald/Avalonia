@@ -195,7 +195,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             }
 
             if (!TryGetRecord(strike.Index, glyphIndex, 0, out var png, out var originX, out var originY) ||
-                !decoder.TryDecode(png, out var decoded))
+                !TextRasterCounters.Decode(decoder, png, out var decoded))
             {
                 return false;
             }

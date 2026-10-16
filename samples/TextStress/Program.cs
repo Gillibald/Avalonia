@@ -43,7 +43,6 @@ namespace TextStress
                 .UsePlatformDetect()
                 .WithInterFont()
                 .With(StressRun.CreateGlyphRasterizationOptions(options))
-                .AfterSetup(_ => Measurement.BitmapDecodeCounter.Install())
                 .LogToTrace();
 
             if (options.Render != "default")

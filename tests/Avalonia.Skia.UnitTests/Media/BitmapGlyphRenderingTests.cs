@@ -116,9 +116,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
             var counting = new CountingDecoder(new SkiaBitmapGlyphDecoder());
             AvaloniaLocator.CurrentMutable
-                .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
-            AvaloniaLocator.CurrentMutable
-                .Bind<IBitmapGlyphDecoder>().ToConstant(counting);
+                .Bind<IPlatformRenderInterface>().ToConstant(new DecodingRenderInterface(counting));
 
             var typeface = CreateBitmapTypeface(out var bitmapGlyph, out var plainGlyph);
             var run = CreateRun(typeface, new[] { plainGlyph, bitmapGlyph }, emSize: 32);
@@ -356,8 +354,6 @@ namespace Avalonia.Skia.UnitTests.Media
 
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
-            AvaloniaLocator.CurrentMutable
-                .Bind<IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
 
             // Managed is the framework default now, so backend-mode tests must opt out
             // explicitly rather than relying on unregistered options.

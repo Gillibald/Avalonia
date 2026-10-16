@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Platform;
 
 namespace Avalonia.Media
 {
@@ -15,10 +16,16 @@ namespace Avalonia.Media
         private readonly ThreadLocal<TextRasterThreadState> _threads;
         private readonly TextRasterizationDefaults _processDefaults = TextRasterizationDefaults.ForProcess();
         private LcdRunAtlas? _lcdAtlas;
+        private IBitmapGlyphDecoder? _bitmapGlyphDecoder;
         private volatile bool _disposed;
 
-        internal GlyphRasterizationContext()
+        /// <param name="renderInterface">
+        /// The render interface of the application, which decodes bitmap glyph images when it can;
+        /// the one registered in the locator when omitted.
+        /// </param>
+        internal GlyphRasterizationContext(IPlatformRenderInterface? renderInterface = null)
         {
+            _bitmapGlyphDecoder = renderInterface as IBitmapGlyphDecoder;
             _threads = new ThreadLocal<TextRasterThreadState>(() => new TextRasterThreadState(this),
                 trackAllValues: true);
             Budget = new GlyphCacheBudget(static () => AvaloniaLocator.Current.GetService<GlyphRasterizationOptions>(),
@@ -92,6 +99,14 @@ namespace Avalonia.Media
             => Volatile.Read(ref _lcdAtlas) ??
                Interlocked.CompareExchange(ref _lcdAtlas, new LcdRunAtlas(Budget), null) ??
                _lcdAtlas!;
+
+        /// <summary>
+        /// The decoder of the application's bitmap glyph images (sbix, CBDT): its render interface,
+        /// taken once a bitmap font first asks for a strike image, or <c>null</c> when the render
+        /// interface decodes none.
+        /// </summary>
+        internal IBitmapGlyphDecoder? BitmapGlyphDecoder
+            => _bitmapGlyphDecoder ??= AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() as IBitmapGlyphDecoder;
 
         /// <summary>The diagnostics switches of the application.</summary>
         internal TextRasterDiagnostics Diagnostics { get; } = new();

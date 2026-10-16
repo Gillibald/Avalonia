@@ -156,7 +156,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             }
 
             if (bounds is null &&
-                AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() is { } decoder &&
+                typeface.BitmapGlyphDecoder is { } decoder &&
                 source.SelectStrike(float.MaxValue) is var largest &&
                 source.TryGetPlacement(largest, glyph, decoder, out var placement))
             {

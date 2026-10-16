@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
+using Avalonia.Media.Fonts.Rasterization;
 
 namespace Avalonia.Media.Fonts.Tables.Bitmaps
 {
@@ -304,7 +305,7 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
                 return true;
             }
 
-            if (!decoder.TryDecode(metrics.PngData, out decoded))
+            if (!TextRasterCounters.Decode(decoder, metrics.PngData, out decoded))
             {
                 return false;
             }

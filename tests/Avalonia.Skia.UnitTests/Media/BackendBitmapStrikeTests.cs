@@ -381,9 +381,7 @@ namespace Avalonia.Skia.UnitTests.Media
             decoder = new RecordingDecoder(new SkiaBitmapGlyphDecoder());
 
             AvaloniaLocator.CurrentMutable
-                .Bind<IPlatformRenderInterface>().ToConstant(new PlatformRenderInterface());
-            AvaloniaLocator.CurrentMutable
-                .Bind<IBitmapGlyphDecoder>().ToConstant(decoder);
+                .Bind<IPlatformRenderInterface>().ToConstant(new DecodingRenderInterface(decoder));
             AvaloniaLocator.CurrentMutable
                 .Bind<GlyphRasterizationOptions>().ToConstant(new GlyphRasterizationOptions
                 {

@@ -1,3 +1,5 @@
+using System;
+
 namespace Avalonia.Media.Fonts.Rasterization
 {
     /// <summary>
@@ -42,6 +44,12 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// <summary>Backend images made of colour masks for draws that cannot write the surface directly.</summary>
         public long ColorFallbackImages;
 
+        /// <summary>Embedded glyph images (sbix, CBDT) decoded.</summary>
+        public long BitmapDecodes;
+
+        /// <summary>The <see cref="System.Diagnostics.Stopwatch"/> ticks spent decoding embedded glyph images.</summary>
+        public long BitmapDecodeTicks;
+
         /// <summary>
         /// The counters of the rendering backend that draws for this thread, made by the backend on
         /// first use; a type the backend owns, so this assembly needs no knowledge of it.
@@ -54,5 +62,24 @@ namespace Avalonia.Media.Fonts.Rasterization
         /// passes its own.
         /// </summary>
         public static TextRasterCounters? TryGetCurrent() => TextRasterThreadState.TryGetCurrent()?.Counters;
+
+        /// <summary>
+        /// Decodes an embedded glyph image through <paramref name="decoder"/>, counted in the calling
+        /// thread's counters. Decodes are rare (the bitmap tables keep what they decoded), so the
+        /// lookup of the counters costs nothing measurable.
+        /// </summary>
+        public static bool Decode(IBitmapGlyphDecoder decoder, ReadOnlyMemory<byte> encoded, out DecodedGlyphBitmap bitmap)
+        {
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            var decoded = decoder.TryDecode(encoded, out bitmap);
+
+            if (TryGetCurrent() is { } counters)
+            {
+                counters.BitmapDecodes++;
+                counters.BitmapDecodeTicks += System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            }
+
+            return decoded;
+        }
     }
 }

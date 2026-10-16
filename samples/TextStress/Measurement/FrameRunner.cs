@@ -348,14 +348,20 @@ namespace TextStress.Measurement
             target.BudgetPeakBytes = budget.PeakBytes;
             target.BudgetEvictedBytes = budget.EvictedBytes;
 
-            // Process-wide readings on the UI thread: the tier counts of every thread that drew.
-            var services = GlyphRasterizationContext.Required;
+            // Process-wide readings on the UI thread: the counts of every thread that drew.
+            var context = GlyphRasterizationContext.Required;
 
-            target.TierMask = SkiaTextCounters.Sum(services, c => c.MaskTierDraws);
-            target.TierTransformed = SkiaTextCounters.Sum(services, c => c.TransformedMaskTierDraws);
-            target.TierBlob = SkiaTextCounters.Sum(services, c => c.BlobTierDraws);
-            target.Decodes = Interlocked.Read(ref BitmapDecodeCounter.Decodes);
-            target.DecodeTicks = Interlocked.Read(ref BitmapDecodeCounter.DecodeTicks);
+            target.TierMask = SkiaTextCounters.Sum(context, c => c.MaskTierDraws);
+            target.TierTransformed = SkiaTextCounters.Sum(context, c => c.TransformedMaskTierDraws);
+            target.TierBlob = SkiaTextCounters.Sum(context, c => c.BlobTierDraws);
+            target.Decodes = 0;
+            target.DecodeTicks = 0;
+
+            foreach (var state in context.GetThreadStates())
+            {
+                target.Decodes += state.Counters.BitmapDecodes;
+                target.DecodeTicks += state.Counters.BitmapDecodeTicks;
+            }
         }
 
         private static void FillDeltas(FrameSample sample, FrameSample before, FrameSample after)

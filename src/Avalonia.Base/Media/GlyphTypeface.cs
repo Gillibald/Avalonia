@@ -93,26 +93,15 @@ namespace Avalonia.Media
                 : null;
 
         private Fonts.Rasterization.IBitmapGlyphDecoder? _bitmapGlyphDecoder;
-        private volatile bool _bitmapGlyphDecoderResolved;
 
         /// <summary>
-        /// The decoder of this typeface's bitmap strike images, or <c>null</c> without one,
-        /// resolved on first use and kept: the platform render services, the decoder among them,
-        /// are fixed for the process.
+        /// The decoder of this typeface's bitmap strike images, the render interface of the current
+        /// application's <see cref="GlyphRasterizationContext"/>, or <c>null</c> without one. Taken
+        /// when a strike image is first asked for and kept: render interfaces never change while an
+        /// application runs.
         /// </summary>
         internal Fonts.Rasterization.IBitmapGlyphDecoder? BitmapGlyphDecoder
-        {
-            get
-            {
-                if (!_bitmapGlyphDecoderResolved)
-                {
-                    _bitmapGlyphDecoder = AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>();
-                    _bitmapGlyphDecoderResolved = true;
-                }
-
-                return _bitmapGlyphDecoder;
-            }
-        }
+            => _bitmapGlyphDecoder ??= GlyphRasterizationContext.Current?.BitmapGlyphDecoder;
         private Fonts.Rasterization.GlyphMaskAtlas? _glyphMaskAtlas;
         private int _maskOwnerId;
         private static int s_lastMaskOwnerId;
@@ -3183,8 +3172,7 @@ namespace Avalonia.Media
                 // available, hand out a bitmap drawing (record-time path; the mask renderer
                 // composes strikes server-side without ever coming here). PixelSize selects the
                 // strike; without it the largest strike wins — best quality, callers downscale.
-                if (BitmapSource is { } bitmapSource &&
-                    AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is { } bitmapDecoder)
+                if (BitmapSource is { } bitmapSource && BitmapGlyphDecoder is { } bitmapDecoder)
                 {
                     var strike = bitmapSource.SelectStrike(options?.PixelSize ?? int.MaxValue);
 
@@ -3275,7 +3263,7 @@ namespace Avalonia.Media
         internal bool IsBitmapGlyph(ushort glyphIndex)
             => glyphIndex < GlyphCount && !HasColrDrawing(glyphIndex) &&
                (BitmapSource?.HasGlyphImage(glyphIndex) ?? false) &&
-               AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is not null;
+               BitmapGlyphDecoder is not null;
 
         // The probe GetGlyphDrawing runs before it builds a COLR drawing; a v1 record wins over v0
         // layers, and COLR wins over strike images.
@@ -3324,8 +3312,7 @@ namespace Avalonia.Media
             var empty = new BuiltGeometry(null, 0, GlyphPayloadKind.ColorRecording, Array.Empty<ushort>(), default,
                 hasBounds: false);
 
-            if (BitmapSource is not { } source ||
-                AvaloniaLocator.Current.GetService<Fonts.Rasterization.IBitmapGlyphDecoder>() is not { } decoder)
+            if (BitmapSource is not { } source || BitmapGlyphDecoder is not { } decoder)
             {
                 return empty;
             }

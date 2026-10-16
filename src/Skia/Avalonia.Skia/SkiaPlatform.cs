@@ -24,8 +24,7 @@ namespace Avalonia.Skia
             // The application's managed glyph rasterization state lives as long as its render setup.
             AvaloniaLocator.CurrentMutable
                 .Bind<IPlatformRenderInterface>().ToConstant(renderInterface)
-                .Bind<Media.GlyphRasterizationContext>().ToConstant(new Media.GlyphRasterizationContext())
-                .Bind<Media.Fonts.Rasterization.IBitmapGlyphDecoder>().ToConstant(new SkiaBitmapGlyphDecoder());
+                .Bind<Media.GlyphRasterizationContext>().ToConstant(new Media.GlyphRasterizationContext(renderInterface));
         }
 
         /// <summary>

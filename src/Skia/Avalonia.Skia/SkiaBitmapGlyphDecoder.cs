@@ -6,9 +6,8 @@ namespace Avalonia.Skia
 {
     /// <summary>
     /// Decodes embedded glyph images (CBDT/sbix PNG payloads) through Skia's codecs into the
-    /// premultiplied BGRA pixels the run-mask composer consumes. Registered by
-    /// <see cref="SkiaPlatform"/>; a managed codec can take over the binding to make bitmap
-    /// glyphs backend-free.
+    /// premultiplied BGRA pixels the run-mask composer consumes, for
+    /// <see cref="PlatformRenderInterface"/>.
     /// </summary>
     internal sealed class SkiaBitmapGlyphDecoder : IBitmapGlyphDecoder
     {

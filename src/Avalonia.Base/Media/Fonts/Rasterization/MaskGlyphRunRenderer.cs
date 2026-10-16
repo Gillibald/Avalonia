@@ -1725,7 +1725,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             // the sources memoise — so calling from both passes is a warm hit the second time.
             var bitmapSource = typeface.BitmapSource;
             var decoder = bitmapSource is not null
-                ? AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>()
+                ? typeface.BitmapGlyphDecoder
                 : null;
             var strike = default(Fonts.Tables.Bitmaps.BitmapStrike);
             var strikeScale = 0f;

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.Media.Fonts.Rasterization;
 using Avalonia.Media.Imaging;
 using Avalonia.Media.TextFormatting;
 using Avalonia.Metal;
@@ -16,10 +17,12 @@ using SkiaSharp;
 namespace Avalonia.Skia
 {
     /// <summary>
-    /// Skia platform render interface.
+    /// Skia platform render interface. It also decodes the embedded glyph images of bitmap fonts
+    /// for managed glyph rasterization, through Skia's codecs.
     /// </summary>
-    internal class PlatformRenderInterface : IPlatformRenderInterface
+    internal class PlatformRenderInterface : IPlatformRenderInterface, IBitmapGlyphDecoder
     {
+        private readonly SkiaBitmapGlyphDecoder _bitmapGlyphDecoder = new();
         private readonly long? _maxResourceBytes;
         private readonly bool? _useStencilBuffers;
         private readonly bool _residentGlyphPages;
@@ -35,6 +38,10 @@ namespace Avalonia.Skia
             _residentGlyphPages = residentGlyphPages;
             DefaultPixelFormat = SKImageInfo.PlatformColorType.ToPixelFormat();
         }
+
+        /// <inheritdoc/>
+        public bool TryDecode(ReadOnlyMemory<byte> encoded, out DecodedGlyphBitmap bitmap)
+            => _bitmapGlyphDecoder.TryDecode(encoded, out bitmap);
 
 
         public IPlatformRenderInterfaceContext CreateBackendContext(IPlatformGraphicsContext? graphicsContext)

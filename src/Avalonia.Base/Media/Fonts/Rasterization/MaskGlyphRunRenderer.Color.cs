@@ -256,7 +256,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
                 // As in Compose: without a decoder the strike data is ignored and outlines draw.
                 var bitmaps = typeface.BitmapSource;
-                var decoder = bitmaps is not null ? AvaloniaLocator.Current.GetService<IBitmapGlyphDecoder>() : null;
+                var decoder = bitmaps is not null ? typeface.BitmapGlyphDecoder : null;
 
                 if (bitmaps is not null && decoder is not null)
                 {
