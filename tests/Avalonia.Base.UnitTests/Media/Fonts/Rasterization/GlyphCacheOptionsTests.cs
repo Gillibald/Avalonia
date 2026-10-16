@@ -1,5 +1,6 @@
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.UnitTests;
 using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
@@ -50,6 +51,32 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization
                 Assert.Equal(64 * Mb, budget.LimitBytes);
                 Assert.Equal(32 * Mb, budget.RetainBytes);
             }
+        }
+
+        [Fact]
+        public void The_Glyph_Rasterization_Options_Of_The_Application_Set_The_Limit_And_The_Mode()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var options = new GlyphRasterizationOptions
+            {
+                GlyphCacheLimitBytes = 8 * Mb, TextRasterizationMode = TextRasterizationMode.Backend,
+            };
+
+            AvaloniaLocator.CurrentMutable.Bind<GlyphRasterizationOptions>().ToConstant(options);
+
+            var budget = GlyphRasterizationContext.Required.Budget;
+
+            using (budget.BeginFrame())
+            {
+                Assert.Equal(8 * Mb, budget.LimitBytes);
+            }
+
+            Assert.False(ColorGlyphRunSplitter.IsManagedTextRasterization());
+
+            options.TextRasterizationMode = TextRasterizationMode.Managed;
+
+            Assert.True(ColorGlyphRunSplitter.IsManagedTextRasterization());
         }
 
         [Fact]
