@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Media;
 using Avalonia.Media.Fonts.Rasterization;
+using Avalonia.Platform;
 using SkiaSharp;
 using Xunit;
 
@@ -368,6 +369,28 @@ namespace Avalonia.Skia.UnitTests.Media
                 DrawText(run);
 
                 Assert.NotEqual(0, run.RunMasks.Count);
+            }
+            finally
+            {
+                typeface.Dispose();
+                GlyphRasterizationContext.Current?.Dispose();
+            }
+        }
+
+        [Fact]
+        public void Bitmap_Glyphs_Decode_Through_The_Render_Interface_Of_The_Application()
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            SkiaPlatform.Initialize();
+
+            var renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
+            var typeface = BitmapGlyphRenderingTests.CreateSbixTypeface(out var glyph);
+
+            try
+            {
+                Assert.True(typeface.IsBitmapGlyph(glyph));
+                Assert.Same(renderInterface, typeface.BitmapGlyphDecoder);
             }
             finally
             {
