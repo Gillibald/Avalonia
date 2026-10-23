@@ -128,6 +128,57 @@ namespace Avalonia.Media.Imaging
             return new BitmapPalette(colors, addTransparentColor, type);
         }
 
+        /// <summary>
+        /// Creates a palette of at most <paramref name="maxColors"/> entries that represents the
+        /// pixels of a buffer.
+        /// </summary>
+        /// <param name="source">The pixels to represent.</param>
+        /// <param name="maxColors">The maximum number of entries, from 1 to 256, including a transparent one.</param>
+        /// <param name="addTransparentColor">Whether to make the last entry transparent.</param>
+        /// <remarks>
+        /// The active imaging backend builds the palette when it has its own quantizer; otherwise
+        /// a median-cut quantizer does, which returns the image's own colors when there are few
+        /// enough of them. Fully transparent pixels do not contribute.
+        /// </remarks>
+        public static BitmapPalette CreateOptimal(PixelBuffer source, int maxColors, bool addTransparentColor = false)
+        {
+            _ = source ?? throw new ArgumentNullException(nameof(source));
+
+            using var framebuffer = source.Lock();
+
+            return CreateOptimal(framebuffer, source.Palette, maxColors, addTransparentColor);
+        }
+
+        /// <summary>
+        /// Creates a palette of at most <paramref name="maxColors"/> entries that represents the
+        /// pixels of a decoded frame.
+        /// </summary>
+        /// <param name="source">The frame to represent; decoded on first use.</param>
+        /// <param name="maxColors">The maximum number of entries, from 1 to 256, including a transparent one.</param>
+        /// <param name="addTransparentColor">Whether to make the last entry transparent.</param>
+        public static BitmapPalette CreateOptimal(BitmapFrame source, int maxColors, bool addTransparentColor = false)
+        {
+            _ = source ?? throw new ArgumentNullException(nameof(source));
+
+            source.TryGetPalette(out var palette);
+
+            using var framebuffer = source.Lock();
+
+            return CreateOptimal(framebuffer, palette, maxColors, addTransparentColor);
+        }
+
+        private static BitmapPalette CreateOptimal(Platform.ILockedFramebuffer source, BitmapPalette? sourcePalette,
+            int maxColors, bool addTransparentColor)
+        {
+            if (maxColors < 1 || maxColors > 256)
+                throw new ArgumentOutOfRangeException(nameof(maxColors), maxColors, "A palette has from 1 to 256 colors.");
+
+            if (Platform.ImagingBackend.CurrentOrNull is Platform.ISupportsPaletteGeneration generator)
+                return generator.CreateOptimalPalette(source, sourcePalette, maxColors, addTransparentColor);
+
+            return PaletteQuantizer.CreateOptimal(source, sourcePalette, maxColors, addTransparentColor);
+        }
+
         private static readonly Color s_silver = Color.FromRgb(192, 192, 192);
 
         // The eight standard colors that complete the cube-based halftone palettes.
