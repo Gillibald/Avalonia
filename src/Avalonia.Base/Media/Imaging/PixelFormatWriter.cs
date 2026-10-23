@@ -421,16 +421,25 @@ internal static unsafe class PixelFormatWriter
 
     private static Rgba8888Pixel ConvertFromPremultiplied(Rgba8888Pixel pixel)
     {
+        // A transparent pixel carries no colour, and dividing by its zero alpha would
+        // turn any stored colour into an infinity.
+        if (pixel.A == 0)
+            return default;
+
         var factor = 1F / (pixel.A / 255F);
 
         return new Rgba8888Pixel
         {
-            R = (byte)(pixel.R * factor),
-            G = (byte)(pixel.G * factor),
-            B = (byte)(pixel.B * factor),
+            R = Unpremultiply(pixel.R, factor),
+            G = Unpremultiply(pixel.G, factor),
+            B = Unpremultiply(pixel.B, factor),
             A = pixel.A
         };
     }
+
+    // A premultiplied channel above alpha is not valid premultiplied data; clamp it so
+    // the float-to-byte conversion cannot wrap around.
+    private static byte Unpremultiply(byte channel, float factor) => (byte)Math.Min(channel * factor, 255F);
 
     public static void Write(
         ReadOnlySpan<Rgba8888Pixel> pixels,
