@@ -25,6 +25,41 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             buffer.Pixels.Span[y * buffer.Stride + x * 4];
 
         [Fact]
+        public void Transform_Keeps_Every_Bit_Of_16_Bit_Channels()
+        {
+            // 0x1234 has a low byte different from its high byte, so any 8-bit staging shows.
+            var pixels = new byte[2 * 8];
+
+            for (var i = 0; i < pixels.Length; i += 2)
+            {
+                pixels[i] = 0x34;
+                pixels[i + 1] = 0x12;
+            }
+
+            var buffer = PixelBuffer.TakeOwnership(pixels, new PixelSize(2, 1), 16, PixelFormats.Rgba64,
+                AlphaFormat.Unpremul, new Vector(96, 96));
+
+            var rotated = EncoderTransform.Apply(buffer, new BitmapTransform(BitmapRotation.Rotate90, false, false));
+
+            Assert.Equal(new PixelSize(1, 2), rotated.Size);
+            Assert.All(rotated.Pixels.ToArray(), (value, index) => Assert.Equal(index % 2 == 0 ? 0x34 : 0x12, value));
+        }
+
+        [Fact]
+        public void Transform_Moves_Indexed_Pixels_Without_A_Palette()
+        {
+            // Two rows of Indexed4: 1 2 3 / 4 5 6.
+            var pixels = new byte[] { 0x12, 0x30, 0x45, 0x60 };
+
+            var buffer = PixelBuffer.TakeOwnership(pixels, new PixelSize(3, 2), 2, PixelFormats.Indexed4,
+                AlphaFormat.Unpremul, new Vector(96, 96));
+
+            var flipped = EncoderTransform.Apply(buffer, new BitmapTransform(BitmapRotation.None, true, false));
+
+            Assert.Equal(new byte[] { 0x32, 0x10, 0x65, 0x40 }, flipped.Pixels.ToArray());
+        }
+
+        [Fact]
         public void Identity_Returns_The_Same_Instance()
         {
             var buffer = CreateBuffer(3, 2);
