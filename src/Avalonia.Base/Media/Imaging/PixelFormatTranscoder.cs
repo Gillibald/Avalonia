@@ -27,7 +27,35 @@ internal static unsafe class PixelFormatTranscoder
         int destStride,
         PixelFormat destFormat,
         AlphaFormat destAlphaFormat)
+        => Transcode(source, srcSize, sourceStride, srcFormat, srcAlphaFormat, dest, destStride, destFormat,
+            destAlphaFormat, null, null, 0);
+
+    /// <summary>
+    /// Converts pixels between formats and alpha representations, including indexed formats.
+    /// </summary>
+    /// <remarks>
+    /// An indexed source needs <paramref name="sourcePalette"/>, and an indexed destination
+    /// needs <paramref name="destPalette"/> to match against. For an indexed destination,
+    /// pixels whose alpha is below <paramref name="alphaThresholdPercent"/> percent of full
+    /// opacity take the palette entry closest to transparent black.
+    /// </remarks>
+    public static void Transcode(
+        IntPtr source,
+        PixelSize srcSize,
+        int sourceStride,
+        PixelFormat srcFormat,
+        AlphaFormat srcAlphaFormat,
+        IntPtr dest,
+        int destStride,
+        PixelFormat destFormat,
+        AlphaFormat destAlphaFormat,
+        BitmapPalette? sourcePalette,
+        BitmapPalette? destPalette,
+        double alphaThresholdPercent)
     {
+        var endpoints = new RowEndpoints(srcFormat, srcAlphaFormat, sourcePalette, destFormat, destAlphaFormat,
+            destPalette, alphaThresholdPercent);
+
         var width = srcSize.Width;
 
         // Formats wider than eight bits per channel, floating-point and CMYK formats would
@@ -35,7 +63,7 @@ internal static unsafe class PixelFormatTranscoder
         // the whole conversion to the wide row.
         if (WidePixelFormat.IsWide(srcFormat) || WidePixelFormat.IsWide(destFormat))
         {
-            TranscodeWide(source, srcSize, sourceStride, srcFormat, srcAlphaFormat, dest, destStride, destFormat, destAlphaFormat);
+            TranscodeWide(endpoints, source, srcSize, sourceStride, dest, destStride);
 
             return;
         }
@@ -46,50 +74,44 @@ internal static unsafe class PixelFormatTranscoder
         {
             Span<Rgba8888Pixel> row = stackalloc Rgba8888Pixel[width];
 
-            Transcode(row, source, srcSize.Height, sourceStride, srcFormat, srcAlphaFormat, dest, destStride, destFormat, destAlphaFormat);
+            Transcode(endpoints, row, source, srcSize.Height, sourceStride, dest, destStride);
         }
         else
         {
             using var staging = BitmapMemoryPool.Shared.Rent(rowBytes);
 
-            Transcode(new Span<Rgba8888Pixel>((void*)staging.Address, width), source, srcSize.Height, sourceStride, srcFormat, srcAlphaFormat, dest, destStride, destFormat, destAlphaFormat);
+            Transcode(endpoints, new Span<Rgba8888Pixel>((void*)staging.Address, width), source, srcSize.Height,
+                sourceStride, dest, destStride);
         }
     }
 
     private static void Transcode(
+        in RowEndpoints endpoints,
         Span<Rgba8888Pixel> row,
         IntPtr source,
         int height,
         int sourceStride,
-        PixelFormat srcFormat,
-        AlphaFormat srcAlphaFormat,
         IntPtr dest,
-        int destStride,
-        PixelFormat destFormat,
-        AlphaFormat destAlphaFormat)
+        int destStride)
     {
         for (var y = 0; y < height; y++)
         {
-            ReadRow(source + (nint)sourceStride * y, srcFormat, row);
-
-            WriteRow(row, dest + (nint)destStride * y, destFormat, destAlphaFormat, srcAlphaFormat);
+            endpoints.Read(source + (nint)sourceStride * y, row);
+            endpoints.Write(row, endpoints.RowAlphaFormat, dest + (nint)destStride * y);
         }
     }
 
     private static void TranscodeWide(
+        in RowEndpoints endpoints,
         IntPtr source,
         PixelSize srcSize,
         int sourceStride,
-        PixelFormat srcFormat,
-        AlphaFormat srcAlphaFormat,
         IntPtr dest,
-        int destStride,
-        PixelFormat destFormat,
-        AlphaFormat destAlphaFormat)
+        int destStride)
     {
         var width = srcSize.Width;
-        var wideSource = WidePixelFormat.IsWide(srcFormat);
-        var wideDest = WidePixelFormat.IsWide(destFormat);
+        var wideSource = WidePixelFormat.IsWide(endpoints.SourceFormat);
+        var wideDest = WidePixelFormat.IsWide(endpoints.DestFormat);
 
         using var wideStaging = BitmapMemoryPool.Shared.Rent((long)width * sizeof(Vector4));
         using var narrowStaging = wideSource && wideDest ? null : BitmapMemoryPool.Shared.Rent((long)width * sizeof(Rgba8888Pixel));
@@ -104,23 +126,77 @@ internal static unsafe class PixelFormatTranscoder
 
             if (wideSource)
             {
-                WidePixelFormat.ReadRow(sourceRow, srcFormat, srcAlphaFormat, wide);
+                WidePixelFormat.ReadRow(sourceRow, endpoints.SourceFormat, endpoints.SourceAlphaFormat, wide);
             }
             else
             {
-                ReadRow(sourceRow, srcFormat, narrow);
-                WidePixelFormat.Widen(narrow, srcAlphaFormat, wide);
+                endpoints.Read(sourceRow, narrow);
+                WidePixelFormat.Widen(narrow, endpoints.RowAlphaFormat, wide);
             }
 
             if (wideDest)
             {
-                WidePixelFormat.WriteRow(wide, destRow, destFormat, destAlphaFormat);
+                WidePixelFormat.WriteRow(wide, destRow, endpoints.DestFormat, endpoints.DestAlphaFormat);
             }
             else
             {
                 WidePixelFormat.Narrow(wide, narrow);
-                WriteRow(narrow, destRow, destFormat, destAlphaFormat, AlphaFormat.Unpremul);
+                endpoints.Write(narrow, AlphaFormat.Unpremul, destRow);
             }
+        }
+    }
+
+    // The two ends of a conversion on the 8-bit row, with palettes resolved once per call.
+    private readonly struct RowEndpoints
+    {
+        private readonly Rgba8888Pixel[]? _sourceEntries;
+        private readonly PaletteMatcher? _matcher;
+
+        public RowEndpoints(PixelFormat sourceFormat, AlphaFormat sourceAlphaFormat, BitmapPalette? sourcePalette,
+            PixelFormat destFormat, AlphaFormat destAlphaFormat, BitmapPalette? destPalette, double alphaThresholdPercent)
+        {
+            SourceFormat = sourceFormat;
+            SourceAlphaFormat = sourceAlphaFormat;
+            DestFormat = destFormat;
+            DestAlphaFormat = destAlphaFormat;
+
+            if (sourceFormat.IsIndexed)
+            {
+                _sourceEntries = IndexedPixelFormat.GetEntries(sourcePalette ??
+                    throw new ArgumentException($"An indexed source ({sourceFormat}) needs a palette.", nameof(sourcePalette)));
+            }
+
+            if (destFormat.IsIndexed)
+            {
+                _matcher = new PaletteMatcher(destPalette ??
+                    throw new ArgumentException($"An indexed destination ({destFormat}) needs a palette.", nameof(destPalette)),
+                    destFormat, alphaThresholdPercent);
+            }
+
+            // Palette colors carry straight alpha regardless of the alpha format passed for the source.
+            RowAlphaFormat = sourceFormat.IsIndexed ? AlphaFormat.Unpremul : sourceAlphaFormat;
+        }
+
+        public PixelFormat SourceFormat { get; }
+        public AlphaFormat SourceAlphaFormat { get; }
+        public PixelFormat DestFormat { get; }
+        public AlphaFormat DestAlphaFormat { get; }
+        public AlphaFormat RowAlphaFormat { get; }
+
+        public void Read(IntPtr sourceRow, Span<Rgba8888Pixel> row)
+        {
+            if (_sourceEntries is null)
+                ReadRow(sourceRow, SourceFormat, row);
+            else
+                IndexedPixelFormat.ReadRow(sourceRow, SourceFormat, _sourceEntries, row);
+        }
+
+        public void Write(ReadOnlySpan<Rgba8888Pixel> row, AlphaFormat rowAlphaFormat, IntPtr destRow)
+        {
+            if (_matcher is null)
+                WriteRow(row, destRow, DestFormat, DestAlphaFormat, rowAlphaFormat);
+            else
+                IndexedPixelFormat.WriteRow(row, rowAlphaFormat, destRow, DestFormat, _matcher);
         }
     }
 

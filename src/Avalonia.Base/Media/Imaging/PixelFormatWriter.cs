@@ -461,6 +461,9 @@ internal static unsafe class PixelFormatWriter
                 WriteRow<Bgr565PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
                 break;
             default:
+                if (format.IsIndexed)
+                    throw new NotSupportedException($"Pixel format {format} needs a palette to convert.");
+
                 if (!WidePixelFormat.IsWide(format))
                     throw new NotSupportedException($"Pixel format {format} is not supported");
 
