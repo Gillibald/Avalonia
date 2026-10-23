@@ -22,7 +22,14 @@ namespace Avalonia.Media.Imaging
             if (colors.Count == 0)
                 throw new ArgumentException("A palette needs at least one color.", nameof(colors));
 
-            Colors = colors;
+            // Palettes travel with frames and pixel buffers, so they must not change after
+            // construction: neither through the caller's list nor through a cast of Colors.
+            var copy = new Color[colors.Count];
+
+            for (var i = 0; i < copy.Length; i++)
+                copy[i] = colors[i];
+
+            Colors = Array.AsReadOnly(copy);
             HasTransparency = hasTransparency;
             Type = type;
         }
@@ -45,7 +52,7 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Returns a copy of this palette.
         /// </summary>
-        public BitmapPalette Clone() => new(new List<Color>(Colors), HasTransparency, Type);
+        public BitmapPalette Clone() => new(Colors, HasTransparency, Type);
     }
 
     /// <summary>
