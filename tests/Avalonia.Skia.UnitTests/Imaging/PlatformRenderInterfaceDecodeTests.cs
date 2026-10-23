@@ -223,6 +223,37 @@ namespace Avalonia.Skia.UnitTests.Imaging
         }
 
         [Fact]
+        public void LoadBitmap_Framebuffer_Transcodes_A_Floating_Point_Format()
+        {
+            // Linear 0.2158605 is sRGB 128; floating-point frames come from high-depth decodes.
+            var pixels = new[] { 1f, 0.2158605f, 0f, 1f };
+            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+
+            try
+            {
+                var framebuffer = new LockedFramebuffer(handle.AddrOfPinnedObject(),
+                    new PixelSize(1, 1), 16, new Vector(96, 96),
+                    PixelFormats.Rgba128Float, AlphaFormat.Unpremul, null);
+
+                using var impl = CreateRenderInterface().LoadBitmap(framebuffer);
+
+                var readable = Assert.IsAssignableFrom<IReadableBitmapImpl>(impl);
+                Assert.Equal(PixelFormats.Bgra8888, readable.Format);
+
+                using var locked = readable.Lock();
+
+                var first = new byte[4];
+                Marshal.Copy(locked.Address, first, 0, 4);
+
+                Assert.Equal(new byte[] { 0, 128, 255, 255 }, first);
+            }
+            finally
+            {
+                handle.Free();
+            }
+        }
+
+        [Fact]
         public void LoadBitmap_PixelData_Transcodes_An_Unsupported_Format()
         {
             const int width = 2;

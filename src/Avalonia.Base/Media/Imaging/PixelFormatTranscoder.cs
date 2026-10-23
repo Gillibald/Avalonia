@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Avalonia.Platform;
 using Avalonia.Platform.Internal;
 namespace Avalonia.Media.Imaging;
@@ -28,6 +29,17 @@ internal static unsafe class PixelFormatTranscoder
         AlphaFormat destAlphaFormat)
     {
         var width = srcSize.Width;
+
+        // Formats wider than eight bits per channel, floating-point and CMYK formats would
+        // lose precision or range in the 8-bit row, so either side being one of them moves
+        // the whole conversion to the wide row.
+        if (WidePixelFormat.IsWide(srcFormat) || WidePixelFormat.IsWide(destFormat))
+        {
+            TranscodeWide(source, srcSize, sourceStride, srcFormat, srcAlphaFormat, dest, destStride, destFormat, destAlphaFormat);
+
+            return;
+        }
+
         var rowBytes = (long)width * sizeof(Rgba8888Pixel);
 
         if (rowBytes <= MaxStackRowBytes)
@@ -61,6 +73,54 @@ internal static unsafe class PixelFormatTranscoder
             ReadRow(source + (nint)sourceStride * y, srcFormat, row);
 
             WriteRow(row, dest + (nint)destStride * y, destFormat, destAlphaFormat, srcAlphaFormat);
+        }
+    }
+
+    private static void TranscodeWide(
+        IntPtr source,
+        PixelSize srcSize,
+        int sourceStride,
+        PixelFormat srcFormat,
+        AlphaFormat srcAlphaFormat,
+        IntPtr dest,
+        int destStride,
+        PixelFormat destFormat,
+        AlphaFormat destAlphaFormat)
+    {
+        var width = srcSize.Width;
+        var wideSource = WidePixelFormat.IsWide(srcFormat);
+        var wideDest = WidePixelFormat.IsWide(destFormat);
+
+        using var wideStaging = BitmapMemoryPool.Shared.Rent((long)width * sizeof(Vector4));
+        using var narrowStaging = wideSource && wideDest ? null : BitmapMemoryPool.Shared.Rent((long)width * sizeof(Rgba8888Pixel));
+
+        var wide = new Span<Vector4>((void*)wideStaging.Address, width);
+        var narrow = narrowStaging is null ? default : new Span<Rgba8888Pixel>((void*)narrowStaging.Address, width);
+
+        for (var y = 0; y < srcSize.Height; y++)
+        {
+            var sourceRow = source + (nint)sourceStride * y;
+            var destRow = dest + (nint)destStride * y;
+
+            if (wideSource)
+            {
+                WidePixelFormat.ReadRow(sourceRow, srcFormat, srcAlphaFormat, wide);
+            }
+            else
+            {
+                ReadRow(sourceRow, srcFormat, narrow);
+                WidePixelFormat.Widen(narrow, srcAlphaFormat, wide);
+            }
+
+            if (wideDest)
+            {
+                WidePixelFormat.WriteRow(wide, destRow, destFormat, destAlphaFormat);
+            }
+            else
+            {
+                WidePixelFormat.Narrow(wide, narrow);
+                WriteRow(narrow, destRow, destFormat, destAlphaFormat, AlphaFormat.Unpremul);
+            }
         }
     }
 

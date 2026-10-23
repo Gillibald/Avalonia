@@ -2,22 +2,6 @@ using System;
 using Avalonia.Platform;
 namespace Avalonia.Media.Imaging;
 
-internal record struct Rgba64Pixel
-{
-    public Rgba64Pixel(ushort r, ushort g, ushort b, ushort a)
-    {
-        R = r;
-        G = g;
-        B = b;
-        A = a;
-    }
-
-    public ushort R;
-    public ushort G;
-    public ushort B;
-    public ushort A;
-}
-
 internal record struct Rgba8888Pixel
 {
     public Rgba8888Pixel(byte r, byte g, byte b, byte a)
@@ -179,68 +163,6 @@ internal static unsafe class PixelFormatReader
                 R = value
             };
         }
-    }
-
-    public unsafe struct Gray16PixelFormatReader : IPixelFormatReader
-    {
-        private ushort* _address;
-        public Rgba8888Pixel ReadNext()
-        {
-            var value16 = *_address;
-            _address++;
-            var value8 = (byte)(value16 >> 8);
-            return new Rgba8888Pixel
-            {
-                A = 255,
-                B = value8,
-                G = value8,
-                R = value8
-            };
-        }
-
-        public void Reset(IntPtr address) => _address = (ushort*)address;
-    }
-
-    public unsafe struct Gray32FloatPixelFormatReader : IPixelFormatReader
-    {
-        private byte* _address;
-        public Rgba8888Pixel ReadNext()
-        {
-            var f = *(float*)_address;
-            var srgb = Math.Pow(f, 1 / 2.2);
-            var value = (byte)(srgb * 255);
-
-            _address += 4;
-            return new Rgba8888Pixel
-            {
-                A = 255,
-                B = value,
-                G = value,
-                R = value
-            };
-        }
-
-        public void Reset(IntPtr address) => _address = (byte*)address;
-    }
-
-    public unsafe struct Rgba64PixelFormatReader : IPixelFormatReader
-    {
-        private Rgba64Pixel* _address;
-        public Rgba8888Pixel ReadNext()
-        {
-            var value = *_address;
-
-            _address++;
-            return new Rgba8888Pixel
-            {
-                A = (byte)(value.A >> 8),
-                B = (byte)(value.B >> 8),
-                G = (byte)(value.G >> 8),
-                R = (byte)(value.R >> 8),
-            };
-        }
-
-        public void Reset(IntPtr address) => _address = (Rgba64Pixel*)address;
     }
 
     public unsafe struct Rgb24PixelFormatReader : IPixelFormatReader
@@ -415,7 +337,7 @@ internal static unsafe class PixelFormatReader
             case PixelFormatEnum.Bgr565:
                 return true;
             default:
-                return false;
+                return WidePixelFormat.IsWide(format);
         }
     }
 
@@ -467,15 +389,6 @@ internal static unsafe class PixelFormatReader
             case PixelFormatEnum.Gray8:
                 ReadRow<Gray8PixelFormatReader>(pixels, source);
                 break;
-            case PixelFormatEnum.Gray16:
-                ReadRow<Gray16PixelFormatReader>(pixels, source);
-                break;
-            case PixelFormatEnum.Gray32Float:
-                ReadRow<Gray32FloatPixelFormatReader>(pixels, source);
-                break;
-            case PixelFormatEnum.Rgba64:
-                ReadRow<Rgba64PixelFormatReader>(pixels, source);
-                break;
             case PixelFormatEnum.Rgb24:
                 ReadRow<Rgb24PixelFormatReader>(pixels, source);
                 break;
@@ -495,7 +408,11 @@ internal static unsafe class PixelFormatReader
                 ReadRow<Bgr565PixelFormatReader>(pixels, source);
                 break;
             default:
-                throw new NotSupportedException($"Pixel format {format} is not supported");
+                if (!WidePixelFormat.IsWide(format))
+                    throw new NotSupportedException($"Pixel format {format} is not supported");
+
+                WidePixelFormat.ReadNarrowRow(pixels, source, format);
+                break;
         }
     }
 }

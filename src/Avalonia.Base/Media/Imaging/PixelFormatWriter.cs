@@ -45,21 +45,6 @@ internal static unsafe class PixelFormatWriter
         public void Reset(IntPtr address) => _address = (byte*)address;
     }
 
-    public unsafe struct Rgba64PixelFormatWriter : IPixelFormatWriter
-    {
-        private Rgba64Pixel* _address;
-        public void WriteNext(Rgba8888Pixel pixel)
-        {
-            var addr = _address;
-
-            *addr = new Rgba64Pixel((ushort)(pixel.R << 8), (ushort)(pixel.G << 8), (ushort)(pixel.B << 8), (ushort)(pixel.A << 8));
-
-            _address++;
-        }
-
-        public void Reset(IntPtr address) => _address = (Rgba64Pixel*)address;
-    }
-
     public unsafe struct Rgba8888PixelFormatWriter : IPixelFormatWriter
     {
         private Rgba8888Pixel* _address;
@@ -189,27 +174,6 @@ internal static unsafe class PixelFormatWriter
               | (((int)Math.Round(pixel.G / 255F * 31F) & 0x1F) << 5)
               | (((int)Math.Round(pixel.B / 255F * 31F) & 0x1F) << 0));
         }
-    }
-
-    public unsafe struct Gray32FloatPixelFormatWriter : IPixelFormatWriter
-    {
-        private float* _address;
-
-        public void WriteNext(Rgba8888Pixel pixel)
-        {
-            var addr = _address;
-
-            *addr = Pack(pixel);
-
-            _address++;
-        }
-
-        private static float Pack(Rgba8888Pixel pixel)
-        {
-            return (float)Math.Pow(pixel.R / 255F, 2.2);
-        }
-
-        public void Reset(IntPtr address) => _address = (float*)address;
     }
 
     public unsafe struct BlackWhitePixelFormatWriter : IPixelFormatWriter
@@ -354,24 +318,6 @@ internal static unsafe class PixelFormatWriter
         public void Reset(IntPtr address) => _address = (byte*)address;
     }
 
-    public unsafe struct Gray16PixelFormatWriter : IPixelFormatWriter
-    {
-        private ushort* _address;
-
-        public void WriteNext(Rgba8888Pixel pixel)
-        {
-            var addr = _address;
-
-            var grayscale = (ushort)Math.Round((0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B) * 0x0101);
-
-            *addr = grayscale;
-
-            _address++;
-        }
-
-        public void Reset(IntPtr address) => _address = (ushort*)address;
-    }
-
     private static void WriteRow<T>(
         ReadOnlySpan<Rgba8888Pixel> pixels,
         IntPtr dest,
@@ -496,15 +442,6 @@ internal static unsafe class PixelFormatWriter
             case PixelFormatEnum.Gray8:
                 WriteRow<Gray8PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
                 break;
-            case PixelFormatEnum.Gray16:
-                WriteRow<Gray16PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
-                break;
-            case PixelFormatEnum.Gray32Float:
-                WriteRow<Gray32FloatPixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
-                break;
-            case PixelFormatEnum.Rgba64:
-                WriteRow<Rgba64PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
-                break;
             case PixelFormatEnum.Rgb24:
                 WriteRow<Rgb24PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
                 break;
@@ -524,7 +461,11 @@ internal static unsafe class PixelFormatWriter
                 WriteRow<Bgr565PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
                 break;
             default:
-                throw new NotSupportedException($"Pixel format {format} is not supported");
+                if (!WidePixelFormat.IsWide(format))
+                    throw new NotSupportedException($"Pixel format {format} is not supported");
+
+                WidePixelFormat.WriteNarrowRow(pixels, dest, format, alphaFormat, srcAlphaFormat);
+                break;
         }
     }
 }

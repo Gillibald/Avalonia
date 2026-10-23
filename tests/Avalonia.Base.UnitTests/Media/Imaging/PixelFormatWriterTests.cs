@@ -122,25 +122,14 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [Fact]
         public void Should_Write_Rgba64()
         {
-            var sourceMemory = new BitmapMemory(
-                new Platform.PixelFormat(Platform.PixelFormatEnum.Rgba64),
-                Platform.AlphaFormat.Unpremul, 
-                new PixelSize(10, 10));
+            var pixels = new[]
+            {
+                new Rgba8888Pixel { R = 255, G = 125, B = 125, A = 125 },
+                new Rgba8888Pixel { R = 125, G = 255, B = 125, A = 125 },
+                new Rgba8888Pixel { R = 125, G = 125, B = 255, A = 125 }
+            };
 
-            var pixelWriter = new PixelFormatWriter.Rgba64PixelFormatWriter();
-            var pixelReader = new PixelFormatReader.Rgba64PixelFormatReader();
-
-            pixelWriter.Reset(sourceMemory.Address);
-            pixelReader.Reset(sourceMemory.Address);
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255, G = 125, B = 125, A = 125 });
-            Assert.Equal(new Rgba8888Pixel { R = 255, G = 125, B = 125, A = 125 }, pixelReader.ReadNext());
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 125, G = 255, B = 125, A = 125 });
-            Assert.Equal(new Rgba8888Pixel { R = 125, G = 255, B = 125, A = 125 }, pixelReader.ReadNext());
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 125, G = 125, B = 255, A = 125 });
-            Assert.Equal(new Rgba8888Pixel { R = 125, G = 125, B = 255, A = 125 }, pixelReader.ReadNext());
+            Assert.Equal(pixels, RoundTrip(Platform.PixelFormats.Rgba64, pixels));
         }
 
         [Fact]
@@ -170,25 +159,14 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [Fact]
         public void Should_Write_Gray32Float()
         {
-            var bitmapMemory = new BitmapMemory(
-                new Platform.PixelFormat(Platform.PixelFormatEnum.Gray32Float), 
-                Platform.AlphaFormat.Unpremul,
-                new PixelSize(10, 10));
+            var pixels = new[]
+            {
+                new Rgba8888Pixel { R = 255, G = 255, B = 255, A = 255 },
+                new Rgba8888Pixel { R = 125, G = 125, B = 125, A = 255 },
+                new Rgba8888Pixel { A = 255 }
+            };
 
-            var pixelWriter = new PixelFormatWriter.Gray32FloatPixelFormatWriter();
-            var pixelReader = new PixelFormatReader.Gray32FloatPixelFormatReader();
-
-            pixelWriter.Reset(bitmapMemory.Address);
-            pixelReader.Reset(bitmapMemory.Address);
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255 });
-            Assert.Equal(new Rgba8888Pixel { R = 255, G = 255, B = 255, A = 255 }, pixelReader.ReadNext());
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 125 });
-            Assert.Equal(new Rgba8888Pixel { R = 125, G = 125, B = 125, A = 255 }, pixelReader.ReadNext());
-
-            pixelWriter.WriteNext(new Rgba8888Pixel());
-            Assert.Equal(new Rgba8888Pixel { A = 255 }, pixelReader.ReadNext());
+            Assert.Equal(pixels, RoundTrip(Platform.PixelFormats.Gray32Float, pixels));
         }
 
         [Fact]
@@ -322,25 +300,16 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [Fact]
         public void Should_Write_Gray16()
         {
-            var bitmapMemory = new BitmapMemory(
-                new Platform.PixelFormat(Platform.PixelFormatEnum.Gray16),
-                Platform.AlphaFormat.Unpremul, 
-                new PixelSize(10, 10));
+            var pixels = new[] { new Rgba8888Pixel { R = 255 }, new Rgba8888Pixel { R = 120 }, new Rgba8888Pixel() };
 
-            var pixelWriter = new PixelFormatWriter.Gray16PixelFormatWriter();
-            var pixelReader = new PixelFormatReader.Gray16PixelFormatReader();
+            var expected = new[]
+            {
+                GetGray16(new Rgba8888Pixel { R = 255 }),
+                GetGray16(new Rgba8888Pixel { R = 120 }),
+                GetGray16(new Rgba8888Pixel { A = 255 })
+            };
 
-            pixelWriter.Reset(bitmapMemory.Address);
-            pixelReader.Reset(bitmapMemory.Address);
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255 });
-            Assert.Equal(GetGray16(new Rgba8888Pixel { R = 255 }), pixelReader.ReadNext());
-
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 120 });
-            Assert.Equal(GetGray16(new Rgba8888Pixel { R = 120 }), pixelReader.ReadNext());
-
-            pixelWriter.WriteNext(new Rgba8888Pixel());
-            Assert.Equal(GetGray16(new Rgba8888Pixel { A = 255 }), pixelReader.ReadNext());
+            Assert.Equal(expected, RoundTrip(Platform.PixelFormats.Gray16, pixels));
         }
 
         [Fact]
@@ -389,6 +358,20 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 Platform.AlphaFormat.Premul, Platform.AlphaFormat.Unpremul);
 
             Assert.Equal(new Rgba8888Pixel(expected, expected, expected, alpha), converted);
+        }
+
+        private static Rgba8888Pixel[] RoundTrip(Platform.PixelFormat format, Rgba8888Pixel[] pixels)
+        {
+            using var memory = new BitmapMemory(format, Platform.AlphaFormat.Unpremul, new PixelSize(pixels.Length, 1));
+
+            PixelFormatTranscoder.WriteRow(pixels, memory.Address, format, Platform.AlphaFormat.Unpremul,
+                Platform.AlphaFormat.Unpremul);
+
+            var result = new Rgba8888Pixel[pixels.Length];
+
+            PixelFormatTranscoder.ReadRow(memory.Address, format, result);
+
+            return result;
         }
 
         private static Rgba8888Pixel GetGray16(Rgba8888Pixel pixel)
