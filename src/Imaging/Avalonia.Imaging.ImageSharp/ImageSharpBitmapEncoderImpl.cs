@@ -130,19 +130,18 @@ namespace Avalonia.Imaging.ImageSharp
         {
             if (encoder.Metadata is { } metadata)
             {
-                switch (metadata)
+                var store = ToImageSharpStore(metadata);
+
+                // TIFF readers (including this backend) find the tags on the page, other
+                // containers on the image; install on both.
+                InstallProfiles(store, image.Metadata, image.Frames.RootFrame.Metadata);
+
+                if (store.Text is { Count: > 0 } text)
                 {
-                    case ImageSharpExifMetadata exif:
-                        // TIFF readers (including this backend) find the tags on the
-                        // page, other containers on the image; install on both.
-                        InstallExifMetadata(exif, image.Metadata, image.Frames.RootFrame.Metadata);
-                        break;
-                    case ImageSharpPngTextMetadata text:
-                        InstallPngTextMetadata(text, image.Metadata);
-                        break;
-                    default:
-                        throw new NotSupportedException(
-                            $"The 'ImageSharp' imaging backend cannot encode metadata of type {metadata.GetType().Name}.");
+                    var pngMetadata = image.Metadata.GetPngMetadata();
+
+                    foreach (var entry in text)
+                        pngMetadata.TextData.Add(entry);
                 }
             }
 
@@ -152,47 +151,45 @@ namespace Avalonia.Imaging.ImageSharp
 
         private static void ApplyFrameMetadata(ImageFrameMetadata target, BitmapMetadata? metadata)
         {
-            switch (metadata)
-            {
-                case null:
-                    break;
-                case ImageSharpExifMetadata exif:
-                    InstallExifMetadata(exif, null, target);
-                    break;
-                default:
-                    throw new NotSupportedException(
-                        $"The 'ImageSharp' imaging backend cannot encode frame metadata of type {metadata.GetType().Name}.");
-            }
+            if (metadata is not null)
+                InstallProfiles(ToImageSharpStore(metadata), null, target);
         }
 
-        private static void InstallExifMetadata(ImageSharpExifMetadata metadata,
-            ImageMetadata? imageMetadata, ImageFrameMetadata? frameMetadata)
+        // Metadata decoded by this backend carries its profiles already; any other store,
+        // such as metadata authored from scratch, is copied value by value, which fails for
+        // paths ImageSharp cannot hold.
+        private static ImageSharpMetadataStore ToImageSharpStore(BitmapMetadata metadata)
         {
-            var exif = metadata.ExifProfile.Values.Count > 0 ? metadata.ExifProfile : null;
-            var xmp = metadata.XmpProfile;
-            var icc = metadata.IccProfileData;
+            if (metadata.Store is ImageSharpMetadataStore own)
+                return own;
 
+            var store = ImageSharpMetadataStore.CreateEmpty(metadata.ContainerFormat);
+
+            foreach (var path in metadata.Store.EnumeratePaths())
+            {
+                if (metadata.Store.TryRead(path, out var value))
+                    store.Write(path, value);
+            }
+
+            return store;
+        }
+
+        private static void InstallProfiles(ImageSharpMetadataStore store, ImageMetadata? imageMetadata,
+            ImageFrameMetadata? frameMetadata)
+        {
             if (imageMetadata is not null)
             {
-                imageMetadata.ExifProfile = exif?.DeepClone() ?? imageMetadata.ExifProfile;
-                imageMetadata.XmpProfile = xmp?.DeepClone() ?? imageMetadata.XmpProfile;
-                imageMetadata.IccProfile = icc?.DeepClone() ?? imageMetadata.IccProfile;
+                imageMetadata.ExifProfile = store.Exif?.DeepClone() ?? imageMetadata.ExifProfile;
+                imageMetadata.XmpProfile = store.Xmp?.DeepClone() ?? imageMetadata.XmpProfile;
+                imageMetadata.IccProfile = store.Icc?.DeepClone() ?? imageMetadata.IccProfile;
             }
 
             if (frameMetadata is not null)
             {
-                frameMetadata.ExifProfile = exif?.DeepClone() ?? frameMetadata.ExifProfile;
-                frameMetadata.XmpProfile = xmp?.DeepClone() ?? frameMetadata.XmpProfile;
-                frameMetadata.IccProfile = icc?.DeepClone() ?? frameMetadata.IccProfile;
+                frameMetadata.ExifProfile = store.Exif?.DeepClone() ?? frameMetadata.ExifProfile;
+                frameMetadata.XmpProfile = store.Xmp?.DeepClone() ?? frameMetadata.XmpProfile;
+                frameMetadata.IccProfile = store.Icc?.DeepClone() ?? frameMetadata.IccProfile;
             }
-        }
-
-        private static void InstallPngTextMetadata(ImageSharpPngTextMetadata metadata, ImageMetadata target)
-        {
-            var pngMetadata = target.GetPngMetadata();
-
-            foreach (var entry in metadata.Entries)
-                pngMetadata.TextData.Add(entry);
         }
 
         private static void ApplyTransform(BitmapTransform transform, ISImage image)

@@ -20,14 +20,16 @@ namespace Avalonia.Media.Imaging
     public sealed class BitmapFrame : IDisposable
     {
         private readonly IBitmapFrameSource _source;
+        private readonly Guid _containerFormat;
         private readonly object _sync = new();
         private IRef<IBitmapImpl>? _realized;
         private BitmapFrame? _thumbnail;
         private bool _disposed;
 
-        internal BitmapFrame(IBitmapFrameSource source)
+        internal BitmapFrame(IBitmapFrameSource source, Guid containerFormat)
         {
             _source = source;
+            _containerFormat = containerFormat;
         }
 
         /// <summary>
@@ -55,9 +57,9 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public bool TryGetMetadata([NotNullWhen(true)] out BitmapMetadata? metadata)
         {
-            if (_source is IMetadataSource source)
+            if (_source is IMetadataStoreSource source)
             {
-                metadata = source.Metadata;
+                metadata = new BitmapMetadata(source.Metadata, _containerFormat);
                 return true;
             }
 
@@ -108,7 +110,7 @@ namespace Avalonia.Media.Imaging
                 ThrowIfDisposed();
 
                 if (_thumbnail is null && _source is IThumbnailSource { Thumbnail: { } source })
-                    _thumbnail = new BitmapFrame(source);
+                    _thumbnail = new BitmapFrame(source, _containerFormat);
 
                 thumbnail = _thumbnail;
                 return thumbnail is not null;

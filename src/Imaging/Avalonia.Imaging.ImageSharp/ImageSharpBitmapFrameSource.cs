@@ -308,33 +308,32 @@ namespace Avalonia.Imaging.ImageSharp
             _ => null,
         };
 
-        private static BitmapMetadata? CreateMetadata(ImageSharpBitmapDecoder owner, int frameIndex)
+        private static IBitmapMetadataStore? CreateMetadata(ImageSharpBitmapDecoder owner, int frameIndex)
         {
             if ((owner.Codec.Capabilities & BitmapCodecCapabilities.Metadata) == 0)
                 return null;
 
             var image = owner.Image;
+            var frameMetadata = image.Frames[frameIndex].Metadata;
+            var icc = frameMetadata.IccProfile ?? image.Metadata.IccProfile;
 
+            // The store deep-copies the profiles, detaching them from the decoder's image lifetime.
             if (owner.Codec.ContainerFormat == BitmapContainerFormats.Png)
             {
-                var pngMetadata = image.Metadata.GetPngMetadata();
+                var text = image.Metadata.GetPngMetadata().TextData;
 
-                return pngMetadata.TextData.Count > 0
-                    ? new ImageSharpPngTextMetadata(pngMetadata.TextData)
+                return text.Count > 0 || icc is not null
+                    ? new ImageSharpMetadataStore(null, null, icc, text, isReadOnly: true)
                     : null;
             }
 
-            var frameMetadata = image.Frames[frameIndex].Metadata;
             var exif = frameMetadata.ExifProfile ?? image.Metadata.ExifProfile;
             var xmp = frameMetadata.XmpProfile ?? image.Metadata.XmpProfile;
-            var icc = frameMetadata.IccProfile ?? image.Metadata.IccProfile;
 
             if (exif is null && xmp is null && icc is null)
                 return null;
 
-            // Deep copies detach the metadata from the decoder's image lifetime.
-            return new ImageSharpExifMetadata(owner.Codec.FormatName,
-                exif?.DeepClone(), xmp?.DeepClone(), icc?.DeepClone());
+            return new ImageSharpMetadataStore(exif, xmp, icc, null, isReadOnly: true);
         }
 
         private static byte[]? FindIccProfileBytes(ImageSharpBitmapDecoder owner, int frameIndex)
@@ -348,16 +347,16 @@ namespace Avalonia.Imaging.ImageSharp
             return profile?.ToByteArray();
         }
 
-        private sealed class FrameWithMetadata : ImageSharpBitmapFrameSource, IMetadataSource
+        private sealed class FrameWithMetadata : ImageSharpBitmapFrameSource, IMetadataStoreSource
         {
             public FrameWithMetadata(ImageSharpBitmapDecoder owner, int frameIndex,
-                BitmapDecodeOptions? options, BitmapMetadata metadata)
+                BitmapDecodeOptions? options, IBitmapMetadataStore metadata)
                 : base(owner, frameIndex, options)
             {
                 Metadata = metadata;
             }
 
-            public BitmapMetadata Metadata { get; }
+            public IBitmapMetadataStore Metadata { get; }
         }
 
         private sealed class FrameWithColorProfile : ImageSharpBitmapFrameSource, IColorProfileSource
@@ -373,17 +372,17 @@ namespace Avalonia.Imaging.ImageSharp
         }
 
         private sealed class FrameWithMetadataAndColorProfile : ImageSharpBitmapFrameSource,
-            IMetadataSource, IColorProfileSource
+            IMetadataStoreSource, IColorProfileSource
         {
             public FrameWithMetadataAndColorProfile(ImageSharpBitmapDecoder owner, int frameIndex,
-                BitmapDecodeOptions? options, BitmapMetadata metadata, byte[] iccProfile)
+                BitmapDecodeOptions? options, IBitmapMetadataStore metadata, byte[] iccProfile)
                 : base(owner, frameIndex, options)
             {
                 Metadata = metadata;
                 IccProfile = iccProfile;
             }
 
-            public BitmapMetadata Metadata { get; }
+            public IBitmapMetadataStore Metadata { get; }
 
             public ReadOnlyMemory<byte> IccProfile { get; }
         }

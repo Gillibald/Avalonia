@@ -1,0 +1,228 @@
+using System;
+using System.Linq;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Xunit;
+
+namespace Avalonia.Base.UnitTests.Media.Imaging
+{
+    public class BitmapMetadataEngineTests
+    {
+        [Theory]
+        [InlineData("/app1/ifd/{ushort=274}", "/ifd/{ushort=274}")]
+        [InlineData("/APP1/IFD/{USHORT=274}", "/ifd/{ushort=274}")]
+        [InlineData("/app1/{ushort=0}/{ushort=271}", "/ifd/{ushort=271}")]
+        [InlineData("/app1/ifd/exif/{ushort=36867}", "/ifd/exif/{ushort=36867}")]
+        [InlineData("/app1/ifd/{ushort=34665}/{ushort=36867}", "/ifd/exif/{ushort=36867}")]
+        [InlineData("/app1/ifd/gps/{ushort=2}", "/ifd/gps/{ushort=2}")]
+        [InlineData("/app1/ifd/{ushort=34853}/{ushort=2}", "/ifd/gps/{ushort=2}")]
+        [InlineData("/app1/ifd/exif/{ushort=40965}/{ushort=1}", "/ifd/exif/interop/{ushort=1}")]
+        [InlineData("/app1/xmp", "/xmp")]
+        [InlineData("/app13/irb/8bimiptc/iptc", "/iptc")]
+        public void Jpeg_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
+        {
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Jpeg));
+        }
+
+        [Theory]
+        [InlineData("/ifd/{ushort=34665}/{ushort=33434}", "/ifd/exif/{ushort=33434}")]
+        [InlineData("/ifd/xmp", "/xmp")]
+        [InlineData("/ifd/{ushort=700}", "/xmp")]
+        [InlineData("/ifd/{ushort=33723}", "/iptc")]
+        public void Tiff_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
+        {
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Tiff));
+        }
+
+        [Theory]
+        [InlineData("/tEXt/{str=Title}", "/text/{str=Title}")]
+        [InlineData("/text/{wstr=Title}", "/text/{str=Title}")]
+        [InlineData("/iCCP/ProfileData", "/icc")]
+        public void Png_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
+        {
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Png));
+        }
+
+        [Theory]
+        [InlineData("ifd")]
+        [InlineData("/ifd//{ushort=1}")]
+        [InlineData("/ifd/{ushort=abc}")]
+        [InlineData("/ifd/{bogus=1}")]
+        [InlineData("/ifd/{ushort}")]
+        public void Malformed_Queries_Should_Throw(string query)
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            Assert.Throws<ArgumentException>(() => metadata.GetQuery(query));
+        }
+
+        [Fact]
+        public void Values_Should_Round_Trip_In_Wic_Shapes()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/app1/ifd/{ushort=274}", (ushort)6);
+            metadata.SetQuery("/app1/ifd/{ushort=282}", 72UL | (1UL << 32));
+            metadata.SetQuery("/app1/ifd/exif/{ushort=37500}", new byte[] { 1, 2, 3 });
+            metadata.SetQuery("/app1/ifd/{ushort=40000}", new ushort[] { 1, 2 });
+
+            Assert.Equal("Make", metadata.GetQuery("/app1/ifd/{ushort=271}"));
+            Assert.Equal((ushort)6, metadata.GetQuery("/app1/ifd/{ushort=274}"));
+            Assert.Equal(72UL | (1UL << 32), metadata.GetQuery("/app1/ifd/{ushort=282}"));
+            Assert.Equal(new byte[] { 1, 2, 3 }, metadata.GetQuery("/app1/ifd/{ushort=34665}/{ushort=37500}"));
+            Assert.Equal(new ushort[] { 1, 2 }, metadata.GetQuery("/ifd/{ushort=40000}"));
+        }
+
+        [Fact]
+        public void Writing_A_Number_Should_Keep_The_Stored_Type()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/ifd/{ushort=274}", (ushort)1);
+            metadata.SetQuery("/ifd/{ushort=274}", 8);
+
+            Assert.Equal((ushort)8, metadata.GetQuery("/ifd/{ushort=274}"));
+        }
+
+        [Fact]
+        public void Text_Outside_Latin1_Should_Be_Stored_As_Unicode()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+
+            metadata.SetQuery("/text/{str=Title}", "Café");
+            metadata.SetQuery("/text/{str=Comment}", "日本");
+
+            Assert.True(metadata.Store.TryRead("/text/{str=Title}", out var latin1));
+            Assert.True(metadata.Store.TryRead("/text/{str=Comment}", out var unicode));
+            Assert.Equal(MetadataValueType.Ascii, latin1.Type);
+            Assert.Equal(MetadataValueType.Unicode, unicode.Type);
+            Assert.Equal("日本", metadata.GetQuery("/tEXt/{str=Comment}"));
+        }
+
+        [Fact]
+        public void A_Block_Query_Should_Return_A_View_Of_The_Same_Values()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/{ushort=271}", "Make");
+
+            var block = Assert.IsType<BitmapMetadata>(metadata.GetQuery("/app1/ifd"));
+
+            Assert.Equal("Make", block.GetQuery("/{ushort=271}"));
+
+            block.SetQuery("/{ushort=272}", "Model");
+
+            Assert.Equal("Model", metadata.GetQuery("/app1/ifd/{ushort=272}"));
+        }
+
+        [Fact]
+        public void Setting_A_Block_Should_Copy_Its_Values()
+        {
+            var source = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            source.SetQuery("/ifd/exif/{ushort=36867}", "2026:10:23 12:00:00");
+            source.SetQuery("/ifd/exif/{ushort=37500}", new byte[] { 9 });
+
+            var target = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            target.SetQuery("/app1/ifd/exif", source.GetQuery("/app1/ifd/exif"));
+
+            Assert.Equal("2026:10:23 12:00:00", target.GetQuery("/ifd/exif/{ushort=36867}"));
+            Assert.Equal(new byte[] { 9 }, target.GetQuery("/ifd/exif/{ushort=37500}"));
+        }
+
+        [Fact]
+        public void Children_Should_List_Immediate_Segments()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/ifd/exif/{ushort=36867}", "2026:10:23 12:00:00");
+            metadata.XmpPacket = "<x/>";
+
+            Assert.Equal(new[] { "/ifd", "/xmp" }, metadata.GetChildren().OrderBy(c => c, StringComparer.Ordinal));
+            Assert.Equal(new[] { "/exif", "/{ushort=271}" }, metadata.GetChildren("/app1/ifd").OrderBy(c => c, StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public void Removing_A_Block_Should_Remove_Everything_Below_It()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/ifd/exif/{ushort=36867}", "2026:10:23 12:00:00");
+
+            metadata.RemoveQuery("/app1/ifd/exif");
+
+            Assert.False(metadata.ContainsQuery("/ifd/exif"));
+            Assert.True(metadata.ContainsQuery("/ifd/{ushort=271}"));
+
+            metadata.SetQuery("/ifd/{ushort=271}", null);
+
+            Assert.False(metadata.ContainsQuery("/ifd"));
+        }
+
+        [Fact]
+        public void Read_Only_Metadata_Should_Reject_Changes_And_Clone_Writable()
+        {
+            var store = MemoryMetadataStore.CopyOf(new BitmapMetadata(BitmapContainerFormats.Png).Store, isReadOnly: true);
+            var metadata = new BitmapMetadata(store, BitmapContainerFormats.Png);
+
+            Assert.True(metadata.IsReadOnly);
+            Assert.Throws<InvalidOperationException>(() => metadata.SetQuery("/text/{str=Title}", "x"));
+            Assert.Throws<InvalidOperationException>(() => metadata.XmpPacket = "<x/>");
+
+            var copy = metadata.Clone();
+
+            copy.SetQuery("/text/{str=Title}", "x");
+
+            Assert.Equal("x", copy.GetQuery("/text/{str=Title}"));
+            Assert.Null(metadata.GetQuery("/text/{str=Title}"));
+        }
+
+        [Fact]
+        public void Photo_Properties_Should_Map_To_Exif_Tags()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+            IPhotoMetadata photo = metadata;
+
+            photo.Title = "Title";
+            photo.Authors = new[] { "Alice", "Bob" };
+            photo.Rating = 9;
+            photo.DateTaken = new DateTime(2026, 10, 23, 12, 34, 56);
+            photo.Comment = "Grand café";
+
+            Assert.Equal("Title", metadata.GetQuery("/app1/ifd/{ushort=270}"));
+            Assert.Equal("Alice;Bob", metadata.GetQuery("/app1/ifd/{ushort=315}"));
+            Assert.Equal((ushort)5, metadata.GetQuery("/app1/ifd/{ushort=18246}"));
+            Assert.Equal("2026:10:23 12:34:56", metadata.GetQuery("/app1/ifd/exif/{ushort=36867}"));
+            Assert.Equal(new[] { "Alice", "Bob" }, photo.Authors);
+            Assert.Equal("Grand café", photo.Comment);
+            Assert.StartsWith("UNICODE", System.Text.Encoding.ASCII.GetString((byte[])metadata.GetQuery("/ifd/exif/{ushort=37510}")!));
+        }
+
+        [Fact]
+        public void Photo_Properties_Should_Map_To_Png_Text_And_Reject_Exif_Only_Ones()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+            IPhotoMetadata photo = metadata;
+
+            photo.Title = "Title";
+            photo.Comment = "Comment";
+
+            Assert.Equal("Title", metadata.GetQuery("/tEXt/{str=Title}"));
+            Assert.Equal("Comment", metadata.GetQuery("/tEXt/{str=Comment}"));
+            Assert.Null(photo.CameraModel);
+            Assert.Throws<NotSupportedException>(() => photo.CameraModel = "Model");
+        }
+
+        [Fact]
+        public void Unsupported_Value_Types_Should_Throw()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            Assert.Throws<NotSupportedException>(() => metadata.SetQuery("/ifd/{ushort=1}", new object()));
+        }
+    }
+}

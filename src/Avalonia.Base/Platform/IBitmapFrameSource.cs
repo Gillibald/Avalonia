@@ -49,18 +49,6 @@ namespace Avalonia.Platform
     }
 
     /// <summary>
-    /// Opt-in capability: the frame or decoder exposes metadata.
-    /// </summary>
-    [Unstable]
-    public interface IMetadataSource
-    {
-        /// <summary>
-        /// Gets the metadata attached to this frame or container.
-        /// </summary>
-        BitmapMetadata Metadata { get; }
-    }
-
-    /// <summary>
     /// Opt-in capability: the frame carries an embedded thumbnail.
     /// </summary>
     [Unstable]

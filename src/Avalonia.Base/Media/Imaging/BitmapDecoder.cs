@@ -188,7 +188,7 @@ namespace Avalonia.Media.Imaging
 
             var frame = _impl.ReadNextFrame();
 
-            return frame is null ? null : new BitmapFrame(frame);
+            return frame is null ? null : new BitmapFrame(frame, _impl.CodecInfo.ContainerFormat);
         }
 
         /// <summary>
@@ -227,7 +227,7 @@ namespace Avalonia.Media.Imaging
             if (index < 0 || index >= seekable.FrameCount)
                 throw new ArgumentOutOfRangeException(nameof(index));
 
-            return new BitmapFrame(seekable.GetFrame(index));
+            return new BitmapFrame(seekable.GetFrame(index), _impl.CodecInfo.ContainerFormat);
         }
 
         /// <summary>
@@ -237,9 +237,9 @@ namespace Avalonia.Media.Imaging
         {
             ThrowIfDisposed();
 
-            if (_impl is IMetadataSource source)
+            if (_impl is IMetadataStoreSource source)
             {
-                metadata = source.Metadata;
+                metadata = new BitmapMetadata(source.Metadata, _impl.CodecInfo.ContainerFormat);
                 return true;
             }
 

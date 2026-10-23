@@ -99,21 +99,6 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             return new BitmapEncoderFrame { Pixels = pixels };
         }
 
-        private sealed class TestMetadata : BitmapMetadata
-        {
-            public override string Format => "PNG";
-
-            public override object? GetQuery(string query) => null;
-
-            public override void SetQuery(string query, object? value) { }
-
-            public override bool ContainsQuery(string query) => false;
-
-            public override void RemoveQuery(string query) { }
-
-            public override BitmapMetadata Clone() => new TestMetadata();
-        }
-
         private static IDisposable BindBackend(FakeBackend backend)
         {
             var scope = AvaloniaLocator.EnterScope();
@@ -184,7 +169,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             var encoder = new TestEncoder(BitmapCodecCapabilities.Encode)
             {
-                Metadata = new TestMetadata(),
+                Metadata = new BitmapMetadata(BitmapContainerFormats.Png),
             };
 
             encoder.Frames.Add(CreateFrame());
@@ -338,15 +323,6 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
-        public void Base_Metadata_Rejects_Xmp_Writes_Instead_Of_Dropping_Them()
-        {
-            var metadata = new TestMetadata();
-
-            Assert.Null(metadata.XmpPacket);
-            Assert.Throws<NotSupportedException>(() => metadata.XmpPacket = "<xmp/>");
-        }
-
-        [Fact]
         public void Frame_Without_A_Pixel_Source_Throws_Before_Writing()
         {
             var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
@@ -369,7 +345,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             using var scope = BindBackend(backend);
             using var stream = new MemoryStream();
-            using var frame = new BitmapFrame(new FakeFrameSource());
+            using var frame = new BitmapFrame(new FakeFrameSource(), BitmapContainerFormats.Png);
 
             var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
 

@@ -29,6 +29,9 @@ namespace Avalonia.Imaging.ImageSharp.Tests
     /// </summary>
     public class ImageSharpBackendTests
     {
+        private static BitmapMetadata MetadataOf(IBitmapFrameSource frame, Guid containerFormat)
+            => new(Assert.IsAssignableFrom<IMetadataStoreSource>(frame).Metadata, containerFormat);
+
         [Fact]
         public void Sixteen_Bit_Rgb_Png_Decodes_To_Rgb48_Keeping_Every_Bit()
         {
@@ -249,9 +252,8 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true);
             using var frame = decoder.ReadNextFrame()!;
 
-            var source = Assert.IsAssignableFrom<IMetadataSource>(frame);
-            var metadata = source.Metadata;
-            var photo = Assert.IsAssignableFrom<IPhotoMetadata>(metadata);
+            var metadata = MetadataOf(frame, BitmapContainerFormats.Jpeg);
+            IPhotoMetadata photo = metadata;
 
             Assert.Equal("TestMake", photo.CameraManufacturer);
             Assert.Equal("TestModel", photo.CameraModel);
@@ -277,7 +279,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using (var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true))
             using (var frame = decoder.ReadNextFrame()!)
             {
-                metadata = ((IMetadataSource)frame).Metadata.Clone();
+                metadata = MetadataOf(frame, BitmapContainerFormats.Jpeg).Clone();
             }
 
             ((IPhotoMetadata)metadata).CameraModel = "Repacked";
@@ -298,11 +300,65 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using var roundTripped = backend.CreateDecoder(stream, ownsStream: false);
             using var page = roundTripped.ReadNextFrame()!;
 
-            var photo = Assert.IsAssignableFrom<IPhotoMetadata>(((IMetadataSource)page).Metadata);
+            IPhotoMetadata photo = MetadataOf(page, BitmapContainerFormats.Jpeg);
 
             Assert.Equal("TestMake", photo.CameraManufacturer);
             Assert.Equal("Repacked", photo.CameraModel);
             Assert.Equal("New title", photo.Title);
+        }
+
+        [Fact]
+        public void AuthoredMetadata_EncodesAndDecodes()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+            IPhotoMetadata authored = metadata;
+
+            authored.CameraManufacturer = "Authored";
+            authored.Title = "From scratch";
+            metadata.SetQuery("/app1/ifd/{ushort=274}", (ushort)6);
+            metadata.XmpPacket = "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"></x:xmpmeta>";
+
+            var encoder = new JpegBitmapEncoder { Metadata = metadata };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(4, 4, (10, 20, 30, 255)) });
+
+            var backend = new ImageSharpImagingBackend();
+
+            using var stream = new MemoryStream();
+
+            backend.CreateEncoder(BitmapContainerFormats.Jpeg).Encode(encoder, stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            // Applying the orientation would consume the tag, so read the file as stored.
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false,
+                new BitmapDecodeOptions { RespectExifOrientation = false });
+            using var frame = decoder.ReadNextFrame()!;
+
+            var decoded = MetadataOf(frame, BitmapContainerFormats.Jpeg);
+            IPhotoMetadata photo = decoded;
+
+            Assert.Equal("Authored", photo.CameraManufacturer);
+            Assert.Equal("From scratch", photo.Title);
+            Assert.Equal((ushort)6, decoded.GetQuery("/app1/ifd/{ushort=274}"));
+            Assert.Equal(metadata.XmpPacket, decoded.XmpPacket);
+        }
+
+        [Fact]
+        public void AuthoredMetadata_WithATagImageSharpCannotCreate_FailsBeforeWriting()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/{ushort=60000}", (ushort)1);
+
+            var encoder = new JpegBitmapEncoder { Metadata = metadata };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(4, 4, (10, 20, 30, 255)) });
+
+            using var stream = new MemoryStream();
+
+            Assert.Throws<NotSupportedException>(() => new ImageSharpImagingBackend().CreateEncoder(BitmapContainerFormats.Jpeg)
+                .Encode(encoder, stream, TestContext.Current.CancellationToken));
+            Assert.Equal(0, stream.Length);
         }
 
         [Fact]
@@ -322,7 +378,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using (var decoder = backend.CreateDecoder(new MemoryStream(jpeg), ownsStream: true))
             using (var frame = decoder.ReadNextFrame()!)
             {
-                metadata = ((IMetadataSource)frame).Metadata.Clone();
+                metadata = MetadataOf(frame, BitmapContainerFormats.Jpeg).Clone();
             }
 
             Assert.Equal(packet, metadata.XmpPacket);
@@ -343,7 +399,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using var roundTripped = backend.CreateDecoder(stream, ownsStream: false);
             using var page = roundTripped.ReadNextFrame()!;
 
-            Assert.Equal(updated, ((IMetadataSource)page).Metadata.XmpPacket);
+            Assert.Equal(updated, MetadataOf(page, BitmapContainerFormats.Jpeg).XmpPacket);
         }
 
         [Fact]
@@ -397,7 +453,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             using var decoder = backend.CreateDecoder(new MemoryStream(png), ownsStream: true);
             using var frame = decoder.ReadNextFrame()!;
 
-            var metadata = Assert.IsAssignableFrom<IMetadataSource>(frame).Metadata;
+            var metadata = MetadataOf(frame, BitmapContainerFormats.Png);
 
             Assert.Equal("PNG", metadata.Format);
             Assert.Equal("Hello PNG", metadata.GetQuery("/text/{str=Title}"));

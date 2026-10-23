@@ -12,7 +12,7 @@ namespace Avalonia.Platform
     /// These flags describe per-format support of the active backend and are used to
     /// fail fast on unsupported operations and to query support up front. What a live
     /// decoder instance actually exposes is discovered through the capability
-    /// interfaces (<see cref="IMetadataSource"/>, <see cref="IAnimatedFrame"/>, ...)
+    /// interfaces (<see cref="IMetadataStoreSource"/>, <see cref="IAnimatedFrame"/>, ...)
     /// by pattern matching.
     /// </remarks>
     [Flags]
