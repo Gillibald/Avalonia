@@ -406,40 +406,47 @@ internal static unsafe class PixelFormatWriter
         return pixel;
     }
 
+    // Alpha conversion reproduces WIC bit for bit, so pixels converted here match what
+    // WPF and the Windows imaging stack produce for the same input.
     private static Rgba8888Pixel ConvertToPremultiplied(Rgba8888Pixel pixel)
     {
-        var factor = pixel.A / 255F;
+        var alpha = pixel.A;
 
         return new Rgba8888Pixel
         {
-            R = (byte)(pixel.R * factor),
-            G = (byte)(pixel.G * factor),
-            B = (byte)(pixel.B * factor),
-            A = pixel.A
+            R = Premultiply(pixel.R, alpha),
+            G = Premultiply(pixel.G, alpha),
+            B = Premultiply(pixel.B, alpha),
+            A = alpha
         };
     }
 
+    // Rounds to nearest.
+    private static byte Premultiply(byte channel, int alpha) => (byte)((channel * alpha + 127) / 255);
+
     private static Rgba8888Pixel ConvertFromPremultiplied(Rgba8888Pixel pixel)
     {
-        // A transparent pixel carries no colour, and dividing by its zero alpha would
-        // turn any stored colour into an infinity.
+        // A transparent pixel carries no colour, and its zero alpha has no reciprocal.
         if (pixel.A == 0)
             return default;
 
-        var factor = 1F / (pixel.A / 255F);
+        // WIC scales by a 16.16 fixed-point reciprocal of alpha and truncates, which is
+        // why a fully saturated channel can come back one step below 255.
+        var reciprocal = (255u << 16) / pixel.A;
 
         return new Rgba8888Pixel
         {
-            R = Unpremultiply(pixel.R, factor),
-            G = Unpremultiply(pixel.G, factor),
-            B = Unpremultiply(pixel.B, factor),
+            R = Unpremultiply(pixel.R, reciprocal),
+            G = Unpremultiply(pixel.G, reciprocal),
+            B = Unpremultiply(pixel.B, reciprocal),
             A = pixel.A
         };
     }
 
     // A premultiplied channel above alpha is not valid premultiplied data; clamp it so
-    // the float-to-byte conversion cannot wrap around.
-    private static byte Unpremultiply(byte channel, float factor) => (byte)Math.Min(channel * factor, 255F);
+    // the byte conversion cannot wrap around.
+    private static byte Unpremultiply(byte channel, uint reciprocal)
+        => (byte)Math.Min((channel * reciprocal) >> 16, 255u);
 
     public static void Write(
         ReadOnlySpan<Rgba8888Pixel> pixels,
