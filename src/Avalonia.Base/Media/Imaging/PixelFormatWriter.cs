@@ -185,9 +185,7 @@ internal static unsafe class PixelFormatWriter
         {
             var addr = _address;
 
-            var grayscale = Math.Round(0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B);
-
-            var value = grayscale > 0x7F ? 1 : 0;
+            var value = WidePixelFormat.GrayLevel(pixel) > 0x7F ? 1 : 0;
 
             var shift = 7 - _bit;
             var mask = 1 << shift;
@@ -220,28 +218,7 @@ internal static unsafe class PixelFormatWriter
         public void WriteNext(Rgba8888Pixel pixel)
         {
             var addr = _address;
-            var value = 0;
-
-            var grayscale = (byte)Math.Round(0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B);
-
-            if (grayscale > 0 && grayscale <= 0x55)
-            {
-                //01
-                value = 1;
-            }
-
-            if (grayscale > 0x55 && grayscale <= 0xAA)
-            {
-                //10
-
-                value = 2;
-            }
-
-            if (grayscale > 0xAA)
-            {
-                //11
-                value = 3;
-            }
+            var value = (WidePixelFormat.GrayLevel(pixel) * 3 + 127) / 255;
 
             var shift = 6 - _bit;
             var mask = 3 << shift;
@@ -274,9 +251,7 @@ internal static unsafe class PixelFormatWriter
         {
             var addr = _address;
 
-            var grayscale = (byte)Math.Round(0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B);
-
-            var value = (byte)(grayscale / 255F * 0xF);
+            var value = (byte)((WidePixelFormat.GrayLevel(pixel) * 15 + 127) / 255);
 
             var shift = 4 - _bit;
             var mask = 0xF << shift;
@@ -308,9 +283,7 @@ internal static unsafe class PixelFormatWriter
         {
             var addr = _address;
 
-            var grayscale = (byte)Math.Round(0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B);
-
-            *addr = grayscale;
+            *addr = WidePixelFormat.GrayLevel(pixel);
 
             _address++;
         }

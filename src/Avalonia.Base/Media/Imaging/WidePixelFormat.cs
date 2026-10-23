@@ -173,7 +173,7 @@ internal static unsafe class WidePixelFormat
                 var dst = (ushort*)dest;
 
                 for (var x = 0; x < row.Length; x++)
-                    dst[x] = ToUInt16(Luminance(row[x]));
+                    dst[x] = Gray16Level(row[x]);
 
                 break;
             }
@@ -182,7 +182,7 @@ internal static unsafe class WidePixelFormat
                 var dst = (float*)dest;
 
                 for (var x = 0; x < row.Length; x++)
-                    dst[x] = SrgbToLinear(Luminance(row[x]));
+                    dst[x] = LinearLuminance(row[x]);
 
                 break;
             }
@@ -426,8 +426,51 @@ internal static unsafe class WidePixelFormat
         return value < 0 ? -linear : linear;
     }
 
-    // Matches the 8-bit gray writers, which weight the sRGB-encoded channels.
-    private static float Luminance(Vector4 pixel) => 0.299f * pixel.X + 0.587f * pixel.Y + 0.114f * pixel.Z;
+    private static readonly float[] s_byteToLinear = CreateByteToLinear();
+
+    /// <summary>
+    /// Gets the gray level of an 8-bit pixel: its luminance in linear light, encoded back to sRGB.
+    /// </summary>
+    public static byte GrayLevel(Rgba8888Pixel pixel)
+    {
+        var table = s_byteToLinear;
+
+        return ToByte(LinearToSrgb(LinearLuminance(table[pixel.R], table[pixel.G], table[pixel.B])));
+    }
+
+    // Gray conversion matches WIC: Rec.709 weights applied to linear-light channels.
+    private static float LinearLuminance(float red, float green, float blue)
+        => 0.2126f * red + 0.7152f * green + 0.0722f * blue;
+
+    private static float LinearLuminance(Vector4 pixel)
+        => LinearLuminance(SrgbToLinear(pixel.X), SrgbToLinear(pixel.Y), SrgbToLinear(pixel.Z));
+
+    // Sixteen-bit gray needs double precision: float rounding moves a few levels off WIC's value.
+    private static ushort Gray16Level(Vector4 pixel)
+    {
+        static double ToLinear(float value)
+        {
+            var magnitude = Math.Abs((double)value);
+            var linear = magnitude <= 0.04045 ? magnitude / 12.92 : Math.Pow((magnitude + 0.055) / 1.055, 2.4);
+
+            return value < 0 ? -linear : linear;
+        }
+
+        var luminance = 0.2126 * ToLinear(pixel.X) + 0.7152 * ToLinear(pixel.Y) + 0.0722 * ToLinear(pixel.Z);
+        var encoded = luminance <= 0.0031308 ? luminance * 12.92 : 1.055 * Math.Pow(luminance, 1 / 2.4) - 0.055;
+
+        return (ushort)Math.Clamp(Math.Round(encoded * 65535, MidpointRounding.AwayFromZero), 0, 65535);
+    }
+
+    private static float[] CreateByteToLinear()
+    {
+        var table = new float[256];
+
+        for (var i = 0; i < table.Length; i++)
+            table[i] = SrgbToLinear(i / 255f);
+
+        return table;
+    }
 
     private static Vector4 Straighten(Vector4 pixel, bool premultiplied)
     {

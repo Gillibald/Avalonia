@@ -245,11 +245,11 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             pixelWriter.Reset(bitmapMemory.Address);
             pixelReader.Reset(bitmapMemory.Address);
 
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255 });
-            Assert.Equal(GetGray4(new Rgba8888Pixel { R = 255 }), pixelReader.ReadNext());
+            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255, G = 255, B = 255 });
+            Assert.Equal(GetGray4(new Rgba8888Pixel { R = 255, G = 255, B = 255 }), pixelReader.ReadNext());
 
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 17 });
-            Assert.Equal(GetGray4(new Rgba8888Pixel { R = 17 }), pixelReader.ReadNext());
+            pixelWriter.WriteNext(new Rgba8888Pixel { R = 17, G = 17, B = 17 });
+            Assert.Equal(GetGray4(new Rgba8888Pixel { R = 17, G = 17, B = 17 }), pixelReader.ReadNext());
 
             pixelWriter.WriteNext(new Rgba8888Pixel());
             Assert.Equal(new Rgba8888Pixel { A = 255 }, pixelReader.ReadNext());
@@ -257,11 +257,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
         private static Rgba8888Pixel GetGray4(Rgba8888Pixel pixel)
         {
-            var grayscale = (byte)Math.Round(0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B);
-
-            var value = (byte)(grayscale / 255F * 0xF);
-
-            value = (byte)(value | (value << 4));
+            var level = (pixel.R * 15 + 127) / 255;
+            var value = (byte)(level | (level << 4));
 
             return new Rgba8888Pixel(value, value, value, 255);
         }
@@ -280,32 +277,28 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             pixelWriter.Reset(bitmapMemory.Address);
             pixelReader.Reset(bitmapMemory.Address);
 
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255 });
-            Assert.Equal(GetGray8(new Rgba8888Pixel { R = 255 }), pixelReader.ReadNext());
+            pixelWriter.WriteNext(new Rgba8888Pixel { R = 255, G = 255, B = 255 });
+            Assert.Equal(GetGray8(new Rgba8888Pixel { R = 255, G = 255, B = 255 }), pixelReader.ReadNext());
 
-            pixelWriter.WriteNext(new Rgba8888Pixel { R = 120 });
-            Assert.Equal(GetGray8(new Rgba8888Pixel { R = 120 }), pixelReader.ReadNext());
+            pixelWriter.WriteNext(new Rgba8888Pixel { R = 120, G = 120, B = 120 });
+            Assert.Equal(GetGray8(new Rgba8888Pixel { R = 120, G = 120, B = 120 }), pixelReader.ReadNext());
 
             pixelWriter.WriteNext(new Rgba8888Pixel());
             Assert.Equal(GetGray8(new Rgba8888Pixel { A = 255 }), pixelReader.ReadNext());
         }
 
         private static Rgba8888Pixel GetGray8(Rgba8888Pixel pixel)
-        {
-            var value = (byte)Math.Round(0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B);
-
-            return new Rgba8888Pixel(value, value, value, 255);
-        }
+            => new(pixel.R, pixel.R, pixel.R, 255);
 
         [Fact]
         public void Should_Write_Gray16()
         {
-            var pixels = new[] { new Rgba8888Pixel { R = 255 }, new Rgba8888Pixel { R = 120 }, new Rgba8888Pixel() };
+            var pixels = new[] { new Rgba8888Pixel { R = 255, G = 255, B = 255 }, new Rgba8888Pixel { R = 120, G = 120, B = 120 }, new Rgba8888Pixel() };
 
             var expected = new[]
             {
-                GetGray16(new Rgba8888Pixel { R = 255 }),
-                GetGray16(new Rgba8888Pixel { R = 120 }),
+                GetGray16(new Rgba8888Pixel { R = 255, G = 255, B = 255 }),
+                GetGray16(new Rgba8888Pixel { R = 120, G = 120, B = 120 }),
                 GetGray16(new Rgba8888Pixel { A = 255 })
             };
 
@@ -375,12 +368,6 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         private static Rgba8888Pixel GetGray16(Rgba8888Pixel pixel)
-        {
-            var grayscale = (ushort)Math.Round((0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B) * 0x0101);
-
-            var value = (byte)(grayscale >> 8);
-
-            return new Rgba8888Pixel(value, value, value, 255);
-        }
+            => new(pixel.R, pixel.R, pixel.R, 255);
     }
 }
