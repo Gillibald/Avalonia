@@ -53,6 +53,118 @@ namespace Avalonia.Media.Imaging
         /// Returns a copy of this palette.
         /// </summary>
         public BitmapPalette Clone() => new(Colors, HasTransparency, Type);
+
+        /// <summary>
+        /// Creates one of the fixed palettes, with the same entries in the same order as the
+        /// Windows Imaging Component and WPF produce.
+        /// </summary>
+        /// <param name="type">The palette to create; not <see cref="WellKnownPaletteType.Custom"/> or <see cref="WellKnownPaletteType.Optimal"/>.</param>
+        /// <param name="addTransparentColor">
+        /// Whether to add a transparent entry: appended to the halftone palettes, replacing the
+        /// last entry when the palette already has 256 colors. Black-and-white and gray palettes
+        /// stay opaque.
+        /// </param>
+        /// <remarks>
+        /// Halftone palettes are an RGB cube, red varying slowest and blue fastest, with channel
+        /// levels spread evenly from 0 to 255. Halftone8, Halftone64 and Halftone216 append the
+        /// eight standard system colors, and Halftone27 and Halftone125 append silver.
+        /// </remarks>
+        public static BitmapPalette CreateWellKnown(WellKnownPaletteType type, bool addTransparentColor = false)
+        {
+            var colors = new List<Color>(256);
+
+            switch (type)
+            {
+                case WellKnownPaletteType.BlackWhite:
+                    AddGrays(colors, 2);
+                    return new BitmapPalette(colors, false, type);
+                case WellKnownPaletteType.Gray4:
+                    AddGrays(colors, 4);
+                    return new BitmapPalette(colors, false, type);
+                case WellKnownPaletteType.Gray16:
+                    AddGrays(colors, 16);
+                    return new BitmapPalette(colors, false, type);
+                case WellKnownPaletteType.Gray256:
+                    AddGrays(colors, 256);
+                    return new BitmapPalette(colors, false, type);
+                case WellKnownPaletteType.Halftone8:
+                    AddCube(colors, 2, 2, 2);
+                    AddSystemColors(colors);
+                    break;
+                case WellKnownPaletteType.Halftone27:
+                    AddCube(colors, 3, 3, 3);
+                    colors.Add(s_silver);
+                    break;
+                case WellKnownPaletteType.Halftone64:
+                    AddCube(colors, 4, 4, 4);
+                    AddSystemColors(colors);
+                    break;
+                case WellKnownPaletteType.Halftone125:
+                    AddCube(colors, 5, 5, 5);
+                    colors.Add(s_silver);
+                    break;
+                case WellKnownPaletteType.Halftone216:
+                    AddCube(colors, 6, 6, 6);
+                    AddSystemColors(colors);
+                    break;
+                case WellKnownPaletteType.Halftone252:
+                    AddCube(colors, 6, 7, 6);
+                    break;
+                case WellKnownPaletteType.Halftone256:
+                    AddCube(colors, 8, 8, 4);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(type), type, "Only fixed palettes can be created by type.");
+            }
+
+            if (addTransparentColor)
+            {
+                if (colors.Count == 256)
+                    colors[255] = default;
+                else
+                    colors.Add(default);
+            }
+
+            return new BitmapPalette(colors, addTransparentColor, type);
+        }
+
+        private static readonly Color s_silver = Color.FromRgb(192, 192, 192);
+
+        // The eight standard colors that complete the cube-based halftone palettes.
+        private static readonly Color[] s_systemColors =
+        {
+            s_silver,
+            Color.FromRgb(128, 128, 128),
+            Color.FromRgb(128, 0, 0),
+            Color.FromRgb(0, 128, 0),
+            Color.FromRgb(0, 0, 128),
+            Color.FromRgb(128, 128, 0),
+            Color.FromRgb(128, 0, 128),
+            Color.FromRgb(0, 128, 128)
+        };
+
+        private static void AddSystemColors(List<Color> colors) => colors.AddRange(s_systemColors);
+
+        private static void AddGrays(List<Color> colors, int levels)
+        {
+            for (var i = 0; i < levels; i++)
+            {
+                var value = Level(i, levels);
+
+                colors.Add(Color.FromRgb(value, value, value));
+            }
+        }
+
+        private static void AddCube(List<Color> colors, int reds, int greens, int blues)
+        {
+            for (var r = 0; r < reds; r++)
+            for (var g = 0; g < greens; g++)
+            for (var b = 0; b < blues; b++)
+                colors.Add(Color.FromRgb(Level(r, reds), Level(g, greens), Level(b, blues)));
+        }
+
+        // Evenly spaced levels, rounding halves up: seven levels are 0, 43, 85, 128, 170, 213, 255.
+        private static byte Level(int index, int levels) => (byte)((index * 255 * 2 + (levels - 1)) / (2 * (levels - 1)));
     }
 
     /// <summary>
