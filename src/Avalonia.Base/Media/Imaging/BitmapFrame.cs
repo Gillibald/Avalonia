@@ -130,13 +130,62 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
-        /// Copies the frame's pixels into a durable managed snapshot.
+        /// Copies the frame's pixels, with its palette when it is indexed, into a durable
+        /// managed snapshot.
         /// </summary>
         public PixelBuffer ToPixelBuffer()
         {
+            TryGetPalette(out var palette);
+
             using var framebuffer = Lock();
 
-            return PixelBuffer.CopyFrom(framebuffer);
+            return PixelBuffer.CopyFrom(framebuffer, palette);
+        }
+
+        /// <summary>
+        /// Converts a rectangle of the frame into caller memory, starting at the destination
+        /// origin, decoding on the first call.
+        /// </summary>
+        /// <param name="sourceRect">The rectangle to copy, within the frame.</param>
+        /// <param name="destination">The destination bytes.</param>
+        /// <param name="destinationStride">The number of bytes per destination row.</param>
+        /// <param name="format">The destination pixel format.</param>
+        /// <param name="alphaFormat">The destination alpha format.</param>
+        /// <param name="options">Palette and alpha threshold for indexed destinations.</param>
+        /// <remarks>
+        /// Copying to the frame's own format and alpha format moves the bits unchanged.
+        /// Validation happens before any byte is written.
+        /// </remarks>
+        public unsafe void CopyPixels(PixelRect sourceRect, Span<byte> destination, int destinationStride,
+            PixelFormat format, AlphaFormat alphaFormat, PixelConversionOptions? options = null)
+        {
+            fixed (byte* address = destination)
+            {
+                CopyPixels(sourceRect, (IntPtr)address, destination.Length, destinationStride, format, alphaFormat,
+                    options);
+            }
+        }
+
+        /// <summary>
+        /// Converts a rectangle of the frame into caller memory, starting at the destination
+        /// origin, decoding on the first call.
+        /// </summary>
+        /// <param name="sourceRect">The rectangle to copy, within the frame.</param>
+        /// <param name="destination">The destination memory.</param>
+        /// <param name="destinationSize">The number of bytes available at <paramref name="destination"/>.</param>
+        /// <param name="destinationStride">The number of bytes per destination row.</param>
+        /// <param name="format">The destination pixel format.</param>
+        /// <param name="alphaFormat">The destination alpha format.</param>
+        /// <param name="options">Palette and alpha threshold for indexed destinations.</param>
+        public void CopyPixels(PixelRect sourceRect, IntPtr destination, int destinationSize, int destinationStride,
+            PixelFormat format, AlphaFormat alphaFormat, PixelConversionOptions? options = null)
+        {
+            TryGetPalette(out var palette);
+
+            using var framebuffer = Lock();
+
+            PixelOperations.CopyPixels(framebuffer, palette, sourceRect, destination, destinationSize,
+                destinationStride, format, alphaFormat, options);
         }
 
         /// <summary>

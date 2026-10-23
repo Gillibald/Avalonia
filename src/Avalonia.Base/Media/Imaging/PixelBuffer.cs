@@ -20,7 +20,7 @@ namespace Avalonia.Media.Imaging
         private readonly byte[] _pixels;
 
         private PixelBuffer(byte[] pixels, PixelSize size, int stride, PixelFormat format,
-            AlphaFormat alphaFormat, Vector dpi)
+            AlphaFormat alphaFormat, Vector dpi, BitmapPalette? palette)
         {
             _pixels = pixels;
             Size = size;
@@ -28,6 +28,7 @@ namespace Avalonia.Media.Imaging
             Format = format;
             AlphaFormat = alphaFormat;
             Dpi = dpi;
+            Palette = palette;
         }
 
         /// <summary>
@@ -61,11 +62,20 @@ namespace Avalonia.Media.Imaging
         public Vector Dpi { get; }
 
         /// <summary>
+        /// Gets the palette the pixels index into; set for indexed formats, null otherwise.
+        /// </summary>
+        public BitmapPalette? Palette { get; }
+
+        /// <summary>
         /// Copies the pixels of a transient framebuffer view into a new immutable buffer.
         /// </summary>
-        public static PixelBuffer CopyFrom(ILockedFramebuffer source)
+        /// <param name="source">The framebuffer view to copy.</param>
+        /// <param name="palette">The palette of an indexed framebuffer; required for indexed formats, ignored otherwise.</param>
+        public static PixelBuffer CopyFrom(ILockedFramebuffer source, BitmapPalette? palette = null)
         {
             _ = source ?? throw new ArgumentNullException(nameof(source));
+
+            palette = ValidatePalette(source.Format, palette);
 
             if (source.Address == IntPtr.Zero)
                 throw new ArgumentException("The framebuffer has no address.", nameof(source));
@@ -88,7 +98,7 @@ namespace Avalonia.Media.Imaging
             Marshal.Copy(source.Address, pixels, 0, readableBytes);
 
             return new PixelBuffer(pixels, source.Size, source.RowBytes, source.Format,
-                source.AlphaFormat, source.Dpi);
+                source.AlphaFormat, source.Dpi, palette);
         }
 
         /// <summary>
@@ -106,11 +116,14 @@ namespace Avalonia.Media.Imaging
         /// <param name="format">The pixel format.</param>
         /// <param name="alphaFormat">The alpha format.</param>
         /// <param name="dpi">The DPI; null uses 96.</param>
+        /// <param name="palette">The palette the pixels index into; required for indexed formats, ignored otherwise.</param>
         public static PixelBuffer Create(ReadOnlySpan<byte> pixels, PixelSize size, int stride,
-            PixelFormat format, AlphaFormat alphaFormat, Vector? dpi = null)
+            PixelFormat format, AlphaFormat alphaFormat, Vector? dpi = null, BitmapPalette? palette = null)
         {
             if (size.Width <= 0 || size.Height <= 0)
                 throw new ArgumentException("The size is empty.", nameof(size));
+
+            palette = ValidatePalette(format, palette);
 
             var minStride = (size.Width * format.BitsPerPixel + 7) / 8;
 
@@ -130,19 +143,173 @@ namespace Avalonia.Media.Imaging
 
             pixels.Slice(0, readableBytes).CopyTo(copy);
 
-            return new PixelBuffer(copy, size, stride, format, alphaFormat, dpi ?? new Vector(96, 96));
+            return new PixelBuffer(copy, size, stride, format, alphaFormat, dpi ?? new Vector(96, 96), palette);
         }
 
         /// <summary>
         /// Wraps an existing byte array without copying. The array must not be mutated afterwards.
         /// </summary>
         internal static PixelBuffer TakeOwnership(byte[] pixels, PixelSize size, int stride,
-            PixelFormat format, AlphaFormat alphaFormat, Vector dpi)
+            PixelFormat format, AlphaFormat alphaFormat, Vector dpi, BitmapPalette? palette = null)
         {
             if (pixels.Length < checked(stride * size.Height))
                 throw new ArgumentException("The pixel array is smaller than stride * height.", nameof(pixels));
 
-            return new PixelBuffer(pixels, size, stride, format, alphaFormat, dpi);
+            return new PixelBuffer(pixels, size, stride, format, alphaFormat, dpi, format.IsIndexed ? palette : null);
+        }
+
+        private static BitmapPalette? ValidatePalette(PixelFormat format, BitmapPalette? palette)
+        {
+            if (!format.IsIndexed)
+                return null;
+
+            return palette ?? throw new ArgumentException($"An indexed format ({format}) needs a palette.", nameof(palette));
+        }
+
+        /// <summary>
+        /// Converts a rectangle of this buffer into caller memory, starting at the destination
+        /// origin.
+        /// </summary>
+        /// <param name="sourceRect">The rectangle to copy, within this buffer.</param>
+        /// <param name="destination">The destination bytes.</param>
+        /// <param name="destinationStride">The number of bytes per destination row.</param>
+        /// <param name="format">The destination pixel format.</param>
+        /// <param name="alphaFormat">The destination alpha format.</param>
+        /// <param name="options">Palette and alpha threshold for indexed destinations.</param>
+        /// <remarks>
+        /// Copying to this buffer's own format and alpha format moves the bits unchanged.
+        /// Validation happens before any byte is written.
+        /// </remarks>
+        public unsafe void CopyPixels(PixelRect sourceRect, Span<byte> destination, int destinationStride,
+            PixelFormat format, AlphaFormat alphaFormat, PixelConversionOptions? options = null)
+        {
+            fixed (byte* address = destination)
+            {
+                CopyPixels(sourceRect, (IntPtr)address, destination.Length, destinationStride, format, alphaFormat,
+                    options);
+            }
+        }
+
+        /// <summary>
+        /// Converts a rectangle of this buffer into caller memory, starting at the destination
+        /// origin.
+        /// </summary>
+        /// <param name="sourceRect">The rectangle to copy, within this buffer.</param>
+        /// <param name="destination">The destination memory.</param>
+        /// <param name="destinationSize">The number of bytes available at <paramref name="destination"/>.</param>
+        /// <param name="destinationStride">The number of bytes per destination row.</param>
+        /// <param name="format">The destination pixel format.</param>
+        /// <param name="alphaFormat">The destination alpha format.</param>
+        /// <param name="options">Palette and alpha threshold for indexed destinations.</param>
+        public void CopyPixels(PixelRect sourceRect, IntPtr destination, int destinationSize, int destinationStride,
+            PixelFormat format, AlphaFormat alphaFormat, PixelConversionOptions? options = null)
+        {
+            using var framebuffer = Lock();
+
+            PixelOperations.CopyPixels(framebuffer, Palette, sourceRect, destination, destinationSize,
+                destinationStride, format, alphaFormat, options);
+        }
+
+        /// <summary>
+        /// Returns a copy of this buffer converted to another format.
+        /// </summary>
+        /// <param name="format">The target pixel format.</param>
+        /// <param name="alphaFormat">The target alpha format.</param>
+        /// <param name="options">Palette and alpha threshold for an indexed target.</param>
+        public PixelBuffer Convert(PixelFormat format, AlphaFormat alphaFormat, PixelConversionOptions? options = null)
+        {
+            var stride = PixelFormatArithmetic.GetMinRowBytes(format, Size.Width);
+            var pixels = new byte[checked(stride * Size.Height)];
+
+            CopyPixels(new PixelRect(Size), pixels, stride, format, alphaFormat, options);
+
+            var palette = format.IsIndexed ? options?.Palette ?? Palette : null;
+
+            return new PixelBuffer(pixels, Size, stride, format, alphaFormat, Dpi, palette);
+        }
+
+        /// <summary>
+        /// Returns the pixels inside a rectangle, with this buffer's format, palette and DPI.
+        /// </summary>
+        /// <param name="rect">The rectangle to keep, within this buffer.</param>
+        public PixelBuffer Crop(PixelRect rect)
+        {
+            var stride = PixelFormatArithmetic.GetMinRowBytes(Format, Math.Max(rect.Width, 1));
+            var pixels = new byte[checked(stride * Math.Max(rect.Height, 1))];
+
+            CopyPixels(rect, pixels, stride, Format, AlphaFormat);
+
+            return new PixelBuffer(pixels, rect.Size, stride, Format, AlphaFormat, Dpi, Palette);
+        }
+
+        /// <summary>
+        /// Returns this buffer rotated and flipped without changing any pixel value. The
+        /// rotation applies first, then the horizontal flip, then the vertical flip; a
+        /// quarter turn swaps the width and height and the two DPI axes.
+        /// </summary>
+        /// <param name="transform">The rotation and flips to apply.</param>
+        public unsafe PixelBuffer Transform(BitmapTransform transform)
+        {
+            var orientation = PixelOrientations.FromTransform(transform);
+
+            if (orientation == PixelOrientation.Normal)
+                return this;
+
+            var swap = PixelOrientations.Decompose(orientation).Swap;
+            var size = swap ? new PixelSize(Size.Height, Size.Width) : Size;
+            var stride = PixelFormatArithmetic.GetMinRowBytes(Format, size.Width);
+            var pixels = new byte[checked(stride * size.Height)];
+
+            using (var framebuffer = Lock())
+            {
+                fixed (byte* address = pixels)
+                    PixelLayout.Orient(framebuffer, orientation, address, stride);
+            }
+
+            var dpi = swap ? new Vector(Dpi.Y, Dpi.X) : Dpi;
+
+            return new PixelBuffer(pixels, size, stride, Format, AlphaFormat, dpi, Palette);
+        }
+
+        /// <summary>
+        /// Returns this buffer resampled to another size, in the same format and DPI.
+        /// </summary>
+        /// <param name="size">The target size in device pixels.</param>
+        /// <param name="interpolation">
+        /// The filter: nearest for <see cref="BitmapInterpolationMode.None"/> and
+        /// <see cref="BitmapInterpolationMode.LowQuality"/>, otherwise a box filter when
+        /// shrinking and bilinear when growing.
+        /// </param>
+        /// <remarks>
+        /// Indexed buffers resample in color and are matched back against their own palette.
+        /// Formats with more than eight bits per channel are filtered at eight bits.
+        /// </remarks>
+        public unsafe PixelBuffer Scale(PixelSize size, BitmapInterpolationMode interpolation = BitmapInterpolationMode.HighQuality)
+        {
+            if (size.Width <= 0 || size.Height <= 0)
+                throw new ArgumentException("The size is empty.", nameof(size));
+
+            if (size == Size)
+                return this;
+
+            if (Format.IsIndexed)
+            {
+                return Convert(PixelFormat.Bgra8888, AlphaFormat.Unpremul)
+                    .Scale(size, interpolation)
+                    .Convert(Format, AlphaFormat, new PixelConversionOptions { Palette = Palette });
+            }
+
+            var stride = PixelFormatArithmetic.GetMinRowBytes(Format, size.Width);
+            var pixels = new byte[checked(stride * size.Height)];
+            var plan = new FusedPlanExecution(new PixelRect(Size), size, Format, AlphaFormat, interpolation);
+
+            using (var framebuffer = Lock())
+            {
+                fixed (byte* address = pixels)
+                    FusedPixelPipeline.Run(framebuffer, plan, (IntPtr)address, stride);
+            }
+
+            return new PixelBuffer(pixels, size, stride, Format, AlphaFormat, Dpi, null);
         }
 
         /// <summary>
@@ -192,6 +359,10 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public Bitmap ToBitmap()
         {
+            // Render backends install colors, not palette indices.
+            if (Format.IsIndexed)
+                return Convert(PixelFormat.Bgra8888, AlphaFormat.Unpremul).ToBitmap();
+
             using var framebuffer = Lock();
 
             return new Bitmap(Format, AlphaFormat, framebuffer.Address, Size, Dpi, Stride);

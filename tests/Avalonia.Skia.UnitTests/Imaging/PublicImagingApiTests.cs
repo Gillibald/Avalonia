@@ -311,6 +311,37 @@ namespace Avalonia.Skia.UnitTests.Imaging
         }
 
         [Fact]
+        public void Frame_CopyPixels_Converts_A_Rectangle_Of_The_Decoded_Pixels()
+        {
+            using var scope = BindPlatform();
+            using var decoder = BitmapDecoder.Create(CreatePng(4, 3), ownsStream: true);
+            using var frame = decoder.ReadNextFrame()!;
+
+            var dest = new byte[2 * 3];
+
+            frame.CopyPixels(new PixelRect(2, 1, 2, 1), dest, 6, PixelFormats.Rgb24, AlphaFormat.Opaque);
+
+            // CreatePng writes R = x * 40, G = y * 40, B = (x + y) * 20.
+            Assert.Equal(new byte[] { 80, 40, 60, 120, 40, 80 }, dest);
+        }
+
+        [Fact]
+        public void Indexed_PixelBuffer_Realizes_Its_Palette_Colors()
+        {
+            using var scope = BindPlatform();
+
+            var palette = new BitmapPalette(new[] { Avalonia.Media.Colors.Black, Avalonia.Media.Color.FromRgb(10, 20, 30) });
+            var buffer = PixelBuffer.Create(new byte[] { 1 }, new PixelSize(1, 1), 1, PixelFormats.Indexed8,
+                AlphaFormat.Unpremul, palette: palette);
+
+            using var bitmap = buffer.ToBitmap();
+
+            var pixels = ReadPixels(bitmap);
+
+            Assert.Equal(new byte[] { 30, 20, 10, 255 }, pixels[..4]);
+        }
+
+        [Fact]
         public void Bitmap_Save_With_Encoder_Round_Trips()
         {
             using var scope = BindPlatform();
