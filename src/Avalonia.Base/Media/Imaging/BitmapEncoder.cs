@@ -40,7 +40,8 @@ namespace Avalonia.Media.Imaging
         public BitmapTransform Transform { get; set; }
 
         /// <summary>
-        /// Gets or sets an ICC profile written into the container; requires the format's
+        /// Gets or sets an ICC profile written for every frame that sets no
+        /// <see cref="BitmapEncoderFrame.ColorProfile"/> of its own; requires the format's
         /// <see cref="BitmapCodecCapabilities.ColorProfile"/> capability.
         /// </summary>
         public ReadOnlyMemory<byte>? ColorProfile { get; set; }
@@ -141,7 +142,7 @@ namespace Avalonia.Media.Imaging
             if (Metadata is not null || HasFrameMetadata())
                 RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.Metadata, "writing metadata");
 
-            if (ColorProfile is not null)
+            if (ColorProfile is not null || HasFrameColorProfile())
                 RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.ColorProfile, "embedding a color profile");
 
             if (HasFramePalette())
@@ -165,6 +166,17 @@ namespace Avalonia.Media.Imaging
             for (var i = 0; i < Frames.Count; i++)
             {
                 if (Frames[i].Metadata is not null)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool HasFrameColorProfile()
+        {
+            for (var i = 0; i < Frames.Count; i++)
+            {
+                if (Frames[i].ColorProfile is not null)
                     return true;
             }
 

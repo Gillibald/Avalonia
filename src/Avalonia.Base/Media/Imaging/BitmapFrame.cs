@@ -68,6 +68,22 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
+        /// Gets the ICC profile embedded for this frame, exactly as stored, when the file
+        /// carries one and the active backend exposes it.
+        /// </summary>
+        public bool TryGetColorProfile(out ReadOnlyMemory<byte> profile)
+        {
+            if (_source is IColorProfileSource source)
+            {
+                profile = source.IccProfile;
+                return true;
+            }
+
+            profile = default;
+            return false;
+        }
+
+        /// <summary>
         /// Gets the frame's palette when it decodes from an indexed format.
         /// </summary>
         public bool TryGetPalette([NotNullWhen(true)] out BitmapPalette? palette)

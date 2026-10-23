@@ -31,6 +31,17 @@ namespace Avalonia.Media.Imaging
         public BitmapMetadata? Metadata { get; set; }
 
         /// <summary>
+        /// Gets or sets the ICC profile written for this frame; it takes precedence over
+        /// <see cref="BitmapEncoder.ColorProfile"/>. Requires the format's
+        /// <see cref="BitmapCodecCapabilities.ColorProfile"/> capability.
+        /// </summary>
+        /// <remarks>
+        /// A decoded <see cref="Frame"/> does not contribute its embedded profile; copy it
+        /// with <see cref="BitmapFrame.TryGetColorProfile"/> to keep it.
+        /// </remarks>
+        public ReadOnlyMemory<byte>? ColorProfile { get; set; }
+
+        /// <summary>
         /// Gets or sets the palette for indexed encode targets.
         /// </summary>
         public BitmapPalette? Palette { get; set; }

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Avalonia.Imaging.TestKit.Fixtures;
 using Avalonia.Imaging.TestKit.Instrumentation;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -437,6 +438,34 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             var roundTrippedProfile = Assert.IsAssignableFrom<IColorProfileSource>(page);
 
             Assert.Equal(profileBytes, roundTrippedProfile.IccProfile.ToArray());
+        }
+
+        [Fact]
+        public void Frame_ColorProfiles_Are_Written_Per_Tiff_Page()
+        {
+            var first = IccProfileFixture.CreateRgb(1.0);
+            var second = IccProfileFixture.CreateRgb(2.0);
+            var shared = IccProfileFixture.CreateRgb(2.5);
+            var backend = new ImageSharpImagingBackend();
+            var encoder = new TiffBitmapEncoder { ColorProfile = shared };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 2, (255, 0, 0, 255)), ColorProfile = first });
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 2, (0, 255, 0, 255)), ColorProfile = second });
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 2, (0, 0, 255, 255)) });
+
+            using var stream = new MemoryStream();
+
+            backend.CreateEncoder(BitmapContainerFormats.Tiff).Encode(encoder, stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false);
+
+            foreach (var expected in new[] { first, second, shared })
+            {
+                using var page = decoder.ReadNextFrame()!;
+
+                Assert.Equal(expected, Assert.IsAssignableFrom<IColorProfileSource>(page).IccProfile.ToArray());
+            }
         }
 
         [Fact]

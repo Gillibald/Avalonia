@@ -69,6 +69,7 @@ namespace Avalonia.Imaging.ImageSharp
             cancellationToken.ThrowIfCancellationRequested();
 
             ApplyContainerMetadata(encoder, image);
+            ApplyColorProfiles(encoder, image);
             ApplyTransform(encoder.Transform, image);
 
             image.Save(stream, CreateEncoder(encoder));
@@ -144,9 +145,24 @@ namespace Avalonia.Imaging.ImageSharp
                         pngMetadata.TextData.Add(entry);
                 }
             }
+        }
 
-            if (encoder.ColorProfile is { } colorProfile)
-                image.Metadata.IccProfile = new ISIccProfile(colorProfile.ToArray());
+        // PNG, JPEG and WebP write the image-level profile and TIFF writes each page's, so
+        // the first frame's profile goes on both.
+        private static void ApplyColorProfiles(BitmapEncoder encoder, Image<Bgra32> image)
+        {
+            var frameCount = Math.Min(encoder.Frames.Count, image.Frames.Count);
+
+            for (var i = 0; i < frameCount; i++)
+            {
+                if ((encoder.Frames[i].ColorProfile ?? encoder.ColorProfile) is not { } profile)
+                    continue;
+
+                image.Frames[i].Metadata.IccProfile = new ISIccProfile(profile.ToArray());
+
+                if (i == 0)
+                    image.Metadata.IccProfile = new ISIccProfile(profile.ToArray());
+            }
         }
 
         private static void ApplyFrameMetadata(ImageFrameMetadata target, BitmapMetadata? metadata)

@@ -179,6 +179,26 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
+        public void Frame_ColorProfile_Without_Backend_Capability_Throws_Naming_The_Backend()
+        {
+            var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
+
+            using var scope = BindBackend(backend);
+            using var stream = new MemoryStream();
+
+            var encoder = new TestEncoder(BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.ColorProfile);
+            var frame = CreateFrame();
+
+            frame.ColorProfile = new byte[128];
+            encoder.Frames.Add(frame);
+
+            var exception = Assert.Throws<NotSupportedException>(() => encoder.Save(stream));
+
+            Assert.Contains("Fake", exception.Message);
+            Assert.Equal(0, stream.Length);
+        }
+
+        [Fact]
         public void Unsupported_Encode_Fails_Fast_Naming_The_Backend()
         {
             var backend = new FakeBackend(BitmapCodecCapabilities.Decode, canEncode: false);
