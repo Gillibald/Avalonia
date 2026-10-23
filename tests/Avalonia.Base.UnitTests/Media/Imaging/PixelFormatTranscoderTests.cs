@@ -122,6 +122,36 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             }
         }
 
+        [Fact]
+        public void Should_Transcode_Transparent_Premultiplied_Pixels_To_Transparent_Black()
+        {
+            var size = new PixelSize(2, 1);
+
+            using var sourceMemory = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Premul, size);
+            using var destMemory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Unpremul, size);
+
+            var row = new[] { new Rgba8888Pixel(10, 20, 30, 0), new Rgba8888Pixel(200, 150, 120, 100) };
+
+            PixelFormatTranscoder.WriteRow(row, sourceMemory.Address, sourceMemory.Format,
+                sourceMemory.AlphaFormat, sourceMemory.AlphaFormat);
+
+            PixelFormatTranscoder.Transcode(
+                sourceMemory.Address,
+                size,
+                sourceMemory.RowBytes,
+                sourceMemory.Format,
+                sourceMemory.AlphaFormat,
+                destMemory.Address,
+                destMemory.RowBytes,
+                destMemory.Format,
+                destMemory.AlphaFormat);
+
+            PixelFormatTranscoder.ReadRow(destMemory.Address, destMemory.Format, row);
+
+            Assert.Equal(new Rgba8888Pixel(0, 0, 0, 0), row[0]);
+            Assert.Equal(new Rgba8888Pixel(255, 255, 255, 100), row[1]);
+        }
+
         private BitmapMemory CreateBitmapMemory()
         {
             var bitmapMemory = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Opaque, new PixelSize(3, 1));

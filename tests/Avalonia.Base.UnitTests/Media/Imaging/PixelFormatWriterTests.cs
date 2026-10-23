@@ -343,6 +343,24 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal(GetGray16(new Rgba8888Pixel { A = 255 }), pixelReader.ReadNext());
         }
 
+        [Fact]
+        public void Unpremultiplying_A_Transparent_Pixel_Should_Produce_Transparent_Black()
+        {
+            var converted = PixelFormatWriter.GetConvertedPixel(new Rgba8888Pixel(10, 20, 30, 0),
+                Platform.AlphaFormat.Premul, Platform.AlphaFormat.Unpremul);
+
+            Assert.Equal(new Rgba8888Pixel(0, 0, 0, 0), converted);
+        }
+
+        [Fact]
+        public void Unpremultiplying_Colour_Above_Alpha_Should_Clamp_To_Full_Intensity()
+        {
+            var converted = PixelFormatWriter.GetConvertedPixel(new Rgba8888Pixel(200, 150, 120, 100),
+                Platform.AlphaFormat.Premul, Platform.AlphaFormat.Unpremul);
+
+            Assert.Equal(new Rgba8888Pixel(255, 255, 255, 100), converted);
+        }
+
         private static Rgba8888Pixel GetGray16(Rgba8888Pixel pixel)
         {
             var grayscale = (ushort)Math.Round((0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B) * 0x0101);
