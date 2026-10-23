@@ -54,6 +54,11 @@ internal static unsafe class PixelOperations
         if (format.IsIndexed && targetPalette is null)
             throw new ArgumentException($"Converting to an indexed format ({format}) needs a palette.", nameof(options));
 
+        if (ImagingBackend.CurrentOrNull is ISupportsPixelConversion converter &&
+            converter.TryCopyPixels(source, sourcePalette, sourceRect, destination, destinationSize,
+                destinationStride, format, alphaFormat, options))
+            return;
+
         var bits = source.Format.BitsPerPixel;
         var threshold = options?.AlphaThresholdPercent ?? 0;
 
