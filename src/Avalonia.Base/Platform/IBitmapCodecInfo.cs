@@ -58,6 +58,13 @@ namespace Avalonia.Platform
 
         /// <summary>The backend encodes multiple frames (animated GIF, multi-page TIFF).</summary>
         MultiFrameEncode = 1 << 10,
+
+        /// <summary>
+        /// Without a <see cref="Avalonia.Media.Imaging.BitmapDecodeOptions.TargetFormat"/>, frames decode to the image's
+        /// stored layout, reported by <see cref="Avalonia.Media.Imaging.BitmapImageInfo.PixelFormat"/>: palette images
+        /// stay indexed, 16-bit and floating-point images keep their depth, CMYK stays CMYK.
+        /// </summary>
+        PreservesStoredFormat = 1 << 11,
     }
 
     /// <summary>

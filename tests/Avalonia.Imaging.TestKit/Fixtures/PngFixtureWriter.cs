@@ -135,8 +135,18 @@ namespace Avalonia.Imaging.TestKit.Fixtures
             return result;
         }
 
+        /// <summary>
+        /// Writes a PNG with any IHDR color type and bit depth. <paramref name="fillRow"/>
+        /// writes the packed, big-endian sample bytes of one row starting at index 1 (index 0
+        /// is the filter byte); indexed images (color type 3) need a PLTE of RGB triples.
+        /// </summary>
+        public static byte[] WriteRaw(int width, int height, byte colorType, byte bitDepth, int rowBytes,
+            Action<byte[], int> fillRow, byte[]? palette = null)
+            => Write(width, height, colorType, 0, fillRow, null, bitDepth, rowBytes, palette);
+
         private static byte[] Write(int width, int height, byte colorType, int bytesPerPixel,
-            Action<byte[], int> fillRow, (string Keyword, string Text)? textChunk = null)
+            Action<byte[], int> fillRow, (string Keyword, string Text)? textChunk = null, byte bitDepth = 8,
+            int rowBytes = 0, byte[]? palette = null)
         {
             if (width < 1)
                 throw new ArgumentOutOfRangeException(nameof(width));
@@ -151,9 +161,12 @@ namespace Avalonia.Imaging.TestKit.Fixtures
 
             WriteUInt32BigEndian(ihdr, 0, (uint)width);
             WriteUInt32BigEndian(ihdr, 4, (uint)height);
-            ihdr[8] = 8;         // bit depth
-            ihdr[9] = colorType; // 2 = RGB, 6 = RGBA; compression, filter and interlace stay 0
+            ihdr[8] = bitDepth;
+            ihdr[9] = colorType; // 0 = gray, 2 = RGB, 3 = indexed, 6 = RGBA; compression, filter and interlace stay 0
             WriteChunk(output, "IHDR", ihdr);
+
+            if (palette is not null)
+                WriteChunk(output, "PLTE", palette);
 
             if (textChunk is { } entry)
                 WriteChunk(output, "tEXt", BuildTextData(entry.Keyword, entry.Text));
@@ -164,7 +177,7 @@ namespace Avalonia.Imaging.TestKit.Fixtures
                 idat.WriteByte(0x9C); // zlib FLG: default compression, no preset dictionary
 
                 var adler = 1u;
-                var row = new byte[1 + width * bytesPerPixel];
+                var row = new byte[1 + (rowBytes > 0 ? rowBytes : width * bytesPerPixel)];
 
                 row[0] = 0; // filter type None; fillRow only writes pixel bytes
 

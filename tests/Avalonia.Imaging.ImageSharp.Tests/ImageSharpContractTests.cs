@@ -180,6 +180,8 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
     public class ImageSharpPaletteContractTests : PaletteContractTests<ImageSharpCodecFixture> { }
 
+    public class ImageSharpStoredFormatContractTests : StoredFormatContractTests<ImageSharpCodecFixture> { }
+
     public class ImageSharpDecodePlanContractTests : DecodePlanContractTests<ImageSharpCodecFixture> { }
 
     public class ImageSharpThreadingContractTests : ThreadingContractTests<ImageSharpCodecFixture> { }

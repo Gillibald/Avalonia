@@ -77,6 +77,8 @@ namespace Avalonia.Skia.UnitTests.Imaging
 
     public class SkiaPaletteContractTests : PaletteContractTests<SkiaCodecFixture> { }
 
+    public class SkiaStoredFormatContractTests : StoredFormatContractTests<SkiaCodecFixture> { }
+
     public class SkiaDecodePlanContractTests : DecodePlanContractTests<SkiaCodecFixture> { }
 
     public class SkiaThreadingContractTests : ThreadingContractTests<SkiaCodecFixture> { }

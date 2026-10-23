@@ -32,7 +32,9 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets or sets the pixel format frames should produce, e.g.
         /// <see cref="PixelFormats.Rgb565"/> for a 565 framebuffer target. Null keeps the
-        /// backend's native decode format.
+        /// image's stored layout when the codec declares
+        /// <see cref="BitmapCodecCapabilities.PreservesStoredFormat"/>, and the backend's
+        /// native decode format otherwise.
         /// </summary>
         public PixelFormat? TargetFormat { get; set; }
 
