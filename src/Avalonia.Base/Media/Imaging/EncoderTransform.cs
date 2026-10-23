@@ -1,12 +1,11 @@
 using System;
-using System.Runtime.InteropServices;
 using Avalonia.Platform;
 
 namespace Avalonia.Media.Imaging
 {
     /// <summary>
     /// The shared software path for <see cref="BitmapEncoder.Transform"/>: applies an
-    /// orthogonal transform to the source pixels in one pipeline pass, so every backend
+    /// orthogonal transform to the source pixels in one remapping pass, so every backend
     /// honors transform-on-encode whether or not its codec can transform natively.
     /// </summary>
     internal static class EncoderTransform
@@ -44,19 +43,12 @@ namespace Avalonia.Media.Imaging
             var orientedSize = FusedPixelPipeline.GetOrientedSize(source.Size, orientation);
             var stride = PixelFormatArithmetic.GetMinRowBytes(source.Format, orientedSize.Width);
             var pixels = new byte[checked(stride * orientedSize.Height)];
-            var handle = GCHandle.Alloc(pixels, GCHandleType.Pinned);
 
-            try
+            // The remap moves pixels without converting them, so every format keeps its exact bits.
+            unsafe
             {
-                var plan = new FusedPlanExecution(new PixelRect(orientedSize), orientedSize,
-                    source.Format, source.AlphaFormat, BitmapInterpolationMode.HighQuality,
-                    orientation);
-
-                FusedPixelPipeline.Run(source, plan, handle.AddrOfPinnedObject(), stride);
-            }
-            finally
-            {
-                handle.Free();
+                fixed (byte* address = pixels)
+                    PixelLayout.Orient(source, orientation, address, stride);
             }
 
             return PixelBuffer.TakeOwnership(pixels, orientedSize, stride, source.Format,

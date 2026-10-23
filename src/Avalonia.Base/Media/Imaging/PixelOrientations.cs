@@ -53,7 +53,7 @@ namespace Avalonia.Media.Imaging
 
         // Each orientation maps input to output coordinates by optionally swapping the
         // axes and then negating (mirroring) the output axes.
-        private static (bool Swap, bool NegX, bool NegY) Decompose(PixelOrientation orientation) => orientation switch
+        public static (bool Swap, bool NegX, bool NegY) Decompose(PixelOrientation orientation) => orientation switch
         {
             PixelOrientation.Normal => (false, false, false),
             PixelOrientation.FlipHorizontal => (false, true, false),
