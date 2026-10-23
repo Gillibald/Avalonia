@@ -329,7 +329,16 @@ namespace Avalonia.Imaging.ImageSharp
             var hasAlpha = pixelType.AlphaRepresentation != PixelAlphaRepresentation.None;
 
             if ((color & PixelColorType.Indexed) != 0)
-                return null;
+            {
+                return bits switch
+                {
+                    1 => PixelFormats.Indexed1,
+                    2 => PixelFormats.Indexed2,
+                    4 => PixelFormats.Indexed4,
+                    8 => PixelFormats.Indexed8,
+                    _ => null,
+                };
+            }
 
             // BGR carries the RGB channel bits plus an ordering marker, so it must be
             // tested before RGB.
@@ -349,6 +358,7 @@ namespace Avalonia.Imaging.ImageSharp
                 {
                     (24, false) => PixelFormats.Rgb24,
                     (32, true) => PixelFormats.Rgba8888,
+                    (48, false) => PixelFormats.Rgb48,
                     (64, true) => PixelFormats.Rgba64,
                     _ => null,
                 };

@@ -219,6 +219,9 @@ namespace Avalonia.Imaging.ImageSharp
                 case Image<Rgba64> image:
                     Transfer(image.Frames[_frameIndex], destination, destRowBytes, allocator);
                     break;
+                case Image<Rgb48> image:
+                    Transfer(image.Frames[_frameIndex], destination, destRowBytes, allocator);
+                    break;
                 default:
                     // Exotic pixel types funnel through a canonical clone.
                     using (var clone = _owner.Image.CloneAs<Rgba32>(ImageSharpImagingBackend.ImagingConfiguration))
@@ -301,6 +304,7 @@ namespace Avalonia.Imaging.ImageSharp
             Image<L8> => PixelFormats.Gray8,
             Image<L16> => PixelFormats.Gray16,
             Image<Rgba64> => PixelFormats.Rgba64,
+            Image<Rgb48> => PixelFormats.Rgb48,
             _ => null,
         };
 

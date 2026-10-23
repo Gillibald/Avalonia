@@ -30,6 +30,42 @@ namespace Avalonia.Imaging.ImageSharp.Tests
     public class ImageSharpBackendTests
     {
         [Fact]
+        public void Sixteen_Bit_Rgb_Png_Decodes_To_Rgb48_Keeping_Every_Bit()
+        {
+            var png = Avalonia.Imaging.TestKit.Fixtures.PngFixtureWriter.WriteRaw(1, 1, 2, 16, 6, (row, _) =>
+            {
+                row[1] = 0x12; row[2] = 0x34; row[3] = 0x56; row[4] = 0x78; row[5] = 0x9A; row[6] = 0xBC;
+            });
+
+            var backend = new ImageSharpImagingBackend();
+
+            Assert.True(backend.TryIdentify(png, out var info));
+            Assert.Equal(PixelFormats.Rgb48, info.PixelFormat);
+
+            using var decoder = backend.CreateDecoder(new MemoryStream(png), ownsStream: true);
+            using var frame = decoder.ReadNextFrame()!;
+            using var view = frame.Lock();
+
+            // PNG samples are big-endian; Rgb48 holds them as little-endian words.
+            Assert.Equal(PixelFormats.Rgb48, view.Format);
+            Assert.Equal(0x1234, (ushort)Marshal.ReadInt16(view.Address));
+            Assert.Equal(0x5678, (ushort)Marshal.ReadInt16(view.Address, 2));
+            Assert.Equal(0x9ABC, (ushort)Marshal.ReadInt16(view.Address, 4));
+        }
+
+        [Fact]
+        public void Identify_Reports_Palette_Pngs_As_Indexed()
+        {
+            var png = Avalonia.Imaging.TestKit.Fixtures.PngFixtureWriter.WriteRaw(2, 1, 3, 8, 2, (row, _) =>
+            {
+                row[1] = 0; row[2] = 1;
+            }, palette: new byte[] { 255, 0, 0, 0, 0, 255 });
+
+            Assert.True(new ImageSharpImagingBackend().TryIdentify(png, out var info));
+            Assert.True(info.PixelFormat is { IsIndexed: true }, $"Expected an indexed format, got {info.PixelFormat}.");
+        }
+
+        [Fact]
         public void OrientedJpeg_DefaultDecode_AppliesExifOrientation()
         {
             var jpeg = CreateOrientedJpeg();
