@@ -11,7 +11,11 @@ namespace Avalonia.Skia.Imaging
     /// <summary>
     /// The SkiaSharp imaging backend, the default when no other backend is selected.
     /// </summary>
-    public sealed class SkiaImagingBackend : IImagingBackend
+    /// <remarks>
+    /// Color transforms accept RGB profiles that Skia can reduce to a matrix and transfer
+    /// curves; Skia applies them colorimetrically, whatever the rendering intent.
+    /// </remarks>
+    public sealed class SkiaImagingBackend : IImagingBackend, IColorTransformProvider
     {
         // Large enough for every supported header, including JPEGs with a full 64 KiB
         // APP1 (EXIF) segment before the frame header.
@@ -46,6 +50,11 @@ namespace Avalonia.Skia.Imaging
 
         /// <inheritdoc />
         public int IdentifyPrefixLength => IdentifyPrefixBytes;
+
+        /// <inheritdoc />
+        IColorTransformImpl IColorTransformProvider.CreateColorTransform(ReadOnlySpan<byte> sourceProfile,
+            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent intent)
+            => SkiaColorTransform.Create(sourceProfile, destinationProfile);
 
         /// <inheritdoc />
         public bool TryIdentify(Stream stream, out BitmapImageInfo info)
