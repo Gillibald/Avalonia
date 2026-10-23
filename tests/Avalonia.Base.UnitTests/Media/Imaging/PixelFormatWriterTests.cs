@@ -361,6 +361,36 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal(new Rgba8888Pixel(255, 255, 255, 100), converted);
         }
 
+        // Expected values are what WIC's format converter produces for Bgra32 to Pbgra32.
+        [Theory]
+        [InlineData(128, 1, 1)]
+        [InlineData(229, 152, 137)]
+        [InlineData(51, 128, 26)]
+        [InlineData(255, 255, 255)]
+        [InlineData(0, 77, 0)]
+        public void Premultiplying_Should_Round_To_Nearest_Like_Wic(byte channel, byte alpha, byte expected)
+        {
+            var converted = PixelFormatWriter.GetConvertedPixel(new Rgba8888Pixel(channel, channel, channel, alpha),
+                Platform.AlphaFormat.Unpremul, Platform.AlphaFormat.Premul);
+
+            Assert.Equal(new Rgba8888Pixel(expected, expected, expected, alpha), converted);
+        }
+
+        // Expected values are what WIC's format converter produces for Pbgra32 to Bgra32.
+        [Theory]
+        [InlineData(1, 1, 255)]
+        [InlineData(3, 9, 84)]
+        [InlineData(1, 17, 15)]
+        [InlineData(7, 7, 254)]
+        [InlineData(128, 255, 128)]
+        public void Unpremultiplying_Should_Match_Wic(byte channel, byte alpha, byte expected)
+        {
+            var converted = PixelFormatWriter.GetConvertedPixel(new Rgba8888Pixel(channel, channel, channel, alpha),
+                Platform.AlphaFormat.Premul, Platform.AlphaFormat.Unpremul);
+
+            Assert.Equal(new Rgba8888Pixel(expected, expected, expected, alpha), converted);
+        }
+
         private static Rgba8888Pixel GetGray16(Rgba8888Pixel pixel)
         {
             var grayscale = (ushort)Math.Round((0.299F * pixel.R + 0.587F * pixel.G + 0.114F * pixel.B) * 0x0101);

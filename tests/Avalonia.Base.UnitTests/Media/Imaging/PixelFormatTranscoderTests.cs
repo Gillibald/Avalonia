@@ -152,6 +152,55 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal(new Rgba8888Pixel(255, 255, 255, 100), row[1]);
         }
 
+        // Expected values are what WIC's format converter produces for the same pixels.
+        [Fact]
+        public void Should_Transcode_Alpha_Like_Wic()
+        {
+            var size = new PixelSize(3, 1);
+
+            using var straight = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Unpremul, size);
+            using var premultiplied = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, size);
+            using var restored = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Unpremul, size);
+
+            var row = new[]
+            {
+                new Rgba8888Pixel(128, 0, 0, 1),
+                new Rgba8888Pixel(229, 0, 0, 152),
+                new Rgba8888Pixel(100, 0, 0, 9)
+            };
+
+            PixelFormatTranscoder.WriteRow(row, straight.Address, straight.Format,
+                straight.AlphaFormat, straight.AlphaFormat);
+
+            Transcode(straight, premultiplied);
+
+            PixelFormatTranscoder.ReadRow(premultiplied.Address, premultiplied.Format, row);
+
+            Assert.Equal(new Rgba8888Pixel(1, 0, 0, 1), row[0]);
+            Assert.Equal(new Rgba8888Pixel(137, 0, 0, 152), row[1]);
+            Assert.Equal(new Rgba8888Pixel(4, 0, 0, 9), row[2]);
+
+            Transcode(premultiplied, restored);
+
+            PixelFormatTranscoder.ReadRow(restored.Address, restored.Format, row);
+
+            Assert.Equal(new Rgba8888Pixel(255, 0, 0, 1), row[0]);
+            Assert.Equal(new Rgba8888Pixel(229, 0, 0, 152), row[1]);
+            Assert.Equal(new Rgba8888Pixel(113, 0, 0, 9), row[2]);
+
+            static void Transcode(BitmapMemory source, BitmapMemory destination)
+                => PixelFormatTranscoder.Transcode(
+                    source.Address,
+                    source.Size,
+                    source.RowBytes,
+                    source.Format,
+                    source.AlphaFormat,
+                    destination.Address,
+                    destination.RowBytes,
+                    destination.Format,
+                    destination.AlphaFormat);
+        }
+
         private BitmapMemory CreateBitmapMemory()
         {
             var bitmapMemory = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Opaque, new PixelSize(3, 1));
