@@ -46,7 +46,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             fixed (byte* dest = actual)
             {
                 FusedPixelPipeline.Run(source, new FusedPlanExecution(region, region.Size, PixelFormats.Bgra8888,
-                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality, orientation), (IntPtr)dest, region.Width * 4);
+                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality, orientation), (IntPtr)dest, region.Width * 4,
+                    cancellation: TestContext.Current.CancellationToken);
             }
 
             for (var y = 0; y < region.Height; y++)
@@ -73,7 +74,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             fixed (Rgba8888Pixel* dest = actual)
             {
                 FusedPixelPipeline.Run(source, new FusedPlanExecution(new PixelRect(source.Size), target, PixelFormats.Rgba8888,
-                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality), (IntPtr)dest, target.Width * 4);
+                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality), (IntPtr)dest, target.Width * 4,
+                    cancellation: TestContext.Current.CancellationToken);
             }
 
             static double Map(int index, int sourceLength, int targetLength) =>
@@ -128,7 +130,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             fixed (Rgba8888Pixel* dest = actual)
             {
                 FusedPixelPipeline.Run(source, new FusedPlanExecution(new PixelRect(source.Size), target, PixelFormats.Rgba8888,
-                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality), (IntPtr)dest, target.Width * 4);
+                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality), (IntPtr)dest, target.Width * 4,
+                    cancellation: TestContext.Current.CancellationToken);
             }
 
             var rows = new Rgba8888Pixel[40][];

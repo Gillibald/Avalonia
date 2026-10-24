@@ -526,7 +526,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             var encoder = new TestEncoder(BitmapCodecCapabilities.Encode);
 
             encoder.Frames.Add(CreateFrame());
-            encoder.Save(stream);
+            encoder.Save(stream, TestContext.Current.CancellationToken);
 
             Assert.Equal(!expectBackendSeesTarget, backend.EncoderImpl.StreamCanSeek);
             Assert.Equal(new byte[] { 42 }, target.ToArray());

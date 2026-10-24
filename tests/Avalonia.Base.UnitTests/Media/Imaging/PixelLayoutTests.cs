@@ -22,7 +22,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             Array.Fill(dest, (byte)0xFF);
 
-            fixed (byte* src = source)
+            fixed (byte* src = &source[0])
             fixed (byte* dst = dest)
                 PixelLayout.CopyRow(src, sourceX, dst, width, bitsPerPixel);
 
