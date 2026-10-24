@@ -1,3 +1,5 @@
+using Avalonia.Platform;
+
 namespace Avalonia.Media.Imaging
 {
     /// <summary>
