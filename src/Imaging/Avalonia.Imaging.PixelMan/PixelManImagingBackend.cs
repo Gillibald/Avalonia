@@ -179,6 +179,9 @@ namespace Avalonia.Imaging.PixelMan
                 reducedFrom = info.PixelSize;
             }
 
+            if (hasHeader && TryGetDecodeFormat(codec, storedOrientation, options, out var format))
+                decodeOptions.TargetFormat = format;
+
             try
             {
                 decoder = PmBitmapFrame.OpenFramesSeekable(source, codec.Kind, decodeOptions,
@@ -226,6 +229,32 @@ namespace Avalonia.Imaging.PixelMan
                 return false;
 
             codec = found;
+            return true;
+        }
+
+        // Asks PixelMan to write the plan's 32-bit RGB target itself when the plan changes
+        // nothing but the format: its decode transform fills the pool rental directly, which
+        // the frame source then adopts, instead of the pipeline converting into a second
+        // frame-sized buffer. Other formats, and plans that crop, scale or reorient, keep
+        // PixelMan's own layout and convert in the pipeline. GIF frames stay indexed for
+        // animation compositing.
+        private static bool TryGetDecodeFormat(PixelManCodecInfo codec, ushort? storedOrientation,
+            BitmapDecodeOptions? options, out PmPixelFormat format)
+        {
+            format = default;
+
+            if (options is not { TargetFormat: { } target, TargetAlphaFormat: { } alpha, SourceRegion: null, TargetSize: null } ||
+                (options.RespectExifOrientation && storedOrientation is { } value and > 1 and <= 8) ||
+                (codec.Kind != PmCodecKind.Png && codec.Kind != PmCodecKind.Jpeg &&
+                 codec.Kind != PmCodecKind.Bmp && codec.Kind != PmCodecKind.Tiff) ||
+                PixelManFormats.ToPixelMan(target, alpha) is not { } requested ||
+                (requested != PmPixelFormat.Pbgra32 && requested != PmPixelFormat.Bgra32 &&
+                 requested != PmPixelFormat.Prgba32 && requested != PmPixelFormat.Rgba32))
+            {
+                return false;
+            }
+
+            format = requested;
             return true;
         }
 
