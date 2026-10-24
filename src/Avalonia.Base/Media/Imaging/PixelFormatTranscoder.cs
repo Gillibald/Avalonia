@@ -53,6 +53,12 @@ internal static unsafe class PixelFormatTranscoder
         BitmapPalette? destPalette,
         double alphaThresholdPercent)
     {
+        if (TryTranscodeDirect(source, srcSize, sourceStride, srcFormat, srcAlphaFormat, dest, destStride, destFormat,
+                destAlphaFormat))
+        {
+            return;
+        }
+
         var endpoints = new RowEndpoints(srcFormat, srcAlphaFormat, sourcePalette, destFormat, destAlphaFormat,
             destPalette, alphaThresholdPercent);
 
@@ -83,6 +89,72 @@ internal static unsafe class PixelFormatTranscoder
             Transcode(endpoints, new Span<Rgba8888Pixel>((void*)staging.Address, width), source, srcSize.Height,
                 sourceStride, dest, destStride);
         }
+    }
+
+    // The 8-bit RGB layouts as byte counts, red/blue order and alpha: Rgba8888 and Bgra8888
+    // carry alpha, Rgb32 and Bgr32 an ignored byte that reads as opaque.
+    private static bool TryGetLayout(PixelFormat format, out int bytes, out bool bgr, out bool alpha)
+    {
+        (bytes, bgr, alpha) = format.FormatEnum switch
+        {
+            PixelFormatEnum.Rgba8888 => (4, false, true),
+            PixelFormatEnum.Bgra8888 => (4, true, true),
+            PixelFormatEnum.Rgb32 => (4, false, false),
+            PixelFormatEnum.Bgr32 => (4, true, false),
+            PixelFormatEnum.Rgb24 => (3, false, false),
+            PixelFormatEnum.Bgr24 => (3, true, false),
+            _ => (0, false, false),
+        };
+
+        return bytes != 0;
+    }
+
+    // Converts between two 8-bit RGB layouts row by row without the canonical staging row,
+    // with the same bytes as reading and writing through it. Alpha conversion runs in place
+    // on the destination; when the destination drops alpha the colours would need it first,
+    // so that case takes the staging path.
+    private static bool TryTranscodeDirect(IntPtr source, PixelSize size, int sourceStride, PixelFormat sourceFormat,
+        AlphaFormat sourceAlpha, IntPtr dest, int destStride, PixelFormat destFormat, AlphaFormat destAlpha)
+    {
+        if (!TryGetLayout(sourceFormat, out var sourceBytes, out var sourceBgr, out var sourceHasAlpha) ||
+            !TryGetLayout(destFormat, out var destBytes, out var destBgr, out var destHasAlpha) ||
+            (sourceBytes == 3 && destBytes == 3))
+        {
+            return false;
+        }
+
+        // A source without alpha reads as opaque, which every alpha conversion leaves alone.
+        var convertAlpha = sourceHasAlpha && sourceAlpha != destAlpha &&
+            (sourceAlpha == AlphaFormat.Premul || destAlpha == AlphaFormat.Premul);
+
+        if (convertAlpha && !destHasAlpha)
+            return false;
+
+        var width = size.Width;
+        var swap = sourceBgr != destBgr;
+
+        for (var y = 0; y < size.Height; y++)
+        {
+            var from = new ReadOnlySpan<byte>((void*)(source + (nint)sourceStride * y), width * sourceBytes);
+            var to = new Span<byte>((void*)(dest + (nint)destStride * y), width * destBytes);
+
+            if (sourceBytes == 3)
+                PixelKernels.Expand3To4(from, to, swap);
+            else if (destBytes == 3)
+                PixelKernels.Contract4To3(from, to, swap);
+            else
+                PixelKernels.Copy4(from, to, swap, !sourceHasAlpha || !destHasAlpha);
+
+            if (convertAlpha)
+            {
+                if (sourceAlpha == AlphaFormat.Premul)
+                    PixelKernels.Unpremultiply(to);
+                else
+                    PixelKernels.Premultiply(to);
+            }
+        }
+
+        return true;
     }
 
     private static void Transcode(

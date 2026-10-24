@@ -11,7 +11,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
     // The vector switch is process-wide, so these tests run alone.
     [Collection(nameof(PixelKernelsTests))]
-    public class PixelKernelsTests
+    public unsafe class PixelKernelsTests
     {
         // Every length up to three vectors and one more pixel, so the scalar tail runs after
         // zero, one and several vector steps.
@@ -196,6 +196,83 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
                 return row;
             });
         }
+
+        public static TheoryData<string, string> LayoutPairs()
+        {
+            var formats = new[] { "Rgba8888", "Bgra8888", "Rgb32", "Bgr32", "Rgb24", "Bgr24" };
+            var data = new TheoryData<string, string>();
+
+            foreach (var source in formats)
+            {
+                foreach (var dest in formats)
+                    data.Add(source, dest);
+            }
+
+            return data;
+        }
+
+        // The transcoder converts these pairs directly; the staging row is the reference.
+        [Theory]
+        [MemberData(nameof(LayoutPairs))]
+        public unsafe void Direct_Transcode_Should_Match_The_Staging_Row(string sourceName, string destName)
+        {
+            var sourceFormat = Format(sourceName);
+            var destFormat = Format(destName);
+            var size = new PixelSize(23, 3);
+            var sourceStride = 23 * sourceFormat.BitsPerPixel / 8 + 5;
+            var destStride = 23 * destFormat.BitsPerPixel / 8 + 3;
+            var source = Random(sourceStride * size.Height, 7);
+            var alphas = new[] { Avalonia.Platform.AlphaFormat.Premul, Avalonia.Platform.AlphaFormat.Unpremul, Avalonia.Platform.AlphaFormat.Opaque };
+
+            foreach (var sourceAlpha in alphas)
+            {
+                foreach (var destAlpha in alphas)
+                {
+                    var expected = new byte[destStride * size.Height];
+                    var row = new Rgba8888Pixel[size.Width];
+
+                    fixed (byte* from = source)
+                    fixed (byte* to = expected)
+                    {
+                        for (var y = 0; y < size.Height; y++)
+                        {
+                            PixelFormatTranscoder.ReadRow((IntPtr)(from + y * sourceStride), sourceFormat, row);
+                            PixelFormatTranscoder.WriteRow(row, (IntPtr)(to + y * destStride), destFormat, destAlpha,
+                                sourceFormat.HasAlpha ? sourceAlpha : Avalonia.Platform.AlphaFormat.Opaque);
+                        }
+                    }
+
+                    // Only the pixels are compared; the stride padding is not part of the result.
+                    for (var y = 0; y < size.Height; y++)
+                        Array.Clear(expected, y * destStride + 23 * destFormat.BitsPerPixel / 8, destStride - 23 * destFormat.BitsPerPixel / 8);
+
+                    AssertBothPaths(expected, () =>
+                    {
+                        var actual = new byte[destStride * size.Height];
+
+                        fixed (byte* from = source)
+                        fixed (byte* to = actual)
+                        {
+                            PixelFormatTranscoder.Transcode((IntPtr)from, size, sourceStride, sourceFormat,
+                                sourceFormat.HasAlpha ? sourceAlpha : Avalonia.Platform.AlphaFormat.Opaque,
+                                (IntPtr)to, destStride, destFormat, destAlpha);
+                        }
+
+                        return actual;
+                    });
+                }
+            }
+        }
+
+        private static Avalonia.Platform.PixelFormat Format(string name) => name switch
+        {
+            "Rgba8888" => Avalonia.Platform.PixelFormats.Rgba8888,
+            "Bgra8888" => Avalonia.Platform.PixelFormats.Bgra8888,
+            "Rgb32" => Avalonia.Platform.PixelFormats.Rgb32,
+            "Bgr32" => Avalonia.Platform.PixelFormats.Bgr32,
+            "Rgb24" => Avalonia.Platform.PixelFormats.Rgb24,
+            _ => Avalonia.Platform.PixelFormats.Bgr24,
+        };
 
         // Pixels (c, 255 - c, c, a) for every channel value c and alpha a.
         private static byte[] AllPairs(out byte[] pixels)

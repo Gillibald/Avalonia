@@ -33,9 +33,15 @@ namespace Avalonia.Benchmarks.Media.Imaging
             Conversion.Bgra8888ToRgb24, Conversion.Premultiply, Conversion.Unpremultiply)]
         public Conversion Pair { get; set; }
 
+        /// <summary>Gets or sets whether the vector kernels run, to compare against the scalar code.</summary>
+        [Params(false, true)]
+        public bool Vectorized { get; set; }
+
         [GlobalSetup]
         public void Setup()
         {
+            PixelKernels.UseVectors = Vectorized;
+
             const int bytes = Width * Height * 4;
 
             _source = (IntPtr)NativeMemory.Alloc(bytes);
