@@ -100,6 +100,16 @@ namespace Avalonia.Imaging.PixelMan
                 new PixelManCodecInfo("BMP", PmCodecKind.Bmp, BitmapContainerFormats.Bmp,
                     Common | BitmapCodecCapabilities.Palette | BitmapCodecCapabilities.HighDepth,
                     new[] { "image/bmp" }, new[] { "bmp", "dib" }),
+#if PIXELMAN_ICO_WEBP
+                // Decode only. Every ICO entry is a frame, decoded to Bgra32; WebP animation
+                // frames come composited, and WebP carries no frame timing PixelMan exposes.
+                new PixelManCodecInfo("ICO", PmCodecKind.Ico, BitmapContainerFormats.Ico,
+                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame,
+                    new[] { "image/x-icon", "image/vnd.microsoft.icon" }, new[] { "ico" }),
+                new PixelManCodecInfo("WebP", PmCodecKind.Webp, BitmapContainerFormats.Webp,
+                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame,
+                    new[] { "image/webp" }, new[] { "webp" }),
+#endif
             };
 
             // The seek requirements come from the library, so they follow PixelMan's codecs.

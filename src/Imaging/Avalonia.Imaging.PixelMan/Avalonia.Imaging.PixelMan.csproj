@@ -17,9 +17,10 @@
     PIXELMAN_DECODE_SCALE: PmDecodeOptions.TargetSize reduces JPEG and PNG at decode, and
     PmImageInspection reports the EXIF orientation.
     PIXELMAN_GLOBAL_PALETTE: PmFrameDecoder.GetGlobalPalette reports the GIF global color table.
+    PIXELMAN_ICO_WEBP: PmCodecKind.Ico and PmCodecKind.Webp decode.
   -->
   <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
-    <DefineConstants>$(DefineConstants);PIXELMAN_HEADER_FACTS;PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE;PIXELMAN_GLOBAL_PALETTE</DefineConstants>
+    <DefineConstants>$(DefineConstants);PIXELMAN_HEADER_FACTS;PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE;PIXELMAN_GLOBAL_PALETTE;PIXELMAN_ICO_WEBP</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />

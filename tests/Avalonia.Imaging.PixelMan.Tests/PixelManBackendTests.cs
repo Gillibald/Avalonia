@@ -309,6 +309,54 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 #endif
 
+#if PIXELMAN_ICO_WEBP
+        [Fact]
+        public void An_Icon_Should_Decode_Every_Entry_In_Wic_Order()
+        {
+            using var scope = Bind();
+            using var decoder = BitmapDecoder.Create(File.OpenRead(Asset("i_order.ico")));
+
+            Assert.Equal(BitmapContainerFormats.Ico, decoder.CodecInfo.ContainerFormat);
+            Assert.Equal(5, decoder.FrameCount);
+
+            using var first = decoder.ReadNextFrame()!;
+
+            // The directory lists a 32x32 entry first; WIC orders by depth, then size.
+            Assert.Equal(new PixelSize(48, 48), first.PixelSize);
+            Assert.Equal(PixelFormats.Bgra8888, first.Format);
+            Assert.Throws<NotSupportedException>(() => ImagingBackend.Current.CreateEncoder(BitmapContainerFormats.Ico));
+        }
+
+        [Fact]
+        public void A_Webp_Should_Decode_Straight_Rgba_And_Composited_Animation_Frames()
+        {
+            using var scope = Bind();
+
+            using (var still = BitmapDecoder.Create(File.OpenRead(Asset("w_lossy_alpha.webp"))))
+            using (var frame = still.ReadNextFrame()!)
+            {
+                Assert.Equal(new PixelSize(37, 23), frame.PixelSize);
+                Assert.Equal(PixelFormats.Rgba8888, frame.Format);
+                Assert.Equal(AlphaFormat.Unpremul, frame.AlphaFormat);
+                // WebP stores no resolution, so Avalonia's default applies, not WIC's 72.
+                Assert.Equal(new Vector(96, 96), frame.Dpi);
+            }
+
+            using var animation = BitmapDecoder.Create(File.OpenRead(Asset("w_anim.webp")));
+
+            Assert.Equal(3, animation.FrameCount);
+
+            for (var i = 0; i < 3; i++)
+            {
+                using var frame = animation.ReadNextFrame()!;
+
+                Assert.Equal(new PixelSize(20, 14), frame.PixelSize);
+            }
+        }
+
+        private static string Asset(string name) => Path.Combine(AppContext.BaseDirectory, "Assets", name);
+#endif
+
         private static BitmapMetadata RoundTrip(BitmapEncoder encoder, Guid containerFormat)
         {
             encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(4, 4, Colors.Gray) });
