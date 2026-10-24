@@ -63,15 +63,19 @@ internal static class PixelKernels
             }
         }
 
+        // The scalar code works on whole pixels as little-endian integers, byte 0 lowest.
+        ref var from = ref MemoryMarshal.GetReference(source);
+        ref var to = ref MemoryMarshal.GetReference(dest);
+        var alphaBits = opaque ? 0xFF000000u : 0u;
+
         for (; i < length; i += 4)
         {
-            var first = source[i];
-            var third = source[i + 2];
+            var pixel = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref from, i));
 
-            dest[i] = swap ? third : first;
-            dest[i + 1] = source[i + 1];
-            dest[i + 2] = swap ? first : third;
-            dest[i + 3] = opaque ? (byte)255 : source[i + 3];
+            if (swap)
+                pixel = (pixel & 0xFF00FF00u) | ((pixel >> 16) & 0xFFu) | ((pixel & 0xFFu) << 16);
+
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, i), pixel | alphaBits);
         }
     }
 
@@ -103,15 +107,18 @@ internal static class PixelKernels
             }
         }
 
+        ref var from = ref MemoryMarshal.GetReference(source);
+        ref var to = ref MemoryMarshal.GetReference(dest);
+        var firstShift = swap ? 16 : 0;
+        var thirdShift = swap ? 0 : 16;
+
         for (; p < pixels; p++)
         {
-            var s = p * 3;
-            var d = p * 4;
+            ref var pixel = ref Unsafe.Add(ref from, p * 3);
+            var value = 0xFF000000u | ((uint)pixel << firstShift) | ((uint)Unsafe.Add(ref pixel, 1) << 8) |
+                ((uint)Unsafe.Add(ref pixel, 2) << thirdShift);
 
-            dest[d] = swap ? source[s + 2] : source[s];
-            dest[d + 1] = source[s + 1];
-            dest[d + 2] = swap ? source[s] : source[s + 2];
-            dest[d + 3] = 255;
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, p * 4), value);
         }
     }
 
@@ -142,14 +149,19 @@ internal static class PixelKernels
             }
         }
 
+        ref var from = ref MemoryMarshal.GetReference(source);
+        ref var to = ref MemoryMarshal.GetReference(dest);
+        var firstShift = swap ? 16 : 0;
+        var thirdShift = swap ? 0 : 16;
+
         for (; p < pixels; p++)
         {
-            var s = p * 4;
-            var d = p * 3;
+            var value = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref from, p * 4));
+            ref var pixel = ref Unsafe.Add(ref to, p * 3);
 
-            dest[d] = swap ? source[s + 2] : source[s];
-            dest[d + 1] = source[s + 1];
-            dest[d + 2] = swap ? source[s] : source[s + 2];
+            pixel = (byte)(value >> firstShift);
+            Unsafe.Add(ref pixel, 1) = (byte)(value >> 8);
+            Unsafe.Add(ref pixel, 2) = (byte)(value >> thirdShift);
         }
     }
 
@@ -190,14 +202,26 @@ internal static class PixelKernels
             }
         }
 
+        ref var bytes = ref MemoryMarshal.GetReference(pixels);
+
         for (; i < length; i += 4)
         {
-            int alpha = pixels[i + 3];
+            ref var pixel = ref Unsafe.Add(ref bytes, i);
+            int alpha = Unsafe.Add(ref pixel, 3);
 
-            pixels[i] = (byte)((pixels[i] * alpha + 127) / 255);
-            pixels[i + 1] = (byte)((pixels[i + 1] * alpha + 127) / 255);
-            pixels[i + 2] = (byte)((pixels[i + 2] * alpha + 127) / 255);
+            pixel = Premultiply(pixel, alpha);
+            Unsafe.Add(ref pixel, 1) = Premultiply(Unsafe.Add(ref pixel, 1), alpha);
+            Unsafe.Add(ref pixel, 2) = Premultiply(Unsafe.Add(ref pixel, 2), alpha);
         }
+    }
+
+    // (c * a + 127) / 255 without the division, the same identity the vector code uses.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static byte Premultiply(int channel, int alpha)
+    {
+        var rounded = channel * alpha + 128;
+
+        return (byte)((rounded + (rounded >> 8)) >> 8);
     }
 
     /// <summary>
@@ -238,13 +262,16 @@ internal static class PixelKernels
             }
         }
 
+        ref var bytes = ref MemoryMarshal.GetReference(pixels);
+
         for (; i < length; i += 4)
         {
-            var reciprocal = reciprocals[pixels[i + 3]];
+            ref var pixel = ref Unsafe.Add(ref bytes, i);
+            var reciprocal = reciprocals[Unsafe.Add(ref pixel, 3)];
 
-            pixels[i] = (byte)Math.Min((pixels[i] * reciprocal) >> 16, 255u);
-            pixels[i + 1] = (byte)Math.Min((pixels[i + 1] * reciprocal) >> 16, 255u);
-            pixels[i + 2] = (byte)Math.Min((pixels[i + 2] * reciprocal) >> 16, 255u);
+            pixel = (byte)Math.Min((pixel * reciprocal) >> 16, 255u);
+            Unsafe.Add(ref pixel, 1) = (byte)Math.Min((Unsafe.Add(ref pixel, 1) * reciprocal) >> 16, 255u);
+            Unsafe.Add(ref pixel, 2) = (byte)Math.Min((Unsafe.Add(ref pixel, 2) * reciprocal) >> 16, 255u);
         }
     }
 

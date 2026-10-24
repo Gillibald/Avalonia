@@ -90,6 +90,10 @@ internal static unsafe class FusedPixelPipeline
 
         var context = new PipelineContext(source, plan, cancellation);
 
+        using var tiles = context.Tiles;
+
+        tiles?.Rent(allocator);
+
         if (target == region.Size)
         {
             RunIdentity(context, plan, destAddress, destRowBytes, allocator);
@@ -211,20 +215,32 @@ internal static unsafe class FusedPixelPipeline
     // Oriented rows that come from raw columns, decoded a tile of columns at a time: every
     // raw row is read once per tile over contiguous memory, instead of once per oriented
     // pixel at a stride, which touched a new cache line for every pixel.
-    private sealed class ColumnTiles
+    private sealed class ColumnTiles : IDisposable
     {
         public const int TileRows = 16;
 
-        private readonly Rgba8888Pixel[] _rows;
         private readonly Rgba8888Pixel[] _scratch = new Rgba8888Pixel[TileRows];
         private readonly int _width;
+        private IBitmapMemory? _memory;
         private int _first = -1;
         private int _count;
 
         public ColumnTiles(int width)
         {
             _width = width;
-            _rows = new Rgba8888Pixel[width * TileRows];
+        }
+
+        private Span<Rgba8888Pixel> Rows => new((void*)_memory!.Address, _width * TileRows);
+
+        // The tile takes pool memory: a tile of a wide frame exceeds the large object
+        // threshold, and a managed array would be a large-object allocation per decode.
+        public void Rent(IBitmapMemoryAllocator allocator)
+            => _memory ??= allocator.Rent((long)_width * TileRows * sizeof(Rgba8888Pixel));
+
+        public void Dispose()
+        {
+            _memory?.Dispose();
+            _memory = null;
         }
 
         public void Read(scoped in PipelineContext context, int rowIndex, Span<Rgba8888Pixel> row)
@@ -232,7 +248,7 @@ internal static unsafe class FusedPixelPipeline
             if (rowIndex < _first || rowIndex >= _first + _count)
                 Load(context, rowIndex);
 
-            _rows.AsSpan((rowIndex - _first) * _width, _width).CopyTo(row);
+            Rows.Slice((rowIndex - _first) * _width, _width).CopyTo(row);
         }
 
         private void Load(scoped in PipelineContext context, int firstRow)
@@ -247,6 +263,7 @@ internal static unsafe class FusedPixelPipeline
             var firstMajor = context.Region.Y + firstRow;
             var firstColumn = context.FlipMajor ? source.Size.Width - firstMajor - _count : firstMajor;
             var pixels = _scratch.AsSpan(0, _count);
+            var rows = Rows;
 
             for (var i = 0; i < _width; i++)
             {
@@ -259,7 +276,7 @@ internal static unsafe class FusedPixelPipeline
                 {
                     var tileRow = context.FlipMajor ? _count - 1 - k : k;
 
-                    _rows[tileRow * _width + i] = pixels[k];
+                    rows[tileRow * _width + i] = pixels[k];
                 }
             }
         }
