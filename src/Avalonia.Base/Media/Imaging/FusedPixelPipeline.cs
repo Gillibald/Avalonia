@@ -1,5 +1,7 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using System.Threading;
 using Avalonia.Platform;
 using Avalonia.Platform.Internal;
@@ -38,6 +40,9 @@ internal static unsafe class FusedPixelPipeline
 
     // Cancellation is observed between rows at this granularity.
     private const int CancellationCheckRows = 16;
+
+    private static readonly Vector128<float> s_half = Vector128.Create(0.5f);
+    private static readonly Vector128<float> s_maxChannel = Vector128.Create(255f);
 
     private enum FilterKind
     {
@@ -506,19 +511,17 @@ internal static unsafe class FusedPixelPipeline
             var top = topRow;
             var bottom = bottomIndex == topIndex ? topRow : bottomRow;
 
+            var verticalWeight = Vector128.Create(fy);
+
             for (var x = 0; x < destWidth; x++)
             {
-                var fx = fractionMap[x];
-                var topLeft = top[leftMap[x]];
-                var topRight = top[rightMap[x]];
-                var bottomLeft = bottom[leftMap[x]];
-                var bottomRight = bottom[rightMap[x]];
+                var horizontalWeight = Vector128.Create(fractionMap[x]);
+                var topLeft = ToVector(top[leftMap[x]]);
+                var bottomLeft = ToVector(bottom[leftMap[x]]);
+                var upper = topLeft + (ToVector(top[rightMap[x]]) - topLeft) * horizontalWeight;
+                var lower = bottomLeft + (ToVector(bottom[rightMap[x]]) - bottomLeft) * horizontalWeight;
 
-                destRow[x] = new Rgba8888Pixel(
-                    Blend(topLeft.R, topRight.R, bottomLeft.R, bottomRight.R, fx, fy),
-                    Blend(topLeft.G, topRight.G, bottomLeft.G, bottomRight.G, fx, fy),
-                    Blend(topLeft.B, topRight.B, bottomLeft.B, bottomRight.B, fx, fy),
-                    Blend(topLeft.A, topRight.A, bottomLeft.A, bottomRight.A, fx, fy));
+                destRow[x] = ToPixel(upper + (lower - upper) * verticalWeight + s_half);
             }
 
             PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.FilterAlpha);
@@ -539,12 +542,26 @@ internal static unsafe class FusedPixelPipeline
         return position;
     }
 
-    private static byte Blend(byte topLeft, byte topRight, byte bottomLeft, byte bottomRight, float fx, float fy)
+    // One pixel is one vector of four float channels. The filters use plain multiplies and
+    // adds, never fused multiply-add, so the result is the same on every instruction set
+    // and in the software fallback.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<float> ToVector(Rgba8888Pixel pixel)
     {
-        var top = topLeft + (topRight - topLeft) * fx;
-        var bottom = bottomLeft + (bottomRight - bottomLeft) * fx;
+        var bytes = Vector128.CreateScalarUnsafe(Unsafe.As<Rgba8888Pixel, uint>(ref pixel)).AsByte();
 
-        return (byte)(top + (bottom - top) * fy + 0.5f);
+        return Vector128.ConvertToSingle(Vector128.WidenLower(Vector128.WidenLower(bytes)).AsInt32());
+    }
+
+    // Truncates, so callers add one half to round.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Rgba8888Pixel ToPixel(Vector128<float> channels)
+    {
+        var integers = Vector128.ConvertToInt32(Vector128.Min(channels, s_maxChannel));
+        var words = Vector128.Narrow(integers, integers);
+        var packed = Vector128.Narrow(words, words).AsUInt32().ToScalar();
+
+        return Unsafe.As<uint, Rgba8888Pixel>(ref packed);
     }
 
     private static void RunBox(in PipelineContext context, in FusedPlanExecution plan,
@@ -560,15 +577,15 @@ internal static unsafe class FusedPixelPipeline
         BuildCoverage(srcWidth, destWidth, out var segmentOffsets, out var segmentColumns, out var segmentWeights, out var columnWeightSums);
 
         using var readStaging = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
-        using var horizontalStaging = allocator.Rent(destWidth * 4 * sizeof(double));
-        using var currentStaging = allocator.Rent(destWidth * 4 * sizeof(double));
-        using var nextStaging = allocator.Rent(destWidth * 4 * sizeof(double));
+        using var horizontalStaging = allocator.Rent(destWidth * sizeof(Vector128<float>));
+        using var currentStaging = allocator.Rent(destWidth * sizeof(Vector128<float>));
+        using var nextStaging = allocator.Rent(destWidth * sizeof(Vector128<float>));
         using var destStaging = allocator.Rent(destWidth * sizeof(Rgba8888Pixel));
 
         var staging = new Span<Rgba8888Pixel>((void*)readStaging.Address, context.StagingWidth);
-        var horizontal = new Span<double>((void*)horizontalStaging.Address, destWidth * 4);
-        var current = new Span<double>((void*)currentStaging.Address, destWidth * 4);
-        var next = new Span<double>((void*)nextStaging.Address, destWidth * 4);
+        var horizontal = new Span<Vector128<float>>((void*)horizontalStaging.Address, destWidth);
+        var current = new Span<Vector128<float>>((void*)currentStaging.Address, destWidth);
+        var next = new Span<Vector128<float>>((void*)nextStaging.Address, destWidth);
         var destRow = new Span<Rgba8888Pixel>((void*)destStaging.Address, destWidth);
 
         current.Clear();
@@ -586,22 +603,14 @@ internal static unsafe class FusedPixelPipeline
             var row = ReadFilteredRow(context, sourceY, staging);
 
             // Reduce the source row horizontally into raw weighted channel sums.
-            horizontal.Clear();
-
             for (var x = 0; x < destWidth; x++)
             {
-                var accumulatorIndex = x * 4;
+                var sum = Vector128<float>.Zero;
 
                 for (var segment = segmentOffsets[x]; segment < segmentOffsets[x + 1]; segment++)
-                {
-                    var pixel = row[segmentColumns[segment]];
-                    var weight = segmentWeights[segment];
+                    sum += ToVector(row[segmentColumns[segment]]) * segmentWeights[segment];
 
-                    horizontal[accumulatorIndex] += pixel.R * weight;
-                    horizontal[accumulatorIndex + 1] += pixel.G * weight;
-                    horizontal[accumulatorIndex + 2] += pixel.B * weight;
-                    horizontal[accumulatorIndex + 3] += pixel.A * weight;
-                }
+                horizontal[x] = sum;
             }
 
             // Distribute the reduced row over the destination rows it covers. With a
@@ -613,7 +622,7 @@ internal static unsafe class FusedPixelPipeline
 
             if (currentOverlap > 0)
             {
-                Accumulate(current, horizontal, currentOverlap);
+                Accumulate(current, horizontal, (float)currentOverlap);
                 currentWeight += currentOverlap;
             }
 
@@ -623,7 +632,7 @@ internal static unsafe class FusedPixelPipeline
 
                 if (nextOverlap > 0)
                 {
-                    Accumulate(next, horizontal, nextOverlap);
+                    Accumulate(next, horizontal, (float)nextOverlap);
                     nextWeight += nextOverlap;
                 }
             }
@@ -632,7 +641,7 @@ internal static unsafe class FusedPixelPipeline
             // row also flushes a row left incomplete by floating point shortfall.
             if (rowBottom >= currentBottom - CoverageEpsilon || sourceY == srcHeight - 1)
             {
-                EmitBoxRow(current, currentWeight, columnWeightSums, destRow);
+                EmitBoxRow(current, (float)currentWeight, columnWeightSums, destRow);
 
                 PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)destY * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.FilterAlpha);
 
@@ -648,7 +657,7 @@ internal static unsafe class FusedPixelPipeline
         }
     }
 
-    private static void Accumulate(Span<double> accumulator, ReadOnlySpan<double> row, double weight)
+    private static void Accumulate(Span<Vector128<float>> accumulator, ReadOnlySpan<Vector128<float>> row, float weight)
     {
         for (var i = 0; i < accumulator.Length; i++)
         {
@@ -656,25 +665,14 @@ internal static unsafe class FusedPixelPipeline
         }
     }
 
-    private static void EmitBoxRow(ReadOnlySpan<double> accumulator, double rowWeight, double[] columnWeightSums, Span<Rgba8888Pixel> destRow)
+    private static void EmitBoxRow(ReadOnlySpan<Vector128<float>> accumulator, float rowWeight, float[] columnWeightSums,
+        Span<Rgba8888Pixel> destRow)
     {
         for (var x = 0; x < destRow.Length; x++)
         {
             var total = columnWeightSums[x] * rowWeight;
 
-            if (total <= 0)
-            {
-                destRow[x] = default;
-                continue;
-            }
-
-            var index = x * 4;
-
-            destRow[x] = new Rgba8888Pixel(
-                (byte)(accumulator[index] / total + 0.5),
-                (byte)(accumulator[index + 1] / total + 0.5),
-                (byte)(accumulator[index + 2] / total + 0.5),
-                (byte)(accumulator[index + 3] / total + 0.5));
+            destRow[x] = total > 0 ? ToPixel(accumulator[x] / total + s_half) : default;
         }
     }
 
@@ -682,7 +680,7 @@ internal static unsafe class FusedPixelPipeline
     // columns with their (possibly fractional) weights, plus the per-column weight sum
     // used for normalization.
     private static void BuildCoverage(int sourceLength, int targetLength,
-        out int[] segmentOffsets, out int[] segmentColumns, out double[] segmentWeights, out double[] weightSums)
+        out int[] segmentOffsets, out int[] segmentColumns, out float[] segmentWeights, out float[] weightSums)
     {
         var scale = sourceLength / (double)targetLength;
 
@@ -696,8 +694,8 @@ internal static unsafe class FusedPixelPipeline
         }
 
         segmentColumns = new int[segmentOffsets[targetLength]];
-        segmentWeights = new double[segmentOffsets[targetLength]];
-        weightSums = new double[targetLength];
+        segmentWeights = new float[segmentOffsets[targetLength]];
+        weightSums = new float[targetLength];
 
         for (var x = 0; x < targetLength; x++)
         {
@@ -709,7 +707,7 @@ internal static unsafe class FusedPixelPipeline
 
             for (var column = first; column <= last; column++)
             {
-                var weight = Math.Max(0, Math.Min(end, column + 1) - Math.Max(start, column));
+                var weight = (float)Math.Max(0, Math.Min(end, column + 1) - Math.Max(start, column));
 
                 segmentColumns[offset] = column;
                 segmentWeights[offset] = weight;

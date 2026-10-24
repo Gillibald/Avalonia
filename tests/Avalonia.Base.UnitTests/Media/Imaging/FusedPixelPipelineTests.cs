@@ -8,8 +8,172 @@ using Xunit;
 
 namespace Avalonia.Base.UnitTests.Media.Imaging
 {
-    public class FusedPixelPipelineTests
+    public unsafe class FusedPixelPipelineTests
     {
+        // Larger than one column tile in both directions, so tiles start mid-frame and the
+        // last one is partial.
+        [Theory]
+        [InlineData(1, false)]
+        [InlineData(2, false)]
+        [InlineData(3, false)]
+        [InlineData(4, false)]
+        [InlineData(5, false)]
+        [InlineData(6, false)]
+        [InlineData(7, false)]
+        [InlineData(8, false)]
+        [InlineData(5, true)]
+        [InlineData(6, true)]
+        [InlineData(7, true)]
+        [InlineData(8, true)]
+        public void Large_Frame_Orientation_Matches_The_Pixel_Layout_Transform(int orientationValue, bool crop)
+        {
+            var orientation = (PixelOrientation)orientationValue;
+            var memory = new BitmapMemory(PixelFormat.Bgra8888, AlphaFormat.Premul, new PixelSize(37, 23));
+
+            FillDeterministic(memory);
+
+            using var source = Lock(memory);
+
+            var oriented = FusedPixelPipeline.GetOrientedSize(source.Size, orientation);
+            var expected = new byte[oriented.Width * oriented.Height * 4];
+
+            fixed (byte* dest = expected)
+                PixelLayout.Orient(source, orientation, dest, oriented.Width * 4);
+
+            var region = crop ? new PixelRect(3, 5, 17, 11) : new PixelRect(oriented);
+            var actual = new byte[region.Width * region.Height * 4];
+
+            fixed (byte* dest = actual)
+            {
+                FusedPixelPipeline.Run(source, new FusedPlanExecution(region, region.Size, PixelFormats.Bgra8888,
+                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality, orientation), (IntPtr)dest, region.Width * 4);
+            }
+
+            for (var y = 0; y < region.Height; y++)
+            {
+                Assert.Equal(expected.AsSpan(((region.Y + y) * oriented.Width + region.X) * 4, region.Width * 4).ToArray(),
+                    actual.AsSpan(y * region.Width * 4, region.Width * 4).ToArray());
+            }
+
+            memory.Dispose();
+        }
+
+        [Fact]
+        public void Bilinear_Upscale_Matches_The_Scalar_Formula()
+        {
+            var memory = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Premul, new PixelSize(13, 9));
+
+            FillDeterministic(memory);
+
+            using var source = Lock(memory);
+
+            var target = new PixelSize(29, 31);
+            var actual = new Rgba8888Pixel[target.Width * target.Height];
+
+            fixed (Rgba8888Pixel* dest = actual)
+            {
+                FusedPixelPipeline.Run(source, new FusedPlanExecution(new PixelRect(source.Size), target, PixelFormats.Rgba8888,
+                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality), (IntPtr)dest, target.Width * 4);
+            }
+
+            static double Map(int index, int sourceLength, int targetLength) =>
+                Math.Clamp((index + 0.5) * sourceLength / targetLength - 0.5, 0, sourceLength - 1);
+
+            static byte Blend(byte tl, byte tr, byte bl, byte br, float fx, float fy)
+            {
+                var top = tl + (tr - tl) * fx;
+                var bottom = bl + (br - bl) * fx;
+
+                return (byte)(top + (bottom - top) * fy + 0.5f);
+            }
+
+            for (var y = 0; y < target.Height; y++)
+            {
+                var py = Map(y, 9, target.Height);
+                var top = GetRow(memory, (int)py);
+                var bottom = GetRow(memory, Math.Min((int)py + 1, 8));
+                var fy = (float)(py - (int)py);
+
+                for (var x = 0; x < target.Width; x++)
+                {
+                    var px = Map(x, 13, target.Width);
+                    var left = (int)px;
+                    var right = Math.Min(left + 1, 12);
+                    var fx = (float)(px - left);
+                    var expected = new Rgba8888Pixel(
+                        Blend(top[left].R, top[right].R, bottom[left].R, bottom[right].R, fx, fy),
+                        Blend(top[left].G, top[right].G, bottom[left].G, bottom[right].G, fx, fy),
+                        Blend(top[left].B, top[right].B, bottom[left].B, bottom[right].B, fx, fy),
+                        Blend(top[left].A, top[right].A, bottom[left].A, bottom[right].A, fx, fy));
+
+                    Assert.Equal(expected, actual[y * target.Width + x]);
+                }
+            }
+
+            memory.Dispose();
+        }
+
+        [Fact]
+        public void Box_Downscale_Stays_Within_One_Level_Of_The_Exact_Area_Average()
+        {
+            var memory = new BitmapMemory(PixelFormat.Rgba8888, AlphaFormat.Premul, new PixelSize(50, 40));
+
+            FillDeterministic(memory);
+
+            using var source = Lock(memory);
+
+            var target = new PixelSize(7, 6);
+            var actual = new Rgba8888Pixel[target.Width * target.Height];
+
+            fixed (Rgba8888Pixel* dest = actual)
+            {
+                FusedPixelPipeline.Run(source, new FusedPlanExecution(new PixelRect(source.Size), target, PixelFormats.Rgba8888,
+                    AlphaFormat.Premul, BitmapInterpolationMode.HighQuality), (IntPtr)dest, target.Width * 4);
+            }
+
+            var rows = new Rgba8888Pixel[40][];
+
+            for (var y = 0; y < 40; y++)
+                rows[y] = GetRow(memory, y);
+
+            var scaleX = 50.0 / target.Width;
+            var scaleY = 40.0 / target.Height;
+
+            for (var dy = 0; dy < target.Height; dy++)
+            {
+                for (var dx = 0; dx < target.Width; dx++)
+                {
+                    var sums = new double[4];
+                    var total = 0.0;
+
+                    for (var y = 0; y < 40; y++)
+                    {
+                        var wy = Math.Max(0, Math.Min((dy + 1) * scaleY, y + 1) - Math.Max(dy * scaleY, y));
+
+                        for (var x = 0; x < 50 && wy > 0; x++)
+                        {
+                            var w = wy * Math.Max(0, Math.Min((dx + 1) * scaleX, x + 1) - Math.Max(dx * scaleX, x));
+                            var p = rows[y][x];
+
+                            sums[0] += p.R * w;
+                            sums[1] += p.G * w;
+                            sums[2] += p.B * w;
+                            sums[3] += p.A * w;
+                            total += w;
+                        }
+                    }
+
+                    var pixel = actual[dy * target.Width + dx];
+                    var channels = new[] { pixel.R, pixel.G, pixel.B, pixel.A };
+
+                    for (var c = 0; c < 4; c++)
+                        Assert.InRange(channels[c] - Math.Round(sums[c] / total), -1, 1);
+                }
+            }
+
+            memory.Dispose();
+        }
+
         public static TheoryData<PixelFormat, AlphaFormat, PixelFormat, AlphaFormat> ConversionPairs => new()
         {
             // The first pair hits the same-format row copy fast path; Transcode is the
