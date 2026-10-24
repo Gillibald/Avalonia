@@ -286,5 +286,67 @@ namespace Avalonia.Skia.UnitTests.Imaging
                 handle.Free();
             }
         }
+
+        [Fact]
+        public void LoadBitmap_Decodes_To_The_Render_Interface_Format()
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            var backend = new RecordingBackend();
+            ImagingBackend.Register(backend);
+
+            var renderInterface = CreateRenderInterface();
+
+            using var stream = CreateQuadrantPng(4, 4);
+            using var impl = renderInterface.LoadBitmap(stream);
+
+            Assert.Equal(renderInterface.DefaultPixelFormat, backend.Options?.TargetFormat);
+            Assert.Equal(renderInterface.DefaultAlphaFormat, backend.Options?.TargetAlphaFormat);
+        }
+
+        [Fact]
+        public void LoadBitmapToWidth_Keeps_The_Target_Size_And_Decodes_To_The_Render_Interface_Format()
+        {
+            using var scope = AvaloniaLocator.EnterScope();
+
+            var backend = new RecordingBackend();
+            ImagingBackend.Register(backend);
+
+            var renderInterface = CreateRenderInterface();
+
+            using var stream = CreateQuadrantPng(8, 8);
+            using var impl = renderInterface.LoadBitmapToWidth(stream, 4);
+
+            Assert.Equal(new PixelSize(4, 0), backend.Options?.TargetSize);
+            Assert.Equal(renderInterface.DefaultPixelFormat, backend.Options?.TargetFormat);
+            Assert.Equal(new PixelSize(4, 4), impl.PixelSize);
+        }
+
+        /// <summary>The Skia imaging backend, recording the options of the last decoder it created.</summary>
+        private sealed class RecordingBackend : IImagingBackend
+        {
+            private readonly SkiaImagingBackend _inner = new();
+
+            public BitmapDecodeOptions? Options { get; private set; }
+
+            public string Name => _inner.Name;
+
+            public System.Collections.Generic.IReadOnlyList<IBitmapCodecInfo> SupportedCodecs => _inner.SupportedCodecs;
+
+            public int IdentifyPrefixLength => _inner.IdentifyPrefixLength;
+
+            public bool TryIdentify(Stream stream, out BitmapImageInfo info) => _inner.TryIdentify(stream, out info);
+
+            public bool TryIdentify(ReadOnlySpan<byte> data, out BitmapImageInfo info) => _inner.TryIdentify(data, out info);
+
+            public IBitmapDecoder CreateDecoder(Stream stream, bool ownsStream, BitmapDecodeOptions? options = null)
+            {
+                Options = options;
+
+                return _inner.CreateDecoder(stream, ownsStream, options);
+            }
+
+            public IBitmapEncoderImpl CreateEncoder(Guid containerFormat) => _inner.CreateEncoder(containerFormat);
+        }
     }
 }
