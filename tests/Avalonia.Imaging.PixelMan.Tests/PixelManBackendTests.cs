@@ -216,6 +216,48 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(0, allocator.OutstandingRentals);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_Frame_Converted_For_The_Renderer_Should_Decode_Straight_Into_The_Pool(bool jpeg)
+        {
+            var allocator = new CountingAllocator();
+            using var stream = new MemoryStream();
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(new PixelManImagingBackend(allocator));
+
+            BitmapEncoder encoder = jpeg ? new JpegBitmapEncoder { Quality = 100 } : new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(64, 48, Color.FromArgb(128, 255, 0, 0)) });
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            var rentsBeforeDecode = allocator.RentCount;
+
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions
+            {
+                TargetFormat = PixelFormats.Bgra8888,
+                TargetAlphaFormat = AlphaFormat.Premul,
+            });
+            using var frame = decoder.ReadNextFrame()!;
+            using var pixels = frame.Lock();
+
+            // PixelMan writes the premultiplied BGRA itself, so the pool holds only the frame.
+            Assert.Equal(rentsBeforeDecode + 1, allocator.RentCount);
+            Assert.Equal(Assert.Single(allocator.LiveAddresses), pixels.Address);
+            Assert.Equal(PixelFormats.Bgra8888, pixels.Format);
+            Assert.Equal(AlphaFormat.Premul, pixels.AlphaFormat);
+
+            if (!jpeg)
+            {
+                var first = new byte[4];
+
+                System.Runtime.InteropServices.Marshal.Copy(pixels.Address, first, 0, 4);
+                Assert.Equal(new byte[] { 0, 0, 128, 128 }, first);
+            }
+        }
+
         [Fact]
         public void A_Frame_The_Pool_Cannot_Hold_Should_Fail_To_Lock()
         {
