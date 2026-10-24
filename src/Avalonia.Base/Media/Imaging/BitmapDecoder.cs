@@ -248,6 +248,20 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
+        /// Gets the container-wide palette, such as the GIF global color table, when the
+        /// stream has one and the active backend exposes it. Frames with a palette of their
+        /// own report it through <see cref="BitmapFrame.TryGetPalette"/>.
+        /// </summary>
+        public bool TryGetGlobalPalette([NotNullWhen(true)] out BitmapPalette? palette)
+        {
+            ThrowIfDisposed();
+
+            palette = (_impl as IPaletteDecoder)?.GlobalPalette;
+
+            return palette is not null;
+        }
+
+        /// <summary>
         /// Gets whether the stream is an animation, and its loop count (zero loops forever).
         /// </summary>
         public bool IsAnimated(out int loopCount)

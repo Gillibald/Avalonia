@@ -534,6 +534,47 @@ namespace Avalonia.Imaging.ImageSharp.Tests
         }
 
         [Fact]
+        public void Gif_Global_Color_Table_Is_The_Decoder_Palette()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var colors = new[] { AvColors.Black, AvColors.White, AvColor.FromRgb(200, 0, 0), AvColor.FromRgb(0, 0, 90) };
+            var encoder = new GifBitmapEncoder { GlobalPalette = new BitmapPalette(colors) };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 2, (200, 0, 0, 255)) });
+
+            var bytes = Encode(backend, encoder, BitmapContainerFormats.Gif);
+
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(backend);
+
+            using var decoder = BitmapDecoder.Create(new MemoryStream(bytes));
+
+            Assert.True(decoder.TryGetGlobalPalette(out var palette));
+            Assert.Equal(colors, palette!.Colors.Take(colors.Length));
+        }
+
+        [Fact]
+        public void Png_Has_No_Decoder_Palette()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 2, (200, 0, 0, 255)) });
+
+            var bytes = Encode(backend, encoder, BitmapContainerFormats.Png);
+
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(backend);
+
+            using var decoder = BitmapDecoder.Create(new MemoryStream(bytes));
+
+            Assert.False(decoder.TryGetGlobalPalette(out var palette));
+            Assert.Null(palette);
+        }
+
+        [Fact]
         public void Png_Frame_Palette_Writes_An_Indexed_Png()
         {
             var backend = new ImageSharpImagingBackend();

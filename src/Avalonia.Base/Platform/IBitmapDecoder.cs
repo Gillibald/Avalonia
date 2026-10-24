@@ -66,6 +66,19 @@ namespace Avalonia.Platform
     }
 
     /// <summary>
+    /// Opt-in capability for decoders of containers with a container-wide palette, such
+    /// as the GIF global color table.
+    /// </summary>
+    [Unstable]
+    public interface IPaletteDecoder
+    {
+        /// <summary>
+        /// Gets the container-wide palette, or null when the stream has none.
+        /// </summary>
+        BitmapPalette? GlobalPalette { get; }
+    }
+
+    /// <summary>
     /// Opt-in capability for decoders of animated containers.
     /// </summary>
     [Unstable]

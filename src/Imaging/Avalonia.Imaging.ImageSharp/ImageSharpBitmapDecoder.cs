@@ -1,6 +1,11 @@
 using System;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using Color = Avalonia.Media.Color;
+using ISColor = SixLabors.ImageSharp.Color;
 using ISImage = SixLabors.ImageSharp.Image;
 
 namespace Avalonia.Imaging.ImageSharp
@@ -10,7 +15,7 @@ namespace Avalonia.Imaging.ImageSharp
     /// image stays alive until both the decoder and every frame produced by it are
     /// disposed.
     /// </summary>
-    internal sealed class ImageSharpBitmapDecoder : IBitmapDecoder, ISeekableFrameDecoder
+    internal sealed class ImageSharpBitmapDecoder : IBitmapDecoder, ISeekableFrameDecoder, IPaletteDecoder
     {
         private readonly ISImage _image;
         private readonly BitmapDecodeOptions? _options;
@@ -33,9 +38,31 @@ namespace Avalonia.Imaging.ImageSharp
             AppliedOrientation = appliedOrientation;
             UsedDecodeScale = usedDecodeScale;
             FrameCount = image.Frames.Count;
+            GlobalPalette = codecInfo.ContainerFormat == BitmapContainerFormats.Gif
+                ? ToPalette(image.Metadata.GetGifMetadata().GlobalColorTable)
+                : null;
         }
 
+        public BitmapPalette? GlobalPalette { get; }
+
         public IBitmapCodecInfo CodecInfo => Codec;
+
+        private static BitmapPalette? ToPalette(ReadOnlyMemory<ISColor>? table)
+        {
+            if (table is not { Length: > 0 } colors)
+                return null;
+
+            var entries = new Color[colors.Length];
+
+            for (var i = 0; i < entries.Length; i++)
+            {
+                var pixel = colors.Span[i].ToPixel<Rgba32>();
+
+                entries[i] = Color.FromArgb(pixel.A, pixel.R, pixel.G, pixel.B);
+            }
+
+            return new BitmapPalette(entries);
+        }
 
         public BitmapImageInfo Info { get; }
 
