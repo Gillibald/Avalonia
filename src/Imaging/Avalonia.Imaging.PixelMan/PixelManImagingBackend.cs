@@ -208,6 +208,36 @@ namespace Avalonia.Imaging.PixelMan
             return true;
         }
 
+#if PIXELMAN_HEADER_FACTS
+        // PixelMan's inspection reads the size, frame count and resolution from the headers
+        // along with the stored layout, which maps to the format a Normal-mode decode produces.
+        private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info)
+        {
+            info = default;
+
+            PmImageInspection inspection;
+
+            try
+            {
+                stream.Position = origin;
+                inspection = PmCodecKind.Inspect(stream);
+            }
+            catch (PmException)
+            {
+                return false;
+            }
+
+            if (inspection.Width == 0 || inspection.Height == 0)
+                return false;
+
+            var (format, hasAlpha) = DescribeLayout(codec, inspection.StoredLayout);
+
+            info = new BitmapImageInfo(codec.FormatName, new PixelSize((int)inspection.Width, (int)inspection.Height),
+                inspection.Dpi is { } dpi ? new Vector(dpi.X, dpi.Y) : null, format,
+                inspection.FrameCount is { } count ? (int)count : null, hasAlpha);
+            return true;
+        }
+#else
         // Size, resolution and frame count come from the headers; the stored pixel format
         // from PixelMan's layout inspection, mapped the way a Normal-mode decode maps it.
         private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info)
@@ -223,17 +253,7 @@ namespace Avalonia.Imaging.PixelMan
             try
             {
                 stream.Position = origin;
-
-                var inspection = PmCodecKind.Inspect(stream);
-                var support = s_capabilities.Value.QueryDecoding(codec.Kind, inspection.StoredLayout, PmCompatibilityMode.Normal);
-
-                if (support.SelectedFormat is { } selected)
-                {
-                    hasAlpha = selected.HasAlpha;
-
-                    if (PixelManFormats.TryMap(selected, out var mapped, out _))
-                        format = mapped;
-                }
+                (format, hasAlpha) = DescribeLayout(codec, PmCodecKind.Inspect(stream).StoredLayout);
             }
             catch (PmException)
             {
@@ -242,6 +262,17 @@ namespace Avalonia.Imaging.PixelMan
 
             info = new BitmapImageInfo(codec.FormatName, header.Size, header.Dpi, format, header.FrameCount, hasAlpha);
             return true;
+        }
+#endif
+
+        private static (PixelFormat? Format, bool? HasAlpha) DescribeLayout(PixelManCodecInfo codec, string storedLayout)
+        {
+            var support = s_capabilities.Value.QueryDecoding(codec.Kind, storedLayout, PmCompatibilityMode.Normal);
+
+            if (support.SelectedFormat is not { } selected)
+                return (null, null);
+
+            return (PixelManFormats.TryMap(selected, out var mapped, out _) ? mapped : null, selected.HasAlpha);
         }
     }
 }

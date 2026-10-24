@@ -1,3 +1,4 @@
+#if !PIXELMAN_HEADER_FACTS
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -344,3 +345,4 @@ namespace Avalonia.Imaging.PixelMan
             => little ? BinaryPrimitives.ReadUInt32LittleEndian(data) : BinaryPrimitives.ReadUInt32BigEndian(data);
     }
 }
+#endif

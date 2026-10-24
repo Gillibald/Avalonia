@@ -9,6 +9,14 @@
     <RootNamespace>Avalonia.Imaging.PixelMan</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <!--
+    Local PixelMan builds (src/Imaging/PixelMan.Local) carry changes the feed package does not
+    have yet; each symbol below switches the backend to one of them.
+    PIXELMAN_HEADER_FACTS: PmImageInspection reports size, frame count and resolution.
+  -->
+  <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
+    <DefineConstants>$(DefineConstants);PIXELMAN_HEADER_FACTS</DefineConstants>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
   </ItemGroup>
