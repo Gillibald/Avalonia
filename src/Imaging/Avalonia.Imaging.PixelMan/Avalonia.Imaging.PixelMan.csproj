@@ -1,27 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    PixelMan ships on the internal Avalonia feed only (see NuGet.config next to this file),
-    so this project is not part of the solution yet: it restores only where that feed's
-    credentials are available.
+    The backend builds against a local PixelMan build (src/Imaging/PixelMan.Local/BuildLocal.ps1),
+    restored from the folder NuGet.config next to this file names, so this project is not part
+    of the solution yet.
   -->
   <PropertyGroup>
     <TargetFrameworks>$(AvsCurrentTargetFramework);$(AvsLegacyTargetFrameworks)</TargetFrameworks>
     <RootNamespace>Avalonia.Imaging.PixelMan</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-  <!--
-    Local PixelMan builds (src/Imaging/PixelMan.Local) carry changes the feed package does not
-    have yet; each symbol below switches the backend to one of them.
-    PIXELMAN_HEADER_FACTS: PmImageInspection reports size, frame count and resolution.
-    PIXELMAN_FRAME_ALLOCATOR: PmDecodeOptions.FrameAllocator decodes frames into caller memory.
-    PIXELMAN_DECODE_SCALE: PmDecodeOptions.TargetSize reduces JPEG and PNG at decode, and
-    PmImageInspection reports the EXIF orientation.
-    PIXELMAN_GLOBAL_PALETTE: PmFrameDecoder.GetGlobalPalette reports the GIF global color table.
-    PIXELMAN_ICO_WEBP: PmCodecKind.Ico and PmCodecKind.Webp decode.
-  -->
-  <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
-    <DefineConstants>$(DefineConstants);PIXELMAN_HEADER_FACTS;PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE;PIXELMAN_GLOBAL_PALETTE;PIXELMAN_ICO_WEBP</DefineConstants>
-  </PropertyGroup>
+  <!-- Restore needs the package BuildLocal.ps1 packs from a PixelMan checkout. -->
+  <Target Name="RequireLocalPixelMan" BeforeTargets="_LoadRestoreGraphEntryPoints;CollectPackageReferences" Condition="'$(PixelManVersion)' == ''">
+    <Error Text="No local PixelMan build is selected. Run src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath &lt;PixelMan checkout&gt; first." />
+  </Target>
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
   </ItemGroup>

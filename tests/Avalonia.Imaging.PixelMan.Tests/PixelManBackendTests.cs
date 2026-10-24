@@ -182,7 +182,6 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(second, profile1.ToArray());
         }
 
-#if PIXELMAN_FRAME_ALLOCATOR
         [Fact]
         public void A_Frame_Decoded_Into_The_Pool_Should_Be_Installed_Without_A_Copy()
         {
@@ -216,9 +215,35 @@ namespace Avalonia.Imaging.PixelMan.Tests
 
             Assert.Equal(0, allocator.OutstandingRentals);
         }
-#endif
 
-#if PIXELMAN_DECODE_SCALE
+        [Fact]
+        public void A_Frame_The_Pool_Cannot_Hold_Should_Fail_To_Lock()
+        {
+            using var stream = new MemoryStream();
+
+            using (var scope = Bind())
+            {
+                var encoder = new PngBitmapEncoder();
+
+                encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(4, 4, Colors.Red) });
+                encoder.Save(stream, TestContext.Current.CancellationToken);
+            }
+
+            stream.Position = 0;
+
+            // PixelMan decodes into its own memory when renting fails; that frame is never
+            // installed outside the pool.
+            using var decoder = new PixelManImagingBackend(new ExhaustedPool()).CreateDecoder(stream, ownsStream: false);
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Throws<OutOfMemoryException>(() => frame.Lock());
+        }
+
+        private sealed class ExhaustedPool : IBitmapMemoryAllocator
+        {
+            public IBitmapMemory Rent(long byteCount) => throw new OutOfMemoryException();
+        }
+
         [Theory]
         [InlineData(1, 8, 8, 6, 8)]
         [InlineData(6, 6, 6, 8, 6)]
@@ -275,9 +300,7 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(new PixelSize(8, 6), frame.PixelSize);
             Assert.Equal(FusedDecodeParts.None, Assert.IsAssignableFrom<ISupportsFusedDecode>(frame).FusedParts);
         }
-#endif
 
-#if PIXELMAN_GLOBAL_PALETTE
         [Fact]
         public void A_Gif_Decoder_Should_Expose_The_Global_Color_Table()
         {
@@ -307,9 +330,7 @@ namespace Avalonia.Imaging.PixelMan.Tests
 
             Assert.False(pngDecoder.TryGetGlobalPalette(out _));
         }
-#endif
 
-#if PIXELMAN_ICO_WEBP
         [Fact]
         public void An_Icon_Should_Decode_Every_Entry_In_Wic_Order()
         {
@@ -355,7 +376,6 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         private static string Asset(string name) => Path.Combine(AppContext.BaseDirectory, "Assets", name);
-#endif
 
         private static BitmapMetadata RoundTrip(BitmapEncoder encoder, Guid containerFormat)
         {

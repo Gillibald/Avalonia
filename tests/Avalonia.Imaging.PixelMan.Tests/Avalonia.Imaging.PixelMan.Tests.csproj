@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk" ToolsVersion="15.0">
-  <!-- Restores PixelMan from the internal feed (NuGet.config next to this file); not part of the solution yet. -->
+  <!-- Restores the local PixelMan build (NuGet.config next to this file); not part of the solution yet. -->
   <PropertyGroup>
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
-  <!-- The tests of local PixelMan changes run against local builds only; see the backend project. -->
-  <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
-    <DefineConstants>$(DefineConstants);PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE;PIXELMAN_GLOBAL_PALETTE;PIXELMAN_ICO_WEBP</DefineConstants>
-  </PropertyGroup>
+  <!-- Restore needs the package BuildLocal.ps1 packs from a PixelMan checkout. -->
+  <Target Name="RequireLocalPixelMan" BeforeTargets="_LoadRestoreGraphEntryPoints;CollectPackageReferences" Condition="'$(PixelManVersion)' == ''">
+    <Error Text="No local PixelMan build is selected. Run src/Imaging/PixelMan.Local/BuildLocal.ps1 -PixelManPath &lt;PixelMan checkout&gt; first." />
+  </Target>
   <Import Project="..\..\build\UnitTests.NetCore.targets" />
   <Import Project="..\..\build\XUnit.props" />
   <Import Project="..\..\build\SharedVersion.props" />

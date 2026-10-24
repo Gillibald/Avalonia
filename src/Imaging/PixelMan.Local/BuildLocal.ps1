@@ -8,9 +8,10 @@
     PixelMan.local.props, which Directory.Packages.props imports to select that version.
     Every run gets a new version, so NuGet never serves a stale build from its cache.
 
-    The package holds the native library of the current platform only: it is for local
-    development, not for distribution. Delete PixelMan.local.props to return to the
-    internal feed package.
+    This is how the PixelMan backend gets its package: the backend and its tests restore only
+    from the packages folder, and fail to restore until this script has run once. The
+    package holds the native library of the current platform only; it is not for
+    distribution.
 
 .PARAMETER PixelManPath
     The PixelMan checkout (its submodules initialized).
@@ -99,4 +100,4 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet pack failed with exit code $LASTEXITCOD
 </Project>
 "@ | Set-Content (Join-Path $here 'PixelMan.local.props') -Encoding utf8
 
-Write-Host "Avalonia.PixelMan $version ($rid) is selected. Delete PixelMan.local.props to use the feed package again."
+Write-Host "Avalonia.PixelMan $version ($rid) is selected."

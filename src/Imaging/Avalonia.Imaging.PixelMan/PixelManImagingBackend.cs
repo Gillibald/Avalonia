@@ -167,23 +167,17 @@ namespace Avalonia.Imaging.PixelMan
 
             PmFrameDecoder decoder;
             var decodeOptions = new PmDecodeOptions(PmCompatibilityMode.Normal) { MaxPixels = (ulong)Math.Max(0, maxPixels) };
-            var allocator = Allocator;
+            var frames = new PixelManFrameAllocator(Allocator);
 
-#if PIXELMAN_FRAME_ALLOCATOR
-            var frames = new PixelManFrameAllocator(allocator);
             decodeOptions.FrameAllocator = frames;
-            allocator = frames;
-#endif
 
             PixelSize? reducedFrom = null;
 
-#if PIXELMAN_DECODE_SCALE
             if (hasHeader && TryGetDecodeTarget(codec, info.PixelSize, storedOrientation, options, out var target))
             {
                 decodeOptions.TargetSize = target;
                 reducedFrom = info.PixelSize;
             }
-#endif
 
             try
             {
@@ -198,7 +192,7 @@ namespace Avalonia.Imaging.PixelMan
             if (!hasHeader)
                 info = new BitmapImageInfo(codec.FormatName, default, null, null, decoder.FrameCount is { } count ? (int)count : null, null);
 
-            return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, allocator, reducedFrom);
+            return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, frames, reducedFrom);
         }
 
         private static bool TryIdentifyCore(Stream stream, long origin, out BitmapImageInfo info)
@@ -225,7 +219,6 @@ namespace Avalonia.Imaging.PixelMan
             return true;
         }
 
-#if PIXELMAN_DECODE_SCALE
         // Asks PixelMan to decode JPEG and PNG reduced towards the plan's target, so the
         // pipeline resamples from a frame near that size instead of the full image. The
         // target is in oriented space and PixelMan's in stored axes; a source region is in
@@ -255,9 +248,7 @@ namespace Avalonia.Imaging.PixelMan
                 : ((uint)size.Height, (uint)size.Width);
             return true;
         }
-#endif
 
-#if PIXELMAN_HEADER_FACTS
         // PixelMan's inspection reads the size, frame count and resolution from the headers
         // along with the stored layout, which maps to the format a Normal-mode decode produces.
         private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info,
@@ -283,44 +274,13 @@ namespace Avalonia.Imaging.PixelMan
 
             var (format, hasAlpha) = DescribeLayout(codec, inspection.StoredLayout);
 
-#if PIXELMAN_DECODE_SCALE
             orientation = inspection.Orientation;
-#endif
 
             info = new BitmapImageInfo(codec.FormatName, new PixelSize((int)inspection.Width, (int)inspection.Height),
                 inspection.Dpi is { } dpi ? new Vector(dpi.X, dpi.Y) : null, format,
                 inspection.FrameCount is { } count ? (int)count : null, hasAlpha);
             return true;
         }
-#else
-        // Size, resolution and frame count come from the headers; the stored pixel format
-        // from PixelMan's layout inspection, mapped the way a Normal-mode decode maps it.
-        private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info,
-            out ushort? orientation)
-        {
-            info = default;
-            orientation = null;
-
-            if (!PixelManHeaderReader.TryRead(codec.Kind, PixelManHeaderReader.FromStream(stream, origin), out var header))
-                return false;
-
-            PixelFormat? format = null;
-            bool? hasAlpha = null;
-
-            try
-            {
-                stream.Position = origin;
-                (format, hasAlpha) = DescribeLayout(codec, PmCodecKind.Inspect(stream).StoredLayout);
-            }
-            catch (PmException)
-            {
-                // The layout is optional; the header facts stand on their own.
-            }
-
-            info = new BitmapImageInfo(codec.FormatName, header.Size, header.Dpi, format, header.FrameCount, hasAlpha);
-            return true;
-        }
-#endif
 
         private static (PixelFormat? Format, bool? HasAlpha) DescribeLayout(PixelManCodecInfo codec, string storedLayout)
         {

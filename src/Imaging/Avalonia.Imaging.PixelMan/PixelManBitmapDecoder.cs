@@ -16,14 +16,14 @@ namespace Avalonia.Imaging.PixelMan
         private readonly PmFrameDecoder _decoder;
         private readonly Stream _stream;
         private readonly BitmapDecodeOptions? _options;
-        private readonly IBitmapMemoryAllocator _allocator;
+        private readonly PixelManFrameAllocator _allocator;
         private readonly PixelSize? _reducedFrom;
         private int _cursor;
         private int _decoderPosition;
         private bool _disposed;
 
         protected PixelManBitmapDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
-            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator,
+            BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator,
             PixelSize? reducedFrom = null)
         {
             _reducedFrom = reducedFrom;
@@ -55,7 +55,7 @@ namespace Avalonia.Imaging.PixelMan
         /// the full stored size when PixelMan was asked to decode reduced.
         /// </summary>
         public static PixelManBitmapDecoder Create(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
-            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator,
+            BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator,
             PixelSize? reducedFrom = null)
         {
             if (codec.Kind == PmCodecKind.Gif)
@@ -182,7 +182,7 @@ namespace Avalonia.Imaging.PixelMan
     internal class PixelManSeekableDecoder : PixelManBitmapDecoder, ISeekableFrameDecoder
     {
         public PixelManSeekableDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
-            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator)
             : base(decoder, stream, codec, info, options, allocator)
         {
         }
@@ -192,29 +192,22 @@ namespace Avalonia.Imaging.PixelMan
         public IBitmapFrameSource GetFrame(int index) => ReadFrameAt(index);
     }
 
-    internal sealed class PixelManGifDecoder : PixelManBitmapDecoder, IAnimatedDecoder
-#if PIXELMAN_GLOBAL_PALETTE
-        , IPaletteDecoder
-#endif
+    internal sealed class PixelManGifDecoder : PixelManBitmapDecoder, IAnimatedDecoder, IPaletteDecoder
     {
         public PixelManGifDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
-            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator)
             : base(decoder, stream, codec, info, options, allocator)
         {
             // Without a NETSCAPE block a GIF plays once; zero means forever.
             LoopCount = ((PixelManMetadataStore)Metadata).Metadata.LoopCount ?? 1;
 
-#if PIXELMAN_GLOBAL_PALETTE
             using var global = decoder.GetGlobalPalette();
 
             GlobalPalette = global is null ? null : PixelManFormats.ToPalette(global);
-#endif
         }
 
         public int LoopCount { get; }
 
-#if PIXELMAN_GLOBAL_PALETTE
         public BitmapPalette? GlobalPalette { get; }
-#endif
     }
 }

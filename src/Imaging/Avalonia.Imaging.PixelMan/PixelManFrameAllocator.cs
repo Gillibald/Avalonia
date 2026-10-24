@@ -1,4 +1,3 @@
-#if PIXELMAN_FRAME_ALLOCATOR
 using System;
 using System.Collections.Concurrent;
 using Avalonia.PixelMan;
@@ -48,4 +47,3 @@ namespace Avalonia.Imaging.PixelMan
         public bool TryClaim(IntPtr address, out IBitmapMemory rental) => _unclaimed.TryRemove(address, out rental!);
     }
 }
-#endif

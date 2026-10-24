@@ -7,18 +7,17 @@ using Avalonia.Platform.Internal;
 namespace Avalonia.Imaging.PixelMan
 {
     /// <summary>
-    /// A frame PixelMan has decoded into its stored layout. The first Lock copies it into
-    /// pooled memory, through the shared pixel pipeline when the decode plan crops, scales,
-    /// orients or converts it; a frame PixelMan decoded into a pool rental whose layout is
-    /// already the plan's output is installed as it is. EXIF orientation is applied by the
-    /// pipeline: PixelMan never rotates.
+    /// A frame PixelMan has decoded, into a pool rental, in its stored layout. When that layout
+    /// is already the plan's output the first Lock installs the rental as it is; otherwise the
+    /// shared pixel pipeline crops, scales, orients or converts it into a second rental. EXIF
+    /// orientation is applied by the pipeline: PixelMan never rotates.
     /// </summary>
     internal class PixelManBitmapFrameSource : IBitmapFrameSource, IColorProfileSource, IMetadataStoreSource,
         ISupportsFusedDecode
     {
         private readonly PmBitmapFrame _frame;
         private readonly BitmapDecodeOptions? _options;
-        private readonly IBitmapMemoryAllocator _allocator;
+        private readonly PixelManFrameAllocator _allocator;
         private readonly object _sync = new();
         private readonly PixelSize _rawSize;
         private readonly PixelOrientation _orientation;
@@ -33,7 +32,7 @@ namespace Avalonia.Imaging.PixelMan
         private bool _disposed;
 
         protected PixelManBitmapFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, PixelOrientation orientation,
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator, PixelOrientation orientation,
             PixelSize? reducedFrom = null)
         {
             _frame = frame;
@@ -95,7 +94,7 @@ namespace Avalonia.Imaging.PixelMan
         /// for indexed output, animation data for GIF frames.
         /// </summary>
         public static PixelManBitmapFrameSource Create(PmBitmapFrame frame, PixelManCodecInfo codec,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, PixelSize? reducedFrom = null)
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator, PixelSize? reducedFrom = null)
         {
             var metadata = frame.GetMetadata();
             var orientation = PixelOrientation.Normal;
@@ -153,10 +152,11 @@ namespace Avalonia.Imaging.PixelMan
         {
             _options?.CancellationToken.ThrowIfCancellationRequested();
 
-#if PIXELMAN_FRAME_ALLOCATOR
-            if (IsIdentityPlan && TryAdoptFrame())
+            if (IsIdentityPlan)
+            {
+                AdoptFrame();
                 return;
-#endif
+            }
 
             var targetRowBytes = PixelFormatArithmetic.GetMinRowBytes(PixelFormat, PixelSize.Width);
             var target = _allocator.Rent((long)targetRowBytes * PixelSize.Height);
@@ -182,26 +182,22 @@ namespace Avalonia.Imaging.PixelMan
             _mapped && !_hasRegion && _orientation == PixelOrientation.Normal && PixelSize == _rawSize &&
             PixelFormat == _decodeFormat && (AlphaFormat == _decodeAlpha || !PixelFormat.HasAlpha);
 
-#if PIXELMAN_FRAME_ALLOCATOR
         // The frame lives in a pool rental, so installing it skips the copy and pool
         // accounting still covers it. The lock keeps PixelMan's frame, and with it the
-        // rental, alive until the last view is released.
-        private bool TryAdoptFrame()
+        // rental, alive until the last view is released. PixelMan decodes into its own
+        // memory only when renting failed, so the pool has no room for the frame either.
+        private void AdoptFrame()
         {
-            if (_allocator is not PixelManFrameAllocator frames)
-                return false;
-
             var pixels = _frame.Lock(PmLockMode.ReadWrite);
 
-            if (!frames.TryClaim(pixels.Scan0, out var rental))
+            if (!_allocator.TryClaim(pixels.Scan0, out var rental))
             {
                 pixels.Dispose();
-                return false;
+                throw new OutOfMemoryException("The imaging memory pool could not hold the decoded frame.");
             }
 
             _pixels = new SharedBitmapMemory(new FrameMemory(rental, pixels));
             _rowBytes = checked((int)pixels.Stride);
-            return true;
         }
 
         private sealed class FrameMemory(IBitmapMemory rental, PmBitmapLock pixels) : IBitmapMemory
@@ -212,24 +208,9 @@ namespace Avalonia.Imaging.PixelMan
 
             public void Dispose() => pixels.Dispose();
         }
-#endif
 
         private void RunPlan(IntPtr destination, int destRowBytes)
         {
-            // The decoded layout is the plan's output: PixelMan copies it into the pooled
-            // destination, so pool accounting covers every installed frame.
-            if (IsIdentityPlan)
-            {
-                unsafe
-                {
-                    _frame.CopyPixels(_frame.Format, 0, 0, 0, 0,
-                        new Span<byte>((void*)destination, checked(destRowBytes * PixelSize.Height)), (nuint)destRowBytes,
-                        _options?.CancellationToken ?? default);
-                }
-
-                return;
-            }
-
             var plan = new FusedPlanExecution(_region, PixelSize, PixelFormat, AlphaFormat,
                 _options?.Interpolation ?? BitmapInterpolationMode.HighQuality, _orientation);
 
@@ -305,7 +286,7 @@ namespace Avalonia.Imaging.PixelMan
     internal class PixelManIndexedFrameSource : PixelManBitmapFrameSource, IIndexedFrame
     {
         public PixelManIndexedFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, BitmapPalette palette)
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator, BitmapPalette palette)
             : base(frame, metadata, options, allocator, PixelOrientation.Normal)
         {
             Palette = palette;
@@ -324,7 +305,7 @@ namespace Avalonia.Imaging.PixelMan
     internal sealed class PixelManGifFrameSource : PixelManIndexedFrameSource, IAnimatedFrame
     {
         public PixelManGifFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, BitmapPalette palette)
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator, BitmapPalette palette)
             : base(frame, metadata, options, allocator, palette)
         {
             Animation = GifAnimation.Read(frame, metadata);
@@ -348,7 +329,7 @@ namespace Avalonia.Imaging.PixelMan
     internal sealed class PixelManGifColorFrameSource : PixelManBitmapFrameSource, IAnimatedFrame
     {
         public PixelManGifColorFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator)
             : base(frame, metadata, options, allocator, PixelOrientation.Normal)
         {
             Animation = GifAnimation.Read(frame, metadata);
