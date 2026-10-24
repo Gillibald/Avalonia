@@ -117,7 +117,53 @@ namespace Avalonia.Media.Imaging
                     nameof(options));
             }
 
-            return new BitmapDecoder(ImagingBackend.Current.CreateDecoder(stream, ownsStream, options));
+            var backend = ImagingBackend.Current;
+            var impl = backend.CreateDecoder(stream, ownsStream, ResolveFormatProfile(options));
+
+            if (options?.FormatProfile == BitmapFormatProfile.Wic &&
+                (impl.CodecInfo.Capabilities & BitmapCodecCapabilities.WicFormatProfile) == 0)
+            {
+                var format = impl.CodecInfo.FormatName;
+
+                impl.Dispose();
+
+                throw new NotSupportedException(
+                    $"The {backend.Name} imaging backend's {format} codec does not decode to the WIC format profile.");
+            }
+
+            return new BitmapDecoder(impl);
+        }
+
+        /// <summary>
+        /// Turns <see cref="BitmapDecodeOptions.PreservePixelFormat"/> and
+        /// <see cref="BitmapDecodeOptions.FormatProfile"/> into the explicit targets the backend
+        /// sees: converting for the render backend targets the render interface's default
+        /// format. Preserving, an explicit <see cref="BitmapDecodeOptions.TargetFormat"/> and
+        /// the WIC profile (which the backend resolves itself) pass through, as does a decode
+        /// with no render interface bound, which has no render format to target.
+        /// </summary>
+        internal static BitmapDecodeOptions? ResolveFormatProfile(BitmapDecodeOptions? options)
+        {
+            if (options is { TargetFormat: not null } or { PreservePixelFormat: true } or
+                { FormatProfile: BitmapFormatProfile.Wic })
+            {
+                return options;
+            }
+
+            if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is not { } render)
+                return options;
+
+            var resolved = options?.Clone() ?? new BitmapDecodeOptions();
+
+            resolved.TargetFormat = render.DefaultPixelFormat;
+
+            if (resolved.TargetAlphaFormat is null)
+            {
+                resolved.TargetAlphaFormat = render.DefaultAlphaFormat;
+                resolved.OpaqueSatisfiesTargetAlpha = true;
+            }
+
+            return resolved;
         }
 
         /// <summary>

@@ -9,10 +9,11 @@ using Xunit;
 namespace Avalonia.Imaging.TestKit.Contract
 {
     /// <summary>
-    /// Copy discipline of the decode-to-render path: a plain decode rents exactly the
-    /// installed destination plus the manifest's per-format copy budget, the installed
-    /// pixels are the pooled rental itself (zero-copy), and the install's lifetime is
-    /// counted exactly.
+    /// Copy discipline of the decode-to-render path: a plain decode that preserves the
+    /// stored format rents exactly the installed destination plus the manifest's
+    /// per-format copy budget, the installed pixels are the pooled rental itself
+    /// (zero-copy), a decode converted to the render format adds at most one
+    /// intermediate, and the install's lifetime is counted exactly.
     /// </summary>
     public abstract class CopyBudgetContractTests<TFixture> : ImagingContractTests<TFixture>
         where TFixture : CodecBackendFixture, new()
@@ -25,13 +26,17 @@ namespace Avalonia.Imaging.TestKit.Contract
         // exact target (per its FusedDecodeParts), which the budget does not model.
         private static ImageFixture BudgetFixture => FixtureImages.Gradient128Png;
 
+        // The budget models the decoder's own output; converting to the render format is
+        // a separate pass, measured on its own.
+        private static BitmapDecodeOptions Preserved => new() { PreservePixelFormat = true };
+
         [Fact]
         public void DecodeToInstall_MeetsManifestCopyBudget()
         {
             Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
 
             using var scope = BindPlatform();
-            using var decoder = BitmapDecoder.Create(BudgetFixture.OpenRead());
+            using var decoder = BitmapDecoder.Create(BudgetFixture.OpenRead(), Preserved);
             using var frame = decoder.ReadNextFrame()!;
             using var bitmap = frame.ToBitmap();
 
@@ -48,12 +53,31 @@ namespace Avalonia.Imaging.TestKit.Contract
         }
 
         [Fact]
-        public void InstalledAddress_InLiveRentalSet()
+        public void DecodeToInstall_ConvertedToTheRenderFormat_AddsAtMostOneIntermediate()
         {
             Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
 
             using var scope = BindPlatform();
             using var decoder = BitmapDecoder.Create(BudgetFixture.OpenRead());
+            using var frame = decoder.ReadNextFrame()!;
+            using var bitmap = frame.ToBitmap();
+
+            var budget = TryGetFormat(FixtureImages.PngFormatName)!.CopyBudget;
+            var frameSized = Allocator.FrameSizedRents(FrameSizedThreshold(BudgetFixture));
+
+            Assert.True(frameSized <= 2 + budget,
+                $"The converted decode performed {frameSized} frame-sized rents; the destination, " +
+                $"one intermediate and a budget of {budget} allow {2 + budget}.");
+            Assert.Contains(Fixture.RenderInstall.Address, Allocator.LiveAddresses);
+        }
+
+        [Fact]
+        public void InstalledAddress_InLiveRentalSet()
+        {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
+
+            using var scope = BindPlatform();
+            using var decoder = BitmapDecoder.Create(BudgetFixture.OpenRead(), Preserved);
             using var frame = decoder.ReadNextFrame()!;
             using var bitmap = frame.ToBitmap();
 
@@ -127,7 +151,7 @@ namespace Avalonia.Imaging.TestKit.Contract
             Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Decode: true }, NoPngDecode);
 
             using var scope = BindPlatform();
-            using var decoder = BitmapDecoder.Create(BudgetFixture.OpenRead());
+            using var decoder = BitmapDecoder.Create(BudgetFixture.OpenRead(), Preserved);
             using var frame = decoder.ReadNextFrame()!;
 
             var buffer = frame.ToPixelBuffer();

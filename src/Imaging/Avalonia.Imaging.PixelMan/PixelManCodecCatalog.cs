@@ -40,8 +40,10 @@ namespace Avalonia.Imaging.PixelMan
     /// </summary>
     internal static class PixelManCodecCatalog
     {
+        // PixelMan's WPF compatibility modes decode every format to WIC's formats.
         private const BitmapCodecCapabilities Common = BitmapCodecCapabilities.Decode |
-            BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.PreservesStoredFormat;
+            BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.PreservesStoredFormat |
+            BitmapCodecCapabilities.WicFormatProfile;
 
         // JPEG and PNG decode reduced towards a target size.
         private const BitmapCodecCapabilities Scaling = BitmapCodecCapabilities.FusedDecode;
@@ -100,10 +102,12 @@ namespace Avalonia.Imaging.PixelMan
                 // Decode only. Every ICO entry is a frame, decoded to Bgra32; WebP animation
                 // frames come composited onto the full canvas, with their durations.
                 new PixelManCodecInfo("ICO", PmCodecKind.Ico, BitmapContainerFormats.Ico,
-                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame,
+                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame |
+                    BitmapCodecCapabilities.WicFormatProfile,
                     new[] { "image/x-icon", "image/vnd.microsoft.icon" }, new[] { "ico" }),
                 new PixelManCodecInfo("WebP", PmCodecKind.Webp, BitmapContainerFormats.Webp,
-                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame | BitmapCodecCapabilities.Animation,
+                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame | BitmapCodecCapabilities.Animation |
+                    BitmapCodecCapabilities.WicFormatProfile,
                     new[] { "image/webp" }, new[] { "webp" }),
             };
 

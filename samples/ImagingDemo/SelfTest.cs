@@ -117,17 +117,17 @@ namespace ImagingDemo
 
                     encoded.Position = 0;
 
-                    // Re-decode with no target format: a JPEG re-decodes to Rgb24 on
+                    // Re-decode preserving the stored format: a JPEG re-decodes to Rgb24 on
                     // ImageSharp, and realizing the bitmap must transcode it rather than
                     // require the caller to pick a render-compatible format.
-                    using var back = Bitmap.Decode(encoded);
+                    using var back = Bitmap.Decode(encoded, new BitmapDecodeOptions { PreservePixelFormat = true });
 
                     // Rotate 90 swaps the 200x120 source to 120x200.
                     return back.PixelSize == new PixelSize(120, 200);
                 });
             }
 
-            Check("Bitmap.Decode with no options realizes a native-format frame", () =>
+            Check("Bitmap.Decode preserving the stored format realizes a native-format frame", () =>
             {
                 // A JPEG is alpha-less, so ImageSharp decodes it to Rgb24 - a format the
                 // render backend has no color type for. Realizing it without a target
@@ -135,7 +135,8 @@ namespace ImagingDemo
                 using var source = Decode(png, PixelFormats.Bgra8888, AlphaFormat.Premul);
                 var jpeg = SaveToBytes(source, new JpegBitmapEncoder { Quality = 90 });
 
-                using var realized = Decode(jpeg);
+                using var realized = Bitmap.Decode(new MemoryStream(jpeg),
+                    new BitmapDecodeOptions { PreservePixelFormat = true });
                 return realized.PixelSize == new PixelSize(200, 120);
             });
 

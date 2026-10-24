@@ -166,7 +166,7 @@ namespace Avalonia.Imaging.PixelMan
             source.Position = origin;
 
             PmFrameDecoder decoder;
-            var decodeOptions = new PmDecodeOptions(PmCompatibilityMode.Normal) { MaxPixels = (ulong)Math.Max(0, maxPixels) };
+            var decodeOptions = new PmDecodeOptions(GetDecodeMode(options)) { MaxPixels = (ulong)Math.Max(0, maxPixels) };
             var frames = new PixelManFrameAllocator(Allocator);
 
             decodeOptions.FrameAllocator = frames;
@@ -194,6 +194,16 @@ namespace Avalonia.Imaging.PixelMan
 
             return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, frames, reducedFrom);
         }
+
+        /// <summary>
+        /// The PixelMan mode a decode runs in: the WIC profile maps to PixelMan's WPF modes,
+        /// preserving to <see cref="PmCompatibilityMode.WpfPreservePixelFormat"/> and converting to
+        /// <see cref="PmCompatibilityMode.Wpf"/>; everything else decodes to the codec's own layout.
+        /// </summary>
+        internal static PmCompatibilityMode GetDecodeMode(BitmapDecodeOptions? options) =>
+            options?.FormatProfile != BitmapFormatProfile.Wic ? PmCompatibilityMode.Normal
+            : options.PreservePixelFormat ? PmCompatibilityMode.WpfPreservePixelFormat
+            : PmCompatibilityMode.Wpf;
 
         private static bool TryIdentifyCore(Stream stream, long origin, out BitmapImageInfo info)
         {

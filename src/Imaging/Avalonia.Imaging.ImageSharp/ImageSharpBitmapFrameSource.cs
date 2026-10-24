@@ -54,7 +54,7 @@ namespace Avalonia.Imaging.ImageSharp
 
             PixelSize = ResolveTargetSize(options?.TargetSize, _region.Size);
             PixelFormat = options?.TargetFormat ?? _decodeFormat;
-            AlphaFormat = options?.TargetAlphaFormat ?? _decodeAlpha;
+            AlphaFormat = options?.ResolveTargetAlpha(_decodeFormat, _decodeAlpha) ?? _decodeAlpha;
             Dpi = ImageSharpImagingBackend.TryGetDpi(image.Metadata) ?? new Vector(96, 96);
         }
 

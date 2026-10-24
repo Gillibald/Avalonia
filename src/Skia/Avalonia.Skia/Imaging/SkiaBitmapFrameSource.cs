@@ -46,7 +46,7 @@ namespace Avalonia.Skia.Imaging
 
             PixelSize = ResolveTargetSize(options?.TargetSize, _region.Size);
             PixelFormat = options?.TargetFormat ?? PixelFormats.Bgra8888;
-            AlphaFormat = options?.TargetAlphaFormat ?? _decodeAlpha;
+            AlphaFormat = options?.ResolveTargetAlpha(PixelFormats.Bgra8888, _decodeAlpha) ?? _decodeAlpha;
         }
 
         public PixelSize PixelSize { get; }

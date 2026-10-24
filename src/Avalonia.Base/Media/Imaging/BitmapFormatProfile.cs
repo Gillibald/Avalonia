@@ -17,8 +17,11 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// The formats WIC reports, as WPF's <c>BitmapDecoder</c> does. Preserved frames
         /// take the format WIC reports with <c>BitmapCreateOptions.PreservePixelFormat</c>;
-        /// converted frames take WIC's default conversion (<see cref="PixelFormats.Bgr32"/>
-        /// or premultiplied <see cref="PixelFormats.Bgra8888"/>, with indexed and gray formats kept).
+        /// converted frames take WIC's default conversion: indexed, bilevel, 2/4/8-bit gray,
+        /// <see cref="PixelFormats.Bgr32"/>, straight <see cref="PixelFormats.Bgra8888"/>,
+        /// <see cref="PixelFormats.Bgr555"/> and <see cref="PixelFormats.Bgr565"/> stay as they
+        /// are, everything else becomes <see cref="PixelFormats.Bgr32"/> or premultiplied
+        /// <see cref="PixelFormats.Bgra8888"/>.
         /// Only codecs that declare <see cref="Avalonia.Platform.BitmapCodecCapabilities.WicFormatProfile"/>
         /// support it.
         /// </summary>

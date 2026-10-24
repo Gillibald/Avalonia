@@ -205,12 +205,13 @@ namespace Avalonia.Imaging.TestKit.Contract
             Assert.Equal(PixelFormats.Bgr32, DecodeFormat(s_gray16, options));
             Assert.Equal(PixelFormats.Indexed4, DecodeFormat(s_indexed4, options));
 
+            // WIC keeps straight Bgra32 for 8-bit RGBA.
             using var scope = BindPlatform();
             using var decoder = BitmapDecoder.Create(new MemoryStream(s_rgba32), options);
             using var frame = decoder.ReadNextFrame()!;
 
             Assert.Equal(PixelFormats.Bgra8888, frame.Format);
-            Assert.Equal(AlphaFormat.Premul, frame.AlphaFormat);
+            Assert.Equal(AlphaFormat.Unpremul, frame.AlphaFormat);
         }
 
         private PixelFormat DecodeFormat(byte[] png, BitmapDecodeOptions options)

@@ -92,6 +92,24 @@ namespace Avalonia.Media.Imaging
         public bool MaterializeSource { get; set; }
 
         /// <summary>
+        /// Set when <see cref="TargetAlphaFormat"/> is the render backend's default rather
+        /// than the caller's choice: an opaque source then keeps <see cref="AlphaFormat.Opaque"/>.
+        /// Opaque pixels are the same bytes premultiplied or not, so this installs as is and
+        /// saves the decode a premultiplication pass that would change nothing.
+        /// </summary>
+        internal bool OpaqueSatisfiesTargetAlpha { get; set; }
+
+        /// <summary>
+        /// The alpha format a frame decoded from <paramref name="sourceFormat"/> with
+        /// <paramref name="sourceAlpha"/> produces, or null to keep the backend's own. An
+        /// indexed source counts as not opaque, since its palette may carry alpha.
+        /// </summary>
+        internal AlphaFormat? ResolveTargetAlpha(PixelFormat sourceFormat, AlphaFormat sourceAlpha) =>
+            OpaqueSatisfiesTargetAlpha && sourceAlpha == AlphaFormat.Opaque && !sourceFormat.IsIndexed
+                ? AlphaFormat.Opaque
+                : TargetAlphaFormat;
+
+        /// <summary>
         /// Gets the effective decompression-bomb guard for these options.
         /// </summary>
         internal long EffectiveMaxPixels => MaxPixels ?? ImagingOptions.Effective.DefaultMaxPixels;

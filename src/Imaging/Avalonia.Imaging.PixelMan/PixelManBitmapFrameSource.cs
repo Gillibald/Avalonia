@@ -61,7 +61,7 @@ namespace Avalonia.Imaging.PixelMan
             // An indexed frame keeps its indices only when nothing resamples or reorders it;
             // any plan works on colours, so the pipeline expands the palette first.
             PixelFormat = options?.TargetFormat ?? (_decodeFormat.IsIndexed && !identity ? PixelFormats.Bgra8888 : _decodeFormat);
-            AlphaFormat = options?.TargetAlphaFormat ??
+            AlphaFormat = options?.ResolveTargetAlpha(_decodeFormat, _decodeAlpha) ??
                 (PixelFormat.IsIndexed || PixelFormat == _decodeFormat ? _decodeAlpha
                     : PixelFormat.HasAlpha ? AlphaFormat.Unpremul : AlphaFormat.Opaque);
 
@@ -103,7 +103,7 @@ namespace Avalonia.Imaging.PixelMan
                     try
                     {
                         thumbnail = _frame.DecodeThumbnail(
-                            new PmDecodeOptions(PmCompatibilityMode.Normal) { FrameAllocator = _allocator },
+                            new PmDecodeOptions(PixelManImagingBackend.GetDecodeMode(_options)) { FrameAllocator = _allocator },
                             _options?.CancellationToken ?? default);
                     }
                     catch (Exception exception) when (PixelManFormats.Translate(exception) is var translated && translated != exception)
