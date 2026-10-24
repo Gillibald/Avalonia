@@ -245,7 +245,7 @@ namespace Avalonia.Imaging.PixelMan
         // the frame source then adopts, instead of the pipeline converting into a second
         // frame-sized buffer. Other formats, and plans that crop, scale or reorient, keep
         // PixelMan's own layout and convert in the pipeline. GIF frames stay indexed for
-        // animation compositing.
+        // animation compositing; PixelMan composites WebP animations itself.
         private static bool TryGetDecodeFormat(PixelManCodecInfo codec, ushort? storedOrientation,
             BitmapDecodeOptions? options, out PmPixelFormat format)
         {
@@ -254,7 +254,8 @@ namespace Avalonia.Imaging.PixelMan
             if (options is not { TargetFormat: { } target, TargetAlphaFormat: { } alpha, SourceRegion: null, TargetSize: null } ||
                 (options.RespectExifOrientation && storedOrientation is { } value and > 1 and <= 8) ||
                 (codec.Kind != PmCodecKind.Png && codec.Kind != PmCodecKind.Jpeg &&
-                 codec.Kind != PmCodecKind.Bmp && codec.Kind != PmCodecKind.Tiff) ||
+                 codec.Kind != PmCodecKind.Bmp && codec.Kind != PmCodecKind.Tiff &&
+                 codec.Kind != PmCodecKind.Webp) ||
                 PixelManFormats.ToPixelMan(target, alpha) is not { } requested ||
                 (requested != PmPixelFormat.Pbgra32 && requested != PmPixelFormat.Bgra32 &&
                  requested != PmPixelFormat.Prgba32 && requested != PmPixelFormat.Rgba32))
