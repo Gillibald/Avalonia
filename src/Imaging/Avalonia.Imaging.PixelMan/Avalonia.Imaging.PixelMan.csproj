@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    PixelMan ships on the internal Avalonia feed only (see NuGet.config next to this file),
+    so this project is not part of the solution yet: it restores only where that feed's
+    credentials are available.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>$(AvsCurrentTargetFramework);$(AvsLegacyTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Avalonia.Imaging.PixelMan</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.PixelMan" />
+  </ItemGroup>
+
+  <Import Project="..\..\..\build\Base.props" />
+  <Import Project="..\..\..\build\NullableEnable.props" />
+  <Import Project="..\..\..\build\TrimmingEnable.props" />
+  <Import Project="..\..\..\build\DevAnalyzers.props" />
+
+  <ItemGroup Label="InternalsVisibleTo">
+    <InternalsVisibleTo Include="Avalonia.Imaging.PixelMan.Tests, PublicKey=$(AvaloniaPublicKey)" />
+  </ItemGroup>
+</Project>

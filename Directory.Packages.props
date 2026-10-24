@@ -6,6 +6,8 @@
     <PackageVersion Include="Appium.WebDriver" Version="5.2.0" />
     <PackageVersion Include="Avalonia.Angle.Windows.Natives" Version="2.1.27548.20260419" />
     <PackageVersion Include="Avalonia.BuildServices" Version="11.3.2" />
+    <!-- Internal feed only; restored by the PixelMan imaging backend through its own NuGet.config. Build 27 is PixelMan 4be9652e2b. -->
+    <PackageVersion Include="Avalonia.PixelMan" Version="0.9.0-cibuild0000027-alpha" />
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.6" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.0" />

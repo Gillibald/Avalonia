@@ -57,7 +57,9 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public bool TryGetMetadata([NotNullWhen(true)] out BitmapMetadata? metadata)
         {
-            if (_source is IMetadataStoreSource source)
+            // A backend may expose the capability on every frame; a frame without any
+            // values reports no metadata, as one without the capability does.
+            if (_source is IMetadataStoreSource source && HasValues(source.Metadata))
             {
                 metadata = new BitmapMetadata(source.Metadata, _containerFormat);
                 return true;
@@ -73,7 +75,7 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public bool TryGetColorProfile(out ReadOnlyMemory<byte> profile)
         {
-            if (_source is IColorProfileSource source)
+            if (_source is IColorProfileSource { IccProfile.IsEmpty: false } source)
             {
                 profile = source.IccProfile;
                 return true;
@@ -81,6 +83,13 @@ namespace Avalonia.Media.Imaging
 
             profile = default;
             return false;
+        }
+
+        private static bool HasValues(IBitmapMetadataStore store)
+        {
+            using var paths = store.EnumeratePaths().GetEnumerator();
+
+            return paths.MoveNext();
         }
 
         /// <summary>
