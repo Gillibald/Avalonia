@@ -13,7 +13,8 @@ namespace Avalonia.Imaging.PixelMan
     /// already the plan's output is installed as it is. EXIF orientation is applied by the
     /// pipeline: PixelMan never rotates.
     /// </summary>
-    internal class PixelManBitmapFrameSource : IBitmapFrameSource, IColorProfileSource, IMetadataStoreSource
+    internal class PixelManBitmapFrameSource : IBitmapFrameSource, IColorProfileSource, IMetadataStoreSource,
+        ISupportsFusedDecode
     {
         private readonly PmBitmapFrame _frame;
         private readonly BitmapDecodeOptions? _options;
@@ -25,13 +26,15 @@ namespace Avalonia.Imaging.PixelMan
         private readonly bool _hasRegion;
         private readonly bool _mapped;
         private readonly PixelFormat _decodeFormat;
+        private readonly bool _reduced;
         private readonly AlphaFormat _decodeAlpha;
         private SharedBitmapMemory? _pixels;
         private int _rowBytes;
         private bool _disposed;
 
         protected PixelManBitmapFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, PixelOrientation orientation)
+            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, PixelOrientation orientation,
+            PixelSize? reducedFrom = null)
         {
             _frame = frame;
             _options = options;
@@ -46,8 +49,12 @@ namespace Avalonia.Imaging.PixelMan
             var orientedSize = FusedPixelPipeline.GetOrientedSize(_rawSize, orientation);
 
             _region = ClampRegion(options?.SourceRegion, orientedSize, out _hasRegion);
+            _reduced = reducedFrom is { } full && full != _rawSize;
 
-            PixelSize = ResolveTargetSize(options?.TargetSize, _region.Size);
+            // A frame PixelMan reduced at decode resolves the target against the full size, so
+            // the output matches a full-size decode, including the aspect a zero axis keeps.
+            PixelSize = ResolveTargetSize(options?.TargetSize,
+                _reduced ? FusedPixelPipeline.GetOrientedSize(reducedFrom!.Value, orientation) : _region.Size);
 
             var identity = !_hasRegion && orientation == PixelOrientation.Normal && PixelSize == _rawSize;
 
@@ -77,12 +84,18 @@ namespace Avalonia.Imaging.PixelMan
 
         protected PmBitmapFrame Frame => _frame;
 
+        public FusedDecodeParts FusedParts => _reduced ? FusedDecodeParts.Scale : FusedDecodeParts.None;
+
+        // PixelMan has already decoded the frame; its oriented size is the only one on offer.
+        public PixelSize GetNearestDecodeSize(PixelSize target) =>
+            FusedPixelPipeline.GetOrientedSize(_rawSize, _orientation);
+
         /// <summary>
         /// Creates the frame source with the capabilities the frame's output has: a palette
         /// for indexed output, animation data for GIF frames.
         /// </summary>
         public static PixelManBitmapFrameSource Create(PmBitmapFrame frame, PixelManCodecInfo codec,
-            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator, PixelSize? reducedFrom = null)
         {
             var metadata = frame.GetMetadata();
             var orientation = PixelOrientation.Normal;
@@ -92,7 +105,8 @@ namespace Avalonia.Imaging.PixelMan
 
             var store = new PixelManMetadataStore(metadata, codec.ContainerFormat, frame.IccProfile, isReadOnly: true);
 
-            PixelManBitmapFrameSource source = new PixelManBitmapFrameSource(frame, store, options, allocator, orientation);
+            PixelManBitmapFrameSource source = new PixelManBitmapFrameSource(frame, store, options, allocator, orientation,
+                reducedFrom);
 
             if (!source.PixelFormat.IsIndexed || frame.GetPalette() is not { } palette)
                 return codec.Kind == PmCodecKind.Gif ? new PixelManGifColorFrameSource(frame, store, options, allocator) : source;
@@ -270,7 +284,7 @@ namespace Avalonia.Imaging.PixelMan
             return clamped;
         }
 
-        private static PixelSize ResolveTargetSize(PixelSize? requested, PixelSize source)
+        internal static PixelSize ResolveTargetSize(PixelSize? requested, PixelSize source)
         {
             if (requested is not { } target || (target.Width <= 0 && target.Height <= 0))
                 return source;

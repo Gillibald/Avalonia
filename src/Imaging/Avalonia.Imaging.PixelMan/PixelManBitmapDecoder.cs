@@ -17,13 +17,16 @@ namespace Avalonia.Imaging.PixelMan
         private readonly Stream _stream;
         private readonly BitmapDecodeOptions? _options;
         private readonly IBitmapMemoryAllocator _allocator;
+        private readonly PixelSize? _reducedFrom;
         private int _cursor;
         private int _decoderPosition;
         private bool _disposed;
 
         protected PixelManBitmapDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
-            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator,
+            PixelSize? reducedFrom = null)
         {
+            _reducedFrom = reducedFrom;
             _decoder = decoder;
             _stream = stream;
             _options = options;
@@ -48,17 +51,19 @@ namespace Avalonia.Imaging.PixelMan
 
         /// <summary>
         /// Creates the decoder with the capabilities the codec has: random frame access when
-        /// PixelMan knows the frame count, the loop count for GIF.
+        /// PixelMan knows the frame count, the loop count for GIF. <paramref name="reducedFrom"/> is
+        /// the full stored size when PixelMan was asked to decode reduced.
         /// </summary>
         public static PixelManBitmapDecoder Create(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
-            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
+            BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator,
+            PixelSize? reducedFrom = null)
         {
             if (codec.Kind == PmCodecKind.Gif)
                 return new PixelManGifDecoder(decoder, stream, codec, info, options, allocator);
 
             return decoder.FrameCount is not null && (codec.Capabilities & BitmapCodecCapabilities.MultiFrame) != 0
                 ? new PixelManSeekableDecoder(decoder, stream, codec, info, options, allocator)
-                : new PixelManBitmapDecoder(decoder, stream, codec, info, options, allocator);
+                : new PixelManBitmapDecoder(decoder, stream, codec, info, options, allocator, reducedFrom);
         }
 
         public IBitmapFrameSource? ReadNextFrame()
@@ -130,7 +135,7 @@ namespace Avalonia.Imaging.PixelMan
 
             try
             {
-                return PixelManBitmapFrameSource.Create(frame, Codec, _options, _allocator);
+                return PixelManBitmapFrameSource.Create(frame, Codec, _options, _allocator, _reducedFrom);
             }
             catch
             {

@@ -152,7 +152,7 @@ namespace Avalonia.Imaging.PixelMan
             }
 
             var maxPixels = options?.EffectiveMaxPixels ?? ImagingOptions.Effective.DefaultMaxPixels;
-            var hasHeader = TryDescribe(source, origin, codec, out var info);
+            var hasHeader = TryDescribe(source, origin, codec, out var info, out var storedOrientation);
 
             // Reject an oversized image on its header, before PixelMan allocates the frame.
             if (hasHeader && (long)info.PixelSize.Width * info.PixelSize.Height > maxPixels)
@@ -175,6 +175,16 @@ namespace Avalonia.Imaging.PixelMan
             allocator = frames;
 #endif
 
+            PixelSize? reducedFrom = null;
+
+#if PIXELMAN_DECODE_SCALE
+            if (hasHeader && TryGetDecodeTarget(codec, info.PixelSize, storedOrientation, options, out var target))
+            {
+                decodeOptions.TargetSize = target;
+                reducedFrom = info.PixelSize;
+            }
+#endif
+
             try
             {
                 decoder = PmBitmapFrame.OpenFramesSeekable(source, codec.Kind, decodeOptions,
@@ -188,14 +198,14 @@ namespace Avalonia.Imaging.PixelMan
             if (!hasHeader)
                 info = new BitmapImageInfo(codec.FormatName, default, null, null, decoder.FrameCount is { } count ? (int)count : null, null);
 
-            return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, allocator);
+            return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, allocator, reducedFrom);
         }
 
         private static bool TryIdentifyCore(Stream stream, long origin, out BitmapImageInfo info)
         {
             info = default;
 
-            return TryDetect(stream, origin, out var codec) && TryDescribe(stream, origin, codec, out info);
+            return TryDetect(stream, origin, out var codec) && TryDescribe(stream, origin, codec, out info, out _);
         }
 
         private static bool TryDetect(Stream stream, long origin, out PixelManCodecInfo codec)
@@ -215,12 +225,46 @@ namespace Avalonia.Imaging.PixelMan
             return true;
         }
 
+#if PIXELMAN_DECODE_SCALE
+        // Asks PixelMan to decode JPEG and PNG reduced towards the plan's target, so the
+        // pipeline resamples from a frame near that size instead of the full image. The
+        // target is in oriented space and PixelMan's in stored axes; a source region is in
+        // full-size coordinates, so such a plan decodes at full size.
+        private static bool TryGetDecodeTarget(PixelManCodecInfo codec, PixelSize fullSize, ushort? storedOrientation,
+            BitmapDecodeOptions? options, out (uint Width, uint Height) target)
+        {
+            target = default;
+
+            if (options?.TargetSize is not { } requested || options.SourceRegion is not null ||
+                (codec.Kind != PmCodecKind.Jpeg && codec.Kind != PmCodecKind.Png))
+            {
+                return false;
+            }
+
+            var orientation = options.RespectExifOrientation && storedOrientation is { } value and >= 1 and <= 8
+                ? (PixelOrientation)value
+                : PixelOrientation.Normal;
+            var oriented = FusedPixelPipeline.GetOrientedSize(fullSize, orientation);
+            var size = PixelManBitmapFrameSource.ResolveTargetSize(requested, oriented);
+
+            if (size.Width >= oriented.Width && size.Height >= oriented.Height)
+                return false;
+
+            target = oriented.Width == fullSize.Width && oriented.Height == fullSize.Height
+                ? ((uint)size.Width, (uint)size.Height)
+                : ((uint)size.Height, (uint)size.Width);
+            return true;
+        }
+#endif
+
 #if PIXELMAN_HEADER_FACTS
         // PixelMan's inspection reads the size, frame count and resolution from the headers
         // along with the stored layout, which maps to the format a Normal-mode decode produces.
-        private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info)
+        private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info,
+            out ushort? orientation)
         {
             info = default;
+            orientation = null;
 
             PmImageInspection inspection;
 
@@ -239,6 +283,10 @@ namespace Avalonia.Imaging.PixelMan
 
             var (format, hasAlpha) = DescribeLayout(codec, inspection.StoredLayout);
 
+#if PIXELMAN_DECODE_SCALE
+            orientation = inspection.Orientation;
+#endif
+
             info = new BitmapImageInfo(codec.FormatName, new PixelSize((int)inspection.Width, (int)inspection.Height),
                 inspection.Dpi is { } dpi ? new Vector(dpi.X, dpi.Y) : null, format,
                 inspection.FrameCount is { } count ? (int)count : null, hasAlpha);
@@ -247,9 +295,11 @@ namespace Avalonia.Imaging.PixelMan
 #else
         // Size, resolution and frame count come from the headers; the stored pixel format
         // from PixelMan's layout inspection, mapped the way a Normal-mode decode maps it.
-        private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info)
+        private static bool TryDescribe(Stream stream, long origin, PixelManCodecInfo codec, out BitmapImageInfo info,
+            out ushort? orientation)
         {
             info = default;
+            orientation = null;
 
             if (!PixelManHeaderReader.TryRead(codec.Kind, PixelManHeaderReader.FromStream(stream, origin), out var header))
                 return false;

@@ -29,6 +29,9 @@ namespace Avalonia.Imaging.PixelMan.Tests
                     Palette = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
+#if PIXELMAN_DECODE_SCALE
+                    FusedParts = FusedDecodeParts.Scale,
+#endif
                 },
                 new FormatManifest("JPEG")
                 {
@@ -37,6 +40,9 @@ namespace Avalonia.Imaging.PixelMan.Tests
                     Metadata = true,
                     CopyBudget = 0,
                     PixelTolerance = 3,
+#if PIXELMAN_DECODE_SCALE
+                    FusedParts = FusedDecodeParts.Scale,
+#endif
                 },
                 new FormatManifest("GIF")
                 {

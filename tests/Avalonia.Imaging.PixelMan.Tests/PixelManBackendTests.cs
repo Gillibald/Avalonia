@@ -218,6 +218,65 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 #endif
 
+#if PIXELMAN_DECODE_SCALE
+        [Theory]
+        [InlineData(1, 8, 8, 6, 8)]
+        [InlineData(6, 6, 6, 8, 6)]
+        public void A_Jpeg_Should_Decode_Reduced_Towards_The_Oriented_Target(int orientation, int targetWidth,
+            int expectedWidth, int expectedHeight, int nearestWidth)
+        {
+            using var stream = new MemoryStream();
+
+            using (var source = Avalonia.PixelMan.PmBitmapFrame.CreateFromCopy(Avalonia.PixelMan.PmPixelFormat.Bgr24,
+                       64, 48, 64 * 3, Enumerable.Repeat((byte)0x80, 64 * 48 * 3).ToArray()))
+            using (var metadata = Avalonia.PixelMan.PmMetadata.Create())
+            {
+                metadata.Orientation = (ushort)orientation;
+                source.SetMetadata(metadata);
+                source.Encode(stream, Avalonia.PixelMan.PmCodecKind.Jpeg, cancellationToken: TestContext.Current.CancellationToken);
+            }
+
+            stream.Position = 0;
+
+            var backend = new PixelManImagingBackend(new CountingAllocator());
+
+            using var decoder = backend.CreateDecoder(stream, ownsStream: false,
+                new BitmapDecodeOptions { TargetSize = new PixelSize(targetWidth, 0) });
+            using var frame = decoder.ReadNextFrame()!;
+
+            // The output matches a full-size decode to the same target; PixelMan decoded at 1/8.
+            Assert.Equal(new PixelSize(expectedWidth, expectedHeight), frame.PixelSize);
+
+            var fused = Assert.IsAssignableFrom<ISupportsFusedDecode>(frame);
+
+            Assert.Equal(FusedDecodeParts.Scale, fused.FusedParts);
+            Assert.Equal(nearestWidth, fused.GetNearestDecodeSize(frame.PixelSize).Width);
+
+            using var pixels = frame.Lock();
+
+            Assert.Equal(new PixelSize(expectedWidth, expectedHeight), pixels.Size);
+        }
+
+        [Fact]
+        public void A_Source_Region_Should_Decode_At_Full_Size()
+        {
+            using var stream = new MemoryStream();
+
+            using (var source = Avalonia.PixelMan.PmBitmapFrame.CreateFromCopy(Avalonia.PixelMan.PmPixelFormat.Bgr24,
+                       64, 48, 64 * 3, new byte[64 * 48 * 3]))
+                source.Encode(stream, Avalonia.PixelMan.PmCodecKind.Jpeg, cancellationToken: TestContext.Current.CancellationToken);
+
+            stream.Position = 0;
+
+            using var decoder = new PixelManImagingBackend(new CountingAllocator()).CreateDecoder(stream, ownsStream: false,
+                new BitmapDecodeOptions { TargetSize = new PixelSize(8, 6), SourceRegion = new PixelRect(0, 0, 32, 24) });
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(new PixelSize(8, 6), frame.PixelSize);
+            Assert.Equal(FusedDecodeParts.None, Assert.IsAssignableFrom<ISupportsFusedDecode>(frame).FusedParts);
+        }
+#endif
+
         private static BitmapMetadata RoundTrip(BitmapEncoder encoder, Guid containerFormat)
         {
             encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(4, 4, Colors.Gray) });

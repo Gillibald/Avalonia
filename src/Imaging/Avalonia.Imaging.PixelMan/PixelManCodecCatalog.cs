@@ -43,6 +43,13 @@ namespace Avalonia.Imaging.PixelMan
         private const BitmapCodecCapabilities Common = BitmapCodecCapabilities.Decode |
             BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.PreservesStoredFormat;
 
+        // JPEG and PNG decode reduced towards a target size.
+#if PIXELMAN_DECODE_SCALE
+        private const BitmapCodecCapabilities Scaling = BitmapCodecCapabilities.FusedDecode;
+#else
+        private const BitmapCodecCapabilities Scaling = BitmapCodecCapabilities.None;
+#endif
+
         private static readonly IReadOnlyList<PixelManCodecInfo> s_all = Create();
 
         public static IReadOnlyList<PixelManCodecInfo> All => s_all;
@@ -75,10 +82,10 @@ namespace Avalonia.Imaging.PixelMan
             {
                 new PixelManCodecInfo("PNG", PmCodecKind.Png, BitmapContainerFormats.Png,
                     Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile |
-                    BitmapCodecCapabilities.HighDepth | BitmapCodecCapabilities.Palette,
+                    BitmapCodecCapabilities.HighDepth | BitmapCodecCapabilities.Palette | Scaling,
                     new[] { "image/png" }, new[] { "png" }),
                 new PixelManCodecInfo("JPEG", PmCodecKind.Jpeg, BitmapContainerFormats.Jpeg,
-                    Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile,
+                    Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile | Scaling,
                     new[] { "image/jpeg" }, new[] { "jpg", "jpeg" }),
                 new PixelManCodecInfo("TIFF", PmCodecKind.Tiff, BitmapContainerFormats.Tiff,
                     Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile |

@@ -14,9 +14,11 @@
     have yet; each symbol below switches the backend to one of them.
     PIXELMAN_HEADER_FACTS: PmImageInspection reports size, frame count and resolution.
     PIXELMAN_FRAME_ALLOCATOR: PmDecodeOptions.FrameAllocator decodes frames into caller memory.
+    PIXELMAN_DECODE_SCALE: PmDecodeOptions.TargetSize reduces JPEG and PNG at decode, and
+    PmImageInspection reports the EXIF orientation.
   -->
   <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
-    <DefineConstants>$(DefineConstants);PIXELMAN_HEADER_FACTS;PIXELMAN_FRAME_ALLOCATOR</DefineConstants>
+    <DefineConstants>$(DefineConstants);PIXELMAN_HEADER_FACTS;PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Avalonia.Base\Avalonia.Base.csproj" />
