@@ -113,7 +113,12 @@ internal static unsafe class PixelFormatTranscoder
     // with the same bytes as reading and writing through it. Alpha conversion runs in place
     // on the destination; when the destination drops alpha the colours would need it first,
     // so that case takes the staging path.
-    private static bool TryTranscodeDirect(IntPtr source, PixelSize size, int sourceStride, PixelFormat sourceFormat,
+    /// <summary>
+    /// Converts between the 8-bit RGB layouts with the direct row kernels, without the
+    /// canonical row. Returns false, having written nothing, when either format is not
+    /// one of those layouts.
+    /// </summary>
+    internal static bool TryTranscodeDirect(IntPtr source, PixelSize size, int sourceStride, PixelFormat sourceFormat,
         AlphaFormat sourceAlpha, IntPtr dest, int destStride, PixelFormat destFormat, AlphaFormat destAlpha)
     {
         if (!TryGetLayout(sourceFormat, out var sourceBytes, out var sourceBgr, out var sourceHasAlpha) ||

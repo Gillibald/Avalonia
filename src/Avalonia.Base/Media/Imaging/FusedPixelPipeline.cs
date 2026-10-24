@@ -389,6 +389,29 @@ internal static unsafe class FusedPixelPipeline
             return;
         }
 
+        // A conversion between 8-bit RGB layouts with nothing to reorient runs the direct
+        // kernels, as the install-time transcode does, instead of the canonical row; the
+        // rows go in bands so cancellation is still observed.
+        if (plan.Orientation == PixelOrientation.Normal && context.BytesPerPixel > 0)
+        {
+            var origin = source.Address + (nint)region.Y * source.RowBytes + (nint)region.X * context.BytesPerPixel;
+            var direct = true;
+
+            for (var y = 0; direct && y < region.Height; y += CancellationCheckRows)
+            {
+                context.Cancellation.ThrowIfCancellationRequested();
+
+                var rows = Math.Min(CancellationCheckRows, region.Height - y);
+
+                direct = PixelFormatTranscoder.TryTranscodeDirect(origin + (nint)y * source.RowBytes,
+                    new PixelSize(region.Width, rows), source.RowBytes, source.Format, context.SourceAlpha,
+                    destAddress + (nint)y * destRowBytes, destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat);
+            }
+
+            if (direct)
+                return;
+        }
+
         using var readStaging = allocator.Rent(context.StagingWidth * sizeof(Rgba8888Pixel));
 
         var staging = new Span<Rgba8888Pixel>((void*)readStaging.Address, context.StagingWidth);

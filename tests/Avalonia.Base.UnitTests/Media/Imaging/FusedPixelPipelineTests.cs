@@ -186,7 +186,10 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             { PixelFormats.Rgba8888, AlphaFormat.Unpremul, PixelFormats.Bgra8888, AlphaFormat.Unpremul },
             { PixelFormats.Bgra8888, AlphaFormat.Opaque, PixelFormats.Rgb565, AlphaFormat.Opaque },
             { PixelFormats.Rgba64, AlphaFormat.Unpremul, PixelFormats.Rgba8888, AlphaFormat.Unpremul },
-            { PixelFormats.Gray8, AlphaFormat.Opaque, PixelFormats.Bgra8888, AlphaFormat.Premul }
+            { PixelFormats.Gray8, AlphaFormat.Opaque, PixelFormats.Bgra8888, AlphaFormat.Premul },
+            // A JPEG and a straight-alpha PNG converted to the render format.
+            { PixelFormats.Rgb24, AlphaFormat.Opaque, PixelFormats.Bgra8888, AlphaFormat.Premul },
+            { PixelFormats.Rgba8888, AlphaFormat.Unpremul, PixelFormats.Bgra8888, AlphaFormat.Premul }
         };
 
         [Theory]
@@ -194,7 +197,9 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         public void Identity_Plan_Matches_Transcode(
             PixelFormat sourceFormat, AlphaFormat sourceAlpha, PixelFormat targetFormat, AlphaFormat targetAlpha)
         {
-            var size = new PixelSize(5, 4);
+            // Taller than one band of the pipeline's cancellation checks, so a conversion
+            // run in bands is compared across the band seams too.
+            var size = new PixelSize(5, 37);
 
             using var sourceMemory = new BitmapMemory(sourceFormat, sourceAlpha, size);
             using var transcoded = new BitmapMemory(targetFormat, targetAlpha, size);
