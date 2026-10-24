@@ -363,15 +363,26 @@ namespace Avalonia.Imaging.PixelMan.Tests
                 Assert.Equal(new Vector(96, 96), frame.Dpi);
             }
 
+            using (var still = BitmapDecoder.Create(File.OpenRead(Asset("w_lossy_alpha.webp"))))
+                Assert.False(still.IsAnimated(out _));
+
             using var animation = BitmapDecoder.Create(File.OpenRead(Asset("w_anim.webp")));
 
             Assert.Equal(3, animation.FrameCount);
+            Assert.True(animation.IsAnimated(out var loops));
+            Assert.Equal(3, loops);
+
+            var delays = new[] { 100, 250, 40 };
 
             for (var i = 0; i < 3; i++)
             {
                 using var frame = animation.ReadNextFrame()!;
 
                 Assert.Equal(new PixelSize(20, 14), frame.PixelSize);
+                Assert.True(frame.TryGetAnimation(out var timing));
+                // Composited frames replace the canvas whole.
+                Assert.Equal(new BitmapFrameAnimation(TimeSpan.FromMilliseconds(delays[i]),
+                    FrameDisposalMethod.DoNotDispose, default, FrameBlendMode.Source), timing);
             }
         }
 

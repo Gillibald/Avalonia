@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media.Imaging;
 using Avalonia.PixelMan;
 using Avalonia.Platform;
@@ -149,6 +150,9 @@ namespace Avalonia.Imaging.PixelMan
 
             PixelManBitmapFrameSource source = new PixelManBitmapFrameSource(frame, store, options, allocator, orientation,
                 reducedFrom);
+
+            if (codec.Kind == PmCodecKind.Webp && WebpAnimation.ReadDuration(metadata) is { } duration)
+                return new PixelManWebpFrameSource(frame, store, options, allocator, duration);
 
             if (!source.PixelFormat.IsIndexed || frame.GetPalette() is not { } palette)
                 return codec.Kind == PmCodecKind.Gif ? new PixelManGifColorFrameSource(frame, store, options, allocator) : source;
@@ -387,6 +391,59 @@ namespace Avalonia.Imaging.PixelMan
         public PixelPoint Origin => Animation.Origin;
 
         public FrameBlendMode Blend => FrameBlendMode.Over;
+    }
+
+    /// <summary>
+    /// A frame of an animated WebP. PixelMan composites it onto the full canvas, so it replaces
+    /// the previous frame whole.
+    /// </summary>
+    internal sealed class PixelManWebpFrameSource : PixelManBitmapFrameSource, IAnimatedFrame
+    {
+        public PixelManWebpFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator, TimeSpan delay)
+            : base(frame, metadata, options, allocator, PixelOrientation.Normal)
+        {
+            Delay = delay;
+        }
+
+        public TimeSpan Delay { get; }
+
+        public FrameDisposalMethod Disposal => FrameDisposalMethod.DoNotDispose;
+
+        public PixelPoint Origin => default;
+
+        public FrameBlendMode Blend => FrameBlendMode.Source;
+    }
+
+    /// <summary>
+    /// WebP animation data PixelMan reports under its own paths, since WIC has none: the loop
+    /// count in the container metadata, each frame's duration in milliseconds in its own.
+    /// </summary>
+    internal static class WebpAnimation
+    {
+        public static int? ReadLoopCount(PmFrameDecoder decoder)
+        {
+            using var container = decoder.GetContainerMetadata();
+
+            return Read(container, "/ANIM/LoopCount", static v => v.AsUInt16()) is { } loops ? (int)loops : null;
+        }
+
+        public static TimeSpan? ReadDuration(PmMetadata frame) =>
+            Read(frame, "/ANMF/Duration", static v => v.AsUInt32()) is { } ms ? TimeSpan.FromMilliseconds(ms) : null;
+
+        private static long? Read(PmMetadata metadata, string path, Func<PmMetadataValue, long> read)
+        {
+            try
+            {
+                using var value = metadata.Query(path);
+
+                return read(value);
+            }
+            catch (KeyNotFoundException)
+            {
+                return null;
+            }
+        }
     }
 
     /// <summary>

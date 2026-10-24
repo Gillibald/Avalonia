@@ -61,6 +61,9 @@ namespace Avalonia.Imaging.PixelMan
             if (codec.Kind == PmCodecKind.Gif)
                 return new PixelManGifDecoder(decoder, stream, codec, info, options, allocator);
 
+            if (codec.Kind == PmCodecKind.Webp && WebpAnimation.ReadLoopCount(decoder) is { } loops)
+                return new PixelManWebpDecoder(decoder, stream, codec, info, options, allocator, loops);
+
             return decoder.FrameCount is not null && (codec.Capabilities & BitmapCodecCapabilities.MultiFrame) != 0
                 ? new PixelManSeekableDecoder(decoder, stream, codec, info, options, allocator)
                 : new PixelManBitmapDecoder(decoder, stream, codec, info, options, allocator, reducedFrom);
@@ -190,6 +193,22 @@ namespace Avalonia.Imaging.PixelMan
         int ISeekableFrameDecoder.FrameCount => FrameCount ?? 0;
 
         public IBitmapFrameSource GetFrame(int index) => ReadFrameAt(index);
+    }
+
+    /// <summary>
+    /// An animated WebP: PixelMan composites every frame onto the full canvas and reports the
+    /// loop count from the ANIM chunk.
+    /// </summary>
+    internal sealed class PixelManWebpDecoder : PixelManSeekableDecoder, IAnimatedDecoder
+    {
+        public PixelManWebpDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
+            BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator, int loopCount)
+            : base(decoder, stream, codec, info, options, allocator)
+        {
+            LoopCount = loopCount;
+        }
+
+        public int LoopCount { get; }
     }
 
     internal sealed class PixelManGifDecoder : PixelManBitmapDecoder, IAnimatedDecoder, IPaletteDecoder

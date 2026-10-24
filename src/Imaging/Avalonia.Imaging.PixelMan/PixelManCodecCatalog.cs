@@ -98,12 +98,12 @@ namespace Avalonia.Imaging.PixelMan
                     Common | BitmapCodecCapabilities.Palette | BitmapCodecCapabilities.HighDepth,
                     new[] { "image/bmp" }, new[] { "bmp", "dib" }),
                 // Decode only. Every ICO entry is a frame, decoded to Bgra32; WebP animation
-                // frames come composited, and WebP carries no frame timing PixelMan exposes.
+                // frames come composited onto the full canvas, with their durations.
                 new PixelManCodecInfo("ICO", PmCodecKind.Ico, BitmapContainerFormats.Ico,
                     BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame,
                     new[] { "image/x-icon", "image/vnd.microsoft.icon" }, new[] { "ico" }),
                 new PixelManCodecInfo("WebP", PmCodecKind.Webp, BitmapContainerFormats.Webp,
-                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame,
+                    BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame | BitmapCodecCapabilities.Animation,
                     new[] { "image/webp" }, new[] { "webp" }),
             };
 
