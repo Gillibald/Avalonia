@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Avalonia.Platform;
 using Avalonia.Platform.Internal;
@@ -177,6 +178,7 @@ internal static unsafe class FusedPixelPipeline
                 var maxColumn = FlipMajor ? source.Size.Width - 1 - Region.Y : Region.Y + Region.Height - 1;
 
                 StagingWidth = Region.Width + (BytesPerPixel > 0 ? 0 : maxColumn + 1);
+                Tiles = BytesPerPixel > 0 ? new ColumnTiles(Region.Width) : null;
             }
             else
             {
@@ -198,6 +200,64 @@ internal static unsafe class FusedPixelPipeline
         public bool Mirror { get; }
         public int MinorStart { get; }
         public int StagingWidth { get; }
+        public ColumnTiles? Tiles { get; }
+    }
+
+    // Oriented rows that come from raw columns, decoded a tile of columns at a time: every
+    // raw row is read once per tile over contiguous memory, instead of once per oriented
+    // pixel at a stride, which touched a new cache line for every pixel.
+    private sealed class ColumnTiles
+    {
+        public const int TileRows = 16;
+
+        private readonly Rgba8888Pixel[] _rows;
+        private readonly Rgba8888Pixel[] _scratch = new Rgba8888Pixel[TileRows];
+        private readonly int _width;
+        private int _first = -1;
+        private int _count;
+
+        public ColumnTiles(int width)
+        {
+            _width = width;
+            _rows = new Rgba8888Pixel[width * TileRows];
+        }
+
+        public void Read(scoped in PipelineContext context, int rowIndex, Span<Rgba8888Pixel> row)
+        {
+            if (rowIndex < _first || rowIndex >= _first + _count)
+                Load(context, rowIndex);
+
+            _rows.AsSpan((rowIndex - _first) * _width, _width).CopyTo(row);
+        }
+
+        private void Load(scoped in PipelineContext context, int firstRow)
+        {
+            var source = context.Source;
+
+            _first = firstRow;
+            _count = Math.Min(TileRows, context.Region.Height - firstRow);
+
+            // Oriented rows firstRow.. map to raw columns that run forwards, or backwards
+            // when the major axis is flipped; either way they are contiguous in a raw row.
+            var firstMajor = context.Region.Y + firstRow;
+            var firstColumn = context.FlipMajor ? source.Size.Width - firstMajor - _count : firstMajor;
+            var pixels = _scratch.AsSpan(0, _count);
+
+            for (var i = 0; i < _width; i++)
+            {
+                var address = source.Address + (nint)(context.MinorStart + i) * source.RowBytes +
+                    (nint)firstColumn * context.BytesPerPixel;
+
+                PixelFormatTranscoder.ReadRow(address, source.Format, pixels);
+
+                for (var k = 0; k < _count; k++)
+                {
+                    var tileRow = context.FlipMajor ? _count - 1 - k : k;
+
+                    _rows[tileRow * _width + i] = pixels[k];
+                }
+            }
+        }
     }
 
     // Produces oriented-space row rowIndex of the crop window as canonical Rgba8888
@@ -237,14 +297,9 @@ internal static unsafe class FusedPixelPipeline
 
             row = staging.Slice(0, width);
 
-            if (context.BytesPerPixel > 0)
+            if (context.Tiles is { } tiles)
             {
-                for (var i = 0; i < width; i++)
-                {
-                    var address = source.Address + (nint)(context.MinorStart + i) * source.RowBytes + (nint)rawColumn * context.BytesPerPixel;
-
-                    PixelFormatTranscoder.ReadRow(address, source.Format, row.Slice(i, 1));
-                }
+                tiles.Read(context, rowIndex, row);
             }
             else
             {
@@ -263,8 +318,9 @@ internal static unsafe class FusedPixelPipeline
             }
         }
 
+        // Reversing whole pixels as integers lets the runtime vectorize the reverse.
         if (context.Mirror)
-            row.Reverse();
+            MemoryMarshal.Cast<Rgba8888Pixel, uint>(row).Reverse();
 
         return row;
     }
