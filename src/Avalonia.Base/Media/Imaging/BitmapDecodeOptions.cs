@@ -31,18 +31,34 @@ namespace Avalonia.Media.Imaging
 
         /// <summary>
         /// Gets or sets the pixel format frames should produce, e.g.
-        /// <see cref="PixelFormats.Rgb565"/> for a 565 framebuffer target. Null keeps the
-        /// image's stored layout when the codec declares
-        /// <see cref="BitmapCodecCapabilities.PreservesStoredFormat"/>, and the backend's
-        /// native decode format otherwise.
+        /// <see cref="PixelFormats.Rgb565"/> for a 565 framebuffer target. It overrides
+        /// <see cref="PreservePixelFormat"/> and <see cref="FormatProfile"/>; null lets them
+        /// choose the format.
         /// </summary>
         public PixelFormat? TargetFormat { get; set; }
 
         /// <summary>
         /// Gets or sets the alpha format frames should produce; premultiplication is fused
-        /// into the decode pass. Null keeps the backend's native alpha format.
+        /// into the decode pass. It overrides <see cref="PreservePixelFormat"/> and
+        /// <see cref="FormatProfile"/>; null lets them choose the alpha format.
         /// </summary>
         public AlphaFormat? TargetAlphaFormat { get; set; }
+
+        /// <summary>
+        /// Gets or sets whether frames keep the image's stored pixel format, named as
+        /// <see cref="FormatProfile"/> names it. False, the default, converts frames to the
+        /// profile's target format in the decode pass: for
+        /// <see cref="BitmapFormatProfile.RenderBackend"/> that is the render backend's default
+        /// pixel and alpha format, so a decoded frame installs for drawing without another
+        /// conversion. Code that processes pixels sets it to keep the codec's layout:
+        /// palette images stay indexed, 16-bit and floating-point images keep their depth.
+        /// </summary>
+        public bool PreservePixelFormat { get; set; }
+
+        /// <summary>
+        /// Gets or sets whose pixel formats apply when <see cref="TargetFormat"/> is not set.
+        /// </summary>
+        public BitmapFormatProfile FormatProfile { get; set; } = BitmapFormatProfile.RenderBackend;
 
         /// <summary>
         /// Gets or sets the interpolation used when <see cref="TargetSize"/> requires resampling.

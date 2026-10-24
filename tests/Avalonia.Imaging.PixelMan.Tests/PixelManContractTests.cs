@@ -190,4 +190,6 @@ namespace Avalonia.Imaging.PixelMan.Tests
     public class PixelManCopyBudgetContractTests : CopyBudgetContractTests<PixelManCodecFixture> { }
 
     public class PixelManPublicApiContractTests : PublicApiContractTests<PixelManCodecFixture> { }
+
+    public class PixelManFormatProfileContractTests : FormatProfileContractTests<PixelManCodecFixture> { }
 }

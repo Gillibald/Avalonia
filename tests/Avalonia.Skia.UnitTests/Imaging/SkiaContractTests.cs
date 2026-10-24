@@ -92,4 +92,6 @@ namespace Avalonia.Skia.UnitTests.Imaging
     public class SkiaCopyBudgetContractTests : CopyBudgetContractTests<SkiaCodecFixture> { }
 
     public class SkiaPublicApiContractTests : PublicApiContractTests<SkiaCodecFixture> { }
+
+    public class SkiaFormatProfileContractTests : FormatProfileContractTests<SkiaCodecFixture> { }
 }

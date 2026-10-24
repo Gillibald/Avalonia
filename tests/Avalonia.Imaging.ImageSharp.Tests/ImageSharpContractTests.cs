@@ -196,4 +196,6 @@ namespace Avalonia.Imaging.ImageSharp.Tests
     public class ImageSharpCopyBudgetContractTests : CopyBudgetContractTests<ImageSharpCodecFixture> { }
 
     public class ImageSharpPublicApiContractTests : PublicApiContractTests<ImageSharpCodecFixture> { }
+
+    public class ImageSharpFormatProfileContractTests : FormatProfileContractTests<ImageSharpCodecFixture> { }
 }

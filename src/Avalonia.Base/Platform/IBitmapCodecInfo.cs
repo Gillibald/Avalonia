@@ -63,9 +63,11 @@ namespace Avalonia.Platform
         MultiFrameEncode = 1 << 10,
 
         /// <summary>
-        /// Without a <see cref="Avalonia.Media.Imaging.BitmapDecodeOptions.TargetFormat"/>, frames decode to the image's
-        /// stored layout, reported by <see cref="Avalonia.Media.Imaging.BitmapImageInfo.PixelFormat"/>: palette images
-        /// stay indexed, 16-bit and floating-point images keep their depth, CMYK stays CMYK.
+        /// With <see cref="Avalonia.Media.Imaging.BitmapDecodeOptions.PreservePixelFormat"/> (and, at this SPI,
+        /// whenever no <see cref="Avalonia.Media.Imaging.BitmapDecodeOptions.TargetFormat"/> is passed), frames
+        /// decode to the image's stored layout, reported by
+        /// <see cref="Avalonia.Media.Imaging.BitmapImageInfo.PixelFormat"/>: palette images stay indexed, 16-bit and
+        /// floating-point images keep their depth, CMYK stays CMYK.
         /// </summary>
         PreservesStoredFormat = 1 << 11,
 
@@ -74,6 +76,13 @@ namespace Avalonia.Platform
         /// then encodes a stream that cannot seek into memory first and copies the result.
         /// </summary>
         EncodeRequiresSeekableStream = 1 << 12,
+
+        /// <summary>
+        /// The codec decodes to the formats of <see cref="Avalonia.Media.Imaging.BitmapFormatProfile.Wic"/>.
+        /// A decode that asks for that profile from a codec without this flag fails before
+        /// decoding, naming the backend.
+        /// </summary>
+        WicFormatProfile = 1 << 13,
     }
 
     /// <summary>
