@@ -47,13 +47,29 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Decodes the first frame of the stream on a background thread. The token flows
         /// into the decode where the active backend supports cooperative cancellation.
+        /// Streams that may refuse synchronous reads are read asynchronously into memory
+        /// first, as <see cref="BitmapDecoder.CreateAsync"/> reads them.
         /// </summary>
         public static Task<Bitmap> DecodeAsync(Stream stream, BitmapDecodeOptions? options = null,
             CancellationToken cancellationToken = default)
         {
+            _ = stream ?? throw new ArgumentNullException(nameof(stream));
+
             var effectiveOptions = BitmapDecoder.WithCancellation(options, cancellationToken);
 
-            return Task.Run(() => Decode(stream, effectiveOptions), cancellationToken);
+            if (AsyncStreamBuffer.SupportsSynchronousIO(stream))
+                return Task.Run(() => Decode(stream, effectiveOptions), cancellationToken);
+
+            return DecodeBufferedAsync(stream, effectiveOptions, cancellationToken);
+        }
+
+        private static async Task<Bitmap> DecodeBufferedAsync(Stream stream, BitmapDecodeOptions? options,
+            CancellationToken cancellationToken)
+        {
+            using var buffer = await BitmapDecoder.ReadIntoMemoryAsync(stream, options, ownsStream: false, cancellationToken)
+                .ConfigureAwait(false);
+
+            return await Task.Run(() => Decode(buffer, options), cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>

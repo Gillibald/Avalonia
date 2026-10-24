@@ -124,7 +124,12 @@ namespace Avalonia.Media.Imaging
         /// Creates a decoder on a background thread. The token flows into
         /// <see cref="BitmapDecodeOptions.CancellationToken"/> (of a copy of the options,
         /// so the caller's instance is never mutated) so backends that support
-        /// cooperative cancellation observe it during decoding.
+        /// cooperative cancellation observe it during decoding. A stream other than a
+        /// <see cref="MemoryStream"/>, <see cref="UnmanagedMemoryStream"/> or <see cref="FileStream"/>
+        /// is read asynchronously into memory first, so streams that refuse synchronous
+        /// reads, such as the browser's file streams, decode too; that read stops with an
+        /// <see cref="InvalidOperationException"/> once the stream exceeds what an image
+        /// within the decode limit can need.
         /// </summary>
         public static Task<BitmapDecoder> CreateAsync(Stream stream, BitmapDecodeOptions? options = null,
             bool ownsStream = false, CancellationToken cancellationToken = default)
@@ -133,7 +138,37 @@ namespace Avalonia.Media.Imaging
 
             var effectiveOptions = WithCancellation(options, cancellationToken);
 
-            return Task.Run(() => Create(stream, effectiveOptions, ownsStream), cancellationToken);
+            if (AsyncStreamBuffer.SupportsSynchronousIO(stream))
+                return Task.Run(() => Create(stream, effectiveOptions, ownsStream), cancellationToken);
+
+            return CreateBufferedAsync(stream, effectiveOptions, ownsStream, cancellationToken);
+        }
+
+        private static async Task<BitmapDecoder> CreateBufferedAsync(Stream stream, BitmapDecodeOptions? options,
+            bool ownsStream, CancellationToken cancellationToken)
+        {
+            var buffer = await ReadIntoMemoryAsync(stream, options, ownsStream, cancellationToken).ConfigureAwait(false);
+
+            return await Task.Run(() => Create(buffer, options, ownsStream: true), cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Reads the stream into memory for a synchronous decode, disposing it afterwards
+        /// when the caller handed it over.
+        /// </summary>
+        internal static async Task<MemoryStream> ReadIntoMemoryAsync(Stream stream, BitmapDecodeOptions? options,
+            bool ownsStream, CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await AsyncStreamBuffer.ReadAsync(stream,
+                    options?.EffectiveMaxPixels ?? ImagingOptions.Effective.DefaultMaxPixels, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (ownsStream)
+                    await stream.DisposeAsync().ConfigureAwait(false);
+            }
         }
 
         /// <summary>

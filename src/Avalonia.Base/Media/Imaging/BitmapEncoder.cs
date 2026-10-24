@@ -92,10 +92,34 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Encodes the frames to the stream on a background thread. The token gates the
         /// start and is observed between frames where the backend supports cooperative
-        /// cancellation.
+        /// cancellation. A stream other than a <see cref="MemoryStream"/>,
+        /// <see cref="UnmanagedMemoryStream"/> or <see cref="FileStream"/> is encoded into
+        /// memory first and then written asynchronously, so streams that refuse synchronous
+        /// writes, such as the browser's file streams, work too.
         /// </summary>
         public Task SaveAsync(Stream stream, CancellationToken cancellationToken = default)
-            => Task.Run(() => Save(stream, cancellationToken), cancellationToken);
+        {
+            _ = stream ?? throw new ArgumentNullException(nameof(stream));
+
+            if (!stream.CanWrite)
+                throw new ArgumentException("The stream is not writable.", nameof(stream));
+
+            if (AsyncStreamBuffer.SupportsSynchronousIO(stream))
+                return Task.Run(() => Save(stream, cancellationToken), cancellationToken);
+
+            return SaveBufferedAsync(stream, cancellationToken);
+        }
+
+        private async Task SaveBufferedAsync(Stream stream, CancellationToken cancellationToken)
+        {
+            using var buffer = new MemoryStream();
+
+            await Task.Run(() => Save(buffer, cancellationToken), cancellationToken).ConfigureAwait(false);
+
+            buffer.Position = 0;
+            await buffer.CopyToAsync(stream, cancellationToken).ConfigureAwait(false);
+            await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         /// <summary>
         /// Creates the encoder for a well-known format.
