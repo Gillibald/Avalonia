@@ -193,6 +193,9 @@ namespace Avalonia.Imaging.PixelMan
     }
 
     internal sealed class PixelManGifDecoder : PixelManBitmapDecoder, IAnimatedDecoder
+#if PIXELMAN_GLOBAL_PALETTE
+        , IPaletteDecoder
+#endif
     {
         public PixelManGifDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
             BitmapImageInfo info, BitmapDecodeOptions? options, IBitmapMemoryAllocator allocator)
@@ -200,8 +203,18 @@ namespace Avalonia.Imaging.PixelMan
         {
             // Without a NETSCAPE block a GIF plays once; zero means forever.
             LoopCount = ((PixelManMetadataStore)Metadata).Metadata.LoopCount ?? 1;
+
+#if PIXELMAN_GLOBAL_PALETTE
+            using var global = decoder.GetGlobalPalette();
+
+            GlobalPalette = global is null ? null : PixelManFormats.ToPalette(global);
+#endif
         }
 
         public int LoopCount { get; }
+
+#if PIXELMAN_GLOBAL_PALETTE
+        public BitmapPalette? GlobalPalette { get; }
+#endif
     }
 }

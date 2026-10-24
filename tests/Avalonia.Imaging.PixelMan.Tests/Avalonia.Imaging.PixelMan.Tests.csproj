@@ -6,7 +6,7 @@
   </PropertyGroup>
   <!-- The tests of local PixelMan changes run against local builds only; see the backend project. -->
   <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
-    <DefineConstants>$(DefineConstants);PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE</DefineConstants>
+    <DefineConstants>$(DefineConstants);PIXELMAN_FRAME_ALLOCATOR;PIXELMAN_DECODE_SCALE;PIXELMAN_GLOBAL_PALETTE</DefineConstants>
   </PropertyGroup>
   <Import Project="..\..\build\UnitTests.NetCore.targets" />
   <Import Project="..\..\build\XUnit.props" />

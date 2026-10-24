@@ -277,6 +277,38 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 #endif
 
+#if PIXELMAN_GLOBAL_PALETTE
+        [Fact]
+        public void A_Gif_Decoder_Should_Expose_The_Global_Color_Table()
+        {
+            using var scope = Bind();
+            using var stream = new MemoryStream();
+            var palette = new BitmapPalette(new[] { Colors.Black, Colors.White, Colors.Red, Colors.Blue });
+            var encoder = new GifBitmapEncoder { GlobalPalette = palette };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Red) });
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Blue) });
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream);
+
+            Assert.True(decoder.TryGetGlobalPalette(out var global));
+            Assert.Equal(palette.Colors.Take(4), global!.Colors.Take(4));
+
+            using var png = new MemoryStream();
+            var pngEncoder = new PngBitmapEncoder();
+
+            pngEncoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Red) });
+            pngEncoder.Save(png, TestContext.Current.CancellationToken);
+            png.Position = 0;
+
+            using var pngDecoder = BitmapDecoder.Create(png);
+
+            Assert.False(pngDecoder.TryGetGlobalPalette(out _));
+        }
+#endif
+
         private static BitmapMetadata RoundTrip(BitmapEncoder encoder, Guid containerFormat)
         {
             encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(4, 4, Colors.Gray) });
