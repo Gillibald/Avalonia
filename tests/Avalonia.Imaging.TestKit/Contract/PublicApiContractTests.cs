@@ -124,7 +124,9 @@ namespace Avalonia.Imaging.TestKit.Contract
             using var saved = new MemoryStream();
 
             // PNG saves route through the active backend.
+#pragma warning disable CS0618 // The options overload stays covered until it is removed.
             bitmap.Save(saved, PngBitmapEncoderOptions.Default);
+#pragma warning restore CS0618
 
             Assert.True(saved.Length > 0, "The PNG save produced no bytes.");
 

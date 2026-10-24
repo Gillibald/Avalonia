@@ -81,7 +81,7 @@ namespace Avalonia.X11
                             fbp[fbr + x] = Data[r + x + 2].ToUInt32();
                     }
                 }
-                wr.Save(outputStream, PngBitmapEncoderOptions.Default);
+                wr.SavePng(outputStream);
             }
         }
     }

@@ -54,7 +54,8 @@ static class TestRenderHelper
                 target.Measure(size);
                 target.Arrange(new Rect(size));
                 bitmap.Render(target);
-                bitmap.Save(path, PngBitmapEncoderOptions.Default);
+                using (var output = File.Create(path))
+                    bitmap.SavePng(output);
             }
 
             return Task.CompletedTask;

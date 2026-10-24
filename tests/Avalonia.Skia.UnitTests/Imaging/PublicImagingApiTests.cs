@@ -373,7 +373,9 @@ namespace Avalonia.Skia.UnitTests.Imaging
             using var original = Bitmap.Decode(source);
             using var saved = new MemoryStream();
 
+#pragma warning disable CS0618 // The options overload stays covered until it is removed.
             original.Save(saved, PngBitmapEncoderOptions.Default);
+#pragma warning restore CS0618
 
             saved.Position = 0;
 
@@ -396,7 +398,9 @@ namespace Avalonia.Skia.UnitTests.Imaging
             using var bitmap = new Bitmap(source);
             using var saved = new MemoryStream();
 
+#pragma warning disable CS0618 // The options overload stays covered until it is removed.
             bitmap.Save(saved, PngBitmapEncoderOptions.Default);
+#pragma warning restore CS0618
 
             Assert.NotEqual(0, saved.Length);
         }

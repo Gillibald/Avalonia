@@ -201,9 +201,13 @@ namespace Avalonia.Media.Imaging
         /// The quality value is interpreted from 0 - 100. PNG ignores it, matching the
         /// historical behavior of this method.
         /// </param>
-        [Obsolete($"Use the overload accepting {nameof(BitmapEncoderOptions)} instead.")]
+        [Obsolete($"Use the overload accepting a {nameof(BitmapEncoder)}, such as {nameof(PngBitmapEncoder)} or {nameof(JpegBitmapEncoder)}, instead.")]
         public void Save(string fileName, int? quality = null)
-            => Save(fileName, PngBitmapEncoderOptions.Default);
+        {
+            using var stream = File.Create(fileName);
+
+            SaveCore(stream, PngBitmapEncoderOptions.Default);
+        }
 
         /// <summary>
         /// Saves the bitmap to a file with the specified options.
@@ -213,11 +217,30 @@ namespace Avalonia.Media.Imaging
         /// The options specifying the format and settings to use.
         /// Typical usages include <see cref="PngBitmapEncoderOptions"/> and <see cref="JpegBitmapEncoderOptions"/>.
         /// </param>
+        // TODO13: remove together with BitmapEncoderOptions.
+        [Obsolete($"Use the overload accepting a {nameof(BitmapEncoder)}, such as {nameof(PngBitmapEncoder)} or {nameof(JpegBitmapEncoder)}, instead.")]
         public void Save(string fileName, BitmapEncoderOptions options)
         {
             using var stream = File.Create(fileName);
 
-            Save(stream, options);
+            SaveCore(stream, options);
+        }
+
+        /// <summary>
+        /// Encodes this bitmap to a file with a configured encoder, e.g.
+        /// <c>new JpegBitmapEncoder { Quality = 92 }</c>. The encoder is pure configuration
+        /// here, as in <see cref="Save(Stream, BitmapEncoder)"/>.
+        /// </summary>
+        /// <param name="fileName">The file to create or overwrite.</param>
+        /// <param name="encoder">The encoder that picks the format and its settings.</param>
+        public void Save(string fileName, BitmapEncoder encoder)
+        {
+            _ = fileName ?? throw new ArgumentNullException(nameof(fileName));
+            _ = encoder ?? throw new ArgumentNullException(nameof(encoder));
+
+            using var stream = File.Create(fileName);
+
+            Save(stream, encoder);
         }
 
         /// <summary>
@@ -229,14 +252,25 @@ namespace Avalonia.Media.Imaging
         /// The quality value is interpreted from 0 - 100. PNG ignores it, matching the
         /// historical behavior of this method.
         /// </param>
-        [Obsolete($"Use the overload accepting {nameof(BitmapEncoderOptions)} instead.")]
+        [Obsolete($"Use the overload accepting a {nameof(BitmapEncoder)}, such as {nameof(PngBitmapEncoder)} or {nameof(JpegBitmapEncoder)}, instead.")]
         public void Save(Stream stream, int? quality = null)
         {
-            Save(stream, PngBitmapEncoderOptions.Default);
+            SaveCore(stream, PngBitmapEncoderOptions.Default);
         }
 
         /// <inheritdoc />
-        public void Save(Stream stream, BitmapEncoderOptions options)
+        // TODO13: remove together with BitmapEncoderOptions; IBitmapImpl.Save stays for render-target readback.
+        [Obsolete($"Use the overload accepting a {nameof(BitmapEncoder)}, such as {nameof(PngBitmapEncoder)} or {nameof(JpegBitmapEncoder)}, instead.")]
+        public void Save(Stream stream, BitmapEncoderOptions options) => SaveCore(stream, options);
+
+        /// <summary>
+        /// Saves the bitmap as PNG for platform code (clipboard, icons, cursors), which must
+        /// work without an imaging backend: without one, or for bitmaps that cannot be read
+        /// back, the render backend encodes instead.
+        /// </summary>
+        internal void SavePng(Stream stream) => SaveCore(stream, PngBitmapEncoderOptions.Default);
+
+        private void SaveCore(Stream stream, BitmapEncoderOptions options)
         {
             if (options is PngBitmapEncoderOptions pngOptions && CanSaveThroughImagingBackend())
             {

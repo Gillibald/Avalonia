@@ -373,7 +373,7 @@ public unsafe class VulkanImage : IDisposable
                     using var b = new Avalonia.Media.Imaging.Bitmap(PixelFormat.Bgra8888,
                         AlphaFormat.Premul, pSurface, new PixelSize(w, h),
                         new Vector(96, 96), (int)sstride);
-                    b.Save(path, PngBitmapEncoderOptions.Default);
+                    b.Save(path, new PngBitmapEncoder());
 
                     NativeMethods.IOSurfaceUnlock(surf, 0, IntPtr.Zero);
                     return;

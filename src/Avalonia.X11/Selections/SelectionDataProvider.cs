@@ -155,7 +155,7 @@ internal abstract class SelectionDataProvider : IDisposable
                 return null;
 
             using var stream = new MemoryStream();
-            bitmap.Save(stream, PngBitmapEncoderOptions.Default);
+            bitmap.SavePng(stream);
 
             return stream.ToArray();
         }

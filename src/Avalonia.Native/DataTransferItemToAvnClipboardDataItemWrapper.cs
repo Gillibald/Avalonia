@@ -36,7 +36,7 @@ internal sealed class DataTransferItemToAvnClipboardDataItemWrapper(IDataTransfe
                 if (_item.TryGetValue(DataFormat.Bitmap) is { } bitmap)
                 {
                     var memoryStream = new MemoryStream();
-                    bitmap.Save(memoryStream, PngBitmapEncoderOptions.Default);
+                    bitmap.SavePng(memoryStream);
                     memoryStream.Seek(0, SeekOrigin.Begin);
                     return new StreamValue(memoryStream);
                 }

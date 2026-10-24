@@ -13,6 +13,55 @@ namespace Avalonia.Skia.UnitTests.Media
     public class BitmapSaveTests
     {
         [Fact]
+        public void Save_With_An_Encoder_Encodes_A_Render_Target()
+        {
+            using var app = Start();
+
+            ImagingBackend.Register(new Avalonia.Skia.Imaging.SkiaImagingBackend());
+
+            using var bitmap = new RenderTargetBitmap(new PixelSize(8, 4));
+            using var stream = new MemoryStream();
+
+            using (var context = bitmap.CreateDrawingContext())
+                context.FillRectangle(Avalonia.Media.Brushes.Red, new Rect(0, 0, 8, 4));
+
+            bitmap.Save(stream, new PngBitmapEncoder());
+
+            stream.Position = 0;
+            using var codec = SKCodec.Create(stream);
+
+            Assert.Equal(SKEncodedImageFormat.Png, codec.EncodedFormat);
+            Assert.Equal(new SKSizeI(8, 4), codec.Info.Size);
+        }
+
+        [Fact]
+        public void Save_To_A_File_With_An_Encoder_Uses_Its_Format()
+        {
+            using var app = Start();
+
+            ImagingBackend.Register(new Avalonia.Skia.Imaging.SkiaImagingBackend());
+
+            using var bitmap = CreateBitmap(SKColors.Red, 16, 16);
+
+            var path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".jpg");
+
+            try
+            {
+                bitmap.Save(path, new JpegBitmapEncoder { Quality = 80 });
+
+                using var codec = SKCodec.Create(path);
+
+                Assert.Equal(SKEncodedImageFormat.Jpeg, codec.EncodedFormat);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+#pragma warning disable CS0618 // The options overload stays covered until it is removed.
+
+        [Fact]
         public void Save_With_Null_Options_Throws()
         {
             using var app = Start();
@@ -78,6 +127,8 @@ namespace Avalonia.Skia.UnitTests.Media
 
             Assert.Equal(SKEncodedImageFormat.Jpeg, codec.EncodedFormat);
         }
+
+#pragma warning restore CS0618
 
         private static WriteableBitmap CreateBitmap(SKColor color, int width, int height)
         {

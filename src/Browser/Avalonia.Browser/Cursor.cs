@@ -80,7 +80,7 @@ namespace Avalonia.Browser
         public ICursorImpl CreateCursor(Avalonia.Media.Imaging.Bitmap cursor, PixelPoint hotSpot)
         {
             using var imageStream = new MemoryStream();
-            cursor.Save(imageStream, PngBitmapEncoderOptions.Default);
+            cursor.SavePng(imageStream);
 
             //not memory optimized because CryptoStream with ToBase64Transform is not supported in the browser.
             var base64String = Convert.ToBase64String(imageStream.ToArray());

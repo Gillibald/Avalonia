@@ -34,7 +34,7 @@ namespace Avalonia.Android
         public CursorImpl(Bitmap cursor, PixelPoint hotSpot)
         {
             using var memoryStream = new System.IO.MemoryStream();
-            cursor.Save(memoryStream, new PngBitmapEncoderOptions());
+            cursor.SavePng(memoryStream);
             using var bitmap = global::Android.Graphics.BitmapFactory.DecodeByteArray(memoryStream.ToArray(), 0, (int)memoryStream.Length);
             PointerIcon = PointerIconCompat.Create(bitmap, hotSpot.X, hotSpot.Y);
         }

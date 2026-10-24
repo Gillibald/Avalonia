@@ -445,7 +445,7 @@ internal static class OleDataObjectHelper
             if (bitmap != null)
             {
                 using var stream = new MemoryStream();
-                bitmap.Save(stream, PngBitmapEncoderOptions.Default);
+                bitmap.SavePng(stream);
 
                 return WriteBytesToHGlobal(ref hGlobal, stream.ToArray().AsSpan());
             }

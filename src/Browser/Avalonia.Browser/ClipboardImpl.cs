@@ -79,7 +79,7 @@ internal sealed class ClipboardImpl : IClipboardImpl
                     if (bitmap != null)
                     {
                         using var stream = new MemoryStream();
-                        bitmap.Save(stream, PngBitmapEncoderOptions.Default);
+                        bitmap.SavePng(stream);
 
                         writeableItem ??= CreateWriteableClipboardItem(source);
                         AddBytesToWriteableClipboardItem(writeableItem, formatString, stream.ToArray());
