@@ -45,6 +45,8 @@ var options = (args.Contains("--quick") ? BenchmarkOptions.Quick : new Benchmark
     ImageDirectory = Option("--images"),
 };
 
+Console.Error.WriteLine($"Scheduling: {ProcessScheduling.RequestFullSpeed()}");
+
 var host = OperatingSystem.IsWindows() ? "console-windows" : OperatingSystem.IsLinux() ? "console-linux" : "console";
 var report = new BenchmarkRunner(options, line => Console.Error.WriteLine(line)).Run(host);
 var json = ReportWriter.ToJson(report);
