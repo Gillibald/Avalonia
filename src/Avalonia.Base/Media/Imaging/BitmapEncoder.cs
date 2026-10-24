@@ -116,8 +116,8 @@ namespace Avalonia.Media.Imaging
 
             await Task.Run(() => Save(buffer, cancellationToken), cancellationToken).ConfigureAwait(false);
 
-            buffer.Position = 0;
-            await buffer.CopyToAsync(stream, cancellationToken).ConfigureAwait(false);
+            // The memory overload, the one a stream written to current guidance overrides.
+            await stream.WriteAsync(buffer.GetBuffer().AsMemory(0, (int)buffer.Length), cancellationToken).ConfigureAwait(false);
             await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
