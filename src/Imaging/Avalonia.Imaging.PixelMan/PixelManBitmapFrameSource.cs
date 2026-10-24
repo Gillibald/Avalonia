@@ -261,6 +261,22 @@ namespace Avalonia.Imaging.PixelMan
             var plan = new FusedPlanExecution(_region, PixelSize, PixelFormat, AlphaFormat,
                 _options?.Interpolation ?? BitmapInterpolationMode.HighQuality, _orientation);
 
+            // A plan that changes only the format of an indexed frame is PixelMan's palette
+            // expansion written straight into the destination.
+            if (_mapped && _decodeFormat.IsIndexed && !_hasRegion && _orientation == PixelOrientation.Normal &&
+                PixelSize == _rawSize && (PixelFormat == PixelFormats.Bgra8888 || PixelFormat == PixelFormats.Rgba8888) &&
+                PixelManFormats.ToPixelMan(PixelFormat, AlphaFormat) is { } target)
+            {
+                unsafe
+                {
+                    _frame.CopyPixels(target, 0, 0, 0, 0,
+                        new Span<byte>((void*)destination, checked(destRowBytes * PixelSize.Height)), (nuint)destRowBytes,
+                        _options?.CancellationToken ?? default);
+                }
+
+                return;
+            }
+
             // Indexed frames and layouts Avalonia has no format for are converted by PixelMan
             // first; the pipeline then works on the converted copy.
             if (!_mapped || _decodeFormat.IsIndexed)
