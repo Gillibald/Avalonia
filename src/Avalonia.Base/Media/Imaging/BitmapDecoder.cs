@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Platform;
@@ -231,13 +232,15 @@ namespace Avalonia.Media.Imaging
         }
 
         /// <summary>
-        /// Gets the container-level metadata when the active backend exposes it.
+        /// Gets the container-level metadata, such as the GIF logical screen and loop count,
+        /// when the stream has any and the active backend exposes it. Most formats keep their
+        /// metadata on the frames instead; see <see cref="BitmapFrame.TryGetMetadata"/>.
         /// </summary>
         public bool TryGetMetadata([NotNullWhen(true)] out BitmapMetadata? metadata)
         {
             ThrowIfDisposed();
 
-            if (_impl is IMetadataStoreSource source)
+            if (_impl is IMetadataStoreSource source && source.Metadata.EnumeratePaths().Any())
             {
                 metadata = new BitmapMetadata(source.Metadata, _impl.CodecInfo.ContainerFormat);
                 return true;

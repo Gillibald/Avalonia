@@ -349,6 +349,112 @@ namespace Avalonia.Imaging.ImageSharp.Tests
         }
 
         [Fact]
+        public void Iptc_Datasets_RoundTripThroughJpeg()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app13/irb/8bimiptc/iptc/Keywords", new[] { "sea", "boat" });
+            metadata.SetQuery("/app13/irb/8bimiptc/iptc/City", "Kiel");
+
+            var encoder = new JpegBitmapEncoder { Metadata = metadata };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(4, 4, (10, 20, 30, 255)) });
+
+            var backend = new ImageSharpImagingBackend();
+
+            using var decoder = backend.CreateDecoder(new MemoryStream(Encode(backend, encoder, BitmapContainerFormats.Jpeg)),
+                ownsStream: true);
+            using var frame = decoder.ReadNextFrame()!;
+
+            var decoded = MetadataOf(frame, BitmapContainerFormats.Jpeg);
+
+            Assert.Equal(new[] { "sea", "boat" }, decoded.GetQuery("/app13/irb/8bimiptc/iptc/Keywords"));
+            Assert.Equal("Kiel", decoded.GetQuery("/app13/irb/8bimiptc/iptc/{ushort=602}"));
+            Assert.Contains("/{str=City}", decoded.GetChildren("/app13/irb/8bimiptc/iptc"));
+        }
+
+        [Fact]
+        public void Itxt_Entries_RoundTripThroughPng()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+
+            metadata.SetQuery("/iTXt/{str=Title}/{str=de}/{str=Titel}", "Hallo");
+
+            var encoder = new PngBitmapEncoder { Metadata = metadata };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(4, 4, (10, 20, 30, 255)) });
+
+            var backend = new ImageSharpImagingBackend();
+
+            using var decoder = backend.CreateDecoder(new MemoryStream(Encode(backend, encoder, BitmapContainerFormats.Png)),
+                ownsStream: true);
+            using var frame = decoder.ReadNextFrame()!;
+
+            var decoded = MetadataOf(frame, BitmapContainerFormats.Png);
+
+            Assert.Equal("Hallo", decoded.GetQuery("/iTXt/{str=Title}/{str=de}/{str=Titel}"));
+            Assert.Equal("Title", decoded.GetQuery("/iTXt/Keyword"));
+            Assert.Equal("de", decoded.GetQuery("/iTXt/LanguageTag"));
+            Assert.Equal("Titel", decoded.GetQuery("/iTXt/TranslatedKeyword"));
+            Assert.Equal("Hallo", decoded.GetQuery("/iTXt/TextEntry"));
+        }
+
+        [Fact]
+        public void Gif_Blocks_AreReportedOnTheDecoderAndTheFrames()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var encoder = new GifBitmapEncoder { LoopCount = 2 };
+
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = CreatePixelBuffer(4, 3, (255, 0, 0, 255)),
+                Delay = TimeSpan.FromMilliseconds(100),
+                Disposal = FrameDisposalMethod.RestoreToBackground,
+            });
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(4, 3, (0, 255, 0, 255)) });
+
+            var bytes = Encode(backend, encoder, BitmapContainerFormats.Gif);
+
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(backend);
+
+            using var decoder = BitmapDecoder.Create(new MemoryStream(bytes));
+
+            Assert.True(decoder.TryGetMetadata(out var container));
+            Assert.Equal((ushort)4, container!.GetQuery("/logscrdesc/Width"));
+            Assert.Equal((ushort)3, container.GetQuery("/logscrdesc/Height"));
+            Assert.Equal(System.Text.Encoding.ASCII.GetBytes("NETSCAPE2.0"), container.GetQuery("/appext/Application"));
+            Assert.Equal(new byte[] { 3, 1, 2, 0, 0 }, container.GetQuery("/[0]appext/Data"));
+
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.True(frame.TryGetMetadata(out var metadata));
+            Assert.Equal((ushort)10, metadata!.GetQuery("/grctlext/Delay"));
+            Assert.Equal((byte)2, metadata.GetQuery("/grctlext/Disposal"));
+            Assert.IsType<bool>(metadata.GetQuery("/grctlext/TransparencyFlag"));
+        }
+
+        [Fact]
+        public void A_Png_Has_No_Container_Metadata()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 2, (1, 2, 3, 255)) });
+
+            var bytes = Encode(backend, encoder, BitmapContainerFormats.Png);
+
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(backend);
+
+            using var decoder = BitmapDecoder.Create(new MemoryStream(bytes));
+
+            Assert.False(decoder.TryGetMetadata(out _));
+        }
+
+        [Fact]
         public void AuthoredMetadata_WithATagImageSharpCannotCreate_FailsBeforeWriting()
         {
             var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);

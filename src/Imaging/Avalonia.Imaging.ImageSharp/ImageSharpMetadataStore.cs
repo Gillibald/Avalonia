@@ -2,11 +2,14 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Png.Chunks;
 using SixLabors.ImageSharp.Metadata.Profiles.Exif;
+using SixLabors.ImageSharp.Metadata.Profiles.Iptc;
 using ISIccProfile = SixLabors.ImageSharp.Metadata.Profiles.Icc.IccProfile;
 using ISXmpProfile = SixLabors.ImageSharp.Metadata.Profiles.Xmp.XmpProfile;
 
@@ -14,13 +17,22 @@ namespace Avalonia.Imaging.ImageSharp
 {
     /// <summary>
     /// The metadata store over ImageSharp's profiles: EXIF tags, the XMP packet, the ICC
-    /// profile and PNG text chunks.
+    /// profile, IPTC datasets, PNG text chunks and, read-only, the GIF blocks.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// ImageSharp holds every EXIF tag in one profile without its IFD, so tags are listed
     /// under IFD0, the EXIF sub-IFD or the GPS sub-IFD by their id, and a tag reads the same
     /// under any of those paths. New tags can only be created for the ids in
     /// <see cref="s_creatableTags"/>, which ImageSharp exposes as typed tags.
+    /// </para>
+    /// <para>
+    /// ImageSharp keeps tEXt, zTXt and iTXt chunks in one list and picks the chunk type when
+    /// writing, so an entry with a language or translated keyword is listed under its iTXt
+    /// path and every other entry under "/text"; "/ztxt" and a plain "/itxt" path address the
+    /// same entry. IPTC is limited to the application record (record 2), the only one
+    /// ImageSharp models.
+    /// </para>
     /// </remarks>
     internal sealed class ImageSharpMetadataStore : IBitmapMetadataStore
     {
@@ -28,6 +40,7 @@ namespace Avalonia.Imaging.ImageSharp
         private const string ExifPrefix = "/ifd/exif/{ushort=";
         private const string GpsPrefix = "/ifd/gps/{ushort=";
         private const string TextPrefix = "/text/{str=";
+        private const string IptcPrefix = "/iptc/";
 
         private static readonly Dictionary<ushort, Action<ExifProfile, object>> s_creatableTags = new()
         {
@@ -49,15 +62,27 @@ namespace Avalonia.Imaging.ImageSharp
         private ExifProfile? _exif;
         private ISXmpProfile? _xmp;
         private ISIccProfile? _icc;
+        private IptcProfile? _iptc;
         private readonly List<PngTextData>? _text;
+        private readonly Dictionary<string, MetadataValue> _blocks;
 
         public ImageSharpMetadataStore(ExifProfile? exif, ISXmpProfile? xmp, ISIccProfile? icc,
-            IEnumerable<PngTextData>? text, bool isReadOnly)
+            IEnumerable<PngTextData>? text, bool isReadOnly, IptcProfile? iptc = null,
+            IEnumerable<KeyValuePair<string, MetadataValue>>? blocks = null)
         {
             _exif = exif?.DeepClone();
             _xmp = xmp?.DeepClone();
             _icc = icc?.DeepClone();
+            _iptc = iptc?.DeepClone();
             _text = text is null ? null : new List<PngTextData>(text);
+            _blocks = new Dictionary<string, MetadataValue>(StringComparer.Ordinal);
+
+            if (blocks is not null)
+            {
+                foreach (var block in blocks)
+                    _blocks.Add(block.Key, block.Value);
+            }
+
             IsReadOnly = isReadOnly;
         }
 
@@ -70,6 +95,9 @@ namespace Avalonia.Imaging.ImageSharp
 
         public ISIccProfile? Icc => _icc;
 
+        /// <summary>Gets the IPTC profile, or null when there are no datasets.</summary>
+        public IptcProfile? Iptc => _iptc is not null && _iptc.Values.Any() ? _iptc : null;
+
         /// <summary>Gets the PNG text entries, or null for containers without them.</summary>
         public IReadOnlyList<PngTextData>? Text => _text;
 
@@ -77,7 +105,10 @@ namespace Avalonia.Imaging.ImageSharp
         /// Creates an empty writable store that can hold the paths of a container.
         /// </summary>
         public static ImageSharpMetadataStore CreateEmpty(Guid containerFormat)
-            => new(null, null, null, containerFormat == Media.Imaging.BitmapContainerFormats.Png ? Array.Empty<PngTextData>() : null, false);
+            => new(null, null, null, containerFormat == Media.Imaging.BitmapContainerFormats.Png ? Array.Empty<PngTextData>() : null, false,
+                containerFormat == Media.Imaging.BitmapContainerFormats.Jpeg || containerFormat == Media.Imaging.BitmapContainerFormats.Tiff
+                    ? new IptcProfile()
+                    : null);
 
         public bool TryRead(string path, out MetadataValue value)
         {
@@ -99,9 +130,12 @@ namespace Avalonia.Imaging.ImageSharp
                     return true;
             }
 
-            if (TryParseText(path, out var keyword))
+            if (_blocks.TryGetValue(path, out value))
+                return true;
+
+            if (TryParseText(path, out var key))
             {
-                var index = FindText(keyword);
+                var index = FindText(key);
 
                 if (index < 0)
                     return false;
@@ -109,6 +143,9 @@ namespace Avalonia.Imaging.ImageSharp
                 value = FromText(_text![index].Value);
                 return true;
             }
+
+            if (TryParseIptc(path, out var iptcTag))
+                return TryReadIptc(iptcTag, out value);
 
             if (TryParseTag(path, out var tagId) && FindTag(tagId) is { } exifValue)
                 return TryConvert(exifValue, out value);
@@ -130,26 +167,36 @@ namespace Avalonia.Imaging.ImageSharp
                     return;
             }
 
-            if (TryParseText(path, out var keyword))
+            if (_blocks.ContainsKey(path) || path.StartsWith("/logscrdesc/", StringComparison.Ordinal) ||
+                path.StartsWith("/imgdesc/", StringComparison.Ordinal) || path.StartsWith("/grctlext/", StringComparison.Ordinal) ||
+                path.Contains("commentext/", StringComparison.Ordinal) || path.Contains("appext/", StringComparison.Ordinal))
+            {
+                throw new NotSupportedException(
+                    $"The 'ImageSharp' imaging backend reads GIF blocks but cannot write them ('{path}').");
+            }
+
+            if (TryParseText(path, out var key))
             {
                 if (_text is null)
                     throw Unsupported(path);
 
-                var text = value.Type switch
-                {
-                    MetadataValueType.Ascii => Encoding.Latin1.GetString(value.Data.Span),
-                    MetadataValueType.Unicode => Encoding.Unicode.GetString(value.Data.Span),
-                    _ => throw new NotSupportedException($"PNG text at '{path}' must be text, not {value.Type}.")
-                };
-
-                var entry = new PngTextData(keyword, text, string.Empty, string.Empty);
-                var index = FindText(keyword);
+                var entry = new PngTextData(key.Keyword, ReadText(value, path), key.Language, key.Translated);
+                var index = FindText(key);
 
                 if (index >= 0)
                     _text[index] = entry;
                 else
                     _text.Add(entry);
 
+                return;
+            }
+
+            if (TryParseIptc(path, out var iptcTag))
+            {
+                if (_iptc is null)
+                    throw Unsupported(path);
+
+                WriteIptc(iptcTag, value, path);
                 return;
             }
 
@@ -175,9 +222,12 @@ namespace Avalonia.Imaging.ImageSharp
                     return hadIcc;
             }
 
-            if (TryParseText(path, out var keyword))
+            if (_blocks.Remove(path))
+                return true;
+
+            if (TryParseText(path, out var key))
             {
-                var index = FindText(keyword);
+                var index = FindText(key);
 
                 if (index < 0)
                     return false;
@@ -185,6 +235,9 @@ namespace Avalonia.Imaging.ImageSharp
                 _text!.RemoveAt(index);
                 return true;
             }
+
+            if (TryParseIptc(path, out var iptcTag))
+                return _iptc is not null && _iptc.RemoveValue(iptcTag);
 
             return TryParseTag(path, out var tagId) && FindTag(tagId) is { } exifValue && _exif!.RemoveValue(exifValue.Tag);
         }
@@ -214,11 +267,112 @@ namespace Avalonia.Imaging.ImageSharp
             if (_text is not null)
             {
                 foreach (var entry in _text)
-                    yield return TextPrefix + entry.Keyword + "}";
+                {
+                    yield return string.IsNullOrEmpty(entry.LanguageTag) && string.IsNullOrEmpty(entry.TranslatedKeyword)
+                        ? TextPrefix + entry.Keyword + "}"
+                        : "/itxt/{str=" + entry.Keyword + "}/{str=" + entry.LanguageTag + "}/{str=" + entry.TranslatedKeyword + "}";
+                }
             }
+
+            if (_iptc is not null)
+            {
+                var seen = new HashSet<IptcTag>();
+
+                foreach (var dataset in _iptc.Values)
+                {
+                    if (seen.Add(dataset.Tag) && ToDatasetId(dataset.Tag) is { } id)
+                        yield return IptcDatasets.GetPath(id);
+                }
+            }
+
+            foreach (var block in _blocks.Keys)
+                yield return block;
         }
 
-        public IBitmapMetadataStore Clone() => new ImageSharpMetadataStore(_exif, _xmp, _icc, _text, false);
+        public IBitmapMetadataStore Clone() => new ImageSharpMetadataStore(_exif, _xmp, _icc, _text, false, _iptc, _blocks);
+
+        private static string ReadText(MetadataValue value, string path) => value.Type switch
+        {
+            MetadataValueType.Ascii => Encoding.Latin1.GetString(value.Data.Span),
+            MetadataValueType.Unicode => Encoding.Unicode.GetString(value.Data.Span),
+            _ => throw new NotSupportedException($"'{path}' holds text, not {value.Type}.")
+        };
+
+        // ImageSharp numbers the record-2 datasets by their dataset number.
+        private static ushort? ToDatasetId(IptcTag tag) => (int)tag is >= 0 and <= 255 ? (ushort)(0x200 | (int)tag) : null;
+
+        private static bool TryParseIptc(string path, out IptcTag tag)
+        {
+            tag = IptcTag.Unknown;
+
+            if (!path.StartsWith(IptcPrefix, StringComparison.Ordinal))
+                return false;
+
+            var segment = path.Substring(IptcPrefix.Length);
+            ushort id;
+
+            if (segment.StartsWith("{str=", StringComparison.Ordinal) && segment.EndsWith("}", StringComparison.Ordinal))
+            {
+                if (!IptcDatasets.TryGetId(segment.Substring(5, segment.Length - 6), out id))
+                    return false;
+            }
+            else if (!(segment.StartsWith("{ushort=", StringComparison.Ordinal) && segment.EndsWith("}", StringComparison.Ordinal) &&
+                       ushort.TryParse(segment.AsSpan(8, segment.Length - 9), NumberStyles.None, CultureInfo.InvariantCulture, out id)))
+            {
+                return false;
+            }
+
+            if (id >> 8 != 2 || !Enum.IsDefined(typeof(IptcTag), id & 0xFF))
+                return false;
+
+            tag = (IptcTag)(id & 0xFF);
+            return true;
+        }
+
+        private bool TryReadIptc(IptcTag tag, out MetadataValue value)
+        {
+            value = default;
+
+            if (_iptc?.GetValues(tag) is not { Count: > 0 } datasets)
+                return false;
+
+            if (datasets.Count == 1)
+            {
+                value = FromText(datasets[0].Value);
+                return true;
+            }
+
+            var items = new List<MetadataValue>(datasets.Count);
+
+            foreach (var dataset in datasets)
+                items.Add(FromText(dataset.Value));
+
+            value = new MetadataValue(items);
+            return true;
+        }
+
+        private void WriteIptc(IptcTag tag, MetadataValue value, string path)
+        {
+            var texts = new List<string>();
+
+            if (value.Type == MetadataValueType.List)
+            {
+                foreach (var item in value.Items!)
+                    texts.Add(ReadText(item, path));
+            }
+            else
+            {
+                texts.Add(ReadText(value, path));
+            }
+
+            _iptc!.RemoveValue(tag);
+
+            foreach (var text in texts)
+                _iptc.SetValue(tag, text, false);
+
+            if (_iptc.GetValues(tag).Count != texts.Count)
+                throw new NotSupportedException($"The IPTC dataset at '{path}' holds one value, not {texts.Count}.");
+        }
 
         // GPS tag ids are 0 to 31; IFD0 tags start at 254, so the ranges do not collide.
         private static bool IsGpsTag(ushort id) => id <= 31;
@@ -247,26 +401,52 @@ namespace Avalonia.Imaging.ImageSharp
                 ushort.TryParse(remainder.AsSpan(0, remainder.Length - 1), NumberStyles.None, CultureInfo.InvariantCulture, out tagId);
         }
 
-        private bool TryParseText(string path, out string keyword)
-        {
-            keyword = string.Empty;
+        private readonly record struct TextKey(string Keyword, string Language, string Translated);
 
-            if (!path.StartsWith(TextPrefix, StringComparison.Ordinal) || !path.EndsWith("}", StringComparison.Ordinal) ||
-                path.IndexOf('/', TextPrefix.Length) >= 0)
+        // "/text/{str=K}", "/ztxt/{str=K}", "/itxt/{str=K}" or "/itxt/{str=K}/{str=L}/{str=T}".
+        private static bool TryParseText(string path, out TextKey key)
+        {
+            key = default;
+
+            string remainder;
+
+            if (path.StartsWith("/text/", StringComparison.Ordinal) || path.StartsWith("/ztxt/", StringComparison.Ordinal) ||
+                path.StartsWith("/itxt/", StringComparison.Ordinal))
+                remainder = path.Substring(6);
+            else
                 return false;
 
-            keyword = path.Substring(TextPrefix.Length, path.Length - TextPrefix.Length - 1);
-            return keyword.Length > 0;
+            var parts = new List<string>();
+
+            foreach (var segment in remainder.Split("}/"))
+            {
+                var part = segment.EndsWith("}", StringComparison.Ordinal) ? segment.Substring(0, segment.Length - 1) : segment;
+
+                if (!part.StartsWith("{str=", StringComparison.Ordinal))
+                    return false;
+
+                parts.Add(part.Substring(5));
+            }
+
+            if (parts.Count is not (1 or 3) || parts[0].Length == 0 || (parts.Count == 3 && !path.StartsWith("/itxt/", StringComparison.Ordinal)))
+                return false;
+
+            key = parts.Count == 1 ? new TextKey(parts[0], string.Empty, string.Empty) : new TextKey(parts[0], parts[1], parts[2]);
+            return true;
         }
 
-        private int FindText(string keyword)
+        private int FindText(TextKey key)
         {
             if (_text is null)
                 return -1;
 
             for (var i = 0; i < _text.Count; i++)
             {
-                if (string.Equals(_text[i].Keyword, keyword, StringComparison.Ordinal))
+                var entry = _text[i];
+
+                if (string.Equals(entry.Keyword, key.Keyword, StringComparison.Ordinal) &&
+                    string.Equals(entry.LanguageTag ?? string.Empty, key.Language, StringComparison.Ordinal) &&
+                    string.Equals(entry.TranslatedKeyword ?? string.Empty, key.Translated, StringComparison.Ordinal))
                     return i;
             }
 

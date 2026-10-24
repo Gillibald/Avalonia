@@ -64,7 +64,7 @@ namespace Avalonia.Imaging.ImageSharp
             new ImageSharpBitmapCodecInfo("GIF", "GIF", BitmapContainerFormats.Gif,
                 BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame |
                 BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.MultiFrameEncode |
-                BitmapCodecCapabilities.Palette,
+                BitmapCodecCapabilities.Palette | BitmapCodecCapabilities.Metadata,
                 new[] { "image/gif" }, new[] { "gif" }),
             new ImageSharpBitmapCodecInfo("BMP", "BMP", BitmapContainerFormats.Bmp,
                 BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.Encode,

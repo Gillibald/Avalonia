@@ -37,7 +37,35 @@ internal static class MetadataQuery
     private static readonly (string From, string To)[] s_pngAliases =
     {
         ("/iccp/profiledata", "/icc"),
+        ("/png/text", "/text"),
+        ("/png/ztxt", "/ztxt"),
+        ("/png/itxt", "/itxt"),
+        ("/[0]text", "/text"),
+        ("/[0]ztxt", "/ztxt"),
     };
+
+    // WIC spells these fields in mixed case; queries match them in any case.
+    private static readonly string[] s_logicalScreenFields =
+    {
+        "Signature", "Width", "Height", "GlobalColorTableFlag", "ColorResolution", "SortFlag",
+        "GlobalColorTableSize", "BackgroundColorIndex", "PixelAspectRatio",
+    };
+
+    private static readonly string[] s_imageDescriptorFields =
+    {
+        "Left", "Top", "Width", "Height", "LocalColorTableFlag", "InterlaceFlag", "SortFlag", "LocalColorTableSize",
+    };
+
+    private static readonly string[] s_graphicControlFields =
+    {
+        "Disposal", "UserInputFlag", "TransparencyFlag", "Delay", "TransparentColorIndex",
+    };
+
+    private static readonly string[] s_applicationFields = { "Application", "Data" };
+
+    private static readonly string[] s_commentFields = { "TextEntry" };
+
+    private static readonly string[] s_textFields = { "Keyword", "TextEntry", "LanguageTag", "TranslatedKeyword" };
 
     /// <summary>
     /// Returns the canonical form of a query for a container.
@@ -55,9 +83,187 @@ internal static class MetadataQuery
             path = Rewrite(path, s_pngAliases);
 
         if (containerFormat == BitmapContainerFormats.Jpeg || containerFormat == BitmapContainerFormats.Tiff)
+        {
             path = Rewrite(path, s_exifAliases);
+            path = CanonicalizeIptc(path, query);
+        }
+        else if (containerFormat == BitmapContainerFormats.Gif)
+        {
+            path = CanonicalizeGif(path, query);
+        }
+        else if (containerFormat == BitmapContainerFormats.Png)
+        {
+            path = CanonicalizeTextField(path, query);
+        }
 
         return path;
+    }
+
+    /// <summary>
+    /// Recognizes a canonical iTXt field query, <c>/[n]itxt/Keyword</c> and its siblings,
+    /// which reads a part of the n-th iTXt entry.
+    /// </summary>
+    public static bool TryParseTextField(string path, out int index, out string field)
+    {
+        index = 0;
+        field = string.Empty;
+
+        var segments = Split(path);
+
+        if (segments.Count != 2 || !TrySplitIndex(segments[0], out var name, out index) || name != "itxt" ||
+            Array.IndexOf(s_textFields, segments[1]) < 0)
+        {
+            return false;
+        }
+
+        field = segments[1];
+        return true;
+    }
+
+    /// <summary>
+    /// Returns whether a canonical path is a GIF flag, which WIC reports as a boolean.
+    /// </summary>
+    public static bool IsBooleanField(string path)
+    {
+        var segments = Split(path);
+
+        return segments.Count == 2 && segments[0] is "logscrdesc" or "imgdesc" or "grctlext" &&
+            segments[1].EndsWith("Flag", StringComparison.Ordinal);
+    }
+
+    // IPTC datasets are named the way WIC names them, whatever the query's case or whether it
+    // gives the dataset by number.
+    private static string CanonicalizeIptc(string path, string query)
+    {
+        var segments = Split(path);
+
+        if (segments.Count != 2 || segments[0] != "iptc")
+            return path;
+
+        var segment = segments[1];
+
+        if (TryGetSelector(segment, "ushort", out var number))
+        {
+            if (!ushort.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+                throw new ArgumentException($"The metadata query '{query}' has an IPTC dataset number above 65535.", nameof(query));
+
+            return IptcDatasets.GetPath(id);
+        }
+
+        var name = TryGetSelector(segment, "str", out var text) ? text : segment;
+
+        if (!IptcDatasets.TryGetId(name, out var named))
+            throw new ArgumentException($"The metadata query '{query}' names no IPTC dataset.", nameof(query));
+
+        return IptcDatasets.GetPath(named);
+    }
+
+    private static string CanonicalizeGif(string path, string query)
+    {
+        var segments = Split(path);
+
+        if (segments.Count != 2 || !TrySplitIndex(segments[0], out var block, out var index))
+            return path;
+
+        var hasIndex = segments[0][0] == '[';
+        var fields = block switch
+        {
+            "logscrdesc" when !hasIndex => s_logicalScreenFields,
+            "imgdesc" when !hasIndex => s_imageDescriptorFields,
+            "grctlext" when !hasIndex => s_graphicControlFields,
+            "commentext" => s_commentFields,
+            "appext" => s_applicationFields,
+            _ => null,
+        };
+
+        if (fields is null)
+            return path;
+
+        if (block == "grctlext" && TryGetSelector(segments[1], "ushort", out _))
+            return path;
+
+        var field = FindField(fields, TryGetSelector(segments[1], "str", out var text) ? text : segments[1]) ??
+            throw new ArgumentException($"The metadata query '{query}' names no {block} field.", nameof(query));
+        var prefix = fields == s_commentFields || fields == s_applicationFields
+            ? "/[" + index.ToString(CultureInfo.InvariantCulture) + "]" + block
+            : "/" + block;
+
+        return prefix + "/" + field;
+    }
+
+    // "/iTXt/Keyword" reads the first entry, as "/[0]iTXt/Keyword" does.
+    private static string CanonicalizeTextField(string path, string query)
+    {
+        var segments = Split(path);
+
+        if (segments.Count != 2 || !TrySplitIndex(segments[0], out var block, out var index) || block != "itxt" ||
+            segments[1].StartsWith("{", StringComparison.Ordinal))
+        {
+            return path;
+        }
+
+        var field = FindField(s_textFields, segments[1]) ??
+            throw new ArgumentException($"The metadata query '{query}' names no iTXt field.", nameof(query));
+
+        return "/[" + index.ToString(CultureInfo.InvariantCulture) + "]itxt/" + field;
+    }
+
+    private static string? FindField(string[] fields, string name)
+    {
+        foreach (var field in fields)
+        {
+            if (string.Equals(field, name, StringComparison.OrdinalIgnoreCase))
+                return field;
+        }
+
+        return null;
+    }
+
+    private static bool TryGetSelector(string segment, string type, out string value)
+    {
+        var prefix = "{" + type + "=";
+
+        if (segment.StartsWith(prefix, StringComparison.Ordinal) && segment.EndsWith("}", StringComparison.Ordinal))
+        {
+            value = segment.Substring(prefix.Length, segment.Length - prefix.Length - 1);
+            return true;
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static bool TrySplitIndex(string segment, out string name, out int index)
+    {
+        index = 0;
+        name = segment;
+
+        if (segment.Length == 0 || segment[0] != '[')
+            return true;
+
+        var close = segment.IndexOf(']');
+
+        if (close < 0 || !int.TryParse(segment.AsSpan(1, close - 1), NumberStyles.None, CultureInfo.InvariantCulture, out index))
+            return false;
+
+        name = segment.Substring(close + 1);
+        return true;
+    }
+
+    private static List<string> Split(string path)
+    {
+        var segments = new List<string>();
+        var position = 1;
+
+        while (position < path.Length)
+        {
+            var end = FindSegmentEnd(path, position);
+
+            segments.Add(path.Substring(position, end - position));
+            position = end + 1;
+        }
+
+        return segments;
     }
 
     /// <summary>
@@ -100,6 +306,7 @@ internal static class MetadataQuery
 
         var builder = new StringBuilder(query.Length);
         var position = 1;
+        var parent = string.Empty;
 
         while (position <= query.Length)
         {
@@ -109,15 +316,29 @@ internal static class MetadataQuery
             if (segment.Length == 0)
                 throw new ArgumentException($"The metadata query '{query}' has an empty segment.", nameof(query));
 
-            builder.Append('/').Append(NormalizeSegment(segment, query));
+            var normalized = NormalizeSegment(segment, query, parent);
+
+            builder.Append('/').Append(normalized);
+            parent = TrySplitIndex(normalized, out var name, out _) ? name : normalized;
             position = end + 1;
         }
 
         return builder.ToString();
     }
 
-    private static string NormalizeSegment(string segment, string query)
+    // Below a PNG text chunk a bare segment is the keyword, taken literally ("/tEXt/Title" is
+    // the keyword "Title"); below iTXt the field names are the exception.
+    private static string NormalizeSegment(string segment, string query, string parent)
     {
+        if (segment[0] is not ('[' or '{') && parent is "text" or "ztxt" or "itxt" &&
+            !(parent == "itxt" && FindField(s_textFields, segment) is not null))
+        {
+            if (segment.IndexOfAny(new[] { '{', '}', '[', ']' }) >= 0)
+                throw new ArgumentException($"The metadata query '{query}' has a malformed segment '{segment}'.", nameof(query));
+
+            return "{str=" + segment + "}";
+        }
+
         var index = string.Empty;
 
         if (segment[0] == '[')

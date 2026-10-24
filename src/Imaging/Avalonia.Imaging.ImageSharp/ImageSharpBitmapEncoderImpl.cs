@@ -248,6 +248,7 @@ namespace Avalonia.Imaging.ImageSharp
                 imageMetadata.ExifProfile = store.Exif?.DeepClone() ?? imageMetadata.ExifProfile;
                 imageMetadata.XmpProfile = store.Xmp?.DeepClone() ?? imageMetadata.XmpProfile;
                 imageMetadata.IccProfile = store.Icc?.DeepClone() ?? imageMetadata.IccProfile;
+                imageMetadata.IptcProfile = store.Iptc?.DeepClone() ?? imageMetadata.IptcProfile;
             }
 
             if (frameMetadata is not null)
@@ -255,6 +256,7 @@ namespace Avalonia.Imaging.ImageSharp
                 frameMetadata.ExifProfile = store.Exif?.DeepClone() ?? frameMetadata.ExifProfile;
                 frameMetadata.XmpProfile = store.Xmp?.DeepClone() ?? frameMetadata.XmpProfile;
                 frameMetadata.IccProfile = store.Icc?.DeepClone() ?? frameMetadata.IccProfile;
+                frameMetadata.IptcProfile = store.Iptc?.DeepClone() ?? frameMetadata.IptcProfile;
             }
         }
 

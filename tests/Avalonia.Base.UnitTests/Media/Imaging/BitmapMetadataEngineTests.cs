@@ -38,9 +38,91 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/tEXt/{str=Title}", "/text/{str=Title}")]
         [InlineData("/text/{wstr=Title}", "/text/{str=Title}")]
         [InlineData("/iCCP/ProfileData", "/icc")]
+        [InlineData("/tEXt/Title", "/text/{str=Title}")]
+        [InlineData("/png/tEXt/{str=Author}", "/text/{str=Author}")]
+        [InlineData("/[0]tEXt/{str=Author}", "/text/{str=Author}")]
+        [InlineData("/zTXt/{str=Comment}", "/ztxt/{str=Comment}")]
+        [InlineData("/iTXt/{str=Title}/{str=de}/{str=Titel}", "/itxt/{str=Title}/{str=de}/{str=Titel}")]
+        [InlineData("/iTXt/keyword", "/[0]itxt/Keyword")]
+        [InlineData("/[2]iTXt/TEXTENTRY", "/[2]itxt/TextEntry")]
         public void Png_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
         {
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Png));
+        }
+
+        [Theory]
+        [InlineData("/app13/irb/8bimiptc/iptc/Keywords", "/iptc/{str=Keywords}")]
+        [InlineData("/app13/irb/8bimiptc/iptc/{str=by-line}", "/iptc/{str=By-line}")]
+        [InlineData("/app13/irb/8bimiptc/iptc/{str=Province/State}", "/iptc/{str=Province/State}")]
+        [InlineData("/iptc/{ushort=537}", "/iptc/{str=Keywords}")]
+        [InlineData("/iptc/{ushort=600}", "/iptc/{ushort=600}")]
+        public void Iptc_Datasets_Should_Resolve_To_Their_Wic_Names(string query, string canonical)
+        {
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Jpeg));
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query.Replace("/app13/irb/8bimiptc/iptc", "/ifd/iptc"),
+                BitmapContainerFormats.Tiff));
+        }
+
+        [Theory]
+        [InlineData("/grctlext/delay", "/grctlext/Delay")]
+        [InlineData("/logscrdesc/{str=globalcolortableflag}", "/logscrdesc/GlobalColorTableFlag")]
+        [InlineData("/commentext/textentry", "/[0]commentext/TextEntry")]
+        [InlineData("/[1]appext/data", "/[1]appext/Data")]
+        [InlineData("/grctlext/{ushort=5}", "/grctlext/{ushort=5}")]
+        public void Gif_Spellings_Should_Resolve_To_Wic_Field_Names(string query, string canonical)
+        {
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Gif));
+        }
+
+        [Fact]
+        public void Unknown_Names_Should_Throw()
+        {
+            Assert.Throws<ArgumentException>(() => MetadataQuery.Canonicalize("/logscrdesc/Bogus", BitmapContainerFormats.Gif));
+            Assert.Throws<ArgumentException>(() => MetadataQuery.Canonicalize("/iptc/NoSuchDataset", BitmapContainerFormats.Jpeg));
+        }
+
+        [Fact]
+        public void Itxt_Fields_Should_View_The_Entries_In_Order()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+
+            metadata.SetQuery("/iTXt/{str=A}", "first");
+            metadata.SetQuery("/iTXt/{str=B}/{str=de}/{str=Bee}", "second");
+
+            Assert.Equal("A", metadata.GetQuery("/iTXt/Keyword"));
+            Assert.Equal("first", metadata.GetQuery("/[0]iTXt/TextEntry"));
+            Assert.Equal(string.Empty, metadata.GetQuery("/[0]iTXt/LanguageTag"));
+            Assert.Equal("B", metadata.GetQuery("/[1]iTXt/Keyword"));
+            Assert.Equal("de", metadata.GetQuery("/[1]iTXt/LanguageTag"));
+            Assert.Equal("Bee", metadata.GetQuery("/[1]iTXt/TranslatedKeyword"));
+            Assert.Equal("second", metadata.GetQuery("/[1]iTXt/TextEntry"));
+            Assert.True(metadata.ContainsQuery("/[1]iTXt/Keyword"));
+            Assert.False(metadata.ContainsQuery("/[2]iTXt/Keyword"));
+            Assert.Throws<NotSupportedException>(() => metadata.SetQuery("/iTXt/TextEntry", "x"));
+        }
+
+        [Fact]
+        public void Gif_Flags_Should_Read_As_Booleans()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Gif);
+
+            metadata.SetQuery("/grctlext/TransparencyFlag", true);
+            metadata.SetQuery("/grctlext/Disposal", (byte)2);
+
+            Assert.Equal(true, metadata.GetQuery("/grctlext/transparencyflag"));
+            Assert.Equal((byte)2, metadata.GetQuery("/grctlext/Disposal"));
+            Assert.True(metadata.Store.TryRead("/grctlext/TransparencyFlag", out var stored));
+            Assert.Equal(MetadataValueType.Byte, stored.Type);
+        }
+
+        [Fact]
+        public void A_Repeated_Iptc_Dataset_Should_Read_As_An_Array()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app13/irb/8bimiptc/iptc/Keywords", new[] { "sea", "boat" });
+
+            Assert.Equal(new[] { "sea", "boat" }, metadata.GetQuery("/iptc/{ushort=537}"));
         }
 
         [Theory]

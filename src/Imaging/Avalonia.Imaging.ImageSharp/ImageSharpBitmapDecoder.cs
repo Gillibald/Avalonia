@@ -15,7 +15,8 @@ namespace Avalonia.Imaging.ImageSharp
     /// image stays alive until both the decoder and every frame produced by it are
     /// disposed.
     /// </summary>
-    internal sealed class ImageSharpBitmapDecoder : IBitmapDecoder, ISeekableFrameDecoder, IPaletteDecoder
+    internal sealed class ImageSharpBitmapDecoder : IBitmapDecoder, ISeekableFrameDecoder, IPaletteDecoder,
+        IMetadataStoreSource
     {
         private readonly ISImage _image;
         private readonly BitmapDecodeOptions? _options;
@@ -41,9 +42,17 @@ namespace Avalonia.Imaging.ImageSharp
             GlobalPalette = codecInfo.ContainerFormat == BitmapContainerFormats.Gif
                 ? ToPalette(image.Metadata.GetGifMetadata().GlobalColorTable)
                 : null;
+            Metadata = new ImageSharpMetadataStore(null, null, null, null, isReadOnly: true,
+                blocks: codecInfo.ContainerFormat == BitmapContainerFormats.Gif ? GifBlocks.ForContainer(image) : null);
         }
 
         public BitmapPalette? GlobalPalette { get; }
+
+        /// <summary>
+        /// Gets the container-level metadata: the GIF logical screen, application and comment
+        /// blocks. Other formats keep their metadata on the frames, so their store is empty.
+        /// </summary>
+        public IBitmapMetadataStore Metadata { get; }
 
         public IBitmapCodecInfo CodecInfo => Codec;
 

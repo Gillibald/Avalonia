@@ -317,6 +317,9 @@ namespace Avalonia.Imaging.ImageSharp
             var frameMetadata = image.Frames[frameIndex].Metadata;
             var icc = frameMetadata.IccProfile ?? image.Metadata.IccProfile;
 
+            if (owner.Codec.ContainerFormat == BitmapContainerFormats.Gif)
+                return new ImageSharpMetadataStore(null, null, null, null, isReadOnly: true, blocks: GifBlocks.ForFrame(frameMetadata));
+
             // The store deep-copies the profiles, detaching them from the decoder's image lifetime.
             if (owner.Codec.ContainerFormat == BitmapContainerFormats.Png)
             {
@@ -329,11 +332,12 @@ namespace Avalonia.Imaging.ImageSharp
 
             var exif = frameMetadata.ExifProfile ?? image.Metadata.ExifProfile;
             var xmp = frameMetadata.XmpProfile ?? image.Metadata.XmpProfile;
+            var iptc = frameMetadata.IptcProfile ?? image.Metadata.IptcProfile;
 
-            if (exif is null && xmp is null && icc is null)
+            if (exif is null && xmp is null && icc is null && iptc is null)
                 return null;
 
-            return new ImageSharpMetadataStore(exif, xmp, icc, null, isReadOnly: true);
+            return new ImageSharpMetadataStore(exif, xmp, icc, null, isReadOnly: true, iptc);
         }
 
         private static byte[]? FindIccProfileBytes(ImageSharpBitmapDecoder owner, int frameIndex)

@@ -75,8 +75,17 @@ namespace Avalonia.Media.Imaging
         {
             var path = Resolve(query);
 
+            if (MetadataQuery.TryParseTextField(path, out var entry, out var field))
+                return GetTextField(entry, field);
+
             if (_store.TryRead(path, out var value))
+            {
+                // WIC reports the GIF flags as booleans; stores hold them as bytes.
+                if (value is { Type: MetadataValueType.Byte, Count: 1 } && MetadataQuery.IsBooleanField(path))
+                    return value.Data.Span[0] != 0;
+
                 return MetadataValueConverter.ToObject(value);
+            }
 
             foreach (var stored in _store.EnumeratePaths())
             {
@@ -98,6 +107,8 @@ namespace Avalonia.Media.Imaging
             ThrowIfReadOnly();
 
             var path = Resolve(query);
+
+            ThrowIfTextField(path);
 
             switch (value)
             {
@@ -127,6 +138,9 @@ namespace Avalonia.Media.Imaging
         {
             var path = Resolve(query);
 
+            if (MetadataQuery.TryParseTextField(path, out var entry, out _))
+                return FindTextEntry(entry) is not null;
+
             if (_store.TryRead(path, out _))
                 return true;
 
@@ -146,7 +160,11 @@ namespace Avalonia.Media.Imaging
         public void RemoveQuery(string query)
         {
             ThrowIfReadOnly();
-            RemovePath(Resolve(query));
+
+            var path = Resolve(query);
+
+            ThrowIfTextField(path);
+            RemovePath(path);
         }
 
         /// <summary>
@@ -381,6 +399,51 @@ namespace Avalonia.Media.Imaging
             _ = query ?? throw new ArgumentNullException(nameof(query));
 
             return MetadataQuery.Canonicalize(MetadataQuery.Combine(_block, query), ContainerFormat);
+        }
+
+        // The iTXt field view numbers the entries in the order the store lists them.
+        private string? FindTextEntry(int index)
+        {
+            foreach (var stored in _store.EnumeratePaths())
+            {
+                if (MetadataQuery.IsBelow(stored, "/itxt") && index-- == 0)
+                    return stored;
+            }
+
+            return null;
+        }
+
+        private object? GetTextField(int index, string field)
+        {
+            if (FindTextEntry(index) is not { } path)
+                return null;
+
+            // "/itxt/{str=K}" or "/itxt/{str=K}/{str=L}/{str=T}"
+            var parts = new List<string>();
+            var block = "/itxt";
+
+            while (block != path)
+            {
+                var segment = MetadataQuery.ChildSegment(path, block);
+
+                parts.Add(segment.Length > 7 ? segment.Substring(6, segment.Length - 7) : string.Empty);
+                block += segment;
+            }
+
+            return field switch
+            {
+                "Keyword" => parts[0],
+                "LanguageTag" => parts.Count > 1 ? parts[1] : string.Empty,
+                "TranslatedKeyword" => parts.Count > 2 ? parts[2] : string.Empty,
+                _ => _store.TryRead(path, out var value) ? MetadataValueConverter.ToObject(value) : null,
+            };
+        }
+
+        private static void ThrowIfTextField(string path)
+        {
+            if (MetadataQuery.TryParseTextField(path, out _, out _))
+                throw new NotSupportedException(
+                    "The iTXt fields are a read-only view; write the entry at /iTXt/{str=Keyword} instead.");
         }
 
         private IEnumerable<string> LeafPaths()

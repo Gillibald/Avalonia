@@ -69,6 +69,8 @@ internal static class MetadataValueConverter
 
         switch (value)
         {
+            case bool flag:
+                return new MetadataValue(MetadataValueType.Byte, new[] { flag ? (byte)1 : (byte)0 });
             case string text:
                 return FromText(text);
             case string[] texts:
