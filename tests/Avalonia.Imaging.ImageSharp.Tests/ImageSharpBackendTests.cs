@@ -8,6 +8,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Gif;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.Formats.Png.Chunks;
@@ -18,6 +19,9 @@ using SixLabors.ImageSharp.Metadata.Profiles.Xmp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using Xunit;
+using AvColor = Avalonia.Media.Color;
+using AvColors = Avalonia.Media.Colors;
+using ISColor = SixLabors.ImageSharp.Color;
 using ISImage = SixLabors.ImageSharp.Image;
 
 namespace Avalonia.Imaging.ImageSharp.Tests
@@ -466,6 +470,99 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
                 Assert.Equal(expected, Assert.IsAssignableFrom<IColorProfileSource>(page).IccProfile.ToArray());
             }
+        }
+
+        [Fact]
+        public void Gif_Animation_Writes_Frames_At_Their_Origins_With_Timing()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var encoder = new GifBitmapEncoder { LoopCount = 3 };
+
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = CreatePixelBuffer(4, 4, (255, 0, 0, 255)),
+                Delay = TimeSpan.FromMilliseconds(100),
+                Disposal = FrameDisposalMethod.DoNotDispose,
+            });
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = CreatePixelBuffer(2, 2, (0, 255, 0, 255)),
+                Origin = new PixelPoint(2, 2),
+                Delay = TimeSpan.FromMilliseconds(254),
+                Disposal = FrameDisposalMethod.RestoreToBackground,
+            });
+
+            using var image = ISImage.Load<Rgba32>(Encode(backend, encoder, BitmapContainerFormats.Gif));
+
+            Assert.Equal(4, image.Width);
+            Assert.Equal(4, image.Height);
+            Assert.Equal(2, image.Frames.Count);
+            Assert.Equal(3, image.Metadata.GetGifMetadata().RepeatCount);
+
+            var first = image.Frames[0].Metadata.GetGifMetadata();
+            var second = image.Frames[1].Metadata.GetGifMetadata();
+
+            Assert.Equal(10, first.FrameDelay);
+            Assert.Equal(FrameDisposalMode.DoNotDispose, first.DisposalMode);
+            Assert.Equal(25, second.FrameDelay);
+            Assert.Equal(FrameDisposalMode.RestoreToBackground, second.DisposalMode);
+
+            // ImageSharp composites decoded frames: the second keeps the first outside its rectangle.
+            Assert.Equal(new Rgba32(255, 0, 0, 255), image.Frames[1][0, 0]);
+            Assert.Equal(new Rgba32(0, 255, 0, 255), image.Frames[1][3, 3]);
+        }
+
+        [Fact]
+        public void Gif_Global_Palette_Maps_Every_Frame_To_Its_Colors()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var palette = new BitmapPalette(new[] { AvColors.Black, AvColors.White, AvColor.FromRgb(200, 0, 0) });
+            var encoder = new GifBitmapEncoder { GlobalPalette = palette };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 1, (x, _) => x == 0 ? Opaque(190, 10, 10) : Opaque(240, 240, 240)) });
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(2, 1, (20, 20, 20, 255)) });
+
+            using var image = ISImage.Load<Rgba32>(Encode(backend, encoder, BitmapContainerFormats.Gif));
+
+            var table = image.Metadata.GetGifMetadata().GlobalColorTable;
+
+            Assert.NotNull(table);
+            Assert.Contains(ISColor.FromPixel(new Rgba32(200, 0, 0, 255)), table!.Value.ToArray());
+            Assert.Equal(new Rgba32(200, 0, 0, 255), image.Frames[0][0, 0]);
+            Assert.Equal(new Rgba32(255, 255, 255, 255), image.Frames[0][1, 0]);
+            Assert.Equal(new Rgba32(0, 0, 0, 255), image.Frames[1][0, 0]);
+        }
+
+        [Fact]
+        public void Png_Frame_Palette_Writes_An_Indexed_Png()
+        {
+            var backend = new ImageSharpImagingBackend();
+            var palette = new BitmapPalette(new[] { AvColors.Black, AvColor.FromRgb(0, 0, 200), AvColors.White });
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = CreatePixelBuffer(3, 1, (x, _) => x switch { 0 => Opaque(10, 10, 10), 1 => Opaque(0, 20, 190), _ => Opaque(250, 250, 250) }),
+                Palette = palette,
+            });
+
+            using var image = ISImage.Load<Rgba32>(Encode(backend, encoder, BitmapContainerFormats.Png));
+
+            Assert.Equal(PngColorType.Palette, image.Metadata.GetPngMetadata().ColorType);
+            Assert.Equal(new Rgba32(0, 0, 0, 255), image[0, 0]);
+            Assert.Equal(new Rgba32(0, 0, 200, 255), image[1, 0]);
+            Assert.Equal(new Rgba32(255, 255, 255, 255), image[2, 0]);
+        }
+
+        private static (byte R, byte G, byte B, byte A) Opaque(byte r, byte g, byte b) => (r, g, b, 255);
+
+        private static byte[] Encode(ImageSharpImagingBackend backend, BitmapEncoder encoder, Guid containerFormat)
+        {
+            using var stream = new MemoryStream();
+
+            backend.CreateEncoder(containerFormat).Encode(encoder, stream, TestContext.Current.CancellationToken);
+
+            return stream.ToArray();
         }
 
         [Fact]

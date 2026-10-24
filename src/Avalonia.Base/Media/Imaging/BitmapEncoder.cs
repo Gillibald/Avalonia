@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Platform;
@@ -65,15 +66,27 @@ namespace Avalonia.Media.Imaging
         {
             _ = stream ?? throw new ArgumentNullException(nameof(stream));
 
+            if (!stream.CanWrite)
+                throw new ArgumentException("The stream is not writable.", nameof(stream));
+
             cancellationToken.ThrowIfCancellationRequested();
 
             var backend = ImagingBackend.Current;
-
-            Validate(backend);
-
+            var backendCapabilities = Validate(backend);
             var impl = backend.CreateEncoder(ContainerFormat);
 
-            impl.Encode(this, stream, cancellationToken);
+            if (stream.CanSeek ||
+                (backendCapabilities & BitmapCodecCapabilities.EncodeRequiresSeekableStream) == 0)
+            {
+                impl.Encode(this, stream, cancellationToken);
+                return;
+            }
+
+            using var buffer = new MemoryStream();
+
+            impl.Encode(this, buffer, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            buffer.WriteTo(stream);
         }
 
         /// <summary>
@@ -107,6 +120,74 @@ namespace Avalonia.Media.Imaging
         {
         }
 
+        /// <summary>
+        /// Gets the palette of frames that set no <see cref="BitmapEncoderFrame.Palette"/>; null
+        /// when the format has no container-wide palette.
+        /// </summary>
+        private protected virtual BitmapPalette? DefaultFramePalette => null;
+
+        /// <summary>
+        /// Returns a transient view over the pixels a backend writes for a frame, with the
+        /// frame's palette applied: indexed pixels in the frame palette (or
+        /// <see cref="DefaultFramePalette"/>) when one is set, otherwise the source as is.
+        /// </summary>
+        /// <param name="index">The frame index.</param>
+        /// <param name="palette">The palette of the returned pixels when they are indexed; null otherwise.</param>
+        internal ILockedFramebuffer LockFramePixels(int index, out BitmapPalette? palette)
+        {
+            var frame = Frames[index];
+
+            if ((frame.Palette ?? DefaultFramePalette) is not { } target)
+            {
+                var view = frame.LockPixels();
+
+                palette = !view.Format.IsIndexed ? null
+                    : frame.Pixels is { } pixels ? pixels.Palette
+                    : frame.Frame!.TryGetPalette(out var own) ? own
+                    : null;
+
+                return view;
+            }
+
+            var source = frame.Pixels ?? frame.Frame!.ToPixelBuffer();
+            var format = GetIndexedFormat(target.Colors.Count);
+
+            palette = target;
+
+            if (source.Format == format && source.Palette is { } sourcePalette &&
+                sourcePalette.Colors.SequenceEqual(target.Colors))
+            {
+                return source.Lock();
+            }
+
+            return source.Convert(format, AlphaFormat.Unpremul, new PixelConversionOptions { Palette = target }).Lock();
+        }
+
+        /// <summary>
+        /// Returns a transient view over a frame's pixels for backends that write no
+        /// palettes: indexed sources are expanded to <see cref="PixelFormats.Bgra8888"/>.
+        /// </summary>
+        internal ILockedFramebuffer LockFramePixelsExpanded(int index)
+        {
+            var view = LockFramePixels(index, out var palette);
+
+            if (!view.Format.IsIndexed)
+                return view;
+
+            using (view)
+            {
+                return PixelBuffer.CopyFrom(view, palette).Convert(PixelFormats.Bgra8888, AlphaFormat.Unpremul).Lock();
+            }
+        }
+
+        private static PixelFormat GetIndexedFormat(int colorCount) => colorCount switch
+        {
+            <= 2 => PixelFormats.Indexed1,
+            <= 4 => PixelFormats.Indexed2,
+            <= 16 => PixelFormats.Indexed4,
+            _ => PixelFormats.Indexed8,
+        };
+
         private protected static void RequireRange(int value, int min, int max, string encoder, string option)
         {
             if (value < min || value > max)
@@ -114,7 +195,7 @@ namespace Avalonia.Media.Imaging
                     $"{encoder}.{option} must be between {min} and {max}; got {value}.");
         }
 
-        private void Validate(IImagingBackend backend)
+        private BitmapCodecCapabilities Validate(IImagingBackend backend)
         {
             if (Frames.Count == 0)
                 throw new InvalidOperationException(
@@ -130,6 +211,13 @@ namespace Avalonia.Media.Imaging
                         $"A {nameof(BitmapEncoderFrame)} needs exactly one pixel source: set either " +
                         $"{nameof(BitmapEncoderFrame.Pixels)} or {nameof(BitmapEncoderFrame.Frame)}.");
                 }
+
+                if (frame.Origin != default && (Capabilities & BitmapCodecCapabilities.Animation) == 0)
+                    throw new NotSupportedException($"{GetType().Name} does not support frame origins.");
+
+                if (frame.Origin.X < 0 || frame.Origin.Y < 0)
+                    throw new InvalidOperationException(
+                        $"{nameof(BitmapEncoderFrame)}.{nameof(BitmapEncoderFrame.Origin)} must not be negative; got {frame.Origin}.");
             }
 
             ValidateOptions();
@@ -145,8 +233,10 @@ namespace Avalonia.Media.Imaging
             if (ColorProfile is not null || HasFrameColorProfile())
                 RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.ColorProfile, "embedding a color profile");
 
-            if (HasFramePalette())
+            if (HasFramePalette() || DefaultFramePalette is not null)
                 RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.Palette, "encoding a palette");
+
+            return backendCapabilities ?? BitmapCodecCapabilities.None;
         }
 
         private void RequireCapability(IImagingBackend backend, BitmapCodecCapabilities? backendCapabilities,

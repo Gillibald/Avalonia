@@ -46,6 +46,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                     Decode = true,
                     Encode = true,
                     SeekableFrames = true,
+                    MultiFrameEncode = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
                 },

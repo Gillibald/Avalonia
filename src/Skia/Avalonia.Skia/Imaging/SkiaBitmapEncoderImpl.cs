@@ -33,7 +33,7 @@ namespace Avalonia.Skia.Imaging
                     "The 'SkiaSharp' imaging backend does not support Adam7 interlacing.");
             }
 
-            using var source = encoder.Frames[0].LockPixels();
+            using var source = encoder.LockFramePixelsExpanded(0);
 
             // Skia cannot transform while encoding; the shared software path can.
             var transformed = EncoderTransform.Apply(source, encoder.Transform);

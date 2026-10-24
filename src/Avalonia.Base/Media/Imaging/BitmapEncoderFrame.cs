@@ -42,7 +42,10 @@ namespace Avalonia.Media.Imaging
         public ReadOnlyMemory<byte>? ColorProfile { get; set; }
 
         /// <summary>
-        /// Gets or sets the palette for indexed encode targets.
+        /// Gets or sets the palette the frame is written with. Pixels that are not already
+        /// indexed in this palette are mapped to its nearest entries, without dithering,
+        /// before the backend sees them. When null, an indexed source keeps its own palette.
+        /// Requires the format's <see cref="BitmapCodecCapabilities.Palette"/> capability.
         /// </summary>
         public BitmapPalette? Palette { get; set; }
 
@@ -55,6 +58,15 @@ namespace Avalonia.Media.Imaging
         /// Gets or sets the disposal method when encoding an animation frame.
         /// </summary>
         public FrameDisposalMethod Disposal { get; set; }
+
+        /// <summary>
+        /// Gets or sets the frame's offset on the animation canvas, such as the GIF logical
+        /// screen. Requires the format's <see cref="BitmapCodecCapabilities.Animation"/> capability
+        /// when not zero.
+        /// </summary>
+        public PixelPoint Origin { get; set; }
+
+        internal PixelSize Size => Pixels?.Size ?? Frame?.PixelSize ?? default;
 
         /// <summary>
         /// Returns a transient view over the frame's pixels for the backend encoder,

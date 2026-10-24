@@ -40,8 +40,9 @@ namespace Avalonia.Imaging.ImageSharp
     /// The per-format capability catalog of the ImageSharp imaging backend.
     /// </summary>
     /// <remarks>
-    /// Animation and palettes are deferred: ImageSharp composites animated frames during
-    /// decode and exposes no raw index buffer. FusedDecode is declared for JPEG only,
+    /// Decoded animation and palettes are deferred: ImageSharp composites animated frames
+    /// during decode and exposes no raw index buffer. Encoding writes GIF animations and
+    /// PNG and GIF palettes. FusedDecode is declared for JPEG only,
     /// where <c>DecoderOptions.TargetSize</c> measurably reduces the decode itself; the
     /// other formats decode at native size and internally resize afterwards, so the
     /// shared pixel pipeline applies their scaling instead.
@@ -53,7 +54,7 @@ namespace Avalonia.Imaging.ImageSharp
             new ImageSharpBitmapCodecInfo("PNG", "PNG", BitmapContainerFormats.Png,
                 BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.Encode |
                 BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile |
-                BitmapCodecCapabilities.HighDepth,
+                BitmapCodecCapabilities.HighDepth | BitmapCodecCapabilities.Palette,
                 new[] { "image/png" }, new[] { "png" }),
             new ImageSharpBitmapCodecInfo("JPEG", "JPEG", BitmapContainerFormats.Jpeg,
                 BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.Encode |
@@ -62,7 +63,8 @@ namespace Avalonia.Imaging.ImageSharp
                 new[] { "image/jpeg" }, new[] { "jpg", "jpeg" }),
             new ImageSharpBitmapCodecInfo("GIF", "GIF", BitmapContainerFormats.Gif,
                 BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.MultiFrame |
-                BitmapCodecCapabilities.Encode,
+                BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.MultiFrameEncode |
+                BitmapCodecCapabilities.Palette,
                 new[] { "image/gif" }, new[] { "gif" }),
             new ImageSharpBitmapCodecInfo("BMP", "BMP", BitmapContainerFormats.Bmp,
                 BitmapCodecCapabilities.Decode | BitmapCodecCapabilities.Encode,

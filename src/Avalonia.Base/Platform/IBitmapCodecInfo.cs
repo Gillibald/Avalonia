@@ -36,7 +36,10 @@ namespace Avalonia.Platform
         /// <summary>The backend exposes animation data (frame delay, disposal, loop count).</summary>
         Animation = 1 << 4,
 
-        /// <summary>The backend exposes indexed pixel access and palettes.</summary>
+        /// <summary>
+        /// The backend handles palettes: it writes <see cref="Avalonia.Media.Imaging.BitmapEncoderFrame.Palette"/>
+        /// when encoding, and exposes indexed pixels with their palette where it decodes them.
+        /// </summary>
         Palette = 1 << 5,
 
         /// <summary>
@@ -65,6 +68,12 @@ namespace Avalonia.Platform
         /// stay indexed, 16-bit and floating-point images keep their depth, CMYK stays CMYK.
         /// </summary>
         PreservesStoredFormat = 1 << 11,
+
+        /// <summary>
+        /// The backend's encoder seeks in its target while writing. <see cref="Avalonia.Media.Imaging.BitmapEncoder.Save"/>
+        /// then encodes a stream that cannot seek into memory first and copies the result.
+        /// </summary>
+        EncodeRequiresSeekableStream = 1 << 12,
     }
 
     /// <summary>

@@ -63,6 +63,39 @@ namespace Avalonia.Imaging.TestKit.Contract
             Assert.SkipWhen(tested == 0, "The manifest declares no lossless encode format with a generated reference.");
         }
 
+        [Fact]
+        public void Save_ToAStreamThatCannotSeek_WritesADecodableImage()
+        {
+            var tested = 0;
+
+            foreach (var entry in s_encoderFormats)
+            {
+                if (TryGetFormat(entry.FormatName) is not { Encode: true, Decode: true })
+                    continue;
+
+                tested++;
+
+                var encoder = entry.Create();
+
+                encoder.Frames.Add(new BitmapEncoderFrame { Pixels = CreatePixelBuffer(FixtureImages.Rgb4x4Png) });
+
+                using var target = new MemoryStream();
+
+                using (var scope = LocatorScope.With(Backend))
+                using (var stream = new NonSeekableStream(target, leaveOpen: true, writable: true))
+                    encoder.Save(stream);
+
+                target.Position = 0;
+
+                using var decoder = Backend.CreateDecoder(target, ownsStream: false);
+                using var frame = ReadFirstFrame(decoder);
+
+                Assert.Equal(FixtureImages.Rgb4x4Png.ExpectedSize, frame.PixelSize);
+            }
+
+            Assert.SkipWhen(tested == 0, "The manifest declares no format that encodes and decodes.");
+        }
+
         [Theory]
         [InlineData(BitmapRotation.Rotate90, false, false)]
         [InlineData(BitmapRotation.None, true, false)]
