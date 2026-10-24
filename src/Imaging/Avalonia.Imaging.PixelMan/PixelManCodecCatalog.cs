@@ -81,7 +81,8 @@ namespace Avalonia.Imaging.PixelMan
                     BitmapCodecCapabilities.HighDepth | BitmapCodecCapabilities.Palette | Scaling,
                     new[] { "image/png" }, new[] { "png" }),
                 new PixelManCodecInfo("JPEG", PmCodecKind.Jpeg, BitmapContainerFormats.Jpeg,
-                    Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile | Scaling,
+                    Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile | Scaling |
+                    BitmapCodecCapabilities.Thumbnail,
                     new[] { "image/jpeg" }, new[] { "jpg", "jpeg" }),
                 new PixelManCodecInfo("TIFF", PmCodecKind.Tiff, BitmapContainerFormats.Tiff,
                     Common | BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile |

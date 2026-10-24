@@ -375,6 +375,68 @@ namespace Avalonia.Imaging.PixelMan.Tests
             }
         }
 
+        [Fact]
+        public void A_Jpeg_Should_Expose_Its_Exif_Thumbnail()
+        {
+            var allocator = new CountingAllocator();
+            using var stream = new MemoryStream();
+
+            using (var thumbnail = Avalonia.PixelMan.PmBitmapFrame.CreateFromCopy(Avalonia.PixelMan.PmPixelFormat.Bgr24,
+                       4, 3, 12, Enumerable.Repeat((byte)0x40, 36).ToArray()))
+            using (var thumbnailBytes = new MemoryStream())
+            using (var main = Avalonia.PixelMan.PmBitmapFrame.CreateFromCopy(Avalonia.PixelMan.PmPixelFormat.Bgr24,
+                       16, 12, 48, new byte[16 * 12 * 3]))
+            using (var metadata = Avalonia.PixelMan.PmMetadata.Create())
+            {
+                thumbnail.Encode(thumbnailBytes, Avalonia.PixelMan.PmCodecKind.Jpeg, cancellationToken: TestContext.Current.CancellationToken);
+
+                using var blob = Avalonia.PixelMan.PmMetadataValue.Create(Avalonia.PixelMan.PmMetadataValueType.Undefined,
+                    thumbnailBytes.ToArray());
+
+                metadata.Write("/app1/thumb/{}", blob);
+                main.SetMetadata(metadata);
+                main.Encode(stream, Avalonia.PixelMan.PmCodecKind.Jpeg, cancellationToken: TestContext.Current.CancellationToken);
+            }
+
+            stream.Position = 0;
+
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(new PixelManImagingBackend(allocator));
+
+            using var decoder = BitmapDecoder.Create(stream);
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.True(frame.TryGetThumbnail(out var thumb));
+            Assert.Equal(new PixelSize(4, 3), thumb!.PixelSize);
+
+            using (var pixels = thumb.Lock())
+            {
+                // Installed from the rental PixelMan decoded into, like any frame.
+                Assert.Contains(pixels.Address, allocator.LiveAddresses);
+            }
+
+            Assert.True(frame.TryGetThumbnail(out var again));
+            Assert.Same(thumb, again);
+        }
+
+        [Fact]
+        public void A_Png_Should_Have_No_Thumbnail()
+        {
+            using var scope = Bind();
+            using var stream = new MemoryStream();
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Red) });
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream);
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.False(frame.TryGetThumbnail(out _));
+        }
+
         private static string Asset(string name) => Path.Combine(AppContext.BaseDirectory, "Assets", name);
 
         private static BitmapMetadata RoundTrip(BitmapEncoder encoder, Guid containerFormat)

@@ -13,7 +13,7 @@ namespace Avalonia.Imaging.PixelMan
     /// orientation is applied by the pipeline: PixelMan never rotates.
     /// </summary>
     internal class PixelManBitmapFrameSource : IBitmapFrameSource, IColorProfileSource, IMetadataStoreSource,
-        ISupportsFusedDecode
+        ISupportsFusedDecode, IThumbnailSource
     {
         private readonly PmBitmapFrame _frame;
         private readonly BitmapDecodeOptions? _options;
@@ -82,6 +82,49 @@ namespace Avalonia.Imaging.PixelMan
         public ReadOnlyMemory<byte> IccProfile { get; }
 
         protected PmBitmapFrame Frame => _frame;
+
+        /// <summary>
+        /// Decodes the EXIF thumbnail PixelMan keeps in a JPEG frame's metadata, into the pool
+        /// like any frame; the caller owns the returned source. The plan's target size and
+        /// region are the frame's, so the thumbnail decodes as it is stored.
+        /// </summary>
+        public IBitmapFrameSource? Thumbnail
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(PixelManBitmapFrameSource));
+
+                    PmBitmapFrame? thumbnail;
+
+                    try
+                    {
+                        thumbnail = _frame.DecodeThumbnail(
+                            new PmDecodeOptions(PmCompatibilityMode.Normal) { FrameAllocator = _allocator },
+                            _options?.CancellationToken ?? default);
+                    }
+                    catch (Exception exception) when (PixelManFormats.Translate(exception) is var translated && translated != exception)
+                    {
+                        throw translated;
+                    }
+
+                    if (thumbnail is null)
+                        return null;
+
+                    try
+                    {
+                        return Create(thumbnail, PixelManCodecCatalog.FromKind(PmCodecKind.Jpeg)!, null, _allocator);
+                    }
+                    catch
+                    {
+                        thumbnail.Dispose();
+                        throw;
+                    }
+                }
+            }
+        }
 
         public FusedDecodeParts FusedParts => _reduced ? FusedDecodeParts.Scale : FusedDecodeParts.None;
 
