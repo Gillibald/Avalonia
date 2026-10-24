@@ -100,6 +100,14 @@ namespace Avalonia.Imaging.PixelMan
             {
                 source = stream;
             }
+            else if (stream.CanSeek && stream.Length - stream.Position is var remaining &&
+                     remaining >= 0 && remaining <= Array.MaxLength)
+            {
+                source = PooledCopyStream.Read(stream, (int)remaining);
+
+                if (ownsStream)
+                    stream.Dispose();
+            }
             else
             {
                 source = new MemoryStream();
