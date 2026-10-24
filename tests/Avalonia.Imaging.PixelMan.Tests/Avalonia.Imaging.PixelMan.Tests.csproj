@@ -4,6 +4,10 @@
     <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
+  <!-- The tests of local PixelMan changes run against local builds only; see the backend project. -->
+  <PropertyGroup Condition="$(PixelManVersion.Contains('-local.'))">
+    <DefineConstants>$(DefineConstants);PIXELMAN_FRAME_ALLOCATOR</DefineConstants>
+  </PropertyGroup>
   <Import Project="..\..\build\UnitTests.NetCore.targets" />
   <Import Project="..\..\build\XUnit.props" />
   <Import Project="..\..\build\SharedVersion.props" />

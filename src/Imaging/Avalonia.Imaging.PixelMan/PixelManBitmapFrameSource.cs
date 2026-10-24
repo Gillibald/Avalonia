@@ -9,8 +9,9 @@ namespace Avalonia.Imaging.PixelMan
     /// <summary>
     /// A frame PixelMan has decoded into its stored layout. The first Lock copies it into
     /// pooled memory, through the shared pixel pipeline when the decode plan crops, scales,
-    /// orients or converts it. EXIF orientation is applied by the pipeline: PixelMan never
-    /// rotates.
+    /// orients or converts it; a frame PixelMan decoded into a pool rental whose layout is
+    /// already the plan's output is installed as it is. EXIF orientation is applied by the
+    /// pipeline: PixelMan never rotates.
     /// </summary>
     internal class PixelManBitmapFrameSource : IBitmapFrameSource, IColorProfileSource, IMetadataStoreSource
     {
@@ -138,6 +139,11 @@ namespace Avalonia.Imaging.PixelMan
         {
             _options?.CancellationToken.ThrowIfCancellationRequested();
 
+#if PIXELMAN_FRAME_ALLOCATOR
+            if (IsIdentityPlan && TryAdoptFrame())
+                return;
+#endif
+
             var targetRowBytes = PixelFormatArithmetic.GetMinRowBytes(PixelFormat, PixelSize.Width);
             var target = _allocator.Rent((long)targetRowBytes * PixelSize.Height);
 
@@ -157,12 +163,48 @@ namespace Avalonia.Imaging.PixelMan
             }
         }
 
+        /// <summary>Whether the decoded layout is already the plan's output.</summary>
+        private bool IsIdentityPlan =>
+            _mapped && !_hasRegion && _orientation == PixelOrientation.Normal && PixelSize == _rawSize &&
+            PixelFormat == _decodeFormat && (AlphaFormat == _decodeAlpha || !PixelFormat.HasAlpha);
+
+#if PIXELMAN_FRAME_ALLOCATOR
+        // The frame lives in a pool rental, so installing it skips the copy and pool
+        // accounting still covers it. The lock keeps PixelMan's frame, and with it the
+        // rental, alive until the last view is released.
+        private bool TryAdoptFrame()
+        {
+            if (_allocator is not PixelManFrameAllocator frames)
+                return false;
+
+            var pixels = _frame.Lock(PmLockMode.ReadWrite);
+
+            if (!frames.TryClaim(pixels.Scan0, out var rental))
+            {
+                pixels.Dispose();
+                return false;
+            }
+
+            _pixels = new SharedBitmapMemory(new FrameMemory(rental, pixels));
+            _rowBytes = checked((int)pixels.Stride);
+            return true;
+        }
+
+        private sealed class FrameMemory(IBitmapMemory rental, PmBitmapLock pixels) : IBitmapMemory
+        {
+            public IntPtr Address => rental.Address;
+
+            public long ByteCount => rental.ByteCount;
+
+            public void Dispose() => pixels.Dispose();
+        }
+#endif
+
         private void RunPlan(IntPtr destination, int destRowBytes)
         {
             // The decoded layout is the plan's output: PixelMan copies it into the pooled
             // destination, so pool accounting covers every installed frame.
-            if (_mapped && !_hasRegion && _orientation == PixelOrientation.Normal && PixelSize == _rawSize &&
-                PixelFormat == _decodeFormat && (AlphaFormat == _decodeAlpha || !PixelFormat.HasAlpha))
+            if (IsIdentityPlan)
             {
                 unsafe
                 {

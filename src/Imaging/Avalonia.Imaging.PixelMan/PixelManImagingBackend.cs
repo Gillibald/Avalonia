@@ -166,11 +166,18 @@ namespace Avalonia.Imaging.PixelMan
             source.Position = origin;
 
             PmFrameDecoder decoder;
+            var decodeOptions = new PmDecodeOptions(PmCompatibilityMode.Normal) { MaxPixels = (ulong)Math.Max(0, maxPixels) };
+            var allocator = Allocator;
+
+#if PIXELMAN_FRAME_ALLOCATOR
+            var frames = new PixelManFrameAllocator(allocator);
+            decodeOptions.FrameAllocator = frames;
+            allocator = frames;
+#endif
 
             try
             {
-                decoder = PmBitmapFrame.OpenFramesSeekable(source, codec.Kind,
-                    new PmDecodeOptions(PmCompatibilityMode.Normal) { MaxPixels = (ulong)Math.Max(0, maxPixels) },
+                decoder = PmBitmapFrame.OpenFramesSeekable(source, codec.Kind, decodeOptions,
                     options?.CancellationToken ?? default);
             }
             catch (Exception exception) when (PixelManFormats.Translate(exception) is var translated && translated != exception)
@@ -181,7 +188,7 @@ namespace Avalonia.Imaging.PixelMan
             if (!hasHeader)
                 info = new BitmapImageInfo(codec.FormatName, default, null, null, decoder.FrameCount is { } count ? (int)count : null, null);
 
-            return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, Allocator);
+            return PixelManBitmapDecoder.Create(decoder, source, codec, info, options, allocator);
         }
 
         private static bool TryIdentifyCore(Stream stream, long origin, out BitmapImageInfo info)

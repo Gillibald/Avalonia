@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Avalonia.Imaging.TestKit.Fixtures;
+using Avalonia.Imaging.TestKit.Instrumentation;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -180,6 +181,42 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(first, profile0.ToArray());
             Assert.Equal(second, profile1.ToArray());
         }
+
+#if PIXELMAN_FRAME_ALLOCATOR
+        [Fact]
+        public void A_Frame_Decoded_Into_The_Pool_Should_Be_Installed_Without_A_Copy()
+        {
+            var allocator = new CountingAllocator();
+            using var stream = new MemoryStream();
+            using var scope = AvaloniaLocator.EnterScope();
+
+            ImagingBackend.Register(new PixelManImagingBackend(allocator));
+
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(5, 3, Colors.Red) });
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            var rentsBeforeDecode = allocator.RentCount;
+
+            using var decoder = BitmapDecoder.Create(stream);
+            using var frame = decoder.ReadNextFrame()!;
+
+            var decodedInto = Assert.Single(allocator.LiveAddresses);
+
+            using (var pixels = frame.Lock())
+            {
+                Assert.Equal(decodedInto, pixels.Address);
+                Assert.Equal(rentsBeforeDecode + 1, allocator.RentCount);
+                Assert.Equal(Colors.Red.R, System.Runtime.InteropServices.Marshal.ReadByte(pixels.Address));
+            }
+
+            frame.Dispose();
+
+            Assert.Equal(0, allocator.OutstandingRentals);
+        }
+#endif
 
         private static BitmapMetadata RoundTrip(BitmapEncoder encoder, Guid containerFormat)
         {
