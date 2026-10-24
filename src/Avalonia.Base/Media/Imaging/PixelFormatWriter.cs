@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.InteropServices;
 using Avalonia.Platform;
 namespace Avalonia.Media.Imaging;
 
@@ -392,6 +393,86 @@ internal static unsafe class PixelFormatWriter
         AlphaFormat alphaFormat,
         AlphaFormat srcAlphaFormat)
     {
+        var bitsPerPixel = format.BitsPerPixel;
+
+        // Alpha converts with the row kernels on a stack chunk, so the pixels then write
+        // without a per-pixel conversion. Sub-byte formats cannot start mid-byte, so they
+        // stay on the per-pixel path.
+        if (NeedsAlphaConversion(srcAlphaFormat, alphaFormat) && bitsPerPixel % 8 == 0 && !format.IsIndexed)
+        {
+            const int ChunkPixels = 256;
+
+            Span<Rgba8888Pixel> chunk = stackalloc Rgba8888Pixel[ChunkPixels];
+            var bytesPerPixel = bitsPerPixel / 8;
+
+            for (var offset = 0; offset < pixels.Length; offset += ChunkPixels)
+            {
+                var count = Math.Min(ChunkPixels, pixels.Length - offset);
+                var part = chunk.Slice(0, count);
+
+                pixels.Slice(offset, count).CopyTo(part);
+                ConvertAlpha(part, srcAlphaFormat, alphaFormat);
+                WriteRowCore(part, dest + (nint)offset * bytesPerPixel, format, alphaFormat, alphaFormat);
+            }
+
+            return;
+        }
+
+        WriteRowCore(pixels, dest, format, alphaFormat, srcAlphaFormat);
+    }
+
+    /// <summary>
+    /// Converts canonical pixels between alpha formats in place, with the same results as
+    /// <see cref="GetConvertedPixel"/>.
+    /// </summary>
+    public static void ConvertAlpha(Span<Rgba8888Pixel> pixels, AlphaFormat sourceAlpha, AlphaFormat destAlpha)
+    {
+        if (!NeedsAlphaConversion(sourceAlpha, destAlpha))
+            return;
+
+        if (sourceAlpha == AlphaFormat.Premul)
+            PixelKernels.Unpremultiply(MemoryMarshal.AsBytes(pixels));
+        else
+            PixelKernels.Premultiply(MemoryMarshal.AsBytes(pixels));
+    }
+
+    private static bool NeedsAlphaConversion(AlphaFormat sourceAlpha, AlphaFormat destAlpha)
+        => sourceAlpha != destAlpha && (sourceAlpha == AlphaFormat.Premul || destAlpha == AlphaFormat.Premul);
+
+    private static void WriteRowCore(
+        ReadOnlySpan<Rgba8888Pixel> pixels,
+        IntPtr dest,
+        PixelFormat format,
+        AlphaFormat alphaFormat,
+        AlphaFormat srcAlphaFormat)
+    {
+        if (srcAlphaFormat == alphaFormat || !NeedsAlphaConversion(srcAlphaFormat, alphaFormat))
+        {
+            var canonical = MemoryMarshal.AsBytes(pixels);
+
+            switch (format.FormatEnum)
+            {
+                case PixelFormatEnum.Rgba8888:
+                    PixelKernels.Copy4(canonical, new Span<byte>((void*)dest, canonical.Length), false, false);
+                    return;
+                case PixelFormatEnum.Bgra8888:
+                    PixelKernels.Copy4(canonical, new Span<byte>((void*)dest, canonical.Length), true, false);
+                    return;
+                case PixelFormatEnum.Rgb32:
+                    PixelKernels.Copy4(canonical, new Span<byte>((void*)dest, canonical.Length), false, true);
+                    return;
+                case PixelFormatEnum.Bgr32:
+                    PixelKernels.Copy4(canonical, new Span<byte>((void*)dest, canonical.Length), true, true);
+                    return;
+                case PixelFormatEnum.Rgb24:
+                    PixelKernels.Contract4To3(canonical, new Span<byte>((void*)dest, pixels.Length * 3), false);
+                    return;
+                case PixelFormatEnum.Bgr24:
+                    PixelKernels.Contract4To3(canonical, new Span<byte>((void*)dest, pixels.Length * 3), true);
+                    return;
+            }
+        }
+
         switch (format.FormatEnum)
         {
             case PixelFormatEnum.Rgb565:

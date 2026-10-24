@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Avalonia.Platform;
 namespace Avalonia.Media.Imaging;
 
@@ -366,6 +367,31 @@ internal static unsafe class PixelFormatReader
 
     public static void ReadRow(Span<Rgba8888Pixel> pixels, IntPtr source, PixelFormat format)
     {
+        var canonical = MemoryMarshal.AsBytes(pixels);
+
+        // The canonical row is RGBA bytes, so the 8-bit layouts convert with byte kernels.
+        switch (format.FormatEnum)
+        {
+            case PixelFormatEnum.Rgba8888:
+                PixelKernels.Copy4(new ReadOnlySpan<byte>((void*)source, canonical.Length), canonical, false, false);
+                return;
+            case PixelFormatEnum.Bgra8888:
+                PixelKernels.Copy4(new ReadOnlySpan<byte>((void*)source, canonical.Length), canonical, true, false);
+                return;
+            case PixelFormatEnum.Rgb32:
+                PixelKernels.Copy4(new ReadOnlySpan<byte>((void*)source, canonical.Length), canonical, false, true);
+                return;
+            case PixelFormatEnum.Bgr32:
+                PixelKernels.Copy4(new ReadOnlySpan<byte>((void*)source, canonical.Length), canonical, true, true);
+                return;
+            case PixelFormatEnum.Rgb24:
+                PixelKernels.Expand3To4(new ReadOnlySpan<byte>((void*)source, pixels.Length * 3), canonical, false);
+                return;
+            case PixelFormatEnum.Bgr24:
+                PixelKernels.Expand3To4(new ReadOnlySpan<byte>((void*)source, pixels.Length * 3), canonical, true);
+                return;
+        }
+
         switch (format.FormatEnum)
         {
             case PixelFormatEnum.Rgb565:

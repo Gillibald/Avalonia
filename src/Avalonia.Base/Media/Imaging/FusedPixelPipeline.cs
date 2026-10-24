@@ -280,12 +280,7 @@ internal static unsafe class FusedPixelPipeline
     }
 
     private static void PremultiplyRow(Span<Rgba8888Pixel> row)
-    {
-        for (var i = 0; i < row.Length; i++)
-        {
-            row[i] = PixelFormatWriter.GetConvertedPixel(row[i], AlphaFormat.Unpremul, AlphaFormat.Premul);
-        }
-    }
+        => PixelFormatWriter.ConvertAlpha(row, AlphaFormat.Unpremul, AlphaFormat.Premul);
 
     private static void RunIdentity(in PipelineContext context, in FusedPlanExecution plan,
         IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator allocator)
