@@ -142,16 +142,21 @@ namespace Avalonia.Media.Imaging
         /// the WIC profile (which the backend resolves itself) pass through, as does a decode
         /// with no render interface bound, which has no render format to target.
         /// </summary>
-        internal static BitmapDecodeOptions? ResolveFormatProfile(BitmapDecodeOptions? options)
+        internal static BitmapDecodeOptions? ResolveFormatProfile(BitmapDecodeOptions? options) =>
+            ResolveFormatProfile(options, AvaloniaLocator.Current.GetService<IPlatformRenderInterface>());
+
+        /// <summary>
+        /// Resolves the profile against <paramref name="render"/>, for a render backend that
+        /// decodes on its own behalf (its stream-loading entry points).
+        /// </summary>
+        internal static BitmapDecodeOptions? ResolveFormatProfile(BitmapDecodeOptions? options,
+            IPlatformRenderInterface? render)
         {
             if (options is { TargetFormat: not null } or { PreservePixelFormat: true } or
-                { FormatProfile: BitmapFormatProfile.Wic })
+                { FormatProfile: BitmapFormatProfile.Wic } || render is null)
             {
                 return options;
             }
-
-            if (AvaloniaLocator.Current.GetService<IPlatformRenderInterface>() is not { } render)
-                return options;
 
             var resolved = options?.Clone() ?? new BitmapDecodeOptions();
 

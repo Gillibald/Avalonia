@@ -127,9 +127,11 @@ namespace Avalonia.Skia
         }
 
         /// <summary>
-        /// Decodes through the active imaging backend, installing the frame's pooled
-        /// pixels zero-copy; falls back to the direct Skia decode when no backend is
-        /// bound (a render interface created without platform initialization).
+        /// Decodes through the active imaging backend into this render interface's default
+        /// format, as <see cref="Media.Imaging.BitmapDecoder"/> does, so the frame's pooled
+        /// pixels install zero-copy and draw without a per-draw premultiplication; falls
+        /// back to the direct Skia decode when no backend is bound (a render interface
+        /// created without platform initialization).
         /// </summary>
         private IBitmapImpl DecodeBitmap(Stream stream, Media.Imaging.BitmapDecodeOptions? options)
         {
@@ -143,7 +145,8 @@ namespace Avalonia.Skia
 
             try
             {
-                using var decoder = backend.CreateDecoder(stream, ownsStream: false, options);
+                using var decoder = backend.CreateDecoder(stream, ownsStream: false,
+                    Media.Imaging.BitmapDecoder.ResolveFormatProfile(options, this));
                 using var frame = decoder.ReadNextFrame() ??
                     throw new ArgumentException("Unable to load bitmap from provided data");
 
