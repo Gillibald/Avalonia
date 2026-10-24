@@ -1,4 +1,9 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
 using Avalonia.Imaging.TestKit.Fixtures;
+using Avalonia.Imaging.TestKit.Instrumentation;
+using Avalonia.Media.Imaging;
 using Xunit;
 
 namespace Avalonia.Imaging.TestKit.Contract
@@ -28,6 +33,68 @@ namespace Avalonia.Imaging.TestKit.Contract
             }
 
             Assert.SkipWhen(tested == 0, NoDecodableReferenceFixtures);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task AsyncOnly_DecodesThroughTheAsyncEntryPoints(bool seekable)
+        {
+            var fixture = RequireAnyDecodableReferenceFixture();
+
+            using var scope = LocatorScope.With(Backend, new FakeRenderInterface(Fixture.RenderInstall));
+
+            using (var decoder = await BitmapDecoder.CreateAsync(new AsyncOnlyStream(fixture.OpenRead(), seekable),
+                       ownsStream: true, cancellationToken: TestContext.Current.CancellationToken))
+            using (var frame = decoder.ReadNextFrame()!)
+            using (var view = frame.Lock())
+            {
+                AssertRgbaMatchesReference(fixture, FramebufferPixels.ReadRgba(view), view.AlphaFormat);
+            }
+
+            using var stream = new AsyncOnlyStream(fixture.OpenRead(), seekable);
+            using var bitmap = await Bitmap.DecodeAsync(stream, cancellationToken: TestContext.Current.CancellationToken);
+
+            Assert.Equal(fixture.ExpectedSize, bitmap.PixelSize);
+        }
+
+        [Fact]
+        public async Task AsyncOnly_EncodesThroughSaveAsync()
+        {
+            Assert.SkipWhen(TryGetFormat(FixtureImages.PngFormatName) is not { Encode: true },
+                "The manifest does not declare PNG encoding.");
+
+            var fixture = RequireAnyDecodableReferenceFixture();
+
+            using var scope = LocatorScope.With(Backend, new FakeRenderInterface(Fixture.RenderInstall));
+            using var source = BitmapDecoder.Create(fixture.OpenRead());
+            using var frame = source.ReadNextFrame()!;
+
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = frame.ToPixelBuffer() });
+
+            using var target = new MemoryStream();
+
+            using (var stream = new AsyncOnlyStream(target, seekable: false))
+                await encoder.SaveAsync(stream, TestContext.Current.CancellationToken);
+
+            using var decoded = BitmapDecoder.Create(new MemoryStream(target.ToArray()));
+
+            Assert.Equal(fixture.ExpectedSize, decoded.ReadNextFrame()!.PixelSize);
+        }
+
+        [Fact]
+        public async Task AsyncOnly_EndlessStreamStopsAtTheDecodeBudget()
+        {
+            using var scope = LocatorScope.With(Backend, new FakeRenderInterface(Fixture.RenderInstall));
+
+            // The buffer the async entry points fill is capped by the decode limit.
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => BitmapDecoder.CreateAsync(
+                AsyncOnlyStream.Endless(), new BitmapDecodeOptions { MaxPixels = 1 }, ownsStream: true,
+                TestContext.Current.CancellationToken));
+
+            Assert.Contains("decode limit", error.Message);
         }
 
         [Fact]
