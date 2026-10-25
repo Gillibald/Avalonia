@@ -13,7 +13,8 @@ namespace Avalonia.Media.Imaging;
 /// A wide pixel holds red, green, blue and alpha in X, Y, Z and W as sRGB-encoded values
 /// with straight (unassociated) alpha; 0 to 1 covers the displayable range. Integer
 /// formats store sRGB-encoded values, so widening them is exact; floating-point formats
-/// store linear (scRGB) values and pass through the sRGB transfer curve. Premultiplied
+/// and the fixed-point linear formats store linear (scRGB) values and pass through the sRGB
+/// transfer curve. Premultiplied
 /// formats are converted to straight alpha in their own space on read and back on write.
 /// </remarks>
 internal static unsafe class WidePixelFormat
@@ -22,7 +23,11 @@ internal static unsafe class WidePixelFormat
         or PixelFormatEnum.Gray32Float or PixelFormatEnum.Rgba64 or PixelFormatEnum.Rgb48
         or PixelFormatEnum.Bgra64 or PixelFormatEnum.Rgba64Half or PixelFormatEnum.Rgb48Half
         or PixelFormatEnum.Rgba128Float or PixelFormatEnum.Rgb128Float or PixelFormatEnum.Cmyk32
-        or PixelFormatEnum.Cmyk64 or PixelFormatEnum.Bgr101010;
+        or PixelFormatEnum.Cmyk64 or PixelFormatEnum.Bgr101010 or PixelFormatEnum.Bgr48Linear
+        or PixelFormatEnum.Bgra64Linear;
+
+    // One in the s2.13 fixed point of the linear formats.
+    private const float LinearOne = 8192f;
 
     /// <summary>
     /// Reads one row of a wide format into straight-alpha wide pixels.
@@ -151,6 +156,24 @@ internal static unsafe class WidePixelFormat
                     row[x] = new Vector4(((word >> 20) & 0x3FF) / 1023f, ((word >> 10) & 0x3FF) / 1023f,
                         (word & 0x3FF) / 1023f, 1);
                 }
+
+                break;
+            }
+            case PixelFormatEnum.Bgr48Linear:
+            {
+                var src = (short*)source;
+
+                for (var x = 0; x < row.Length; x++, src += 3)
+                    row[x] = FromLinear(new Vector4(src[2], src[1], src[0], LinearOne) / LinearOne, false);
+
+                break;
+            }
+            case PixelFormatEnum.Bgra64Linear:
+            {
+                var src = (short*)source;
+
+                for (var x = 0; x < row.Length; x++, src += 4)
+                    row[x] = FromLinear(new Vector4(src[2], src[1], src[0], src[3]) / LinearOne, premultiplied);
 
                 break;
             }
@@ -328,6 +351,37 @@ internal static unsafe class WidePixelFormat
 
                     // WIC sets the two unused bits; matching it keeps encoded files identical.
                     dst[x] = ToUInt10(pixel.Z) | (ToUInt10(pixel.Y) << 10) | (ToUInt10(pixel.X) << 20) | (3u << 30);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Bgr48Linear:
+            {
+                var dst = (short*)dest;
+
+                for (var x = 0; x < row.Length; x++, dst += 3)
+                {
+                    var pixel = ToLinear(row[x], false);
+
+                    dst[0] = ToFixed13(pixel.Z);
+                    dst[1] = ToFixed13(pixel.Y);
+                    dst[2] = ToFixed13(pixel.X);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Bgra64Linear:
+            {
+                var dst = (short*)dest;
+
+                for (var x = 0; x < row.Length; x++, dst += 4)
+                {
+                    var pixel = ToLinear(row[x], premultiplied);
+
+                    dst[0] = ToFixed13(pixel.Z);
+                    dst[1] = ToFixed13(pixel.Y);
+                    dst[2] = ToFixed13(pixel.X);
+                    dst[3] = ToFixed13(pixel.W);
                 }
 
                 break;
@@ -522,6 +576,8 @@ internal static unsafe class WidePixelFormat
     private static byte ToByte(float value) => (byte)Math.Clamp(MathF.Round(value * 255), 0, 255);
 
     private static ushort ToUInt16(float value) => (ushort)Math.Clamp(MathF.Round(value * 65535), 0, 65535);
+
+    private static short ToFixed13(float value) => (short)Math.Clamp(MathF.Round(value * LinearOne), short.MinValue, short.MaxValue);
 
     // WIC narrows ten-bit channels from their sixteen-bit value, which turns an 8-bit
     // source into exact bit replication; rounding at ten bits differs on a sixth of them.

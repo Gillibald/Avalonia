@@ -37,6 +37,9 @@ namespace Avalonia.Base.UnitTests
         [InlineData(nameof(PixelFormats.Cmyk32), 32, 4, false, false, false, false, true)]
         [InlineData(nameof(PixelFormats.Cmyk64), 64, 4, false, false, false, false, true)]
         [InlineData(nameof(PixelFormats.Bgr101010), 32, 3, false, false, false, false, false)]
+        [InlineData(nameof(PixelFormats.Bgra5551), 16, 4, true, false, false, false, false)]
+        [InlineData(nameof(PixelFormats.Bgr48Linear), 48, 3, false, false, false, false, false)]
+        [InlineData(nameof(PixelFormats.Bgra64Linear), 64, 4, true, false, false, false, false)]
         public void Format_Should_Describe_Its_Layout(string name, int bitsPerPixel, int channelCount,
             bool hasAlpha, bool isIndexed, bool isGrayscale, bool isFloat, bool isCmyk)
         {

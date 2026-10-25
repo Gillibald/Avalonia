@@ -177,6 +177,29 @@ internal static unsafe class PixelFormatWriter
         }
     }
 
+    public unsafe struct Bgra5551PixelFormatWriter : IPixelFormatWriter
+    {
+        private ushort* _address;
+        public void WriteNext(Rgba8888Pixel pixel)
+        {
+            *_address = Pack(pixel);
+
+            _address++;
+        }
+
+        public void Reset(IntPtr address) => _address = (ushort*)address;
+
+        // The one-bit alpha is set from half coverage up.
+        private static ushort Pack(Rgba8888Pixel pixel)
+        {
+            return (ushort)(
+              (pixel.A >= 128 ? 0x8000 : 0)
+              | (((int)Math.Round(pixel.R / 255F * 31F) & 0x1F) << 10)
+              | (((int)Math.Round(pixel.G / 255F * 31F) & 0x1F) << 5)
+              | (((int)Math.Round(pixel.B / 255F * 31F) & 0x1F) << 0));
+        }
+    }
+
     public unsafe struct BlackWhitePixelFormatWriter : IPixelFormatWriter
     {
         private int _bit;
@@ -513,6 +536,9 @@ internal static unsafe class PixelFormatWriter
                 break;
             case PixelFormatEnum.Bgr565:
                 WriteRow<Bgr565PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
+                break;
+            case PixelFormatEnum.Bgra5551:
+                WriteRow<Bgra5551PixelFormatWriter>(pixels, dest, alphaFormat, srcAlphaFormat);
                 break;
             default:
                 if (format.IsIndexed)

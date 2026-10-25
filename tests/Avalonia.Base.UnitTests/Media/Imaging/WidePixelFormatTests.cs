@@ -17,7 +17,9 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             nameof(PixelFormats.Rgba64Half),
             nameof(PixelFormats.Rgb128Float),
             nameof(PixelFormats.Rgba128Float),
-            nameof(PixelFormats.Bgr101010)
+            nameof(PixelFormats.Bgr101010),
+            nameof(PixelFormats.Bgr48Linear),
+            nameof(PixelFormats.Bgra64Linear)
         };
 
         [Theory]
@@ -94,6 +96,41 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal(expected, (word >> 20) & 0x3FF);
             Assert.Equal(0u, word & 0xFFFFF);
             Assert.Equal(3u, word >> 30);
+        }
+
+        [Theory]
+        [InlineData(255, 8192)]
+        [InlineData(128, 1768)]
+        [InlineData(1, 2)]
+        [InlineData(0, 0)]
+        public void Linear_Fixed_Point_Should_Hold_Linear_Light_With_8192_For_One(byte value, short expected)
+        {
+            var samples = Transcode<short>(new Rgba8888Pixel(value, 0, 0, 255), PixelFormats.Bgra64Linear, AlphaFormat.Unpremul);
+
+            // Blue, green, red, alpha.
+            Assert.Equal(new short[] { 0, 0, expected, 8192 }, samples);
+        }
+
+        [Fact]
+        public void Premultiplied_Linear_Fixed_Point_Should_Associate_Alpha_In_Linear_Light()
+        {
+            var samples = Transcode<short>(new Rgba8888Pixel(255, 0, 0, 128), PixelFormats.Bgra64Linear, AlphaFormat.Premul);
+
+            Assert.Equal(new short[] { 0, 0, 4112, 4112 }, samples);
+        }
+
+        [Theory]
+        [InlineData(255, 0, 0, 255, 0xFC00)]
+        [InlineData(255, 0, 0, 0, 0x7C00)]
+        [InlineData(0, 255, 0, 128, 0x83E0)]
+        [InlineData(0, 0, 255, 127, 0x001F)]
+        public void Bgra5551_Should_Pack_Five_Bit_Color_And_One_Bit_Alpha(byte r, byte g, byte b, byte a, int expected)
+        {
+            var word = Transcode<ushort>(new Rgba8888Pixel(r, g, b, a), PixelFormats.Bgra5551, AlphaFormat.Unpremul)[0];
+
+            Assert.Equal((ushort)expected, word);
+            Assert.Equal(new[] { new Rgba8888Pixel(r, g, b, a >= 128 ? (byte)255 : (byte)0) },
+                RoundTrip(new[] { new Rgba8888Pixel(r, g, b, a) }, PixelFormats.Bgra5551, AlphaFormat.Unpremul));
         }
 
         [Fact]

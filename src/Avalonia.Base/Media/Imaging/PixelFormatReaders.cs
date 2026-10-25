@@ -228,6 +228,30 @@ internal static unsafe class PixelFormatReader
         }
     }
 
+    public unsafe struct Bgra5551PixelFormatReader : IPixelFormatReader
+    {
+        private byte* _address;
+        public Rgba8888Pixel ReadNext()
+        {
+            var addr = (ushort*)_address;
+
+            _address += 2;
+
+            return UnPack(*addr);
+        }
+
+        public void Reset(IntPtr address) => _address = (byte*)address;
+
+        private static Rgba8888Pixel UnPack(ushort value)
+        {
+            var r = (byte)Math.Round(((value >> 10) & 0x1F) / 31F * 255);
+            var g = (byte)Math.Round(((value >> 5) & 0x1F) / 31F * 255);
+            var b = (byte)Math.Round(((value >> 0) & 0x1F) / 31F * 255);
+
+            return new Rgba8888Pixel(r, g, b, (value & 0x8000) != 0 ? (byte)255 : (byte)0);
+        }
+    }
+
     public unsafe struct Bgr565PixelFormatReader : IPixelFormatReader
     {
         private byte* _address;
@@ -336,6 +360,7 @@ internal static unsafe class PixelFormatReader
             case PixelFormatEnum.Bgr32:
             case PixelFormatEnum.Bgr555:
             case PixelFormatEnum.Bgr565:
+            case PixelFormatEnum.Bgra5551:
                 return true;
             default:
                 return WidePixelFormat.IsWide(format);
@@ -432,6 +457,9 @@ internal static unsafe class PixelFormatReader
                 break;
             case PixelFormatEnum.Bgr565:
                 ReadRow<Bgr565PixelFormatReader>(pixels, source);
+                break;
+            case PixelFormatEnum.Bgra5551:
+                ReadRow<Bgra5551PixelFormatReader>(pixels, source);
                 break;
             default:
                 if (format.IsIndexed)
