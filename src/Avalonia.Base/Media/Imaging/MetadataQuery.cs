@@ -97,7 +97,31 @@ internal static class MetadataQuery
         }
         else if (containerFormat == BitmapContainerFormats.Png)
         {
+            path = StripTextChunkIndex(path);
             path = CanonicalizeTextField(path, query);
+        }
+
+        return path;
+    }
+
+    // A keyword selects a text entry on its own, so the index of the chunk that holds it
+    // (/[1]text/{str=Author}) adds nothing; the indexed iTXt field view keeps its index.
+    private static string StripTextChunkIndex(string path)
+    {
+        if (!path.StartsWith("/[", StringComparison.Ordinal))
+            return path;
+
+        var close = path.IndexOf(']');
+
+        if (close < 0)
+            return path;
+
+        foreach (var chunk in new[] { "text", "ztxt", "itxt" })
+        {
+            var rest = path.Substring(close + 1);
+
+            if (rest.StartsWith(chunk + "/{str=", StringComparison.Ordinal))
+                return "/" + rest;
         }
 
         return path;
