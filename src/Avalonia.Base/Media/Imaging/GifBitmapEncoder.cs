@@ -43,7 +43,7 @@ namespace Avalonia.Media.Imaging
         /// <inheritdoc />
         protected override BitmapCodecCapabilities Capabilities =>
             BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.MultiFrameEncode |
-            BitmapCodecCapabilities.Animation | BitmapCodecCapabilities.Palette;
+            BitmapCodecCapabilities.Animation | BitmapCodecCapabilities.Palette | BitmapCodecCapabilities.Metadata;
 
         private protected override BitmapPalette? DefaultFramePalette => GlobalPalette;
 

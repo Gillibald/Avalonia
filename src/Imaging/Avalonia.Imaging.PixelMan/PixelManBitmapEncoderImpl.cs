@@ -176,7 +176,9 @@ namespace Avalonia.Imaging.PixelMan
                     };
                     break;
                 case GifBitmapEncoder gif:
-                    options.GifLoopCount = (ushort)(gif.LoopCount ?? 0);
+                    // PixelMan leaves the loop count to the container metadata when it is not set.
+                    if (gif.LoopCount is { } loops)
+                        options.GifLoopCount = (ushort)loops;
                     break;
             }
 

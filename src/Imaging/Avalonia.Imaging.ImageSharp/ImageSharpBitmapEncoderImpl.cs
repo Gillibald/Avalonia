@@ -282,7 +282,8 @@ namespace Avalonia.Imaging.ImageSharp
         {
             var gifMetadata = image.Metadata.GetGifMetadata();
 
-            gifMetadata.RepeatCount = (ushort)(encoder.LoopCount ?? 0);
+            // A repeat count of one plays the animation once, which is what no loop block means.
+            gifMetadata.RepeatCount = (ushort)(encoder.LoopCount ?? 1);
 
             if (encoder.GlobalPalette is { } global)
             {
