@@ -250,6 +250,47 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(second, profile1.ToArray());
         }
 
+        [Theory]
+        [InlineData(BitmapFormatProfile.RenderBackend, (ushort)1)]
+        [InlineData(BitmapFormatProfile.Wic, (ushort)2)]
+        public void The_Wic_Profile_Should_Encode_With_Wic_Choices(BitmapFormatProfile profile, ushort? predictor)
+        {
+            using var scope = Bind();
+
+            // WIC writes LZW TIFFs with horizontal differencing for 8-bit samples.
+            var encoder = new TiffBitmapEncoder { FormatProfile = profile, Compression = TiffCompression.Lzw };
+
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = Solid(4, 4, Colors.Red).Convert(PixelFormats.Rgb24, AlphaFormat.Opaque)
+            });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+
+            Assert.Equal(predictor, ReadTiffTag(stream.ToArray(), 317));
+        }
+
+        // Reads a SHORT tag of a little-endian TIFF's first IFD.
+        private static ushort? ReadTiffTag(byte[] tiff, ushort tag)
+        {
+            Assert.Equal((byte)'I', tiff[0]);
+
+            var ifd = BitConverter.ToInt32(tiff, 4);
+            var count = BitConverter.ToUInt16(tiff, ifd);
+
+            for (var i = 0; i < count; i++)
+            {
+                var entry = ifd + 2 + i * 12;
+
+                if (BitConverter.ToUInt16(tiff, entry) == tag)
+                    return BitConverter.ToUInt16(tiff, entry + 8);
+            }
+
+            return null;
+        }
+
         [Fact]
         public void A_Gif_Should_Take_Container_Metadata_And_Leave_Out_The_Loop_Block_When_Asked()
         {

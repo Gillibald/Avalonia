@@ -48,6 +48,14 @@ namespace Avalonia.Media.Imaging
         public ReadOnlyMemory<byte>? ColorProfile { get; set; }
 
         /// <summary>
+        /// Gets or sets whose encoding choices apply to what the options leave open: the stored
+        /// pixel format, the metadata layout and the defaults of options that are null.
+        /// <see cref="BitmapFormatProfile.Wic"/> encodes as WIC does and requires the backend's
+        /// <see cref="BitmapCodecCapabilities.WicFormatProfile"/> capability for the format.
+        /// </summary>
+        public BitmapFormatProfile FormatProfile { get; set; } = BitmapFormatProfile.RenderBackend;
+
+        /// <summary>
         /// Gets the container format this encoder produces, see <see cref="BitmapContainerFormats"/>.
         /// </summary>
         protected abstract Guid ContainerFormat { get; }
