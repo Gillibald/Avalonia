@@ -168,8 +168,10 @@ namespace Avalonia.Imaging.PixelMan
             }
 
             // Like WIC, PixelMan recovers what it can from truncated or corrupt pixel data and
-            // flags it; the imaging contract treats such data as a failed decode.
-            if (frame is not null && (frame.DecodeReport.Warnings & PmDecodeWarnings.PixelDataRecovered) != 0)
+            // flags it; the imaging contract treats such data as a failed decode unless the
+            // caller opted into the recovered pixels.
+            if (frame is not null && _options?.AllowRecoveredPixelData != true &&
+                (frame.DecodeReport.Warnings & PmDecodeWarnings.PixelDataRecovered) != 0)
             {
                 frame.Dispose();
 
