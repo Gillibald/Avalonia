@@ -282,7 +282,7 @@ namespace Avalonia.Imaging.ImageSharp
         {
             var gifMetadata = image.Metadata.GetGifMetadata();
 
-            gifMetadata.RepeatCount = (ushort)encoder.LoopCount;
+            gifMetadata.RepeatCount = (ushort)(encoder.LoopCount ?? 0);
 
             if (encoder.GlobalPalette is { } global)
             {

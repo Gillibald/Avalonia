@@ -176,7 +176,7 @@ namespace Avalonia.Imaging.PixelMan
                     };
                     break;
                 case GifBitmapEncoder gif:
-                    options.GifLoopCount = (ushort)gif.LoopCount;
+                    options.GifLoopCount = (ushort)(gif.LoopCount ?? 0);
                     break;
             }
 

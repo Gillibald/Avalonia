@@ -250,6 +250,32 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(second, profile1.ToArray());
         }
 
+        [Fact]
+        public void A_Gif_Should_Take_Container_Metadata_And_Leave_Out_The_Loop_Block_When_Asked()
+        {
+            using var scope = Bind();
+
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Gif);
+
+            metadata.SetQuery("/commentext/TextEntry", "made by a test");
+
+            var encoder = new GifBitmapEncoder { LoopCount = null, Metadata = metadata };
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Red) });
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Blue) });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream);
+
+            Assert.True(decoder.TryGetMetadata(out var container));
+            Assert.Equal("made by a test", container.GetQuery("/commentext/TextEntry"));
+            Assert.False(container.ContainsQuery("/appext/Application"));
+        }
+
         [Theory]
         [InlineData("bmp")]
         [InlineData("tiff")]

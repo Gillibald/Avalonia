@@ -18,9 +18,11 @@ namespace Avalonia.Media.Imaging
         private static readonly TimeSpan s_maxDelay = TimeSpan.FromMilliseconds(ushort.MaxValue * 10.0);
 
         /// <summary>
-        /// Gets or sets the animation loop count. Zero loops forever.
+        /// Gets or sets the animation loop count. Zero, the default, loops forever. Null writes no
+        /// loop count of its own, so an animation plays once unless the encoder's
+        /// <see cref="BitmapEncoder.Metadata"/> carries a NETSCAPE2.0 application block, as WIC does.
         /// </summary>
-        public int LoopCount { get; set; }
+        public int? LoopCount { get; set; } = 0;
 
         /// <summary>
         /// Gets or sets the global palette, which frames without a
@@ -68,7 +70,8 @@ namespace Avalonia.Media.Imaging
         /// <inheritdoc />
         protected override void ValidateOptions()
         {
-            RequireRange(LoopCount, 0, ushort.MaxValue, nameof(GifBitmapEncoder), nameof(LoopCount));
+            if (LoopCount is { } loops)
+                RequireRange(loops, 0, ushort.MaxValue, nameof(GifBitmapEncoder), nameof(LoopCount));
 
             if (ScreenSize is { } size)
             {
