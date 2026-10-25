@@ -159,10 +159,13 @@ internal static unsafe class FusedPixelPipeline
             SourceAlpha = source.Format.HasAlpha ? source.AlphaFormat : AlphaFormat.Opaque;
 
             // Filtering mixes neighboring pixels; on unassociated alpha that bleeds the
-            // color of fully transparent pixels into their neighbors, so the filtering
-            // paths premultiply rows and convert to the requested alpha on write.
+            // color of fully transparent pixels into their neighbors, so the filters weight
+            // colors by alpha. They do so on the float samples: premultiplied bytes would
+            // lose the color of translucent pixels (128 at alpha 128 premultiplies to 64
+            // and comes back as 127).
             Premultiply = SourceAlpha == AlphaFormat.Unpremul;
-            FilterAlpha = Premultiply ? AlphaFormat.Premul : SourceAlpha;
+            UnpremultiplyOutput = Premultiply && plan.TargetAlphaFormat != AlphaFormat.Premul;
+            FilterAlpha = Premultiply && !UnpremultiplyOutput ? AlphaFormat.Premul : SourceAlpha;
 
             var bitsPerPixel = source.Format.BitsPerPixel;
 
@@ -201,7 +204,13 @@ internal static unsafe class FusedPixelPipeline
         public PixelRect Region { get; }
         public CancellationToken Cancellation { get; }
         public AlphaFormat SourceAlpha { get; }
+        /// <summary>Gets whether the filters weight colors by alpha before mixing them.</summary>
         public bool Premultiply { get; }
+
+        /// <summary>Gets whether the filtered colors are divided by alpha again before rounding.</summary>
+        public bool UnpremultiplyOutput { get; }
+
+        /// <summary>Gets the alpha format of the filtered rows.</summary>
         public AlphaFormat FilterAlpha { get; }
         public int BytesPerPixel { get; }
         public bool ColumnMajor { get; }
@@ -348,17 +357,7 @@ internal static unsafe class FusedPixelPipeline
     }
 
     private static Span<Rgba8888Pixel> ReadFilteredRow(scoped in PipelineContext context, int rowIndex, Span<Rgba8888Pixel> staging)
-    {
-        var row = ReadOrientedRow(context, rowIndex, staging);
-
-        if (context.Premultiply)
-            PremultiplyRow(row);
-
-        return row;
-    }
-
-    private static void PremultiplyRow(Span<Rgba8888Pixel> row)
-        => PixelFormatWriter.ConvertAlpha(row, AlphaFormat.Unpremul, AlphaFormat.Premul);
+        => ReadOrientedRow(context, rowIndex, staging);
 
     private static void RunIdentity(in PipelineContext context, in FusedPlanExecution plan,
         IntPtr destAddress, int destRowBytes, IBitmapMemoryAllocator allocator)
@@ -553,15 +552,18 @@ internal static unsafe class FusedPixelPipeline
 
             var verticalWeight = Vector128.Create(fy);
 
+            var premultiply = context.Premultiply;
+            var unpremultiply = context.UnpremultiplyOutput;
+
             for (var x = 0; x < destWidth; x++)
             {
                 var horizontalWeight = Vector128.Create(fractionMap[x]);
-                var topLeft = ToVector(top[leftMap[x]]);
-                var bottomLeft = ToVector(bottom[leftMap[x]]);
-                var upper = topLeft + (ToVector(top[rightMap[x]]) - topLeft) * horizontalWeight;
-                var lower = bottomLeft + (ToVector(bottom[rightMap[x]]) - bottomLeft) * horizontalWeight;
+                var topLeft = ToFilterVector(top[leftMap[x]], premultiply);
+                var bottomLeft = ToFilterVector(bottom[leftMap[x]], premultiply);
+                var upper = topLeft + (ToFilterVector(top[rightMap[x]], premultiply) - topLeft) * horizontalWeight;
+                var lower = bottomLeft + (ToFilterVector(bottom[rightMap[x]], premultiply) - bottomLeft) * horizontalWeight;
 
-                destRow[x] = ToPixel(upper + (lower - upper) * verticalWeight + s_half);
+                destRow[x] = ToFilteredPixel(upper + (lower - upper) * verticalWeight, unpremultiply);
             }
 
             PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)y * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.FilterAlpha);
@@ -591,6 +593,41 @@ internal static unsafe class FusedPixelPipeline
         var bytes = Vector128.CreateScalarUnsafe(Unsafe.As<Rgba8888Pixel, uint>(ref pixel)).AsByte();
 
         return Vector128.ConvertToSingle(Vector128.WidenLower(Vector128.WidenLower(bytes)).AsInt32());
+    }
+
+    // A sample as the filters mix it: with its color weighted by its alpha when the source
+    // alpha is unassociated.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<float> ToFilterVector(Rgba8888Pixel pixel, bool premultiply)
+    {
+        var channels = ToVector(pixel);
+
+        if (!premultiply)
+            return channels;
+
+        var weight = channels.GetElement(3) * (1f / 255f);
+
+        return channels * Vector128.Create(weight, weight, weight, 1f);
+    }
+
+    // Rounds a filtered sample to a pixel, dividing the color by alpha first when the output
+    // is unassociated. A sample whose alpha rounds to zero becomes transparent black.
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Rgba8888Pixel ToFilteredPixel(Vector128<float> channels, bool unpremultiply)
+    {
+        if (unpremultiply)
+        {
+            var alpha = channels.GetElement(3);
+
+            if (alpha < 0.5f)
+                return default;
+
+            var scale = 255f / alpha;
+
+            channels *= Vector128.Create(scale, scale, scale, 1f);
+        }
+
+        return ToPixel(channels + s_half);
     }
 
     // Truncates, so callers add one half to round.
@@ -648,7 +685,7 @@ internal static unsafe class FusedPixelPipeline
                 var sum = Vector128<float>.Zero;
 
                 for (var segment = segmentOffsets[x]; segment < segmentOffsets[x + 1]; segment++)
-                    sum += ToVector(row[segmentColumns[segment]]) * segmentWeights[segment];
+                    sum += ToFilterVector(row[segmentColumns[segment]], context.Premultiply) * segmentWeights[segment];
 
                 horizontal[x] = sum;
             }
@@ -681,7 +718,7 @@ internal static unsafe class FusedPixelPipeline
             // row also flushes a row left incomplete by floating point shortfall.
             if (rowBottom >= currentBottom - CoverageEpsilon || sourceY == srcHeight - 1)
             {
-                EmitBoxRow(current, (float)currentWeight, columnWeightSums, destRow);
+                EmitBoxRow(current, (float)currentWeight, columnWeightSums, destRow, context.UnpremultiplyOutput);
 
                 PixelFormatTranscoder.WriteRow(destRow, destAddress + (nint)destY * destRowBytes, plan.TargetFormat, plan.TargetAlphaFormat, context.FilterAlpha);
 
@@ -706,13 +743,13 @@ internal static unsafe class FusedPixelPipeline
     }
 
     private static void EmitBoxRow(ReadOnlySpan<Vector128<float>> accumulator, float rowWeight, float[] columnWeightSums,
-        Span<Rgba8888Pixel> destRow)
+        Span<Rgba8888Pixel> destRow, bool unpremultiply)
     {
         for (var x = 0; x < destRow.Length; x++)
         {
             var total = columnWeightSums[x] * rowWeight;
 
-            destRow[x] = total > 0 ? ToPixel(accumulator[x] / total + s_half) : default;
+            destRow[x] = total > 0 ? ToFilteredPixel(accumulator[x] / total, unpremultiply) : default;
         }
     }
 
