@@ -113,6 +113,19 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
+        public void An_Empty_Color_Profile_Should_Mean_None()
+        {
+            byte[]? missing = null;
+
+            // A null array converts to an empty memory, not to a null one.
+            var frame = new BitmapEncoderFrame { ColorProfile = missing };
+            var encoder = new BmpBitmapEncoder { ColorProfile = Array.Empty<byte>() };
+
+            Assert.Null(frame.ColorProfile);
+            Assert.Null(encoder.ColorProfile);
+        }
+
+        [Fact]
         public void Save_Without_Frames_Throws_And_Writes_Nothing()
         {
             var backend = new FakeBackend(BitmapCodecCapabilities.Encode);
