@@ -25,7 +25,7 @@ namespace Avalonia.Media.Imaging
         private readonly int _destinationChannels;
         private IColorTransformImpl? _impl;
 
-        private BitmapColorTransform(IColorTransformImpl impl, ColorRenderingIntent intent,
+        private BitmapColorTransform(IColorTransformImpl impl, ColorRenderingIntent? intent,
             int sourceChannels, int destinationChannels)
         {
             _impl = impl;
@@ -40,9 +40,10 @@ namespace Avalonia.Media.Imaging
         public static bool IsSupported => ImagingBackend.CurrentOrNull is IColorTransformProvider;
 
         /// <summary>
-        /// Gets the rendering intent the transform applies.
+        /// Gets the rendering intent the transform was created with, or null when the color
+        /// management chose it from the profiles.
         /// </summary>
-        public ColorRenderingIntent Intent { get; }
+        public ColorRenderingIntent? Intent { get; }
 
         /// <summary>
         /// Gets the number of channels of a source color: 1 for gray, 3 for RGB, 4 for CMYK.
@@ -55,7 +56,8 @@ namespace Avalonia.Media.Imaging
         public int DestinationChannelCount => _destinationChannels;
 
         /// <summary>
-        /// Prepares a transform with the rendering intent stored in the source profile.
+        /// Prepares a transform whose rendering intent the color management chooses from what the
+        /// profiles hold, as WIC does; the intent a profile header names is only a hint.
         /// </summary>
         /// <param name="sourceProfile">The ICC profile the input colors are in.</param>
         /// <param name="destinationProfile">The ICC profile the output colors are in.</param>
@@ -64,16 +66,7 @@ namespace Avalonia.Media.Imaging
         /// The active backend has no color management, or cannot use one of the profiles.
         /// </exception>
         public static BitmapColorTransform Create(ReadOnlyMemory<byte> sourceProfile, ReadOnlyMemory<byte> destinationProfile)
-        {
-            ReadChannelCount(sourceProfile.Span, nameof(sourceProfile));
-
-            var intent = BinaryPrimitives.ReadUInt32BigEndian(sourceProfile.Span.Slice(64));
-
-            return Create(sourceProfile, destinationProfile,
-                intent <= (uint)ColorRenderingIntent.AbsoluteColorimetric
-                    ? (ColorRenderingIntent)intent
-                    : ColorRenderingIntent.Perceptual);
-        }
+            => CreateCore(sourceProfile, destinationProfile, null);
 
         /// <summary>
         /// Prepares a transform with an explicit rendering intent.
@@ -91,6 +84,12 @@ namespace Avalonia.Media.Imaging
             if (intent is < ColorRenderingIntent.Perceptual or > ColorRenderingIntent.AbsoluteColorimetric)
                 throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown rendering intent.");
 
+            return CreateCore(sourceProfile, destinationProfile, intent);
+        }
+
+        private static BitmapColorTransform CreateCore(ReadOnlyMemory<byte> sourceProfile,
+            ReadOnlyMemory<byte> destinationProfile, ColorRenderingIntent? intent)
+        {
             var sourceChannels = ReadChannelCount(sourceProfile.Span, nameof(sourceProfile));
             var destinationChannels = ReadChannelCount(destinationProfile.Span, nameof(destinationProfile));
             var backend = ImagingBackend.Current;

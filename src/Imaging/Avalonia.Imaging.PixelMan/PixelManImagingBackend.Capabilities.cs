@@ -73,10 +73,12 @@ namespace Avalonia.Imaging.PixelMan
 
         /// <inheritdoc />
         IColorTransformImpl IColorTransformProvider.CreateColorTransform(ReadOnlySpan<byte> sourceProfile,
-            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent intent)
+            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent? intent)
         {
             var pmIntent = intent switch
             {
+                // PixelMan's default picks from the profiles' tags as WIC does.
+                null => PmRenderingIntent.Default,
                 ColorRenderingIntent.Perceptual => PmRenderingIntent.Perceptual,
                 ColorRenderingIntent.RelativeColorimetric => PmRenderingIntent.RelativeColorimetric,
                 ColorRenderingIntent.Saturation => PmRenderingIntent.Saturation,

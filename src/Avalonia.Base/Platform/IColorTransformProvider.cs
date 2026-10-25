@@ -22,10 +22,14 @@ namespace Avalonia.Platform
         /// </summary>
         /// <param name="sourceProfile">The ICC profile the input colors are in.</param>
         /// <param name="destinationProfile">The ICC profile the output colors are in.</param>
-        /// <param name="intent">The rendering intent to apply.</param>
-        /// <exception cref="NotSupportedException">The backend cannot use one of the profiles.</exception>
+        /// <param name="intent">
+        /// The rendering intent to apply, or null to choose one from what the profiles hold.
+        /// </param>
+        /// <exception cref="NotSupportedException">
+        /// The backend cannot use one of the profiles or does not offer the intent.
+        /// </exception>
         IColorTransformImpl CreateColorTransform(ReadOnlySpan<byte> sourceProfile,
-            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent intent);
+            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent? intent);
     }
 
     /// <summary>

@@ -39,17 +39,21 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
-        public void The_Source_Header_Should_Supply_The_Default_Intent()
+        public void Without_An_Intent_The_Color_Management_Should_Choose()
         {
             using var scope = AvaloniaLocator.EnterScope();
 
             var backend = Register(Identity);
 
-            using var stored = BitmapColorTransform.Create(Profile("RGB ", intent: 2), s_rgb);
+            using var chosen = BitmapColorTransform.Create(Profile("RGB ", intent: 2), s_rgb);
+
+            Assert.Null(chosen.Intent);
+            Assert.Null(backend.LastIntent);
+
             using var explicitIntent = BitmapColorTransform.Create(Profile("RGB ", intent: 2), s_rgb,
                 ColorRenderingIntent.AbsoluteColorimetric);
 
-            Assert.Equal(ColorRenderingIntent.Saturation, stored.Intent);
+            Assert.Equal(ColorRenderingIntent.AbsoluteColorimetric, explicitIntent.Intent);
             Assert.Equal(ColorRenderingIntent.AbsoluteColorimetric, backend.LastIntent);
         }
 
@@ -334,12 +338,12 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             public int Created { get; private set; }
 
-            public ColorRenderingIntent LastIntent { get; private set; }
+            public ColorRenderingIntent? LastIntent { get; private set; }
 
             public FakeTransform? LastImpl { get; private set; }
 
             public IColorTransformImpl CreateColorTransform(ReadOnlySpan<byte> sourceProfile,
-                ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent intent)
+                ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent? intent)
             {
                 Created++;
                 LastIntent = intent;

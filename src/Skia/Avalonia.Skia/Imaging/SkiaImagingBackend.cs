@@ -53,7 +53,7 @@ namespace Avalonia.Skia.Imaging
 
         /// <inheritdoc />
         IColorTransformImpl IColorTransformProvider.CreateColorTransform(ReadOnlySpan<byte> sourceProfile,
-            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent intent)
+            ReadOnlySpan<byte> destinationProfile, ColorRenderingIntent? intent)
             => SkiaColorTransform.Create(sourceProfile, destinationProfile);
 
         /// <inheritdoc />
