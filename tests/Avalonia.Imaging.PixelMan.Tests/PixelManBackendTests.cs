@@ -85,6 +85,27 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void Truncated_Pixel_Data_Should_Decode_Only_When_Recovery_Is_Allowed()
+        {
+            using var scope = Bind();
+
+            var bytes = FixtureImages.TruncatedPng.EncodedBytes.ToArray();
+
+            Assert.Throws<InvalidDataException>(() =>
+            {
+                using var decoder = BitmapDecoder.Create(new MemoryStream(bytes));
+                using var frame = decoder.ReadNextFrame();
+            });
+
+            using (var decoder = BitmapDecoder.Create(new MemoryStream(bytes),
+                       new BitmapDecodeOptions { AllowRecoveredPixelData = true }))
+            using (var frame = decoder.ReadNextFrame()!)
+            {
+                Assert.Equal(FixtureImages.TruncatedPng.ExpectedSize, frame.PixelSize);
+            }
+        }
+
+        [Fact]
         public void A_Gif_Decoder_Should_Read_Frames_In_Any_Order()
         {
             using var scope = Bind();

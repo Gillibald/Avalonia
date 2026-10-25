@@ -92,6 +92,14 @@ namespace Avalonia.Media.Imaging
         public bool MaterializeSource { get; set; }
 
         /// <summary>
+        /// Gets or sets whether a frame whose pixel data is truncated or corrupt decodes to the
+        /// pixels the codec could recover, as WIC does, instead of failing. The default, false,
+        /// fails such a decode with <see cref="System.IO.InvalidDataException"/>. A backend that
+        /// cannot recover pixel data fails either way; a damaged header always fails.
+        /// </summary>
+        public bool AllowRecoveredPixelData { get; set; }
+
+        /// <summary>
         /// Set when <see cref="TargetAlphaFormat"/> is the render backend's default rather
         /// than the caller's choice: an opaque source then keeps <see cref="AlphaFormat.Opaque"/>.
         /// Opaque pixels are the same bytes premultiplied or not, so this installs as is and
