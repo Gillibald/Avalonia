@@ -12,6 +12,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/app1/ifd/{ushort=274}", "/ifd/{ushort=274}")]
         [InlineData("/APP1/IFD/{USHORT=274}", "/ifd/{ushort=274}")]
         [InlineData("/app1/{ushort=0}/{ushort=271}", "/ifd/{ushort=271}")]
+        [InlineData("/app1/{ushort=1}/{ushort=259}", "/app1/thumb/{ushort=259}")]
         [InlineData("/app1/ifd/exif/{ushort=36867}", "/ifd/exif/{ushort=36867}")]
         [InlineData("/app1/ifd/{ushort=34665}/{ushort=36867}", "/ifd/exif/{ushort=36867}")]
         [InlineData("/app1/ifd/gps/{ushort=2}", "/ifd/gps/{ushort=2}")]
@@ -241,6 +242,90 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
 
             Assert.Equal(new[] { "/ifd", "/xmp" }, metadata.GetChildren().OrderBy(c => c, StringComparer.Ordinal));
             Assert.Equal(new[] { "/exif", "/{ushort=271}" }, metadata.GetChildren("/app1/ifd").OrderBy(c => c, StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_List_Jpeg_Blocks_As_Wic_Enumerates_Them()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/app1/ifd/exif/{ushort=36867}", "2026:10:25 12:00:00");
+            metadata.SetQuery("/app1/ifd/gps/{ushort=2}", new ulong[] { 1, 2, 3 });
+            metadata.SetQuery("/app13/irb/8bimiptc/iptc/Keywords", "Keyword");
+            metadata.XmpPacket = "<x/>";
+
+            Assert.Equal(new[] { "/app1", "/app13", "/xmp" }, Sorted(metadata.GetChildren(null, MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/{ushort=0}" }, metadata.GetChildren("/app1", MetadataPathSpelling.Container));
+            Assert.Equal(new[] { "/{ushort=271}", "/{ushort=34665}", "/{ushort=34853}" },
+                Sorted(metadata.GetChildren("/app1/{ushort=0}", MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/{str=Keywords}" },
+                metadata.GetChildren("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc", MetadataPathSpelling.Container));
+            AssertEveryEnumeratedPathResolves(metadata);
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_List_Tiff_Blocks_Under_Their_Pointer_Tags()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Tiff);
+
+            metadata.SetQuery("/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/ifd/exif/{ushort=36867}", "2026:10:25 12:00:00");
+            metadata.SetQuery("/ifd/iptc/Keywords", "Keyword");
+            metadata.XmpPacket = "<x/>";
+
+            Assert.Equal(new[] { "/ifd" }, metadata.GetChildren(null, MetadataPathSpelling.Container));
+            Assert.Equal(new[] { "/{ushort=271}", "/{ushort=33723}", "/{ushort=34665}", "/{ushort=700}" },
+                Sorted(metadata.GetChildren("/ifd", MetadataPathSpelling.Container)));
+            AssertEveryEnumeratedPathResolves(metadata);
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_Number_Png_Text_Chunks_And_Spell_Chunk_Fields()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+
+            metadata.SetQuery("/tEXt/{str=Title}", "Title");
+            metadata.SetQuery("/tEXt/{str=Author}", "Author");
+            metadata.SetQuery("/iTXt/{str=Description}", "Description");
+            metadata.SetQuery("/gAMA/ImageGamma", 45455u);
+            metadata.SetQuery("/iCCP/ProfileData", new BitmapMetadataBlob(new byte[] { 1, 2, 3 }));
+
+            Assert.Equal(new[] { "/[1]tEXt", "/gAMA", "/iCCP", "/iTXt", "/tEXt" },
+                Sorted(metadata.GetChildren(null, MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/Keyword", "/LanguageTag", "/TextEntry", "/TranslatedKeyword" },
+                Sorted(metadata.GetChildren("/iTXt", MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/ImageGamma" }, metadata.GetChildren("/gAMA", MetadataPathSpelling.Container));
+            Assert.Equal(new[] { "/ProfileData" }, metadata.GetChildren("/iCCP", MetadataPathSpelling.Container));
+            AssertEveryEnumeratedPathResolves(metadata);
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_Start_A_Nested_View_At_Its_Block()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/exif/{ushort=36867}", "2026:10:25 12:00:00");
+
+            var exif = Assert.IsType<BitmapMetadata>(metadata.GetQuery("/app1/ifd/exif"));
+
+            Assert.Equal(new[] { "/{ushort=36867}" }, exif.GetChildren(null, MetadataPathSpelling.Container));
+        }
+
+        private static string[] Sorted(System.Collections.Generic.IEnumerable<string> values)
+            => values.OrderBy(v => v, StringComparer.Ordinal).ToArray();
+
+        private static void AssertEveryEnumeratedPathResolves(BitmapMetadata metadata, string block = "")
+        {
+            foreach (var child in metadata.GetChildren(block.Length == 0 ? null : block, MetadataPathSpelling.Container))
+            {
+                var path = block + child;
+
+                if (metadata.GetChildren(path, MetadataPathSpelling.Container).Count == 0)
+                    Assert.True(metadata.GetQuery(path) is not null, $"{path} does not resolve.");
+                else
+                    AssertEveryEnumeratedPathResolves(metadata, path);
+            }
         }
 
         [Fact]

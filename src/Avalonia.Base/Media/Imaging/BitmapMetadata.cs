@@ -7,6 +7,18 @@ using Avalonia.Platform;
 namespace Avalonia.Media.Imaging
 {
     /// <summary>
+    /// How <see cref="BitmapMetadata.GetChildren(string?, MetadataPathSpelling)"/> spells paths.
+    /// </summary>
+    public enum MetadataPathSpelling
+    {
+        /// <summary>The container-neutral paths the metadata stores, e.g. "/ifd/exif".</summary>
+        Canonical,
+
+        /// <summary>The paths as WIC enumerates the container, e.g. "/app1/{ushort=0}/{ushort=34665}" in a JPEG.</summary>
+        Container,
+    }
+
+    /// <summary>
     /// Image metadata queried by path, with the same query syntax and container spellings as
     /// the Windows Imaging Component (for example "/app1/ifd/{ushort=274}" in a JPEG).
     /// </summary>
@@ -20,7 +32,8 @@ namespace Avalonia.Media.Imaging
     /// <para>
     /// Values come back in WIC's shapes: integers by width and sign (arrays when a tag holds
     /// several), rationals as <see cref="ulong"/> or <see cref="long"/> with the numerator in
-    /// the low 32 bits, text as <see cref="string"/>, opaque data as a byte array.
+    /// the low 32 bits, text as <see cref="string"/>, byte arrays for <c>BYTE</c> data and
+    /// <see cref="BitmapMetadataBlob"/> for opaque <c>UNDEFINED</c> data.
     /// </para>
     /// <para>
     /// Metadata read from a decoded image is read-only; <see cref="Clone"/> returns a writable
@@ -182,6 +195,42 @@ namespace Avalonia.Media.Imaging
             {
                 if (MetadataQuery.IsBelow(stored, block) && seen.Add(MetadataQuery.ChildSegment(stored, block)))
                     children.Add(MetadataQuery.ChildSegment(stored, block));
+            }
+
+            return children;
+        }
+
+        /// <summary>
+        /// Gets the immediate children of a block in the requested spelling.
+        /// <see cref="MetadataPathSpelling.Container"/> lists them as WIC enumerates the
+        /// container (for a JPEG "/app1" and "/app13" at the root, "/{ushort=0}" below "/app1"),
+        /// and takes <paramref name="blockPath"/> in that spelling.
+        /// </summary>
+        /// <param name="blockPath">The block to list, relative to this metadata; null for this metadata itself.</param>
+        /// <param name="spelling">The spelling of <paramref name="blockPath"/> and of the children.</param>
+        public IReadOnlyList<string> GetChildren(string? blockPath, MetadataPathSpelling spelling)
+        {
+            if (spelling == MetadataPathSpelling.Canonical)
+                return GetChildren(blockPath);
+
+            var view = _block == "/" ? string.Empty : MetadataSpelling.ToContainer(_block, ContainerFormat);
+            var block = (view + (blockPath ?? string.Empty)).TrimEnd('/');
+            var children = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var path in MetadataSpelling.ToContainer(_store.EnumeratePaths(), ContainerFormat))
+            {
+                // Spellings compare without case, as queries do.
+                if (path.Length <= block.Length + 1 || path[block.Length] != '/' ||
+                    !path.StartsWith(block, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var child = MetadataQuery.ChildSegment(path, block.Length == 0 ? "/" : block);
+
+                if (seen.Add(child))
+                    children.Add(child);
             }
 
             return children;

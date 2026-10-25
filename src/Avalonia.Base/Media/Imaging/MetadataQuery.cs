@@ -22,6 +22,8 @@ internal static class MetadataQuery
     {
         ("/app1/ifd", "/ifd"),
         ("/app1/{ushort=0}", "/ifd"),
+        // The thumbnail IFD.
+        ("/app1/{ushort=1}", "/app1/thumb"),
         ("/app1/xmp", "/xmp"),
         ("/app13/irb/8bimiptc/iptc", "/iptc"),
         // The photoshop resource block by id: APP13 item 0, resource "8BIMIPTC".
