@@ -251,6 +251,31 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Theory]
+        [InlineData("bmp")]
+        [InlineData("tiff")]
+        public void Bmp_And_Tiff_Should_Encode_A_Frame_Palette(string format)
+        {
+            using var scope = Bind();
+
+            var palette = new BitmapPalette(new[] { Colors.Red, Colors.Blue });
+            BitmapEncoder encoder = format == "bmp" ? new BmpBitmapEncoder() : new TiffBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Blue), Palette = palette });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions { PreservePixelFormat = true });
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.True(frame.Format.IsIndexed);
+            Assert.True(frame.TryGetPalette(out var written));
+            Assert.Equal(Colors.Blue, written.Colors[frame.ToPixelBuffer().Pixels.Span[0] >> (8 - frame.Format.BitsPerPixel)]);
+        }
+
+        [Theory]
         [InlineData(false)]
         [InlineData(true)]
         public void A_Profile_In_Frame_Metadata_Should_Be_Written(bool asBlob)
