@@ -301,6 +301,33 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
+        public void Container_Spelling_Should_Take_The_Block_In_Any_Spelling()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/app1/ifd/exif/{ushort=36867}", "2026:10:25 12:00:00");
+
+            var expected = Sorted(metadata.GetChildren("/app1/{ushort=0}", MetadataPathSpelling.Container));
+
+            Assert.Equal(new[] { "/{ushort=271}", "/{ushort=34665}" }, expected);
+            Assert.Equal(expected, Sorted(metadata.GetChildren("/app1/ifd", MetadataPathSpelling.Container)));
+            Assert.Equal(expected, Sorted(metadata.GetChildren("/APP1/{USHORT=0}", MetadataPathSpelling.Container)));
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_Not_List_The_Profile_Outside_Png()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/{ushort=271}", "Make");
+            metadata.SetQuery("/icc", new BitmapMetadataBlob(new byte[] { 1, 2, 3 }));
+
+            // WIC exposes a JPEG's or TIFF's profile through the frame, not as metadata.
+            Assert.Equal(new[] { "/app1" }, metadata.GetChildren(null, MetadataPathSpelling.Container));
+        }
+
+        [Fact]
         public void Container_Spelling_Should_Start_A_Nested_View_At_Its_Block()
         {
             var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
