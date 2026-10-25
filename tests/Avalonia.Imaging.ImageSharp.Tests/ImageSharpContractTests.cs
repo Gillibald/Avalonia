@@ -28,6 +28,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Metadata = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
@@ -36,6 +37,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Metadata = true,
                     FusedParts = FusedDecodeParts.Scale,
                     CopyBudget = 0,
@@ -54,6 +56,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
                 },
@@ -61,6 +64,7 @@ namespace Avalonia.Imaging.ImageSharp.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Metadata = true,
                     SeekableFrames = true,
                     MultiFrameEncode = true,
@@ -192,6 +196,8 @@ namespace Avalonia.Imaging.ImageSharp.Tests
     public class ImageSharpLifetimeContractTests : LifetimeContractTests<ImageSharpCodecFixture> { }
 
     public class ImageSharpSoakContractTests : SoakContractTests<ImageSharpCodecFixture> { }
+
+    public class ImageSharpMetadataWriteContractTests : MetadataWriteContractTests<ImageSharpCodecFixture> { }
 
     public class ImageSharpPoolContractTests : PoolContractTests<ImageSharpCodecFixture> { }
 

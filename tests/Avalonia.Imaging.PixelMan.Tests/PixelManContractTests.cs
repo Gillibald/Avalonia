@@ -27,6 +27,7 @@ namespace Avalonia.Imaging.PixelMan.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Metadata = true,
                     Palette = true,
                     CopyBudget = 0,
@@ -37,6 +38,7 @@ namespace Avalonia.Imaging.PixelMan.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Metadata = true,
                     CopyBudget = 0,
                     PixelTolerance = 3,
@@ -57,6 +59,7 @@ namespace Avalonia.Imaging.PixelMan.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Palette = true,
                     CopyBudget = 0,
                     PixelTolerance = 0,
@@ -65,6 +68,7 @@ namespace Avalonia.Imaging.PixelMan.Tests
                 {
                     Decode = true,
                     Encode = true,
+                    Dpi = true,
                     Metadata = true,
                     Palette = true,
                     SeekableFrames = true,
@@ -193,6 +197,8 @@ namespace Avalonia.Imaging.PixelMan.Tests
     public class PixelManLifetimeContractTests : LifetimeContractTests<PixelManCodecFixture> { }
 
     public class PixelManSoakContractTests : SoakContractTests<PixelManCodecFixture> { }
+
+    public class PixelManMetadataWriteContractTests : MetadataWriteContractTests<PixelManCodecFixture> { }
 
     public class PixelManPoolContractTests : PoolContractTests<PixelManCodecFixture> { }
 

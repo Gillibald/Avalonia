@@ -82,6 +82,9 @@ namespace Avalonia.Imaging.TestKit.Fixtures
         /// <summary>Gets whether the backend reads and writes metadata for this format.</summary>
         public bool Metadata { get; init; }
 
+        /// <summary>Gets whether the encoder writes a frame's resolution and the decoder reports it back.</summary>
+        public bool Dpi { get; init; }
+
         /// <summary>Gets whether decoders of this format have random frame access.</summary>
         public bool SeekableFrames { get; init; }
 
