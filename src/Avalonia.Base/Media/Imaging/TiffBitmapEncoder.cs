@@ -19,7 +19,7 @@ namespace Avalonia.Media.Imaging
         /// <inheritdoc />
         protected override BitmapCodecCapabilities Capabilities =>
             BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.MultiFrameEncode |
-            BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile;
+            BitmapCodecCapabilities.Metadata | BitmapCodecCapabilities.ColorProfile | BitmapCodecCapabilities.Palette;
     }
 
     /// <summary>

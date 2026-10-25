@@ -13,6 +13,6 @@ namespace Avalonia.Media.Imaging
 
         /// <inheritdoc />
         protected override BitmapCodecCapabilities Capabilities =>
-            BitmapCodecCapabilities.Encode;
+            BitmapCodecCapabilities.Encode | BitmapCodecCapabilities.Palette;
     }
 }
