@@ -293,7 +293,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal("2026:10:23 12:34:56", metadata.GetQuery("/app1/ifd/exif/{ushort=36867}"));
             Assert.Equal(new[] { "Alice", "Bob" }, photo.Authors);
             Assert.Equal("Grand café", photo.Comment);
-            Assert.StartsWith("UNICODE", System.Text.Encoding.ASCII.GetString((byte[])metadata.GetQuery("/ifd/exif/{ushort=37510}")!));
+            Assert.StartsWith("UNICODE", System.Text.Encoding.ASCII.GetString(
+                Assert.IsType<BitmapMetadataBlob>(metadata.GetQuery("/ifd/exif/{ushort=37510}")).GetBlobValue()));
         }
 
         [Fact]
@@ -309,6 +310,44 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal("Comment", metadata.GetQuery("/tEXt/{str=Comment}"));
             Assert.Null(photo.CameraModel);
             Assert.Throws<NotSupportedException>(() => photo.CameraModel = "Model");
+        }
+
+        [Fact]
+        public void Opaque_Bytes_Should_Read_As_Blobs_And_Byte_Arrays_As_Byte_Values()
+        {
+            Assert.Equal(MetadataValueType.Byte, MetadataValueConverter.FromObject(new byte[] { 1, 2 }, null).Type);
+            Assert.Equal(MetadataValueType.Undefined,
+                MetadataValueConverter.FromObject(new BitmapMetadataBlob(new byte[] { 1, 2 }), null).Type);
+
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app1/ifd/exif/{ushort=37500}", new BitmapMetadataBlob(new byte[] { 1, 2, 3 }));
+            metadata.SetQuery("/app1/ifd/{ushort=50341}", new byte[] { 4, 5 });
+
+            var blob = Assert.IsType<BitmapMetadataBlob>(metadata.GetQuery("/app1/ifd/exif/{ushort=37500}"));
+
+            Assert.Equal(new byte[] { 1, 2, 3 }, blob.GetBlobValue());
+            Assert.Equal(new byte[] { 4, 5 }, Assert.IsType<byte[]>(metadata.GetQuery("/app1/ifd/{ushort=50341}")));
+        }
+
+        [Fact]
+        public void Signed_And_Floating_Point_Arrays_Should_Round_Trip()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+            var values = new object[]
+            {
+                new sbyte[] { -1, 2 }, new short[] { -3, 4 }, new int[] { -5, 6 }, new long[] { -7, 8 },
+                new float[] { 1.5f, -2.5f }, new double[] { 3.25, -4.75 },
+            };
+
+            for (var i = 0; i < values.Length; i++)
+            {
+                var query = "/app1/ifd/{ushort=" + (60000 + i) + "}";
+
+                metadata.SetQuery(query, values[i]);
+
+                Assert.Equal(values[i], metadata.GetQuery(query));
+            }
         }
 
         [Fact]
