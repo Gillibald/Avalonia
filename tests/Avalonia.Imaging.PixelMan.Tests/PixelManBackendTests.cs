@@ -250,6 +250,34 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Equal(second, profile1.ToArray());
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void A_Profile_In_Frame_Metadata_Should_Be_Written(bool asBlob)
+        {
+            using var scope = Bind();
+
+            var profile = IccProfileFixture.CreateRgb(1.0);
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+
+            metadata.SetQuery("/iCCP/ProfileData", asBlob ? new BitmapMetadataBlob(profile) : profile);
+
+            var encoder = new PngBitmapEncoder();
+
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Red), Metadata = metadata });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream);
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.True(frame.TryGetColorProfile(out var written));
+            Assert.Equal(profile, written.ToArray());
+        }
+
         [Fact]
         public void A_Frame_Decoded_Into_The_Pool_Should_Be_Installed_Without_A_Copy()
         {
