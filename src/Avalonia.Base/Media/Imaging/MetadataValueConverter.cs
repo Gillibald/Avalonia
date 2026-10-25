@@ -9,7 +9,8 @@ namespace Avalonia.Media.Imaging;
 /// <summary>
 /// Converts raw metadata values to and from the CLR values the query API exposes, in the
 /// shapes WIC uses: integers by width and sign, rationals packed into 64 bits with the
-/// numerator in the low half, text as strings, opaque data as byte arrays.
+/// numerator in the low half, text as strings, <c>BYTE</c> arrays as byte arrays and opaque
+/// <c>UNDEFINED</c> data as <see cref="BitmapMetadataBlob"/>.
 /// </summary>
 internal static class MetadataValueConverter
 {
@@ -24,7 +25,7 @@ internal static class MetadataValueConverter
             case MetadataValueType.Unicode:
                 return Encoding.Unicode.GetString(data);
             case MetadataValueType.Undefined:
-                return data.ToArray();
+                return new BitmapMetadataBlob(data.ToArray());
             case MetadataValueType.List:
                 return ListToObject(value.Items!);
         }
@@ -82,8 +83,10 @@ internal static class MetadataValueConverter
 
                 return new MetadataValue(items);
             }
-            case byte[] bytes:
-                return new MetadataValue(MetadataValueType.Undefined, (byte[])bytes.Clone());
+            case Array array:
+                return FromArray(array);
+            case BitmapMetadataBlob blob:
+                return new MetadataValue(MetadataValueType.Undefined, blob.Span.ToArray());
             case byte scalar:
                 return new MetadataValue(MetadataValueType.Byte, new[] { scalar });
             case sbyte scalar:
@@ -104,16 +107,27 @@ internal static class MetadataValueConverter
                 return Pack(MetadataValueType.Float, 4, s => BinaryPrimitives.WriteSingleLittleEndian(s, scalar));
             case double scalar:
                 return Pack(MetadataValueType.Double, 8, s => BinaryPrimitives.WriteDoubleLittleEndian(s, scalar));
-            case ushort[] values:
-                return PackArray(MetadataValueType.Short, values.Length, 2, (s, i) => BinaryPrimitives.WriteUInt16LittleEndian(s, values[i]));
-            case uint[] values:
-                return PackArray(MetadataValueType.Long, values.Length, 4, (s, i) => BinaryPrimitives.WriteUInt32LittleEndian(s, values[i]));
-            case ulong[] values:
-                return PackArray(MetadataValueType.Rational, values.Length, 8, (s, i) => BinaryPrimitives.WriteUInt64LittleEndian(s, values[i]));
             default:
                 throw new NotSupportedException($"Metadata values of type {value.GetType().Name} are not supported.");
         }
     }
+
+    // The runtime lets arrays of the same element size but other signedness pass a type
+    // pattern (an sbyte[] is a byte[]), so arrays are told apart by their exact type.
+    private static MetadataValue FromArray(Array array) => array switch
+    {
+        _ when array.GetType() == typeof(byte[]) => new MetadataValue(MetadataValueType.Byte, (byte[])array.Clone()),
+        _ when array.GetType() == typeof(sbyte[]) => PackArray(MetadataValueType.SByte, (sbyte[])array, 1, (s, v) => s[0] = (byte)v),
+        _ when array.GetType() == typeof(ushort[]) => PackArray(MetadataValueType.Short, (ushort[])array, 2, BinaryPrimitives.WriteUInt16LittleEndian),
+        _ when array.GetType() == typeof(short[]) => PackArray(MetadataValueType.SShort, (short[])array, 2, BinaryPrimitives.WriteInt16LittleEndian),
+        _ when array.GetType() == typeof(uint[]) => PackArray(MetadataValueType.Long, (uint[])array, 4, BinaryPrimitives.WriteUInt32LittleEndian),
+        _ when array.GetType() == typeof(int[]) => PackArray(MetadataValueType.SLong, (int[])array, 4, BinaryPrimitives.WriteInt32LittleEndian),
+        _ when array.GetType() == typeof(ulong[]) => PackArray(MetadataValueType.Rational, (ulong[])array, 8, BinaryPrimitives.WriteUInt64LittleEndian),
+        _ when array.GetType() == typeof(long[]) => PackArray(MetadataValueType.SRational, (long[])array, 8, BinaryPrimitives.WriteInt64LittleEndian),
+        _ when array.GetType() == typeof(float[]) => PackArray(MetadataValueType.Float, (float[])array, 4, BinaryPrimitives.WriteSingleLittleEndian),
+        _ when array.GetType() == typeof(double[]) => PackArray(MetadataValueType.Double, (double[])array, 8, BinaryPrimitives.WriteDoubleLittleEndian),
+        _ => throw new NotSupportedException($"Metadata values of type {array.GetType().Name} are not supported.")
+    };
 
     // Latin-1 text keeps the single-byte form tags such as EXIF ASCII and PNG tEXt use.
     private static MetadataValue FromText(string text)
@@ -193,7 +207,7 @@ internal static class MetadataValueConverter
 
     private delegate void ElementWriter(Span<byte> destination);
 
-    private delegate void IndexedElementWriter(Span<byte> destination, int index);
+    private delegate void ElementWriter<in T>(Span<byte> destination, T value);
 
     private static MetadataValue Pack(MetadataValueType type, int size, ElementWriter write)
     {
@@ -204,12 +218,12 @@ internal static class MetadataValueConverter
         return new MetadataValue(type, data);
     }
 
-    private static MetadataValue PackArray(MetadataValueType type, int count, int size, IndexedElementWriter write)
+    private static MetadataValue PackArray<T>(MetadataValueType type, T[] values, int size, ElementWriter<T> write)
     {
-        var data = new byte[count * size];
+        var data = new byte[values.Length * size];
 
-        for (var i = 0; i < count; i++)
-            write(data.AsSpan(i * size), i);
+        for (var i = 0; i < values.Length; i++)
+            write(data.AsSpan(i * size), values[i]);
 
         return new MetadataValue(type, data);
     }

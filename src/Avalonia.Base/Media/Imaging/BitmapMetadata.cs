@@ -354,12 +354,13 @@ namespace Avalonia.Media.Imaging
 
         private string? GetUserComment()
         {
-            if (GetQuery("/ifd/exif/{ushort=37510}") is not byte[] data || data.Length < 8)
+            if (GetQuery("/ifd/exif/{ushort=37510}") is not BitmapMetadataBlob blob || blob.Span.Length < 8)
                 return null;
 
-            var text = data.AsSpan(8);
+            var data = blob.Span;
+            var text = data.Slice(8);
 
-            if (data.AsSpan(0, 8).SequenceEqual(s_unicodeCode))
+            if (data.Slice(0, 8).SequenceEqual(s_unicodeCode))
                 return Encoding.Unicode.GetString(text);
 
             return Encoding.Latin1.GetString(text).TrimEnd('\0');
@@ -385,7 +386,7 @@ namespace Avalonia.Media.Imaging
             code.CopyTo(data, 0);
             text.CopyTo(data, code.Length);
 
-            SetQuery("/ifd/exif/{ushort=37510}", data);
+            SetQuery("/ifd/exif/{ushort=37510}", new BitmapMetadataBlob(data));
         }
 
         private void RequirePhotoContainer()

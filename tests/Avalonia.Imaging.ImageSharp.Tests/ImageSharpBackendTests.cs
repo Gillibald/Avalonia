@@ -424,8 +424,10 @@ namespace Avalonia.Imaging.ImageSharp.Tests
             Assert.True(decoder.TryGetMetadata(out var container));
             Assert.Equal((ushort)4, container!.GetQuery("/logscrdesc/Width"));
             Assert.Equal((ushort)3, container.GetQuery("/logscrdesc/Height"));
-            Assert.Equal(System.Text.Encoding.ASCII.GetBytes("NETSCAPE2.0"), container.GetQuery("/appext/Application"));
-            Assert.Equal(new byte[] { 3, 1, 2, 0, 0 }, container.GetQuery("/[0]appext/Data"));
+            Assert.Equal(System.Text.Encoding.ASCII.GetBytes("NETSCAPE2.0"),
+                Assert.IsType<BitmapMetadataBlob>(container.GetQuery("/appext/Application")).GetBlobValue());
+            Assert.Equal(new byte[] { 3, 1, 2, 0, 0 },
+                Assert.IsType<BitmapMetadataBlob>(container.GetQuery("/[0]appext/Data")).GetBlobValue());
 
             using var frame = decoder.ReadNextFrame()!;
 

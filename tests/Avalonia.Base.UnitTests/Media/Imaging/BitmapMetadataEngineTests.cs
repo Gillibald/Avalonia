@@ -216,14 +216,15 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             var source = new BitmapMetadata(BitmapContainerFormats.Jpeg);
 
             source.SetQuery("/ifd/exif/{ushort=36867}", "2026:10:23 12:00:00");
-            source.SetQuery("/ifd/exif/{ushort=37500}", new byte[] { 9 });
+            source.SetQuery("/ifd/exif/{ushort=37500}", new BitmapMetadataBlob(new byte[] { 9 }));
 
             var target = new BitmapMetadata(BitmapContainerFormats.Jpeg);
 
             target.SetQuery("/app1/ifd/exif", source.GetQuery("/app1/ifd/exif"));
 
             Assert.Equal("2026:10:23 12:00:00", target.GetQuery("/ifd/exif/{ushort=36867}"));
-            Assert.Equal(new byte[] { 9 }, target.GetQuery("/ifd/exif/{ushort=37500}"));
+            Assert.Equal(new byte[] { 9 },
+                Assert.IsType<BitmapMetadataBlob>(target.GetQuery("/ifd/exif/{ushort=37500}")).GetBlobValue());
         }
 
         [Fact]
