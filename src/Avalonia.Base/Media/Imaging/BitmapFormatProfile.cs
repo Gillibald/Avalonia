@@ -26,6 +26,8 @@ namespace Avalonia.Media.Imaging
         /// <see cref="PixelFormats.Bgra8888"/>.
         /// Only codecs that declare <see cref="Avalonia.Platform.BitmapCodecCapabilities.WicFormatProfile"/>
         /// support it.
+        /// The profile names formats only: WIC never applies the EXIF orientation, so decoding as
+        /// WPF does also sets <see cref="BitmapDecodeOptions.RespectExifOrientation"/> to false.
         /// </summary>
         Wic,
     }
