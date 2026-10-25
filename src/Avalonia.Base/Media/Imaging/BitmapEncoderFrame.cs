@@ -9,6 +9,8 @@ namespace Avalonia.Media.Imaging
     /// </summary>
     public sealed class BitmapEncoderFrame
     {
+        private ReadOnlyMemory<byte>? _colorProfile;
+
         /// <summary>
         /// Gets an immutable managed snapshot to encode - the source for generated or
         /// externally produced pixels. Obtain one from <see cref="PixelBuffer.Create"/>,
@@ -33,13 +35,18 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets or sets the ICC profile written for this frame; it takes precedence over
         /// <see cref="BitmapEncoder.ColorProfile"/>. Requires the format's
-        /// <see cref="BitmapCodecCapabilities.ColorProfile"/> capability.
+        /// <see cref="BitmapCodecCapabilities.ColorProfile"/> capability. An empty profile, such as
+        /// a null array converts to, means none.
         /// </summary>
         /// <remarks>
         /// A decoded <see cref="Frame"/> does not contribute its embedded profile; copy it
         /// with <see cref="BitmapFrame.TryGetColorProfile"/> to keep it.
         /// </remarks>
-        public ReadOnlyMemory<byte>? ColorProfile { get; set; }
+        public ReadOnlyMemory<byte>? ColorProfile
+        {
+            get => _colorProfile;
+            set => _colorProfile = value is { IsEmpty: true } ? null : value;
+        }
 
         /// <summary>
         /// Gets or sets the palette the frame is written with. Pixels that are not already

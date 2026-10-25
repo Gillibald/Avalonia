@@ -23,6 +23,8 @@ namespace Avalonia.Media.Imaging
     /// </remarks>
     public abstract class BitmapEncoder
     {
+        private ReadOnlyMemory<byte>? _colorProfile;
+
         /// <summary>
         /// Gets the frames to encode. Single-frame formats accept exactly one; encoding
         /// more than one frame requires <see cref="BitmapCodecCapabilities.MultiFrameEncode"/>.
@@ -43,9 +45,14 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets or sets an ICC profile written for every frame that sets no
         /// <see cref="BitmapEncoderFrame.ColorProfile"/> of its own; requires the format's
-        /// <see cref="BitmapCodecCapabilities.ColorProfile"/> capability.
+        /// <see cref="BitmapCodecCapabilities.ColorProfile"/> capability. An empty profile, such as
+        /// a null array converts to, means none.
         /// </summary>
-        public ReadOnlyMemory<byte>? ColorProfile { get; set; }
+        public ReadOnlyMemory<byte>? ColorProfile
+        {
+            get => _colorProfile;
+            set => _colorProfile = value is { IsEmpty: true } ? null : value;
+        }
 
         /// <summary>
         /// Gets or sets whose encoding choices apply to what the options leave open: the stored
