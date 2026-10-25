@@ -133,6 +133,29 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Same(buffer, buffer.Transform(new BitmapTransform(BitmapRotation.Rotate180, true, true)));
         }
 
+        [Theory]
+        [InlineData(8, AlphaFormat.Unpremul)]
+        [InlineData(2, AlphaFormat.Unpremul)]
+        [InlineData(8, AlphaFormat.Premul)]
+        [InlineData(2, AlphaFormat.Premul)]
+        public void Scale_Should_Keep_A_Uniform_Translucent_Color(int size, AlphaFormat target)
+        {
+            // Filtering premultiplies; doing that in eight bits loses the colour of translucent
+            // pixels (128 at alpha 128 premultiplies to 64 and comes back as 127).
+            var pixels = new byte[4 * 4 * 4];
+            Array.Fill(pixels, (byte)0x80);
+
+            var source = PixelBuffer.Create(pixels, new PixelSize(4, 4), 16, PixelFormats.Bgra8888, AlphaFormat.Unpremul);
+            var scaled = source.Scale(new PixelSize(size, size), BitmapInterpolationMode.HighQuality)
+                .Convert(PixelFormats.Bgra8888, target);
+            var expected = target == AlphaFormat.Premul
+                ? new byte[] { 0x40, 0x40, 0x40, 0x80 }
+                : new byte[] { 0x80, 0x80, 0x80, 0x80 };
+
+            for (var i = 0; i < scaled.Pixels.Length; i += 4)
+                Assert.Equal(expected, scaled.Pixels.Slice(i, 4).ToArray());
+        }
+
         [Fact]
         public void Scale_Should_Resample_In_The_Source_Format()
         {
