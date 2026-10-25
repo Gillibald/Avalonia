@@ -59,7 +59,11 @@ namespace Avalonia.Imaging.PixelMan
             PixelSize? reducedFrom = null)
         {
             if (codec.Kind == PmCodecKind.Gif)
-                return new PixelManGifDecoder(decoder, stream, codec, info, options, allocator);
+            {
+                return decoder.FrameCount is not null
+                    ? new PixelManGifDecoder(decoder, stream, codec, info, options, allocator)
+                    : new PixelManSequentialGifDecoder(decoder, stream, codec, info, options, allocator);
+            }
 
             if (codec.Kind == PmCodecKind.Webp && WebpAnimation.ReadLoopCount(decoder) is { } loops)
                 return new PixelManWebpDecoder(decoder, stream, codec, info, options, allocator, loops);
@@ -211,22 +215,53 @@ namespace Avalonia.Imaging.PixelMan
         public int LoopCount { get; }
     }
 
-    internal sealed class PixelManGifDecoder : PixelManBitmapDecoder, IAnimatedDecoder, IPaletteDecoder
+    /// <summary>
+    /// A GIF whose frame count PixelMan knows, so frames can be read in any order.
+    /// </summary>
+    internal sealed class PixelManGifDecoder : PixelManSeekableDecoder, IAnimatedDecoder, IPaletteDecoder
     {
         public PixelManGifDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
             BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator)
             : base(decoder, stream, codec, info, options, allocator)
         {
-            // Without a NETSCAPE block a GIF plays once; zero means forever.
-            LoopCount = ((PixelManMetadataStore)Metadata).Metadata.LoopCount ?? 1;
-
-            using var global = decoder.GetGlobalPalette();
-
-            GlobalPalette = global is null ? null : PixelManFormats.ToPalette(global);
+            LoopCount = GifDecoderInfo.ReadLoopCount(Metadata);
+            GlobalPalette = GifDecoderInfo.ReadGlobalPalette(decoder);
         }
 
         public int LoopCount { get; }
 
         public BitmapPalette? GlobalPalette { get; }
+    }
+
+    /// <summary>
+    /// A GIF read in order, when PixelMan does not know the frame count up front.
+    /// </summary>
+    internal sealed class PixelManSequentialGifDecoder : PixelManBitmapDecoder, IAnimatedDecoder, IPaletteDecoder
+    {
+        public PixelManSequentialGifDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
+            BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator)
+            : base(decoder, stream, codec, info, options, allocator)
+        {
+            LoopCount = GifDecoderInfo.ReadLoopCount(Metadata);
+            GlobalPalette = GifDecoderInfo.ReadGlobalPalette(decoder);
+        }
+
+        public int LoopCount { get; }
+
+        public BitmapPalette? GlobalPalette { get; }
+    }
+
+    internal static class GifDecoderInfo
+    {
+        // Without a NETSCAPE block a GIF plays once; zero means forever.
+        public static int ReadLoopCount(IBitmapMetadataStore metadata) =>
+            ((PixelManMetadataStore)metadata).Metadata.LoopCount ?? 1;
+
+        public static BitmapPalette? ReadGlobalPalette(PmFrameDecoder decoder)
+        {
+            using var global = decoder.GetGlobalPalette();
+
+            return global is null ? null : PixelManFormats.ToPalette(global);
+        }
     }
 }
