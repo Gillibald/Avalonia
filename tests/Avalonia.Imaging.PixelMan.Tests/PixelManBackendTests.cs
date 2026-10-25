@@ -42,6 +42,23 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void An_Indexed_Source_Should_Remap_To_A_New_Palette_Of_The_Same_Format()
+        {
+            var palette = new BitmapPalette(new[] { Colors.Black, Colors.White, Colors.Red, Colors.Blue });
+            var reversed = new BitmapPalette(new[] { Colors.Blue, Colors.Red, Colors.White, Colors.Black });
+            var source = PixelBuffer.Create(new byte[] { 0, 1, 2, 3 }, new PixelSize(4, 1), 4, PixelFormats.Indexed8,
+                AlphaFormat.Opaque, palette: palette);
+
+            using var scope = Bind();
+
+            var remapped = source.Convert(PixelFormats.Indexed8, AlphaFormat.Opaque,
+                new PixelConversionOptions { Palette = reversed });
+
+            Assert.Same(reversed, remapped.Palette);
+            Assert.Equal(new byte[] { 3, 2, 1, 0 }, remapped.Pixels.ToArray());
+        }
+
+        [Fact]
         public void Optimal_Palette_Should_Hold_The_Colors_Of_A_Four_Color_Image()
         {
             var colors = new[] { Colors.Red, Colors.Lime, Colors.Blue, Colors.White };

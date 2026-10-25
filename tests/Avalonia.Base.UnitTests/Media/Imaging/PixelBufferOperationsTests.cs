@@ -89,6 +89,21 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
+        public void Convert_To_The_Same_Indexed_Format_Should_Remap_To_A_New_Palette()
+        {
+            var reversed = new BitmapPalette(new[]
+            {
+                Color.FromRgb(0, 0, 255), Color.FromRgb(255, 0, 0), Colors.White, Colors.Black
+            });
+
+            var remapped = Indexed().Convert(PixelFormats.Indexed4, AlphaFormat.Unpremul,
+                new PixelConversionOptions { Palette = reversed });
+
+            Assert.Same(reversed, remapped.Palette);
+            Assert.Equal(new byte[] { 0x32, 0x10, 0x01, 0x20 }, remapped.Pixels.ToArray());
+        }
+
+        [Fact]
         public void Crop_Should_Keep_Indices_Palette_And_Dpi()
         {
             var cropped = Indexed().Crop(new PixelRect(1, 0, 2, 2));
