@@ -48,6 +48,6 @@ dotnet publish -c Release tests/Avalonia.Imaging.Benchmarks.Browser
 
 Serve `bin/Release/net11.0/publish/wwwroot` and open it. `?quick` and `?filter=<text>` work as on the console. `?save` posts `results/browser.json` and `results/browser.md` back to the server, for a server that stores them.
 
-The browser host runs under the .NET interpreter, Avalonia's default for browser apps. AOT (`-p:RunAOTCompilation=true`) does not build yet: Mono's AOT compiler in .NET 11 rc.2 asserts in `sgen-alloc.c` on `Avalonia.PixelMan.dll`. It also lifts SkiaSharp to 4.153.1, because 3.119.4 has no archive that links with .NET 11's Emscripten; see the comments in its project file.
+The browser host runs under the .NET interpreter by default, Avalonia's default for browser apps; publish with `-p:RunAOTCompilation=true` for Mono AOT. AOT needs a PixelMan build whose bindings are plain `DllImport` declarations: Mono's AOT compiler in .NET 11 rc.2 aborts (`sgen-alloc.c:409`) on any import carrying `[UnmanagedCallConv]`. The host also lifts SkiaSharp to 4.153.1, because 3.119.4 has no archive that links with .NET 11's Emscripten; see the comments in its project file.
 
 Linux: publish the console host with `-r linux-x64 --self-contained` and run it there. PixelMan then needs its `linux-x64` library in the local package, which `BuildLocal.ps1` builds when run on Linux.
