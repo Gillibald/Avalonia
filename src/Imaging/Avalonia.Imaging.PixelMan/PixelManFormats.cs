@@ -16,8 +16,7 @@ namespace Avalonia.Imaging.PixelMan
 
         /// <summary>
         /// Maps a PixelMan format to the Avalonia format with the same memory layout, or
-        /// returns false for the formats Avalonia has no equivalent of: the GDI+
-        /// linear-light 48/64-bit formats and Bgra1555.
+        /// returns false for a format Avalonia has no equivalent of.
         /// </summary>
         public static bool TryMap(PmPixelFormat format, out PixelFormat pixelFormat, out AlphaFormat alphaFormat)
         {
@@ -52,6 +51,9 @@ namespace Avalonia.Imaging.PixelMan
                 format == PmPixelFormat.Rgba128Float || format == PmPixelFormat.Prgba128Float ? PixelFormats.Rgba128Float :
                 format == PmPixelFormat.Rgb128Float ? PixelFormats.Rgb128Float :
                 format == PmPixelFormat.Bgr101010 ? PixelFormats.Bgr101010 :
+                format == PmPixelFormat.Bgra1555 ? PixelFormats.Bgra5551 :
+                format == PmPixelFormat.Bgr48 ? PixelFormats.Bgr48Linear :
+                format == PmPixelFormat.Bgra64 || format == PmPixelFormat.Pbgra64 ? PixelFormats.Bgra64Linear :
                 null;
 
             pixelFormat = mapped ?? default;
@@ -66,8 +68,8 @@ namespace Avalonia.Imaging.PixelMan
         }
 
         /// <summary>
-        /// Returns the format a frame without an Avalonia equivalent is converted to: the
-        /// 16-bit linear formats keep their depth, Bgra1555 becomes 8-bit.
+        /// Returns the format a frame without an Avalonia equivalent is converted to: formats
+        /// deeper than 32 bits per pixel keep 16 bits per channel, the others become 8-bit.
         /// </summary>
         public static PmPixelFormat GetFallback(PmPixelFormat format)
             => format.BitsPerPixel > 32 ? PmPixelFormat.Rgba64 : PmPixelFormat.Bgra32;
@@ -108,6 +110,9 @@ namespace Avalonia.Imaging.PixelMan
                 PixelFormatEnum.Rgba128Float => premultiplied ? PmPixelFormat.Prgba128Float : PmPixelFormat.Rgba128Float,
                 PixelFormatEnum.Rgb128Float => PmPixelFormat.Rgb128Float,
                 PixelFormatEnum.Bgr101010 => PmPixelFormat.Bgr101010,
+                PixelFormatEnum.Bgra5551 => PmPixelFormat.Bgra1555,
+                PixelFormatEnum.Bgr48Linear => PmPixelFormat.Bgr48,
+                PixelFormatEnum.Bgra64Linear => premultiplied ? PmPixelFormat.Pbgra64 : PmPixelFormat.Bgra64,
                 _ => null,
             };
         }

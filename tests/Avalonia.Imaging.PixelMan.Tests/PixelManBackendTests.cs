@@ -292,6 +292,38 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void A_64_Bpp_Bmp_Should_Keep_Its_Linear_Fixed_Point_Samples()
+        {
+            using var scope = Bind();
+
+            // Blue, green, red, alpha in s2.13 linear light: a GDI+ Format64bppArgb pixel.
+            var samples = new short[] { 1000, 2000, 8192, 4096 };
+            var bytes = new byte[8];
+            Buffer.BlockCopy(samples, 0, bytes, 0, 8);
+
+            var encoder = new BmpBitmapEncoder();
+            encoder.Frames.Add(new BitmapEncoderFrame
+            {
+                Pixels = PixelBuffer.Create(bytes, new PixelSize(1, 1), 8, PixelFormats.Bgra64Linear, AlphaFormat.Unpremul)
+            });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream, new BitmapDecodeOptions { PreservePixelFormat = true });
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(PixelFormats.Bgra64Linear, frame.Format);
+
+            var decoded = new short[4];
+            Buffer.BlockCopy(frame.ToPixelBuffer().Pixels.ToArray(), 0, decoded, 0, 8);
+
+            Assert.Equal(samples, decoded);
+        }
+
+        [Fact]
         public void A_Gif_Should_Take_Container_Metadata_And_Leave_Out_The_Loop_Block_When_Asked()
         {
             using var scope = Bind();
