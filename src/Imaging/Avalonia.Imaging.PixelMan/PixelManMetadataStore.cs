@@ -107,9 +107,9 @@ namespace Avalonia.Imaging.PixelMan
 
             if (path == "/icc")
             {
-                _icc = value.Type == MetadataValueType.Undefined
+                _icc = value.Type is MetadataValueType.Undefined or MetadataValueType.Byte
                     ? value.Data.ToArray()
-                    : throw new NotSupportedException($"'{path}' holds opaque bytes, not {value.Type}.");
+                    : throw new NotSupportedException($"'{path}' holds bytes, not {value.Type}.");
                 return;
             }
 

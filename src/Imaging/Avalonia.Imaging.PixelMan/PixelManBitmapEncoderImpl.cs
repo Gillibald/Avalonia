@@ -115,15 +115,17 @@ namespace Avalonia.Imaging.PixelMan
         {
             var source = encoder.Frames[index];
 
-            if ((source.ColorProfile ?? encoder.ColorProfile) is { } profile)
-                frame.IccProfile = profile.ToArray();
-
             // Frames take their own metadata; for formats without file-level metadata the
             // encoder's metadata belongs to the first frame.
             var metadata = source.Metadata ?? (!isGif && index == 0 ? encoder.Metadata : null);
             var store = metadata is not null
                 ? PixelManMetadataStore.CopyOf(metadata.Store, _codec.ContainerFormat)
                 : isGif ? new PixelManMetadataStore(PmMetadata.Create(), _codec.ContainerFormat, null, false) : null;
+
+            // PixelMan keeps the profile beside the metadata bag, so a profile written into the
+            // metadata (/iCCP/ProfileData) is passed on unless a colour profile was set.
+            if (((source.ColorProfile ?? encoder.ColorProfile)?.ToArray() ?? store?.Icc) is { } profile)
+                frame.IccProfile = profile;
 
             if (store is null)
                 return;
