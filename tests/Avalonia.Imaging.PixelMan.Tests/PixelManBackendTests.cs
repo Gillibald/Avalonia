@@ -292,6 +292,25 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void A_Transform_Without_An_Intent_Should_Leave_The_Choice_To_The_Color_Management()
+        {
+            using var scope = Bind();
+
+            // The header names absolute colorimetric, which PixelMan does not offer as an explicit
+            // intent; without one it picks from what the profiles hold, as WIC does.
+            var source = IccProfileFixture.CreateRgb(2.2);
+            source[67] = 3;
+
+            using var transform = BitmapColorTransform.Create(source, IccProfileFixture.CreateRgb(1.0));
+            var result = new float[3];
+
+            transform.TransformColors(new[] { 1f, 1f, 1f }, result);
+
+            Assert.Null(transform.Intent);
+            Assert.Equal(new[] { 1f, 1f, 1f }, result.Select(v => MathF.Round(v, 3)).ToArray());
+        }
+
+        [Fact]
         public void A_64_Bpp_Bmp_Should_Keep_Its_Linear_Fixed_Point_Samples()
         {
             using var scope = Bind();
