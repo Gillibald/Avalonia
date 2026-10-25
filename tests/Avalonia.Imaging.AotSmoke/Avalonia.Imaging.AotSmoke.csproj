@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Publishes the imaging backends with NativeAOT and runs them: dotnet publish -c Release -r win-x64
+    (or linux-x64), then run the executable. Trim and AOT analysis warnings are errors, so an
+    imaging path that is not trim-safe fails the publish. Restores the local PixelMan build, so,
+    like the PixelMan adapter, it is not part of the solution.
+  -->
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2060;IL2067;IL2070;IL2072;IL2075;IL2087;IL2090;IL2091;IL2104;IL3050;IL3051;IL3053</WarningsAsErrors>
+  </PropertyGroup>
+  <Import Project="..\..\build\SharedVersion.props" />
+  <Import Project="..\..\build\NullableEnable.props" />
+  <ItemGroup>
+    <ProjectReference Include="..\Avalonia.Imaging.Benchmarks.Core\Avalonia.Imaging.Benchmarks.Core.csproj" />
+    <ProjectReference Include="..\..\src\Imaging\Avalonia.Imaging.ImageSharp\Avalonia.Imaging.ImageSharp.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('linux'))">
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+  </ItemGroup>
+</Project>
