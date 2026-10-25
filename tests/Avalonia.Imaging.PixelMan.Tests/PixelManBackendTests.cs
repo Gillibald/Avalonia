@@ -85,6 +85,36 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void A_Gif_Decoder_Should_Read_Frames_In_Any_Order()
+        {
+            using var scope = Bind();
+
+            var colors = new[] { Colors.Red, Colors.Lime, Colors.Blue };
+            var encoder = new GifBitmapEncoder();
+
+            foreach (var color in colors)
+                encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, color) });
+
+            using var stream = new MemoryStream();
+
+            encoder.Save(stream, TestContext.Current.CancellationToken);
+            stream.Position = 0;
+
+            using var decoder = BitmapDecoder.Create(stream);
+
+            Assert.True(decoder.CanSeekFrames);
+            Assert.Equal(3, decoder.FrameCount);
+
+            foreach (var index in new[] { 2, 0, 1 })
+            {
+                using var frame = decoder.GetFrame(index);
+                var pixel = frame.ToPixelBuffer().Convert(PixelFormats.Bgra8888, AlphaFormat.Unpremul).Pixels.Span;
+
+                Assert.Equal(colors[index], Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]));
+            }
+        }
+
+        [Fact]
         public void Animated_Gif_Should_Round_Trip_Frames_Origins_And_Timing()
         {
             using var scope = Bind();
