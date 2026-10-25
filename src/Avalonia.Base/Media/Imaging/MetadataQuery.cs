@@ -24,6 +24,8 @@ internal static class MetadataQuery
         ("/app1/{ushort=0}", "/ifd"),
         ("/app1/xmp", "/xmp"),
         ("/app13/irb/8bimiptc/iptc", "/iptc"),
+        // The photoshop resource block by id: APP13 item 0, resource "8BIMIPTC".
+        ("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc", "/iptc"),
     };
 
     private static readonly (string From, string To)[] s_tiffAliases =
@@ -32,6 +34,8 @@ internal static class MetadataQuery
         ("/ifd/{ushort=700}", "/xmp"),
         ("/ifd/iptc", "/iptc"),
         ("/ifd/{ushort=33723}", "/iptc"),
+        // The photoshop resource block by id: tag 34377, resource "8BIMIPTC".
+        ("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc", "/iptc"),
     };
 
     private static readonly (string From, string To)[] s_pngAliases =
@@ -378,10 +382,17 @@ internal static class MetadataQuery
                 case "short":
                 case "int":
                 case "long":
+                case "ulonglong":
+                case "longlong":
                     if (!ulong.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var number))
                         throw new ArgumentException($"The metadata query '{query}' has an invalid {type} selector.", nameof(query));
 
                     return index + "{" + type + "=" + number.ToString(CultureInfo.InvariantCulture) + "}";
+                case "guid":
+                    if (!Guid.TryParse(value, out var guid))
+                        throw new ArgumentException($"The metadata query '{query}' has an invalid guid selector.", nameof(query));
+
+                    return index + "{guid=" + guid.ToString("B") + "}";
                 default:
                     throw new ArgumentException($"The metadata query '{query}' has an unknown selector type '{type}'.", nameof(query));
             }
