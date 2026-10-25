@@ -1,0 +1,199 @@
+# WIC parity baseline, StoredFormat: the corpus cases this backend decodes differently from WPF, 197 of 506.
+# Rewrite with AVALONIA_IMAGING_PARITY_BLESS=1; one case per line: corpus path, tab, difference.
+dotnet/wpf/from-alpha-sweep/Bgr101010.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Bgr101010.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Bgr101010.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Bgr24.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Bgr24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Bgr32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Bgr32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Bgr555.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Bgr555.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Bgr565.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Bgr565.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Bgra32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/BlackWhite.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-alpha-sweep/BlackWhite.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Cmyk32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-alpha-sweep/Cmyk32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Gray16.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Gray16.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-alpha-sweep/Gray16.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Gray2.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-alpha-sweep/Gray2.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Gray32Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Gray32Float.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-alpha-sweep/Gray32Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Gray4.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-alpha-sweep/Gray4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Gray8.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-alpha-sweep/Gray8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Indexed1.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Indexed2.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-alpha-sweep/Indexed2.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Indexed4.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-alpha-sweep/Indexed4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Indexed8.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-alpha-sweep/Indexed8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Pbgra32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-alpha-sweep/Pbgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Prgba128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Prgba128Float.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Prgba128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Prgba64.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Prgba64.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Prgba64.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Rgb128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Rgb128Float.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Rgb128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Rgb24.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Rgb24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Rgb48.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Rgb48.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Rgb48.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Rgba128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Rgba128Float.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Rgba128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-alpha-sweep/Rgba64.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-alpha-sweep/Rgba64.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-alpha-sweep/Rgba64.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Bgr101010.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Bgr101010.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Bgr101010.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Bgr24.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Bgr24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Bgr32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Bgr32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Bgr555.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-channel-sweep/Bgr555.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Bgr565.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Bgr565.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Bgra32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/BlackWhite.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/BlackWhite.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Cmyk32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Cmyk32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Gray16.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Gray16.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/Gray16.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Gray2.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/Gray2.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Gray32Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Gray32Float.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/Gray32Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Gray4.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/Gray4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Gray8.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/Gray8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Indexed1.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-channel-sweep/Indexed1.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Indexed2.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Indexed2.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Indexed4.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Indexed4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Indexed8.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Indexed8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Pbgra32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Pbgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Prgba128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Prgba128Float.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Prgba128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Prgba64.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Prgba64.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Prgba64.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Rgb128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Rgb128Float.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Rgb128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Rgb24.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Rgb24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Rgb48.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Rgb48.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Rgb48.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Rgba128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Rgba128Float.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Rgba128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-channel-sweep/Rgba64.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-channel-sweep/Rgba64.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-channel-sweep/Rgba64.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-cmyk-source/Bgr24.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-cmyk-source/Bgr24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-cmyk-source/Bgra32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-cmyk-source/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-cmyk-source/Cmyk32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-cmyk-source/Cmyk32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-cmyk-source/Rgb24.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-cmyk-source/Rgb24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed1/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed1/Indexed1.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed4/Bgra32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-indexed4/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed4/Indexed4.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-indexed4/Indexed4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed8-color/Bgra32.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-indexed8-color/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed8-color/Indexed8.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-indexed8-color/Indexed8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed8-gray/Bgra32.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-indexed8-gray/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-indexed8-gray/Indexed8.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-indexed8-gray/Indexed8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Bgr101010.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Bgr101010.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Bgr101010.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Bgr24.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Bgr24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Bgr32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Bgr32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Bgr555.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Bgr555.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Bgr565.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Bgr565.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Bgra32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Bgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/BlackWhite.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Cmyk32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Cmyk32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Gray16.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Gray16.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-known-values/Gray16.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Gray2.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-known-values/Gray2.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Gray32Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Gray32Float.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-known-values/Gray32Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Gray4.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-known-values/Gray4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Gray8.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-known-values/Gray8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Indexed1.jpg.decoded.raw	pixels: max byte difference 1
+dotnet/wpf/from-known-values/Indexed1.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Indexed2.jpg.decoded.raw	pixels: max byte difference 3
+dotnet/wpf/from-known-values/Indexed2.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Indexed4.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Indexed4.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Indexed8.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Indexed8.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Pbgra32.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Pbgra32.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Prgba128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Prgba128Float.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Prgba128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Prgba64.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Prgba64.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Prgba64.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Rgb128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Rgb128Float.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Rgb128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Rgb24.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Rgb24.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Rgb48.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Rgb48.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Rgb48.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Rgba128Float.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Rgba128Float.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Rgba128Float.wdp.decoded.raw	decode failed: NotSupportedException
+dotnet/wpf/from-known-values/Rgba64.bmp.gz.decoded.raw	WIC format unnamed in WPF (64 bpp)
+dotnet/wpf/from-known-values/Rgba64.jpg.decoded.raw	pixels: max byte difference 2
+dotnet/wpf/from-known-values/Rgba64.wdp.decoded.raw	decode failed: NotSupportedException

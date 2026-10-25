@@ -1,7 +1,9 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using Avalonia.Imaging.PixelMan;
 using Avalonia.Imaging.TestKit.Contract;
 using Avalonia.Imaging.TestKit.Fixtures;
+using Avalonia.Imaging.TestKit.Parity;
 using Avalonia.PixelMan;
 using Avalonia.Platform;
 using Xunit;
@@ -124,6 +126,8 @@ namespace Avalonia.Imaging.PixelMan.Tests
             return new OrientedImageFixture("JPEG", stream.ToArray(), new PixelSize(8, 4), orientedRgba, pixelTolerance: 24);
         }
 
+        public override string? WicParityBaselineDirectory => Path.Combine(SourceDirectory(), "Parity");
+
         public override MultiFrameImageFixture? CreateMultiFrameFixture()
         {
             using var first = PmBitmapFrame.CreateFromCopy(PmPixelFormat.Rgba32, 4, 4, 16, SolidRgba(255, 0, 0), null);
@@ -138,6 +142,9 @@ namespace Avalonia.Imaging.PixelMan.Tests
                 SolidRgba(0, 255, 0),
             });
         }
+
+        // The baselines live next to this file, so blessing rewrites them in the source tree.
+        private static string SourceDirectory([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
 
         private static byte[] SolidRgba(byte r, byte g, byte b)
         {
@@ -192,4 +199,6 @@ namespace Avalonia.Imaging.PixelMan.Tests
     public class PixelManPublicApiContractTests : PublicApiContractTests<PixelManCodecFixture> { }
 
     public class PixelManFormatProfileContractTests : FormatProfileContractTests<PixelManCodecFixture> { }
+
+    public class PixelManWicParityTests : WicParityTests<PixelManCodecFixture> { }
 }

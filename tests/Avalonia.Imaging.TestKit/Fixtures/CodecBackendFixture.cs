@@ -50,5 +50,11 @@ namespace Avalonia.Imaging.TestKit.Fixtures
         /// skip then.
         /// </summary>
         public virtual MultiFrameImageFixture? CreateMultiFrameFixture() => null;
+
+        /// <summary>
+        /// Gets the directory holding the backend's WIC parity baselines, or null when the
+        /// backend has none; the parity tier skips then.
+        /// </summary>
+        public virtual string? WicParityBaselineDirectory => null;
     }
 }
