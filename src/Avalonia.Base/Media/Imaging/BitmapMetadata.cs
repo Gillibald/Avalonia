@@ -203,8 +203,8 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Gets the immediate children of a block in the requested spelling.
         /// <see cref="MetadataPathSpelling.Container"/> lists them as WIC enumerates the
-        /// container (for a JPEG "/app1" and "/app13" at the root, "/{ushort=0}" below "/app1"),
-        /// and takes <paramref name="blockPath"/> in that spelling.
+        /// container (for a JPEG "/app1" and "/app13" at the root, "/{ushort=0}" below "/app1").
+        /// <paramref name="blockPath"/> may use any spelling the queries accept.
         /// </summary>
         /// <param name="blockPath">The block to list, relative to this metadata; null for this metadata itself.</param>
         /// <param name="spelling">The spelling of <paramref name="blockPath"/> and of the children.</param>
@@ -213,8 +213,8 @@ namespace Avalonia.Media.Imaging
             if (spelling == MetadataPathSpelling.Canonical)
                 return GetChildren(blockPath);
 
-            var view = _block == "/" ? string.Empty : MetadataSpelling.ToContainer(_block, ContainerFormat);
-            var block = (view + (blockPath ?? string.Empty)).TrimEnd('/');
+            var canonical = blockPath is null ? _block : Resolve(blockPath);
+            var block = canonical == "/" ? string.Empty : MetadataSpelling.ToContainer(canonical, ContainerFormat).TrimEnd('/');
             var children = new List<string>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

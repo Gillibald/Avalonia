@@ -58,7 +58,11 @@ internal static class MetadataSpelling
         if (containerFormat != BitmapContainerFormats.Png)
         {
             foreach (var path in canonicalPaths)
-                spelled.Add(ToContainer(path, containerFormat));
+            {
+                // Outside PNG the profile belongs to the frame; WIC lists no metadata for it.
+                if (path != "/icc")
+                    spelled.Add(ToContainer(path, containerFormat));
+            }
 
             return spelled;
         }
