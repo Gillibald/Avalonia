@@ -353,8 +353,8 @@ namespace Avalonia.Imaging.ImageSharp
         {
             PngBitmapEncoder png when palettes[0] is { } palette => new PngEncoder
             {
-                CompressionLevel = (PngCompressionLevel)Math.Clamp(png.CompressionLevel, 0, 9),
-                FilterMethod = ToPngFilterMethod(png.Filter),
+                CompressionLevel = (PngCompressionLevel)Math.Clamp(png.CompressionLevel ?? 6, 0, 9),
+                FilterMethod = ToPngFilterMethod(png.Filter ?? PngFilterMode.Auto),
                 InterlaceMethod = png.Interlace == PngInterlaceMode.Adam7
                     ? ISPngInterlaceMode.Adam7
                     : ISPngInterlaceMode.None,
@@ -363,8 +363,8 @@ namespace Avalonia.Imaging.ImageSharp
             },
             PngBitmapEncoder png => new PngEncoder
             {
-                CompressionLevel = (PngCompressionLevel)Math.Clamp(png.CompressionLevel, 0, 9),
-                FilterMethod = ToPngFilterMethod(png.Filter),
+                CompressionLevel = (PngCompressionLevel)Math.Clamp(png.CompressionLevel ?? 6, 0, 9),
+                FilterMethod = ToPngFilterMethod(png.Filter ?? PngFilterMode.Auto),
                 InterlaceMethod = png.Interlace == PngInterlaceMode.Adam7
                     ? ISPngInterlaceMode.Adam7
                     : ISPngInterlaceMode.None,
@@ -375,7 +375,7 @@ namespace Avalonia.Imaging.ImageSharp
                 Quality = webp.Quality,
                 FileFormat = webp.Lossless ? WebpFileFormatType.Lossless : WebpFileFormatType.Lossy,
             },
-            TiffBitmapEncoder tiff => new TiffEncoder { Compression = ToTiffCompression(tiff.Compression) },
+            TiffBitmapEncoder tiff => new TiffEncoder { Compression = ToTiffCompression(tiff.Compression ?? TiffCompression.Lzw) },
             GifBitmapEncoder gif when CreatePaletteQuantizer(palettes, gif.GlobalPalette) is { } quantizer => new GifEncoder
             {
                 Quantizer = quantizer,

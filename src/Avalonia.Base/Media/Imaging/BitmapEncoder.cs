@@ -268,6 +268,15 @@ namespace Avalonia.Media.Imaging
             if (HasFramePalette() || DefaultFramePalette is not null)
                 RequireCapability(backend, backendCapabilities, BitmapCodecCapabilities.Palette, "encoding a palette");
 
+            // The WIC profile is a backend quality, not a property of the format, so only the
+            // backend's codec decides.
+            if (FormatProfile == BitmapFormatProfile.Wic &&
+                (backendCapabilities is not { } caps || (caps & BitmapCodecCapabilities.WicFormatProfile) == 0))
+            {
+                throw new NotSupportedException(
+                    $"The '{backend.Name}' imaging backend does not encode {GetType().Name} output with the WIC format profile.");
+            }
+
             return backendCapabilities ?? BitmapCodecCapabilities.None;
         }
 

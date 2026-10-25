@@ -9,23 +9,28 @@ namespace Avalonia.Media.Imaging
     public sealed class PngBitmapEncoder : BitmapEncoder
     {
         /// <summary>
-        /// Gets or sets the zlib compression level, 0 (none) to 9 (best).
+        /// Gets or sets the zlib compression level, 0 (none) to 9 (best). Null takes the
+        /// <see cref="BitmapEncoder.FormatProfile"/>'s choice.
         /// </summary>
-        public int CompressionLevel { get; set; } = 6;
+        public int? CompressionLevel { get; set; } = 6;
 
         /// <summary>
-        /// Gets or sets the interlacing mode.
+        /// Gets or sets the interlacing mode. Null takes the <see cref="BitmapEncoder.FormatProfile"/>'s choice.
         /// </summary>
-        public PngInterlaceMode Interlace { get; set; }
+        public PngInterlaceMode? Interlace { get; set; } = PngInterlaceMode.None;
 
         /// <summary>
-        /// Gets or sets the scanline filter strategy.
+        /// Gets or sets the scanline filter strategy. Null takes the
+        /// <see cref="BitmapEncoder.FormatProfile"/>'s choice.
         /// </summary>
-        public PngFilterMode Filter { get; set; }
+        public PngFilterMode? Filter { get; set; } = PngFilterMode.Auto;
 
         /// <inheritdoc />
-        protected override void ValidateOptions() =>
-            RequireRange(CompressionLevel, 0, 9, nameof(PngBitmapEncoder), nameof(CompressionLevel));
+        protected override void ValidateOptions()
+        {
+            if (CompressionLevel is { } level)
+                RequireRange(level, 0, 9, nameof(PngBitmapEncoder), nameof(CompressionLevel));
+        }
 
         /// <inheritdoc />
         protected override Guid ContainerFormat => BitmapContainerFormats.Png;

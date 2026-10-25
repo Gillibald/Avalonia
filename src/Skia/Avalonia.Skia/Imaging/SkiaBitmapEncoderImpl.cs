@@ -83,7 +83,7 @@ namespace Avalonia.Skia.Imaging
             var success = encoder switch
             {
                 PngBitmapEncoder png => pixmap.Encode(stream,
-                    new SKPngEncoderOptions(ToFilterFlags(png.Filter), png.CompressionLevel)),
+                    new SKPngEncoderOptions(ToFilterFlags(png.Filter ?? PngFilterMode.Auto), png.CompressionLevel ?? 6)),
                 JpegBitmapEncoder jpeg => pixmap.Encode(stream,
                     new SKJpegEncoderOptions(jpeg.Quality)),
                 WebpBitmapEncoder webp => pixmap.Encode(stream,

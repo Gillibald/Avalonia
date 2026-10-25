@@ -145,34 +145,45 @@ namespace Avalonia.Imaging.PixelMan
 
         private static PmEncodeOptions CreateOptions(BitmapEncoder encoder)
         {
-            var options = new PmEncodeOptions(PmCompatibilityMode.Normal);
+            // Under the WIC profile PixelMan's WPF mode makes the choices the options leave open;
+            // otherwise unset options take the render-backend defaults.
+            var wic = encoder.FormatProfile == BitmapFormatProfile.Wic;
+            var options = new PmEncodeOptions(wic ? PmCompatibilityMode.WpfPreservePixelFormat : PmCompatibilityMode.Normal);
 
             switch (encoder)
             {
                 case PngBitmapEncoder png:
-                    options.PngCompressionLevel = (uint)Math.Clamp(png.CompressionLevel, 0, 9);
-                    options.PngInterlace = png.Interlace == PngInterlaceMode.Adam7;
-                    options.PngFilter = png.Filter switch
+                    if ((png.CompressionLevel ?? (wic ? null : 6)) is { } level)
+                        options.PngCompressionLevel = (uint)Math.Clamp(level, 0, 9);
+
+                    if ((png.Interlace ?? (wic ? null : PngInterlaceMode.None)) is { } interlace)
+                        options.PngInterlace = interlace == PngInterlaceMode.Adam7;
+
+                    if ((png.Filter ?? (wic ? null : PngFilterMode.Auto)) is { } filter)
                     {
-                        PngFilterMode.None => PmPngFilter.None,
-                        PngFilterMode.Sub => PmPngFilter.Sub,
-                        PngFilterMode.Up => PmPngFilter.Up,
-                        PngFilterMode.Average => PmPngFilter.Average,
-                        PngFilterMode.Paeth => PmPngFilter.Paeth,
-                        _ => PmPngFilter.Auto,
-                    };
+                        options.PngFilter = filter switch
+                        {
+                            PngFilterMode.None => PmPngFilter.None,
+                            PngFilterMode.Sub => PmPngFilter.Sub,
+                            PngFilterMode.Up => PmPngFilter.Up,
+                            PngFilterMode.Average => PmPngFilter.Average,
+                            PngFilterMode.Paeth => PmPngFilter.Paeth,
+                            _ => PmPngFilter.Auto,
+                        };
+                    }
+
                     break;
                 case JpegBitmapEncoder jpeg:
                     options.JpegQuality = (uint)Math.Clamp(jpeg.Quality, 1, 100);
                     break;
-                case TiffBitmapEncoder tiff:
-                    options.TiffCompression = tiff.Compression switch
+                case TiffBitmapEncoder tiff when (tiff.Compression ?? (wic ? null : TiffCompression.Lzw)) is { } compression:
+                    options.TiffCompression = compression switch
                     {
                         TiffCompression.None => PmTiffCompression.None,
                         TiffCompression.Lzw => PmTiffCompression.Lzw,
                         TiffCompression.Deflate => PmTiffCompression.Zip,
                         _ => throw new NotSupportedException(
-                            $"The '{PixelManFormats.BackendName}' imaging backend does not write {tiff.Compression} TIFF compression."),
+                            $"The '{PixelManFormats.BackendName}' imaging backend does not write {compression} TIFF compression."),
                     };
                     break;
                 case GifBitmapEncoder gif:

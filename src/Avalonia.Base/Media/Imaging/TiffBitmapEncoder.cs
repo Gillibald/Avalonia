@@ -9,9 +9,9 @@ namespace Avalonia.Media.Imaging
     public sealed class TiffBitmapEncoder : BitmapEncoder
     {
         /// <summary>
-        /// Gets or sets the compression scheme.
+        /// Gets or sets the compression scheme. Null takes the <see cref="BitmapEncoder.FormatProfile"/>'s choice.
         /// </summary>
-        public TiffCompression Compression { get; set; } = TiffCompression.Lzw;
+        public TiffCompression? Compression { get; set; } = TiffCompression.Lzw;
 
         /// <inheritdoc />
         protected override Guid ContainerFormat => BitmapContainerFormats.Tiff;
