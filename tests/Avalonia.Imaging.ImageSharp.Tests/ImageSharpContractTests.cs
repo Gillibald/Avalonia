@@ -191,6 +191,8 @@ namespace Avalonia.Imaging.ImageSharp.Tests
 
     public class ImageSharpLifetimeContractTests : LifetimeContractTests<ImageSharpCodecFixture> { }
 
+    public class ImageSharpSoakContractTests : SoakContractTests<ImageSharpCodecFixture> { }
+
     public class ImageSharpPoolContractTests : PoolContractTests<ImageSharpCodecFixture> { }
 
     public class ImageSharpCopyBudgetContractTests : CopyBudgetContractTests<ImageSharpCodecFixture> { }

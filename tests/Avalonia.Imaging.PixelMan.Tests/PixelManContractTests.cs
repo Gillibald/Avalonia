@@ -192,6 +192,8 @@ namespace Avalonia.Imaging.PixelMan.Tests
 
     public class PixelManLifetimeContractTests : LifetimeContractTests<PixelManCodecFixture> { }
 
+    public class PixelManSoakContractTests : SoakContractTests<PixelManCodecFixture> { }
+
     public class PixelManPoolContractTests : PoolContractTests<PixelManCodecFixture> { }
 
     public class PixelManCopyBudgetContractTests : CopyBudgetContractTests<PixelManCodecFixture> { }
