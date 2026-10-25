@@ -19,6 +19,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/app1/ifd/exif/{ushort=40965}/{ushort=1}", "/ifd/exif/interop/{ushort=1}")]
         [InlineData("/app1/xmp", "/xmp")]
         [InlineData("/app13/irb/8bimiptc/iptc", "/iptc")]
+        [InlineData("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc", "/iptc")]
+        [InlineData("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc/{str=Keywords}", "/iptc/{str=Keywords}")]
         public void Jpeg_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
         {
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Jpeg));
@@ -29,6 +31,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/ifd/xmp", "/xmp")]
         [InlineData("/ifd/{ushort=700}", "/xmp")]
         [InlineData("/ifd/{ushort=33723}", "/iptc")]
+        [InlineData("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc", "/iptc")]
         public void Tiff_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
         {
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Tiff));
@@ -61,6 +64,15 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Jpeg));
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query.Replace("/app13/irb/8bimiptc/iptc", "/ifd/iptc"),
                 BitmapContainerFormats.Tiff));
+        }
+
+        [Theory]
+        [InlineData("/block/{ULONGLONG=18446744073709551615}", "/block/{ulonglong=18446744073709551615}")]
+        [InlineData("/block/{longlong=7}", "/block/{longlong=7}")]
+        [InlineData("/block/{guid={6AAE2E3D-7F8B-4A3B-9F4E-0D3C2B1A0F9E}}", "/block/{guid={6aae2e3d-7f8b-4a3b-9f4e-0d3c2b1a0f9e}}")]
+        public void Wide_Integer_And_Guid_Selectors_Should_Normalize(string query, string canonical)
+        {
+            Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Jpeg));
         }
 
         [Theory]
