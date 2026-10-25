@@ -24,6 +24,11 @@ namespace Avalonia.Imaging.PixelMan
                 return false;
             }
 
+            // WIC keeps the source indices and palette when the target is the same indexed format,
+            // and so does PixelMan; the contract remaps to the new palette, which the core path does.
+            if (targetFormat.IsIndexed && targetFormat == sourceFormat && options?.Palette is not null)
+                return false;
+
             using var sourcePm = sourcePalette is not null ? PixelManFormats.ToPixelMan(sourcePalette) : null;
             using var frame = Wrap(source, sourceFormat, sourcePm);
 
