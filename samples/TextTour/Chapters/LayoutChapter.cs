@@ -23,6 +23,21 @@ namespace TextTour.Chapters
         // Height of the strip above each line in the run order step that holds the direction arrows.
         private const double ArrowStrip = 26;
 
+        // The reading-order band under each line: the stop row, jump lanes above and below it, and
+        // the numbered labels on the stops.
+        private const double LaneGap = 12;
+        private const double LaneClearance = 24;
+        private const double BandEdge = 12;
+        private const double BandSpacing = 12;
+        private const double LabelSize = 14;
+        private const double LabelHeight = 20;
+        private const double DotRadius = 4;
+        private const double StretchHead = 12;
+        private const double JumpHead = 10;
+
+        // How far a jump leaving a stop starts beside the jump landing on it.
+        private const double PortOffset = 5;
+
         private static readonly (bool Path, double Mix, string Name)[] s_orderVariants =
         {
             (false, 0, "-logical"), (false, 1, "-visual"), (true, 0, "-logical-path"), (true, 1, "-visual-path"),
@@ -47,6 +62,7 @@ namespace TextTour.Chapters
         private bool _syncingSlider;
         private int _hoverLine = -1;
         private bool _showPath;
+        private IReadOnlyList<IReadOnlyList<PathStop>>? _pathStops;
 
         public LayoutChapter(TourState state) : base(state)
         {
@@ -288,30 +304,76 @@ namespace TextTour.Chapters
         }
 
         /// <summary>
-        /// Draws a line through the graphemes of each line in logical order, at their real positions,
-        /// with an arrowhead per segment. Neighbours on screen are joined straight; a jump to a
-        /// character elsewhere on the line arcs off it. <paramref name="lineTops"/> gives the
-        /// top of each line's text; <paramref name="shift"/> moves a character with its run while the
-        /// runs animate.
+        /// Lays out the reading-order band under each line: the stops of the line's graphemes in
+        /// logical order, the stretches between screen neighbours and the jumps between the rest.
+        /// <paramref name="mixes"/> are the run order mixes the band must have room for; the first
+        /// is the one drawn now.
         /// </summary>
-        private void RenderReadingPath(DrawingContext context, IReadOnlyList<double> lineTops, Func<TextLine, int, double>? shift)
+        private PathPlan PlanPath(params double[] mixes)
         {
-            var p = Palette;
-            var analysis = State.Analysis;
-            var layout = _layout!;
-            var brush = p.Caret;
-            var pen = new Pen(brush, 2.5);
-            var dashed = new Pen(brush, 2.5, new DashStyle(new double[] { 3, 2 }, 0));
-            var halo = new Pen(p.Background, 6.5);
-            var head = 14.0;
+            var stops = PathStops();
+            var plan = new PathPlan();
 
-            for (var l = 0; l < layout.TextLines.Count; l++)
+            foreach (var mix in mixes)
             {
-                var line = layout.TextLines[l];
+                foreach (var line in stops)
+                {
+                    var xs = line.Select(s => s.X + s.RunShift * (1 - mix)).ToArray();
+                    plan.Dense |= IsDense(line, xs);
+                }
+            }
+
+            foreach (var line in stops)
+            {
+                var upper = 0;
+                var lower = 0;
+                PathRoute? current = null;
+
+                foreach (var mix in mixes)
+                {
+                    var xs = line.Select(s => s.X + s.RunShift * (1 - mix)).ToArray();
+                    var route = Route(line, xs, plan.Dense);
+                    current ??= route;
+                    upper = Math.Max(upper, route.Upper);
+                    lower = Math.Max(lower, route.Lower);
+                }
+
+                current!.StopRow = StopRowOffset(upper);
+                plan.Routes.Add(current);
+                plan.Bands.Add(current.StopRow + BandBottom(lower) + BandSpacing);
+            }
+
+            return plan;
+
+            static double StopRowOffset(int upper) =>
+                upper > 0 ? BandEdge + (upper - 1) * LaneGap + LaneClearance : LabelHeight / 2 + 6;
+
+            static double BandBottom(int lower) =>
+                lower > 0 ? LaneClearance + (lower - 1) * LaneGap + BandEdge : LabelHeight / 2 + 4;
+        }
+
+        /// <summary>
+        /// The graphemes of each line with their centre from <see cref="TextLine.GetTextBounds"/>, the
+        /// bidi level of their run and the offset that moves their run from its visual to its logical
+        /// slot. Numbers run on across lines.
+        /// </summary>
+        private IReadOnlyList<IReadOnlyList<PathStop>> PathStops()
+        {
+            if (_pathStops is not null)
+            {
+                return _pathStops;
+            }
+
+            var analysis = State.Analysis;
+            var lines = new List<IReadOnlyList<PathStop>>();
+            var number = 1;
+
+            foreach (var line in _layout!.TextLines)
+            {
                 var start = line.FirstTextSourceIndex;
                 var end = start + line.Length - line.NewLineLength;
-                var y = _origin.Y + lineTops[l] + line.Baseline - FontSize * 0.3;
-                var points = new List<(double X, double HalfWidth)>();
+                var shifts = RunShifts(line);
+                var stops = new List<PathStop>();
 
                 foreach (var g in analysis.Graphemes)
                 {
@@ -334,105 +396,453 @@ namespace TextTour.Chapters
                         continue;
                     }
 
-                    points.Add((_origin.X + rect.Center.X + (shift?.Invoke(line, g.Start) ?? 0), rect.Width / 2));
-                }
+                    var (level, shift) = (0, 0.0);
 
-                // Consecutive neighbours that read the same way form one stretch with one arrowhead
-                // in its middle. A jump is a dashed arc with its head where it lands; it bends above
-                // the line when it goes right and below when it goes left, and a longer jump bends
-                // further, so jumps over the same characters stay apart.
-                var strokes = new List<(Geometry Geometry, bool Jump)>();
-                var heads = new List<(Point Tip, Vector Direction)>();
-                var i = 1;
-
-                while (i < points.Count)
-                {
-                    var a = points[i - 1];
-                    var b = points[i];
-                    var sign = b.X < a.X ? -1 : 1;
-
-                    if (!Neighbours(a, b))
+                    foreach (var run in shifts)
                     {
-                        var lift = sign * Math.Min(line.Height * 1.2, 10 + Math.Abs(b.X - a.X) * 0.45);
-                        var from = new Point(a.X, y);
-                        var to = new Point(b.X, y);
-                        var c1 = new Point(a.X + (b.X - a.X) * 0.15, y - lift);
-                        var c2 = new Point(b.X - (b.X - a.X) * 0.15, y - lift);
-                        var geometry = new StreamGeometry();
-
-                        using (var g = geometry.Open())
+                        if (g.Start >= run.Start && g.Start < run.End)
                         {
-                            g.BeginFigure(from, false);
-                            g.CubicBezierTo(c1, c2, to);
-                            g.EndFigure(false);
+                            (level, shift) = (run.Level, run.Shift);
+                            break;
                         }
-
-                        strokes.Add((geometry, true));
-
-                        // The head sits on the curve just before the landing dot, along the tangent there.
-                        var t = 0.9;
-                        var u = 1 - t;
-                        var onCurve = new Point(
-                            u * u * u * from.X + 3 * u * u * t * c1.X + 3 * u * t * t * c2.X + t * t * t * to.X,
-                            u * u * u * from.Y + 3 * u * u * t * c1.Y + 3 * u * t * t * c2.Y + t * t * t * to.Y);
-                        var tangent = 3 * u * u * (c1 - from) + 6 * u * t * (c2 - c1) + 3 * t * t * (to - c2);
-                        heads.Add((onCurve, tangent));
-                        i++;
-                        continue;
                     }
 
-                    var stretchFirst = i - 1;
-
-                    while (i < points.Count && Neighbours(points[i - 1], points[i]) &&
-                           (points[i].X < points[i - 1].X ? -1 : 1) == sign)
-                    {
-                        i++;
-                    }
-
-                    var stretchStart = new Point(points[stretchFirst].X, y);
-                    var stretchEnd = new Point(points[i - 1].X, y);
-                    strokes.Add((new LineGeometry(stretchStart, stretchEnd), false));
-                    heads.Add((new Point((stretchStart.X + stretchEnd.X) / 2 + sign * head / 2, y), new Vector(sign, 0)));
+                    stops.Add(new PathStop(number++, _origin.X + rect.Center.X, rect.Width / 2, level, shift));
                 }
 
-                foreach (var (geometry, _) in strokes)
-                {
-                    context.DrawGeometry(null, halo, geometry);
-                }
+                lines.Add(stops);
+            }
 
-                foreach (var (geometry, jump) in strokes)
-                {
-                    context.DrawGeometry(null, jump ? dashed : pen, geometry);
-                }
+            return _pathStops = lines;
+        }
 
-                foreach (var (x, _) in points)
-                {
-                    context.DrawEllipse(brush, Draw.Pen(p.Background, 1.5), new Point(x, y), 3.5, 3.5);
-                }
+        /// <summary>
+        /// The runs of a line with their bidi level and the distance from their visual to their
+        /// logical slot, where the line lays the runs out in the order the text source handed them out.
+        /// </summary>
+        private static List<(int Start, int End, int Level, double Shift)> RunShifts(TextLine line)
+        {
+            var runs = line.TextRuns.OfType<DrawableTextRun>().ToList();
+            var logicalX = new Dictionary<TextRun, double>();
+            var x = line.Start;
 
-                foreach (var (tip, direction) in heads)
+            foreach (var run in runs.OrderBy(TextAnalysis.StartOf))
+            {
+                logicalX[run] = x;
+                x += run.Size.Width;
+            }
+
+            var result = new List<(int, int, int, double)>();
+            x = line.Start;
+
+            foreach (var run in runs)
+            {
+                var start = TextAnalysis.StartOf(run);
+                result.Add((start, start + run.Length, run is ShapedTextRun s ? s.BidiLevel : 0, logicalX[run] - x));
+                x += run.Size.Width;
+            }
+
+            return result;
+        }
+
+        // Stops are dense when two screen neighbours lack room for both labels and a stretch arrowhead
+        // between them; then only the first stop of each stretch, which includes every landing, is numbered.
+        private static bool IsDense(IReadOnlyList<PathStop> stops, IReadOnlyList<double> xs)
+        {
+            var order = Enumerable.Range(0, stops.Count).OrderBy(i => xs[i]).ToList();
+
+            for (var k = 1; k < order.Count; k++)
+            {
+                var a = order[k - 1];
+                var b = order[k];
+
+                if (xs[b] - xs[a] < (LabelWidth(stops[a].Number) + LabelWidth(stops[b].Number)) / 2 + StretchHead + 6)
                 {
-                    Draw.Head(context, brush, tip, direction, head);
+                    return true;
                 }
             }
 
-            static bool Neighbours((double X, double HalfWidth) a, (double X, double HalfWidth) b) =>
-                Math.Abs(b.X - a.X) <= a.HalfWidth + b.HalfWidth + 2;
+            return false;
         }
 
-        private IReadOnlyList<double> LineTops(double extra)
+        private static double LabelWidth(int number) =>
+            Math.Max(LabelHeight, number.ToString().Length * LabelSize * 0.62 + 10);
+
+        /// <summary>
+        /// Splits a line's stops into stretches of screen neighbours that read the same way and the
+        /// jumps between them, and gives each jump a side and a lane. Two jumps whose ends interleave
+        /// would cross on the same side, so they go to opposite sides of the stop row; nested jumps on
+        /// one side take lanes further out the more they enclose, so connectors never touch.
+        /// </summary>
+        private static PathRoute Route(IReadOnlyList<PathStop> stops, IReadOnlyList<double> xs, bool dense)
+        {
+            var route = new PathRoute { Xs = xs };
+            var first = 0;
+            var sign = 0;
+
+            for (var k = 1; k <= stops.Count; k++)
+            {
+                if (k < stops.Count && Neighbours(k - 1, k))
+                {
+                    var s = xs[k] < xs[k - 1] ? -1 : 1;
+
+                    if (sign == 0 || s == sign)
+                    {
+                        sign = s;
+                        continue;
+                    }
+
+                    // The direction turns between two neighbours: the turning stop ends one stretch
+                    // and starts the next.
+                    route.Stretches.Add((first, k - 1, sign));
+                    first = k - 1;
+                    sign = s;
+                    continue;
+                }
+
+                if (stops.Count > 0)
+                {
+                    route.Stretches.Add((first, k - 1, sign));
+                }
+
+                if (k < stops.Count)
+                {
+                    var jump = new PathJump(k - 1, k, xs[k - 1], xs[k]);
+
+                    // A stop that is landed on and left again by jumps keeps the two connectors apart,
+                    // on the side that does not interleave them.
+                    if (route.Jumps.Count > 0 && route.Jumps[^1].To == k - 1)
+                    {
+                        var previous = route.Jumps[^1];
+                        jump.FromX = xs[k - 1] + PortOffset;
+
+                        if (Interleaved(previous, jump))
+                        {
+                            jump.FromX = xs[k - 1] - PortOffset;
+                        }
+                    }
+
+                    route.Jumps.Add(jump);
+                }
+
+                first = k;
+                sign = 0;
+            }
+
+            foreach (var (stretchFirst, _, _) in route.Stretches)
+            {
+                route.Labelled.Add(stretchFirst);
+            }
+
+            if (!dense)
+            {
+                for (var k = 0; k < stops.Count; k++)
+                {
+                    route.Labelled.Add(k);
+                }
+            }
+
+            AssignSides(route.Jumps);
+
+            foreach (var above in new[] { false, true })
+            {
+                var side = route.Jumps.Where(j => j.Above == above).OrderBy(j => j.Hi - j.Lo).ToList();
+                var lanes = 0;
+
+                for (var n = 0; n < side.Count; n++)
+                {
+                    var jump = side[n];
+                    var lane = 0;
+
+                    for (var m = 0; m < n; m++)
+                    {
+                        if (side[m].Lo >= jump.Lo - 0.5 && side[m].Hi <= jump.Hi + 0.5)
+                        {
+                            lane = Math.Max(lane, side[m].Lane + 1);
+                        }
+                    }
+
+                    while (side.Take(n).Any(o => o.Lane == lane && o.Lo < jump.Hi + 6 && jump.Lo < o.Hi + 6))
+                    {
+                        lane++;
+                    }
+
+                    jump.Lane = lane;
+                    lanes = Math.Max(lanes, lane + 1);
+                }
+
+                if (above)
+                {
+                    route.Upper = lanes;
+                }
+                else
+                {
+                    route.Lower = lanes;
+                }
+            }
+
+            return route;
+
+            bool Neighbours(int a, int b) => Math.Abs(xs[b] - xs[a]) <= stops[a].HalfWidth + stops[b].HalfWidth + 2;
+        }
+
+        // Jumps go below the stop row unless they interleave with another jump below; then the
+        // interleaving ones are two-coloured, with the larger group below.
+        private static void AssignSides(List<PathJump> jumps)
+        {
+            var side = new int[jumps.Count];
+            Array.Fill(side, -1);
+
+            for (var s = 0; s < jumps.Count; s++)
+            {
+                if (side[s] >= 0)
+                {
+                    continue;
+                }
+
+                var component = new List<int> { s };
+                var bipartite = true;
+                side[s] = 0;
+
+                for (var q = 0; q < component.Count; q++)
+                {
+                    var u = component[q];
+
+                    for (var t = 0; t < jumps.Count; t++)
+                    {
+                        if (t == u || !Interleaved(jumps[u], jumps[t]))
+                        {
+                            continue;
+                        }
+
+                        if (side[t] < 0)
+                        {
+                            side[t] = 1 - side[u];
+                            component.Add(t);
+                        }
+                        else if (side[t] == side[u])
+                        {
+                            bipartite = false;
+                        }
+                    }
+                }
+
+                if (!bipartite)
+                {
+                    // An odd cycle of interleaved jumps cannot avoid every crossing; the longest
+                    // jumps take the free side first.
+                    foreach (var c in component)
+                    {
+                        side[c] = -1;
+                    }
+
+                    foreach (var c in component.OrderByDescending(c => jumps[c].Hi - jumps[c].Lo))
+                    {
+                        side[c] = component.Any(o => side[o] == 0 && Interleaved(jumps[o], jumps[c])) &&
+                                  !component.Any(o => side[o] == 1 && Interleaved(jumps[o], jumps[c])) ? 1 : 0;
+                    }
+                }
+                else if (component.Count(c => side[c] == 1) > component.Count(c => side[c] == 0))
+                {
+                    foreach (var c in component)
+                    {
+                        side[c] = 1 - side[c];
+                    }
+                }
+            }
+
+            for (var i = 0; i < jumps.Count; i++)
+            {
+                jumps[i].Above = side[i] == 1;
+            }
+        }
+
+        private static bool Interleaved(PathJump a, PathJump b) =>
+            (a.Lo < b.Lo && b.Lo < a.Hi && a.Hi < b.Hi) || (b.Lo < a.Lo && a.Lo < b.Hi && b.Hi < a.Hi);
+
+        /// <summary>
+        /// Draws the reading-order band of each line under the line: numbered stops at the grapheme
+        /// centres, a solid stretch in the run's level colour with one arrowhead for each run of screen
+        /// neighbours that read the same way, and dashed jumps in lanes above or below the stop row with
+        /// the head where they land. <paramref name="bandTops"/> gives the top of each line's band.
+        /// </summary>
+        private void RenderReadingPath(DrawingContext context, PathPlan plan, IReadOnlyList<double> bandTops)
+        {
+            var p = Palette;
+            var stops = PathStops();
+            var jumpPen = new Pen(p.Muted, 2, new DashStyle(new double[] { 3, 2 }, 0), PenLineCap.Flat);
+            var halo = new Pen(p.Background, 6);
+
+            for (var l = 0; l < stops.Count; l++)
+            {
+                var line = stops[l];
+                var route = plan.Routes[l];
+                var xs = route.Xs;
+                var y = bandTops[l] + route.StopRow;
+
+                // Stretches, then their heads, so a head is never cut by the next segment.
+                foreach (var (first, last, _) in route.Stretches)
+                {
+                    for (var k = first + 1; k <= last; k++)
+                    {
+                        context.DrawLine(new Pen(LevelBrush(line[k].Level), 3), new Point(xs[k - 1], y), new Point(xs[k], y));
+                    }
+                }
+
+                foreach (var (first, last, sign) in route.Stretches)
+                {
+                    if (last == first)
+                    {
+                        continue;
+                    }
+
+                    var gap = HeadGap(first, last);
+                    var mid = (xs[gap] + xs[gap + 1]) / 2;
+                    Draw.Head(context, LevelBrush(line[gap + 1].Level), new Point(mid + sign * StretchHead / 2, y),
+                        new Vector(sign, 0), StretchHead);
+                }
+
+                foreach (var jump in route.Jumps)
+                {
+                    var geometry = JumpGeometry(jump, y, out var tip);
+                    context.DrawGeometry(null, halo, geometry);
+                    context.DrawGeometry(null, jumpPen, geometry);
+                    Draw.Head(context, p.Muted, tip, new Vector(0, jump.Above ? 1 : -1), JumpHead);
+                }
+
+                for (var k = 0; k < line.Count; k++)
+                {
+                    var brush = LevelBrush(line[k].Level);
+
+                    if (!route.Labelled.Contains(k))
+                    {
+                        context.DrawEllipse(brush, null, new Point(xs[k], y), DotRadius, DotRadius);
+                        continue;
+                    }
+
+                    var width = LabelWidth(line[k].Number);
+                    var box = new Rect(xs[k] - width / 2, y - LabelHeight / 2, width, LabelHeight);
+                    context.DrawRectangle(brush, Draw.Pen(p.Background, 1.5), box, LabelHeight / 2, LabelHeight / 2);
+                    Draw.TextIn(context, line[k].Number.ToString(), box, LabelSize, p.Background, Draw.UiBold, padding: 2);
+                }
+
+                // The gap nearest the middle of a stretch whose ends are plain dots, so the head sits
+                // clear of the labels; any gap when every one touches a label.
+                int HeadGap(int first, int last)
+                {
+                    var middle = (first + last) / 2.0 - 0.5;
+
+                    return Enumerable.Range(first, last - first)
+                        .OrderBy(g => route.Labelled.Contains(g) || route.Labelled.Contains(g + 1) ? 1 : 0)
+                        .ThenBy(g => Math.Abs(g - middle))
+                        .First();
+                }
+
+                double Attach(int k) => route.Labelled.Contains(k) ? LabelHeight / 2 : DotRadius;
+
+                Geometry JumpGeometry(PathJump jump, double stopY, out Point tip)
+                {
+                    var dir = jump.Above ? -1 : 1;
+                    var laneY = stopY + dir * (LaneClearance + jump.Lane * LaneGap);
+                    var fromY = stopY + dir * Attach(jump.From);
+                    tip = new Point(jump.ToX, stopY + dir * Attach(jump.To));
+                    var endY = tip.Y + dir * JumpHead * 0.7;
+                    var corner = Math.Min(5, Math.Abs(jump.ToX - jump.FromX) / 2);
+                    var h = jump.ToX > jump.FromX ? 1 : -1;
+                    var geometry = new StreamGeometry();
+
+                    using (var g = geometry.Open())
+                    {
+                        g.BeginFigure(new Point(jump.FromX, fromY), false);
+                        g.LineTo(new Point(jump.FromX, laneY - dir * corner));
+                        g.QuadraticBezierTo(new Point(jump.FromX, laneY), new Point(jump.FromX + h * corner, laneY));
+                        g.LineTo(new Point(jump.ToX - h * corner, laneY));
+                        g.QuadraticBezierTo(new Point(jump.ToX, laneY), new Point(jump.ToX, laneY - dir * corner));
+                        g.LineTo(new Point(jump.ToX, endY));
+                        g.EndFigure(false);
+                    }
+
+                    return geometry;
+                }
+            }
+
+            IBrush LevelBrush(int level) => level == 0 ? p.Foreground : p.Series(level + 2);
+        }
+
+        /// <summary>
+        /// The top of each line's text, with <paramref name="above"/> reserved over every line and
+        /// <paramref name="below"/> under it.
+        /// </summary>
+        private IReadOnlyList<double> LineTops(double above, IReadOnlyList<double>? below)
         {
             var tops = new List<double>();
             var top = 0.0;
 
-            foreach (var line in _layout!.TextLines)
+            for (var l = 0; l < _layout!.TextLines.Count; l++)
             {
-                tops.Add(top + extra);
-                top += line.Height + extra;
+                tops.Add(top + above);
+                top += _layout.TextLines[l].Height + above + (below?[l] ?? 0);
             }
 
             return tops;
         }
+
+        private sealed class PathPlan
+        {
+            public bool Dense { get; set; }
+
+            public List<PathRoute> Routes { get; } = new();
+
+            /// <summary>The height reserved under each line.</summary>
+            public List<double> Bands { get; } = new();
+        }
+
+        private sealed class PathRoute
+        {
+            public IReadOnlyList<double> Xs { get; init; } = Array.Empty<double>();
+
+            public List<(int First, int Last, int Sign)> Stretches { get; } = new();
+
+            public List<PathJump> Jumps { get; } = new();
+
+            public HashSet<int> Labelled { get; } = new();
+
+            public int Upper { get; set; }
+
+            public int Lower { get; set; }
+
+            /// <summary>The distance from the band's top to its stop row.</summary>
+            public double StopRow { get; set; }
+        }
+
+        private sealed class PathJump
+        {
+            public PathJump(int from, int to, double fromX, double toX)
+            {
+                From = from;
+                To = to;
+                FromX = fromX;
+                ToX = toX;
+            }
+
+            public int From { get; }
+
+            public int To { get; }
+
+            public double FromX { get; set; }
+
+            public double ToX { get; }
+
+            public bool Above { get; set; }
+
+            public int Lane { get; set; }
+
+            public double Lo => Math.Min(FromX, ToX);
+
+            public double Hi => Math.Max(FromX, ToX);
+        }
+
+        private readonly record struct PathStop(int Number, double X, double HalfWidth, int Level, double RunShift);
 
         private void RenderWidthGuide(DrawingContext context, double height)
         {
@@ -447,12 +857,19 @@ namespace TextTour.Chapters
         {
             var p = Palette;
             var layout = _layout!;
-            RenderWidthGuide(context, layout.Height);
-            layout.Draw(context, _origin);
+            var plan = PathVisible ? PlanPath(1) : null;
+            var tops = LineTops(0, plan?.Bands);
+            var height = tops[^1] + layout.TextLines[^1].Height + (plan?.Bands[^1] ?? 0);
+            RenderWidthGuide(context, height);
 
-            if (PathVisible)
+            for (var l = 0; l < layout.TextLines.Count; l++)
             {
-                RenderReadingPath(context, LineTops(0), null);
+                layout.TextLines[l].Draw(context, new Point(_origin.X, _origin.Y + tops[l]));
+            }
+
+            if (plan is not null)
+            {
+                RenderReadingPath(context, plan, BandTops(tops));
             }
 
             if (!breaks)
@@ -461,11 +878,11 @@ namespace TextTour.Chapters
             }
 
             var analysis = State.Analysis;
-            var top = 0.0;
 
             for (var l = 0; l < layout.TextLines.Count; l++)
             {
                 var line = layout.TextLines[l];
+                var top = tops[l];
                 var start = line.FirstTextSourceIndex;
                 var end = start + line.Length;
                 var bottom = _origin.Y + top + line.Height;
@@ -496,56 +913,44 @@ namespace TextTour.Chapters
 
                 Draw.Text(context, $"line {l}: {start}..{end - 1}, Length {line.Length}", _origin.X + WrapWidth() + 24,
                     _origin.Y + top + line.Height / 2 - 12, 18, p.Muted);
-                top += line.Height;
             }
         }
+
+        // The top of the band under each line, in view coordinates.
+        private IReadOnlyList<double> BandTops(IReadOnlyList<double> tops) =>
+            tops.Select((top, l) => _origin.Y + top + _layout!.TextLines[l].Height).ToList();
 
         private void RenderOrder(DrawingContext context)
         {
             var p = Palette;
             var layout = _layout!;
             var mix = VisualMix;
-            var tops = LineTops(ArrowStrip);
-            var shifts = new Dictionary<TextLine, List<(int Start, int End, double Shift)>>();
 
-            // The direction arrows are drawn last, so the reading path never covers them.
+            // The band keeps room for the jumps of both orders, so the lines below stay put while
+            // the runs move.
+            var plan = PathVisible ? PlanPath(mix, 0, 1) : null;
+            var tops = LineTops(ArrowStrip, plan?.Bands);
+            var height = tops[^1] + layout.TextLines[^1].Height + (plan?.Bands[^1] ?? 0);
+
+            // The direction arrows are drawn last, so nothing covers them.
             var arrows = new List<(Rect Box, bool RightToLeft)>();
 
-            RenderWidthGuide(context, layout.Height + ArrowStrip * layout.TextLines.Count);
+            RenderWidthGuide(context, height);
 
             for (var l = 0; l < layout.TextLines.Count; l++)
             {
                 var line = layout.TextLines[l];
                 var top = tops[l];
                 var runs = line.TextRuns.OfType<DrawableTextRun>().ToList();
-                var logical = runs.OrderBy(TextAnalysis.StartOf).ToList();
-                var logicalX = new Dictionary<TextRun, double>();
-                var visualX = new Dictionary<TextRun, double>();
-                var lineShifts = shifts[line] = new List<(int, int, double)>();
-
+                var shifts = RunShifts(line);
                 var x = line.Start;
 
-                foreach (var run in logical)
+                for (var r = 0; r < runs.Count; r++)
                 {
-                    logicalX[run] = x;
+                    var run = runs[r];
+                    var (start, _, level, fullShift) = shifts[r];
+                    var rx = _origin.X + x + fullShift * (1 - mix);
                     x += run.Size.Width;
-                }
-
-                x = line.Start;
-
-                foreach (var run in runs)
-                {
-                    visualX[run] = x;
-                    x += run.Size.Width;
-                }
-
-                foreach (var run in runs)
-                {
-                    var shift = (logicalX[run] - visualX[run]) * (1 - mix);
-                    var rx = _origin.X + visualX[run] + shift;
-                    var level = run is ShapedTextRun s ? s.BidiLevel : 0;
-                    var start = TextAnalysis.StartOf(run);
-                    lineShifts.Add((start, start + run.Length, shift));
 
                     // The box holds a strip above the text for the arrow of the run's reading direction.
                     var box = new Rect(rx, _origin.Y + top - ArrowStrip, run.Size.Width, line.Height + ArrowStrip);
@@ -557,20 +962,9 @@ namespace TextTour.Chapters
                 }
             }
 
-            if (PathVisible)
+            if (plan is not null)
             {
-                RenderReadingPath(context, tops, (line, index) =>
-                {
-                    foreach (var (s, e, shift) in shifts[line])
-                    {
-                        if (index >= s && index < e)
-                        {
-                            return shift;
-                        }
-                    }
-
-                    return 0;
-                });
+                RenderReadingPath(context, plan, BandTops(tops));
             }
 
             foreach (var (box, rightToLeft) in arrows)
@@ -581,7 +975,7 @@ namespace TextTour.Chapters
             Draw.Text(context, (mix < 0.5 ?
                     "runs in logical order (as the text source handed them out); press V" :
                     "runs in visual order (as the line draws them); press V") + ", P for the reading order",
-                _origin.X, _origin.Y + tops[^1] + layout.TextLines[^1].Height + 24, 20, p.Muted);
+                _origin.X, _origin.Y + height + 24, 20, p.Muted);
         }
 
         private void RenderMetrics(DrawingContext context, TextLayout layout, Point origin, bool labels)
@@ -803,6 +1197,7 @@ namespace TextTour.Chapters
         {
             _layout?.Dispose();
             _layout = null;
+            _pathStops = null;
             _alternate?.Dispose();
             _alternate = null;
 
