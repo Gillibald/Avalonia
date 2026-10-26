@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -21,6 +20,21 @@ namespace TextTour.Chapters
     {
         private const double FontSize = 64;
 
+        // Height of the strip above each line in the run order step that holds the direction arrows.
+        private const double ArrowStrip = 26;
+
+        private static readonly (bool Path, double Mix, string Name)[] s_orderVariants =
+        {
+            (false, 0, "-logical"), (false, 1, "-visual"), (true, 0, "-logical-path"), (true, 1, "-visual-path"),
+            (true, 0.5, "-midway-path"),
+        };
+
+        // The paragraph direction of the wrapped string and of the samples beside it.
+        private readonly FlowDirection _flowDirection = FlowDirection.LeftToRight;
+
+        // The paragraph direction of the right-to-left trimming sample.
+        private readonly FlowDirection _rtlFlowDirection = FlowDirection.RightToLeft;
+
         private readonly Tween _visualMix;
         private readonly Slider _slider;
         private readonly TextBlock _sliderLabel;
@@ -32,6 +46,7 @@ namespace TextTour.Chapters
         private bool _dragging;
         private bool _syncingSlider;
         private int _hoverLine = -1;
+        private bool _showPath;
 
         public LayoutChapter(TourState state) : base(state)
         {
@@ -76,6 +91,11 @@ namespace TextTour.Chapters
         /// <summary>0 draws each line's runs in logical order, 1 in visual order.</summary>
         private double VisualMix => _visualMix.Value;
 
+        /// <summary>The steps that draw the wrapped string at its real positions, where P draws the reading order.</summary>
+        private bool PathStep => Step <= 3;
+
+        private bool PathVisible => _showPath && PathStep;
+
         public override string StepName => Step switch
         {
             1 => "lines at a width",
@@ -86,26 +106,46 @@ namespace TextTour.Chapters
             _ => "trimming",
         };
 
-        public override string Caption => Step switch
+        public override string Caption => (Step switch
         {
-            1 => $"new TextLayout(..., TextWrapping.Wrap, maxWidth: {WrapWidth():0})  ->  TextLayout.TextLines",
+            1 => $"new TextLayout(..., FlowDirection.{_flowDirection}, TextWrapping.Wrap, maxWidth: {WrapWidth():0})  ->  " +
+                 "TextLayout.TextLines",
             2 => "LineBreakEnumerator  ->  TextLine.Length, TextLine.TextLineBreak",
-            3 => "TextLine.TextRuns (runs are reordered into visual order when the line is finalized)",
+            3 => "TextLine.TextRuns (in visual order once the line is finalized)  ->  ShapedTextRun.BidiLevel",
             4 => "TextLine.Baseline, .Height, .Extent; GlyphTypeface.Metrics.Ascent, .Descent, .LineGap",
             5 => "GlyphTypeface.Metrics: each font brings its own ascent, descent and line gap",
-            _ => "TextTrimming.CharacterEllipsis, .WordEllipsis, .PrefixCharacterEllipsis; maxLines",
+            _ => "TextTrimming.CharacterEllipsis, .WordEllipsis, .PrefixCharacterEllipsis; maxLines; " +
+                 "FlowDirection.RightToLeft",
+        }) + (PathVisible ? "   path: TextLine.GetTextBounds per grapheme" : string.Empty);
+
+        public override int ExportVariantCount(int step) => step switch
+        {
+            1 => 2,
+            3 => s_orderVariants.Length,
+            _ => 1,
         };
 
-        public override int ExportVariantCount(int step) => step == 3 ? 2 : 1;
-
-        public override string ExportVariantName(int step, int variant) => step == 3 ? variant == 0 ? "-logical" : "-visual" : string.Empty;
+        public override string ExportVariantName(int step, int variant) => step switch
+        {
+            1 => variant == 1 ? "-path" : string.Empty,
+            3 => s_orderVariants[variant].Name,
+            _ => string.Empty,
+        };
 
         public override void PrepareExport(int step, int variant)
         {
-            AnimateTo(_visualMix, step == 3 && variant == 1 ? 1 : 0);
+            var order = step == 3 ? s_orderVariants[variant] : default;
+            _visualMix.To(order.Mix, false);
+            _showPath = step == 1 ? variant == 1 : order.Path;
             _hoverLine = step == 4 ? 0 : -1;
             RaiseCaptionChanged();
             InvalidateVisual();
+        }
+
+        public override void EndExport()
+        {
+            _showPath = false;
+            _visualMix.To(0, false);
         }
 
         public override bool HandleKey(Key key, KeyModifiers modifiers)
@@ -114,6 +154,14 @@ namespace TextTour.Chapters
             {
                 AnimateTo(_visualMix, _visualMix.Target < 0.5 ? 1 : 0);
                 RaiseCaptionChanged();
+                return true;
+            }
+
+            if (PathStep && key == Key.P)
+            {
+                _showPath = !_showPath;
+                RaiseCaptionChanged();
+                InvalidateVisual();
                 return true;
             }
 
@@ -220,6 +268,170 @@ namespace TextTour.Chapters
                     RenderTrimming(context);
                     break;
             }
+
+            RenderParagraphBadge(context);
+        }
+
+        // The paragraph direction of the wrapped string, beside the width slider.
+        private void RenderParagraphBadge(DrawingContext context)
+        {
+            if (Child is not { } bar)
+            {
+                return;
+            }
+
+            var detail = $"level {TextAnalysis.ResolveParagraphLevel(State.Text, _flowDirection)}";
+            var size = 17.0;
+            var height = size * 2.3;
+            Draw.Badge(context, Palette, bar.Bounds.Right + 32, bar.Bounds.Y + (bar.Bounds.Height - height) / 2,
+                $"paragraph: {Draw.Direction(_flowDirection)}", size, detail);
+        }
+
+        /// <summary>
+        /// Draws a line through the graphemes of each line in logical order, at their real positions,
+        /// with an arrowhead per segment. Neighbours on screen are joined straight; a jump to a
+        /// character elsewhere on the line arcs off it. <paramref name="lineTops"/> gives the
+        /// top of each line's text; <paramref name="shift"/> moves a character with its run while the
+        /// runs animate.
+        /// </summary>
+        private void RenderReadingPath(DrawingContext context, IReadOnlyList<double> lineTops, Func<TextLine, int, double>? shift)
+        {
+            var p = Palette;
+            var analysis = State.Analysis;
+            var layout = _layout!;
+            var brush = p.Caret;
+            var pen = new Pen(brush, 2.5);
+            var dashed = new Pen(brush, 2.5, new DashStyle(new double[] { 3, 2 }, 0));
+            var halo = new Pen(p.Background, 6.5);
+            var head = 14.0;
+
+            for (var l = 0; l < layout.TextLines.Count; l++)
+            {
+                var line = layout.TextLines[l];
+                var start = line.FirstTextSourceIndex;
+                var end = start + line.Length - line.NewLineLength;
+                var y = _origin.Y + lineTops[l] + line.Baseline - FontSize * 0.3;
+                var points = new List<(double X, double HalfWidth)>();
+
+                foreach (var g in analysis.Graphemes)
+                {
+                    if (g.Start < start || g.End > end)
+                    {
+                        continue;
+                    }
+
+                    var rect = default(Rect);
+                    var first = true;
+
+                    foreach (var b in line.GetTextBounds(g.Start, g.Length))
+                    {
+                        rect = first ? b.Rectangle : rect.Union(b.Rectangle);
+                        first = false;
+                    }
+
+                    if (first || rect.Width < 0.5)
+                    {
+                        continue;
+                    }
+
+                    points.Add((_origin.X + rect.Center.X + (shift?.Invoke(line, g.Start) ?? 0), rect.Width / 2));
+                }
+
+                // Consecutive neighbours that read the same way form one stretch with one arrowhead
+                // in its middle. A jump is a dashed arc with its head where it lands; it bends above
+                // the line when it goes right and below when it goes left, and a longer jump bends
+                // further, so jumps over the same characters stay apart.
+                var strokes = new List<(Geometry Geometry, bool Jump)>();
+                var heads = new List<(Point Tip, Vector Direction)>();
+                var i = 1;
+
+                while (i < points.Count)
+                {
+                    var a = points[i - 1];
+                    var b = points[i];
+                    var sign = b.X < a.X ? -1 : 1;
+
+                    if (!Neighbours(a, b))
+                    {
+                        var lift = sign * Math.Min(line.Height * 1.2, 10 + Math.Abs(b.X - a.X) * 0.45);
+                        var from = new Point(a.X, y);
+                        var to = new Point(b.X, y);
+                        var c1 = new Point(a.X + (b.X - a.X) * 0.15, y - lift);
+                        var c2 = new Point(b.X - (b.X - a.X) * 0.15, y - lift);
+                        var geometry = new StreamGeometry();
+
+                        using (var g = geometry.Open())
+                        {
+                            g.BeginFigure(from, false);
+                            g.CubicBezierTo(c1, c2, to);
+                            g.EndFigure(false);
+                        }
+
+                        strokes.Add((geometry, true));
+
+                        // The head sits on the curve just before the landing dot, along the tangent there.
+                        var t = 0.9;
+                        var u = 1 - t;
+                        var onCurve = new Point(
+                            u * u * u * from.X + 3 * u * u * t * c1.X + 3 * u * t * t * c2.X + t * t * t * to.X,
+                            u * u * u * from.Y + 3 * u * u * t * c1.Y + 3 * u * t * t * c2.Y + t * t * t * to.Y);
+                        var tangent = 3 * u * u * (c1 - from) + 6 * u * t * (c2 - c1) + 3 * t * t * (to - c2);
+                        heads.Add((onCurve, tangent));
+                        i++;
+                        continue;
+                    }
+
+                    var stretchFirst = i - 1;
+
+                    while (i < points.Count && Neighbours(points[i - 1], points[i]) &&
+                           (points[i].X < points[i - 1].X ? -1 : 1) == sign)
+                    {
+                        i++;
+                    }
+
+                    var stretchStart = new Point(points[stretchFirst].X, y);
+                    var stretchEnd = new Point(points[i - 1].X, y);
+                    strokes.Add((new LineGeometry(stretchStart, stretchEnd), false));
+                    heads.Add((new Point((stretchStart.X + stretchEnd.X) / 2 + sign * head / 2, y), new Vector(sign, 0)));
+                }
+
+                foreach (var (geometry, _) in strokes)
+                {
+                    context.DrawGeometry(null, halo, geometry);
+                }
+
+                foreach (var (geometry, jump) in strokes)
+                {
+                    context.DrawGeometry(null, jump ? dashed : pen, geometry);
+                }
+
+                foreach (var (x, _) in points)
+                {
+                    context.DrawEllipse(brush, Draw.Pen(p.Background, 1.5), new Point(x, y), 3.5, 3.5);
+                }
+
+                foreach (var (tip, direction) in heads)
+                {
+                    Draw.Head(context, brush, tip, direction, head);
+                }
+            }
+
+            static bool Neighbours((double X, double HalfWidth) a, (double X, double HalfWidth) b) =>
+                Math.Abs(b.X - a.X) <= a.HalfWidth + b.HalfWidth + 2;
+        }
+
+        private IReadOnlyList<double> LineTops(double extra)
+        {
+            var tops = new List<double>();
+            var top = 0.0;
+
+            foreach (var line in _layout!.TextLines)
+            {
+                tops.Add(top + extra);
+                top += line.Height + extra;
+            }
+
+            return tops;
         }
 
         private void RenderWidthGuide(DrawingContext context, double height)
@@ -237,6 +449,11 @@ namespace TextTour.Chapters
             var layout = _layout!;
             RenderWidthGuide(context, layout.Height);
             layout.Draw(context, _origin);
+
+            if (PathVisible)
+            {
+                RenderReadingPath(context, LineTops(0), null);
+            }
 
             if (!breaks)
             {
@@ -288,16 +505,23 @@ namespace TextTour.Chapters
             var p = Palette;
             var layout = _layout!;
             var mix = VisualMix;
-            var top = 0.0;
+            var tops = LineTops(ArrowStrip);
+            var shifts = new Dictionary<TextLine, List<(int Start, int End, double Shift)>>();
 
-            RenderWidthGuide(context, layout.Height);
+            // The direction arrows are drawn last, so the reading path never covers them.
+            var arrows = new List<(Rect Box, bool RightToLeft)>();
 
-            foreach (var line in layout.TextLines)
+            RenderWidthGuide(context, layout.Height + ArrowStrip * layout.TextLines.Count);
+
+            for (var l = 0; l < layout.TextLines.Count; l++)
             {
+                var line = layout.TextLines[l];
+                var top = tops[l];
                 var runs = line.TextRuns.OfType<DrawableTextRun>().ToList();
-                var logical = runs.OrderBy(StartOf).ToList();
+                var logical = runs.OrderBy(TextAnalysis.StartOf).ToList();
                 var logicalX = new Dictionary<TextRun, double>();
                 var visualX = new Dictionary<TextRun, double>();
+                var lineShifts = shifts[line] = new List<(int, int, double)>();
 
                 var x = line.Start;
 
@@ -317,22 +541,47 @@ namespace TextTour.Chapters
 
                 foreach (var run in runs)
                 {
-                    var rx = _origin.X + logicalX[run] + (visualX[run] - logicalX[run]) * mix;
+                    var shift = (logicalX[run] - visualX[run]) * (1 - mix);
+                    var rx = _origin.X + visualX[run] + shift;
                     var level = run is ShapedTextRun s ? s.BidiLevel : 0;
-                    var box = new Rect(rx, _origin.Y + top, run.Size.Width, line.Height);
+                    var start = TextAnalysis.StartOf(run);
+                    lineShifts.Add((start, start + run.Length, shift));
+
+                    // The box holds a strip above the text for the arrow of the run's reading direction.
+                    var box = new Rect(rx, _origin.Y + top - ArrowStrip, run.Size.Width, line.Height + ArrowStrip);
                     context.DrawRectangle(level % 2 == 1 ? p.SeriesFill(3) : level > 0 ? p.SeriesFill(4) : null,
                         Draw.Pen(level == 0 ? p.Grid : p.Series(level + 2), 1.5), box.Deflate(new Thickness(1, 2)), 4, 4);
+                    arrows.Add((new Rect(box.X + 1, box.Y + 3, box.Width - 2, ArrowStrip - 2), level % 2 == 1));
                     run.Draw(context, new Point(rx, _origin.Y + top + TextLineImpl.GetBaselineOffset(line, run)));
-                    Draw.Text(context, $"{StartOf(run)}", rx + 4, box.Bottom - 20, 14, p.Muted);
+                    Draw.Text(context, $"{start}", rx + 4, box.Bottom - 20, 14, p.Muted);
                 }
-
-                top += line.Height;
             }
 
-            Draw.Text(context, mix < 0.5 ?
+            if (PathVisible)
+            {
+                RenderReadingPath(context, tops, (line, index) =>
+                {
+                    foreach (var (s, e, shift) in shifts[line])
+                    {
+                        if (index >= s && index < e)
+                        {
+                            return shift;
+                        }
+                    }
+
+                    return 0;
+                });
+            }
+
+            foreach (var (box, rightToLeft) in arrows)
+            {
+                Draw.DirectionArrow(context, box, rightToLeft, p.Foreground, 44, 2.5);
+            }
+
+            Draw.Text(context, (mix < 0.5 ?
                     "runs in logical order (as the text source handed them out); press V" :
-                    "runs in visual order (as the line draws them); press V",
-                _origin.X, _origin.Y + top + 24, 20, p.Muted);
+                    "runs in visual order (as the line draws them); press V") + ", P for the reading order",
+                _origin.X, _origin.Y + tops[^1] + layout.TextLines[^1].Height + 24, 20, p.Muted);
         }
 
         private void RenderMetrics(DrawingContext context, TextLayout layout, Point origin, bool labels)
@@ -444,6 +693,17 @@ namespace TextTour.Chapters
                 var layout = _layouts[i];
                 Draw.Text(context, names[i], _origin.X, y, 18, p.Muted);
                 y += 24;
+
+                // The right-to-left sample is a paragraph of its own direction; its badge sits
+                // beside the sample box.
+                if (i == 4)
+                {
+                    var size = 16.0;
+                    Draw.Badge(context, p, _origin.X + layout.MaxWidth + 16, y + (layout.Height - size * 2.3) / 2,
+                        $"paragraph: {Draw.Direction(_rtlFlowDirection)}", size,
+                        $"level {TextAnalysis.ResolveParagraphLevel(RtlSample, _rtlFlowDirection)}");
+                }
+
                 context.DrawRectangle(null, Draw.Pen(p.Grid, 1, dashed: true), new Rect(_origin.X, y, layout.MaxWidth, layout.Height));
                 layout.Draw(context, new Point(_origin.X, y));
                 y += layout.Height + 12;
@@ -459,18 +719,19 @@ namespace TextTour.Chapters
 
             var analysis = State.Analysis;
             _origin = new Point(Pad, Pad + 100);
-            _layout = analysis.CreateLayout(FontSize, WrapWidth(), TextWrapping.Wrap);
+            _layout = analysis.CreateLayout(FontSize, WrapWidth(), TextWrapping.Wrap, flowDirection: _flowDirection);
 
             if (Step == 5)
             {
                 var sample = SampleText();
                 var half = (Bounds.Width - 3 * Pad) / 2;
-                _layouts.Add(analysis.CreateLayout(FontSize, half, TextWrapping.Wrap, text: sample));
+                _layouts.Add(analysis.CreateLayout(FontSize, half, TextWrapping.Wrap, flowDirection: _flowDirection,
+                    text: sample));
                 _alternateFamily = PickAlternateFamily();
 
                 if (_alternateFamily is not null)
                 {
-                    _alternate = analysis.CreateLayout(FontSize, half, TextWrapping.Wrap,
+                    _alternate = analysis.CreateLayout(FontSize, half, TextWrapping.Wrap, flowDirection: _flowDirection,
                         typeface: new Typeface(_alternateFamily), text: sample);
                 }
             }
@@ -479,12 +740,15 @@ namespace TextTour.Chapters
                 // Trimming needs text wider than the box, so the box never exceeds 70 % of the string.
                 var size = 36;
                 var width = Math.Min(WrapWidth(), analysis.Layout.WidthIncludingTrailingWhitespace * size / analysis.FontSize * 0.7);
-                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.CharacterEllipsis));
-                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.WordEllipsis));
-                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.PrefixCharacterEllipsis));
-                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.Wrap, TextTrimming.CharacterEllipsis, maxLines: 1));
+                var flow = _flowDirection;
+                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.CharacterEllipsis, flowDirection: flow));
+                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.WordEllipsis, flowDirection: flow));
+                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.PrefixCharacterEllipsis,
+                    flowDirection: flow));
+                _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.Wrap, TextTrimming.CharacterEllipsis, maxLines: 1,
+                    flowDirection: flow));
                 _layouts.Add(analysis.CreateLayout(size, width, TextWrapping.NoWrap, TextTrimming.CharacterEllipsis,
-                    flowDirection: FlowDirection.RightToLeft, text: Preset.All.First(x => x.Name == "Arabic").Text));
+                    flowDirection: _rtlFlowDirection, text: RtlSample));
             }
         }
 
@@ -529,8 +793,7 @@ namespace TextTour.Chapters
             return -1;
         }
 
-        private static int StartOf(TextRun run) =>
-            MemoryMarshal.TryGetString(run.Text, out _, out var start, out _) ? start : 0;
+        private static string RtlSample => Preset.All.First(x => x.Name == "Arabic").Text;
 
         private double ContentWidth() => Math.Max(200, Bounds.Width - 2 * Pad - 280);
 

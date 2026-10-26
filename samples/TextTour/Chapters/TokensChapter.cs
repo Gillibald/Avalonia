@@ -49,8 +49,10 @@ namespace TextTour.Chapters
             2 => "GraphemeEnumerator.MoveNext(out Grapheme)",
             3 => "WordBreakEnumerator.MoveNext(out WordSegment)",
             4 => "LineBreakEnumerator.MoveNext(out LineBreak)  ->  PositionWrap, Required",
-            5 => "BidiAlgorithm.Process(BidiData)  ->  ResolvedLevels",
-            6 => "TextLine.TextRuns  ->  ShapedTextRun.BidiLevel, .Properties.Typeface, .ShapedBuffer.GlyphTypeface",
+            5 => "BidiAlgorithm.Process(BidiData)  ->  ResolvedLevels, ResolvedParagraphEmbeddingLevel;  " +
+                 "GenericTextParagraphProperties.FlowDirection",
+            6 => "TextLine.TextRuns  ->  ShapedTextRun.BidiLevel (arrow: odd = right to left), .Properties.Typeface, " +
+                 ".ShapedBuffer.GlyphTypeface",
             _ => "ShapedBuffer[i]  ->  GlyphInfo(GlyphIndex, GlyphCluster, GlyphAdvance, GlyphOffset)",
         };
 
@@ -173,6 +175,8 @@ namespace TextTour.Chapters
                     t => t.Level == 0 ? p.Surface : p.SeriesFill(t.Level + 2),
                     t => t.Level == 0 ? p.Grid : p.Series(t.Level + 2),
                     t => t.Level.ToString(), labelSize, p.Foreground, Draw.UiBold);
+                DrawLevelLegend(context, model, labelSize);
+                DrawParagraphBadge(context, model, analysis, labelSize);
             }
 
             using (context.PushOpacity(Reveal(6)))
@@ -181,14 +185,20 @@ namespace TextTour.Chapters
                 {
                     foreach (var (stripe, x0, x1) in grid.Spans(item.Range))
                     {
-                        var box = new Rect(x0, stripe.Top + model.BandTop(5), x1 - x0, model.ItemHeight);
+                        var box = new Rect(x0, stripe.Top + model.BandTop(6), x1 - x0, model.ItemHeight);
                         Draw.Segment(context, box, p.SeriesFill(item.Index), p.Series(item.Index), null, labelSize,
                             p.Foreground);
-                        var half = box.Height / 2;
-                        Draw.TextIn(context, $"{item.Script}  L{item.BidiLevel}", box.WithHeight(half).Translate(new Vector(0, 2)),
+                        var row1 = box.Height * 0.37;
+                        var row2 = box.Height * 0.31;
+                        Draw.TextIn(context, $"{item.Script}  L{item.BidiLevel}", new Rect(box.X, box.Y + 1, box.Width, row1),
                             labelSize * 0.92, p.Foreground, Draw.UiBold);
-                        Draw.TextIn(context, item.Typeface.FamilyName, new Rect(box.X, box.Y + half - 2, box.Width, half),
+                        Draw.TextIn(context, item.Typeface.FamilyName, new Rect(box.X, box.Y + row1, box.Width, row2),
                             labelSize * 0.85, p.Foreground);
+
+                        // The run's reading direction: an odd level reads right to left.
+                        var arrowRow = new Rect(box.X + 1.5, box.Y + row1 + row2, box.Width - 3, box.Height - row1 - row2 - 2);
+                        Draw.DirectionArrow(context, arrowRow, (item.BidiLevel & 1) == 1, p.Foreground, labelSize * 2.6,
+                            Math.Max(2, labelSize * 0.16));
                     }
                 }
             }
@@ -213,8 +223,10 @@ namespace TextTour.Chapters
             {
                 using (context.PushOpacity(Reveal(i + 1)))
                 {
+                    // The legend row under the levels sits between band 4 and the items.
+                    var band = i == 5 ? 6 : i;
                     var height = i == 5 ? model.ItemHeight : i == 3 ? model.BreakHeight : model.RowHeight;
-                    Draw.TextIn(context, names[i], new Rect(Pad, stripe.Top + model.BandTop(i), LabelWidth - 10, height),
+                    Draw.TextIn(context, names[i], new Rect(Pad, stripe.Top + model.BandTop(band), LabelWidth - 10, height),
                         size, p.Muted, align: HAlign.Left, padding: 0);
                 }
             }
@@ -226,6 +238,41 @@ namespace TextTour.Chapters
                 Draw.TextIn(context, "visual order", new Rect(Pad, stripe.Top + model.GlyphHeight, LabelWidth - 10, size * 1.4),
                     size * 0.8, p.Muted, align: HAlign.Left, padding: 0);
             }
+        }
+
+        // The meaning of the levels as directions, once under the levels band of the first stripe.
+        private void DrawLevelLegend(DrawingContext context, Model model, double size)
+        {
+            var p = Palette;
+            var stripe = model.Grid.Stripes[0];
+            var row = new Rect(model.Grid.Left, stripe.Top + model.BandTop(5), 0, model.LegendHeight);
+            var textSize = size * 0.92;
+            var arrowLength = textSize * 2.2;
+            var thickness = Math.Max(2, size * 0.15);
+            var x = row.X + 4;
+
+            foreach (var (rtl, text) in new[] { (false, "even level: left to right"), (true, "odd level: right to left") })
+            {
+                Draw.DirectionArrow(context, new Rect(x, row.Y, arrowLength + 8, row.Height), rtl, p.Foreground,
+                    arrowLength, thickness);
+                x += arrowLength + 14;
+                using var layout = Draw.Layout(text, textSize, p.Foreground);
+                layout.Draw(context, new Point(x, row.Y + (row.Height - layout.Height) / 2));
+                x += layout.WidthIncludingTrailingWhitespace + textSize * 2;
+            }
+        }
+
+        // The paragraph direction the levels were resolved in, beside the characters of the first stripe.
+        private void DrawParagraphBadge(DrawingContext context, Model model, TextAnalysis analysis, double size)
+        {
+            var stripe = model.Grid.Stripes[0];
+
+            // Two lines of the badge have to fit the character row, which is short on a small screen.
+            var badgeSize = Math.Clamp(model.CharHeight / 2.5, 11, size * 0.95);
+            var estimate = badgeSize * 2.3;
+            Draw.Badge(context, Palette, Pad, stripe.Top + model.CharTop + Math.Max(0, (model.CharHeight - estimate) / 2),
+                $"paragraph: {Draw.Direction(analysis.ParagraphFlowDirection)}", badgeSize,
+                $"level {analysis.ParagraphLevel}", LabelWidth - 14);
         }
 
         private void DrawBreaks(DrawingContext context, Model model, TextAnalysis analysis)
@@ -447,7 +494,7 @@ namespace TextTour.Chapters
         /// <summary>Row geometry of the layer stack for one unit size.</summary>
         private sealed class Model
         {
-            private readonly double[] _bandTops = new double[6];
+            private readonly double[] _bandTops = new double[7];
             private readonly List<(int Index, Rect Rect)> _glyphBoxes = new();
 
             public Model(double unit, TextAnalysis analysis, double left, double top, double width, double cell,
@@ -460,15 +507,18 @@ namespace TextTour.Chapters
                 CharHeight = v * 1.3;
                 RowHeight = v * 0.72;
                 BreakHeight = v * 0.6;
-                ItemHeight = v * 1.3;
+                ItemHeight = v * 1.75;
+                LegendHeight = Math.Max(v * 0.55, 18);
 
                 var gap = v * 0.14;
                 var y = CharTop + CharHeight + gap;
 
-                for (var i = 0; i < 6; i++)
+                // Bands 0-4 are the runs, graphemes, words, breaks and levels; 5 is the legend of
+                // the levels and 6 the items.
+                for (var i = 0; i < 7; i++)
                 {
                     _bandTops[i] = y;
-                    y += (i == 3 ? BreakHeight : i == 5 ? ItemHeight : RowHeight) + gap;
+                    y += (i switch { 3 => BreakHeight, 5 => LegendHeight, 6 => ItemHeight, _ => RowHeight }) + gap;
                 }
 
                 Grid = new LogicalGrid(analysis, left, top, width, cell, y - gap, unit * 0.6, unit * 1.4);
@@ -487,6 +537,8 @@ namespace TextTour.Chapters
             public double BreakHeight { get; }
 
             public double ItemHeight { get; }
+
+            public double LegendHeight { get; }
 
             public LogicalGrid Grid { get; }
 

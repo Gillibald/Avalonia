@@ -110,6 +110,99 @@ namespace TextTour
             context.DrawGeometry(null, pen, geometry);
         }
 
+        /// <summary>A filled arrowhead with its tip at <paramref name="tip"/>, pointing along <paramref name="direction"/>.</summary>
+        public static void Head(DrawingContext context, IBrush brush, Point tip, Vector direction, double size)
+        {
+            var length = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y);
+
+            if (length < 1e-6)
+            {
+                return;
+            }
+
+            var d = direction / length;
+            var n = new Vector(-d.Y, d.X);
+            var back = tip - d * size;
+            var geometry = new StreamGeometry();
+
+            using (var g = geometry.Open())
+            {
+                g.BeginFigure(tip, true);
+                g.LineTo(back + n * size * 0.55);
+                g.LineTo(back - n * size * 0.55);
+                g.EndFigure(true);
+            }
+
+            context.DrawGeometry(brush, null, geometry);
+        }
+
+        /// <summary>A straight arrow from <paramref name="from"/> to <paramref name="to"/> with a filled head.</summary>
+        public static void Arrow(DrawingContext context, IBrush brush, Point from, Point to, double thickness, double head)
+        {
+            var direction = to - from;
+            var length = Math.Sqrt(direction.X * direction.X + direction.Y * direction.Y);
+
+            if (length < 1e-6)
+            {
+                return;
+            }
+
+            // The shaft stops inside the head, so a thick shaft does not poke out of the tip.
+            var shaftEnd = to - direction / length * Math.Min(length, head * 0.8);
+            context.DrawLine(new Pen(brush, thickness, lineCap: PenLineCap.Flat), from, shaftEnd);
+            Head(context, brush, to, direction, Math.Min(head, length));
+        }
+
+        /// <summary>
+        /// A horizontal arrow centred in <paramref name="box"/> that points in a run's reading
+        /// direction: right for an even BiDi level, left for an odd one. A box too narrow for a shaft
+        /// still gets the head.
+        /// </summary>
+        public static void DirectionArrow(DrawingContext context, Rect box, bool rightToLeft, IBrush brush,
+            double maxLength, double thickness)
+        {
+            var head = Math.Max(6, thickness * 3.2);
+            var length = Math.Min(maxLength, box.Width - 8);
+            var y = box.Center.Y;
+
+            if (length < head * 0.9)
+            {
+                var size = Math.Max(4, Math.Min(head, box.Width - 4));
+                var tipX = box.Center.X + (rightToLeft ? -size / 2 : size / 2);
+                Head(context, brush, new Point(tipX, y), new Vector(rightToLeft ? -1 : 1, 0), size);
+                return;
+            }
+
+            var left = new Point(box.Center.X - length / 2, y);
+            var right = new Point(box.Center.X + length / 2, y);
+            Arrow(context, brush, rightToLeft ? right : left, rightToLeft ? left : right, thickness, head);
+        }
+
+        /// <summary>
+        /// A rounded badge with one bold line and an optional muted second line, its left edge at
+        /// <paramref name="x"/> and its top at <paramref name="y"/>. Returns the badge rectangle.
+        /// </summary>
+        public static Rect Badge(DrawingContext context, Palette palette, double x, double y, string text, double size,
+            string? detail = null, double maxWidth = double.PositiveInfinity)
+        {
+            var pad = size * 0.45;
+            var available = Math.Max(10, maxWidth - 2 * pad);
+            using var main = Layout(text, size, palette.Foreground, UiBold, available);
+            using var sub = detail is null ? null : Layout(detail, size * 0.8, palette.Muted, UiTypeface, available);
+            var width = Math.Max(main.WidthIncludingTrailingWhitespace, sub?.WidthIncludingTrailingWhitespace ?? 0) + 2 * pad;
+            var height = main.Height + (sub?.Height ?? 0) + pad * 0.9;
+            var rect = new Rect(x, y, width, height);
+
+            context.DrawRectangle(palette.Surface, Pen(palette.Accent, 2), rect, height / 4, height / 4);
+            main.Draw(context, new Point(x + pad, y + pad * 0.45));
+            sub?.Draw(context, new Point(x + pad, y + pad * 0.45 + main.Height));
+
+            return rect;
+        }
+
+        /// <summary>A short name of a paragraph direction for badges.</summary>
+        public static string Direction(FlowDirection direction) => direction == FlowDirection.RightToLeft ? "RTL" : "LTR";
+
         /// <summary>A card with a title line and key/value rows, kept inside <paramref name="bounds"/>.</summary>
         public static Rect Card(DrawingContext context, Palette palette, Point anchor, Rect bounds, string title,
             (string Key, string Value)[] rows, double size)

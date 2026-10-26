@@ -74,11 +74,13 @@ namespace TextTour
             Graphemes = ReadGraphemes(text);
             Words = ReadWords(text);
             Breaks = ReadBreaks(text);
-            Levels = ReadLevels(text, Codepoints, out var paragraphLevel);
-            ParagraphLevel = paragraphLevel;
 
             var defaultProperties = new GenericTextRunProperties(typeface, fontSize, foregroundBrush: palette.Foreground,
                 cultureInfo: culture);
+            var paragraph = new GenericTextParagraphProperties(defaultProperties);
+            ParagraphFlowDirection = paragraph.FlowDirection;
+            Levels = ReadLevels(text, Codepoints, ParagraphFlowDirection, out var paragraphLevel);
+            ParagraphLevel = paragraphLevel;
             var styledProperties = new GenericTextRunProperties(typeface, fontSize, foregroundBrush: palette.Series(1),
                 cultureInfo: culture);
 
@@ -89,16 +91,14 @@ namespace TextTour
             Source = new FormattedTextSource(text, defaultProperties, overrides);
             SourceRuns = ReadSourceRuns(Source, text.Length, styledProperties);
 
-            Layout = new TextLayout(Source, new GenericTextParagraphProperties(defaultProperties));
+            Layout = new TextLayout(Source, paragraph);
             Line = Layout.TextLines[0];
             Items = ReadItems(Line, Codepoints).OrderBy(i => i.Range.Start).Select((item, index) => item with
             {
                 Index = index,
                 Glyphs = item.Glyphs.Select(g => g with { ItemIndex = index }).ToArray(),
             }).ToArray();
-            LineRunOrder = Line.TextRuns
-                .Select(r => MemoryMarshal.TryGetString(r.Text, out _, out var start, out _) ? start : -1)
-                .ToArray();
+            LineRunOrder = Line.TextRuns.Select(StartOf).ToArray();
             Glyphs = Items.SelectMany(i => i.Glyphs).OrderBy(g => g.X).ToArray();
         }
 
@@ -123,6 +123,9 @@ namespace TextTour
         public IReadOnlyList<sbyte> Levels { get; }
 
         public sbyte ParagraphLevel { get; }
+
+        /// <summary>The paragraph flow direction the layout of the string is built with.</summary>
+        public FlowDirection ParagraphFlowDirection { get; }
 
         public ITextSource Source { get; }
 
@@ -260,14 +263,9 @@ namespace TextTour
         // Runs the formatter's BiDi algorithm over the paragraph the same way TextFormatterImpl does:
         // classes are appended per code point, so the resolved levels come back per code point.
         private static IReadOnlyList<sbyte> ReadLevels(string text, IReadOnlyList<CodepointInfo> codepoints,
-            out sbyte paragraphLevel)
+            FlowDirection flowDirection, out sbyte paragraphLevel)
         {
-            var data = new BidiData { ParagraphEmbeddingLevel = (sbyte)FlowDirection.LeftToRight };
-            data.Append(text.AsSpan());
-
-            var algorithm = new BidiAlgorithm();
-            algorithm.Process(data);
-
+            var algorithm = RunBidi(text, flowDirection);
             paragraphLevel = (sbyte)algorithm.ResolvedParagraphEmbeddingLevel;
 
             var levels = algorithm.ResolvedLevels.Span;
@@ -279,6 +277,47 @@ namespace TextTour
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// The paragraph embedding level the formatter's BiDi algorithm works with for
+        /// <paramref name="text"/> in a paragraph of <paramref name="flowDirection"/>.
+        /// </summary>
+        public static sbyte ResolveParagraphLevel(string text, FlowDirection flowDirection) =>
+            (sbyte)RunBidi(text, flowDirection).ResolvedParagraphEmbeddingLevel;
+
+        private static BidiAlgorithm RunBidi(string text, FlowDirection flowDirection)
+        {
+            var data = new BidiData { ParagraphEmbeddingLevel = (sbyte)flowDirection };
+            data.Append(text.AsSpan());
+
+            var algorithm = new BidiAlgorithm();
+            algorithm.Process(data);
+
+            return algorithm;
+        }
+
+        /// <summary>The start of a run's text in the string, or -1 when the run carries no slice of it.</summary>
+        public static int StartOf(TextRun run) =>
+            MemoryMarshal.TryGetString(run.Text, out _, out var start, out _) ? start : -1;
+
+        /// <summary>
+        /// The BiDi level of the shaped run of <paramref name="line"/> that holds the character at
+        /// <paramref name="index"/>, or null when no shaped run holds it.
+        /// </summary>
+        public static sbyte? LevelAt(TextLine line, int index)
+        {
+            foreach (var run in line.TextRuns)
+            {
+                var start = StartOf(run);
+
+                if (run is ShapedTextRun shaped && start >= 0 && index >= start && index < start + run.Length)
+                {
+                    return shaped.BidiLevel;
+                }
+            }
+
+            return null;
         }
 
         private static IReadOnlyList<SourceRun> ReadSourceRuns(ITextSource source, int length, TextRunProperties styled)
@@ -406,6 +445,7 @@ namespace TextTour
             b.AppendLine($"words: {string.Join(" ", Words.Select(g => $"{g.Start}+{g.Length}"))}");
             b.AppendLine($"breaks: {string.Join(" ", Breaks.Select(l => $"{l.PositionMeasure}/{l.PositionWrap}{(l.Required ? "!" : "")}"))}");
             b.AppendLine($"levels (per code point, paragraph {ParagraphLevel}): {string.Join("", Levels)}");
+            b.AppendLine($"paragraph: FlowDirection {ParagraphFlowDirection}, level {ParagraphLevel}");
             b.AppendLine($"source runs: {string.Join(" ", SourceRuns.Select(r => $"{r.Range.Start}+{r.Range.Length}{(r.IsStyled ? "*" : "")}"))}");
             b.AppendLine($"line runs in TextLine.TextRuns order (start): {string.Join(" ", LineRunOrder)}");
 

@@ -13,10 +13,12 @@ dotnet run --project samples/TextTour/TextTour.csproj
 | 1 | Start | the string in a plain `TextBlock`; the map of the stages |
 | 2 | Units | chars (UTF-16 code units) with hex values; code points spanning their units; grapheme clusters spanning their code points; the glyphs shaping produced, spanning their clusters; counts per row. Hover a code point for its Unicode property card. |
 | 3 | Fonts | the family list as a query (weight, style, stretch, culture); the collection asked for each name; the family's faces ranked by CSS matching distance with FontManager's answer highlighted; synthesized bold or oblique; the string coloured by the face of each shaped item, with the fallback request (`FontManager.TryMatchCharacter`) per uncovered item |
-| 4 | Tokens | bands under the characters in logical order: runs from the text source (the preset has a span with its own brush), graphemes, words, break opportunities (solid mandatory, dashed allowed), BiDi levels per code point, shaped items (script, level, face); then the glyphs in visual order above, each connected to its cluster. A dashed red line ties a glyph to its own code point by cmap, which shows the Devanagari vowel sign drawn before its consonants. Hover a glyph for its id, cluster, advance and offset. |
-| 5 | Layout | the string wrapped at a width (slider at the top, or drag the dashed edge); break opportunities with the chosen break per line; runs animating from logical into visual order (V); line metrics (hover a line); a second font with other vertical metrics; trimming modes and a right-to-left line with an ellipsis |
-| 6 | Hits | click for the `TextHitTestResult`; caret stops as ticks (Left/Right walk them); the ffi ligature and its caret stops; the two caret positions of one text position at a BiDi boundary; drag to select with the `HitTestTextRange` rectangles |
+| 4 | Tokens | bands under the characters in logical order: runs from the text source (the preset has a span with its own brush), graphemes, words, break opportunities (solid mandatory, dashed allowed), BiDi levels per code point with a legend (even level: left to right, odd level: right to left) and a badge beside the characters with the paragraph direction and level, shaped items (script, level, face, and an arrow for the item's reading direction); then the glyphs in visual order above, each connected to its cluster. A dashed red line ties a glyph to its own code point by cmap, which shows the Devanagari vowel sign drawn before its consonants. Hover a glyph for its id, cluster, advance and offset. |
+| 5 | Layout | the string wrapped at a width (slider at the top, or drag the dashed edge); break opportunities with the chosen break per line; runs animating from logical into visual order (V), each run box with an arrow for its reading direction; the reading-order path (P, steps 1-3): a line through the graphemes in logical order at their real positions, so the Arabic word reads right to left and the number inside it left to right; line metrics (hover a line); a second font with other vertical metrics; trimming modes and a right-to-left line with an ellipsis and its own paragraph badge. A badge beside the width slider shows the paragraph direction and level of the wrapped string |
+| 6 | Hits | click for the `TextHitTestResult`; caret stops as ticks (Left/Right walk them); the ffi ligature and its caret stops; the two caret positions of one text position at the first BiDi boundary, each with its own run's flag; drag to select with the `HitTestTextRange` rectangles |
 | D | Display | window size in points and pixels, render scaling, screens, a text size ladder and colour swatches for checking the projector |
+
+The caret carries a flag that points in the reading direction of its run (from ShapedTextRun.BidiLevel), the side the next character comes from.
 
 The bottom bar names the type and member behind the current step and shows the step counter.
 
@@ -35,6 +37,7 @@ The bottom bar names the type and member behind the current step and shows the s
 | R | hide or show the chapter rail |
 | I | edit the string in the input box; Escape leaves the input box |
 | V | Layout step 3: toggle logical and visual run order |
+| P | Layout steps 1-3: show or hide the reading-order path |
 
 Keys work whatever has focus, except while typing in the input box or the family box (only PageUp, PageDown and Escape pass through). No Ctrl+arrow combinations, which switch Spaces on macOS. In Hits steps 2 and 3, Left and Right move the caret instead of stepping; PageDown and Space still step.
 
@@ -59,7 +62,7 @@ TextTour --export-steps <dir> [--size 1920x1080] [--theme light|dark] [--preset 
 
 Renders every chapter, step and demo variant to `<dir>/NN-chapter-step[-variant].png` and exits. `export.txt` next to the images lists the renderer, the caption of every frame and a plain text analysis of the string (units, breaks, levels, source runs, items, glyphs). It also says whether a fresh layout after all chapters still matches the first one, which catches lookups that changed the pipeline's answers.
 
-The export hosts the shell at the requested size in a small offscreen window and captures it with `RenderTargetBitmap` at 96 dpi, using the platform's own font manager and the Skia render interface. Offscreen surfaces get grayscale antialiasing, so the PNGs differ from the live window in antialiasing and, on the Mac, in the fonts available. Demo variants (a clicked hit, a hovered card, a font query) are set by the chapter, not by input.
+The export hosts the shell at the requested size in a small offscreen window and captures it with `RenderTargetBitmap` at 96 dpi, using the platform's own font manager and the Skia render interface. Offscreen surfaces get grayscale antialiasing, so the PNGs differ from the live window in antialiasing and, on the Mac, in the fonts available. Demo variants (a clicked hit, a hovered card, a font query, the reading-order path in Layout steps 1 and 3, and the run order halfway through its animation) are set by the chapter, not by input.
 
 ## macOS notes
 

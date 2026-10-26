@@ -53,15 +53,16 @@ namespace TextTour.Chapters
                     case 1:
                         return _hit is { } hit ?
                             $"TextLayout.HitTestPoint(({_clickPoint!.Value.X - _origin.X:0}, {_clickPoint.Value.Y - _origin.Y:0}))  ->  " +
-                            $"CharacterHit({hit.CharacterHit.FirstCharacterIndex}, {hit.CharacterHit.TrailingLength})" :
+                            $"CharacterHit({hit.CharacterHit.FirstCharacterIndex}, {hit.CharacterHit.TrailingLength})   flag: ShapedTextRun.BidiLevel" :
                             "TextLayout.HitTestPoint(point)  ->  TextHitTestResult.CharacterHit   (click the text)";
                     case 2 or 3:
                         return CurrentStop is { } stop ?
                             $"TextLine.GetNextCaretCharacterHit  ->  CharacterHit({stop.Hit.FirstCharacterIndex}, {stop.Hit.TrailingLength})" +
-                            $"   GetDistanceFromCharacterHit = {stop.X:0.#}" :
+                            $"   GetDistanceFromCharacterHit = {stop.X:0.#}   flag: ShapedTextRun.BidiLevel" :
                             "TextLine.GetNextCaretCharacterHit, GetPreviousCaretCharacterHit, GetDistanceFromCharacterHit";
                     case 4:
-                        return "TextLine.GetDistanceFromCharacterHit(CharacterHit(i, 0)) vs (CharacterHit(i - 1, 1))";
+                        return "TextLine.GetDistanceFromCharacterHit(CharacterHit(i, 0)) vs (CharacterHit(i - 1, 1));  " +
+                               "flags: ShapedTextRun.BidiLevel of each hit's run";
                     default:
                         return _anchor is { } a && _active is { } b && a != b ?
                             $"TextLayout.HitTestTextRange({Math.Min(a, b)}, {Math.Abs(b - a)})  ->  {SelectionRects().Count} rectangles" :
@@ -288,6 +289,7 @@ namespace TextTour.Chapters
                 ("CharacterHit", $"FirstCharacterIndex {characterHit.FirstCharacterIndex}, TrailingLength {characterHit.TrailingLength}"),
                 ("TextPosition", $"{hit.TextPosition}   IsInside {hit.IsInside}   IsTrailing (past the line end) {hit.IsTrailing}"),
                 ("Line", $"{lineIndex}"),
+                ("Caret flag", FlagText(lineIndex, characterHit)),
             };
 
             if (item is not null)
@@ -335,6 +337,7 @@ namespace TextTour.Chapters
             {
                 rows.Add(("Current", $"CharacterHit({stop.Hit.FirstCharacterIndex}, {stop.Hit.TrailingLength}) on line {stop.Line}"));
                 rows.Add(("Distance", $"{stop.X:0.##}"));
+                rows.Add(("Caret flag", FlagText(stop.Line, stop.Hit)));
             }
 
             rows.Add(("Keys", "Left and Right move the caret; PageDown continues"));
@@ -474,7 +477,7 @@ namespace TextTour.Chapters
         {
             var p = Palette;
             var analysis = State.Analysis;
-            var index = FirstRtlIndex();
+            var index = FirstDirectionChange();
 
             if (index <= 0)
             {
@@ -500,6 +503,8 @@ namespace TextTour.Chapters
                 ("A", $"CharacterHit({index}, 0): before '{analysis.Text[index]}' at x {a:0.#}"),
                 ("B", $"CharacterHit({index - 1}, 1): after '{analysis.Text[index - 1]}' at x {b:0.#}"),
                 ("HitTestTextPosition", $"{_layout.HitTestTextPosition(index).X:0.#} (one answer for the index)"),
+                ("Flag A", FlagText(lineIndex, leading)),
+                ("Flag B", FlagText(_layout.GetLineIndexFromCharacterIndex(index - 1, true), trailing)),
             }, size);
         }
 
@@ -556,14 +561,46 @@ namespace TextTour.Chapters
             var y = _origin.Y + top;
             context.DrawLine(Draw.Pen(brush, 3), new Point(x, y - 4), new Point(x, y + line.Height + 4));
 
-            // A small flag shows which side of the caret the hit belongs to.
-            var flag = hit.TrailingLength > 0 ? -8 : 8;
-            context.DrawLine(Draw.Pen(brush, 3), new Point(x, y - 4), new Point(x + flag, y - 4));
+            // The flag points the way the caret's run reads, to the side the next character comes
+            // from: right in a left-to-right run, left in a right-to-left one.
+            if (CaretLevel(line, hit) is { } level)
+            {
+                var sign = (level & 1) == 1 ? -1 : 1;
+                var flag = new StreamGeometry();
+
+                using (var g = flag.Open())
+                {
+                    g.BeginFigure(new Point(x, y - 20), true);
+                    g.LineTo(new Point(x + sign * 18, y - 13));
+                    g.LineTo(new Point(x, y - 6));
+                    g.EndFigure(true);
+                }
+
+                context.DrawGeometry(brush, null, flag);
+                context.DrawLine(Draw.Pen(brush, 3), new Point(x, y - 21), new Point(x, y - 4));
+            }
 
             if (label is not null)
             {
-                Draw.Text(context, label, x, y - 30, 20, brush, HAlign.Center, Draw.UiBold);
+                Draw.Text(context, label, x, y - 48, 20, brush, HAlign.Center, Draw.UiBold);
             }
+        }
+
+        /// <summary>
+        /// The BiDi level of the run the caret belongs to: the run of the character the hit names,
+        /// which for a trailing hit is the character before the caret.
+        /// </summary>
+        private static sbyte? CaretLevel(TextLine line, CharacterHit hit) =>
+            TextAnalysis.LevelAt(line, hit.FirstCharacterIndex) ??
+            TextAnalysis.LevelAt(line, Math.Max(line.FirstTextSourceIndex, hit.FirstCharacterIndex - 1));
+
+        private string FlagText(int lineIndex, CharacterHit hit)
+        {
+            var line = _layout!.TextLines[Math.Clamp(lineIndex, 0, _layout.TextLines.Count - 1)];
+
+            return CaretLevel(line, hit) is { } level ?
+                $"run level {level}: {((level & 1) == 1 ? "right to left, points left" : "left to right, points right")}" :
+                "-";
         }
 
         private void DrawInfo(DrawingContext context, double top, string title, List<(string, string)> rows, double size,
@@ -581,6 +618,23 @@ namespace TextTour.Chapters
             for (var i = 0; i < analysis.Codepoints.Count; i++)
             {
                 if ((analysis.Levels[i] & 1) == 1)
+                {
+                    return analysis.Codepoints[i].Offset;
+                }
+            }
+
+            return -1;
+        }
+
+        // The first code point whose level reads the other way than the code point before it: in
+        // the running example the first Arabic letter, in the Arabic preset the number.
+        private int FirstDirectionChange()
+        {
+            var analysis = State.Analysis;
+
+            for (var i = 1; i < analysis.Codepoints.Count; i++)
+            {
+                if (((analysis.Levels[i] ^ analysis.Levels[i - 1]) & 1) == 1)
                 {
                     return analysis.Codepoints[i].Offset;
                 }
