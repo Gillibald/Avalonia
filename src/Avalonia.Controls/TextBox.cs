@@ -390,6 +390,7 @@ namespace Avalonia.Controls
         private bool _canRedo;
 
         private int _wordSelectionStart = -1;
+        private bool _isMovingCaretToSelectionEnd;
         private (int Start, int End) _selectionAtPointerPress;
         private int _selectedTextChangesMadeSinceLastUndoSnapshot;
         private bool _hasDoneSnapshotOnce;
@@ -480,25 +481,70 @@ namespace Avalonia.Controls
         /// <summary>
         /// Gets or sets the index of the text caret
         /// </summary>
+        /// <remarks>
+        /// The caret sits at the moving end of the selection, so while text is selected this is
+        /// <see cref="SelectionEnd"/>. Setting the caret index collapses the selection at the new
+        /// index, also when the index does not change.
+        /// </remarks>
+        [SuppressMessage("AvaloniaProperty", "AVP1030:StyledProperty accessors should not have side effects",
+            Justification = "Assigning the current value raises no change notification, and the selection still has to collapse.")]
         public int CaretIndex
         {
             get => GetValue(CaretIndexProperty);
-            set => SetValue(CaretIndexProperty, value);
+            set
+            {
+                SetValue(CaretIndexProperty, value);
+                CollapseSelectionAtCaret();
+            }
         }
 
         private void OnCaretIndexChanged(AvaloniaPropertyChangedEventArgs e)
         {
+            using var _ = _imClient.BeginChange();
+
+            var newValue = e.GetNewValue<int>();
+
+            // A caret that follows a selection change keeps the selection.
+            if (!_isMovingCaretToSelectionEnd)
+            {
+                SetCurrentValue(SelectionStartProperty, newValue);
+                SetCurrentValue(SelectionEndProperty, newValue);
+            }
+
             UndoRedoState state;
             if (IsUndoEnabled && _undoRedoHelper.TryGetLastState(out state) && state.Text == Text)
                 _undoRedoHelper.UpdateLastState();
 
+            _presenter?.SetCurrentValue(TextPresenter.CaretIndexProperty, newValue);
+        }
+
+        /// <summary>
+        /// Moves the caret to <paramref name="caretIndex"/> and collapses the selection there.
+        /// </summary>
+        /// <remarks>
+        /// Setting <see cref="CaretIndexProperty"/> alone leaves a selection in place when the caret
+        /// already sits at <paramref name="caretIndex"/>, which is the case whenever the target is the
+        /// selection's moving end.
+        /// </remarks>
+        private void MoveCaretAndCollapseSelection(int caretIndex)
+        {
+            SetCurrentValue(CaretIndexProperty, caretIndex);
+            CollapseSelectionAtCaret();
+        }
+
+        private void CollapseSelectionAtCaret()
+        {
+            var caretIndex = CaretIndex;
+
+            if (SelectionStart == caretIndex && SelectionEnd == caretIndex)
+            {
+                return;
+            }
+
             using var _ = _imClient.BeginChange();
 
-            var newValue = e.GetNewValue<int>();
-            SetCurrentValue(SelectionStartProperty, newValue);
-            SetCurrentValue(SelectionEndProperty, newValue);
-
-            _presenter?.SetCurrentValue(TextPresenter.CaretIndexProperty, newValue);
+            SetCurrentValue(SelectionStartProperty, caretIndex);
+            SetCurrentValue(SelectionEndProperty, caretIndex);
         }
 
         /// <summary>
@@ -556,6 +602,10 @@ namespace Avalonia.Controls
         /// <summary>
         /// Gets or sets the starting position of the text selected in the TextBox
         /// </summary>
+        /// <remarks>
+        /// SelectionStart is the anchor of the selection: it stays in place while the selection is
+        /// extended, and it can be greater than <see cref="SelectionEnd"/>.
+        /// </remarks>
         public int SelectionStart
         {
             get => GetValue(SelectionStartProperty);
@@ -566,31 +616,35 @@ namespace Avalonia.Controls
         {
             UpdateCommandStates();
 
-            var value = e.GetNewValue<int>();
-            if (SelectionEnd == value)
+            // The anchor moved; the caret stays at SelectionEnd. A pointer gesture that leaves the
+            // selection unchanged can leave the presenter caret at the pointer, so a collapse puts
+            // it back on the caret, or the next Delete, Backspace or arrow key acts from there.
+            if (e.GetNewValue<int>() == SelectionEnd)
             {
-                MoveCaretToCollapsedSelection(value);
+                _presenter?.SetCurrentValue(TextPresenter.CaretIndexProperty, CaretIndex);
             }
         }
 
         /// <summary>
-        /// Places the caret at a selection that has just collapsed to <paramref name="position"/>.
+        /// Moves <see cref="CaretIndex"/> to the selection's moving end without collapsing the selection.
         /// </summary>
-        /// <remarks>
-        /// A keyboard selection moves the presenter caret to the selection's moving end while
-        /// <see cref="CaretIndex"/> keeps its value. When the selection collapses onto that unchanged
-        /// value no CaretIndex change is raised, so the presenter caret has to be moved here, or the
-        /// next Delete, Backspace or arrow key acts from the old selection end.
-        /// </remarks>
-        private void MoveCaretToCollapsedSelection(int position)
+        private void MoveCaretToSelectionEnd(int selectionEnd)
         {
-            if (CaretIndex != position)
+            if (CaretIndex == selectionEnd)
             {
-                SetCurrentValue(CaretIndexProperty, position);
+                _presenter?.SetCurrentValue(TextPresenter.CaretIndexProperty, selectionEnd);
+                return;
             }
-            else
+
+            _isMovingCaretToSelectionEnd = true;
+
+            try
             {
-                _presenter?.SetCurrentValue(TextPresenter.CaretIndexProperty, position);
+                SetCurrentValue(CaretIndexProperty, selectionEnd);
+            }
+            finally
+            {
+                _isMovingCaretToSelectionEnd = false;
             }
         }
 
@@ -598,6 +652,7 @@ namespace Avalonia.Controls
         /// Gets or sets the end position of the text selected in the TextBox
         /// </summary>
         /// <remarks>
+        /// SelectionEnd is the moving end of the selection and always equals <see cref="CaretIndex"/>.
         /// When the SelectionEnd is equal to <see cref="SelectionStart"/>, there is no
         /// selected text and it marks the caret position
         /// </remarks>
@@ -611,11 +666,7 @@ namespace Avalonia.Controls
         {
             UpdateCommandStates();
 
-            var value = e.GetNewValue<int>();
-            if (SelectionStart == value)
-            {
-                MoveCaretToCollapsedSelection(value);
-            }
+            MoveCaretToSelectionEnd(e.GetNewValue<int>());
         }
 
         /// <summary>
@@ -869,12 +920,11 @@ namespace Avalonia.Controls
         }
 
         /// <summary>
-        /// Clears the current selection, maintaining the <see cref="CaretIndex"/>
+        /// Clears the current selection, moving the <see cref="CaretIndex"/> to <see cref="SelectionStart"/>
         /// </summary>
         public void ClearSelection()
         {
-            SetCurrentValue(CaretIndexProperty, SelectionStart);
-            SetCurrentValue(SelectionEndProperty, SelectionStart);
+            MoveCaretAndCollapseSelection(SelectionStart);
         }
 
         /// <summary>
@@ -1091,9 +1141,11 @@ namespace Avalonia.Controls
                     SnapshotUndoRedo();
                 }
 
-                CoerceValue(CaretIndexProperty);
+                // The selection first: a clamped SelectionEnd carries the caret with it, while a
+                // clamped caret would collapse the selection.
                 CoerceValue(SelectionStartProperty);
                 CoerceValue(SelectionEndProperty);
+                CoerceValue(CaretIndexProperty);
 
                 RaiseTextChangeEvents();
 
@@ -1279,7 +1331,7 @@ namespace Avalonia.Controls
                 //Make sure caret is in sync
                 _presenter?.MoveCaretToTextPosition(caretIndex);
 
-                SetCurrentValue(CaretIndexProperty, caretIndex);
+                MoveCaretAndCollapseSelection(caretIndex);
             }
         }
 
@@ -1505,7 +1557,7 @@ namespace Avalonia.Controls
                 movement = true;
                 selection = false;
                 handled = true;
-                SetCurrentValue(CaretIndexProperty, _presenter.CaretIndex);
+                MoveCaretAndCollapseSelection(_presenter.CaretIndex);
             }
             else if (Match(keymap.MoveCursorToTheEndOfDocument))
             {
@@ -1513,7 +1565,7 @@ namespace Avalonia.Controls
                 movement = true;
                 selection = false;
                 handled = true;
-                SetCurrentValue(CaretIndexProperty, _presenter.CaretIndex);
+                MoveCaretAndCollapseSelection(_presenter.CaretIndex);
             }
             else if (Match(keymap.MoveCursorToTheStartOfLine))
             {
@@ -1521,7 +1573,7 @@ namespace Avalonia.Controls
                 movement = true;
                 selection = false;
                 handled = true;
-                SetCurrentValue(CaretIndexProperty, _presenter.CaretIndex);
+                MoveCaretAndCollapseSelection(_presenter.CaretIndex);
             }
             else if (Match(keymap.MoveCursorToTheEndOfLine))
             {
@@ -1529,11 +1581,10 @@ namespace Avalonia.Controls
                 movement = true;
                 selection = false;
                 handled = true;
-                SetCurrentValue(CaretIndexProperty, _presenter.CaretIndex);
+                MoveCaretAndCollapseSelection(_presenter.CaretIndex);
             }
             else if (Match(keymap.MoveCursorToTheStartOfDocumentWithSelection))
             {
-                SetCurrentValue(SelectionStartProperty, caretIndex);
                 MoveHome(true);
                 SetCurrentValue(SelectionEndProperty, _presenter.CaretIndex);
                 movement = true;
@@ -1542,7 +1593,6 @@ namespace Avalonia.Controls
             }
             else if (Match(keymap.MoveCursorToTheEndOfDocumentWithSelection))
             {
-                SetCurrentValue(SelectionStartProperty, caretIndex);
                 MoveEnd(true);
                 SetCurrentValue(SelectionEndProperty, _presenter.CaretIndex);
                 movement = true;
@@ -1551,7 +1601,6 @@ namespace Avalonia.Controls
             }
             else if (Match(keymap.MoveCursorToTheStartOfLineWithSelection))
             {
-                SetCurrentValue(SelectionStartProperty, caretIndex);
                 MoveHome(false);
                 SetCurrentValue(SelectionEndProperty, _presenter.CaretIndex);
                 movement = true;
@@ -1561,7 +1610,6 @@ namespace Avalonia.Controls
             }
             else if (Match(keymap.MoveCursorToTheEndOfLineWithSelection))
             {
-                SetCurrentValue(SelectionStartProperty, caretIndex);
                 MoveEnd(false);
                 SetCurrentValue(SelectionEndProperty, _presenter.CaretIndex);
                 movement = true;
@@ -1678,7 +1726,7 @@ namespace Avalonia.Controls
 
                                     SetTextFromEdit(StringBuilderCache.GetStringAndRelease(sb));
 
-                                    SetCurrentValue(CaretIndexProperty, start);
+                                    MoveCaretAndCollapseSelection(start);
 
                                     _presenter.MoveCaretToTextPosition(start);
                                 }
@@ -2277,7 +2325,7 @@ namespace Avalonia.Controls
                             LogicalDirection.Backward);
                     }
 
-                    SetCurrentValue(CaretIndexProperty, _presenter.CaretIndex);
+                    MoveCaretAndCollapseSelection(_presenter.CaretIndex);
                 }
             }
             else
@@ -2302,7 +2350,7 @@ namespace Avalonia.Controls
 
                 if (!isSelecting && moveCaretPosition)
                 {
-                    SetCurrentValue(CaretIndexProperty, SelectionEnd);
+                    MoveCaretAndCollapseSelection(SelectionEnd);
                 }
                 else
                 {
@@ -2351,7 +2399,7 @@ namespace Avalonia.Controls
 
                 _presenter.MoveCaretVertical(direction);
 
-                SetCurrentValue(CaretIndexProperty, _presenter.CaretIndex);
+                MoveCaretAndCollapseSelection(_presenter.CaretIndex);
             }
         }
 
@@ -2503,7 +2551,7 @@ namespace Avalonia.Controls
                 return true;
             }
 
-            SetCurrentValue(CaretIndexProperty, SelectionStart);
+            MoveCaretAndCollapseSelection(SelectionStart);
 
             return false;
         }
@@ -2671,12 +2719,14 @@ namespace Avalonia.Controls
 
         UndoRedoState UndoRedoHelper<UndoRedoState>.IUndoRedoHost.UndoRedoState
         {
-            get => new UndoRedoState(Text, CaretIndex);
+            // The anchor, not the caret: a snapshot can be taken while a selection exists, such as
+            // the one Ctrl+Backspace builds before deleting, and undo returns the caret to where
+            // that selection started.
+            get => new UndoRedoState(Text, SelectionStart);
             set
             {
                 SetCurrentValue(TextProperty, value.Text);
-                SetCurrentValue(CaretIndexProperty, value.CaretPosition);
-                ClearSelection();
+                MoveCaretAndCollapseSelection(value.CaretPosition);
             }
         }
 
