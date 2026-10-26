@@ -66,7 +66,8 @@ namespace Avalonia.Media.Fonts.Tables
         /// The number of carets defined for the glyph, which can exceed the length of
         /// <paramref name="caretPositions"/>; 0 when there are none or any of them cannot be resolved.
         /// </returns>
-        public int GetLigatureCarets(ushort glyphIndex, Span<int> caretPositions)
+        public int GetLigatureCarets(ushort glyphIndex, Span<int> caretPositions,
+            ReadOnlySpan<float> variationCoordinates = default)
         {
             var span = _table.Span;
 

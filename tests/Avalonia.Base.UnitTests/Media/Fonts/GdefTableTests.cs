@@ -49,6 +49,30 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
+        public void CaretValue_Format3_Applies_Variation_Delta()
+        {
+            using var app = UnitTestApplication.Start();
+
+            // One axis, one region peaking at +1.0, a delta of +40 units for the caret's VariationIndex.
+            var gdef = BuildGdef(CoverageFormat1(3), new[] { Lig(Caret1(100), Caret3VariationIndex(450)) },
+                majorVersion: 1, minorVersion: 3, itemVariationStore: SingleRegionVariationStore(40));
+            var table = GdefTable.TryParse(gdef);
+
+            Assert.NotNull(table);
+
+            var carets = new int[4];
+
+            Assert.Equal(2, table!.GetLigatureCarets(3, carets, new[] { 1f }));
+            Assert.Equal(new[] { 100, 490 }, carets.AsSpan(0, 2).ToArray());
+
+            Assert.Equal(2, table.GetLigatureCarets(3, carets, new[] { 0.5f }));
+            Assert.Equal(new[] { 100, 470 }, carets.AsSpan(0, 2).ToArray());
+
+            Assert.Equal(2, table.GetLigatureCarets(3, carets));
+            Assert.Equal(new[] { 100, 450 }, carets.AsSpan(0, 2).ToArray());
+        }
+
+        [Fact]
         public void Unresolvable_Contour_Point_Returns_No_Carets()
         {
             using var app = UnitTestApplication.Start();
@@ -153,7 +177,8 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             => BuildGdef(coverage, ligGlyphs, majorVersion: 1, minorVersion: 0);
 
         // Lays out the header, the LigCaretList, its coverage and its LigGlyph tables in that order.
-        private static byte[] BuildGdef(byte[] coverage, byte[][] ligGlyphs, int majorVersion, int minorVersion)
+        private static byte[] BuildGdef(byte[] coverage, byte[][] ligGlyphs, int majorVersion, int minorVersion,
+            byte[]? itemVariationStore = null)
         {
             var headerSize = minorVersion switch { >= 3 => 18, 2 => 14, _ => 12 };
 
@@ -177,8 +202,13 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
             if (minorVersion >= 3)
             {
-                WriteUInt16(bytes, 0); // itemVarStoreOffset (Offset32)
-                WriteUInt16(bytes, 0);
+                // itemVarStoreOffset (Offset32): the store follows the LigCaretList.
+                var storeOffset = itemVariationStore is null
+                    ? 0
+                    : headerSize + ligGlyphOffset + ligGlyphs.Sum(x => x.Length);
+
+                WriteUInt16(bytes, storeOffset >> 16);
+                WriteUInt16(bytes, storeOffset & 0xFFFF);
             }
 
             WriteUInt16(bytes, coverageOffset);
@@ -198,6 +228,39 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             {
                 bytes.AddRange(ligGlyph);
             }
+
+            if (itemVariationStore is not null)
+            {
+                bytes.AddRange(itemVariationStore);
+            }
+
+            return bytes.ToArray();
+        }
+
+        // An ItemVariationStore with one axis, one region (start 0, peak 1, end 1) and one
+        // ItemVariationData holding a single 16-bit delta at outer 0, inner 0.
+        private static byte[] SingleRegionVariationStore(short delta)
+        {
+            var bytes = new List<byte>();
+
+            WriteUInt16(bytes, 1); // format
+            WriteUInt16(bytes, 0); // variationRegionListOffset (Offset32) = 12
+            WriteUInt16(bytes, 12);
+            WriteUInt16(bytes, 1); // itemVariationDataCount
+            WriteUInt16(bytes, 0); // itemVariationDataOffsets[0] (Offset32) = 22
+            WriteUInt16(bytes, 22);
+
+            WriteUInt16(bytes, 1); // axisCount
+            WriteUInt16(bytes, 1); // regionCount
+            WriteUInt16(bytes, 0); // startCoord F2DOT14 0.0
+            WriteUInt16(bytes, 0x4000); // peakCoord 1.0
+            WriteUInt16(bytes, 0x4000); // endCoord 1.0
+
+            WriteUInt16(bytes, 1); // itemCount
+            WriteUInt16(bytes, 1); // wordDeltaCount
+            WriteUInt16(bytes, 1); // regionIndexCount
+            WriteUInt16(bytes, 0); // regionIndexes[0]
+            WriteUInt16(bytes, (ushort)delta);
 
             return bytes.ToArray();
         }
