@@ -82,6 +82,48 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             Assert.Equal("Korean Test", Match(collection, "ja-JP"));
         }
 
+        [Fact]
+        public void Han_Without_A_Writing_System_Should_Not_Take_A_Loaded_Face()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider { Languages = { ["de-DE"] = "Japanese Test" } };
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.True(collection.TryGetGlyphTypeface("Simplified Test", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.Equal("Japanese Test", Match(collection, "de-DE"));
+        }
+
+        [Fact]
+        public void Han_Without_A_Writing_System_Should_Not_Depend_On_An_Earlier_Lookup()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider { Languages = { ["de-DE"] = "Japanese Test" } };
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.Equal("Korean Test", Match(collection, "ko-KR"));
+            Assert.Equal("Japanese Test", Match(collection, "de-DE"));
+        }
+
+        [Fact]
+        public void Han_Without_A_Writing_System_Should_Ask_The_Platform_Once_Per_Bucket()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider { Languages = { ["de-DE"] = "Japanese Test" } };
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.Equal("Japanese Test", Match(collection, "de-DE"));
+
+            var calls = provider.TryMatchCharacterCount;
+
+            Assert.Equal("Japanese Test", Match(collection, "de-DE", 0x5B57));
+            Assert.Equal(calls, provider.TryMatchCharacterCount);
+        }
+
         private static string Match(SystemFontCollection collection, string culture, int codepoint = Han)
         {
             Assert.True(collection.TryMatchCharacter(codepoint, FontStyle.Normal, FontWeight.Normal, FontStretch.Normal,

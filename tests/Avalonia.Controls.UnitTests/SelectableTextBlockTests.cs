@@ -476,5 +476,50 @@ namespace Avalonia.Controls.UnitTests
         }
 
         private class TestTopLevel(ITopLevelImpl impl) : TopLevel(impl);
+
+        [Theory]
+        [InlineData(false, 1)]
+        [InlineData(false, 2)]
+        [InlineData(false, 3)]
+        [InlineData(true, 1)]
+        [InlineData(true, 2)]
+        [InlineData(true, 3)]
+        public void Selection_Foreground_Inside_Ligature_Should_Cover_The_Whole_Ligature(bool useInlines, int selectionStart)
+        {
+            using (UnitTestApplication.Start(TestServices.MockPlatformRenderInterface.With(
+                       textShaperImpl: new HarfBuzzTextShaper(),
+                       systemFontProvider: new TestFontManager(),
+                       assetLoader: new StandardAssetLoader())))
+            {
+                var target = new SelectableTextBlock
+                {
+                    FontFamily = new FontFamily(TextBoxTests.LigatureFontFamily),
+                    FontStyle = FontStyle.Italic,
+                    FontSize = 100,
+                    SelectionForegroundBrush = Brushes.Red
+                };
+
+                if (useInlines)
+                {
+                    target.Inlines!.Add(new Run("Office"));
+                }
+                else
+                {
+                    target.Text = "Office";
+                }
+
+                target.SelectionStart = selectionStart;
+                target.SelectionEnd = selectionStart + 1;
+
+                target.Measure(Size.Infinity);
+
+                var runs = target.TextLayout.TextLines[0].TextRuns.OfType<ShapedTextRun>().ToArray();
+                var selected = Assert.Single(runs, x => x.Properties.ForegroundBrush == Brushes.Red);
+
+                Assert.Equal("ffi", selected.Text.ToString());
+                Assert.Single(selected.GlyphRun.GlyphInfos);
+                Assert.Equal(new[] { "O", "ffi", "ce" }, runs.Select(x => x.Text.ToString()));
+            }
+        }
     }
 }

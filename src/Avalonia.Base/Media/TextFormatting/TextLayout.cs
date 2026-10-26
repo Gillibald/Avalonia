@@ -310,6 +310,52 @@ namespace Avalonia.Media.TextFormatting
         }
 
         /// <summary>
+        /// Extends a text range so that it neither starts nor ends inside a cluster, such as a ligature.
+        /// </summary>
+        /// <param name="start">The start of the range, moved back to the start of its cluster.</param>
+        /// <param name="length">The length of the range, extended to the end of the cluster it ends in.</param>
+        internal void ExtendToClusterBoundaries(ref int start, ref int length)
+        {
+            var end = start + length;
+
+            if (TryGetClusterRange(start, out var startCluster, out _))
+            {
+                start = Math.Min(start, startCluster);
+            }
+
+            if (end > 0 && TryGetClusterRange(end - 1, out var endCluster, out var endClusterLength))
+            {
+                end = Math.Max(end, endCluster + endClusterLength);
+            }
+
+            length = end - start;
+        }
+
+        private bool TryGetClusterRange(int textSourceIndex, out int clusterStart, out int clusterLength)
+        {
+            foreach (var textLine in _textLines)
+            {
+                if (textSourceIndex < textLine.FirstTextSourceIndex ||
+                    textSourceIndex >= textLine.FirstTextSourceIndex + textLine.Length)
+                {
+                    continue;
+                }
+
+                if (textLine is TextLineImpl textLineImpl)
+                {
+                    return textLineImpl.TryGetClusterRange(textSourceIndex, out clusterStart, out clusterLength);
+                }
+
+                break;
+            }
+
+            clusterStart = textSourceIndex;
+            clusterLength = 0;
+
+            return false;
+        }
+
+        /// <summary>
         /// Get the pixel location relative to the top-left of the layout box given the text position.
         /// </summary>
         /// <param name="textPosition">The text position.</param>

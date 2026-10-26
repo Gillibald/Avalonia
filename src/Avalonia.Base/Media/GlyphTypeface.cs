@@ -283,6 +283,11 @@ namespace Avalonia.Media
         // CanShapeScript. Parsing copies the layout tables, so it is deferred until a complex script
         // is actually queried (most text never triggers it). Published via the volatile field.
         private volatile HashSet<OpenTypeTag>? _shapingScriptTags;
+
+        // Read on the first ligature caret query. The reader is immutable, so a race only reads the
+        // table header twice.
+        private volatile GdefTable? _gdefTable;
+        private volatile bool _gdefTableMissing;
         private bool _shapingScriptTagsUnknown;
         private readonly object _shapingScriptTagsLock = new();
 
@@ -1921,6 +1926,60 @@ namespace Avalonia.Media
         /// Gets whether the font should be used as a last resort, if no other fonts matched.
         /// </summary>
         internal bool IsLastResort { get; }
+
+        /// <summary>
+        /// Gets the caret positions the font defines inside a ligature glyph, from the ligature caret list
+        /// of its <c>GDEF</c> table.
+        /// </summary>
+        /// <remarks>
+        /// A ligature glyph that stands for several characters (an "ffi" ligature, for example) can carry
+        /// caret positions that divide it into its components, so a caret can be placed between them.
+        /// Positions are in design units (see <see cref="FontMetrics.DesignEmHeight"/>), measured from the
+        /// glyph origin along the horizontal advance, and returned in increasing order whatever the text
+        /// direction. Multiply by the font rendering em size divided by the design em height to get device
+        /// independent units. Device table adjustments for specific pixel sizes are not applied. Carets
+        /// defined as an outline contour point cannot be resolved, so a glyph with such a caret reports
+        /// none; callers that need positions then usually divide the advance evenly.
+        /// </remarks>
+        /// <param name="glyphIndex">The ligature glyph.</param>
+        /// <param name="caretPositions">
+        /// Receives the caret positions, up to its length. Pass an empty span to query the count only.
+        /// </param>
+        /// <returns>
+        /// The number of carets the font defines for the glyph, which can exceed the length of
+        /// <paramref name="caretPositions"/>; 0 when the font defines none for the glyph or they cannot be
+        /// resolved.
+        /// </returns>
+        public int GetLigatureCaretPositions(ushort glyphIndex, Span<int> caretPositions)
+        {
+            if (_isDisposed)
+            {
+                return 0;
+            }
+
+            var gdefTable = _gdefTable;
+
+            if (gdefTable is null)
+            {
+                if (_gdefTableMissing)
+                {
+                    return 0;
+                }
+
+                gdefTable = GdefTable.TryLoad(this);
+
+                if (gdefTable is null)
+                {
+                    _gdefTableMissing = true;
+
+                    return 0;
+                }
+
+                _gdefTable = gdefTable;
+            }
+
+            return gdefTable.GetLigatureCarets(glyphIndex, caretPositions);
+        }
 
         /// <summary>
         /// Attempts to retrieve the horizontal advance width for the specified glyph.
