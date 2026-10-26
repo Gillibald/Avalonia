@@ -2509,6 +2509,253 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 .Select(r => r.Text.ToString()));
         }
 
+        private const string LigatureNotoSansItalic = "fonts:SystemFonts#Noto Sans";
+        private const string LigatureNotoSansHebrew = "fonts:SystemFonts#Noto Sans Hebrew";
+        private const string LigatureDejaVuSans = "resm:Avalonia.Skia.UnitTests.Fonts?assembly=Avalonia.Skia.UnitTests#DejaVu Sans";
+
+        [InlineData(LigatureNotoSansItalic)]
+        [InlineData(LigatureDejaVuSans)]
+        [Theory]
+        public void GetNextCaretCharacterHit_Should_Stop_Inside_Ligature(string familyName)
+        {
+            using (Start())
+            {
+                var textLine = FormatLigatureLine(familyName, new TextCharacters("Office", LigatureProperties(familyName)));
+
+                var characterHit = new CharacterHit(1);
+                var positions = new List<int>();
+
+                for (var i = 0; i < 3; i++)
+                {
+                    characterHit = textLine.GetNextCaretCharacterHit(characterHit);
+
+                    positions.Add(characterHit.FirstCharacterIndex + characterHit.TrailingLength);
+                }
+
+                Assert.Equal(new[] { 2, 3, 4 }, positions);
+            }
+        }
+
+        [InlineData(LigatureNotoSansItalic)]
+        [InlineData(LigatureDejaVuSans)]
+        [Theory]
+        public void GetPreviousCaretCharacterHit_Should_Stop_Inside_Ligature(string familyName)
+        {
+            using (Start())
+            {
+                var textLine = FormatLigatureLine(familyName, new TextCharacters("Office", LigatureProperties(familyName)));
+
+                var characterHit = new CharacterHit(4);
+                var positions = new List<int>();
+
+                for (var i = 0; i < 3; i++)
+                {
+                    characterHit = textLine.GetPreviousCaretCharacterHit(characterHit);
+
+                    positions.Add(characterHit.FirstCharacterIndex + characterHit.TrailingLength);
+                }
+
+                Assert.Equal(new[] { 3, 2, 1 }, positions);
+            }
+        }
+
+        [Fact]
+        public void GetBackspaceCaretCharacterHit_Inside_Ligature_Is_Unchanged()
+        {
+            using (Start())
+            {
+                var textLine = FormatLigatureLine(LigatureNotoSansItalic,
+                    new TextCharacters("Office", LigatureProperties(LigatureNotoSansItalic)));
+
+                var characterHit = textLine.GetBackspaceCaretCharacterHit(new CharacterHit(4));
+
+                Assert.Equal(3, characterHit.FirstCharacterIndex + characterHit.TrailingLength);
+            }
+        }
+
+        [Fact]
+        public void GetDistanceFromCharacterHit_Should_Use_Ligature_Carets()
+        {
+            using (Start())
+            {
+                // Noto Sans Italic f_f_i at 100 px: carets 24.7 and 55.7, advance 89.6.
+                var textLine = FormatLigatureLine(LigatureNotoSansItalic,
+                    new TextCharacters("Office", LigatureProperties(LigatureNotoSansItalic)));
+
+                var ligatureStart = textLine.GetDistanceFromCharacterHit(new CharacterHit(1));
+
+                Assert.Equal(ligatureStart + 24.7, textLine.GetDistanceFromCharacterHit(new CharacterHit(2)), 6);
+                Assert.Equal(ligatureStart + 55.7, textLine.GetDistanceFromCharacterHit(new CharacterHit(3)), 6);
+                Assert.Equal(ligatureStart + 89.6, textLine.GetDistanceFromCharacterHit(new CharacterHit(4)), 6);
+            }
+        }
+
+        [Fact]
+        public void GetDistanceFromCharacterHit_Should_Divide_Ligature_Evenly_Without_Carets()
+        {
+            using (Start())
+            {
+                var textLine = FormatLigatureLine(LigatureDejaVuSans,
+                    new TextCharacters("Office", LigatureProperties(LigatureDejaVuSans)));
+
+                var ligatureStart = textLine.GetDistanceFromCharacterHit(new CharacterHit(1));
+                var ligatureEnd = textLine.GetDistanceFromCharacterHit(new CharacterHit(4));
+                var third = (ligatureEnd - ligatureStart) / 3;
+
+                Assert.Equal(ligatureStart + third, textLine.GetDistanceFromCharacterHit(new CharacterHit(2)), 6);
+                Assert.Equal(ligatureStart + 2 * third, textLine.GetDistanceFromCharacterHit(new CharacterHit(3)), 6);
+            }
+        }
+
+        [Fact]
+        public void GetDistanceFromCharacterHit_Should_Use_Right_To_Left_Ligature_Caret()
+        {
+            using (Start())
+            {
+                // Noto Sans Hebrew alef-lamed (dlig) at 100 px: advance 59.3, caret 29.9 from the glyph origin.
+                var properties = LigatureProperties(LigatureNotoSansHebrew, "dlig");
+                var textLine = FormatLigatureLine(LigatureNotoSansHebrew, new TextCharacters("אל", properties));
+
+                Assert.Equal(59.3, textLine.GetDistanceFromCharacterHit(new CharacterHit(0)), 6);
+                Assert.Equal(29.9, textLine.GetDistanceFromCharacterHit(new CharacterHit(1)), 6);
+                Assert.Equal(0, textLine.GetDistanceFromCharacterHit(new CharacterHit(2)), 6);
+            }
+        }
+
+        [Fact]
+        public void GetNextCaretCharacterHit_Should_Stop_Inside_Right_To_Left_Ligature()
+        {
+            using (Start())
+            {
+                var properties = LigatureProperties(LigatureNotoSansHebrew, "dlig");
+                var textLine = FormatLigatureLine(LigatureNotoSansHebrew, new TextCharacters("אל", properties));
+
+                var next = textLine.GetNextCaretCharacterHit(new CharacterHit(0));
+
+                Assert.Equal(1, next.FirstCharacterIndex + next.TrailingLength);
+
+                var previous = textLine.GetPreviousCaretCharacterHit(new CharacterHit(2));
+
+                Assert.Equal(1, previous.FirstCharacterIndex + previous.TrailingLength);
+            }
+        }
+
+        [InlineData(LigatureNotoSansItalic)]
+        [InlineData(LigatureDejaVuSans)]
+        [Theory]
+        public void GetTextBounds_Should_Split_Inside_Ligature(string familyName)
+        {
+            using (Start())
+            {
+                var textLine = FormatLigatureLine(familyName, new TextCharacters("Office", LigatureProperties(familyName)));
+
+                var stops = Enumerable.Range(1, 4).Select(i => textLine.GetDistanceFromCharacterHit(new CharacterHit(i))).ToArray();
+
+                for (var i = 0; i < 3; i++)
+                {
+                    var bounds = textLine.GetTextBounds(1 + i, 1);
+
+                    Assert.Single(bounds);
+                    Assert.Equal(stops[i], bounds[0].Rectangle.Left, 6);
+                    Assert.Equal(stops[i + 1], bounds[0].Rectangle.Right, 6);
+                    Assert.Equal(1 + i, bounds[0].TextRunBounds[0].TextSourceCharacterIndex);
+                    Assert.Equal(1, bounds[0].TextRunBounds[0].Length);
+                }
+
+                var middleAndLast = textLine.GetTextBounds(2, 2);
+
+                Assert.Single(middleAndLast);
+                Assert.Equal(stops[1], middleAndLast[0].Rectangle.Left, 6);
+                Assert.Equal(stops[3], middleAndLast[0].Rectangle.Right, 6);
+            }
+        }
+
+        [Fact]
+        public void GetTextBounds_Should_Split_Inside_Right_To_Left_Ligature()
+        {
+            using (Start())
+            {
+                var properties = LigatureProperties(LigatureNotoSansHebrew, "dlig");
+                var textLine = FormatLigatureLine(LigatureNotoSansHebrew, new TextCharacters("אל", properties));
+
+                var alef = textLine.GetTextBounds(0, 1);
+
+                Assert.Single(alef);
+                Assert.Equal(29.9, alef[0].Rectangle.Left, 6);
+                Assert.Equal(59.3, alef[0].Rectangle.Right, 6);
+
+                var lamed = textLine.GetTextBounds(1, 1);
+
+                Assert.Single(lamed);
+                Assert.Equal(0, lamed[0].Rectangle.Left, 6);
+                Assert.Equal(29.9, lamed[0].Rectangle.Right, 6);
+            }
+        }
+
+        [Fact]
+        public void GetNextCaretCharacterHit_Should_Stop_Inside_Ligature_At_The_Start_Of_A_Run()
+        {
+            using (Start())
+            {
+                var first = LigatureProperties(LigatureNotoSansItalic);
+                var second = new GenericTextRunProperties(first.Typeface, first.FontRenderingEmSize,
+                    foregroundBrush: Brushes.Red);
+
+                var textLine = FormatLigatureLine(LigatureNotoSansItalic,
+                    new TextCharacters("ab", first), new TextCharacters("ffi", second));
+
+                Assert.Equal(2, textLine.TextRuns.OfType<ShapedTextRun>().Count());
+
+                var next = textLine.GetNextCaretCharacterHit(new CharacterHit(1, 1));
+
+                Assert.Equal(3, next.FirstCharacterIndex + next.TrailingLength);
+
+                var previous = textLine.GetPreviousCaretCharacterHit(new CharacterHit(5));
+
+                Assert.Equal(4, previous.FirstCharacterIndex + previous.TrailingLength);
+            }
+        }
+
+        [InlineData(LigatureNotoSansItalic)]
+        [InlineData(LigatureDejaVuSans)]
+        [Theory]
+        public void Every_Caret_Stop_Should_Round_Trip_Through_Its_Distance(string familyName)
+        {
+            using (Start())
+            {
+                var textLine = FormatLigatureLine(familyName, new TextCharacters("Office", LigatureProperties(familyName)));
+
+                for (var i = 0; i <= 6; i++)
+                {
+                    var distance = textLine.GetDistanceFromCharacterHit(new CharacterHit(i));
+                    var hit = textLine.GetCharacterHitFromDistance(distance);
+
+                    Assert.Equal(i, hit.FirstCharacterIndex + hit.TrailingLength);
+                }
+            }
+        }
+
+        private static GenericTextRunProperties LigatureProperties(string familyName, string? feature = null)
+        {
+            var style = familyName == LigatureNotoSansItalic ? FontStyle.Italic : FontStyle.Normal;
+            var features = feature is null ? null : new FontFeatureCollection { FontFeature.Parse(feature) };
+
+            return new GenericTextRunProperties(new Typeface(familyName, style), 100, fontFeatures: features);
+        }
+
+        private static TextLine FormatLigatureLine(string familyName, params TextRun[] textRuns)
+        {
+            var defaultProperties = LigatureProperties(familyName);
+            var textSource = new FixedRunsTextSource(textRuns);
+
+            var textLine = TextFormatter.Current.FormatLine(textSource, 0, double.PositiveInfinity,
+                new GenericTextParagraphProperties(defaultProperties));
+
+            Assert.NotNull(textLine);
+
+            return textLine!;
+        }
+
         private class FixedRunsTextSource : ITextSource
         {
             private readonly IReadOnlyList<TextRun> _textRuns;

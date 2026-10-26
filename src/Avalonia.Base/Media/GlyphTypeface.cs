@@ -283,6 +283,10 @@ namespace Avalonia.Media
         // CanShapeScript. Parsing copies the layout tables, so it is deferred until a complex script
         // is actually queried (most text never triggers it). Published via the volatile field.
         private volatile HashSet<OpenTypeTag>? _shapingScriptTags;
+
+        // Decoded on the first ligature caret query and published with a compare-exchange. The list is
+        // immutable, so a race only decodes it twice and every reader sees a complete list.
+        private LigatureCaretList? _ligatureCarets;
         private bool _shapingScriptTagsUnknown;
         private readonly object _shapingScriptTagsLock = new();
 
@@ -1921,6 +1925,50 @@ namespace Avalonia.Media
         /// Gets whether the font should be used as a last resort, if no other fonts matched.
         /// </summary>
         internal bool IsLastResort { get; }
+
+        /// <summary>
+        /// Gets the caret positions the font defines inside a ligature glyph, from the ligature caret list
+        /// of its <c>GDEF</c> table.
+        /// </summary>
+        /// <remarks>
+        /// A ligature glyph that stands for several characters (an "ffi" ligature, for example) can carry
+        /// caret positions that divide it into its components, so a caret can be placed between them.
+        /// Positions are in design units (see <see cref="FontMetrics.DesignEmHeight"/>), measured from the
+        /// glyph origin along the horizontal advance, and returned in increasing order whatever the text
+        /// direction. Multiply by the font rendering em size divided by the design em height to get device
+        /// independent units. On a variable font instance the carets include their variation deltas for
+        /// the instance. Device table adjustments for specific pixel sizes are not applied. Carets
+        /// defined as an outline contour point cannot be resolved, so a glyph with such a caret reports
+        /// none; callers that need positions then usually divide the advance evenly.
+        /// The caret list is decoded once per typeface, on the first call; the returned span stays valid
+        /// for the lifetime of the typeface and must not be modified.
+        /// </remarks>
+        /// <param name="glyphIndex">The ligature glyph.</param>
+        /// <returns>
+        /// The caret positions in increasing order; empty when the font defines none for the glyph, they
+        /// cannot be resolved, or the typeface is disposed.
+        /// </returns>
+        public ReadOnlySpan<int> GetLigatureCaretPositions(ushort glyphIndex)
+        {
+            if (_isDisposed)
+            {
+                return default;
+            }
+
+            var ligatureCarets = Volatile.Read(ref _ligatureCarets) ?? DecodeLigatureCarets();
+
+            return ligatureCarets.GetCarets(glyphIndex);
+        }
+
+        // Every variation instance is its own typeface with fixed coordinates, so the deltas are applied
+        // while decoding and the decoded list belongs to the instance.
+        private LigatureCaretList DecodeLigatureCarets()
+        {
+            var decoded = GdefTable.TryLoad(this)?.DecodeLigatureCarets(ActiveVariationCoords)
+                ?? LigatureCaretList.Empty;
+
+            return Interlocked.CompareExchange(ref _ligatureCarets, decoded, null) ?? decoded;
+        }
 
         /// <summary>
         /// Attempts to retrieve the horizontal advance width for the specified glyph.

@@ -533,26 +533,34 @@ namespace Avalonia.Media.TextFormatting
         {
             var shapedBuffer = textShaper.ShapeText(text, options);
 
-            var previousLength = 0;
+            // Both offsets count characters from the start of the shaped text.
+            var bufferStart = 0;
+            var runEnd = 0;
 
             for (var i = 0; i < textRuns.Count; i++)
             {
                 var currentRun = textRuns[i];
 
-                var splitResult = shapedBuffer.Split(previousLength + currentRun.Length);
+                runEnd += currentRun.Length;
+
+                // A split inside a cluster keeps the whole cluster in the leading half, so an earlier
+                // run can already own characters of this one. A run that lies entirely inside such a
+                // cluster has nothing left; later runs are still split at their own end offsets.
+                if (runEnd <= bufferStart)
+                {
+                    continue;
+                }
+
+                var splitResult = shapedBuffer.Split(runEnd - bufferStart);
 
                 // Split by text, not by glyph count: a run can legitimately shape to no glyphs at
                 // all and still own its characters. Shapers drop default ignorables that the font
                 // cannot hide behind a space glyph, so a run holding nothing but a line break can
                 // come back empty. Skipping it there would delete its characters from the line and
-                // leave the caller stuck at the same text position.
-                if (splitResult.First is null || splitResult.First.Text.Length == 0)
+                // leave the caller stuck at the same text position. Its characters go to the next run.
+                if (splitResult.First is not null && splitResult.First.Text.Length > 0)
                 {
-                    previousLength += currentRun.Length;
-                }
-                else
-                {
-                    previousLength = 0;
+                    bufferStart += splitResult.First.Text.Length;
 
                     results.Add(new ShapedTextRun(splitResult.First, currentRun.Properties));
                 }

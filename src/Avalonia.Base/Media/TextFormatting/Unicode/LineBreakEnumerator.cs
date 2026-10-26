@@ -314,7 +314,9 @@ namespace Avalonia.Media.TextFormatting.Unicode
         private static RuleResult LB08a(ReadOnlySpan<char> text, ref LineBreakState state)
         {
             // ZWJ ×
-            if (state.Current.LineBreakClass == LineBreakClass.ZWJ)
+            // LB9 absorbs a ZWJ that follows a base and gives it the base's class, so the joiner is
+            // recognized by the class of its own code point.
+            if (state.Current.Codepoint.LineBreakClass == LineBreakClass.ZWJ)
             {
                 return RuleResult.NoBreak;
             }

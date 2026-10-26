@@ -102,6 +102,16 @@ namespace Avalonia.Controls.Presenters
         // ArrangeOverride when the final width differs from the measured one.
         private TextLayout? _textLayout;
         private TextRunCache? _textRunCache;
+
+        // A layout of the text without selection styling, used to find cluster boundaries, and the inputs
+        // it was built from.
+        private TextLayout? _clusterLayout;
+        private string? _clusterLayoutText;
+        private Typeface _clusterLayoutTypeface;
+        private double _clusterLayoutFontSize;
+        private FontFeatureCollection? _clusterLayoutFontFeatures;
+        private double _clusterLayoutLetterSpacing;
+        private FlowDirection _clusterLayoutFlowDirection;
         private Size _constraint;
 
         private CharacterHit _lastCharacterHit;
@@ -602,6 +612,15 @@ namespace Avalonia.Controls.Presenters
             {
                 if (ShowSelectionHighlight && length > 0 && SelectionForegroundBrush != null)
                 {
+                    // The selection foreground is applied as a style override of its own. A selection that
+                    // starts or ends inside a ligature would split the ligature, so the override covers
+                    // whole clusters; the selection highlight is drawn from the exact selection.
+                    var displayText = PasswordChar != default(char) && !RevealPassword
+                        ? new string(PasswordChar, text?.Length ?? 0)
+                        : text;
+
+                    GetClusterLayout(displayText, typeface).ExtendToClusterBoundaries(ref start, ref length);
+
                     textStyleOverrides = new[]
                     {
                         new ValueSpan<TextRunProperties>(start, length,
@@ -625,6 +644,36 @@ namespace Avalonia.Controls.Presenters
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Gets a layout of the text without selection styling that answers cluster boundaries. Cluster
+        /// boundaries do not depend on the available width, so the layout is unconstrained and kept until the
+        /// text or its formatting changes.
+        /// </summary>
+        private TextLayout GetClusterLayout(string? text, Typeface typeface)
+        {
+            var clusterLayout = _clusterLayout;
+
+            if (clusterLayout is null || !ReferenceEquals(_clusterLayoutText, text) || _clusterLayoutTypeface != typeface ||
+                _clusterLayoutFontSize != FontSize || !ReferenceEquals(_clusterLayoutFontFeatures, FontFeatures) ||
+                _clusterLayoutLetterSpacing != LetterSpacing || _clusterLayoutFlowDirection != FlowDirection)
+            {
+                clusterLayout?.Dispose();
+
+                clusterLayout = new TextLayout(text, typeface, FontSize, Foreground, flowDirection: FlowDirection,
+                    letterSpacing: LetterSpacing, fontFeatures: FontFeatures);
+
+                _clusterLayout = clusterLayout;
+                _clusterLayoutText = text;
+                _clusterLayoutTypeface = typeface;
+                _clusterLayoutFontSize = FontSize;
+                _clusterLayoutFontFeatures = FontFeatures;
+                _clusterLayoutLetterSpacing = LetterSpacing;
+                _clusterLayoutFlowDirection = FlowDirection;
+            }
+
+            return clusterLayout;
         }
 
         private static string? GetCombinedText(string? text, int caretIndex, string? preeditText)
@@ -1059,6 +1108,9 @@ namespace Avalonia.Controls.Presenters
                 _caretTimer.Stop();
                 _caretTimer.Tick -= CaretTimerTick;
             }
+
+            _clusterLayout?.Dispose();
+            _clusterLayout = null;
         }
 
         private void OnPreeditChanged(string? preeditText, int? cursorPosition)

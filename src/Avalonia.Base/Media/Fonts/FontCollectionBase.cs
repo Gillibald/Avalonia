@@ -166,7 +166,9 @@ namespace Avalonia.Media.Fonts
             // --- Tier C: deterministic cache sweep (non last-resort), culture-scored ---
             // Only faces for the requested writing system answer here: a loaded face that merely maps
             // the codepoint (a Korean face for Japanese Han) waits until the platform, which places
-            // text by language, had its turn.
+            // text by language, had its turn. Han in a culture that names no writing system never
+            // answers here, so whichever CJK face happens to be loaded does not decide it; the
+            // platform's choice is recorded for the bucket and Tier B replays it.
             if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: false,
                     writingSystemOnly: true, out var bestGt, out var bestFamilyName))
             {
@@ -279,7 +281,8 @@ namespace Avalonia.Media.Fonts
                 }
 
                 if (writingSystemOnly &&
-                    FontFallbackScriptHints.MatchWritingSystem(candidate, codepoint, culture) == WritingSystemMatch.Mismatch)
+                    FontFallbackScriptHints.MatchWritingSystem(candidate, codepoint, culture) is
+                        WritingSystemMatch.Mismatch or WritingSystemMatch.Unspecified)
                 {
                     continue;
                 }

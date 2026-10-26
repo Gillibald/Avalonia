@@ -1090,6 +1090,159 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
         }
 
         [Fact]
+        public void Paint_Run_Inside_A_Ligature_Should_Not_Shift_Following_Runs()
+        {
+            using (Start())
+            {
+                var typeface = new Typeface(FontFamily.Parse(
+                    "resm:Avalonia.Skia.UnitTests.Fonts?assembly=Avalonia.Skia.UnitTests#DejaVu Sans"));
+
+                // "Office": DejaVu Sans shapes "ffi" (characters 1-3) into one ligature cluster.
+                // The red run holds only the second "f", which lies inside that cluster.
+                var black = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Black);
+                var red = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Red);
+                var blue = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Blue);
+
+                var source = new ContiguousRunsTextSource("Office", (2, black), (1, red), (3, blue));
+
+                var textLine = TextFormatter.Current.FormatLine(source, 0, double.PositiveInfinity,
+                    new GenericTextParagraphProperties(black));
+
+                Assert.NotNull(textLine);
+
+                var runs = textLine.TextRuns.OfType<ShapedTextRun>().ToList();
+
+                // The ligature cluster belongs to the run that contains its first character; the
+                // red run has no character outside it and every later run keeps its own characters.
+                Assert.Equal(2, runs.Count);
+
+                Assert.Equal("Offi", runs[0].Text.ToString());
+                Assert.Same(Brushes.Black, runs[0].Properties.ForegroundBrush);
+
+                Assert.Equal("ce", runs[1].Text.ToString());
+                Assert.Same(Brushes.Blue, runs[1].Properties.ForegroundBrush);
+
+                Assert.Equal(6, textLine.Length);
+            }
+        }
+
+        [Fact]
+        public void Paint_Run_Starting_Inside_A_Ligature_Should_Keep_Its_Characters_After_It()
+        {
+            using (Start())
+            {
+                var typeface = new Typeface(FontFamily.Parse(
+                    "resm:Avalonia.Skia.UnitTests.Fonts?assembly=Avalonia.Skia.UnitTests#DejaVu Sans"));
+
+                var black = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Black);
+                var red = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Red);
+                var blue = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Blue);
+
+                // The red run "fic" starts inside the "ffi" ligature and ends after it.
+                var source = new ContiguousRunsTextSource("Office", (2, black), (3, red), (1, blue));
+
+                var textLine = TextFormatter.Current.FormatLine(source, 0, double.PositiveInfinity,
+                    new GenericTextParagraphProperties(black));
+
+                Assert.NotNull(textLine);
+
+                var runs = textLine.TextRuns.OfType<ShapedTextRun>().ToList();
+
+                Assert.Equal(3, runs.Count);
+
+                Assert.Equal("Offi", runs[0].Text.ToString());
+                Assert.Same(Brushes.Black, runs[0].Properties.ForegroundBrush);
+
+                Assert.Equal("c", runs[1].Text.ToString());
+                Assert.Same(Brushes.Red, runs[1].Properties.ForegroundBrush);
+
+                Assert.Equal("e", runs[2].Text.ToString());
+                Assert.Same(Brushes.Blue, runs[2].Properties.ForegroundBrush);
+            }
+        }
+
+        [Fact]
+        public void Paint_Run_Inside_A_Right_To_Left_Ligature_Should_Not_Shift_Following_Runs()
+        {
+            using (Start())
+            {
+                var typeface = new Typeface(new FontFamily(
+                    new Uri("resm:Avalonia.Skia.UnitTests.Assets?assembly=Avalonia.Skia.UnitTests"),
+                    "Noto Sans Arabic"));
+
+                var black = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Black);
+                var red = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Red);
+                var blue = new GenericTextRunProperties(typeface, 40, foregroundBrush: Brushes.Blue);
+
+                // "سلام": lam (1) and alef (2) shape into one lam-alef ligature cluster. The red run
+                // holds only the alef.
+                const string text = "سلام";
+
+                var source = new ContiguousRunsTextSource(text, (2, black), (1, red), (1, blue));
+
+                var textLine = TextFormatter.Current.FormatLine(source, 0, double.PositiveInfinity,
+                    new GenericTextParagraphProperties(black));
+
+                Assert.NotNull(textLine);
+
+                var runs = textLine.TextRuns.OfType<ShapedTextRun>()
+                    .OrderBy(r => GetStart(text, r))
+                    .ToList();
+
+                Assert.Equal(2, runs.Count);
+
+                Assert.Equal(text.Substring(0, 3), runs[0].Text.ToString());
+                Assert.Same(Brushes.Black, runs[0].Properties.ForegroundBrush);
+
+                Assert.Equal(text.Substring(3, 1), runs[1].Text.ToString());
+                Assert.Same(Brushes.Blue, runs[1].Properties.ForegroundBrush);
+            }
+
+            static int GetStart(string text, ShapedTextRun run)
+            {
+                Assert.True(System.Runtime.InteropServices.MemoryMarshal.TryGetString(run.Text, out var s,
+                    out var start, out _));
+                Assert.Same(text, s);
+
+                return start;
+            }
+        }
+
+        /// <summary>
+        /// Serves consecutive slices of one string, so runs that differ only in paint are joined and
+        /// shaped together by the formatter.
+        /// </summary>
+        private sealed class ContiguousRunsTextSource : ITextSource
+        {
+            private readonly string _text;
+            private readonly (int Length, TextRunProperties Properties)[] _runs;
+
+            public ContiguousRunsTextSource(string text, params (int, TextRunProperties)[] runs)
+            {
+                _text = text;
+                _runs = runs;
+            }
+
+            public TextRun? GetTextRun(int textSourceIndex)
+            {
+                var start = 0;
+
+                foreach (var (length, properties) in _runs)
+                {
+                    if (textSourceIndex < start + length)
+                    {
+                        return new TextCharacters(_text.AsMemory(textSourceIndex, start + length - textSourceIndex),
+                            properties);
+                    }
+
+                    start += length;
+                }
+
+                return null;
+            }
+        }
+
+        [Fact]
         public void Should_Wrap_Chinese()
         {
             using (Start())
@@ -1352,6 +1505,46 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 {
                     drawingContext.FillRectangle(_fill, _rect);
                 }
+            }
+        }
+
+        [Win32Fact("Windows font")]
+        public void Emoji_Zwj_Sequence_Should_Wrap_Together_With_Closing_Punctuation()
+        {
+            using (Start())
+            {
+                // x, space, the family emoji (man ZWJ woman ZWJ girl), closing parenthesis.
+                const string text = "x \U0001F468‍\U0001F469‍\U0001F467)";
+
+                var defaultProperties = new GenericTextRunProperties(new Typeface("Segoe UI Emoji"), 12);
+                var paragraphProperties = new GenericTextParagraphProperties(defaultProperties,
+                    textWrapping: TextWrapping.Wrap);
+                var textSource = new SingleBufferTextSource(text, defaultProperties);
+                var formatter = new TextFormatterImpl();
+
+                var unwrapped = formatter.FormatLine(textSource, 0, double.PositiveInfinity, paragraphProperties);
+
+                Assert.NotNull(unwrapped);
+
+                // Wide enough for everything but the closing parenthesis.
+                var width = unwrapped.GetDistanceFromCharacterHit(new CharacterHit(text.Length - 1)) + 0.5;
+
+                var lineLengths = new List<int>();
+                var currentPosition = 0;
+
+                while (currentPosition < text.Length)
+                {
+                    var textLine = formatter.FormatLine(textSource, currentPosition, width, paragraphProperties);
+
+                    Assert.NotNull(textLine);
+
+                    lineLengths.Add(textLine.Length);
+                    currentPosition += textLine.Length;
+                }
+
+                // The parenthesis cannot start a line (LB13) and nothing breaks after a ZWJ (LB8a), so the
+                // whole emoji moves to the second line with it.
+                Assert.Equal(new[] { 2, 9 }, lineLengths);
             }
         }
 

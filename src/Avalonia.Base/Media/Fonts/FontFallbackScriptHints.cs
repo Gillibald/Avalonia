@@ -131,11 +131,18 @@ namespace Avalonia.Media.Fonts
         /// for in the culture's writing system (Japanese, Korean, Simplified or Traditional
         /// Chinese), Hangul in Korean and kana in Japanese; a face matches when it declares that
         /// writing system, in its <c>meta</c> table or, without one, through its OS/2 code pages.
-        /// Text in any other script asks for a face that supports the script.
+        /// Text in any other script asks for a face that supports the script. Han in a culture that
+        /// names none of these writing systems is <see cref="WritingSystemMatch.Unspecified"/>: any
+        /// regional design could answer it, so the choice belongs to the platform.
         /// </summary>
         public static WritingSystemMatch MatchWritingSystem(GlyphTypeface candidate, Codepoint codepoint, CultureInfo? culture)
         {
             var script = codepoint.Script;
+
+            if (script == Script.Han && GetHanWritingSystem(culture) is null)
+            {
+                return WritingSystemMatch.Unspecified;
+            }
 
             var subtag = script switch
             {
@@ -325,5 +332,11 @@ namespace Avalonia.Media.Fonts
 
         /// <summary>The face declares only other writing systems, or lacks the requested script.</summary>
         Mismatch,
+
+        /// <summary>
+        /// The request names no writing system although the script has regional designs (Han in a
+        /// culture without a CJK writing system), so no face can be judged to match it.
+        /// </summary>
+        Unspecified,
     }
 }
