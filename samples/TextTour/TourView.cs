@@ -48,7 +48,7 @@ namespace TextTour
                 () => new PlaceholderChapter(state, "Start"),
                 () => new UnitsChapter(state),
                 () => new PlaceholderChapter(state, "Fonts"),
-                () => new PlaceholderChapter(state, "Tokens"),
+                () => new TokensChapter(state),
                 () => new PlaceholderChapter(state, "Layout"),
                 () => new PlaceholderChapter(state, "Hits"),
                 () => new DisplayChapter(state),
