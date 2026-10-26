@@ -98,6 +98,7 @@
     <Project Path="samples/TextShowcase.Android/TextShowcase.Android.csproj">
       <Deploy />
     </Project>
+    <Project Path="samples/TextTour/TextTour.csproj" />
     <Project Path="samples/TextStress/TextStress.csproj" />
     <Project Path="samples/TextStress.Android/TextStress.Android.csproj">
       <Deploy />

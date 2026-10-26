@@ -16,6 +16,7 @@
       "samples\\TextLab\\TextLab.csproj",
       "samples\\TextShowcase\\TextShowcase.csproj",
       "samples\\TextStress\\TextStress.csproj",
+      "samples\\TextTour\\TextTour.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContextPlug\\UnloadableAssemblyLoadContextPlug.csproj",
       "samples\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext\\UnloadableAssemblyLoadContext.csproj",
       "samples\\XEmbedSample\\XEmbedSample.csproj",
