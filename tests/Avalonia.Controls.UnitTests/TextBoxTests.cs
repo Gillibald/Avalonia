@@ -2646,6 +2646,147 @@ namespace Avalonia.Controls.UnitTests
         }
 
         [Fact]
+        public void Delete_After_Selection_Collapsed_From_Code_Should_Remove_One_Character_At_The_Caret()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            // (ab[cd]ef ffi) collapsed to (ab|cdef ffi)
+            target.SelectionStart = 2;
+            target.SelectionEnd = 2;
+
+            RaiseKeyEvent(target, Key.Delete, KeyModifiers.None);
+
+            Assert.Equal("abdef ffi", target.Text);
+            Assert.Equal(2, target.CaretIndex);
+        }
+
+        [Fact]
+        public void Backspace_After_Selection_Collapsed_From_Code_Should_Remove_One_Character_Before_The_Caret()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            target.SelectionStart = 2;
+            target.SelectionEnd = 2;
+
+            RaiseKeyEvent(target, Key.Back, KeyModifiers.None);
+
+            Assert.Equal("acdef ffi", target.Text);
+            Assert.Equal(1, target.CaretIndex);
+        }
+
+        [Fact]
+        public void Delete_After_SelectionStart_Collapses_Selection_From_Code_Should_Remove_One_Character_At_The_Caret()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            // The last assignment collapses the selection through SelectionStart.
+            target.SelectionStart = 0;
+            target.SelectionEnd = 2;
+            target.SelectionStart = 2;
+
+            RaiseKeyEvent(target, Key.Delete, KeyModifiers.None);
+
+            Assert.Equal("abdef ffi", target.Text);
+        }
+
+        [Fact]
+        public void Delete_After_Backward_Selection_Collapsed_From_Code_Should_Remove_One_Character_At_The_Caret()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = new TextBox
+            {
+                Template = CreateThemeLikeTemplate(),
+                Text = "abcdef ffi",
+                CaretIndex = 4
+            };
+            target.ApplyTemplate();
+
+            // (ab]cd[ef ffi)
+            RaiseKeyEvent(target, Key.Left, KeyModifiers.Shift);
+            RaiseKeyEvent(target, Key.Left, KeyModifiers.Shift);
+
+            Assert.Equal(4, target.SelectionStart);
+            Assert.Equal(2, target.SelectionEnd);
+
+            target.SelectionEnd = 4;
+
+            RaiseKeyEvent(target, Key.Delete, KeyModifiers.None);
+
+            Assert.Equal("abcdf ffi", target.Text);
+        }
+
+        [Fact]
+        public void Right_After_Selection_Collapsed_From_Code_Should_Move_Caret_By_One_Character()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            target.SelectionStart = 2;
+            target.SelectionEnd = 2;
+
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.None);
+
+            Assert.Equal(3, target.CaretIndex);
+        }
+
+        [Fact]
+        public void Collapsing_Selection_From_Code_Should_Move_Presenter_Caret()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+            var presenter = target.FindDescendantOfType<ScrollViewer>()?.Content as TextPresenter;
+
+            Assert.NotNull(presenter);
+            Assert.Equal(4, presenter.CaretIndex);
+
+            target.SelectionStart = 2;
+            target.SelectionEnd = 2;
+
+            Assert.Equal(2, presenter.CaretIndex);
+            var nextHit = presenter.GetNextCharacterHit();
+
+            Assert.Equal(3, nextHit.FirstCharacterIndex + nextHit.TrailingLength);
+        }
+
+        [Fact]
+        public void Delete_After_CaretIndex_Set_From_Code_Following_A_Keyboard_Selection_Should_Remove_One_Character()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            target.CaretIndex = 3;
+
+            RaiseKeyEvent(target, Key.Delete, KeyModifiers.None);
+
+            Assert.Equal("abcef ffi", target.Text);
+        }
+
+        private static TextBox CreateTextBoxWithForwardKeyboardSelection()
+        {
+            var target = new TextBox
+            {
+                Template = CreateThemeLikeTemplate(),
+                Text = "abcdef ffi",
+                CaretIndex = 2
+            };
+            target.ApplyTemplate();
+
+            // (ab[cd]ef ffi): the selection's moving end and the presenter caret sit at 4
+            // while CaretIndex stays at the anchor.
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
+
+            Assert.Equal(2, target.SelectionStart);
+            Assert.Equal(4, target.SelectionEnd);
+            Assert.Equal(2, target.CaretIndex);
+
+            return target;
+        }
+
+        [Fact]
         public void PlaceholderForeground_Can_Be_Set()
         {
             using (UnitTestApplication.Start(Services))
@@ -2890,6 +3031,32 @@ namespace Avalonia.Controls.UnitTests
                         Priority = BindingPriority.Template,
                         RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent),
                     }
+                }.RegisterInNameScope(scope)
+            }.RegisterInNameScope(scope));
+        }
+
+        /// <summary>
+        /// Binds the presenter like the built-in themes do: caret and selection flow one way from the
+        /// TextBox, so the presenter caret can move during a keyboard selection without changing
+        /// <see cref="TextBox.CaretIndex"/>.
+        /// </summary>
+        private static IControlTemplate CreateThemeLikeTemplate()
+        {
+            return new FuncControlTemplate<TextBox>((control, scope) =>
+            new ScrollViewer
+            {
+                Name = "PART_ScrollViewer",
+                Template = new FuncControlTemplate<ScrollViewer>(ScrollViewerTests.CreateTemplate),
+                Content = new TextPresenter
+                {
+                    Name = "PART_TextPresenter",
+                    [!!TextPresenter.TextProperty] = new TemplateBinding(TextBox.TextProperty)
+                    {
+                        Mode = BindingMode.TwoWay
+                    },
+                    [!TextPresenter.CaretIndexProperty] = new TemplateBinding(TextBox.CaretIndexProperty),
+                    [!TextPresenter.SelectionStartProperty] = new TemplateBinding(TextBox.SelectionStartProperty),
+                    [!TextPresenter.SelectionEndProperty] = new TemplateBinding(TextBox.SelectionEndProperty)
                 }.RegisterInNameScope(scope)
             }.RegisterInNameScope(scope));
         }
