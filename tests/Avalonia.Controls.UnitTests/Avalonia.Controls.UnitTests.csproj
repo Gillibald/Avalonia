@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Avalonia.Controls\Avalonia.Controls.csproj" />
     <ProjectReference Include="..\Avalonia.UnitTests\Avalonia.UnitTests.csproj" />
     <Compile Include="../Shared/ScopedSanityCheck.cs"/>
+    <EmbeddedResource Include="..\Avalonia.RenderTests\Assets\NotoSans-Italic.ttf" Link="Assets\NotoSans-Italic.ttf" />
     <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
   </ItemGroup>
 </Project>

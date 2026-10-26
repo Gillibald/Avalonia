@@ -153,6 +153,101 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
+        // Noto Sans Italic shapes the "ffi" of "Office" as one f_f_i ligature with two caret positions.
+        internal const string LigatureFontFamily = "resm:Avalonia.Controls.UnitTests.Assets?assembly=Avalonia.Controls.UnitTests#Noto Sans";
+
+        private static TextBox CreateLigatureTextBox(int caretIndex)
+        {
+            var target = new TextBox
+            {
+                Template = CreateTemplate(),
+                FontFamily = new FontFamily(LigatureFontFamily),
+                FontStyle = FontStyle.Italic,
+                Text = "Office",
+            };
+
+            target.ApplyTemplate();
+            target.Measure(Size.Infinity);
+            target.CaretIndex = caretIndex;
+
+            return target;
+        }
+
+
+        [Fact]
+        public void Right_Arrow_Should_Stop_Inside_Ligature()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = CreateLigatureTextBox(1);
+                var positions = new List<int>();
+
+                for (var i = 0; i < 3; i++)
+                {
+                    RaiseKeyEvent(target, Key.Right, 0);
+
+                    positions.Add(target.CaretIndex);
+                }
+
+                Assert.Equal(new[] { 2, 3, 4 }, positions);
+            }
+        }
+
+        [Fact]
+        public void Left_Arrow_Should_Stop_Inside_Ligature()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = CreateLigatureTextBox(4);
+                var positions = new List<int>();
+
+                for (var i = 0; i < 3; i++)
+                {
+                    RaiseKeyEvent(target, Key.Left, 0);
+
+                    positions.Add(target.CaretIndex);
+                }
+
+                Assert.Equal(new[] { 3, 2, 1 }, positions);
+            }
+        }
+
+        [Fact]
+        public void Delete_Inside_Ligature_Should_Remove_One_Grapheme()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = CreateLigatureTextBox(1);
+
+                RaiseKeyEvent(target, Key.Delete, 0);
+
+                Assert.Equal("Ofice", target.Text);
+                Assert.Equal(1, target.CaretIndex);
+
+                target.Text = "Office";
+                target.Measure(Size.Infinity);
+                target.CaretIndex = 3;
+
+                RaiseKeyEvent(target, Key.Delete, 0);
+
+                Assert.Equal("Offce", target.Text);
+            }
+        }
+
+        [Fact]
+        public void Backspace_After_Ligature_Should_Remove_Its_Last_Component()
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var target = CreateLigatureTextBox(4);
+
+                RaiseKeyEvent(target, Key.Back, 0);
+
+                Assert.Equal("Offce", target.Text);
+                Assert.Equal(3, target.CaretIndex);
+            }
+        }
+
         [Fact]
         public void CaretIndex_Can_Moved_To_Position_After_The_End_Of_Text_With_Arrow_Key()
         {
