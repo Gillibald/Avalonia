@@ -1227,6 +1227,50 @@ namespace Avalonia.Media.TextFormatting
         }
 
         /// <summary>
+        /// Finds the cluster of shaped text that contains a text source index of this line.
+        /// </summary>
+        /// <param name="textSourceIndex">The text source index.</param>
+        /// <param name="clusterStart">The text source index the cluster starts at.</param>
+        /// <param name="clusterLength">The length of the cluster.</param>
+        /// <returns><see langword="false"/> when the index does not fall on shaped text of this line.</returns>
+        internal bool TryGetClusterRange(int textSourceIndex, out int clusterStart, out int clusterLength)
+        {
+            clusterStart = textSourceIndex;
+            clusterLength = 0;
+
+            if (_indexedTextRuns is null)
+            {
+                return false;
+            }
+
+            foreach (var indexedRun in _indexedTextRuns)
+            {
+                if (indexedRun.TextRun is not ShapedTextRun shapedRun)
+                {
+                    continue;
+                }
+
+                var runStart = indexedRun.TextSourceCharacterIndex;
+
+                if (textSourceIndex < runStart || textSourceIndex >= runStart + shapedRun.Length)
+                {
+                    continue;
+                }
+
+                var glyphRun = shapedRun.GlyphRun;
+                var firstCluster = glyphRun.Metrics.FirstCluster;
+                var cluster = glyphRun.FindNearestCharacterHit(firstCluster + textSourceIndex - runStart, out _);
+
+                clusterStart = runStart + cluster.FirstCharacterIndex - firstCluster;
+                clusterLength = cluster.TrailingLength;
+
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Gets the run index of the specified codepoint index.
         /// </summary>
         /// <param name="codepointIndex">The codepoint index.</param>

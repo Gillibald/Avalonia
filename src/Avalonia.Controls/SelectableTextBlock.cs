@@ -204,6 +204,14 @@ namespace Avalonia.Controls
 
             if (length > 0 && SelectionForegroundBrush != null)
             {
+                // The selection foreground is applied as a style override of its own. A selection that
+                // starts or ends inside a ligature would split the ligature, so the override covers whole
+                // clusters; the selection highlight is drawn from the exact selection.
+                using (var clusterLayout = CreateTextLayout(text, paragraphProperties, null))
+                {
+                    clusterLayout.ExtendToClusterBoundaries(ref start, ref length);
+                }
+
                 if (_textRuns != null)
                 {
                     // Apply selection foreground color without changing the original text formatting.
@@ -255,6 +263,12 @@ namespace Avalonia.Controls
                 }
             }
 
+            return CreateTextLayout(text, paragraphProperties, textStyleOverrides);
+        }
+
+        private TextLayout CreateTextLayout(string? text, TextParagraphProperties paragraphProperties,
+            IReadOnlyList<ValueSpan<TextRunProperties>>? textStyleOverrides)
+        {
             ITextSource textSource;
 
             if (_textRuns != null)
@@ -263,7 +277,8 @@ namespace Avalonia.Controls
             }
             else
             {
-                textSource = new FormattedTextSource(text ?? "", defaultProperties, textStyleOverrides);
+                textSource = new FormattedTextSource(text ?? "", paragraphProperties.DefaultTextRunProperties,
+                    textStyleOverrides);
             }
 
             var maxSize = GetMaxSizeFromConstraint();
