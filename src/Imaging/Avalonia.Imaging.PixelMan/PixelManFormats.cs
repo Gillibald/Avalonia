@@ -54,6 +54,10 @@ namespace Avalonia.Imaging.PixelMan
                 format == PmPixelFormat.Bgra1555 ? PixelFormats.Bgra5551 :
                 format == PmPixelFormat.Bgr48 ? PixelFormats.Bgr48Linear :
                 format == PmPixelFormat.Bgra64 || format == PmPixelFormat.Pbgra64 ? PixelFormats.Bgra64Linear :
+                format == PmPixelFormat.Rgba64Fixed ? PixelFormats.Rgba64Linear :
+                format == PmPixelFormat.Cmyka40 ? PixelFormats.Cmyka40 :
+                format == PmPixelFormat.Cmyka80 ? PixelFormats.Cmyka80 :
+                format == PmPixelFormat.Rgb96Float ? PixelFormats.Rgb96Float :
                 null;
 
             pixelFormat = mapped ?? default;
@@ -113,6 +117,10 @@ namespace Avalonia.Imaging.PixelMan
                 PixelFormatEnum.Bgra5551 => PmPixelFormat.Bgra1555,
                 PixelFormatEnum.Bgr48Linear => PmPixelFormat.Bgr48,
                 PixelFormatEnum.Bgra64Linear => premultiplied ? PmPixelFormat.Pbgra64 : PmPixelFormat.Bgra64,
+                PixelFormatEnum.Rgba64Linear when !premultiplied => PmPixelFormat.Rgba64Fixed,
+                PixelFormatEnum.Cmyka40 => PmPixelFormat.Cmyka40,
+                PixelFormatEnum.Cmyka80 => PmPixelFormat.Cmyka80,
+                PixelFormatEnum.Rgb96Float => PmPixelFormat.Rgb96Float,
                 _ => null,
             };
         }
