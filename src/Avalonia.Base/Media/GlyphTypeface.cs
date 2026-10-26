@@ -284,10 +284,9 @@ namespace Avalonia.Media
         // is actually queried (most text never triggers it). Published via the volatile field.
         private volatile HashSet<OpenTypeTag>? _shapingScriptTags;
 
-        // Read on the first ligature caret query. The reader is immutable, so a race only reads the
-        // table header twice.
-        private volatile GdefTable? _gdefTable;
-        private volatile bool _gdefTableMissing;
+        // Decoded on the first ligature caret query and published with a compare-exchange. The list is
+        // immutable, so a race only decodes it twice and every reader sees a complete list.
+        private LigatureCaretList? _ligatureCarets;
         private bool _shapingScriptTagsUnknown;
         private readonly object _shapingScriptTagsLock = new();
 
@@ -1941,45 +1940,34 @@ namespace Avalonia.Media
         /// the instance. Device table adjustments for specific pixel sizes are not applied. Carets
         /// defined as an outline contour point cannot be resolved, so a glyph with such a caret reports
         /// none; callers that need positions then usually divide the advance evenly.
+        /// The caret list is decoded once per typeface, on the first call; the returned span stays valid
+        /// for the lifetime of the typeface and must not be modified.
         /// </remarks>
         /// <param name="glyphIndex">The ligature glyph.</param>
-        /// <param name="caretPositions">
-        /// Receives the caret positions, up to its length. Pass an empty span to query the count only.
-        /// </param>
         /// <returns>
-        /// The number of carets the font defines for the glyph, which can exceed the length of
-        /// <paramref name="caretPositions"/>; 0 when the font defines none for the glyph or they cannot be
-        /// resolved.
+        /// The caret positions in increasing order; empty when the font defines none for the glyph, they
+        /// cannot be resolved, or the typeface is disposed.
         /// </returns>
-        public int GetLigatureCaretPositions(ushort glyphIndex, Span<int> caretPositions)
+        public ReadOnlySpan<int> GetLigatureCaretPositions(ushort glyphIndex)
         {
             if (_isDisposed)
             {
-                return 0;
+                return default;
             }
 
-            var gdefTable = _gdefTable;
+            var ligatureCarets = Volatile.Read(ref _ligatureCarets) ?? DecodeLigatureCarets();
 
-            if (gdefTable is null)
-            {
-                if (_gdefTableMissing)
-                {
-                    return 0;
-                }
+            return ligatureCarets.GetCarets(glyphIndex);
+        }
 
-                gdefTable = GdefTable.TryLoad(this);
+        // Every variation instance is its own typeface with fixed coordinates, so the deltas are applied
+        // while decoding and the decoded list belongs to the instance.
+        private LigatureCaretList DecodeLigatureCarets()
+        {
+            var decoded = GdefTable.TryLoad(this)?.DecodeLigatureCarets(ActiveVariationCoords)
+                ?? LigatureCaretList.Empty;
 
-                if (gdefTable is null)
-                {
-                    _gdefTableMissing = true;
-
-                    return 0;
-                }
-
-                _gdefTable = gdefTable;
-            }
-
-            return gdefTable.GetLigatureCarets(glyphIndex, caretPositions, ActiveVariationCoords);
+            return Interlocked.CompareExchange(ref _ligatureCarets, decoded, null) ?? decoded;
         }
 
         /// <summary>

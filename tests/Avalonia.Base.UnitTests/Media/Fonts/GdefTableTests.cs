@@ -60,16 +60,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
             Assert.NotNull(table);
 
-            var carets = new int[4];
-
-            Assert.Equal(2, table!.GetLigatureCarets(3, carets, new[] { 1f }));
-            Assert.Equal(new[] { 100, 490 }, carets.AsSpan(0, 2).ToArray());
-
-            Assert.Equal(2, table.GetLigatureCarets(3, carets, new[] { 0.5f }));
-            Assert.Equal(new[] { 100, 470 }, carets.AsSpan(0, 2).ToArray());
-
-            Assert.Equal(2, table.GetLigatureCarets(3, carets));
-            Assert.Equal(new[] { 100, 450 }, carets.AsSpan(0, 2).ToArray());
+            Assert.Equal(new[] { 100, 490 }, table!.DecodeLigatureCarets(new[] { 1f }).GetCarets(3).ToArray());
+            Assert.Equal(new[] { 100, 470 }, table.DecodeLigatureCarets(new[] { 0.5f }).GetCarets(3).ToArray());
+            Assert.Equal(new[] { 100, 450 }, table.DecodeLigatureCarets().GetCarets(3).ToArray());
         }
 
         [Fact]
@@ -106,23 +99,6 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             var gdef = BuildGdef(CoverageFormat1(5), Lig(Caret1(400), Caret1(-20), Caret1(150)));
 
             Assert.Equal(new[] { -20, 150, 400 }, Carets(gdef, 5));
-        }
-
-        [Fact]
-        public void Short_Destination_Receives_The_First_Carets_And_The_Full_Count()
-        {
-            using var app = UnitTestApplication.Start();
-
-            var gdef = BuildGdef(CoverageFormat1(5), Lig(Caret1(300), Caret1(100), Caret1(200)));
-            var table = GdefTable.TryParse(gdef);
-
-            Assert.NotNull(table);
-
-            Span<int> carets = stackalloc int[2];
-
-            Assert.Equal(3, table!.GetLigatureCarets(5, carets));
-            Assert.Equal(new[] { 100, 200 }, carets.ToArray());
-            Assert.Equal(3, table.GetLigatureCarets(5, Span<int>.Empty));
         }
 
         [Theory]
@@ -167,10 +143,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
                 return Array.Empty<int>();
             }
 
-            var carets = new int[16];
-            var count = table.GetLigatureCarets(glyph, carets);
-
-            return carets.AsSpan(0, Math.Min(count, carets.Length)).ToArray();
+            return table.DecodeLigatureCarets().GetCarets(glyph).ToArray();
         }
 
         private static byte[] BuildGdef(byte[] coverage, params byte[][] ligGlyphs)

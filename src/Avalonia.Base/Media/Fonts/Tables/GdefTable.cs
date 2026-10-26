@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Generic;
 using Avalonia.Media.Fonts.Tables.Variation;
 
 namespace Avalonia.Media.Fonts.Tables
@@ -9,16 +10,12 @@ namespace Avalonia.Media.Fonts.Tables
     /// See <see href="https://learn.microsoft.com/typography/opentype/spec/gdef"/>.
     /// </summary>
     /// <remarks>
-    /// The table is kept as it is stored in the font and searched per query; nothing is expanded up
-    /// front. Malformed data makes the affected glyph report no carets instead of throwing, because the
+    /// Malformed data makes the affected glyph report no carets instead of throwing, because the
     /// callers are layout and hit testing.
     /// </remarks>
     internal sealed class GdefTable
     {
         internal static OpenTypeTag Tag { get; } = OpenTypeTag.Parse("GDEF");
-
-        // Carets of one ligature are sorted on the stack up to this count, on the heap beyond it.
-        private const int MaxStackCarets = 32;
 
         private readonly ReadOnlyMemory<byte> _table;
         private readonly int _ligCaretListOffset;
@@ -76,17 +73,13 @@ namespace Avalonia.Media.Fonts.Tables
         }
 
         /// <summary>
-        /// Gets the caret positions defined for a ligature glyph, in design units from the glyph origin,
-        /// in increasing order. With <paramref name="variationCoordinates"/>, the normalized coordinates of
-        /// a variable font instance in fvar axis order, carets that carry a variation index move by their
-        /// delta for that instance.
+        /// Decodes the carets of every ligature glyph in the ligature caret list, in design units from the
+        /// glyph origin, in increasing order per glyph. A ligature with a caret that cannot be resolved is
+        /// left out, so it reports no carets. With <paramref name="variationCoordinates"/>, the normalized
+        /// coordinates of a variable font instance in fvar axis order, carets that carry a variation index
+        /// move by their delta for that instance.
         /// </summary>
-        /// <returns>
-        /// The number of carets defined for the glyph, which can exceed the length of
-        /// <paramref name="caretPositions"/>; 0 when there are none or any of them cannot be resolved.
-        /// </returns>
-        public int GetLigatureCarets(ushort glyphIndex, Span<int> caretPositions,
-            ReadOnlySpan<float> variationCoordinates = default)
+        public LigatureCaretList DecodeLigatureCarets(ReadOnlySpan<float> variationCoordinates = default)
         {
             var span = _table.Span;
 
@@ -94,17 +87,111 @@ namespace Avalonia.Media.Fonts.Tables
             var listOffset = _ligCaretListOffset;
 
             if (!TryReadUInt16(span, listOffset, out var coverageOffset) ||
-                !TryReadUInt16(span, listOffset + 2, out var ligGlyphCount))
+                !TryReadUInt16(span, listOffset + 2, out var ligGlyphCount) || ligGlyphCount == 0)
             {
-                return 0;
+                return LigatureCaretList.Empty;
             }
 
-            var coverageIndex = GetCoverageIndex(span, listOffset + coverageOffset, glyphIndex);
+            var coverage = listOffset + coverageOffset;
 
-            if (coverageIndex < 0 || coverageIndex >= ligGlyphCount ||
-                !TryReadUInt16(span, listOffset + 4 + 2 * coverageIndex, out var ligGlyphOffset))
+            if (!TryReadUInt16(span, coverage, out var coverageFormat) ||
+                !TryReadUInt16(span, coverage + 2, out var coverageCount))
             {
-                return 0;
+                return LigatureCaretList.Empty;
+            }
+
+            var ligatures = new List<(ushort Glyph, int Start, int Count)>();
+            var positions = new List<int>();
+
+            switch (coverageFormat)
+            {
+                // Format 1: uint16 glyphArray[glyphCount]; the coverage index is the array index.
+                case 1:
+                    {
+                        var count = Math.Min(coverageCount, ligGlyphCount);
+
+                        for (var coverageIndex = 0; coverageIndex < count; coverageIndex++)
+                        {
+                            if (!TryReadUInt16(span, coverage + 4 + 2 * coverageIndex, out var glyph))
+                            {
+                                break;
+                            }
+
+                            AddLigature(span, glyph, coverageIndex, variationCoordinates, ligatures, positions);
+                        }
+
+                        break;
+                    }
+
+                // Format 2: RangeRecord { uint16 startGlyphID, uint16 endGlyphID, uint16 startCoverageIndex }[rangeCount]
+                case 2:
+                    {
+                        for (var i = 0; i < coverageCount; i++)
+                        {
+                            var record = coverage + 4 + 6 * i;
+
+                            if (!TryReadUInt16(span, record, out var start) ||
+                                !TryReadUInt16(span, record + 2, out var end) ||
+                                !TryReadUInt16(span, record + 4, out var startCoverageIndex))
+                            {
+                                break;
+                            }
+
+                            // Glyphs whose coverage index has no LigGlyph table carry no carets.
+                            var count = Math.Min(end - start + 1, ligGlyphCount - startCoverageIndex);
+
+                            for (var j = 0; j < count; j++)
+                            {
+                                AddLigature(span, (ushort)(start + j), startCoverageIndex + j, variationCoordinates,
+                                    ligatures, positions);
+                            }
+                        }
+
+                        break;
+                    }
+            }
+
+            if (ligatures.Count == 0)
+            {
+                return LigatureCaretList.Empty;
+            }
+
+            // Coverage tables are sorted by glyph, but malformed ones are not trusted to be. A glyph listed
+            // twice keeps its first carets.
+            ligatures.Sort((x, y) => x.Glyph != y.Glyph ? x.Glyph.CompareTo(y.Glyph) : x.Start.CompareTo(y.Start));
+
+            var glyphs = new List<ushort>(ligatures.Count);
+            var starts = new List<int>(ligatures.Count + 1);
+            var packed = new int[positions.Count];
+            var packedCount = 0;
+
+            foreach (var (glyph, start, count) in ligatures)
+            {
+                if (glyphs.Count > 0 && glyphs[glyphs.Count - 1] == glyph)
+                {
+                    continue;
+                }
+
+                glyphs.Add(glyph);
+                starts.Add(packedCount);
+                positions.CopyTo(start, packed, packedCount, count);
+                packedCount += count;
+            }
+
+            starts.Add(packedCount);
+
+            return new LigatureCaretList(glyphs.ToArray(), starts.ToArray(), packed.AsSpan(0, packedCount).ToArray());
+        }
+
+        private void AddLigature(ReadOnlySpan<byte> span, ushort glyph, int coverageIndex,
+            ReadOnlySpan<float> variationCoordinates, List<(ushort Glyph, int Start, int Count)> ligatures,
+            List<int> positions)
+        {
+            var listOffset = _ligCaretListOffset;
+
+            if (!TryReadUInt16(span, listOffset + 4 + 2 * coverageIndex, out var ligGlyphOffset))
+            {
+                return;
             }
 
             // LigGlyph: uint16 caretCount, Offset16 caretValueOffsets[caretCount], relative to the LigGlyph
@@ -112,26 +199,28 @@ namespace Avalonia.Media.Fonts.Tables
 
             if (!TryReadUInt16(span, ligGlyph, out var caretCount) || caretCount == 0)
             {
-                return 0;
+                return;
             }
 
-            var carets = caretCount <= MaxStackCarets ? stackalloc int[caretCount] : new int[caretCount];
+            var start = positions.Count;
 
             for (var i = 0; i < caretCount; i++)
             {
                 if (!TryReadUInt16(span, ligGlyph + 2 + 2 * i, out var caretValueOffset) ||
-                    !TryReadCaretValue(span, ligGlyph + caretValueOffset, variationCoordinates, out carets[i]))
+                    !TryReadCaretValue(span, ligGlyph + caretValueOffset, variationCoordinates, out var caret))
                 {
-                    return 0;
+                    positions.RemoveRange(start, positions.Count - start);
+
+                    return;
                 }
+
+                positions.Add(caret);
             }
 
             // The specification lists carets in increasing order; sort for fonts that do not.
-            carets.Sort();
+            positions.Sort(start, caretCount, null);
 
-            carets.Slice(0, Math.Min(caretCount, caretPositions.Length)).CopyTo(caretPositions);
-
-            return caretCount;
+            ligatures.Add((glyph, start, caretCount));
         }
 
         private bool TryReadCaretValue(ReadOnlySpan<byte> span, int offset, ReadOnlySpan<float> variationCoordinates,
@@ -218,85 +307,6 @@ namespace Avalonia.Media.Fonts.Tables
             _itemVariationStore = store;
 
             return store;
-        }
-
-        private static int GetCoverageIndex(ReadOnlySpan<byte> span, int offset, ushort glyphIndex)
-        {
-            if (!TryReadUInt16(span, offset, out var format) || !TryReadUInt16(span, offset + 2, out var count))
-            {
-                return -1;
-            }
-
-            var low = 0;
-            var high = count - 1;
-
-            switch (format)
-            {
-                // Format 1: uint16 glyphArray[glyphCount], sorted by glyph id.
-                case 1:
-                    {
-                        while (low <= high)
-                        {
-                            var mid = (low + high) >> 1;
-
-                            if (!TryReadUInt16(span, offset + 4 + 2 * mid, out var glyph))
-                            {
-                                return -1;
-                            }
-
-                            if (glyph == glyphIndex)
-                            {
-                                return mid;
-                            }
-
-                            if (glyph < glyphIndex)
-                            {
-                                low = mid + 1;
-                            }
-                            else
-                            {
-                                high = mid - 1;
-                            }
-                        }
-
-                        return -1;
-                    }
-
-                // Format 2: RangeRecord { uint16 startGlyphID, uint16 endGlyphID, uint16 startCoverageIndex }[rangeCount]
-                case 2:
-                    {
-                        while (low <= high)
-                        {
-                            var mid = (low + high) >> 1;
-                            var record = offset + 4 + 6 * mid;
-
-                            if (!TryReadUInt16(span, record, out var start) ||
-                                !TryReadUInt16(span, record + 2, out var end) ||
-                                !TryReadUInt16(span, record + 4, out var startCoverageIndex))
-                            {
-                                return -1;
-                            }
-
-                            if (glyphIndex < start)
-                            {
-                                high = mid - 1;
-                            }
-                            else if (glyphIndex > end)
-                            {
-                                low = mid + 1;
-                            }
-                            else
-                            {
-                                return startCoverageIndex + glyphIndex - start;
-                            }
-                        }
-
-                        return -1;
-                    }
-
-                default:
-                    return -1;
-            }
         }
 
         private static bool TryReadUInt16(ReadOnlySpan<byte> span, int offset, out ushort value)
