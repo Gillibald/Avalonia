@@ -1,6 +1,9 @@
 ﻿using System.Linq;
 using Avalonia.Controls.Presenters;
+using Avalonia.Harfbuzz;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
+using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Xunit;
 
@@ -100,5 +103,48 @@ namespace Avalonia.Controls.UnitTests.Presenters
                 Assert.Equal(new Rect(default, expectedSize), presenter.Bounds);
             }
         }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(2)]
+        [InlineData(3)]
+        public void Selection_Foreground_Inside_Ligature_Should_Cover_The_Whole_Ligature(int selectionStart)
+        {
+            using (UnitTestApplication.Start(LigatureServices))
+            {
+                var presenter = new TextPresenter
+                {
+                    Text = "Office",
+                    FontFamily = new FontFamily(TextBoxTests.LigatureFontFamily),
+                    FontStyle = FontStyle.Italic,
+                    FontSize = 100,
+                    SelectionForegroundBrush = Brushes.Red,
+                    SelectionStart = selectionStart,
+                    SelectionEnd = selectionStart + 1
+                };
+
+                presenter.Measure(Size.Infinity);
+
+                var runs = presenter.TextLayout.TextLines[0].TextRuns.OfType<ShapedTextRun>().ToArray();
+                var selected = Assert.Single(runs, x => x.Properties.ForegroundBrush == Brushes.Red);
+
+                Assert.Equal("ffi", selected.Text.ToString());
+                Assert.Single(selected.GlyphRun.GlyphInfos);
+                Assert.Equal(new[] { "O", "ffi", "ce" }, runs.Select(x => x.Text.ToString()));
+
+                // The highlight stays on the selected grapheme.
+                var highlight = Assert.Single(presenter.TextLayout.HitTestTextRange(selectionStart, 1));
+                var graphemeStart = presenter.TextLayout.HitTestTextPosition(selectionStart).X;
+                var graphemeEnd = presenter.TextLayout.HitTestTextPosition(selectionStart + 1).X;
+
+                Assert.Equal(graphemeStart, highlight.X, 6);
+                Assert.Equal(graphemeEnd, highlight.Right, 6);
+            }
+        }
+
+        private static TestServices LigatureServices => TestServices.MockPlatformRenderInterface.With(
+            textShaperImpl: new HarfBuzzTextShaper(),
+            systemFontProvider: new TestFontManager(),
+            assetLoader: new StandardAssetLoader());
     }
 }
