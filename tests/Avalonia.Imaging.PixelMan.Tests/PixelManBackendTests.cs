@@ -311,6 +311,48 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void A_Cursor_Should_Decode_Unless_Decoding_As_Wic()
+        {
+            using var scope = Bind();
+
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(2, 2, Colors.Red) });
+
+            using var png = new MemoryStream();
+            encoder.Save(png, TestContext.Current.CancellationToken);
+
+            // An icon file of type 2 with one PNG entry; the entry holds the hotspot (1, 1).
+            var image = png.ToArray();
+            var cursor = new byte[6 + 16 + image.Length];
+            cursor[2] = 2;
+            cursor[4] = 1;
+            cursor[6] = 2;
+            cursor[7] = 2;
+            cursor[10] = 1;
+            cursor[12] = 1;
+            BitConverter.GetBytes(image.Length).CopyTo(cursor, 14);
+            BitConverter.GetBytes(22).CopyTo(cursor, 18);
+            image.CopyTo(cursor, 22);
+
+            using (var decoder = BitmapDecoder.Create(new MemoryStream(cursor)))
+            using (var frame = decoder.ReadNextFrame()!)
+            {
+                var pixel = frame.ToPixelBuffer().Convert(PixelFormats.Bgra8888, AlphaFormat.Unpremul).Pixels.Span;
+
+                Assert.Equal(new PixelSize(2, 2), frame.PixelSize);
+                Assert.Equal(Colors.Red, Color.FromArgb(pixel[3], pixel[2], pixel[1], pixel[0]));
+            }
+
+            // WIC's icon decoder takes icons only.
+            Assert.ThrowsAny<Exception>(() =>
+            {
+                using var decoder = BitmapDecoder.Create(new MemoryStream(cursor),
+                    new BitmapDecodeOptions { FormatProfile = BitmapFormatProfile.Wic });
+                using var frame = decoder.ReadNextFrame();
+            });
+        }
+
+        [Fact]
         public void A_64_Bpp_Bmp_Should_Keep_Its_Linear_Fixed_Point_Samples()
         {
             using var scope = Bind();
