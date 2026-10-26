@@ -169,7 +169,7 @@ namespace TextTour.Chapters
                         if (stripe == grid.StripeOf(range.Start))
                         {
                             var glyphBox = box.Deflate(new Thickness(3, 2, 3, labelSize * 1.15));
-                            DrawClusterGlyphs(context, analysis, glyphs, glyphBox, u * 0.66);
+                            DrawClusterGlyphs(context, analysis, glyphs, glyphBox, model.GlyphRowHeight * 0.46);
                             Draw.TextIn(context, string.Join(" ", glyphs.Select(g => $"#{g.GlyphIndex}")),
                                 new Rect(box.X, box.Bottom - labelSize * 1.25, box.Width, labelSize * 1.2),
                                 labelSize * 0.85, p.Muted, Draw.UiMono);
@@ -351,10 +351,18 @@ namespace TextTour.Chapters
                 }
             }
 
+            // Spare height goes to the rows, so a wide display does not leave the bottom half empty.
+            var stretch = Math.Clamp(height / Math.Max(1, model!.Grid.Bottom + model.Unit * 1.4 - Pad), 1, 1.4);
+
+            if (stretch > 1.01)
+            {
+                model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, model.Grid.CellWidth, stretch);
+            }
+
             foreach (var g in analysis.Graphemes)
             {
                 _graphemeLayouts.Add(new TextLayout(analysis.Text.Substring(g.Start, g.Length), State.Typeface,
-                    model!.Unit * 0.95, Palette.Foreground));
+                    Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95), Palette.Foreground));
             }
 
             return _model = model!;
@@ -375,13 +383,15 @@ namespace TextTour.Chapters
         /// <summary>Row geometry of the units table for one unit size.</summary>
         private sealed class Model
         {
-            public Model(double unit, TextAnalysis analysis, double left, double top, double width, double cell)
+            public Model(double unit, TextAnalysis analysis, double left, double top, double width, double cell,
+                double stretch = 1)
             {
+                var v = unit * stretch;
                 Unit = unit;
-                CharHeight = unit * 1.45;
-                RowHeight = unit * 0.78;
-                GlyphRowHeight = unit * 1.45;
-                Gap = unit * 0.16;
+                CharHeight = v * 1.45;
+                RowHeight = v * 0.78;
+                GlyphRowHeight = v * 1.45;
+                Gap = v * 0.16;
 
                 var stripeHeight = CharHeight + Gap + 3 * (RowHeight + Gap) + GlyphRowHeight;
                 Grid = new LogicalGrid(analysis, left, top, width, cell, stripeHeight, unit * 0.55);

@@ -275,7 +275,7 @@ namespace TextTour.Chapters
 
                 var shape = rect.Deflate(new Thickness(1, 2, 1, labelSize * 1.1));
                 _glyphs.DrawCentered(context, analysis.Text, new[] { glyph with { Offset = default } }, shape,
-                    model.Unit * 0.95, p.Foreground);
+                    model.GlyphHeight * 0.63, p.Foreground);
                 Draw.TextIn(context, glyph.GlyphIndex.ToString(),
                     new Rect(rect.X, rect.Bottom - labelSize * 1.15, rect.Width, labelSize * 1.1),
                     labelSize * 0.75, p.Muted, Draw.UiMono, padding: 1);
@@ -409,13 +409,21 @@ namespace TextTour.Chapters
                 }
             }
 
+            // Spare height goes to the rows, so a wide display does not leave the bottom half empty.
+            var stretch = Math.Clamp(height / Math.Max(1, model!.Grid.Bottom - Pad), 1, 1.45);
+
+            if (stretch > 1.01)
+            {
+                model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, model.Grid.CellWidth, stretch);
+            }
+
             var span = State.StyleSpan;
 
             foreach (var g in analysis.Graphemes)
             {
                 var styled = span is { } s && g.Start >= s.Start && g.Start < s.Start + s.Length;
                 _graphemeLayouts.Add(new TextLayout(analysis.Text.Substring(g.Start, g.Length), State.Typeface,
-                    model!.CharHeight * 0.66, styled ? Palette.Series(1) : Palette.Foreground));
+                    Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95), styled ? Palette.Series(1) : Palette.Foreground));
             }
 
             model!.PlaceGlyphs(analysis);
@@ -441,17 +449,19 @@ namespace TextTour.Chapters
             private readonly double[] _bandTops = new double[6];
             private readonly List<(int Index, Rect Rect)> _glyphBoxes = new();
 
-            public Model(double unit, TextAnalysis analysis, double left, double top, double width, double cell)
+            public Model(double unit, TextAnalysis analysis, double left, double top, double width, double cell,
+                double stretch = 1)
             {
+                var v = unit * stretch;
                 Unit = unit;
-                GlyphHeight = unit * 1.5;
-                CharTop = GlyphHeight + unit * 1.5;
-                CharHeight = unit * 1.3;
-                RowHeight = unit * 0.72;
-                BreakHeight = unit * 0.6;
-                ItemHeight = unit * 1.3;
+                GlyphHeight = v * 1.5;
+                CharTop = GlyphHeight + v * 1.5;
+                CharHeight = v * 1.3;
+                RowHeight = v * 0.72;
+                BreakHeight = v * 0.6;
+                ItemHeight = v * 1.3;
 
-                var gap = unit * 0.14;
+                var gap = v * 0.14;
                 var y = CharTop + CharHeight + gap;
 
                 for (var i = 0; i < 6; i++)
@@ -507,7 +517,7 @@ namespace TextTour.Chapters
                     var stripeWidth = stripe.Range.Length * Grid.CellWidth;
                     var advance = members.Sum(t => t.g.Advance);
                     var fixedWidth = members.Count(t => t.g.Advance <= 0.01) * minWidth;
-                    var scale = advance > 0 ? Math.Min(1.15, Math.Max(0.1, (stripeWidth - fixedWidth) / advance)) : 1;
+                    var scale = advance > 0 ? Math.Min(2.5, Math.Max(0.1, (stripeWidth - fixedWidth) / advance)) : 1;
                     var total = members.Sum(t => Math.Max(minWidth, t.g.Advance * scale));
                     var x = Grid.Left + Math.Max(0, (stripeWidth - total) / 2);
 
