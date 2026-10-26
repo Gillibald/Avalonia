@@ -96,6 +96,18 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
             Assert.Equal(21, positionsF[3].PositionMeasure);
         }
 
+        [InlineData("\U0001F468‍\U0001F469‍\U0001F467", new[] { 8 })]
+        [InlineData("a‍\U0001F469", new[] { 4 })]
+        [InlineData("\U0001F44D\U0001F3FB‍\U0001F469", new[] { 7 })]
+        [InlineData("क्षि \U0001F468‍\U0001F469‍\U0001F467 漢字", new[] { 5, 14, 15, 16 })]
+        [Theory]
+        public void Should_Not_Break_After_Zero_Width_Joiner(string text, int[] expectedBreaks)
+        {
+            var breaks = GetBreaks(new LineBreakEnumerator(text)).Select(x => x.PositionWrap).ToArray();
+
+            Assert.Equal(expectedBreaks, breaks);
+        }
+
         [Theory(Skip = "Only run when we update Unicode data.")]
         [ClassData(typeof(LineBreakTestDataGenerator))]
         public void ShouldFindBreaks(int lineNumber, int[] codePoints, int[] breakPoints, string rules)

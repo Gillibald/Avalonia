@@ -1355,6 +1355,46 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             }
         }
 
+        [Win32Fact("Windows font")]
+        public void Emoji_Zwj_Sequence_Should_Wrap_Together_With_Closing_Punctuation()
+        {
+            using (Start())
+            {
+                // x, space, the family emoji (man ZWJ woman ZWJ girl), closing parenthesis.
+                const string text = "x \U0001F468‍\U0001F469‍\U0001F467)";
+
+                var defaultProperties = new GenericTextRunProperties(new Typeface("Segoe UI Emoji"), 12);
+                var paragraphProperties = new GenericTextParagraphProperties(defaultProperties,
+                    textWrapping: TextWrapping.Wrap);
+                var textSource = new SingleBufferTextSource(text, defaultProperties);
+                var formatter = new TextFormatterImpl();
+
+                var unwrapped = formatter.FormatLine(textSource, 0, double.PositiveInfinity, paragraphProperties);
+
+                Assert.NotNull(unwrapped);
+
+                // Wide enough for everything but the closing parenthesis.
+                var width = unwrapped.GetDistanceFromCharacterHit(new CharacterHit(text.Length - 1)) + 0.5;
+
+                var lineLengths = new List<int>();
+                var currentPosition = 0;
+
+                while (currentPosition < text.Length)
+                {
+                    var textLine = formatter.FormatLine(textSource, currentPosition, width, paragraphProperties);
+
+                    Assert.NotNull(textLine);
+
+                    lineLengths.Add(textLine.Length);
+                    currentPosition += textLine.Length;
+                }
+
+                // The parenthesis cannot start a line (LB13) and nothing breaks after a ZWJ (LB8a), so the
+                // whole emoji moves to the second line with it.
+                Assert.Equal(new[] { 2, 9 }, lineLengths);
+            }
+        }
+
         private class InvisibleRun : TextRun
         {
             public InvisibleRun(int length)
