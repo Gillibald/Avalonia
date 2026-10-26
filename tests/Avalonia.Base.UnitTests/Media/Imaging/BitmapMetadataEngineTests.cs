@@ -55,8 +55,8 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/tEXt/Title", "/text/{str=Title}")]
         [InlineData("/png/tEXt/{str=Author}", "/text/{str=Author}")]
         [InlineData("/[0]tEXt/{str=Author}", "/text/{str=Author}")]
-        [InlineData("/[1]tEXt/{str=Author}", "/text/{str=Author}")]
-        [InlineData("/[2]zTXt/{str=Comment}", "/ztxt/{str=Comment}")]
+        [InlineData("/[1]tEXt/{str=Author}", "/[1]text/{str=Author}")]
+        [InlineData("/[2]zTXt/{str=Comment}", "/[2]ztxt/{str=Comment}")]
         [InlineData("/[1]iTXt/{str=Title}", "/itxt/{str=Title}")]
         [InlineData("/zTXt/{str=Comment}", "/ztxt/{str=Comment}")]
         [InlineData("/iTXt/{str=Title}/{str=de}/{str=Titel}", "/itxt/{str=Title}/{str=de}/{str=Titel}")]
@@ -332,12 +332,49 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         }
 
         [Fact]
+        public void Png_Text_Should_Be_Addressed_By_Chunk()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+
+            // WIC's /tEXt is chunk 0: each keyword written there replaces the chunk.
+            metadata.SetQuery("/tEXt/{str=A}", "a");
+            metadata.SetQuery("/tEXt/{str=B}", "b");
+            metadata.SetQuery("/[1]tEXt/{str=C}", "c");
+
+            Assert.Null(metadata.GetQuery("/tEXt/{str=A}"));
+            Assert.Equal("b", metadata.GetQuery("/tEXt/{str=B}"));
+            Assert.Null(metadata.GetQuery("/tEXt/{str=C}"));
+            Assert.Equal("c", metadata.GetQuery("/[1]tEXt/{str=C}"));
+            Assert.Equal(new[] { "/[1]tEXt", "/tEXt" }, Sorted(metadata.GetChildren(null, MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/{str=C}" }, metadata.GetChildren("/[1]tEXt", MetadataPathSpelling.Container));
+        }
+
+        [Fact]
+        public void Png_Photo_Properties_Should_Find_Their_Keyword_In_Any_Chunk()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
+            IPhotoMetadata photo = metadata;
+
+            metadata.SetQuery("/tEXt/{str=Software}", "App");
+            metadata.SetQuery("/[1]tEXt/{str=Title}", "Old");
+
+            Assert.Equal("Old", photo.Title);
+
+            photo.Title = "New";
+            photo.Comment = "Note";
+
+            Assert.Equal("New", metadata.GetQuery("/[1]tEXt/{str=Title}"));
+            Assert.Equal("Note", metadata.GetQuery("/[2]tEXt/{str=Comment}"));
+            Assert.Equal("App", metadata.GetQuery("/tEXt/{str=Software}"));
+        }
+
+        [Fact]
         public void Container_Spelling_Should_Number_Png_Text_Chunks_And_Spell_Chunk_Fields()
         {
             var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
 
             metadata.SetQuery("/tEXt/{str=Title}", "Title");
-            metadata.SetQuery("/tEXt/{str=Author}", "Author");
+            metadata.SetQuery("/[1]tEXt/{str=Author}", "Author");
             metadata.SetQuery("/iTXt/{str=Description}", "Description");
             metadata.SetQuery("/gAMA/ImageGamma", 45455u);
             metadata.SetQuery("/iCCP/ProfileData", new BitmapMetadataBlob(new byte[] { 1, 2, 3 }));
@@ -474,7 +511,7 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             photo.Comment = "Comment";
 
             Assert.Equal("Title", metadata.GetQuery("/tEXt/{str=Title}"));
-            Assert.Equal("Comment", metadata.GetQuery("/tEXt/{str=Comment}"));
+            Assert.Equal("Comment", metadata.GetQuery("/[1]tEXt/{str=Comment}"));
             Assert.Null(photo.CameraModel);
             Assert.Throws<NotSupportedException>(() => photo.CameraModel = "Model");
         }
