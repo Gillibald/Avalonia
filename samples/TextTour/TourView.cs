@@ -45,7 +45,7 @@ namespace TextTour
 
             _factories = new Func<Chapter>[]
             {
-                () => new PlaceholderChapter(state, "Start"),
+                () => new StartChapter(state),
                 () => new UnitsChapter(state),
                 () => new FontsChapter(state),
                 () => new TokensChapter(state),
