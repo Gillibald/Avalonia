@@ -567,9 +567,30 @@ namespace Avalonia.Controls
             UpdateCommandStates();
 
             var value = e.GetNewValue<int>();
-            if (SelectionEnd == value && CaretIndex != value)
+            if (SelectionEnd == value)
             {
-                SetCurrentValue(CaretIndexProperty, value);
+                MoveCaretToCollapsedSelection(value);
+            }
+        }
+
+        /// <summary>
+        /// Places the caret at a selection that has just collapsed to <paramref name="position"/>.
+        /// </summary>
+        /// <remarks>
+        /// A keyboard selection moves the presenter caret to the selection's moving end while
+        /// <see cref="CaretIndex"/> keeps its value. When the selection collapses onto that unchanged
+        /// value no CaretIndex change is raised, so the presenter caret has to be moved here, or the
+        /// next Delete, Backspace or arrow key acts from the old selection end.
+        /// </remarks>
+        private void MoveCaretToCollapsedSelection(int position)
+        {
+            if (CaretIndex != position)
+            {
+                SetCurrentValue(CaretIndexProperty, position);
+            }
+            else
+            {
+                _presenter?.SetCurrentValue(TextPresenter.CaretIndexProperty, position);
             }
         }
 
@@ -591,9 +612,9 @@ namespace Avalonia.Controls
             UpdateCommandStates();
 
             var value = e.GetNewValue<int>();
-            if (SelectionStart == value && CaretIndex != value)
+            if (SelectionStart == value)
             {
-                SetCurrentValue(CaretIndexProperty, value);
+                MoveCaretToCollapsedSelection(value);
             }
         }
 
