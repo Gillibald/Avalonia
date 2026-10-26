@@ -16,5 +16,12 @@ namespace Avalonia.Media.Imaging
         /// pixels less opaque than this take the palette entry closest to transparent black.
         /// </summary>
         public double AlphaThresholdPercent { get; init; }
+
+        /// <summary>
+        /// Gets how a conversion to an indexed, <see cref="Platform.PixelFormats.BlackWhite"/>,
+        /// <see cref="Platform.PixelFormats.Gray2"/> or <see cref="Platform.PixelFormats.Gray4"/> target spreads
+        /// the difference between each pixel and the color it gets. Other targets ignore it.
+        /// </summary>
+        public BitmapDitherMode Dither { get; init; }
     }
 }

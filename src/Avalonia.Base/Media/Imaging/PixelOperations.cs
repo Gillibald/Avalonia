@@ -61,14 +61,14 @@ internal static unsafe class PixelOperations
 
         var bits = source.Format.BitsPerPixel;
         var threshold = options?.AlphaThresholdPercent ?? 0;
+        var dither = options?.Dither == BitmapDitherMode.ErrorDiffusion && ErrorDiffusion.IsTarget(format);
 
         if ((long)sourceRect.X * bits % 8 == 0)
         {
             var start = source.Address + (nint)sourceRect.Y * source.RowBytes + (nint)((long)sourceRect.X * bits / 8);
 
-            PixelFormatTranscoder.Transcode(start, sourceRect.Size, source.RowBytes, source.Format,
-                source.AlphaFormat, destination, destinationStride, format, alphaFormat, sourcePalette,
-                targetPalette, threshold);
+            Transcode(start, sourceRect.Size, source.RowBytes, source.Format, source.AlphaFormat, sourcePalette,
+                destination, destinationStride, format, alphaFormat, targetPalette, threshold, dither);
 
             return;
         }
@@ -81,9 +81,24 @@ internal static unsafe class PixelOperations
 
         CopyRaw(source, sourceRect, (byte*)aligned.Address, alignedStride);
 
-        PixelFormatTranscoder.Transcode(aligned.Address, sourceRect.Size, alignedStride, source.Format,
-            source.AlphaFormat, destination, destinationStride, format, alphaFormat, sourcePalette,
-            targetPalette, threshold);
+        Transcode(aligned.Address, sourceRect.Size, alignedStride, source.Format, source.AlphaFormat, sourcePalette,
+            destination, destinationStride, format, alphaFormat, targetPalette, threshold, dither);
+    }
+
+    private static void Transcode(IntPtr source, PixelSize size, int sourceStride, PixelFormat sourceFormat,
+        AlphaFormat sourceAlphaFormat, BitmapPalette? sourcePalette, IntPtr destination, int destinationStride,
+        PixelFormat format, AlphaFormat alphaFormat, BitmapPalette? targetPalette, double threshold, bool dither)
+    {
+        if (dither)
+        {
+            ErrorDiffusion.Transcode(source, size, sourceStride, sourceFormat, sourceAlphaFormat, sourcePalette,
+                destination, destinationStride, format, targetPalette, threshold);
+        }
+        else
+        {
+            PixelFormatTranscoder.Transcode(source, size, sourceStride, sourceFormat, sourceAlphaFormat, destination,
+                destinationStride, format, alphaFormat, sourcePalette, targetPalette, threshold);
+        }
     }
 
     private static void CopyRaw(ILockedFramebuffer source, PixelRect sourceRect, byte* dest, int destStride)

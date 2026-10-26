@@ -123,6 +123,15 @@ internal sealed class PaletteMatcher
         }
     }
 
+    /// <summary>The entries the format can reach.</summary>
+    public ReadOnlySpan<Rgba8888Pixel> Entries => _entries;
+
+    /// <summary>The 8-bit alpha below which a pixel takes <see cref="TransparentIndex"/>.</summary>
+    public int AlphaThreshold => _alphaThreshold;
+
+    /// <summary>The entry closest to transparent black.</summary>
+    public int TransparentIndex => _transparentIndex;
+
     public int Nearest(Rgba8888Pixel pixel)
     {
         if (pixel.A < _alphaThreshold)
