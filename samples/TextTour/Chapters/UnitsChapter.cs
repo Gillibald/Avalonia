@@ -336,12 +336,13 @@ namespace TextTour.Chapters
             var width = Math.Max(200, Bounds.Width - 2 * Pad - LabelWidth);
             var height = Math.Max(200, Bounds.Height - 2 * Pad);
             Model? model = null;
+            var chosenCell = 0.0;
 
             // The largest unit that fits: rows shrink before the grid wraps into more stripes than fit.
             for (var u = 60.0; u >= 26; u -= 2)
             {
-                var cell = LogicalGrid.FitCellWidth(analysis.Text.Length, width, Math.Max(34, u * 0.82), u * 1.5);
-                var candidate = new Model(u, analysis, Pad + LabelWidth, Pad, width, cell);
+                chosenCell = LogicalGrid.FitCellWidth(analysis.Text.Length, width, Math.Max(34, u * 0.82), u * 1.5);
+                var candidate = new Model(u, analysis, Pad + LabelWidth, Pad, width, chosenCell);
 
                 model = candidate;
 
@@ -356,7 +357,7 @@ namespace TextTour.Chapters
 
             if (stretch > 1.01)
             {
-                model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, model.Grid.CellWidth, stretch);
+                model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, chosenCell, stretch);
             }
 
             foreach (var g in analysis.Graphemes)
@@ -394,7 +395,7 @@ namespace TextTour.Chapters
                 Gap = v * 0.16;
 
                 var stripeHeight = CharHeight + Gap + 3 * (RowHeight + Gap) + GlyphRowHeight;
-                Grid = new LogicalGrid(analysis, left, top, width, cell, stripeHeight, unit * 0.55);
+                Grid = new LogicalGrid(analysis, left, top, width, cell, stripeHeight, unit * 0.55, unit * 1.5);
                 Clusters = analysis.Clusters();
             }
 

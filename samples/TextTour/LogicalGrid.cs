@@ -19,7 +19,7 @@ namespace TextTour
         private readonly List<Stripe> _stripes = new();
 
         public LogicalGrid(TextAnalysis analysis, double left, double top, double width, double cellWidth,
-            double stripeHeight, double stripeGap)
+            double stripeHeight, double stripeGap, double maxCellWidth = 0)
         {
             Left = left;
             CellWidth = cellWidth;
@@ -50,6 +50,20 @@ namespace TextTour
             }
 
             Bottom = y - stripeGap;
+
+            // Stripes end at spaces, so the longest one is often shorter than the width allows;
+            // the cells grow to use the width, up to the caller's limit.
+            var longest = 0;
+
+            foreach (var stripe in _stripes)
+            {
+                longest = Math.Max(longest, stripe.Range.Length);
+            }
+
+            if (maxCellWidth > cellWidth && longest > 0)
+            {
+                CellWidth = Math.Min(maxCellWidth, Math.Max(cellWidth, width / longest));
+            }
         }
 
         public double Left { get; }

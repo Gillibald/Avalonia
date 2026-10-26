@@ -397,11 +397,12 @@ namespace TextTour.Chapters
             var width = Math.Max(200, Bounds.Width - 2 * Pad - LabelWidth);
             var height = Math.Max(200, Bounds.Height - 2 * Pad);
             Model? model = null;
+            var chosenCell = 0.0;
 
             for (var u = 56.0; u >= 22; u -= 2)
             {
-                var cell = LogicalGrid.FitCellWidth(analysis.Text.Length, width, Math.Max(24, u * 0.8), u * 1.4);
-                model = new Model(u, analysis, Pad + LabelWidth, Pad, width, cell);
+                chosenCell = LogicalGrid.FitCellWidth(analysis.Text.Length, width, Math.Max(24, u * 0.8), u * 1.4);
+                model = new Model(u, analysis, Pad + LabelWidth, Pad, width, chosenCell);
 
                 if (model.Grid.Bottom <= Pad + height)
                 {
@@ -414,7 +415,7 @@ namespace TextTour.Chapters
 
             if (stretch > 1.01)
             {
-                model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, model.Grid.CellWidth, stretch);
+                model = new Model(model.Unit, analysis, Pad + LabelWidth, Pad, width, chosenCell, stretch);
             }
 
             var span = State.StyleSpan;
@@ -470,7 +471,7 @@ namespace TextTour.Chapters
                     y += (i == 3 ? BreakHeight : i == 5 ? ItemHeight : RowHeight) + gap;
                 }
 
-                Grid = new LogicalGrid(analysis, left, top, width, cell, y - gap, unit * 0.6);
+                Grid = new LogicalGrid(analysis, left, top, width, cell, y - gap, unit * 0.6, unit * 1.4);
             }
 
             public double Unit { get; }
