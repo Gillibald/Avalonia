@@ -40,7 +40,7 @@ namespace Avalonia.Media.Imaging
     /// copy for encoding.
     /// </para>
     /// </remarks>
-    public sealed class BitmapMetadata : IPhotoMetadata
+    public sealed partial class BitmapMetadata : IPhotoMetadata
     {
         private const string ExifDateFormat = "yyyy:MM:dd HH:mm:ss";
 
@@ -70,8 +70,11 @@ namespace Avalonia.Media.Imaging
         /// <summary>Gets the container format the paths are spelled for.</summary>
         public Guid ContainerFormat { get; }
 
-        /// <summary>Gets the container format name, e.g. "JPEG" or "PNG".</summary>
-        public string Format => MetadataQuery.GetFormatName(ContainerFormat);
+        /// <summary>
+        /// Gets the container format name, e.g. "JPEG" or "PNG"; for a view of an XMP block, WIC's
+        /// name of the block: "xmp", "xmpstruct", "xmpbag", "xmpseq" or "xmpalt".
+        /// </summary>
+        public string Format => XmpFormat ?? MetadataQuery.GetFormatName(ContainerFormat);
 
         /// <summary>Gets whether changes are rejected; true for metadata read from a decoded image.</summary>
         public bool IsReadOnly => _store.IsReadOnly;
@@ -86,6 +89,12 @@ namespace Avalonia.Media.Imaging
         /// <exception cref="ArgumentException">The query is not a valid metadata path.</exception>
         public object? GetQuery(string query)
         {
+            if (TryResolveXmp(query, out var xmpPath, out var xmpSegments) &&
+                (xmpSegments.Count > 0 || _detached is not null || LoadXmp() is not null))
+            {
+                return GetXmp(xmpPath, xmpSegments);
+            }
+
             var path = Resolve(query);
 
             if (MetadataQuery.TryParseTextField(path, out var entry, out var field))
@@ -118,6 +127,14 @@ namespace Avalonia.Media.Imaging
         public void SetQuery(string query, object? value)
         {
             ThrowIfReadOnly();
+
+            // The packet itself still takes raw bytes; a block or a path below it goes into the tree.
+            if (TryResolveXmp(query, out _, out var xmpSegments) &&
+                (xmpSegments.Count > 0 || _detached is not null || value is null or BitmapMetadata))
+            {
+                SetXmp(xmpSegments, value);
+                return;
+            }
 
             var path = Resolve(query);
 
@@ -161,6 +178,9 @@ namespace Avalonia.Media.Imaging
         /// </summary>
         public bool ContainsQuery(string query)
         {
+            if (TryResolveXmp(query, out _, out var xmpSegments) && (xmpSegments.Count > 0 || _detached is not null))
+                return Walk(XmpRoot(false), xmpSegments) is not null;
+
             var path = Resolve(query);
 
             if (MetadataQuery.TryParseTextField(path, out var entry, out _))
@@ -186,6 +206,12 @@ namespace Avalonia.Media.Imaging
         {
             ThrowIfReadOnly();
 
+            if (TryResolveXmp(query, out _, out var xmpSegments) && (xmpSegments.Count > 0 || _detached is not null))
+            {
+                RemoveXmp(xmpSegments);
+                return;
+            }
+
             var path = Resolve(query);
 
             ThrowIfTextField(path);
@@ -199,6 +225,9 @@ namespace Avalonia.Media.Imaging
         /// <param name="blockPath">The block to list, relative to this metadata; null for this metadata itself.</param>
         public IReadOnlyList<string> GetChildren(string? blockPath = null)
         {
+            if (TryResolveXmp(blockPath ?? "/", out _, out var xmpSegments))
+                return XmpChildren(xmpSegments);
+
             var block = blockPath is null ? _block : Resolve(blockPath);
             var children = new List<string>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -224,6 +253,10 @@ namespace Avalonia.Media.Imaging
         {
             if (spelling == MetadataPathSpelling.Canonical)
                 return GetChildren(blockPath);
+
+            // XMP paths are spelled the same in every container.
+            if (TryResolveXmp(blockPath ?? "/", out _, out var xmpSegments))
+                return XmpChildren(xmpSegments);
 
             var canonical = blockPath is null ? _block : Resolve(blockPath);
             var block = canonical == "/" ? string.Empty : MetadataSpelling.ToContainer(canonical, ContainerFormat).TrimEnd('/');
@@ -255,8 +288,8 @@ namespace Avalonia.Media.Imaging
             => _store.TryRead("/icc", out var value) && value.Type == MetadataValueType.Undefined ? value.Data : null;
 
         /// <summary>
-        /// Gets or sets the raw XMP packet, or null when the metadata carries none. Parsed XMP
-        /// properties are not queryable.
+        /// Gets or sets the raw XMP packet, or null when the metadata carries none. Its properties
+        /// are also queryable below "/xmp".
         /// </summary>
         public string? XmpPacket
         {
@@ -277,7 +310,7 @@ namespace Avalonia.Media.Imaging
         /// <summary>
         /// Returns a writable deep copy holding the same values.
         /// </summary>
-        public BitmapMetadata Clone() => new(_store.Clone(), ContainerFormat, _block);
+        public BitmapMetadata Clone() => _detached is not null ? new BitmapMetadata(_detached.Clone()) : new(_store.Clone(), ContainerFormat, _block);
 
         string? IPhotoMetadata.Title
         {

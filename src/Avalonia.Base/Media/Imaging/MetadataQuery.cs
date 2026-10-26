@@ -369,6 +369,22 @@ internal static class MetadataQuery
         return block == "/" ? query : block + (query[0] == '/' ? query : "/" + query);
     }
 
+    /// <summary>
+    /// Returns whether a canonical path is the XMP packet, which the query engine reads as a
+    /// tree of properties.
+    /// </summary>
+    public static bool IsXmp(string path) => path == "/xmp" || IsBelow(path, "/xmp");
+
+    // The spellings of the XMP block, before aliasing: JPEG APP1, TIFF tag 700 and the bare block.
+    private static bool IsXmpBlock(string normalized)
+        => normalized is "/xmp" or "/app1/xmp" or "/ifd/xmp" or "/ifd/{ushort=700}";
+
+    /// <summary>
+    /// Returns the segments of <paramref name="path"/> below <paramref name="block"/>.
+    /// </summary>
+    public static List<string> SegmentsBelow(string path, string block)
+        => path == block ? new List<string>() : Split(block == "/" ? path : path.Substring(block.Length));
+
     // Lower-cases names, normalizes item selectors and validates the syntax.
     private static string Normalize(string query)
     {
@@ -381,6 +397,7 @@ internal static class MetadataQuery
         var builder = new StringBuilder(query.Length);
         var position = 1;
         var parent = string.Empty;
+        var xmp = false;
 
         while (position <= query.Length)
         {
@@ -390,7 +407,10 @@ internal static class MetadataQuery
             if (segment.Length == 0)
                 throw new ArgumentException($"The metadata query '{query}' has an empty segment.", nameof(query));
 
-            var normalized = NormalizeSegment(segment, query, parent);
+            // Below an XMP block, property names keep their case and take WIC's prefixes.
+            xmp |= IsXmpBlock(builder.ToString());
+
+            var normalized = xmp ? XmpNamespaces.Normalize(segment) : NormalizeSegment(segment, query, parent);
 
             builder.Append('/').Append(normalized);
             parent = TrySplitIndex(normalized, out var name, out _) ? name : normalized;
@@ -474,7 +494,8 @@ internal static class MetadataQuery
         return index + segment.ToLowerInvariant();
     }
 
-    // Item selectors may contain '/' inside braces, so a segment ends at the next '/' outside them.
+    // Item selectors may contain '/' inside braces and XMP namespace URIs escape it with a
+    // backslash, so a segment ends at the next '/' outside both.
     private static int FindSegmentEnd(string path, int start)
     {
         var depth = 0;
@@ -483,6 +504,9 @@ internal static class MetadataQuery
         {
             switch (path[i])
             {
+                case '\\':
+                    i++;
+                    break;
                 case '{':
                     depth++;
                     break;
