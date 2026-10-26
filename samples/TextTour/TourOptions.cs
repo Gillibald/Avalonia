@@ -28,6 +28,8 @@ namespace TextTour
 
         public double Scale { get; private set; } = 1;
 
+        public CultureInfo? Culture { get; private set; }
+
         public bool Help { get; private set; }
 
         public static TourOptions Parse(string[] args)
@@ -74,6 +76,9 @@ namespace TextTour
                         break;
                     case "--scale":
                         options.Scale = double.Parse(Next(), CultureInfo.InvariantCulture) / 100;
+                        break;
+                    case "--culture":
+                        options.Culture = CultureInfo.GetCultureInfo(Next());
                         break;
                     case "--help" or "-h":
                         options.Help = true;

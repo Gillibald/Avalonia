@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using Avalonia;
@@ -18,6 +19,8 @@ namespace TextTour
     /// </summary>
     internal sealed class StepExporter
     {
+        private const int FontsChapterIndex = 2;
+
         private readonly TourOptions _options;
         private readonly string _directory;
 
@@ -37,6 +40,7 @@ namespace TextTour
             var code = 0;
             var state = new TourState(_options.Preset)
             {
+                Culture = _options.Culture,
                 Dark = _options.Dark,
                 ContentScale = _options.Scale,
                 Animate = false,
@@ -69,7 +73,11 @@ namespace TextTour
                                $"content scale {_options.Scale * 100:0} %, preset '{_options.Preset.Name}'");
                 log.AppendLine();
 
-                for (var c = 0; c < view.ChapterCount; c++)
+                // The Fonts chapter's demo moves load other families, and loaded families change
+                // what later fallback lookups answer, so it runs after the chapters that only read.
+                var order = Enumerable.Range(0, view.ChapterCount).OrderBy(c => c == FontsChapterIndex ? 1 : 0);
+
+                foreach (var c in order)
                 {
                     view.ShowChapter(c);
                     var chapter = view.CurrentChapter;
@@ -91,11 +99,25 @@ namespace TextTour
                             log.AppendLine($"{name}: {chapter.StepName} | {chapter.Caption}");
                         }
                     }
+
+                    chapter.EndExport();
                 }
 
                 log.AppendLine();
                 log.AppendLine("analysis of the string as the pipeline sees it:");
-                log.AppendLine(state.Analysis.Describe());
+                var first = state.Analysis.Describe();
+                log.AppendLine(first);
+
+                // Every chapter has run its lookups by now; a fresh layout of the same string shows
+                // whether those lookups changed what the pipeline answers.
+                using (var again = new TextAnalysis(state.Text, state.StyleSpan, state.Typeface, state.FontSize,
+                           state.Culture, state.Palette))
+                {
+                    var second = again.Describe();
+                    log.AppendLine(second == first ?
+                        "a fresh layout after all chapters gives the same analysis" :
+                        "a fresh layout after all chapters differs:" + Environment.NewLine + second);
+                }
                 File.WriteAllText(Path.Combine(_directory, "export.txt"), log.ToString());
                 Console.WriteLine($"Exported to {Path.GetFullPath(_directory)}");
             }

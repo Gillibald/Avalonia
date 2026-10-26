@@ -606,15 +606,8 @@ namespace TextTour.Chapters
         // first one whose shaping really produces a single glyph for it.
         private (TextLayout?, string?) CreateLigatureDemo()
         {
-            foreach (var family in new[] { "Calibri", "Cambria", "Gabriola", "Hoefler Text", "Baskerville", "Didot", "Georgia", "Palatino" })
+            foreach (var family in SystemFamilies.All("Calibri", "Cambria", "Gabriola", "Hoefler Text", "Baskerville", "Didot", "Georgia", "Palatino"))
             {
-                if (!FontManager.Current.SystemFonts.TryGetGlyphTypeface(family, FontStyle.Normal, FontWeight.Normal,
-                        FontStretch.Normal, out var face) ||
-                    !string.Equals(face.FamilyName, family, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
                 var layout = State.Analysis.CreateLayout(64, double.PositiveInfinity, TextWrapping.NoWrap,
                     typeface: new Typeface(family), text: "Office");
 

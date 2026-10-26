@@ -521,21 +521,9 @@ namespace TextTour.Chapters
             return end > 2 ? text.Substring(0, end).TrimEnd() : "Office ffi";
         }
 
-        private static string? PickAlternateFamily()
-        {
-            // Script and display faces with tall ascenders or large line gaps on Windows and macOS.
-            foreach (var family in new[] { "Gabriola", "Cambria Math", "Zapfino", "Snell Roundhand", "Apple Chancery", "Georgia" })
-            {
-                if (FontManager.Current.SystemFonts.TryGetGlyphTypeface(family, FontStyle.Normal, FontWeight.Normal,
-                        FontStretch.Normal, out var face) &&
-                    string.Equals(face.FamilyName, family, StringComparison.OrdinalIgnoreCase))
-                {
-                    return family;
-                }
-            }
-
-            return null;
-        }
+        // Script and display faces with tall ascenders or large line gaps on Windows and macOS.
+        private static string? PickAlternateFamily() =>
+            SystemFamilies.FirstOf("Gabriola", "Cambria Math", "Zapfino", "Snell Roundhand", "Apple Chancery", "Georgia");
 
         private int LineAt(double y)
         {

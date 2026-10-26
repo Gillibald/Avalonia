@@ -101,6 +101,11 @@ namespace TextTour
         {
         }
 
+        /// <summary>Puts back what <see cref="PrepareExport"/> changed in the shared state.</summary>
+        public virtual void EndExport()
+        {
+        }
+
         /// <summary>A file name suffix for an export variant.</summary>
         public virtual string ExportVariantName(int step, int variant) => variant == 0 ? string.Empty : $"-{variant}";
 

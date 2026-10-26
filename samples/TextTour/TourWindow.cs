@@ -11,7 +11,12 @@ namespace TextTour
 
         public TourWindow(TourOptions options)
         {
-            _state = new TourState(options.Preset) { Dark = options.Dark, ContentScale = options.Scale };
+            _state = new TourState(options.Preset)
+            {
+                Dark = options.Dark,
+                ContentScale = options.Scale,
+                Culture = options.Culture,
+            };
             _view = new TourView(_state);
 
             Title = "Text tour";

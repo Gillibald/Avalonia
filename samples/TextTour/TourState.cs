@@ -107,6 +107,11 @@ namespace TextTour
             get => _weight;
             set
             {
+                if (_weight == value)
+                {
+                    return;
+                }
+
                 _weight = value;
                 Raise(TourChange.Text);
             }
@@ -117,6 +122,11 @@ namespace TextTour
             get => _style;
             set
             {
+                if (_style == value)
+                {
+                    return;
+                }
+
                 _style = value;
                 Raise(TourChange.Text);
             }
@@ -127,6 +137,11 @@ namespace TextTour
             get => _stretch;
             set
             {
+                if (_stretch == value)
+                {
+                    return;
+                }
+
                 _stretch = value;
                 Raise(TourChange.Text);
             }
@@ -138,6 +153,11 @@ namespace TextTour
             get => _culture;
             set
             {
+                if (Equals(_culture, value))
+                {
+                    return;
+                }
+
                 _culture = value;
                 Raise(TourChange.Text);
             }
