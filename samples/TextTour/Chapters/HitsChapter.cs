@@ -358,6 +358,7 @@ namespace TextTour.Chapters
                     ("Characters", $"'{analysis.Text.Substring(ligature.Range.Start, ligature.Range.Length)}' = {ligature.Range.Length} graphemes"),
                     ("Glyph", $"#{ligature.Glyphs[0].GlyphIndex} in {ligature.Glyphs[0].Typeface.FamilyName}"),
                     ("Stops inside", StopsInside(_stops!.Select(t => t.Hit), ligature.Range.Start, ligature.Range.End)),
+                    ("Positions", CaretSource(_layout!, ligature.Range.Start)),
                 }, size);
                 return;
             }
@@ -366,6 +367,8 @@ namespace TextTour.Chapters
             // family that has one, so the interpolated stops can still be shown.
             var y = top;
             var demoStops = new List<CharacterHit>();
+            Rect? selection = null;
+            double? cardLeft = null;
 
             if (_ligatureLayout is { } demo)
             {
@@ -375,6 +378,11 @@ namespace TextTour.Chapters
                 const int start = 1;
                 var rect = Union(demo.HitTestTextRange(start, 3)).Translate(new Vector(origin.X, origin.Y));
                 context.DrawRectangle(p.AccentFill, Draw.Pen(p.Accent, 2), rect);
+
+                // A selection of the second "f" alone ends between two caret stops inside the glyph.
+                selection = Union(demo.HitTestTextRange(start + 1, 1));
+                context.DrawRectangle(p.SeriesFill(4), Draw.Pen(p.Series(4), 2),
+                    selection.Value.Translate(new Vector(origin.X, origin.Y)));
                 demo.Draw(context, origin);
 
                 // The demo line's own caret stops, so stops inside the glyph show where the
@@ -409,7 +417,8 @@ namespace TextTour.Chapters
                     Draw.Text(context, label, x, origin.Y + ffi.Height + 12, 16, p.Caret, HAlign.Center);
                 }
 
-                y += demo.Height + 48;
+                // The card goes beside the demo word so it still fits above the caption on a short screen.
+                cardLeft = origin.X + demo.WidthIncludingTrailingWhitespace + 64;
             }
 
             DrawInfo(context, y, "No ligature in this font", new List<(string, string)>
@@ -417,7 +426,35 @@ namespace TextTour.Chapters
                 ("Font", $"{analysis.Typeface.FontFamily.Name} shapes 'ffi' as {CountFfiGlyphs()} glyphs"),
                 ("Shown above", _ligatureFamily is null ? "no installed family with an ffi ligature found" : $"the same word in {_ligatureFamily}: 'ffi' is one glyph"),
                 ("Stops inside", _ligatureFamily is null ? "-" : StopsInside(demoStops, 1, 4)),
-            }, size);
+                ("Positions", _ligatureLayout is null ? "-" : CaretSource(_ligatureLayout, 1)),
+                ("Selection", selection is { } s ? $"HitTestTextRange(2, 1)  ->  x {s.X:0.#}  width {s.Width:0.#}, inside the glyph" : "-"),
+            }, size, cardLeft);
+        }
+
+        /// <summary>Says where the caret stops inside the ligature glyph that starts a cluster come from.</summary>
+        private static string CaretSource(TextLayout layout, int clusterStart)
+        {
+            foreach (var line in layout.TextLines)
+            {
+                foreach (var run in line.TextRuns.OfType<ShapedTextRun>())
+                {
+                    foreach (var glyph in run.ShapedBuffer)
+                    {
+                        if (glyph.GlyphCluster != clusterStart)
+                        {
+                            continue;
+                        }
+
+                        var typeface = run.ShapedBuffer.GlyphTypeface;
+
+                        return typeface.GetLigatureCaretPositions(glyph.GlyphIndex).Length > 0 ?
+                            $"the caret list in {typeface.FamilyName}'s GDEF table" :
+                            $"the advance divided evenly: {typeface.FamilyName} has no caret list for this glyph";
+                    }
+                }
+            }
+
+            return "-";
         }
 
         /// <summary>Describes the caret stops strictly inside a cluster, as the line reported them.</summary>
@@ -529,9 +566,11 @@ namespace TextTour.Chapters
             }
         }
 
-        private void DrawInfo(DrawingContext context, double top, string title, List<(string, string)> rows, double size)
+        private void DrawInfo(DrawingContext context, double top, string title, List<(string, string)> rows, double size,
+            double? left = null)
         {
-            Draw.Card(context, Palette, new Point(_origin.X + 10000, top), new Rect(_origin.X, top, Bounds.Width - _origin.X - Pad,
+            var x = left ?? _origin.X;
+            Draw.Card(context, Palette, new Point(x + 10000, top), new Rect(x, top, Math.Max(10, Bounds.Width - x - Pad),
                 Math.Max(10, Bounds.Height - top - 8)), title, rows.ToArray(), size);
         }
 
