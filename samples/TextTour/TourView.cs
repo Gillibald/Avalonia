@@ -46,7 +46,7 @@ namespace TextTour
             _factories = new Func<Chapter>[]
             {
                 () => new PlaceholderChapter(state, "Start"),
-                () => new PlaceholderChapter(state, "Units"),
+                () => new UnitsChapter(state),
                 () => new PlaceholderChapter(state, "Fonts"),
                 () => new PlaceholderChapter(state, "Tokens"),
                 () => new PlaceholderChapter(state, "Layout"),
@@ -137,8 +137,10 @@ namespace TextTour
             _caption = new TextBlock
             {
                 FontFamily = Draw.UiMono.FontFamily,
-                FontSize = 20,
+                FontSize = 19,
                 VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                MaxLines = 2,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             _stepText = new TextBlock { FontSize = 20, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };

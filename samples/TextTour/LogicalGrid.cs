@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Avalonia;
+using Avalonia.Media;
 
 namespace TextTour
 {
@@ -26,17 +27,16 @@ namespace TextTour
 
             var perStripe = Math.Max(1, (int)Math.Floor(width / cellWidth));
             var text = analysis.Text;
+
+            // Stripes share the string evenly instead of leaving a short last stripe.
+            var stripeCount = Math.Max(1, (int)Math.Ceiling(text.Length / (double)perStripe));
+            var target = (int)Math.Ceiling(text.Length / (double)stripeCount);
             var start = 0;
             var y = top;
 
             while (start < text.Length)
             {
-                var end = Math.Min(text.Length, start + perStripe);
-
-                if (end < text.Length)
-                {
-                    end = ChooseEnd(analysis, start, end);
-                }
+                var end = text.Length - start <= perStripe ? text.Length : ChooseEnd(analysis, start, start + target, start + perStripe);
 
                 _stripes.Add(new Stripe(_stripes.Count, new TextRange(start, end - start), y));
                 y += stripeHeight + stripeGap;
@@ -93,6 +93,24 @@ namespace TextTour
             return null;
         }
 
+        /// <summary>
+        /// Draws one band of segments, one per range, in every stripe the range touches. The band sits
+        /// <paramref name="offset"/> below each stripe's top.
+        /// </summary>
+        public void Band<T>(DrawingContext context, IEnumerable<T> items, Func<T, TextRange> range, double offset,
+            double height, Func<T, IBrush?> fill, Func<T, IBrush?> stroke, Func<T, string?> label, double labelSize,
+            IBrush labelBrush, Typeface? typeface = null)
+        {
+            foreach (var item in items)
+            {
+                foreach (var (stripe, x0, x1) in Spans(range(item)))
+                {
+                    var box = new Rect(x0, stripe.Top + offset, Math.Max(0, x1 - x0), height);
+                    Draw.Segment(context, box, fill(item), stroke(item), label(item), labelSize, labelBrush, typeface);
+                }
+            }
+        }
+
         /// <summary>The char index under a point, or -1.</summary>
         public int IndexAt(Point point, Func<Stripe, (double Top, double Bottom)> verticalExtent)
         {
@@ -126,7 +144,14 @@ namespace TextTour
             return length == 0 ? max : Math.Clamp(width / length, min, max);
         }
 
-        private static int ChooseEnd(TextAnalysis analysis, int start, int limit)
+        private static bool AtParagraphLevel(TextAnalysis analysis, int index)
+        {
+            var cp = analysis.CodepointIndexAt(index);
+
+            return cp < 0 || analysis.Levels[cp] == analysis.ParagraphLevel;
+        }
+
+        private static int ChooseEnd(TextAnalysis analysis, int start, int target, int limit)
         {
             var bestSpace = -1;
             var bestGrapheme = -1;
@@ -143,9 +168,18 @@ namespace TextTour
                     break;
                 }
 
-                bestGrapheme = g.End;
+                if (bestGrapheme < 0 || Math.Abs(g.End - target) < Math.Abs(bestGrapheme - target))
+                {
+                    bestGrapheme = g.End;
+                }
 
-                if (char.IsWhiteSpace(analysis.Text[g.End - 1]))
+                // A space only counts as a stripe end outside right-to-left text, so an Arabic word
+                // and the number inside it stay on one stripe.
+                var isSpace = char.IsWhiteSpace(analysis.Text[g.End - 1]) && AtParagraphLevel(analysis, g.End - 1) &&
+                              (g.End >= analysis.Text.Length || AtParagraphLevel(analysis, g.End));
+
+                if (isSpace && g.End - start >= (target - start) / 2 &&
+                    (bestSpace < 0 || Math.Abs(g.End - target) < Math.Abs(bestSpace - target)))
                 {
                     bestSpace = g.End;
                 }
@@ -164,11 +198,6 @@ namespace TextTour
             // A single grapheme wider than the stripe still gets a stripe of its own.
             foreach (var g in analysis.Graphemes)
             {
-                if (g.Start >= start)
-                {
-                    return g.End;
-                }
-
                 if (g.End > start)
                 {
                     return g.End;

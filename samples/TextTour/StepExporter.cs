@@ -90,6 +90,9 @@ namespace TextTour
                     }
                 }
 
+                log.AppendLine();
+                log.AppendLine("analysis of the string as the pipeline sees it:");
+                log.AppendLine(state.Analysis.Describe());
                 File.WriteAllText(Path.Combine(_directory, "export.txt"), log.ToString());
                 Console.WriteLine($"Exported to {Path.GetFullPath(_directory)}");
             }

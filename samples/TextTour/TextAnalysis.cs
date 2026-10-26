@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
@@ -84,7 +86,14 @@ namespace TextTour
 
             Layout = new TextLayout(Source, new GenericTextParagraphProperties(defaultProperties));
             Line = Layout.TextLines[0];
-            Items = ReadItems(Line, Codepoints);
+            Items = ReadItems(Line, Codepoints).OrderBy(i => i.Range.Start).Select((item, index) => item with
+            {
+                Index = index,
+                Glyphs = item.Glyphs.Select(g => g with { ItemIndex = index }).ToArray(),
+            }).ToArray();
+            LineRunOrder = Line.TextRuns
+                .Select(r => MemoryMarshal.TryGetString(r.Text, out _, out var start, out _) ? start : -1)
+                .ToArray();
             Glyphs = Items.SelectMany(i => i.Glyphs).OrderBy(g => g.X).ToArray();
         }
 
@@ -121,6 +130,9 @@ namespace TextTour
 
         /// <summary>The shaped items in logical order.</summary>
         public IReadOnlyList<ItemInfo> Items { get; }
+
+        /// <summary>The start of each of <see cref="TextLine.TextRuns"/>, in the order the line keeps them.</summary>
+        public IReadOnlyList<int> LineRunOrder { get; }
 
         /// <summary>Every glyph of the line in visual order.</summary>
         public IReadOnlyList<GlyphBox> Glyphs { get; }
@@ -262,6 +274,13 @@ namespace TextTour
 
             foreach (var run in line.TextRuns)
             {
+                // The run's text is a slice of the string, so its own start is exact whatever order
+                // the line keeps its runs in.
+                if (MemoryMarshal.TryGetString(run.Text, out _, out var runStart, out _))
+                {
+                    offset = runStart;
+                }
+
                 if (run is ShapedTextRun shaped && run.Length > 0)
                 {
                     var range = new TextRange(offset, run.Length);
@@ -346,6 +365,34 @@ namespace TextTour
             }
 
             return rect;
+        }
+
+        /// <summary>A plain text listing of the analysis, for review away from the presenting machine.</summary>
+        public string Describe()
+        {
+            var b = new StringBuilder();
+            b.AppendLine($"text: {string.Join(" ", Text.Select(c => ((int)c).ToString("X4")))}");
+            b.AppendLine($"length {Text.Length}, code points {Codepoints.Count}, graphemes {Graphemes.Count}, glyphs {Glyphs.Count}");
+            b.AppendLine($"graphemes: {string.Join(" ", Graphemes.Select(g => $"{g.Start}+{g.Length}"))}");
+            b.AppendLine($"words: {string.Join(" ", Words.Select(g => $"{g.Start}+{g.Length}"))}");
+            b.AppendLine($"breaks: {string.Join(" ", Breaks.Select(l => $"{l.PositionMeasure}/{l.PositionWrap}{(l.Required ? "!" : "")}"))}");
+            b.AppendLine($"levels (per code point, paragraph {ParagraphLevel}): {string.Join("", Levels)}");
+            b.AppendLine($"source runs: {string.Join(" ", SourceRuns.Select(r => $"{r.Range.Start}+{r.Range.Length}{(r.IsStyled ? "*" : "")}"))}");
+            b.AppendLine($"line runs in TextLine.TextRuns order (start): {string.Join(" ", LineRunOrder)}");
+
+            foreach (var item in Items)
+            {
+                b.AppendLine($"item {item.Index}: {item.Range.Start}+{item.Range.Length} level {item.BidiLevel} {item.Script} " +
+                             $"'{item.Typeface.FamilyName}' x {item.Bounds.X:0.#}..{item.Bounds.Right:0.#}");
+
+                foreach (var g in item.Glyphs)
+                {
+                    b.AppendLine($"    glyph {g.GlyphIndex,5} cluster {g.Cluster,3} -> text {g.ClusterRange.Start}+{g.ClusterRange.Length} " +
+                                 $"x {g.X,7:0.#} advance {g.Advance,6:0.##} offset {g.Offset.X:0.##},{g.Offset.Y:0.##}");
+                }
+            }
+
+            return b.ToString();
         }
 
         public void Dispose() => Layout.Dispose();
