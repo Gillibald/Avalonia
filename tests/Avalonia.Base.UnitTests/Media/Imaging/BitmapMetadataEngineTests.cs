@@ -199,13 +199,13 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             var metadata = new BitmapMetadata(BitmapContainerFormats.Png);
 
             metadata.SetQuery("/text/{str=Title}", "Café");
-            metadata.SetQuery("/text/{str=Comment}", "日本");
+            metadata.SetQuery("/[1]text/{str=Comment}", "日本");
 
             Assert.True(metadata.Store.TryRead("/text/{str=Title}", out var latin1));
-            Assert.True(metadata.Store.TryRead("/text/{str=Comment}", out var unicode));
+            Assert.True(metadata.Store.TryRead("/[1]text/{str=Comment}", out var unicode));
             Assert.Equal(MetadataValueType.Ascii, latin1.Type);
             Assert.Equal(MetadataValueType.Unicode, unicode.Type);
-            Assert.Equal("日本", metadata.GetQuery("/tEXt/{str=Comment}"));
+            Assert.Equal("日本", metadata.GetQuery("/[1]tEXt/{str=Comment}"));
         }
 
         [Fact]

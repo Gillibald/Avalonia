@@ -138,8 +138,20 @@ namespace Avalonia.Media.Imaging
                     break;
                 default:
                     MetadataValue? existing = _store.TryRead(path, out var current) ? current : null;
+                    var converted = MetadataValueConverter.FromObject(value, existing);
 
-                    _store.Write(path, MetadataValueConverter.FromObject(value, existing));
+                    // A PNG text chunk holds one keyword: writing another keyword at the
+                    // chunk's number replaces the chunk, as WIC does.
+                    if (MetadataQuery.TryGetTextChunk(path, out var chunk))
+                    {
+                        foreach (var stored in new List<string>(_store.EnumeratePaths()))
+                        {
+                            if (stored != path && MetadataQuery.IsBelow(stored, chunk))
+                                _store.Remove(stored);
+                        }
+                    }
+
+                    _store.Write(path, converted);
                     break;
             }
         }
@@ -391,14 +403,68 @@ namespace Avalonia.Media.Imaging
             return null;
         }
 
-        private string? GetPhotoText(PhotoTag tag) => PhotoPath(tag) is { } path ? GetQuery(path) as string : null;
+        private string? GetPhotoText(PhotoTag tag) => PhotoPath(tag) is { } path ? GetQuery(FindTextChunk(path) ?? path) as string : null;
 
         private void SetPhotoText(PhotoTag tag, string? value)
         {
             var path = PhotoPath(tag) ??
                 throw new NotSupportedException($"{Format} metadata has no {tag} property.");
 
-            SetQuery(path, value);
+            SetQuery(FindTextChunk(path) ?? NextTextChunk(path), value);
+        }
+
+        // A PNG photo property is the first tEXt chunk with its keyword, in any chunk.
+        private string? FindTextChunk(string path)
+        {
+            if (!MetadataQuery.TryGetTextChunk(path, out _))
+                return null;
+
+            var keyword = path.Substring(path.IndexOf('/', 1));
+            string? found = null;
+            var foundIndex = int.MaxValue;
+
+            foreach (var stored in _store.EnumeratePaths())
+            {
+                if (TextChunkIndex(stored, keyword) is { } index && index < foundIndex)
+                {
+                    found = stored;
+                    foundIndex = index;
+                }
+            }
+
+            return found;
+        }
+
+        // A new PNG photo property goes into a chunk after the last tEXt chunk.
+        private string NextTextChunk(string path)
+        {
+            if (!MetadataQuery.TryGetTextChunk(path, out _))
+                return path;
+
+            var next = 0;
+
+            foreach (var stored in _store.EnumeratePaths())
+            {
+                if (TextChunkIndex(stored, null) is { } index)
+                    next = Math.Max(next, index + 1);
+            }
+
+            return next == 0 ? path : "/[" + next.ToString(CultureInfo.InvariantCulture) + "]text" + path.Substring(path.IndexOf('/', 1));
+        }
+
+        // The number of the tEXt chunk a canonical path names, when it names one with the keyword
+        // segment (any keyword for null).
+        private static int? TextChunkIndex(string path, string? keyword)
+        {
+            if (!MetadataQuery.TryGetTextChunk(path, out var chunk) || !chunk.EndsWith("]text", StringComparison.Ordinal) && chunk != "/text")
+                return null;
+
+            if (keyword is not null && !path.EndsWith(keyword, StringComparison.Ordinal))
+                return null;
+
+            return chunk == "/text"
+                ? 0
+                : int.Parse(chunk.AsSpan(2, chunk.IndexOf(']') - 2), NumberStyles.None, CultureInfo.InvariantCulture);
         }
 
         private string? GetUserComment()

@@ -124,8 +124,10 @@ internal static class MetadataQuery
         return path;
     }
 
-    // A keyword selects a text entry on its own, so the index of the chunk that holds it
-    // (/[1]text/{str=Author}) adds nothing; the indexed iTXt field view keeps its index.
+    // A tEXt or zTXt index is the chunk's number among the chunks of its type, as in WIC:
+    // /[1]text/{str=Author} is chunk 1 if it holds Author. Chunk 0 is spelled without an
+    // index. An iTXt keyword selects the entry on its own, so its index adds nothing; the
+    // indexed iTXt field view keeps its index.
     private static string StripTextChunkIndex(string path)
     {
         if (!path.StartsWith("/[", StringComparison.Ordinal))
@@ -136,15 +138,38 @@ internal static class MetadataQuery
         if (close < 0)
             return path;
 
-        foreach (var chunk in new[] { "text", "ztxt", "itxt" })
-        {
-            var rest = path.Substring(close + 1);
+        var rest = path.Substring(close + 1);
 
-            if (rest.StartsWith(chunk + "/{str=", StringComparison.Ordinal))
-                return "/" + rest;
+        if (rest.StartsWith("itxt/{str=", StringComparison.Ordinal))
+            return "/" + rest;
+
+        if (path.StartsWith("/[0]", StringComparison.Ordinal) &&
+            (rest.StartsWith("text/{str=", StringComparison.Ordinal) || rest.StartsWith("ztxt/{str=", StringComparison.Ordinal)))
+        {
+            return "/" + rest;
         }
 
         return path;
+    }
+
+    /// <summary>
+    /// Recognizes a canonical tEXt or zTXt entry, <c>/[n]text/{str=K}</c>, and returns the
+    /// chunk it addresses, <c>/[n]text</c> (<c>/text</c> for chunk 0).
+    /// </summary>
+    public static bool TryGetTextChunk(string path, out string chunk)
+    {
+        chunk = string.Empty;
+
+        var segments = Split(path);
+
+        if (segments.Count != 2 || !TrySplitIndex(segments[0], out var name, out _) || name is not ("text" or "ztxt") ||
+            !TryGetSelector(segments[1], "str", out _))
+        {
+            return false;
+        }
+
+        chunk = "/" + segments[0];
+        return true;
     }
 
     /// <summary>

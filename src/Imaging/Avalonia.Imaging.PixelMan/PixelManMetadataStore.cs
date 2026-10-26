@@ -224,9 +224,16 @@ namespace Avalonia.Imaging.PixelMan
             // Core lower-cases PNG chunk names; PixelMan spells them as the PNG specification does.
             var end = path.IndexOf('/', 1);
             var first = end < 0 ? path.Substring(1) : path.Substring(1, end - 1);
+            var index = string.Empty;
+
+            if (first.StartsWith("[", StringComparison.Ordinal) && first.IndexOf(']') is var close and > 0)
+            {
+                index = first.Substring(0, close + 1);
+                first = first.Substring(close + 1);
+            }
 
             return s_pngChunks.TryGetValue(first, out var chunk)
-                ? "/" + chunk + (end < 0 ? string.Empty : path.Substring(end))
+                ? "/" + index + chunk + (end < 0 ? string.Empty : path.Substring(end))
                 : path;
         }
 

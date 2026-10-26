@@ -51,8 +51,9 @@ internal static class MetadataSpelling
     private static readonly string[] s_textFields = { "Keyword", "LanguageTag", "TranslatedKeyword", "TextEntry" };
 
     /// <summary>
-    /// Spells every stored path for the container. PNG text chunks are numbered in the order
-    /// the store lists them, which is the order the iTXt field view counts them in.
+    /// Spells every stored path for the container. tEXt and zTXt entries carry their chunk
+    /// number; iTXt entries are numbered in the order the store lists them, which is the order
+    /// the iTXt field view counts them in.
     /// </summary>
     public static List<string> ToContainer(IEnumerable<string> canonicalPaths, Guid containerFormat)
     {
@@ -87,23 +88,15 @@ internal static class MetadataSpelling
 
             var block = index == 0 ? "/" + family : "/[" + index + "]" + family;
 
-            if (family == "iTXt")
-            {
-                foreach (var field in s_textFields)
-                    spelled.Add(block + "/" + field);
-            }
-            else
-            {
-                spelled.Add(block + path.Substring(path.IndexOf('/', 1)));
-            }
+            foreach (var field in s_textFields)
+                spelled.Add(block + "/" + field);
         }
 
         return spelled;
     }
 
     /// <summary>
-    /// Spells one canonical path or block for the container. A PNG text entry keeps its
-    /// keyword selector, which resolves without the chunk number.
+    /// Spells one canonical path or block for the container.
     /// </summary>
     public static string ToContainer(string canonicalPath, Guid containerFormat)
     {
@@ -135,13 +128,7 @@ internal static class MetadataSpelling
 
     private static string? TextFamily(string canonicalPath)
     {
-        foreach (var (canonical, family) in new[] { ("/text/", "tEXt"), ("/ztxt/", "zTXt"), ("/itxt/", "iTXt") })
-        {
-            if (canonicalPath.StartsWith(canonical, StringComparison.Ordinal))
-                return family;
-        }
-
-        return null;
+        return canonicalPath.StartsWith("/itxt/", StringComparison.Ordinal) ? "iTXt" : null;
     }
 
     private static string SpellPngChunk(string path)
