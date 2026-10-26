@@ -24,7 +24,8 @@ internal static unsafe class WidePixelFormat
         or PixelFormatEnum.Bgra64 or PixelFormatEnum.Rgba64Half or PixelFormatEnum.Rgb48Half
         or PixelFormatEnum.Rgba128Float or PixelFormatEnum.Rgb128Float or PixelFormatEnum.Cmyk32
         or PixelFormatEnum.Cmyk64 or PixelFormatEnum.Bgr101010 or PixelFormatEnum.Bgr48Linear
-        or PixelFormatEnum.Bgra64Linear;
+        or PixelFormatEnum.Bgra64Linear or PixelFormatEnum.Rgba64Linear or PixelFormatEnum.Cmyka40
+        or PixelFormatEnum.Cmyka80 or PixelFormatEnum.Rgb96Float;
 
     // One in the s2.13 fixed point of the linear formats.
     private const float LinearOne = 8192f;
@@ -174,6 +175,50 @@ internal static unsafe class WidePixelFormat
 
                 for (var x = 0; x < row.Length; x++, src += 4)
                     row[x] = FromLinear(new Vector4(src[2], src[1], src[0], src[3]) / LinearOne, premultiplied);
+
+                break;
+            }
+            case PixelFormatEnum.Rgba64Linear:
+            {
+                var src = (short*)source;
+
+                for (var x = 0; x < row.Length; x++, src += 4)
+                    row[x] = FromLinear(new Vector4(src[0], src[1], src[2], src[3]) / LinearOne, premultiplied);
+
+                break;
+            }
+            case PixelFormatEnum.Cmyka40:
+            {
+                var src = (byte*)source;
+
+                for (var x = 0; x < row.Length; x++, src += 5)
+                {
+                    var pixel = FromCmyk(src[0] / 255f, src[1] / 255f, src[2] / 255f, src[3] / 255f);
+
+                    row[x] = new Vector4(pixel.X, pixel.Y, pixel.Z, src[4] / 255f);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Cmyka80:
+            {
+                var src = (ushort*)source;
+
+                for (var x = 0; x < row.Length; x++, src += 5)
+                {
+                    var pixel = FromCmyk(src[0] / 65535f, src[1] / 65535f, src[2] / 65535f, src[3] / 65535f);
+
+                    row[x] = new Vector4(pixel.X, pixel.Y, pixel.Z, src[4] / 65535f);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Rgb96Float:
+            {
+                var src = (float*)source;
+
+                for (var x = 0; x < row.Length; x++, src += 3)
+                    row[x] = FromLinear(new Vector4(src[0], src[1], src[2], 1), false);
 
                 break;
             }
@@ -382,6 +427,71 @@ internal static unsafe class WidePixelFormat
                     dst[1] = ToFixed13(pixel.Y);
                     dst[2] = ToFixed13(pixel.X);
                     dst[3] = ToFixed13(pixel.W);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Rgba64Linear:
+            {
+                var dst = (short*)dest;
+
+                for (var x = 0; x < row.Length; x++, dst += 4)
+                {
+                    var pixel = ToLinear(row[x], premultiplied);
+
+                    dst[0] = ToFixed13(pixel.X);
+                    dst[1] = ToFixed13(pixel.Y);
+                    dst[2] = ToFixed13(pixel.Z);
+                    dst[3] = ToFixed13(pixel.W);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Cmyka40:
+            {
+                var dst = (byte*)dest;
+
+                for (var x = 0; x < row.Length; x++, dst += 5)
+                {
+                    var ink = ToCmyk(row[x]);
+
+                    dst[0] = ToByte(ink.X);
+                    dst[1] = ToByte(ink.Y);
+                    dst[2] = ToByte(ink.Z);
+                    dst[3] = ToByte(ink.W);
+                    dst[4] = ToByte(row[x].W);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Cmyka80:
+            {
+                var dst = (ushort*)dest;
+
+                for (var x = 0; x < row.Length; x++, dst += 5)
+                {
+                    var ink = ToCmyk(row[x]);
+
+                    dst[0] = ToUInt16(ink.X);
+                    dst[1] = ToUInt16(ink.Y);
+                    dst[2] = ToUInt16(ink.Z);
+                    dst[3] = ToUInt16(ink.W);
+                    dst[4] = ToUInt16(row[x].W);
+                }
+
+                break;
+            }
+            case PixelFormatEnum.Rgb96Float:
+            {
+                var dst = (float*)dest;
+
+                for (var x = 0; x < row.Length; x++, dst += 3)
+                {
+                    var pixel = ToLinear(row[x], false);
+
+                    dst[0] = pixel.X;
+                    dst[1] = pixel.Y;
+                    dst[2] = pixel.Z;
                 }
 
                 break;

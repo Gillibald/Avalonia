@@ -40,6 +40,10 @@ namespace Avalonia.Base.UnitTests
         [InlineData(nameof(PixelFormats.Bgra5551), 16, 4, true, false, false, false, false)]
         [InlineData(nameof(PixelFormats.Bgr48Linear), 48, 3, false, false, false, false, false)]
         [InlineData(nameof(PixelFormats.Bgra64Linear), 64, 4, true, false, false, false, false)]
+        [InlineData(nameof(PixelFormats.Rgba64Linear), 64, 4, true, false, false, false, false)]
+        [InlineData(nameof(PixelFormats.Cmyka40), 40, 5, true, false, false, false, true)]
+        [InlineData(nameof(PixelFormats.Cmyka80), 80, 5, true, false, false, false, true)]
+        [InlineData(nameof(PixelFormats.Rgb96Float), 96, 3, false, false, false, true, false)]
         public void Format_Should_Describe_Its_Layout(string name, int bitsPerPixel, int channelCount,
             bool hasAlpha, bool isIndexed, bool isGrayscale, bool isFloat, bool isCmyk)
         {

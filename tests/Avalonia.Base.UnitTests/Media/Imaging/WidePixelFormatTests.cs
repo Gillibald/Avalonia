@@ -19,7 +19,11 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             nameof(PixelFormats.Rgba128Float),
             nameof(PixelFormats.Bgr101010),
             nameof(PixelFormats.Bgr48Linear),
-            nameof(PixelFormats.Bgra64Linear)
+            nameof(PixelFormats.Bgra64Linear),
+            nameof(PixelFormats.Rgba64Linear),
+            nameof(PixelFormats.Cmyka40),
+            nameof(PixelFormats.Cmyka80),
+            nameof(PixelFormats.Rgb96Float)
         };
 
         [Theory]
@@ -117,6 +121,19 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             var samples = Transcode<short>(new Rgba8888Pixel(255, 0, 0, 128), PixelFormats.Bgra64Linear, AlphaFormat.Premul);
 
             Assert.Equal(new short[] { 0, 0, 4112, 4112 }, samples);
+        }
+
+        [Fact]
+        public void Wic_Unnamed_Formats_Should_Keep_Their_Channel_Order()
+        {
+            // Red first, unlike the GDI+ fixed-point formats.
+            Assert.Equal(new short[] { 8192, 0, 0, 8192 },
+                Transcode<short>(new Rgba8888Pixel(255, 0, 0, 255), PixelFormats.Rgba64Linear, AlphaFormat.Unpremul));
+            // Cyan for red's complement, then straight alpha.
+            Assert.Equal(new byte[] { 255, 0, 0, 0, 128 },
+                Transcode<byte>(new Rgba8888Pixel(0, 255, 255, 128), PixelFormats.Cmyka40, AlphaFormat.Unpremul));
+            Assert.Equal(new float[] { 1, 0, 0 },
+                Transcode<float>(new Rgba8888Pixel(255, 0, 0, 255), PixelFormats.Rgb96Float, AlphaFormat.Unpremul));
         }
 
         [Theory]

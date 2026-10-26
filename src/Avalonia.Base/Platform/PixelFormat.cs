@@ -37,7 +37,11 @@ namespace Avalonia.Platform
         Bgr101010,
         Bgra5551,
         Bgr48Linear,
-        Bgra64Linear
+        Bgra64Linear,
+        Rgba64Linear,
+        Cmyka40,
+        Cmyka80,
+        Rgb96Float
     }
 
     public record struct PixelFormat
@@ -55,7 +59,10 @@ namespace Avalonia.Platform
             PixelFormatEnum.Bgr24 or PixelFormatEnum.Rgb24 => 24,
             PixelFormatEnum.Rgb48 or PixelFormatEnum.Rgb48Half or PixelFormatEnum.Bgr48Linear => 48,
             PixelFormatEnum.Rgba64 or PixelFormatEnum.Bgra64 or PixelFormatEnum.Rgba64Half or PixelFormatEnum.Cmyk64
-                or PixelFormatEnum.Bgra64Linear => 64,
+                or PixelFormatEnum.Bgra64Linear or PixelFormatEnum.Rgba64Linear => 64,
+            PixelFormatEnum.Cmyka40 => 40,
+            PixelFormatEnum.Cmyka80 => 80,
+            PixelFormatEnum.Rgb96Float => 96,
             PixelFormatEnum.Rgba128Float or PixelFormatEnum.Rgb128Float => 128,
             _ => 32
         };
@@ -66,7 +73,8 @@ namespace Avalonia.Platform
         /// </summary>
         public bool HasAlpha => FormatEnum is PixelFormatEnum.Rgba8888 or PixelFormatEnum.Bgra8888
             or PixelFormatEnum.Rgba64 or PixelFormatEnum.Bgra64 or PixelFormatEnum.Rgba64Half
-            or PixelFormatEnum.Rgba128Float or PixelFormatEnum.Bgra5551 or PixelFormatEnum.Bgra64Linear;
+            or PixelFormatEnum.Rgba128Float or PixelFormatEnum.Bgra5551 or PixelFormatEnum.Bgra64Linear
+            or PixelFormatEnum.Rgba64Linear or PixelFormatEnum.Cmyka40 or PixelFormatEnum.Cmyka80;
 
         /// <summary>
         /// Gets a value indicating whether pixels are indices into a palette rather than colors.
@@ -83,16 +91,19 @@ namespace Avalonia.Platform
 
         /// <summary>
         /// Gets a value indicating whether channels are floating-point values. Floating-point
-        /// formats hold linear (scRGB) values, as do the fixed-point <see cref="PixelFormats.Bgr48Linear"/>
-        /// and <see cref="PixelFormats.Bgra64Linear"/>; all other color formats are sRGB-encoded.
+        /// formats hold linear (scRGB) values, as do the fixed-point <see cref="PixelFormats.Bgr48Linear"/>,
+        /// <see cref="PixelFormats.Bgra64Linear"/> and <see cref="PixelFormats.Rgba64Linear"/>; all other color
+        /// formats are sRGB-encoded.
         /// </summary>
         public bool IsFloat => FormatEnum is PixelFormatEnum.Gray32Float or PixelFormatEnum.Rgba64Half
-            or PixelFormatEnum.Rgb48Half or PixelFormatEnum.Rgba128Float or PixelFormatEnum.Rgb128Float;
+            or PixelFormatEnum.Rgb48Half or PixelFormatEnum.Rgba128Float or PixelFormatEnum.Rgb128Float
+            or PixelFormatEnum.Rgb96Float;
 
         /// <summary>
         /// Gets a value indicating whether the format stores cyan, magenta, yellow and black ink.
         /// </summary>
-        public bool IsCmyk => FormatEnum is PixelFormatEnum.Cmyk32 or PixelFormatEnum.Cmyk64;
+        public bool IsCmyk => FormatEnum is PixelFormatEnum.Cmyk32 or PixelFormatEnum.Cmyk64
+            or PixelFormatEnum.Cmyka40 or PixelFormatEnum.Cmyka80;
 
         /// <summary>
         /// Gets the number of channels a pixel stores, counting alpha and excluding unused
@@ -100,14 +111,15 @@ namespace Avalonia.Platform
         /// </summary>
         public int ChannelCount => FormatEnum switch
         {
+            PixelFormatEnum.Cmyka40 or PixelFormatEnum.Cmyka80 => 5,
             PixelFormatEnum.Rgba8888 or PixelFormatEnum.Bgra8888 or PixelFormatEnum.Rgba64
                 or PixelFormatEnum.Bgra64 or PixelFormatEnum.Rgba64Half or PixelFormatEnum.Rgba128Float
                 or PixelFormatEnum.Cmyk32 or PixelFormatEnum.Cmyk64 or PixelFormatEnum.Bgra5551
-                or PixelFormatEnum.Bgra64Linear => 4,
+                or PixelFormatEnum.Bgra64Linear or PixelFormatEnum.Rgba64Linear => 4,
             PixelFormatEnum.Rgb565 or PixelFormatEnum.Rgb24 or PixelFormatEnum.Rgb32 or PixelFormatEnum.Bgr24
                 or PixelFormatEnum.Bgr32 or PixelFormatEnum.Bgr555 or PixelFormatEnum.Bgr565
                 or PixelFormatEnum.Rgb48 or PixelFormatEnum.Rgb48Half or PixelFormatEnum.Rgb128Float
-                or PixelFormatEnum.Bgr101010 or PixelFormatEnum.Bgr48Linear => 3,
+                or PixelFormatEnum.Bgr101010 or PixelFormatEnum.Bgr48Linear or PixelFormatEnum.Rgb96Float => 3,
             _ => 1
         };
 
@@ -227,5 +239,29 @@ namespace Avalonia.Platform
         /// or <c>Format64bppPArgb</c> with premultiplied alpha).
         /// </summary>
         public static PixelFormat Bgra64Linear { get; } = new PixelFormat(PixelFormatEnum.Bgra64Linear);
+
+        /// <summary>
+        /// Red, green, blue and alpha as 16-bit little-endian signed fixed-point values with 13
+        /// fraction bits, 8192 for 1.0, with colors in linear light (WIC
+        /// <c>64bppRGBAFixedPoint</c>, which WIC decodes 64 bpp BMPs to).
+        /// </summary>
+        public static PixelFormat Rgba64Linear { get; } = new PixelFormat(PixelFormatEnum.Rgba64Linear);
+
+        /// <summary>
+        /// Cyan, magenta, yellow, black and straight alpha, one byte each (WIC <c>40bppCMYKAlpha</c>).
+        /// </summary>
+        public static PixelFormat Cmyka40 { get; } = new PixelFormat(PixelFormatEnum.Cmyka40);
+
+        /// <summary>
+        /// Cyan, magenta, yellow, black and straight alpha as 16-bit little-endian values (WIC
+        /// <c>80bppCMYKAlpha</c>).
+        /// </summary>
+        public static PixelFormat Cmyka80 { get; } = new PixelFormat(PixelFormatEnum.Cmyka80);
+
+        /// <summary>
+        /// Red, green and blue as 32-bit little-endian floats in linear light (scRGB) without a
+        /// fourth channel (WIC <c>96bppRGBFloat</c>).
+        /// </summary>
+        public static PixelFormat Rgb96Float { get; } = new PixelFormat(PixelFormatEnum.Rgb96Float);
     }
 }
