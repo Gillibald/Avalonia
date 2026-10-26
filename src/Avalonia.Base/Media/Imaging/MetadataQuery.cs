@@ -18,6 +18,20 @@ internal static class MetadataQuery
         ("/ifd/exif/{ushort=40965}", "/ifd/exif/interop"),
     };
 
+    // Photoshop resources are selected by {ulonglong=signature << 16 | id}; WIC also names the
+    // three it parses. The IPTC record of resource 0x0404 comes after "/irb/{ulonglong=...}".
+    private const string ResolutionInfoResource = "/irb/{ulonglong=61857348781037}";
+    private const string IptcResource = "/irb/{ulonglong=61857348781060}";
+    private const string IptcDigestResource = "/irb/{ulonglong=61857348781093}";
+
+    private static readonly (string From, string To)[] s_resourceNames =
+    {
+        ("/irb/8bimresinfo", ResolutionInfoResource),
+        ("/irb/8bimiptc", IptcResource),
+        ("/irb/8bimiptcdigest", IptcDigestResource),
+    };
+
+    // A JPEG's only IPTC record is the one in its APP13 resource block.
     private static readonly (string From, string To)[] s_jpegAliases =
     {
         ("/app1/ifd", "/ifd"),
@@ -25,19 +39,23 @@ internal static class MetadataQuery
         // The thumbnail IFD.
         ("/app1/{ushort=1}", "/app1/thumb"),
         ("/app1/xmp", "/xmp"),
-        ("/app13/irb/8bimiptc/iptc", "/iptc"),
-        // The photoshop resource block by id: APP13 item 0, resource "8BIMIPTC".
-        ("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc", "/iptc"),
+        // The photoshop resource block, by name or as APP13 item 0.
+        ("/app13/irb", "/irb"),
+        ("/app13/{ushort=0}", "/irb"),
+        ("/irb/8bimiptc/iptc", "/iptc"),
+        (IptcResource + "/iptc", "/iptc"),
     };
 
+    // A TIFF holds IPTC in tag 33723 and, apart from it, in the photoshop resource block of
+    // tag 34377.
     private static readonly (string From, string To)[] s_tiffAliases =
     {
         ("/ifd/xmp", "/xmp"),
         ("/ifd/{ushort=700}", "/xmp"),
         ("/ifd/iptc", "/iptc"),
         ("/ifd/{ushort=33723}", "/iptc"),
-        // The photoshop resource block by id: tag 34377, resource "8BIMIPTC".
-        ("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc", "/iptc"),
+        ("/ifd/irb", "/irb"),
+        ("/ifd/{ushort=34377}", "/irb"),
     };
 
     private static readonly (string From, string To)[] s_pngAliases =
@@ -82,9 +100,9 @@ internal static class MetadataQuery
         var path = Normalize(query);
 
         if (containerFormat == BitmapContainerFormats.Jpeg)
-            path = Rewrite(path, s_jpegAliases);
+            path = Rewrite(Rewrite(path, s_jpegAliases), s_resourceNames);
         else if (containerFormat == BitmapContainerFormats.Tiff)
-            path = Rewrite(path, s_tiffAliases);
+            path = Rewrite(Rewrite(path, s_tiffAliases), s_resourceNames);
         else if (containerFormat == BitmapContainerFormats.Png)
             path = Rewrite(path, s_pngAliases);
 
@@ -162,10 +180,11 @@ internal static class MetadataQuery
     }
 
     // IPTC datasets are named the way WIC names them, whatever the query's case or whether it
-    // gives the dataset by number.
+    // gives the dataset by number. A TIFF's resource IPTC names them the same way.
     private static string CanonicalizeIptc(string path, string query)
     {
-        var segments = Split(path);
+        var block = path.StartsWith(IptcResource + "/iptc/", StringComparison.Ordinal) ? IptcResource : string.Empty;
+        var segments = Split(path.Substring(block.Length));
 
         if (segments.Count != 2 || segments[0] != "iptc")
             return path;
@@ -177,7 +196,7 @@ internal static class MetadataQuery
             if (!ushort.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
                 throw new ArgumentException($"The metadata query '{query}' has an IPTC dataset number above 65535.", nameof(query));
 
-            return IptcDatasets.GetPath(id);
+            return block + IptcDatasets.GetPath(id);
         }
 
         var name = TryGetSelector(segment, "str", out var text) ? text : segment;
@@ -185,7 +204,7 @@ internal static class MetadataQuery
         if (!IptcDatasets.TryGetId(name, out var named))
             throw new ArgumentException($"The metadata query '{query}' names no IPTC dataset.", nameof(query));
 
-        return IptcDatasets.GetPath(named);
+        return block + IptcDatasets.GetPath(named);
     }
 
     private static string CanonicalizeGif(string path, string query)

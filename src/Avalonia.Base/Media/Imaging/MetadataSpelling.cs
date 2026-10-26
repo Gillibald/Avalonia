@@ -19,6 +19,7 @@ internal static class MetadataSpelling
         ("/ifd", "/app1/{ushort=0}"),
         ("/app1/thumb", "/app1/{ushort=1}"),
         ("/iptc", "/app13/{ushort=0}/{ulonglong=61857348781060}/iptc"),
+        ("/irb", "/app13/{ushort=0}"),
     };
 
     private static readonly (string Canonical, string Container)[] s_tiff =
@@ -27,6 +28,7 @@ internal static class MetadataSpelling
         ("/ifd/exif", "/ifd/{ushort=34665}"),
         ("/ifd/gps", "/ifd/{ushort=34853}"),
         ("/iptc", "/ifd/{ushort=33723}"),
+        ("/irb", "/ifd/{ushort=34377}"),
         ("/xmp", "/ifd/{ushort=700}"),
     };
 
@@ -42,7 +44,8 @@ internal static class MetadataSpelling
         "TableEntry", "TextEntry", "ImageGamma", "WhitePointX", "WhitePointY", "RedX", "RedY", "GreenX",
         "GreenY", "BlueX", "BlueY", "BackgroundColor", "Frequencies", "ProfileName", "ProfileData",
         "RenderingIntent", "Year", "Month", "Day", "Hour", "Minute", "Second", "PixelsPerUnitX",
-        "PixelsPerUnitY", "UnitSpecifier");
+        "PixelsPerUnitY", "UnitSpecifier", "PString", "HResolution", "HResolutionUnit", "WidthUnit",
+        "VResolution", "VResolutionUnit", "HeightUnit", "IPTCDigest");
 
     // WIC also lists CompressionFlag, which no metadata store keeps, so it is not listed here.
     private static readonly string[] s_textFields = { "Keyword", "LanguageTag", "TranslatedKeyword", "TextEntry" };
