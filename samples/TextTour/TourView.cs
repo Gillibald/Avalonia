@@ -49,7 +49,7 @@ namespace TextTour
                 () => new UnitsChapter(state),
                 () => new PlaceholderChapter(state, "Fonts"),
                 () => new TokensChapter(state),
-                () => new PlaceholderChapter(state, "Layout"),
+                () => new LayoutChapter(state),
                 () => new HitsChapter(state),
                 () => new DisplayChapter(state),
             };
