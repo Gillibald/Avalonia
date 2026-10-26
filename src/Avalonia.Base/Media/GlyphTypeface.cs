@@ -1937,7 +1937,8 @@ namespace Avalonia.Media
         /// Positions are in design units (see <see cref="FontMetrics.DesignEmHeight"/>), measured from the
         /// glyph origin along the horizontal advance, and returned in increasing order whatever the text
         /// direction. Multiply by the font rendering em size divided by the design em height to get device
-        /// independent units. Device table adjustments for specific pixel sizes are not applied. Carets
+        /// independent units. On a variable font instance the carets include their variation deltas for
+        /// the instance. Device table adjustments for specific pixel sizes are not applied. Carets
         /// defined as an outline contour point cannot be resolved, so a glyph with such a caret reports
         /// none; callers that need positions then usually divide the advance evenly.
         /// </remarks>
@@ -1978,7 +1979,7 @@ namespace Avalonia.Media
                 _gdefTable = gdefTable;
             }
 
-            return gdefTable.GetLigatureCarets(glyphIndex, caretPositions);
+            return gdefTable.GetLigatureCarets(glyphIndex, caretPositions, ActiveVariationCoords);
         }
 
         /// <summary>

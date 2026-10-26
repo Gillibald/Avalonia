@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using Avalonia.Media.Fonts.Tables.Variation;
 
 namespace Avalonia.Media.Fonts.Tables
 {
@@ -21,11 +22,18 @@ namespace Avalonia.Media.Fonts.Tables
 
         private readonly ReadOnlyMemory<byte> _table;
         private readonly int _ligCaretListOffset;
+        private readonly uint _itemVariationStoreOffset;
 
-        private GdefTable(ReadOnlyMemory<byte> table, int ligCaretListOffset)
+        // Loaded on the first caret that needs a variation delta. The store is immutable, so a race
+        // only loads it twice.
+        private volatile ItemVariationStore? _itemVariationStore;
+        private volatile bool _itemVariationStoreInvalid;
+
+        private GdefTable(ReadOnlyMemory<byte> table, int ligCaretListOffset, uint itemVariationStoreOffset)
         {
             _table = table;
             _ligCaretListOffset = ligCaretListOffset;
+            _itemVariationStoreOffset = itemVariationStoreOffset;
         }
 
         public static GdefTable? TryLoad(GlyphTypeface glyphTypeface)
@@ -50,17 +58,28 @@ namespace Avalonia.Media.Fonts.Tables
             var span = table.Span;
 
             if (!TryReadUInt16(span, 0, out var majorVersion) || majorVersion != 1 ||
+                !TryReadUInt16(span, 2, out var minorVersion) ||
                 !TryReadUInt16(span, 8, out var ligCaretListOffset) || ligCaretListOffset == 0)
             {
                 return null;
             }
 
-            return new GdefTable(table, ligCaretListOffset);
+            // Version 1.3 adds Offset32 itemVarStoreOffset after markGlyphSetsDefOffset.
+            uint itemVariationStoreOffset = 0;
+
+            if (minorVersion >= 3 && TryReadUInt16(span, 14, out var high) && TryReadUInt16(span, 16, out var low))
+            {
+                itemVariationStoreOffset = ((uint)high << 16) | low;
+            }
+
+            return new GdefTable(table, ligCaretListOffset, itemVariationStoreOffset);
         }
 
         /// <summary>
         /// Gets the caret positions defined for a ligature glyph, in design units from the glyph origin,
-        /// in increasing order.
+        /// in increasing order. With <paramref name="variationCoordinates"/>, the normalized coordinates of
+        /// a variable font instance in fvar axis order, carets that carry a variation index move by their
+        /// delta for that instance.
         /// </summary>
         /// <returns>
         /// The number of carets defined for the glyph, which can exceed the length of
@@ -101,7 +120,7 @@ namespace Avalonia.Media.Fonts.Tables
             for (var i = 0; i < caretCount; i++)
             {
                 if (!TryReadUInt16(span, ligGlyph + 2 + 2 * i, out var caretValueOffset) ||
-                    !TryReadCaretValue(span, ligGlyph + caretValueOffset, out carets[i]))
+                    !TryReadCaretValue(span, ligGlyph + caretValueOffset, variationCoordinates, out carets[i]))
                 {
                     return 0;
                 }
@@ -115,7 +134,8 @@ namespace Avalonia.Media.Fonts.Tables
             return caretCount;
         }
 
-        private static bool TryReadCaretValue(ReadOnlySpan<byte> span, int offset, out int coordinate)
+        private bool TryReadCaretValue(ReadOnlySpan<byte> span, int offset, ReadOnlySpan<float> variationCoordinates,
+            out int coordinate)
         {
             coordinate = 0;
 
@@ -129,7 +149,7 @@ namespace Avalonia.Media.Fonts.Tables
                 // Format 1: int16 coordinate.
                 // Format 3: int16 coordinate, Offset16 deviceOffset. A Device table adjusts the caret for
                 // specific pixel sizes, which layout in device independent units does not use. A
-                // VariationIndex table adds nothing at the default instance.
+                // VariationIndex table adds the delta of the variable font instance.
                 case 1:
                 case 3:
                     {
@@ -140,6 +160,12 @@ namespace Avalonia.Media.Fonts.Tables
 
                         coordinate = (short)value;
 
+                        if (format == 3 && !variationCoordinates.IsEmpty &&
+                            TryReadUInt16(span, offset + 4, out var deviceOffset) && deviceOffset != 0)
+                        {
+                            coordinate += GetVariationDelta(span, offset + deviceOffset, variationCoordinates);
+                        }
+
                         return true;
                     }
 
@@ -148,6 +174,50 @@ namespace Avalonia.Media.Fonts.Tables
                 default:
                     return false;
             }
+        }
+
+        // VariationIndex table: uint16 deltaSetOuterIndex, uint16 deltaSetInnerIndex, uint16 deltaFormat 0x8000.
+        private int GetVariationDelta(ReadOnlySpan<byte> span, int offset, ReadOnlySpan<float> variationCoordinates)
+        {
+            const ushort VariationIndexFormat = 0x8000;
+
+            if (!TryReadUInt16(span, offset, out var outerIndex) ||
+                !TryReadUInt16(span, offset + 2, out var innerIndex) ||
+                !TryReadUInt16(span, offset + 4, out var deltaFormat) || deltaFormat != VariationIndexFormat)
+            {
+                return 0;
+            }
+
+            var store = GetItemVariationStore(variationCoordinates.Length);
+
+            if (store is null || !store.TryGetDelta(outerIndex, innerIndex, variationCoordinates, out var delta))
+            {
+                return 0;
+            }
+
+            return (int)MathF.Round(delta, MidpointRounding.AwayFromZero);
+        }
+
+        private ItemVariationStore? GetItemVariationStore(int axisCount)
+        {
+            var store = _itemVariationStore;
+
+            if (store is not null || _itemVariationStoreInvalid)
+            {
+                return store;
+            }
+
+            if (_itemVariationStoreOffset == 0 || _itemVariationStoreOffset >= (uint)_table.Length ||
+                !ItemVariationStore.TryLoad(_table.Slice((int)_itemVariationStoreOffset), axisCount, out store))
+            {
+                _itemVariationStoreInvalid = true;
+
+                return null;
+            }
+
+            _itemVariationStore = store;
+
+            return store;
         }
 
         private static int GetCoverageIndex(ReadOnlySpan<byte> span, int offset, ushort glyphIndex)
