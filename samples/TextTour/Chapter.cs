@@ -1,7 +1,6 @@
 using System;
+using System.Collections.Generic;
 using Avalonia;
-using Avalonia.Animation;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
@@ -11,19 +10,17 @@ namespace TextTour
     /// <summary>
     /// One stage of the pipeline: a control that reveals its content step by step and names the
     /// Avalonia member behind each step. Chapters draw in <see cref="Render"/>; a child (query panel,
-    /// sliders) sit on top of the drawing.
+    /// slider) sits on top of the drawing.
     /// </summary>
     internal abstract class Chapter : Decorator, IDisposable
     {
-        /// <summary>The step as a continuous value, animated toward <see cref="Step"/> so layers fade in.</summary>
-        public static readonly StyledProperty<double> StepProgressProperty =
-            AvaloniaProperty.Register<Chapter, double>(nameof(StepProgress), 1);
-
+        private readonly Tween _stepProgress = new(1, TimeSpan.FromMilliseconds(320), Tween.EaseOut);
+        private readonly List<Tween> _tweens = new();
+        private bool _frameRequested;
         private int _step = 1;
 
         static Chapter()
         {
-            AffectsRender<Chapter>(StepProgressProperty);
             FocusableProperty.OverrideDefaultValue<Chapter>(true);
         }
 
@@ -31,6 +28,7 @@ namespace TextTour
         {
             State = state;
             ClipToBounds = true;
+            _tweens.Add(_stepProgress);
         }
 
         /// <summary>Raised when the caption or the step counter text changed.</summary>
@@ -56,19 +54,15 @@ namespace TextTour
                 }
 
                 _step = clamped;
-                UpdateTransitions();
-                SetCurrentValue(StepProgressProperty, (double)clamped);
+                AnimateTo(_stepProgress, clamped);
                 OnStepChanged();
                 RaiseCaptionChanged();
                 InvalidateVisual();
             }
         }
 
-        public double StepProgress
-        {
-            get => GetValue(StepProgressProperty);
-            set => SetValue(StepProgressProperty, value);
-        }
+        /// <summary>The step as a continuous value, eased toward <see cref="Step"/> so layers fade in.</summary>
+        public double StepProgress => _stepProgress.Value;
 
         /// <summary>The type and member that produced what the current step shows.</summary>
         public abstract string Caption { get; }
@@ -125,17 +119,33 @@ namespace TextTour
 
         protected void RaiseCaptionChanged() => CaptionChanged?.Invoke();
 
+        /// <summary>Registers another eased value of the chapter, advanced with the step progress.</summary>
+        protected Tween AddTween(double value, TimeSpan duration, Func<double, double> easing)
+        {
+            var tween = new Tween(value, duration, easing);
+            _tweens.Add(tween);
+            return tween;
+        }
+
+        /// <summary>Eases <paramref name="tween"/> to <paramref name="target"/>, or jumps there while exporting.</summary>
+        protected void AnimateTo(Tween tween, double target)
+        {
+            tween.To(target, State.Animate);
+            RequestFrame();
+            InvalidateVisual();
+        }
+
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
             base.OnAttachedToVisualTree(e);
-            State.Changed += OnStateChangedCore;
-            UpdateTransitions();
+            State.Changed += OnStateChanged;
             InvalidateModel();
+            RequestFrame();
         }
 
         protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
         {
-            State.Changed -= OnStateChangedCore;
+            State.Changed -= OnStateChanged;
             base.OnDetachedFromVisualTree(e);
         }
 
@@ -158,30 +168,28 @@ namespace TextTour
             context.FillRectangle(Palette.Background, new Rect(Bounds.Size));
         }
 
-        private void OnStateChangedCore(TourChange change)
+        private void RequestFrame()
         {
-            UpdateTransitions();
-            OnStateChanged(change);
+            if (_frameRequested || !_tweens.Exists(t => t.IsRunning) || TopLevel.GetTopLevel(this) is not { } topLevel)
+            {
+                return;
+            }
+
+            _frameRequested = true;
+            topLevel.RequestAnimationFrame(OnFrame);
         }
 
-        private void UpdateTransitions()
+        private void OnFrame(TimeSpan time)
         {
-            if (!State.Animate)
+            _frameRequested = false;
+
+            foreach (var tween in _tweens)
             {
-                Transitions = null;
+                tween.Advance(time);
             }
-            else if (Transitions is null)
-            {
-                Transitions = new Transitions
-                {
-                    new DoubleTransition
-                    {
-                        Property = StepProgressProperty,
-                        Duration = TimeSpan.FromMilliseconds(320),
-                        Easing = new CubicEaseOut(),
-                    },
-                };
-            }
+
+            InvalidateVisual();
+            RequestFrame();
         }
 
         public virtual void Dispose()

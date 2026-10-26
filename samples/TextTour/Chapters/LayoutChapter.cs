@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Avalonia;
-using Avalonia.Animation;
-using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -21,12 +19,9 @@ namespace TextTour.Chapters
     /// </summary>
     internal sealed class LayoutChapter : Chapter
     {
-        /// <summary>0 draws each line's runs in logical order, 1 in visual order.</summary>
-        public static readonly StyledProperty<double> VisualMixProperty =
-            AvaloniaProperty.Register<LayoutChapter, double>(nameof(VisualMix));
-
         private const double FontSize = 64;
 
+        private readonly Tween _visualMix;
         private readonly Slider _slider;
         private readonly TextBlock _sliderLabel;
         private readonly List<TextLayout> _layouts = new();
@@ -38,13 +33,9 @@ namespace TextTour.Chapters
         private bool _syncingSlider;
         private int _hoverLine = -1;
 
-        static LayoutChapter()
-        {
-            AffectsRender<LayoutChapter>(VisualMixProperty);
-        }
-
         public LayoutChapter(TourState state) : base(state)
         {
+            _visualMix = AddTween(0, TimeSpan.FromMilliseconds(900), Tween.EaseInOut);
             _slider = new Slider
             {
                 Minimum = 0.12,
@@ -82,17 +73,14 @@ namespace TextTour.Chapters
 
         public override int StepCount => 6;
 
-        public double VisualMix
-        {
-            get => GetValue(VisualMixProperty);
-            set => SetValue(VisualMixProperty, value);
-        }
+        /// <summary>0 draws each line's runs in logical order, 1 in visual order.</summary>
+        private double VisualMix => _visualMix.Value;
 
         public override string StepName => Step switch
         {
             1 => "lines at a width",
             2 => "break opportunities",
-            3 => VisualMix < 0.5 ? "logical order (V)" : "visual order (V)",
+            3 => _visualMix.Target < 0.5 ? "logical order (V)" : "visual order (V)",
             4 => "line metrics",
             5 => "another font",
             _ => "trimming",
@@ -114,7 +102,7 @@ namespace TextTour.Chapters
 
         public override void PrepareExport(int step, int variant)
         {
-            SetCurrentValue(VisualMixProperty, step == 3 && variant == 1 ? 1.0 : 0.0);
+            AnimateTo(_visualMix, step == 3 && variant == 1 ? 1 : 0);
             _hoverLine = step == 4 ? 0 : -1;
             RaiseCaptionChanged();
             InvalidateVisual();
@@ -124,8 +112,7 @@ namespace TextTour.Chapters
         {
             if (Step == 3 && key == Key.V)
             {
-                UpdateMixTransition();
-                SetCurrentValue(VisualMixProperty, VisualMix < 0.5 ? 1.0 : 0.0);
+                AnimateTo(_visualMix, _visualMix.Target < 0.5 ? 1 : 0);
                 RaiseCaptionChanged();
                 return true;
             }
@@ -137,7 +124,7 @@ namespace TextTour.Chapters
         {
             if (Step != 3)
             {
-                SetCurrentValue(VisualMixProperty, 0.0);
+                _visualMix.To(0, false);
             }
 
             // Steps 5 and 6 lay out their own samples.
@@ -548,17 +535,6 @@ namespace TextTour.Chapters
         private double ContentWidth() => Math.Max(200, Bounds.Width - 2 * Pad - 280);
 
         private double WrapWidth() => Math.Max(80, ContentWidth() * State.WrapFraction);
-
-        private void UpdateMixTransition()
-        {
-            Transitions = State.Animate ?
-                new Transitions
-                {
-                    new DoubleTransition { Property = StepProgressProperty, Duration = TimeSpan.FromMilliseconds(320), Easing = new CubicEaseOut() },
-                    new DoubleTransition { Property = VisualMixProperty, Duration = TimeSpan.FromMilliseconds(900), Easing = new CubicEaseInOut() },
-                } :
-                null;
-        }
 
         private void DisposeLayouts()
         {

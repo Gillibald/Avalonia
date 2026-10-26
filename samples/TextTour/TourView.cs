@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using TextTour.Chapters;
 
 namespace TextTour
@@ -203,8 +204,17 @@ namespace TextTour
             _chapterIndex = index;
             var chapter = GetChapter(index);
             chapter.CaptionChanged += UpdateCaption;
+            var focused = _topLevel?.FocusManager?.GetFocusedElement();
             _host.Child = chapter;
             UpdateRail();
+
+            // The removed chapter took the focus with it; the new one takes it over unless the
+            // presenter is typing.
+            if (focused is not TextBox)
+            {
+                Dispatcher.UIThread.Post(FocusContent);
+            }
+
             UpdateCaption();
         }
 
@@ -331,7 +341,7 @@ namespace TextTour
                 case Key.OemMinus or Key.Subtract:
                     _state.ContentScale -= 0.25;
                     break;
-                case Key.I or Key.Enter:
+                case Key.I:
                     _input.Focus();
                     _input.SelectAll();
                     break;
