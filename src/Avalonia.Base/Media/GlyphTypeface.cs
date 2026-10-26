@@ -757,6 +757,34 @@ namespace Avalonia.Media
         internal bool IsLastResort { get; }
 
         /// <summary>
+        /// Gets the caret positions the font defines inside a ligature glyph, from the ligature caret list
+        /// of its <c>GDEF</c> table.
+        /// </summary>
+        /// <remarks>
+        /// A ligature glyph that stands for several characters (an "ffi" ligature, for example) can carry
+        /// caret positions that divide it into its components, so a caret can be placed between them.
+        /// Positions are in design units (see <see cref="FontMetrics.DesignEmHeight"/>), measured from the
+        /// glyph origin along the horizontal advance, and returned in increasing order whatever the text
+        /// direction. Multiply by the font rendering em size divided by the design em height to get device
+        /// independent units. Device table adjustments for specific pixel sizes are not applied. Carets
+        /// defined as an outline contour point cannot be resolved, so a glyph with such a caret reports
+        /// none; callers that need positions then usually divide the advance evenly.
+        /// </remarks>
+        /// <param name="glyphIndex">The ligature glyph.</param>
+        /// <param name="caretPositions">
+        /// Receives the caret positions, up to its length. Pass an empty span to query the count only.
+        /// </param>
+        /// <returns>
+        /// The number of carets the font defines for the glyph, which can exceed the length of
+        /// <paramref name="caretPositions"/>; 0 when the font defines none for the glyph or they cannot be
+        /// resolved.
+        /// </returns>
+        public int GetLigatureCaretPositions(ushort glyphIndex, Span<int> caretPositions)
+        {
+            return 0;
+        }
+
+        /// <summary>
         /// Attempts to retrieve the horizontal advance width for the specified glyph.
         /// </summary>
         /// <remarks>Returns false if horizontal metrics are not available or if the specified glyph is
