@@ -53,6 +53,11 @@ namespace Avalonia.Media
         // CanShapeScript. Parsing copies the layout tables, so it is deferred until a complex script
         // is actually queried (most text never triggers it). Published via the volatile field.
         private volatile HashSet<OpenTypeTag>? _shapingScriptTags;
+
+        // Read on the first ligature caret query. The reader is immutable, so a race only reads the
+        // table header twice.
+        private volatile GdefTable? _gdefTable;
+        private volatile bool _gdefTableMissing;
         private bool _shapingScriptTagsUnknown;
         private readonly object _shapingScriptTagsLock = new();
 
@@ -781,7 +786,33 @@ namespace Avalonia.Media
         /// </returns>
         public int GetLigatureCaretPositions(ushort glyphIndex, Span<int> caretPositions)
         {
-            return 0;
+            if (_isDisposed)
+            {
+                return 0;
+            }
+
+            var gdefTable = _gdefTable;
+
+            if (gdefTable is null)
+            {
+                if (_gdefTableMissing)
+                {
+                    return 0;
+                }
+
+                gdefTable = GdefTable.TryLoad(this);
+
+                if (gdefTable is null)
+                {
+                    _gdefTableMissing = true;
+
+                    return 0;
+                }
+
+                _gdefTable = gdefTable;
+            }
+
+            return gdefTable.GetLigatureCarets(glyphIndex, caretPositions);
         }
 
         /// <summary>
