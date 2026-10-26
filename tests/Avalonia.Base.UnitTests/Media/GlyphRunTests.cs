@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Avalonia.Headless;
 using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
@@ -180,7 +181,23 @@ namespace Avalonia.Base.UnitTests.Media
                 glyphInfos[i] = new GlyphInfo(0, glyphClusters[i], glyphAdvances[i]);
             }
 
-            return new GlyphRun(Typeface.Default.GlyphTypeface, 10, new string('a', count).AsMemory(), glyphInfos, biDiLevel: bidiLevel);
+            return new GlyphRun(Typeface.Default.GlyphTypeface, 10, CreateClusterText(glyphClusters, count).AsMemory(),
+                glyphInfos, biDiLevel: bidiLevel);
+        }
+
+        // One grapheme per cluster: a base letter at every cluster start and combining marks after it, so
+        // a multi-character cluster models a base with marks, not a ligature of several letters.
+        private static string CreateClusterText(int[] glyphClusters, int length)
+        {
+            var text = new char[length];
+            var firstCluster = glyphClusters.Length == 0 ? 0 : glyphClusters.Min();
+
+            for (var i = 0; i < length; i++)
+            {
+                text[i] = Array.IndexOf(glyphClusters, firstCluster + i) >= 0 ? 'a' : '́';
+            }
+
+            return new string(text);
         }
 
         private static IDisposable Start()

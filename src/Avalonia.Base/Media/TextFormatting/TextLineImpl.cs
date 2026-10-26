@@ -524,9 +524,9 @@ namespace Avalonia.Media.TextFormatting
 
                         if (characterHit.FirstCharacterIndex < currentPosition && offset > 0)
                         {
-                            // Crossing from a previous run: find the nearest character hit at the first cluster
-                            var nearest = shapedRun.GlyphRun.FindNearestCharacterHit(
-                                shapedRun.GlyphRun.Metrics.FirstCluster, out _);
+                            // Crossing from a previous run: the next stop is the end of the run's first caret stop
+                            var nearest = shapedRun.GlyphRun.FindNearestCaretStop(
+                                shapedRun.GlyphRun.Metrics.FirstCluster);
                             nextCharacterHit = new CharacterHit(
                                 nearest.FirstCharacterIndex + offset, nearest.TrailingLength);
                         }
@@ -1127,10 +1127,11 @@ namespace Avalonia.Media.TextFormatting
 
             var clusterOffset = 0;
 
-            // Cluster boundary correction
+            // Caret stop boundary correction: a start inside a caret stop (a cluster, or a grapheme of a
+            // ligature) moves to the start of that stop.
             if (runOffset > 0)
             {
-                var characterHit = currentRun.GlyphRun.FindNearestCharacterHit(startIndex, out _);
+                var characterHit = currentRun.GlyphRun.FindNearestCaretStop(startIndex);
                 var clusterStart = characterHit.FirstCharacterIndex;
                 var clusterEnd = clusterStart + characterHit.TrailingLength;
 
@@ -1144,24 +1145,8 @@ namespace Avalonia.Media.TextFormatting
                 }
             }
 
-            //Find the visual start and end position of the hit
-            var startOffset = currentRun.GlyphRun.GetDistanceFromCharacterHit(new CharacterHit(startIndex));
-            var endOffset = currentRun.GlyphRun.GetDistanceFromCharacterHit(new CharacterHit(endIndex));
-
-            if (isLeftToRight)
-            {
-                endX = startX + endOffset;
-                startX += startOffset;
-            }
-            else
-            {
-                //We need the distance from right to left and GetDistanceFromCharacterHit returs a distance from left to right so we need to adjust the offsets
-                startX -= currentRun.Size.Width - startOffset;
-                endX -= currentRun.Size.Width - endOffset;
-            }
-
             // Find the start of the hit
-            var startHit = currentRun.GlyphRun.FindNearestCharacterHit(startIndex, out _);
+            var startHit = currentRun.GlyphRun.FindNearestCaretStop(startIndex);
             var startHitIndex = startHit.FirstCharacterIndex;
 
             //If the requested text range starts at the trailing edge we need to move at the end of the hit
@@ -1171,7 +1156,7 @@ namespace Avalonia.Media.TextFormatting
             }
 
             //Find the next possible position that contains the endIndex
-            var nearestEndHit = currentRun.GlyphRun.FindNearestCharacterHit(endIndex, out _);
+            var nearestEndHit = currentRun.GlyphRun.FindNearestCaretStop(endIndex);
 
             int endHitIndex;
 
@@ -1184,6 +1169,22 @@ namespace Avalonia.Media.TextFormatting
             {
                 //The hit is at the leading edge
                 endHitIndex = nearestEndHit.FirstCharacterIndex;
+            }
+
+            // Measure the caret stops the range covers, so the rectangle matches the reported length
+            var startOffset = currentRun.GlyphRun.GetDistanceFromCharacterHit(new CharacterHit(startIndex));
+            var endOffset = currentRun.GlyphRun.GetDistanceFromCharacterHit(new CharacterHit(endHitIndex));
+
+            if (isLeftToRight)
+            {
+                endX = startX + endOffset;
+                startX += startOffset;
+            }
+            else
+            {
+                //We need the distance from right to left and GetDistanceFromCharacterHit returs a distance from left to right so we need to adjust the offsets
+                startX -= currentRun.Size.Width - startOffset;
+                endX -= currentRun.Size.Width - endOffset;
             }
 
             var coveredLength = Math.Max(0, Math.Abs(startHitIndex - endHitIndex) - clusterOffset);

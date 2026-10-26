@@ -24,6 +24,12 @@ namespace Avalonia.Media
         private Point? _baselineOrigin;
         private bool _hasOneCharPerCluster; // if true, character index and cluster are similar
 
+        // Caret stop queries keep per-cluster scratch data on the stack up to this cluster length.
+        private const int MaxStackClusterLength = 64;
+
+        // A ligature with more carets than this is divided evenly.
+        private const int MaxLigatureCarets = 16;
+
         static GlyphRun()
         {
             s_renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
@@ -249,6 +255,11 @@ namespace Avalonia.Media
             var characterIndex = characterHit.FirstCharacterIndex + characterHit.TrailingLength;
             var isTrailingHit = characterHit.TrailingLength > 0;
 
+            if (TryGetDistanceInsideCluster(characterIndex, out var distanceInsideCluster))
+            {
+                return distanceInsideCluster;
+            }
+
             var distance = 0.0;
 
             if (IsLeftToRight)
@@ -404,6 +415,11 @@ namespace Avalonia.Media
 
             var characterHit = FindNearestCharacterHit(characterIndex, out var width);
 
+            if (TryGetCaretStopFromDistance(characterHit, distance, out var caretStopHit))
+            {
+                return caretStopHit;
+            }
+
             var delta = width / 2;
 
             var offset = IsLeftToRight ? Math.Round(distance - currentX, 3) : Math.Round(currentX - distance, 3);
@@ -425,17 +441,21 @@ namespace Avalonia.Media
         {
             if (characterHit.TrailingLength == 0)
             {
-                characterHit = FindNearestCharacterHit(characterHit.FirstCharacterIndex, out _);
+                var cluster = FindNearestCharacterHit(characterHit.FirstCharacterIndex, out _);
+                var caretStop = GetCaretStop(cluster, characterHit.FirstCharacterIndex);
 
-                if (characterHit.FirstCharacterIndex == Metrics.LastCluster)
+                // The last stop of the run is returned as a trailing hit, so the caret stays in this run.
+                if (cluster.FirstCharacterIndex == Metrics.LastCluster &&
+                    caretStop.FirstCharacterIndex + caretStop.TrailingLength ==
+                    cluster.FirstCharacterIndex + cluster.TrailingLength)
                 {
-                    return characterHit;
+                    return caretStop;
                 }
 
-                return new CharacterHit(characterHit.FirstCharacterIndex + characterHit.TrailingLength);
+                return new CharacterHit(caretStop.FirstCharacterIndex + caretStop.TrailingLength);
             }
 
-            return FindNearestCharacterHit(characterHit.FirstCharacterIndex + characterHit.TrailingLength, out _);
+            return FindNearestCaretStop(characterHit.FirstCharacterIndex + characterHit.TrailingLength);
         }
 
         /// <summary>
@@ -452,13 +472,13 @@ namespace Avalonia.Media
 
             if (characterHit.TrailingLength > 0)
             {
-                var previousCharacterHit = FindNearestCharacterHit(characterHit.FirstCharacterIndex, out _);
+                var previousCharacterHit = FindNearestCaretStop(characterHit.FirstCharacterIndex);
 
                 return new CharacterHit(previousCharacterHit.FirstCharacterIndex);
             }
             else
             {
-                var previousCharacterHit = FindNearestCharacterHit(characterHit.FirstCharacterIndex - 1, out _);
+                var previousCharacterHit = FindNearestCaretStop(characterHit.FirstCharacterIndex - 1);
 
                 return new CharacterHit(previousCharacterHit.FirstCharacterIndex);
             }
@@ -548,12 +568,18 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Finds the nearest <see cref="CharacterHit"/> at given index.
+        /// Finds the cluster that contains the given character index.
         /// </summary>
+        /// <remarks>
+        /// The result always spans a whole cluster, the characters the shaper mapped to the same glyphs. A
+        /// ligature that stands for several graphemes is one cluster, although the caret navigation and
+        /// hit testing methods of this class stop inside it at every grapheme boundary.
+        /// </remarks>
         /// <param name="index">The index.</param>
         /// <param name="width">The width of found cluster.</param>
         /// <returns>
-        /// The nearest <see cref="CharacterHit"/>.
+        /// A <see cref="CharacterHit"/> whose <see cref="CharacterHit.FirstCharacterIndex"/> is the start of
+        /// the cluster and whose <see cref="CharacterHit.TrailingLength"/> is its length.
         /// </returns>
         public CharacterHit FindNearestCharacterHit(int index, out double width)
         {
@@ -660,6 +686,360 @@ namespace Avalonia.Media
 
             return new CharacterHit(cluster, clusterLength);
         }
+
+        /// <summary>
+        /// Finds the caret stop that contains the given character index: the grapheme inside its cluster when
+        /// the cluster holds more than one grapheme (a ligature), otherwise the whole cluster.
+        /// </summary>
+        /// <returns>
+        /// A <see cref="CharacterHit"/> whose <see cref="CharacterHit.FirstCharacterIndex"/> is the start of the
+        /// caret stop and whose <see cref="CharacterHit.TrailingLength"/> is its length.
+        /// </returns>
+        internal CharacterHit FindNearestCaretStop(int index)
+            => GetCaretStop(FindNearestCharacterHit(index, out _), index);
+
+        private CharacterHit GetCaretStop(CharacterHit cluster, int index)
+        {
+            var clusterLength = cluster.TrailingLength;
+
+            if (_hasOneCharPerCluster || clusterLength < 2)
+            {
+                return cluster;
+            }
+
+            Span<int> boundaries = clusterLength < MaxStackClusterLength
+                ? stackalloc int[clusterLength + 1]
+                : new int[clusterLength + 1];
+
+            var graphemeCount = GetGraphemeBoundaries(cluster.FirstCharacterIndex, clusterLength, boundaries);
+
+            if (graphemeCount < 2)
+            {
+                return cluster;
+            }
+
+            var grapheme = FindGrapheme(boundaries, graphemeCount, index - cluster.FirstCharacterIndex);
+
+            return new CharacterHit(cluster.FirstCharacterIndex + boundaries[grapheme],
+                boundaries[grapheme + 1] - boundaries[grapheme]);
+        }
+
+        /// <summary>
+        /// Gets the distance of a character index that lies inside a cluster of several graphemes. An index
+        /// between two graphemes measures at the caret position between them; any other index inside the
+        /// cluster measures at the start of its grapheme.
+        /// </summary>
+        private bool TryGetDistanceInsideCluster(int characterIndex, out double distance)
+        {
+            distance = 0;
+
+            if (_hasOneCharPerCluster || _glyphInfos.Count == 0)
+            {
+                return false;
+            }
+
+            var cluster = FindNearestCharacterHit(characterIndex, out _);
+            var clusterLength = cluster.TrailingLength;
+            var offset = characterIndex - cluster.FirstCharacterIndex;
+
+            if (clusterLength < 2 || offset <= 0 || offset >= clusterLength)
+            {
+                return false;
+            }
+
+            Span<int> boundaries = clusterLength < MaxStackClusterLength
+                ? stackalloc int[clusterLength + 1]
+                : new int[clusterLength + 1];
+
+            var graphemeCount = GetGraphemeBoundaries(cluster.FirstCharacterIndex, clusterLength, boundaries);
+
+            if (graphemeCount < 2)
+            {
+                return false;
+            }
+
+            Span<double> positions = clusterLength < MaxStackClusterLength
+                ? stackalloc double[clusterLength + 1]
+                : new double[clusterLength + 1];
+
+            GetCaretStopPositions(cluster.FirstCharacterIndex, clusterLength, boundaries, graphemeCount, positions);
+
+            distance = positions[FindGrapheme(boundaries, graphemeCount, offset)];
+
+            return true;
+        }
+
+        /// <summary>
+        /// Maps a distance over a cluster of several graphemes to the leading or trailing edge of the grapheme
+        /// under it, by the same half-width rule clusters use.
+        /// </summary>
+        private bool TryGetCaretStopFromDistance(CharacterHit cluster, double distance, out CharacterHit characterHit)
+        {
+            characterHit = default;
+
+            var clusterLength = cluster.TrailingLength;
+
+            if (_hasOneCharPerCluster || clusterLength < 2)
+            {
+                return false;
+            }
+
+            Span<int> boundaries = clusterLength < MaxStackClusterLength
+                ? stackalloc int[clusterLength + 1]
+                : new int[clusterLength + 1];
+
+            var graphemeCount = GetGraphemeBoundaries(cluster.FirstCharacterIndex, clusterLength, boundaries);
+
+            if (graphemeCount < 2)
+            {
+                return false;
+            }
+
+            Span<double> positions = clusterLength < MaxStackClusterLength
+                ? stackalloc double[clusterLength + 1]
+                : new double[clusterLength + 1];
+
+            GetCaretStopPositions(cluster.FirstCharacterIndex, clusterLength, boundaries, graphemeCount, positions);
+
+            // Positions follow the logical order, so they ascend in left-to-right text and descend in
+            // right-to-left text. The grapheme under the distance is the last one whose leading edge it reached.
+            var grapheme = 0;
+
+            for (var i = 1; i < graphemeCount; i++)
+            {
+                if (IsLeftToRight ? distance >= positions[i] : distance <= positions[i])
+                {
+                    grapheme = i;
+                }
+            }
+
+            var leadingEdge = positions[grapheme];
+            var trailingEdge = positions[grapheme + 1];
+
+            var offset = Math.Round(Math.Abs(distance - leadingEdge), 3);
+            var isTrailing = offset > Math.Abs(trailingEdge - leadingEdge) / 2;
+
+            var start = cluster.FirstCharacterIndex + boundaries[grapheme];
+
+            characterHit = isTrailing
+                ? new CharacterHit(start, boundaries[grapheme + 1] - boundaries[grapheme])
+                : new CharacterHit(start);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Fills <paramref name="boundaries"/> with the grapheme boundaries of a cluster as offsets from its
+        /// start, 0 and the cluster length included.
+        /// </summary>
+        /// <returns>The number of graphemes in the cluster.</returns>
+        private int GetGraphemeBoundaries(int clusterStart, int clusterLength, Span<int> boundaries)
+        {
+            boundaries[0] = 0;
+            boundaries[1] = clusterLength;
+
+            // Cluster values count from the character of the run's first cluster.
+            var characters = Characters.Span;
+            var characterOffset = clusterStart - Metrics.FirstCluster;
+
+            if (characterOffset < 0 || characterOffset + clusterLength > characters.Length)
+            {
+                return 1;
+            }
+
+            var text = characters.Slice(characterOffset, clusterLength);
+
+            if (clusterLength == 2 && char.IsSurrogatePair(text[0], text[1]))
+            {
+                return 1;
+            }
+
+            var enumerator = new GraphemeEnumerator(text);
+            var count = 0;
+            var position = 0;
+
+            while (enumerator.MoveNext(out var grapheme))
+            {
+                position += grapheme.Length;
+                boundaries[++count] = position;
+            }
+
+            return Math.Max(1, count);
+        }
+
+        /// <summary>
+        /// Finds the grapheme that contains the offset; offsets before or after the cluster map to its first
+        /// or last grapheme.
+        /// </summary>
+        private static int FindGrapheme(ReadOnlySpan<int> boundaries, int graphemeCount, int offset)
+        {
+            for (var i = graphemeCount - 1; i > 0; i--)
+            {
+                if (boundaries[i] <= offset)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        /// <summary>
+        /// Computes the caret position of every grapheme boundary of a cluster, as distances from the left
+        /// edge of the run, in logical order. Inner positions come from the ligature carets of the font when
+        /// the cluster is a single ligature glyph with a matching number of carets, and divide the cluster
+        /// evenly otherwise.
+        /// </summary>
+        private void GetCaretStopPositions(int clusterStart, int clusterLength, ReadOnlySpan<int> boundaries,
+            int graphemeCount, Span<double> positions)
+        {
+            // The glyphs of a cluster are adjacent in visual order, in either direction.
+            var firstGlyph = FindGlyphIndex(clusterStart);
+            var lastGlyph = firstGlyph;
+            var cluster = _glyphInfos[firstGlyph].GlyphCluster;
+
+            while (firstGlyph > 0 && _glyphInfos[firstGlyph - 1].GlyphCluster == cluster)
+            {
+                firstGlyph--;
+            }
+
+            while (lastGlyph + 1 < _glyphInfos.Count && _glyphInfos[lastGlyph + 1].GlyphCluster == cluster)
+            {
+                lastGlyph++;
+            }
+
+            var left = 0.0;
+
+            for (var i = 0; i < firstGlyph; i++)
+            {
+                left += _glyphInfos[i].GlyphAdvance;
+            }
+
+            var width = 0.0;
+
+            for (var i = firstGlyph; i <= lastGlyph; i++)
+            {
+                width += _glyphInfos[i].GlyphAdvance;
+            }
+
+            var isLeftToRight = IsLeftToRight;
+
+            positions[0] = isLeftToRight ? left : left + width;
+            positions[graphemeCount] = isLeftToRight ? left + width : left;
+
+            if (TryGetLigatureCaretPositions(clusterStart, clusterLength, boundaries, graphemeCount, firstGlyph,
+                    lastGlyph, left, positions))
+            {
+                return;
+            }
+
+            for (var i = 1; i < graphemeCount; i++)
+            {
+                var offset = width * i / graphemeCount;
+
+                positions[i] = isLeftToRight ? left + offset : left + width - offset;
+            }
+        }
+
+        private bool TryGetLigatureCaretPositions(int clusterStart, int clusterLength, ReadOnlySpan<int> boundaries,
+            int graphemeCount, int firstGlyph, int lastGlyph, double left, Span<double> positions)
+        {
+            // Carets belong to one ligature glyph. Marks and other zero-advance glyphs of the cluster take
+            // no part in caret placement; a cluster of several advancing glyphs has no single caret glyph.
+            var caretGlyph = -1;
+
+            for (var i = firstGlyph; i <= lastGlyph; i++)
+            {
+                if (_glyphInfos[i].GlyphAdvance == 0)
+                {
+                    continue;
+                }
+
+                if (caretGlyph >= 0)
+                {
+                    return false;
+                }
+
+                caretGlyph = i;
+            }
+
+            if (caretGlyph < 0)
+            {
+                return false;
+            }
+
+            Span<int> carets = stackalloc int[MaxLigatureCarets];
+
+            var caretCount = GlyphTypeface.GetLigatureCaretPositions(_glyphInfos[caretGlyph].GlyphIndex, carets);
+
+            if (caretCount == 0 || caretCount > carets.Length)
+            {
+                return false;
+            }
+
+            var caretGlyphLeft = left;
+
+            for (var i = firstGlyph; i < caretGlyph; i++)
+            {
+                caretGlyphLeft += _glyphInfos[i].GlyphAdvance;
+            }
+
+            // Carets are placed from the glyph origin rather than scaled to the shaped advance, so kerning
+            // and letter spacing on the ligature move only its trailing edge. The clamp keeps the stops
+            // inside a narrowed advance.
+            var advance = _glyphInfos[caretGlyph].GlyphAdvance;
+            var isLeftToRight = IsLeftToRight;
+
+            // Carets ascend along the advance while right-to-left text runs from the right, so the
+            // boundaries take carets from the other end there.
+            if (caretCount == graphemeCount - 1)
+            {
+                for (var i = 1; i < graphemeCount; i++)
+                {
+                    var caret = carets[isLeftToRight ? i - 1 : graphemeCount - 1 - i];
+
+                    positions[i] = caretGlyphLeft + Math.Clamp(caret * Scale, 0, advance);
+                }
+
+                return true;
+            }
+
+            // A ligature whose components include a mark or a joiner can define a caret per code point;
+            // the carets that fall on grapheme boundaries are used.
+            var characters = Characters.Span.Slice(clusterStart - Metrics.FirstCluster, clusterLength);
+            var codepointCount = CountCodepoints(characters, clusterLength);
+
+            if (caretCount != codepointCount - 1)
+            {
+                return false;
+            }
+
+            for (var i = 1; i < graphemeCount; i++)
+            {
+                var codepointIndex = CountCodepoints(characters, boundaries[i]);
+                var caret = carets[isLeftToRight ? codepointIndex - 1 : codepointCount - 1 - codepointIndex];
+
+                positions[i] = caretGlyphLeft + Math.Clamp(caret * Scale, 0, advance);
+            }
+
+            return true;
+
+            static int CountCodepoints(ReadOnlySpan<char> text, int length)
+            {
+                var count = 0;
+
+                for (var i = 0; i < length;)
+                {
+                    Codepoint.ReadAt(text, i, out var codepointLength);
+
+                    i += codepointLength;
+                    count++;
+                }
+
+                return count;
+            }
+        }
+
 
         private GlyphRunMetrics CreateGlyphRunMetrics()
         {
