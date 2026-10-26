@@ -27,9 +27,6 @@ namespace Avalonia.Media
         // Caret stop queries keep per-cluster scratch data on the stack up to this cluster length.
         private const int MaxStackClusterLength = 64;
 
-        // A ligature with more carets than this is divided evenly.
-        private const int MaxLigatureCarets = 16;
-
         static GlyphRun()
         {
             s_renderInterface = AvaloniaLocator.Current.GetRequiredService<IPlatformRenderInterface>();
@@ -968,14 +965,14 @@ namespace Avalonia.Media
                 return false;
             }
 
-            Span<int> carets = stackalloc int[MaxLigatureCarets];
+            var carets = GlyphTypeface.GetLigatureCaretPositions(_glyphInfos[caretGlyph].GlyphIndex);
 
-            var caretCount = GlyphTypeface.GetLigatureCaretPositions(_glyphInfos[caretGlyph].GlyphIndex, carets);
-
-            if (caretCount == 0 || caretCount > carets.Length)
+            if (carets.IsEmpty)
             {
                 return false;
             }
+
+            var caretCount = carets.Length;
 
             var caretGlyphLeft = left;
 
