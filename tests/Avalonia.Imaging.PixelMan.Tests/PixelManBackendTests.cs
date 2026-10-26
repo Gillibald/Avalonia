@@ -106,6 +106,31 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void Error_Diffusion_Should_Match_WIC()
+        {
+            using var scope = Bind();
+
+            // WPF's FormatConvertedBitmap of these pixels, which dithers through WIC.
+            byte[] gray =
+            {
+                122, 129, 51, 215, 84, 6, 227, 175,
+                212, 84, 211, 35, 122, 151, 217, 209,
+                153, 26, 145, 55, 12, 71, 170, 220,
+            };
+            var source = PixelBuffer.Create(gray, new PixelSize(8, 3), 8, PixelFormats.Gray8, AlphaFormat.Opaque);
+            var options = new PixelConversionOptions { Dither = BitmapDitherMode.ErrorDiffusion };
+
+            Assert.Equal(new byte[] { 83, 171, 163 },
+                source.Convert(PixelFormats.BlackWhite, AlphaFormat.Opaque, options).Pixels.ToArray());
+
+            var halftone8 = BitmapPalette.CreateWellKnown(WellKnownPaletteType.Halftone8);
+            var indexed = source.Convert(PixelFormats.Indexed4, AlphaFormat.Opaque,
+                new PixelConversionOptions { Dither = BitmapDitherMode.ErrorDiffusion, Palette = halftone8 });
+
+            Assert.Equal(new byte[] { 153, 8, 144, 136, 137, 128, 153, 120, 128, 153, 9, 136 }, indexed.Pixels.ToArray());
+        }
+
+        [Fact]
         public void A_Gif_Decoder_Should_Read_Frames_In_Any_Order()
         {
             using var scope = Bind();

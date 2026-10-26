@@ -29,6 +29,15 @@ namespace Avalonia.Imaging.PixelMan
             if (targetFormat.IsIndexed && targetFormat == sourceFormat && options?.Palette is not null)
                 return false;
 
+            // Error diffusion depends on where the scan starts; the core path dithers the requested
+            // rectangle, PixelMan the whole frame.
+            var dither = options?.Dither == BitmapDitherMode.ErrorDiffusion && targetFormat != sourceFormat &&
+                (format.IsIndexed || format == PixelFormats.BlackWhite || format == PixelFormats.Gray2 ||
+                    format == PixelFormats.Gray4);
+
+            if (dither && sourceRect != new PixelRect(source.Size))
+                return false;
+
             using var sourcePm = sourcePalette is not null ? PixelManFormats.ToPixelMan(sourcePalette) : null;
             using var frame = Wrap(source, sourceFormat, sourcePm);
 
@@ -37,12 +46,15 @@ namespace Avalonia.Imaging.PixelMan
                 var span = new Span<byte>((void*)destination, checked((int)destinationSize));
 
                 // PixelMan copies into an indexed format only from that same format, so a
-                // palette target is matched by a conversion first.
-                if (targetFormat.IsIndexed && targetFormat != sourceFormat)
+                // palette target is matched by a conversion first; so is a dithered one.
+                if ((targetFormat.IsIndexed && targetFormat != sourceFormat) || dither)
                 {
-                    using var palette = PixelManFormats.ToPixelMan(options!.Palette!);
-                    using var converted = frame.ConvertTo(targetFormat, palette,
-                        new PmConversionOptions { AlphaThresholdPercent = options.AlphaThresholdPercent });
+                    using var palette = targetFormat.IsIndexed ? PixelManFormats.ToPixelMan(options!.Palette!) : null;
+                    using var converted = frame.ConvertTo(targetFormat, palette, new PmConversionOptions
+                    {
+                        AlphaThresholdPercent = options?.AlphaThresholdPercent ?? 0,
+                        Dither = dither ? PmDither.ErrorDiffusion : PmDither.None,
+                    });
 
                     converted.CopyPixels(targetFormat, (uint)sourceRect.X, (uint)sourceRect.Y, (uint)sourceRect.Width,
                         (uint)sourceRect.Height, span, (nuint)destinationStride);
