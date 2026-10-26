@@ -2764,6 +2764,253 @@ namespace Avalonia.Controls.UnitTests
             Assert.Equal("abcef ffi", target.Text);
         }
 
+        [Fact]
+        public void Shift_Right_Should_Move_CaretIndex_To_The_Selection_End()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
+
+            AssertCaretAtSelectionEnd(target, 2, 4);
+        }
+
+        [Fact]
+        public void Shift_Left_Should_Move_CaretIndex_To_The_Selection_End()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 4);
+
+            RaiseKeyEvent(target, Key.Left, KeyModifiers.Shift);
+            RaiseKeyEvent(target, Key.Left, KeyModifiers.Shift);
+
+            AssertCaretAtSelectionEnd(target, 4, 2);
+        }
+
+        [Fact]
+        public void Shift_End_And_Shift_Home_Should_Keep_The_Anchor_And_Move_CaretIndex()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            RaiseKeyEvent(target, Key.End, KeyModifiers.Shift);
+
+            AssertCaretAtSelectionEnd(target, 2, 10);
+
+            RaiseKeyEvent(target, Key.Home, KeyModifiers.Shift);
+
+            AssertCaretAtSelectionEnd(target, 2, 0);
+        }
+
+        [Fact]
+        public void Shift_Home_After_Shift_Right_Should_Keep_The_Anchor()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            RaiseKeyEvent(target, Key.Home, KeyModifiers.Shift);
+
+            AssertCaretAtSelectionEnd(target, 2, 0);
+        }
+
+        [Fact]
+        public void Ctrl_Shift_Right_Should_Move_CaretIndex_To_The_Selection_End()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 0);
+
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Control | KeyModifiers.Shift);
+
+            var selectionEnd = target.SelectionEnd;
+            Assert.True(selectionEnd > 0);
+            AssertCaretAtSelectionEnd(target, 0, selectionEnd);
+        }
+
+        [Fact]
+        public void Ctrl_Right_Should_Collapse_The_Selection_At_The_Next_Word()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 0);
+
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Control);
+
+            var caretIndex = target.CaretIndex;
+            Assert.True(caretIndex > 0);
+            AssertCaretAtSelectionEnd(target, caretIndex, caretIndex);
+        }
+
+        [Fact]
+        public void Ctrl_A_Should_Move_CaretIndex_To_The_End_Of_The_Text()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            RaiseKeyEvent(target, Key.A, KeyModifiers.Control);
+
+            AssertCaretAtSelectionEnd(target, 0, 10);
+        }
+
+        [Fact]
+        public void SelectAll_Should_Move_CaretIndex_To_The_End_Of_The_Text()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            target.SelectAll();
+
+            AssertCaretAtSelectionEnd(target, 0, 10);
+        }
+
+        [Fact]
+        public void Shift_Home_After_SelectAll_Should_Keep_The_Anchor_At_The_Start()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            target.SelectAll();
+            RaiseKeyEvent(target, Key.Home, KeyModifiers.Shift);
+
+            AssertCaretAtSelectionEnd(target, 0, 0);
+        }
+
+        [Fact]
+        public void Setting_Selection_From_Code_Should_Move_CaretIndex_To_SelectionEnd()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 0);
+
+            target.SelectionStart = 1;
+            target.SelectionEnd = 4;
+
+            AssertCaretAtSelectionEnd(target, 1, 4);
+        }
+
+        [Fact]
+        public void Setting_SelectionStart_From_Code_Should_Keep_CaretIndex_At_SelectionEnd()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            target.SelectionStart = 5;
+
+            AssertCaretAtSelectionEnd(target, 5, 2);
+        }
+
+        [Fact]
+        public void Setting_CaretIndex_To_The_Selection_Anchor_Should_Collapse_The_Selection()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            target.CaretIndex = 2;
+
+            AssertCaretAtSelectionEnd(target, 2, 2);
+        }
+
+        [Fact]
+        public void Setting_CaretIndex_To_Its_Current_Value_Should_Collapse_The_Selection()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 4);
+
+            target.SelectionStart = 2;
+
+            Assert.Equal(4, target.CaretIndex);
+
+            target.CaretIndex = 4;
+
+            AssertCaretAtSelectionEnd(target, 4, 4);
+        }
+
+        [Fact]
+        public void Setting_SelectedText_Should_Place_CaretIndex_After_The_Inserted_Text()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateTextBoxWithForwardKeyboardSelection();
+
+            target.SelectedText = "X";
+
+            Assert.Equal("abXef ffi", target.Text);
+            AssertCaretAtSelectionEnd(target, 3, 3);
+        }
+
+        [Fact]
+        public void Shrinking_Text_Should_Clamp_The_Selection_And_Keep_CaretIndex_At_SelectionEnd()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            RaiseKeyEvent(target, Key.End, KeyModifiers.Shift);
+
+            target.Text = "abcd";
+
+            AssertCaretAtSelectionEnd(target, 2, 4);
+        }
+
+        [Fact]
+        public void Undo_After_A_Keyboard_Selection_Should_Collapse_At_The_Restored_Caret()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 2);
+
+            RaiseTextEvent(target, "x");
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
+            RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
+
+            target.Undo();
+
+            Assert.Equal("abcdef ffi", target.Text);
+            AssertCaretAtSelectionEnd(target, 2, 2);
+        }
+
+        [Fact]
+        public void Input_Method_Selection_Should_Move_CaretIndex_To_The_Selection_End()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = CreateThemeLikeTextBox("abcdef ffi", 0);
+            var client = GetInputMethodClient(target);
+
+            client.Selection = new TextSelection(1, 4);
+
+            AssertCaretAtSelectionEnd(target, 1, 4);
+            Assert.Equal(new TextSelection(1, 4), client.Selection);
+        }
+
+        [Fact]
+        public void Double_Click_Should_Move_CaretIndex_To_The_End_Of_The_Word()
+        {
+            using var _ = UnitTestApplication.Start(TestServices.StyledWindow);
+            var target = new TextBox { Template = CreateThemeLikeTemplate(), Text = "abcdef ffi" };
+            var window = new Window { Content = target };
+            window.Show();
+
+            var mouse = new MouseTestHelper();
+            var point = GetPointAtCharacter(target, window, 3);
+            mouse.DoubleClick(target, MouseButton.Left, point);
+            mouse.Up(target, MouseButton.Left, point);
+
+            Assert.Equal(0, target.SelectionStart);
+            Assert.True(target.SelectionEnd >= 6);
+            AssertCaretAtSelectionEnd(target, 0, target.SelectionEnd);
+        }
+
+        [Fact]
+        public void Pointer_Drag_Should_Move_CaretIndex_To_The_Selection_End()
+        {
+            using var _ = UnitTestApplication.Start(TestServices.StyledWindow);
+            var target = new TextBox { Template = CreateThemeLikeTemplate(), Text = "abcdef ffi" };
+            var window = new Window { Content = target };
+            window.Show();
+
+            var mouse = new MouseTestHelper();
+            mouse.Down(target, MouseButton.Left, GetPointAtCharacter(target, window, 2));
+            mouse.Move(target, GetPointAtCharacter(target, window, 5));
+            mouse.Up(target, MouseButton.Left, GetPointAtCharacter(target, window, 5));
+
+            AssertCaretAtSelectionEnd(target, 2, 5);
+        }
+
         private static TextBox CreateTextBoxWithForwardKeyboardSelection()
         {
             var target = new TextBox
@@ -2774,16 +3021,54 @@ namespace Avalonia.Controls.UnitTests
             };
             target.ApplyTemplate();
 
-            // (ab[cd]ef ffi): the selection's moving end and the presenter caret sit at 4
-            // while CaretIndex stays at the anchor.
+            // (ab[cd]ef ffi): the selection's moving end and the presenter caret sit at 4.
             RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
             RaiseKeyEvent(target, Key.Right, KeyModifiers.Shift);
 
             Assert.Equal(2, target.SelectionStart);
             Assert.Equal(4, target.SelectionEnd);
-            Assert.Equal(2, target.CaretIndex);
 
             return target;
+        }
+
+        private static TextBox CreateThemeLikeTextBox(string text, int caretIndex)
+        {
+            var target = new TextBox
+            {
+                Template = CreateThemeLikeTemplate(),
+                Text = text,
+                CaretIndex = caretIndex
+            };
+            target.ApplyTemplate();
+            return target;
+        }
+
+        private static TextPresenter GetPresenter(TextBox target)
+        {
+            var presenter = target.FindDescendantOfType<ScrollViewer>()?.Content as TextPresenter;
+            Assert.NotNull(presenter);
+            return presenter;
+        }
+
+        private static void AssertCaretAtSelectionEnd(TextBox target, int selectionStart, int selectionEnd)
+        {
+            Assert.Equal(selectionStart, target.SelectionStart);
+            Assert.Equal(selectionEnd, target.SelectionEnd);
+            Assert.Equal(selectionEnd, target.CaretIndex);
+            Assert.Equal(selectionEnd, GetPresenter(target).CaretIndex);
+        }
+
+        /// <summary>
+        /// Returns a point, relative to the window, inside the leading half of the character at
+        /// <paramref name="characterIndex"/>, so a click there hits that caret position.
+        /// </summary>
+        private static Point GetPointAtCharacter(TextBox target, Window window, int characterIndex)
+        {
+            var presenter = GetPresenter(target);
+            var bounds = presenter.TextLayout.HitTestTextPosition(characterIndex);
+            var point = presenter.TranslatePoint(new Point(bounds.X + 1, bounds.Center.Y), window);
+            Assert.NotNull(point);
+            return point.Value;
         }
 
         [Fact]
