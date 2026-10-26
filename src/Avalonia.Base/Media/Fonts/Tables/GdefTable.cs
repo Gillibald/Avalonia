@@ -58,6 +58,8 @@ namespace Avalonia.Media.Fonts.Tables
             return new GdefTable(table, ligCaretListOffset);
         }
 
+        public LigatureCaretList DecodeLigatureCarets() => LigatureCaretList.Empty;
+
         /// <summary>
         /// Gets the caret positions defined for a ligature glyph, in design units from the glyph origin,
         /// in increasing order.

@@ -1,5 +1,9 @@
 using System;
 using System.Globalization;
+using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
@@ -22,17 +26,9 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 var glyphTypeface = Load(NotoSansItalic);
 
-                var shapedBuffer = TextShaper.Current.ShapeText("ffi",
-                    new TextShaperOptions(glyphTypeface, 12, 0, CultureInfo.InvariantCulture));
+                var ffi = ShapeSingleGlyph(glyphTypeface, "ffi");
 
-                Assert.Equal(1, shapedBuffer.Length);
-
-                Span<int> carets = stackalloc int[4];
-
-                var count = glyphTypeface.GetLigatureCaretPositions(shapedBuffer[0].GlyphIndex, carets);
-
-                Assert.Equal(2, count);
-                Assert.Equal(new[] { 247, 557 }, carets.Slice(0, count).ToArray());
+                Assert.Equal(new[] { 247, 557 }, glyphTypeface.GetLigatureCaretPositions(ffi).ToArray());
             }
         }
 
@@ -43,12 +39,9 @@ namespace Avalonia.Skia.UnitTests.Media
             {
                 var glyphTypeface = Load(NotoSansItalic);
 
-                var shapedBuffer = TextShaper.Current.ShapeText("ff",
-                    new TextShaperOptions(glyphTypeface, 12, 0, CultureInfo.InvariantCulture));
+                var ff = ShapeSingleGlyph(glyphTypeface, "ff");
 
-                Assert.Equal(1, shapedBuffer.Length);
-
-                Assert.Equal(0, glyphTypeface.GetLigatureCaretPositions(shapedBuffer[0].GlyphIndex, stackalloc int[4]));
+                Assert.True(glyphTypeface.GetLigatureCaretPositions(ff).IsEmpty);
             }
         }
 
@@ -61,7 +54,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.True(glyphTypeface.CharacterToGlyphMap.TryGetGlyph(0xFB03, out var ffi));
 
-                Assert.Equal(0, glyphTypeface.GetLigatureCaretPositions(ffi, stackalloc int[4]));
+                Assert.True(glyphTypeface.GetLigatureCaretPositions(ffi).IsEmpty);
             }
         }
 
@@ -74,12 +67,7 @@ namespace Avalonia.Skia.UnitTests.Media
 
                 Assert.True(glyphTypeface.CharacterToGlyphMap.TryGetGlyph(0xFB4F, out var alefLamed));
 
-                Span<int> carets = stackalloc int[4];
-
-                var count = glyphTypeface.GetLigatureCaretPositions(alefLamed, carets);
-
-                Assert.Equal(1, count);
-                Assert.Equal(299, carets[0]);
+                Assert.Equal(new[] { 299 }, glyphTypeface.GetLigatureCaretPositions(alefLamed).ToArray());
             }
         }
 
@@ -93,8 +81,94 @@ namespace Avalonia.Skia.UnitTests.Media
                 var shapedBuffer = TextShaper.Current.ShapeText("ff",
                     new TextShaperOptions(glyphTypeface, 12, 0, CultureInfo.InvariantCulture));
 
-                Assert.Equal(0, glyphTypeface.GetLigatureCaretPositions(shapedBuffer[0].GlyphIndex, stackalloc int[4]));
+                Assert.True(glyphTypeface.GetLigatureCaretPositions(shapedBuffer[0].GlyphIndex).IsEmpty);
             }
+        }
+
+        [Fact]
+        public void Disposed_Typeface_Should_Return_None()
+        {
+            using (Start())
+            {
+                var glyphTypeface = Load(NotoSansItalic);
+
+                var ffi = ShapeSingleGlyph(glyphTypeface, "ffi");
+
+                glyphTypeface.Dispose();
+
+                Assert.True(glyphTypeface.GetLigatureCaretPositions(ffi).IsEmpty);
+            }
+        }
+
+        [Fact]
+        public void Repeated_Calls_Should_Return_The_Same_Positions()
+        {
+            using (Start())
+            {
+                var glyphTypeface = Load(NotoSansItalic);
+
+                var ffi = ShapeSingleGlyph(glyphTypeface, "ffi");
+
+                var first = glyphTypeface.GetLigatureCaretPositions(ffi);
+                var second = glyphTypeface.GetLigatureCaretPositions(ffi);
+
+                Assert.Equal(new[] { 247, 557 }, first.ToArray());
+                Assert.Equal(first.ToArray(), second.ToArray());
+
+                // The carets are decoded once and then served from the same memory.
+                Assert.True(Unsafe.AreSame(ref MemoryMarshal.GetReference(first), ref MemoryMarshal.GetReference(second)));
+            }
+        }
+
+        [Fact]
+        public void Concurrent_First_Calls_Should_Agree()
+        {
+            using (Start())
+            {
+                var glyphTypeface = Load(NotoSansItalic);
+
+                var ffi = ShapeSingleGlyph(glyphTypeface, "ffi");
+
+                const int threadCount = 8;
+
+                using var barrier = new Barrier(threadCount);
+
+                var results = new int[threadCount][];
+
+                var threads = Enumerable.Range(0, threadCount)
+                    .Select(index => new Thread(() =>
+                    {
+                        barrier.SignalAndWait();
+
+                        results[index] = glyphTypeface.GetLigatureCaretPositions(ffi).ToArray();
+                    }))
+                    .ToArray();
+
+                foreach (var thread in threads)
+                {
+                    thread.Start();
+                }
+
+                foreach (var thread in threads)
+                {
+                    thread.Join();
+                }
+
+                foreach (var result in results)
+                {
+                    Assert.Equal(new[] { 247, 557 }, result);
+                }
+            }
+        }
+
+        private static ushort ShapeSingleGlyph(GlyphTypeface glyphTypeface, string text)
+        {
+            var shapedBuffer = TextShaper.Current.ShapeText(text,
+                new TextShaperOptions(glyphTypeface, 12, 0, CultureInfo.InvariantCulture));
+
+            Assert.Equal(1, shapedBuffer.Length);
+
+            return shapedBuffer[0].GlyphIndex;
         }
 
         private static GlyphTypeface Load(string resourceName)

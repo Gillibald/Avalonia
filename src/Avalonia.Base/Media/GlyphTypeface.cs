@@ -761,6 +761,8 @@ namespace Avalonia.Media
         /// </summary>
         internal bool IsLastResort { get; }
 
+        public ReadOnlySpan<int> GetLigatureCaretPositions(ushort glyphIndex) => default;
+
         /// <summary>
         /// Gets the caret positions the font defines inside a ligature glyph, from the ligature caret list
         /// of its <c>GDEF</c> table.
