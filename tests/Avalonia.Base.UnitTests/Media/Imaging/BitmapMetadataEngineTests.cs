@@ -22,6 +22,12 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/app13/irb/8bimiptc/iptc", "/iptc")]
         [InlineData("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc", "/iptc")]
         [InlineData("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc/{str=Keywords}", "/iptc/{str=Keywords}")]
+        [InlineData("/app13/irb/8bimiptc/PString", "/irb/{ulonglong=61857348781060}/pstring")]
+        [InlineData("/app13/irb/8bimResInfo/HResolution", "/irb/{ulonglong=61857348781037}/hresolution")]
+        [InlineData("/app13/{ushort=0}/{ulonglong=61857348781037}/HeightUnit", "/irb/{ulonglong=61857348781037}/heightunit")]
+        [InlineData("/app13/irb/8bimiptcdigest/IPTCDigest", "/irb/{ulonglong=61857348781093}/iptcdigest")]
+        [InlineData("/app13/{ushort=0}/{ulonglong=61857348783031}/{}", "/irb/{ulonglong=61857348783031}/{}")]
+        [InlineData("/irb/{ulonglong=61857348781060}/iptc/Caption", "/iptc/{str=Caption}")]
         public void Jpeg_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
         {
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Jpeg));
@@ -32,7 +38,11 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
         [InlineData("/ifd/xmp", "/xmp")]
         [InlineData("/ifd/{ushort=700}", "/xmp")]
         [InlineData("/ifd/{ushort=33723}", "/iptc")]
-        [InlineData("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc", "/iptc")]
+        [InlineData("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc", "/irb/{ulonglong=61857348781060}/iptc")]
+        [InlineData("/ifd/irb/8bimiptc/iptc/caption", "/irb/{ulonglong=61857348781060}/iptc/{str=Caption}")]
+        [InlineData("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc/{ushort=632}", "/irb/{ulonglong=61857348781060}/iptc/{str=Caption}")]
+        [InlineData("/ifd/irb/8bimResInfo/VResolution", "/irb/{ulonglong=61857348781037}/vresolution")]
+        [InlineData("/ifd/{ushort=34377}/{ulonglong=85097585901569}/{}", "/irb/{ulonglong=85097585901569}/{}")]
         public void Tiff_Spellings_Should_Resolve_To_Canonical_Paths(string query, string canonical)
         {
             Assert.Equal(canonical, MetadataQuery.Canonicalize(query, BitmapContainerFormats.Tiff));
@@ -277,6 +287,47 @@ namespace Avalonia.Base.UnitTests.Media.Imaging
             Assert.Equal(new[] { "/ifd" }, metadata.GetChildren(null, MetadataPathSpelling.Container));
             Assert.Equal(new[] { "/{ushort=271}", "/{ushort=33723}", "/{ushort=34665}", "/{ushort=700}" },
                 Sorted(metadata.GetChildren("/ifd", MetadataPathSpelling.Container)));
+            AssertEveryEnumeratedPathResolves(metadata);
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_List_Photoshop_Resources_Under_App13()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app13/irb/8bimResInfo/PString", "Res");
+            metadata.SetQuery("/app13/irb/8bimResInfo/HResolution", 96u);
+            metadata.SetQuery("/app13/irb/8bimiptc/PString", "");
+            metadata.SetQuery("/app13/irb/8bimiptc/iptc/Caption", "Hello");
+
+            Assert.Equal(new[] { "/{ushort=0}" }, metadata.GetChildren("/app13", MetadataPathSpelling.Container));
+            Assert.Equal(new[] { "/{ulonglong=61857348781037}", "/{ulonglong=61857348781060}" },
+                Sorted(metadata.GetChildren("/app13/{ushort=0}", MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/HResolution", "/PString" },
+                Sorted(metadata.GetChildren("/app13/{ushort=0}/{ulonglong=61857348781037}", MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/PString", "/iptc" },
+                Sorted(metadata.GetChildren("/app13/{ushort=0}/{ulonglong=61857348781060}", MetadataPathSpelling.Container)));
+            Assert.Equal("Hello", metadata.GetQuery("/iptc/Caption"));
+            AssertEveryEnumeratedPathResolves(metadata);
+        }
+
+        [Fact]
+        public void Container_Spelling_Should_Keep_Tiff_Resource_Iptc_Apart_From_Tag_33723()
+        {
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Tiff);
+
+            metadata.SetQuery("/ifd/iptc/Caption", "Tag");
+            metadata.SetQuery("/ifd/irb/8bimiptc/PString", "");
+            metadata.SetQuery("/ifd/irb/8bimiptc/iptc/Caption", "Resource");
+
+            Assert.Equal("Tag", metadata.GetQuery("/ifd/{ushort=33723}/{str=Caption}"));
+            Assert.Equal("Resource", metadata.GetQuery("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc/{str=Caption}"));
+            Assert.Equal(new[] { "/{ushort=33723}", "/{ushort=34377}" },
+                Sorted(metadata.GetChildren("/ifd", MetadataPathSpelling.Container)));
+            Assert.Equal(new[] { "/{ulonglong=61857348781060}" },
+                metadata.GetChildren("/ifd/{ushort=34377}", MetadataPathSpelling.Container));
+            Assert.Equal(new[] { "/{str=Caption}" },
+                metadata.GetChildren("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc", MetadataPathSpelling.Container));
             AssertEveryEnumeratedPathResolves(metadata);
         }
 
