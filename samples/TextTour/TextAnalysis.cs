@@ -57,10 +57,15 @@ namespace TextTour
     /// </summary>
     internal sealed class TextAnalysis : IDisposable
     {
+        private readonly StyleSpan? _span;
+        private readonly Palette _palette;
+
         public TextAnalysis(string text, StyleSpan? span, Typeface typeface, double fontSize, CultureInfo? culture,
             Palette palette)
         {
             Text = text;
+            _span = span;
+            _palette = palette;
             Typeface = typeface;
             FontSize = fontSize;
             Culture = culture;
@@ -136,6 +141,30 @@ namespace TextTour
 
         /// <summary>Every glyph of the line in visual order.</summary>
         public IReadOnlyList<GlyphBox> Glyphs { get; }
+
+        /// <summary>
+        /// Lays the same string out again with the same text source spans, for the chapters that
+        /// wrap, trim or switch the font. The caller owns the layout.
+        /// </summary>
+        public TextLayout CreateLayout(double fontSize, double maxWidth, TextWrapping wrapping,
+            TextTrimming? trimming = null, int maxLines = 0, FlowDirection flowDirection = FlowDirection.LeftToRight,
+            Typeface? typeface = null, string? text = null)
+        {
+            var face = typeface ?? Typeface;
+            var content = text ?? Text;
+            var defaultProperties = new GenericTextRunProperties(face, fontSize, foregroundBrush: _palette.Foreground,
+                cultureInfo: Culture);
+            var styledProperties = new GenericTextRunProperties(face, fontSize, foregroundBrush: _palette.Series(1),
+                cultureInfo: Culture);
+            var overrides = text is null && _span is { } s && s.Start + s.Length <= content.Length ?
+                new[] { new ValueSpan<TextRunProperties>(s.Start, s.Length, styledProperties) } :
+                null;
+            var paragraph = new GenericTextParagraphProperties(flowDirection, TextAlignment.Left, true, false,
+                defaultProperties, wrapping, double.NaN, 0, 0);
+
+            return new TextLayout(new FormattedTextSource(content, defaultProperties, overrides), paragraph, trimming,
+                maxWidth, double.PositiveInfinity, maxLines);
+        }
 
         public int CodepointIndexAt(int textIndex)
         {

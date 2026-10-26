@@ -79,6 +79,9 @@ namespace TextTour
                         for (var variant = 0; variant < chapter.ExportVariantCount(step); variant++)
                         {
                             chapter.Step = step;
+
+                            // The chapter prepares its demo state against its final size.
+                            view.UpdateLayout();
                             chapter.PrepareExport(step, variant);
 
                             var name = string.Format(CultureInfo.InvariantCulture, "{0:00}-{1}-{2}{3}.png", c + 1,

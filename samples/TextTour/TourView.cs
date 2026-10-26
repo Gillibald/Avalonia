@@ -50,7 +50,7 @@ namespace TextTour
                 () => new PlaceholderChapter(state, "Fonts"),
                 () => new TokensChapter(state),
                 () => new PlaceholderChapter(state, "Layout"),
-                () => new PlaceholderChapter(state, "Hits"),
+                () => new HitsChapter(state),
                 () => new DisplayChapter(state),
             };
             _chapters = new Chapter?[_factories.Length];
@@ -137,9 +137,12 @@ namespace TextTour
             _caption = new TextBlock
             {
                 FontFamily = Draw.UiMono.FontFamily,
-                FontSize = 19,
+                FontSize = 18,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
+
+                // Two lines are always reserved so a longer caption never resizes the chapter.
+                MinHeight = 48,
                 MaxLines = 2,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
