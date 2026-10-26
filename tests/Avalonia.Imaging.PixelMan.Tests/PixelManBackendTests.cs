@@ -224,6 +224,51 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void Photoshop_Resources_Should_Round_Trip_Through_Jpeg()
+        {
+            using var scope = Bind();
+
+            // An unparsed resource as WIC exposes it: signature, id, empty name, size 3, "abc".
+            var stored = new byte[] { 0x38, 0x42, 0x49, 0x4D, 0x0B, 0xB7, 0, 0, 0, 0, 0, 3, 0x61, 0x62, 0x63 };
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Jpeg);
+
+            metadata.SetQuery("/app13/irb/8bimResInfo/PString", "Res");
+            metadata.SetQuery("/app13/irb/8bimResInfo/HResolution", 300u << 16);
+            metadata.SetQuery("/app13/{ushort=0}/{ulonglong=61857348783031}/{}", new BitmapMetadataBlob(stored));
+            metadata.SetQuery("/app13/irb/8bimiptc/iptc/Caption", "Hello");
+
+            var decoded = RoundTrip(new JpegBitmapEncoder { Metadata = metadata }, BitmapContainerFormats.Jpeg);
+
+            Assert.Equal("Res", decoded.GetQuery("/app13/{ushort=0}/{ulonglong=61857348781037}/PString"));
+            Assert.Equal(300u << 16, decoded.GetQuery("/app13/irb/8bimResInfo/HResolution"));
+            // Fields left unset take WIC's defaults.
+            Assert.Equal((ushort)1, decoded.GetQuery("/app13/irb/8bimResInfo/HeightUnit"));
+            Assert.Equal(stored, Assert.IsType<BitmapMetadataBlob>(
+                decoded.GetQuery("/app13/{ushort=0}/{ulonglong=61857348783031}/{}")).GetBlobValue());
+            Assert.Equal("Hello", decoded.GetQuery("/app13/{ushort=0}/{ulonglong=61857348781060}/iptc/{str=Caption}"));
+            Assert.Equal(string.Empty, decoded.GetQuery("/app13/irb/8bimiptc/PString"));
+            Assert.Equal(new[] { "/{ulonglong=61857348781037}", "/{ulonglong=61857348781060}", "/{ulonglong=61857348783031}" },
+                decoded.GetChildren("/app13/{ushort=0}", MetadataPathSpelling.Container).OrderBy(p => p, StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public void Tiff_Resource_Iptc_Should_Round_Trip_Apart_From_Tag_33723()
+        {
+            using var scope = Bind();
+
+            var metadata = new BitmapMetadata(BitmapContainerFormats.Tiff);
+
+            metadata.SetQuery("/ifd/iptc/Caption", "Tag");
+            metadata.SetQuery("/ifd/irb/8bimiptc/iptc/Caption", "Resource");
+
+            var decoded = RoundTrip(new TiffBitmapEncoder { Metadata = metadata }, BitmapContainerFormats.Tiff);
+
+            Assert.Equal("Tag", decoded.GetQuery("/ifd/{ushort=33723}/{str=Caption}"));
+            Assert.Equal("Resource", decoded.GetQuery("/ifd/{ushort=34377}/{ulonglong=61857348781060}/iptc/{str=Caption}"));
+            Assert.Equal(string.Empty, decoded.GetQuery("/ifd/irb/8bimiptc/PString"));
+        }
+
+        [Fact]
         public void Tiff_Pages_Should_Keep_Their_Own_Color_Profiles()
         {
             using var scope = Bind();
