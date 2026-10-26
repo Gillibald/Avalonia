@@ -399,6 +399,186 @@ namespace Avalonia.Skia.UnitTests.Media
             }
         }
 
+        private const string NotoSansItalic = "fonts:SystemFonts#Noto Sans";
+        private const string NotoSansHebrew = "fonts:SystemFonts#Noto Sans Hebrew";
+        private const string DejaVuSans = "resm:Avalonia.Skia.UnitTests.Fonts?assembly=Avalonia.Skia.UnitTests#DejaVu Sans";
+
+        [InlineData(NotoSansItalic)]
+        [InlineData(DejaVuSans)]
+        [Theory]
+        public void Next_Caret_Hit_Should_Stop_At_Every_Grapheme_Inside_A_Ligature(string familyName)
+        {
+            using (Start())
+            {
+                var glyphRun = CreateLigatureRun("ffi", familyName, 100);
+
+                Assert.Single(glyphRun.GlyphInfos);
+
+                var characterHit = new CharacterHit(0);
+                var positions = new List<int>();
+
+                for (var i = 0; i < 4; i++)
+                {
+                    characterHit = glyphRun.GetNextCaretCharacterHit(characterHit);
+
+                    positions.Add(characterHit.FirstCharacterIndex + characterHit.TrailingLength);
+                }
+
+                Assert.Equal(new[] { 1, 2, 3, 3 }, positions);
+            }
+        }
+
+        [InlineData(NotoSansItalic)]
+        [InlineData(DejaVuSans)]
+        [Theory]
+        public void Previous_Caret_Hit_Should_Stop_At_Every_Grapheme_Inside_A_Ligature(string familyName)
+        {
+            using (Start())
+            {
+                var glyphRun = CreateLigatureRun("ffi", familyName, 100);
+
+                var characterHit = new CharacterHit(2, 1);
+                var positions = new List<int>();
+
+                for (var i = 0; i < 4; i++)
+                {
+                    characterHit = glyphRun.GetPreviousCaretCharacterHit(characterHit);
+
+                    positions.Add(characterHit.FirstCharacterIndex + characterHit.TrailingLength);
+                }
+
+                Assert.Equal(new[] { 2, 1, 0, 0 }, positions);
+            }
+        }
+
+        [Fact]
+        public void Distance_Inside_A_Ligature_Should_Use_The_Font_Carets()
+        {
+            using (Start())
+            {
+                // Noto Sans Italic f_f_i: advance 896, carets 247 and 557 in a 1000 unit em.
+                var glyphRun = CreateLigatureRun("ffi", NotoSansItalic, 1000);
+
+                Assert.Equal(0, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(0)), 6);
+                Assert.Equal(247, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(1)), 6);
+                Assert.Equal(247, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(0, 1)), 6);
+                Assert.Equal(557, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(2)), 6);
+                Assert.Equal(557, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(1, 1)), 6);
+                Assert.Equal(896, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(2, 1)), 6);
+            }
+        }
+
+        [Fact]
+        public void Distance_Inside_A_Ligature_Without_Carets_Should_Divide_It_Evenly()
+        {
+            using (Start())
+            {
+                var glyphRun = CreateLigatureRun("ffi", DejaVuSans, 100);
+
+                var width = glyphRun.GlyphInfos[0].GlyphAdvance;
+
+                Assert.Equal(width / 3, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(1)), 6);
+                Assert.Equal(width * 2 / 3, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(2)), 6);
+            }
+        }
+
+        [Fact]
+        public void Distance_Inside_A_Right_To_Left_Ligature_Should_Use_The_Font_Caret()
+        {
+            using (Start())
+            {
+                // Noto Sans Hebrew alef-lamed (dlig): advance 593, caret 299 from the glyph origin.
+                var glyphRun = CreateLigatureRun("אל", NotoSansHebrew, 1000, 1, "dlig");
+
+                Assert.Single(glyphRun.GlyphInfos);
+
+                Assert.Equal(593, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(0)), 6);
+                Assert.Equal(299, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(1)), 6);
+                Assert.Equal(0, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(1, 1)), 6);
+            }
+        }
+
+        [Fact]
+        public void Distance_Inside_A_Right_To_Left_Ligature_Without_Carets_Should_Divide_It_Evenly()
+        {
+            using (Start())
+            {
+                // DejaVu Sans alef-lamed (hlig) has no caret.
+                var glyphRun = CreateLigatureRun("אל", DejaVuSans, 100, 1, "hlig");
+
+                Assert.Single(glyphRun.GlyphInfos);
+
+                var width = glyphRun.GlyphInfos[0].GlyphAdvance;
+
+                Assert.Equal(width / 2, glyphRun.GetDistanceFromCharacterHit(new CharacterHit(1)), 6);
+            }
+        }
+
+        [Fact]
+        public void Character_Hit_From_Distance_Inside_A_Ligature_Should_Use_The_Segment_Under_The_Point()
+        {
+            using (Start())
+            {
+                var glyphRun = CreateLigatureRun("ffi", NotoSansItalic, 1000);
+
+                Assert.Equal(0, Position(glyphRun.GetCharacterHitFromDistance(247 * 0.4, out _)));
+                Assert.Equal(1, Position(glyphRun.GetCharacterHitFromDistance(247 * 0.6, out _)));
+                Assert.Equal(1, Position(glyphRun.GetCharacterHitFromDistance(247 + 310 * 0.4, out _)));
+                Assert.Equal(2, Position(glyphRun.GetCharacterHitFromDistance(247 + 310 * 0.6, out _)));
+                Assert.Equal(2, Position(glyphRun.GetCharacterHitFromDistance(557 + 339 * 0.4, out _)));
+                Assert.Equal(3, Position(glyphRun.GetCharacterHitFromDistance(557 + 339 * 0.6, out _)));
+            }
+        }
+
+        [Fact]
+        public void Character_Hit_From_Distance_Inside_A_Right_To_Left_Ligature_Should_Use_The_Segment_Under_The_Point()
+        {
+            using (Start())
+            {
+                var glyphRun = CreateLigatureRun("אל", NotoSansHebrew, 1000, 1, "dlig");
+
+                // Alef is the right segment [299, 593], lamed the left one [0, 299].
+                Assert.Equal(0, Position(glyphRun.GetCharacterHitFromDistance(593 - 294 * 0.4, out _)));
+                Assert.Equal(1, Position(glyphRun.GetCharacterHitFromDistance(593 - 294 * 0.6, out _)));
+                Assert.Equal(1, Position(glyphRun.GetCharacterHitFromDistance(299 - 299 * 0.4, out _)));
+                Assert.Equal(2, Position(glyphRun.GetCharacterHitFromDistance(299 - 299 * 0.6, out _)));
+            }
+        }
+
+        [Fact]
+        public void Single_Grapheme_Ligature_Should_Have_No_Inner_Caret_Stop()
+        {
+            using (Start())
+            {
+                // DejaVu Sans composes alef + hamza above into one glyph; it is one grapheme.
+                var glyphRun = CreateLigatureRun("أ", DejaVuSans, 100, 1);
+
+                Assert.Single(glyphRun.GlyphInfos);
+
+                var next = glyphRun.GetNextCaretCharacterHit(new CharacterHit(0));
+
+                Assert.Equal(2, Position(next));
+                Assert.Equal(0, Position(glyphRun.GetPreviousCaretCharacterHit(next)));
+            }
+        }
+
+        private static int Position(CharacterHit characterHit)
+            => characterHit.FirstCharacterIndex + characterHit.TrailingLength;
+
+        private static GlyphRun CreateLigatureRun(string text, string familyName, double fontSize, sbyte bidiLevel = 0,
+            string? feature = null)
+        {
+            var style = familyName == NotoSansItalic ? FontStyle.Italic : FontStyle.Normal;
+            var glyphTypeface = new Typeface(familyName, style).GlyphTypeface;
+            var features = feature is null ? null : new[] { FontFeature.Parse(feature) };
+
+            var shapedBuffer = TextShaper.Current.ShapeText(text,
+                new TextShaperOptions(glyphTypeface, fontSize, bidiLevel, CultureInfo.InvariantCulture,
+                    fontFeatures: features));
+
+            return CreateGlyphRun(shapedBuffer);
+        }
+
         private static List<Rect> BuildRects(GlyphRun glyphRun)
         {
             var height = glyphRun.Bounds.Height;

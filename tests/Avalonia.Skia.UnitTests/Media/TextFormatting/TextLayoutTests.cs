@@ -1814,6 +1814,56 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
             }
         }
 
+        // Noto Sans Italic f_f_i at 100 px: carets 24.7 and 55.7, advance 89.6.
+        private static TextLayout CreateLigatureLayout()
+            => new TextLayout("Office", new Typeface("fonts:SystemFonts#Noto Sans", FontStyle.Italic), 100);
+
+        [Fact]
+        public void HitTestPoint_Inside_Ligature_Returns_Inner_Stop()
+        {
+            using (Start())
+            {
+                using var layout = CreateLigatureLayout();
+
+                var ligatureStart = layout.HitTestTextPosition(1).X;
+
+                Assert.Equal(1, layout.HitTestPoint(new Point(ligatureStart + 24.7 * 0.4, 50)).TextPosition);
+                Assert.Equal(2, layout.HitTestPoint(new Point(ligatureStart + 24.7 * 0.6, 50)).TextPosition);
+                Assert.Equal(3, layout.HitTestPoint(new Point(ligatureStart + 55.7 + 33.9 * 0.4, 50)).TextPosition);
+            }
+        }
+
+        [Fact]
+        public void HitTestTextPosition_Inside_Ligature_Has_Segment_Width()
+        {
+            using (Start())
+            {
+                using var layout = CreateLigatureLayout();
+
+                var ligatureStart = layout.HitTestTextPosition(1).X;
+                var rect = layout.HitTestTextPosition(2);
+
+                Assert.Equal(ligatureStart + 24.7, rect.X, 6);
+                Assert.Equal(31.0, rect.Width, 6);
+            }
+        }
+
+        [Fact]
+        public void HitTestTextRange_Inside_Ligature_Returns_Partial_Rect()
+        {
+            using (Start())
+            {
+                using var layout = CreateLigatureLayout();
+
+                var ligatureStart = layout.HitTestTextPosition(1).X;
+                var rects = layout.HitTestTextRange(1, 1).ToArray();
+
+                Assert.Single(rects);
+                Assert.Equal(ligatureStart, rects[0].X, 6);
+                Assert.Equal(24.7, rects[0].Width, 6);
+            }
+        }
+
         private static void AssertGreaterThan(double x, double y, string message) => Assert.True(x > y, $"{message}. {x} is not > {y}");
 
         private static IDisposable Start()
