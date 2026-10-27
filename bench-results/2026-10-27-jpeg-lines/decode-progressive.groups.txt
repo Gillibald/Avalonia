@@ -1,0 +1,11 @@
+# main-thread samples 14536; with decode_internal on the stack 13871
+# group	samples	% of main thread	% of decode_internal stack
+Huffman symbol lookup	6216	42.8	44.8
+receive_extend / get_bits	43	0.3	0.3
+bit reader (read_bits)	1169	8.0	8.4
+coefficient bookkeeping	2332	16.0	16.8
+progressive band handling	27	0.2	0.2
+row/worker hand-off	206	1.4	1.5
+everything else in decode_internal	3878	26.7	28.0
+  of which upsampling + colour conversion	2457	16.9	17.7
+outside decode_internal	665	4.6	-

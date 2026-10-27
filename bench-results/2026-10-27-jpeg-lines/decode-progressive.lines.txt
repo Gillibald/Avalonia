@@ -1,0 +1,232 @@
+# out/pixelman-decode-progressive.timeprofile.xml
+# main-thread samples (1 ms each): 14536
+# samples	% of main	innermost file:line	innermost function	leaf's outer function
+2164	14.89	decoder.rs:1115	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1124	7.73	huffman.rs:66	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+825	5.68	huffman.rs:69	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+790	5.43	decoder.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+682	4.69	decoder.rs:0	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+551	3.79	upsampler.rs:286	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsample>::upsample_row	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsam
+477	3.28	huffman.rs:65	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+427	2.94	huffman.rs:123	consume_bits	jpeg_decoder::decoder::Decoder<R>::decode_internal
+319	2.19	huffman.rs:45	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+297	2.04	generated.rs:28038	vmlal_s16	jpeg_decoder::decoder::color_convert_line_ycbcr
+294	2.02	huffman.rs:115	peek_bits	jpeg_decoder::decoder::Decoder<R>::decode_internal
+246	1.69	huffman.rs:163	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+237	1.63	decoder.rs:1112	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+232	1.60	macros.rs:384	position<u8, pixelman_codecs::jpeg_input::{impl#1}::read::{closure_env#0}<pixelman_codecs::limits::C	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+218	1.50	upsampler.rs:285	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsample>::upsample_row	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsam
+210	1.44	huffman.rs:33	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+193	1.33	huffman.rs:57	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+186	1.28	huffman.rs:64	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+179	1.23	generated.rs:1895	vaddq_s16	jpeg_decoder::decoder::color_convert_line_ycbcr
+173	1.19	index.rs:580	index_mut<u8>	jpeg_decoder::decoder::color_convert_line_ycbcr
+157	1.08	mod.rs:1851	as_mut_slice<i16, alloc::alloc::Global>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+154	1.06	huffman.rs:32	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+151	1.04	-:0	__bzero [libsystem_platform.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+144	0.99	-:0	_platform_memmove [libsystem_platform.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+142	0.98	mod.rs:1815	as_slice<core::option::Option<jpeg_decoder::huffman::HuffmanTable>, alloc::alloc::Global>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+142	0.98	-:0	__bzero [libsystem_platform.dylib]	jpeg_decoder::decoder::compute_image
+141	0.97	decoder.rs:934	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+141	0.97	impls.rs:348	read_exact	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+138	0.95	index.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+137	0.94	huffman.rs:36	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+129	0.89	option.rs:0	as_ref<jpeg_decoder::huffman::HuffmanTable>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+124	0.85	index.rs:568	index<u8>	jpeg_decoder::decoder::color_convert_line_ycbcr
+120	0.83	decoder.rs:1133	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+112	0.77	upsampler.rs:275	{closure#0}	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsam
+109	0.75	range.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+107	0.74	cmp.rs:1916	lt	jpeg_decoder::decoder::Decoder<R>::decode_internal
+97	0.67	generated.rs:67428	vst3q_s8	jpeg_decoder::decoder::color_convert_line_ycbcr
+96	0.66	huffman.rs:129	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+92	0.63	huffman.rs:167	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+88	0.61	step_by.rs:446	spec_next	jpeg_decoder::decoder::color_convert_line_ycbcr
+85	0.58	huffman.rs:0	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+83	0.57	decoder.rs:0	spec_next<u16>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+81	0.56	huffman.rs:126	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+81	0.56	-:0	_platform_memmove [libsystem_platform.dylib]	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+80	0.55	index.rs:0	next<core::slice::iter::Iter<jpeg_decoder::parser::Component>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+71	0.49	range.rs:772	spec_next<u16>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+68	0.47	decoder.rs:891	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+66	0.45	generated.rs:36083	vqmovn_s32	jpeg_decoder::decoder::color_convert_line_ycbcr
+66	0.45	cursor.rs:0	read_exact<alloc::vec::Vec<u8, alloc::alloc::Global>>	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+62	0.43	mod.rs:1851	as_mut_slice<alloc::vec::Vec<i16, alloc::alloc::Global>, alloc::alloc::Global>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+59	0.41	-:0	_platform_memmove [libsystem_platform.dylib]	jpeg_decoder::decoder::compute_image
+53	0.36	macros.rs:157	vqmovn_high_s32	jpeg_decoder::decoder::color_convert_line_ycbcr
+52	0.36	decoder.rs:965	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+51	0.35	generated.rs:70013	vsubq_s16	jpeg_decoder::decoder::color_convert_line_ycbcr
+50	0.34	index.rs:451	index_mut<i16>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+49	0.34	-:0	mach_absolute_time [libsystem_kernel.dylib]	jpeg_decoder::decoder::compute_image
+46	0.32	result.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+42	0.29	decoder.rs:1123	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+39	0.27	decoder.rs:895	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+38	0.26	huffman.rs:0	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+37	0.25	huffman.rs:47	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+36	0.25	decoder.rs:935	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+32	0.22	huffman.rs:115	peek_bits	jpeg_decoder::huffman::HuffmanDecoder::decode
+31	0.21	result.rs:2173	branch<u8, jpeg_decoder::error::Error>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+30	0.21	huffman.rs:0	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+27	0.19	decoder.rs:1098	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+27	0.19	decoder.rs:1113	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+26	0.18	result.rs:2174	branch<u8, jpeg_decoder::error::Error>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+24	0.17	-:0	_platform_memmove [libsystem_platform.dylib]	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+24	0.17	huffman.rs:134	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+23	0.16	-:0	_platform_memmove [libsystem_platform.dylib]	pixelman_codecs::jpeg_input::Layout::keep
+23	0.16	-:0	_platform_memset [libsystem_platform.dylib]	jpeg_decoder::decoder::compute_image
+23	0.16	huffman.rs:85	get_bits<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+21	0.14	decoder.rs:1077	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+20	0.14	decoder.rs:1104	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+20	0.14	mod.rs:1815	as_slice<u8, alloc::alloc::Global>	jpeg_decoder::huffman::HuffmanDecoder::decode
+19	0.13	decoder.rs:1108	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+18	0.12	decoder.rs:1092	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+17	0.12	-:0	_platform_memmove [libsystem_platform.dylib]	alloc::raw_vec::RawVecInner<A>::finish_grow
+14	0.10	decoder.rs:1119	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+14	0.10	result.rs:2173	branch<(), jpeg_decoder::error::Error>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+14	0.10	-:0	_xzm_xzone_malloc_tiny [libsystem_malloc.dylib]	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+13	0.09	jpeg_input.rs:208	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+13	0.09	?:0	DYLD-STUB$$memcpy	DYLD-STUB$$memcpy
+13	0.09	huffman.rs:127	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+13	0.09	-:0	__bsdthread_create [libsystem_kernel.dylib]	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+13	0.09	range.rs:772	spec_next<usize>	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsam
+13	0.09	decoder.rs:1080	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+13	0.09	macros.rs:390	position<u8, pixelman_codecs::jpeg_input::{impl#1}::read::{closure_env#0}<pixelman_codecs::limits::C	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+12	0.08	huffman.rs:50	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+12	0.08	huffman.rs:71	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+12	0.08	-:0	_platform_memmove [libsystem_platform.dylib]	_<pixelman_codecs::jpeg_input::Buffered<R> as std::io::BufRead>::fill_
+11	0.08	decoder.rs:1078	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+10	0.07	-:0	_xzm_free [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+10	0.07	result.rs:0	branch<u8, jpeg_decoder::error::Error>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+9	0.06	mod.rs:612	non_null<alloc::alloc::Global, alloc::vec::Vec<i16, alloc::alloc::Global>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+9	0.06	-:0	mach_absolute_time [libsystem_kernel.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+9	0.06	index.rs:272	index<usize>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+8	0.06	-:0	_platform_memmove [libsystem_platform.dylib]	jpeg_decoder::worker::WorkerScope::with
+8	0.06	index.rs:278	index_mut<alloc::vec::Vec<i16, alloc::alloc::Global>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+7	0.05	range.rs:0	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsample>::upsample_row	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsam
+6	0.04	decoder.rs:1139	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+6	0.04	jpeg_input.rs:219	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+6	0.04	result.rs:2173	branch<(), jpeg_decoder::error::Error>	jpeg_decoder::huffman::HuffmanDecoder::decode
+6	0.04	decoder.rs:941	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+5	0.03	-:0	semaphore_signal_trap [libsystem_kernel.dylib]	_RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify
+5	0.03	macros.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+5	0.03	huffman.rs:175	extend	jpeg_decoder::decoder::Decoder<R>::decode_internal
+5	0.03	mod.rs:1815	as_slice<u8, alloc::alloc::Global>	_<pixelman_codecs::jpeg_input::Buffered<R> as std::io::BufRead>::fill_
+5	0.03	mod.rs:1917	write<alloc::vec::Vec<u8, alloc::alloc::Global>>	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+4	0.03	-:0	_platform_memset [libsystem_platform.dylib]	jpeg_decoder::worker::WorkerScope::get_or_init_worker
+4	0.03	jpeg_input.rs:697	consume<pixelman_codecs::limits::CancelReader<std::io::cursor::Cursor<&alloc::vec::Vec<u8, alloc::al	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+4	0.03	jpeg_input.rs:438	pixelman_codecs::jpeg_input::Layout::keep	pixelman_codecs::jpeg_input::Layout::keep
+4	0.03	jpeg_input.rs:695	_<pixelman_codecs::jpeg_input::Buffered<R> as std::io::BufRead>::fill_buf	_<pixelman_codecs::jpeg_input::Buffered<R> as std::io::BufRead>::fill_
+4	0.03	-:0	_pthread_create [libsystem_pthread.dylib]	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+4	0.03	-:0	_free [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+4	0.03	-:0	semaphore_wait_trap [libsystem_kernel.dylib]	std::sync::mpmc::list::Channel<T>::recv::_$u7b$$u7b$closure$u7d$$u7d$
+4	0.03	jpeg_input.rs:168	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+4	0.03	-:0	_xzm_xzone_malloc_tiny [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+3	0.02	decoder.rs:1093	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+3	0.02	jpeg_input.rs:690	_<pixelman_codecs::jpeg_input::Buffered<R> as std::io::BufRead>::fill_buf	_<pixelman_codecs::jpeg_input::Buffered<R> as std::io::BufRead>::fill_
+3	0.02	-:0	_xzm_free [libsystem_malloc.dylib]	jpeg_decoder::worker::WorkerScope::get_or_init_worker
+3	0.02	decoder.rs:1120	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+3	0.02	-:0	_malloc_zone_malloc [libsystem_malloc.dylib]	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+3	0.02	decoder.rs:936	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+3	0.02	option.rs:1014	unwrap<&jpeg_decoder::huffman::HuffmanTable>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+3	0.02	decoder.rs:1106	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+3	0.02	jpeg_input.rs:198	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+3	0.02	huffman.rs:122	consume_bits	jpeg_decoder::huffman::HuffmanDecoder::decode
+3	0.02	iter.rs:2029	new<u8>	jpeg_decoder::decoder::color_convert_line_ycbcr
+3	0.02	-:0	_xzm_segment_group_find_and_allocate_chunk [libsystem_malloc.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+2	0.01	num.rs:82	from	_<jpeg_decoder::upsampler::H2V2Fancy as jpeg_decoder::upsampler::Upsam
+2	0.01	-:0	<deduplicated_symbol> [libsystem_malloc.dylib]	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+2	0.01	-:0	xzm_realloc [libsystem_malloc.dylib]	alloc::raw_vec::RawVecInner<A>::finish_grow
+2	0.01	macros.rs:0	next<jpeg_decoder::upsampler::UpsamplerComponent>	jpeg_decoder::decoder::compute_image
+2	0.01	upsampler.rs:0	upsample_and_interleave_row	jpeg_decoder::decoder::compute_image
+2	0.01	cmp.rs:1076	min<usize>	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+2	0.01	jpeg_input.rs:179	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+2	0.01	-:0	_kernelrpc_mach_vm_protect_trap [libsystem_kernel.dylib]	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+2	0.01	mod.rs:2886	append_elements<u8, alloc::alloc::Global>	pixelman_codecs::jpeg_input::Layout::keep
+2	0.01	-:0	_xzm_xzone_malloc_small_freelist [libsystem_malloc.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+2	0.01	mod.rs:612	non_null<alloc::alloc::Global, u8>	pixelman_codecs::jpeg_input::Layout::keep
+2	0.01	-:0	_xzm_xzone_malloc [libsystem_malloc.dylib]	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+2	0.01	mod.rs:612	non_null<alloc::alloc::Global, u8>	pixelman_codecs::limits::append_up_to
+2	0.01	mod.rs:2887	alloc::vec::Vec<T$C$A>::append_elements	alloc::vec::Vec<T$C$A>::append_elements
+2	0.01	mod.rs:612	non_null<alloc::alloc::Global, i16>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+2	0.01	spec_from_elem.rs:17	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+2	0.01	-:0	mach_vm_reclaim_try_cancel [libsystem_kernel.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+2	0.01	jpeg_input.rs:197	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+2	0.01	decoder.rs:1125	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+2	0.01	-:0	_kernelrpc_mach_vm_map_trap [libsystem_kernel.dylib]	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+2	0.01	-:0	__bzero [libsystem_platform.dylib]	pixelman_codecs::limits::append_up_to
+2	0.01	mod.rs:617	capacity<alloc::alloc::Global>	pixelman_codecs::jpeg_input::Layout::keep
+1	0.01	-:0	<deduplicated_symbol> [dyld]	-
+1	0.01	-:0	__kdebug_trace_string [dyld]	-
+1	0.01	-:0	read [libsystem_kernel.dylib]	jpeg_profile::main
+1	0.01	decoder.rs:995	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	decoder.rs:1400	jpeg_decoder::decoder::color_convert_line_ycbcr	jpeg_decoder::decoder::color_convert_line_ycbcr
+1	0.01	-:0	mfm_alloc_size [libsystem_malloc.dylib]	alloc::raw_vec::RawVecInner<A>::finish_grow
+1	0.01	-:0	_platform_memmove [libsystem_platform.dylib]	pixelman_codecs::limits::append_up_to
+1	0.01	spec_from_elem.rs:13	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+1	0.01	-:0	_malloc_zone_calloc [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+1	0.01	impls.rs:360	read_exact	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+1	0.01	mod.rs:0	extend_with<alloc::vec::Vec<i16, alloc::alloc::Global>, alloc::alloc::Global>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	-:0	_xzm_malloc_large_huge [libsystem_malloc.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	limits.rs:0	pixelman_codecs::limits::append_up_to	pixelman_codecs::limits::append_up_to
+1	0.01	-:0	xzm_segment_group_try_realloc_large_chunk [libsystem_malloc.dylib]	alloc::raw_vec::RawVecInner<A>::finish_grow
+1	0.01	huffman.rs:38	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+1	0.01	decoder.rs:886	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	fmt.rs:650	_RNvNvNtCs1OjIl8oxbrv_5alloc3fmt6format12format_inner	_RNvNvNtCs1OjIl8oxbrv_5alloc3fmt6format12format_inner
+1	0.01	option.rs:745	as_ref<jpeg_decoder::huffman::HuffmanTable>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	-:0	_xzm_xzone_malloc_from_empty_freelist_chunk [libsystem_malloc.dylib]	_RNvNvNtCs1OjIl8oxbrv_5alloc3fmt6format12format_inner
+1	0.01	-:0	_xzm_xzone_malloc_tiny [libsystem_malloc.dylib]	pixelman_codecs::jpeg_input::Layout::scan
+1	0.01	-:0	semaphore_create [libsystem_kernel.dylib]	_RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify
+1	0.01	jpeg_input.rs:398	pixelman_codecs::jpeg_input::Layout::scan	pixelman_codecs::jpeg_input::Layout::scan
+1	0.01	huffman.rs:86	get_bits<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	unix.rs:36	_RNvXNtNtNtCsg55jX0GwzBC_3std3sys5alloc4unixNtNtB8_5alloc6SystemNtNtNtCsl8K0bEFm1U0_4core5alloc6glob	std::sync::mpmc::Sender<T>::send
+1	0.01	-:0	_xzm_xzone_find_and_malloc_from_freelist_chunk [libsystem_malloc.dylib]	alloc::raw_vec::RawVecInner<A>::finish_grow
+1	0.01	decoder.rs:445	jpeg_decoder::decoder::Decoder<R>::decode_internal	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	unix.rs:0	decode_jpeg<pixelman_codecs::limits::CancelReader<std::io::cursor::Cursor<&alloc::vec::Vec<u8, alloc	pixelman_codecs::codec::Codec::decode_seekable
+1	0.01	-:0	xzm_segment_group_free_chunk [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+1	0.01	upsampler.rs:103	upsample_and_interleave_row	jpeg_decoder::decoder::compute_image
+1	0.01	sync.rs:2405	clone<std::thread::lifecycle::Packet<()>, alloc::alloc::Global>	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+1	0.01	waker.rs:172	_RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify	_RNvMs0_NtNtNtCsg55jX0GwzBC_3std4sync4mpmc5wakerNtB5_9SyncWaker6notify
+1	0.01	list.rs:189	start_send<jpeg_decoder::worker::multithreaded::WorkerMsg>	std::sync::mpmc::Sender<T>::send
+1	0.01	jpeg_input.rs:56	byte<pixelman_codecs::limits::CancelReader<std::io::cursor::Cursor<&alloc::vec::Vec<u8, alloc::alloc	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+1	0.01	-:0	_xzm_segment_group_span_mark_smaller [libsystem_malloc.dylib]	alloc::raw_vec::RawVecInner<A>::finish_grow
+1	0.01	?:0	DYLD-STUB$$calloc	DYLD-STUB$$calloc
+1	0.01	mod.rs:2997	len<u8, alloc::alloc::Global>	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+1	0.01	huffman.rs:284	derive_huffman_codes	jpeg_decoder::huffman::HuffmanTable::new
+1	0.01	mod.rs:805	core::ptr::drop_in_place<alloc::vec::Vec<jpeg_decoder::upsampler::UpsamplerComponent>>	core::ptr::drop_in_place<alloc::vec::Vec<jpeg_decoder::upsampler::Upsa
+1	0.01	list.rs:310	start_recv<alloc::vec::Vec<u8, alloc::alloc::Global>>	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+1	0.01	parser.rs:416	parse_sos<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	decoder.rs:1117	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	huffman.rs:162	jpeg_decoder::huffman::HuffmanDecoder::read_bits	jpeg_decoder::huffman::HuffmanDecoder::read_bits
+1	0.01	mod.rs:632	current_memory<alloc::alloc::Global>	jpeg_decoder::decoder::compute_image
+1	0.01	-:0	mach_vm_reclaim_try_enter [libsystem_kernel.dylib]	jpeg_decoder::decoder::compute_image
+1	0.01	index.rs:438	index<u8>	_<jpeg_decoder::upsampler::FullSize as jpeg_decoder::upsampler::Upsamp
+1	0.01	slice.rs:0	to_vec<u8, alloc::alloc::Global>	_<T as alloc::vec::spec_from_elem::SpecFromElem>::from_elem
+1	0.01	mod.rs:617	capacity<alloc::alloc::Global>	alloc::vec::Vec<T$C$A>::append_elements
+1	0.01	huffman.rs:222	{closure#0}	jpeg_decoder::huffman::HuffmanTable::new
+1	0.01	-:0	mach_vm_reclaim_is_reusable [libsystem_kernel.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	mod.rs:612	non_null<alloc::alloc::Global, core::option::Option<jpeg_decoder::huffman::HuffmanTable>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	huffman.rs:31	jpeg_decoder::huffman::HuffmanDecoder::decode	jpeg_decoder::huffman::HuffmanDecoder::decode
+1	0.01	mod.rs:612	non_null<alloc::alloc::Global, u8>	jpeg_decoder::decoder::color_convert_line_ycbcr
+1	0.01	list.rs:183	start_send<jpeg_decoder::worker::multithreaded::WorkerMsg>	std::sync::mpmc::Sender<T>::send
+1	0.01	option.rs:1583	core::option::Option<T>::filter	core::option::Option<T>::filter
+1	0.01	result.rs:2174	branch<&[u8], std::io::error::Error>	_<pixelman_codecs::jpeg_input::Reader<R> as std::io::Read>::read
+1	0.01	macros.rs:180	next<jpeg_decoder::upsampler::UpsamplerComponent>	jpeg_decoder::decoder::compute_image
+1	0.01	decoder.rs:1074	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	num.rs:135	_RNvXsd_NtNtNtCsl8K0bEFm1U0_4core3fmt3num3impyNtB9_7Display3fmt	_RNvXsd_NtNtNtCsl8K0bEFm1U0_4core3fmt3num3impyNtB9_7Display3fmt
+1	0.01	mod.rs:901	replace<core::option::Option<std::sync::mpmc::context::Context>>	_<jpeg_decoder::worker::multithreaded::MpscWorker as jpeg_decoder::wor
+1	0.01	list.rs:411	send<jpeg_decoder::worker::multithreaded::WorkerMsg>	std::sync::mpmc::Sender<T>::send
+1	0.01	decoder.rs:1006	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	-:0	_xzm_malloc_zone_malloc_type_calloc_entry [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+1	0.01	limits.rs:58	pixelman_codecs::limits::append_up_to	pixelman_codecs::limits::append_up_to
+1	0.01	mod.rs:805	drop_in_place<[alloc::vec::Vec<u8, alloc::alloc::Global>]>	jpeg_decoder::decoder::compute_image
+1	0.01	decoder.rs:1033	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	decoder.rs:1381	jpeg_decoder::decoder::color_convert_line_ycbcr	jpeg_decoder::decoder::color_convert_line_ycbcr
+1	0.01	-:0	xzm_malloc_zone_malloc_type_calloc [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+1	0.01	-:0	DYLD-STUB$$mach_vm_reclaim_try_enter [libsystem_malloc.dylib]	jpeg_decoder::decoder::compute_image
+1	0.01	mod.rs:1044	std::io::Read::read_exact	std::io::Read::read_exact
+1	0.01	zip.rs:330	_<core::iter::adapters::zip::Zip<A$C$B> as core::iter::adapters::zip::ZipImpl<A$C$B>>::nth	_<core::iter::adapters::zip::Zip<A$C$B> as core::iter::adapters::zip::
+1	0.01	macros.rs:0	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::fold	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator
+1	0.01	decoder.rs:692	decode_planes<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>	jpeg_decoder::worker::WorkerScope::get_or_init_worker
+1	0.01	-:0	_xzm_free [libsystem_malloc.dylib]	jpeg_decoder::decoder::Decoder<R>::decode_internal
+1	0.01	-:0	_platform_memmove [libsystem_platform.dylib]	alloc::vec::Vec<T$C$A>::append_elements
+1	0.01	jpeg_codec.rs:0	pixelman_codecs::jpeg_codec::reduce_to_target	pixelman_codecs::jpeg_codec::reduce_to_target
+1	0.01	mod.rs:0	core::ptr::drop_in_place<pixelman_core::error::Error>	core::ptr::drop_in_place<pixelman_core::error::Error>

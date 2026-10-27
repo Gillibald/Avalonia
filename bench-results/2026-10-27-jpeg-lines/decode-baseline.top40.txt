@@ -1,0 +1,50 @@
+# leaf inlined into decode_internal: 8861 of 15105 main-thread samples (58.7%)
+# samples	% of main	file:line	innermost function
+2482	16.43	decoder.rs:1115	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+1740	11.52	huffman.rs:66	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+818	5.42	decoder.rs:0	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+605	4.01	huffman.rs:69	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+598	3.96	huffman.rs:65	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+499	3.30	huffman.rs:123	consume_bits
+407	2.69	decoder.rs:1112	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+353	2.34	huffman.rs:115	peek_bits
+138	0.91	huffman.rs:64	decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+134	0.89	decoder.rs:1133	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+117	0.77	decoder.rs:936	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+107	0.71	range.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+94	0.62	decoder.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+74	0.49	index.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+74	0.49	range.rs:772	spec_next<u16>
+63	0.42	huffman.rs:0	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+40	0.26	option.rs:0	as_ref<jpeg_decoder::huffman::HuffmanTable>
+38	0.25	result.rs:2174	branch<u8, jpeg_decoder::error::Error>
+36	0.24	mod.rs:1815	as_slice<core::option::Option<jpeg_decoder::huffman::HuffmanTable>, alloc::alloc::Global>
+33	0.22	mod.rs:1851	as_mut_slice<i16, alloc::alloc::Global>
+27	0.18	decoder.rs:1113	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+27	0.18	decoder.rs:1108	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+23	0.15	cmp.rs:1916	lt
+23	0.15	decoder.rs:1092	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+21	0.14	huffman.rs:85	get_bits<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+19	0.13	decoder.rs:934	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+17	0.11	decoder.rs:0	spec_next<u16>
+17	0.11	result.rs:2173	branch<(), jpeg_decoder::error::Error>
+15	0.10	decoder.rs:1139	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+15	0.10	decoder.rs:1077	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+15	0.10	decoder.rs:943	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+12	0.08	result.rs:0	branch<u8, jpeg_decoder::error::Error>
+12	0.08	decoder.rs:1080	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+12	0.08	decoder.rs:1078	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+12	0.08	macros.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+12	0.08	result.rs:2173	branch<u8, jpeg_decoder::error::Error>
+11	0.07	decoder.rs:1141	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+11	0.07	result.rs:0	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+10	0.07	decoder.rs:1123	decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+10	0.07	decoder.rs:935	decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>>
+
+# inline depth of those samples (frames from atos -i, incl. decode_internal)
+4	487	5.50%
+5	4131	46.62%
+6	3242	36.59%
+7	999	11.27%
+9	2	0.02%
+# resolving only to decode_internal: 0
