@@ -86,7 +86,8 @@ namespace Avalonia.Imaging.Benchmarks
         /// <summary>
         /// A diagnostic, not a like-for-like comparison: each library's own codec API decodes to
         /// its native format (SkiaSharp's SKCodec to the codec's colour type, PixelMan's Normal
-        /// mode to the stored layout), with no Avalonia pipeline. Set against <see cref="Decode"/>
+        /// mode to the stored layout, ImageSharp to its matching pixel type), with no Avalonia
+        /// pipeline. Set against <see cref="Decode"/>
         /// it separates codec cost from the conversion and adapter cost.
         /// </summary>
         public static Scenario CodecOnly(Fixture fixture) =>
@@ -113,6 +114,14 @@ namespace Avalonia.Imaging.Benchmarks
 
                     return new ScenarioOutcome(info.Width, info.Height, info.ColorType + " " + info.AlphaType, null,
                         null, null);
+                }
+
+                if (backend == BenchmarkBackends.ImageSharp.Name)
+                {
+                    // ImageSharp decodes into the pixel type that matches the stored layout.
+                    using var image = SixLabors.ImageSharp.Image.Load(new MemoryStream(fixture.Data, writable: false));
+
+                    return new ScenarioOutcome(image.Width, image.Height, image.PixelType.ToString() ?? "", null, null, null);
                 }
 
                 using var frame = Avalonia.PixelMan.PmBitmapFrame.Decode(new MemoryStream(fixture.Data, writable: false));
