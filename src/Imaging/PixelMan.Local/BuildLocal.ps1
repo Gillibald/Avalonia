@@ -71,7 +71,7 @@ $boundaries = @{
     'Directory.Packages.props' = '<Project><PropertyGroup><ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally></PropertyGroup></Project>'
 }
 
-$exclude = Join-Path (git -C $pixelMan rev-parse --git-common-dir) 'info/exclude'
+$exclude = Join-Path (git -C $pixelMan rev-parse --path-format=absolute --git-common-dir) 'info/exclude'
 
 foreach ($name in $boundaries.Keys) {
     $file = Join-Path $pixelMan $name
