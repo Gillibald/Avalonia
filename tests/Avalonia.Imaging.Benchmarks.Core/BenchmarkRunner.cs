@@ -26,7 +26,7 @@ namespace Avalonia.Imaging.Benchmarks
     }
 
     /// <summary>
-    /// Runs every scenario on both backends: decodes to Skia's render format (Bgra8888,
+    /// Runs every scenario on every backend: decodes to Skia's render format (Bgra8888,
     /// premultiplied) and encodes with Avalonia's encoder settings, alternating the backends
     /// and keeping each one's best round, then compares their outputs.
     /// </summary>
@@ -75,12 +75,17 @@ namespace Avalonia.Imaging.Benchmarks
                 }
 
                 if (scenario.Kind == ScenarioKind.Decode &&
-                    runs[BenchmarkBackends.Skia.Name].Outcome is { Pixels: { } skia } skiaOutcome &&
-                    runs[BenchmarkBackends.PixelMan.Name].Outcome is { Pixels: { } pixelMan } pixelManOutcome &&
-                    skia.Length == pixelMan.Length &&
-                    skiaOutcome.Format?.Split(' ')[0] == pixelManOutcome.Format?.Split(' ')[0])
+                    runs[BenchmarkBackends.Skia.Name].Outcome is { Pixels: { } skia } skiaOutcome)
                 {
-                    comparisons.Add(Compare(scenario, skia, pixelMan));
+                    foreach (var backend in BenchmarkBackends.All.Skip(1))
+                    {
+                        if (runs[backend.Name].Outcome is { Pixels: { } other } otherOutcome &&
+                            skia.Length == other.Length &&
+                            skiaOutcome.Format?.Split(' ')[0] == otherOutcome.Format?.Split(' ')[0])
+                        {
+                            comparisons.Add(Compare(scenario, backend.Name, skia, other));
+                        }
+                    }
                 }
             }
 
@@ -206,7 +211,7 @@ namespace Avalonia.Imaging.Benchmarks
             }
         }
 
-        private static OutputComparison Compare(Scenario scenario, byte[] a, byte[] b)
+        private static OutputComparison Compare(Scenario scenario, string backend, byte[] a, byte[] b)
         {
             var max = 0;
             long sum = 0;
@@ -221,7 +226,7 @@ namespace Avalonia.Imaging.Benchmarks
 
             return new OutputComparison
             {
-                Scenario = scenario.Id, Fixture = scenario.Fixture, MaxChannelDifference = max,
+                Scenario = scenario.Id, Fixture = scenario.Fixture, Backend = backend, MaxChannelDifference = max,
                 MeanAbsoluteDifference = Math.Round((double)sum / a.Length, 4),
             };
         }
@@ -255,6 +260,7 @@ namespace Avalonia.Imaging.Benchmarks
             Processor = System.Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER"),
             SkiaSharpVersion = Version(typeof(SkiaSharp.SKImage).Assembly),
             PixelManVersion = Version(typeof(Avalonia.PixelMan.PmBitmapFrame).Assembly),
+            ImageSharpVersion = Version(typeof(SixLabors.ImageSharp.Image).Assembly),
             Timestamp = DateTimeOffset.UtcNow.ToString("u"),
             Warmup = _options.Warmup,
             Iterations = _options.Iterations,

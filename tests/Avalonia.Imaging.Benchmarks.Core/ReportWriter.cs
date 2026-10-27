@@ -18,32 +18,47 @@ namespace Avalonia.Imaging.Benchmarks
             ?? throw new FormatException("Not a benchmark report.");
 
         /// <summary>
-        /// One row per scenario and fixture. "Skia / PixelMan" above 1 means PixelMan is faster.
+        /// One row per scenario and fixture, one time column per backend. "Skia / X" above 1 means
+        /// X is faster than Skia; "X diff" is the largest channel difference of X's decode to Skia's.
         /// </summary>
         public static string ToMarkdown(BenchmarkReport report)
         {
             var e = report.Environment;
             var text = new StringBuilder();
             var fixtures = report.Fixtures.ToDictionary(f => f.Name);
+            var backends = report.Results.Select(r => r.Backend).Distinct().ToList();
+            var others = backends.Where(b => b != BenchmarkBackends.Skia.Name).ToList();
 
             text.AppendLine($"Host: {e.Host}, {e.OperatingSystem}, {e.Architecture}, {e.Runtime}, {e.ProcessorCount} logical processors{(e.Processor is null ? "" : ", " + e.Processor)}.");
-            text.AppendLine($"SkiaSharp {e.SkiaSharpVersion}, PixelMan {e.PixelManVersion}. {e.Warmup} warm-up, {e.Iterations} timed runs, best of {e.Rounds} rounds; {e.Timestamp}.");
+            text.AppendLine($"SkiaSharp {e.SkiaSharpVersion}, PixelMan {e.PixelManVersion}{(e.ImageSharpVersion is null ? "" : ", ImageSharp " + e.ImageSharpVersion)}. {e.Warmup} warm-up, {e.Iterations} timed runs, best of {e.Rounds} rounds; {e.Timestamp}.");
             text.AppendLine();
-            text.AppendLine("| Scenario | Fixture | Format | Skia ms | PixelMan ms | Skia / PixelMan | Skia CPU ms | PixelMan CPU ms | Max diff | Output | Notes |");
-            text.AppendLine("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |");
+
+            var columns = new List<string> { "Scenario", "Fixture", "Format" };
+            columns.AddRange(backends.Select(b => $"{b} ms"));
+            columns.AddRange(others.Select(b => $"Skia / {b}"));
+            columns.AddRange(backends.Select(b => $"{b} CPU ms"));
+            columns.AddRange(others.Select(b => $"{b} diff"));
+            columns.Add("Output");
+            columns.Add("Notes");
+            text.AppendLine("| " + string.Join(" | ", columns) + " |");
+            text.AppendLine("| " + string.Join(" | ", columns.Select((_, i) => i < 3 || i >= columns.Count - 2 ? "---" : "---:")) + " |");
 
             foreach (var group in report.Results.GroupBy(r => (r.Scenario, r.Fixture)))
             {
-                var skia = group.FirstOrDefault(r => r.Backend == BenchmarkBackends.Skia.Name);
-                var pixelMan = group.FirstOrDefault(r => r.Backend == BenchmarkBackends.PixelMan.Name);
-                var comparison = report.Comparisons.FirstOrDefault(c =>
-                    c.Scenario == group.Key.Scenario && c.Fixture == group.Key.Fixture);
+                var row = backends.ToDictionary(b => b, b => group.FirstOrDefault(r => r.Backend == b));
+                var skia = row.GetValueOrDefault(BenchmarkBackends.Skia.Name);
                 var format = fixtures.TryGetValue(group.Key.Fixture, out var fixture) ? fixture.Format : "";
-                var ratio = skia is { Supported: true } && pixelMan is { Supported: true } && pixelMan.MedianMs > 0
-                    ? (skia.MedianMs / pixelMan.MedianMs).ToString("F2", CultureInfo.InvariantCulture)
-                    : "";
+                var cells = new List<string> { group.Key.Scenario, group.Key.Fixture, format };
 
-                text.AppendLine($"| {group.Key.Scenario} | {group.Key.Fixture} | {format} | {Time(skia)} | {Time(pixelMan)} | {ratio} | {Cpu(skia)} | {Cpu(pixelMan)} | {comparison?.MaxChannelDifference.ToString(CultureInfo.InvariantCulture) ?? ""} | {Output(skia, pixelMan)} | {Notes(skia, pixelMan)} |");
+                cells.AddRange(backends.Select(b => Time(row[b])));
+                cells.AddRange(others.Select(b => Ratio(skia, row[b])));
+                cells.AddRange(backends.Select(b => Cpu(row[b])));
+                cells.AddRange(others.Select(b => report.Comparisons.FirstOrDefault(c =>
+                        c.Scenario == group.Key.Scenario && c.Fixture == group.Key.Fixture && c.Backend == b)
+                    ?.MaxChannelDifference.ToString(CultureInfo.InvariantCulture) ?? ""));
+                cells.Add(Output(row.Values));
+                cells.Add(Notes(row.Values));
+                text.AppendLine("| " + string.Join(" | ", cells) + " |");
             }
 
             return text.ToString();
@@ -96,23 +111,29 @@ namespace Avalonia.Imaging.Benchmarks
         private static string Cpu(ScenarioResult? result) =>
             result?.CpuMedianMs is { } cpu ? cpu.ToString("F2", CultureInfo.InvariantCulture) : "";
 
-        private static string Output(ScenarioResult? skia, ScenarioResult? pixelMan)
+        private static string Ratio(ScenarioResult? skia, ScenarioResult? other) =>
+            skia is { Supported: true } && other is { Supported: true } && other.MedianMs > 0
+                ? (skia.MedianMs / other.MedianMs).ToString("F2", CultureInfo.InvariantCulture)
+                : "";
+
+        private static string Output(IEnumerable<ScenarioResult?> results)
         {
-            var formats = new[] { skia, pixelMan }.Select(r => r?.OutputFormat).Where(f => f is not null).Distinct().ToList();
+            var present = results.Where(r => r?.OutputFormat is not null).ToList();
+            var formats = present.Select(r => r!.OutputFormat).Distinct().ToList();
 
             return formats.Count switch
             {
                 0 => "",
                 1 => formats[0]!,
-                _ => $"Skia {skia?.OutputFormat}, PixelMan {pixelMan?.OutputFormat}",
+                _ => string.Join(", ", present.Select(r => $"{r!.Backend} {r.OutputFormat}")),
             };
         }
 
-        private static string Notes(ScenarioResult? skia, ScenarioResult? pixelMan)
+        private static string Notes(IEnumerable<ScenarioResult?> results)
         {
             var notes = new List<string>();
 
-            foreach (var result in new[] { skia, pixelMan })
+            foreach (var result in results)
             {
                 if (result is null)
                     continue;

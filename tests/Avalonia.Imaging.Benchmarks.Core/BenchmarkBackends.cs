@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Avalonia.Imaging.ImageSharp;
 using Avalonia.Imaging.PixelMan;
 using Avalonia.Platform;
 using Avalonia.Skia.Imaging;
@@ -16,7 +17,10 @@ namespace Avalonia.Imaging.Benchmarks
 
         public static BenchmarkBackend PixelMan { get; } = new("PixelMan", () => new PixelManImagingBackend());
 
-        public static IReadOnlyList<BenchmarkBackend> All { get; } = new[] { Skia, PixelMan };
+        public static BenchmarkBackend ImageSharp { get; } = new("ImageSharp", () => new ImageSharpImagingBackend());
+
+        /// <summary>Skia first: the other backends' outputs and timings are compared against it.</summary>
+        public static IReadOnlyList<BenchmarkBackend> All { get; } = new[] { Skia, PixelMan, ImageSharp };
 
         /// <summary>
         /// Binds Skia's render interface and <paramref name="backend"/> as the active imaging

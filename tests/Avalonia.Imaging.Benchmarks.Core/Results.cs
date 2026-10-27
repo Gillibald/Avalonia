@@ -22,6 +22,7 @@ namespace Avalonia.Imaging.Benchmarks
         public string? Processor { get; init; }
         public required string SkiaSharpVersion { get; init; }
         public required string PixelManVersion { get; init; }
+        public string? ImageSharpVersion { get; init; }
         public required string Timestamp { get; init; }
         public required int Warmup { get; init; }
         public required int Iterations { get; init; }
@@ -72,11 +73,14 @@ namespace Avalonia.Imaging.Benchmarks
         public double? PsnrDb { get; init; }
     }
 
-    /// <summary>How far the two backends' decoded pixels are apart, to show both did the same work.</summary>
+    /// <summary>How far a backend's decoded pixels are from Skia's, to show both did the same work.</summary>
     public sealed class OutputComparison
     {
         public required string Scenario { get; init; }
         public required string Fixture { get; init; }
+
+        /// <summary>The backend compared with Skia; reports written before ImageSharp joined compared PixelMan.</summary>
+        public string Backend { get; init; } = "PixelMan";
         public required int MaxChannelDifference { get; init; }
         public required double MeanAbsoluteDifference { get; init; }
     }
