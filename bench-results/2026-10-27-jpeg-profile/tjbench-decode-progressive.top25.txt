@@ -1,0 +1,32 @@
+tjbench-decode-progressive.sample.txt
+total samples 11390, on-CPU samples 11390 (100.0%)
+
+thread groups: threads, samples, on-CPU samples
+  main: 1 threads, 11390 samples, 11390 on-CPU
+
+top 25 by self samples: % of all samples | % of on-CPU samples
+     6427  56.4%  56.4%  decode_mcu_AC_first (libturbojpeg.0.5.0.dylib)
+     1663  14.6%  14.6%  jsimd_idct_islow_neon (libturbojpeg.0.5.0.dylib)
+      837   7.3%   7.3%  jpeg_fill_bit_buffer (libturbojpeg.0.5.0.dylib)
+      663   5.8%   5.8%  jsimd_ycc_extrgb_convert_neon (libturbojpeg.0.5.0.dylib)
+      566   5.0%   5.0%  consume_data (libturbojpeg.0.5.0.dylib)
+      465   4.1%   4.1%  decode_mcu_DC_first (libturbojpeg.0.5.0.dylib)
+      309   2.7%   2.7%  jsimd_h2v2_fancy_upsample_neon (libturbojpeg.0.5.0.dylib)
+      264   2.3%   2.3%  jpeg_huff_decode (libturbojpeg.0.5.0.dylib)
+       58   0.5%   0.5%  __bzero (libsystem_platform.dylib)
+       42   0.4%   0.4%  _platform_memset (libsystem_platform.dylib)
+       35   0.3%   0.3%  decompress_data (libturbojpeg.0.5.0.dylib)
+       29   0.3%   0.3%  jsimd_idct_islow (libturbojpeg.0.5.0.dylib)
+        6   0.1%   0.1%  access_virt_barray (libturbojpeg.0.5.0.dylib)
+        6   0.1%   0.1%  sep_upsample (libturbojpeg.0.5.0.dylib)
+        3   0.0%   0.0%  jsimd_h2v2_fancy_upsample (libturbojpeg.0.5.0.dylib)
+        2   0.0%   0.0%  sigprocmask (libsystem_kernel.dylib)
+        2   0.0%   0.0%  tj3Decompress8 (libturbojpeg.0.5.0.dylib)
+        1   0.0%   0.0%  jpeg_make_d_derived_tbl (libturbojpeg.0.5.0.dylib)
+        1   0.0%   0.0%  jinit_upsampler (libturbojpeg.0.5.0.dylib)
+        1   0.0%   0.0%  jpeg_read_scanlines (libturbojpeg.0.5.0.dylib)
+        1   0.0%   0.0%  _xzm_free_outlined (libsystem_malloc.dylib)
+        1   0.0%   0.0%  _xzm_segment_table_freed_at (libsystem_malloc.dylib)
+        1   0.0%   0.0%  mach_absolute_time (libsystem_kernel.dylib)
+        1   0.0%   0.0%  jpeg_abort (libturbojpeg.0.5.0.dylib)
+        1   0.0%   0.0%  finish_output_pass (libturbojpeg.0.5.0.dylib)

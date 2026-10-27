@@ -1,0 +1,425 @@
+Analysis of sampling jpeg-profile (pid 16457) every 1 millisecond
+Process:         jpeg-profile [16457]
+Path:            /Users/USER/*/jpeg-profile
+Load Address:    0x10226c000
+Identifier:      jpeg-profile
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  zsh [16456]
+Target Type:     live task
+
+Date/Time:       2026-10-27 18:32:32.239 +0100
+Launch Time:     2026-10-27 18:32:31.197 +0100
+OS Version:      macOS 26.5 (25F71)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         17.7M
+Physical footprint (peak):  17.7M
+Idle exit:                  untracked
+----
+
+Call graph:
+    11338 Thread_196961   DispatchQueue_1: com.apple.main-thread  (serial)
+      11338 start  (in dyld) + 6992  [0x188a8be00]
+        11338 main  (in jpeg-profile) + 872  [0x1022eb270]
+          11338 std::sys::backtrace::__rust_begin_short_backtrace::ha16d050742adcd03  (in jpeg-profile) + 12  [0x1022b6288]  backtrace.rs:166
+            11338 jpeg_profile::main::h80760360941adbaf  (in jpeg-profile) + 3948  [0x1022804c8]  jpeg-profile.rs:58
+              11338 jpeg_profile::run::hef07605f17747efc  (in jpeg-profile) + 568  [0x1023e99a4]  jpeg-profile.rs:93
+                11338 jpeg_profile::main::_$u7b$$u7b$closure$u7d$$u7d$::hed0839b0eea8303c  (in jpeg-profile) + 48  [0x1023e9c2c]  jpeg-profile.rs:60
+                  11337 pixelman_codecs::encode_through::h3d6c0f6b656c402b  (in jpeg-profile) + 2124  [0x1023ea780]  lib.rs:368
+                  + 11333 core::ops::function::FnOnce::call_once::h658466625d423c92  (in jpeg-profile) + 14340  [0x1022bf7e8]  function.rs:250
+                  + ! 5320 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4304,4372,...  [0x10227e550,0x10227e594,...]  encoder.rs:752
+                  + ! 3053 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4656  [0x10227e6b0]  encoder.rs:764
+                  + ! : 720 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 128  [0x10227b048]  writer.rs:369
+                  + ! : 716 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 108  [0x10227b034]  writer.rs:367
+                  + ! : 591 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 280  [0x10227b0e0]  writer.rs:377
+                  + ! : | 220 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 92,112  [0x10227ad48,0x10227ad5c]  writer.rs:193
+                  + ! : | 174 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 672  [0x10227af8c]  writer.rs:194
+                  + ! : | + 96 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552,544  [0x1022dadfc,0x1022dadf4]  sink.rs:127
+                  + ! : | + 54 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 28 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + ! : 24 _platform_memmove  (in libsystem_platform.dylib) + 460,0,...  [0x188e5352c,0x188e53360,...]
+                  + ! : | + ! : 4 DYLD-STUB$$memcpy  (in jpeg-profile) + 4  [0x1023f89bc]
+                  + ! : | + ! 11 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 36  [0x1022dabf8]  sink.rs:110
+                  + ! : | + ! 5 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 472  [0x1022dadac]  sink.rs:122
+                  + ! : | + ! 4 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 328  [0x1022dad1c]  sink.rs:119
+                  + ! : | + ! 3 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | + ! 2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 176  [0x1022dac84]  sink.rs:116
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 240  [0x1022dacc4]  sink.rs:117
+                  + ! : | + !   1 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x188e533b8]
+                  + ! : | + 20 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 144,36,...  [0x1022b5e1c,0x1022b5db0,...]  impls.rs:78
+                  + ! : | + 4 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 12,0  [0x1022b5d98,0x1022b5d8c]  impls.rs:77
+                  + ! : | 96 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 36,44  [0x10227ad10,0x10227ad18]  writer.rs:190
+                  + ! : | 23 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 656,136,...  [0x10227af7c,0x10227ad74,...]  writer.rs:194
+                  + ! : | 9 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 420  [0x10227ae90]  writer.rs:194
+                  + ! : | + 5 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 328  [0x1022dad1c]  sink.rs:119
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + ! : 1 _platform_memmove  (in libsystem_platform.dylib) + 436  [0x188e53514]
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 484  [0x1022dadb8]  sink.rs:122
+                  + ! : | + 3 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552,548  [0x1022dadfc,0x1022dadf8]  sink.rs:127
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 144  [0x1022b5e1c]  impls.rs:78
+                  + ! : | 9 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 484  [0x10227aed0]  writer.rs:194
+                  + ! : | + 5 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 36  [0x1022dabf8]  sink.rs:110
+                  + ! : | + ! 2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + ! : 2 _platform_memmove  (in libsystem_platform.dylib) + 12,436  [0x188e5336c,0x188e53514]
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | + 3 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 12  [0x1022b5d98]  impls.rs:77
+                  + ! : | 7 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 168  [0x10227ad94]  writer.rs:194
+                  + ! : | + 2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 328  [0x1022dad1c]  sink.rs:119
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + !   1 _platform_memmove  (in libsystem_platform.dylib) + 436  [0x188e53514]
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 132,144  [0x1022b5e10,0x1022b5e1c]  impls.rs:78
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 12  [0x1022b5d98]  impls.rs:77
+                  + ! : | 6 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 356  [0x10227ae50]  writer.rs:194
+                  + ! : | + 4 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 80,132  [0x1022b5ddc,0x1022b5e10]  impls.rs:78
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | +     2 _platform_memmove  (in libsystem_platform.dylib) + 0,12  [0x188e53360,0x188e5336c]
+                  + ! : | 6 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 608  [0x10227af4c]  writer.rs:194
+                  + ! : | + 4 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 3 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + ! : 2 DYLD-STUB$$memcpy  (in jpeg-profile) + 4  [0x1023f89bc]
+                  + ! : | + ! : 1 _platform_memmove  (in libsystem_platform.dylib) + 16  [0x188e53370]
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 176  [0x1022dac84]  sink.rs:116
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 80,132  [0x1022b5ddc,0x1022b5e10]  impls.rs:78
+                  + ! : | 6 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 52  [0x10227ad20]  writer.rs:198
+                  + ! : | 6 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 688  [0x10227af9c]  writer.rs:202
+                  + ! : | 5 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 548  [0x10227af10]  writer.rs:194
+                  + ! : | + 3 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 3 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + !   3 _platform_memmove  (in libsystem_platform.dylib) + 0,12,...  [0x188e53360,0x188e5336c,...]
+                  + ! : | + 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | 5 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 496  [0x1022b5f7c]  impls.rs:79
+                  + ! : | 4 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 292  [0x10227ae10]  writer.rs:194
+                  + ! : | + 3 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 80,132,...  [0x1022b5ddc,0x1022b5e10,...]  impls.rs:78
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | +     1 _platform_memmove  (in libsystem_platform.dylib) + 460  [0x188e5352c]
+                  + ! : | 4 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 584  [0x10227af34]  writer.rs:194
+                  + ! : | + 3 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 240  [0x1022dacc4]  sink.rs:117
+                  + ! : | + ! : 1 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x188e533b8]
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 328  [0x1022dad1c]  sink.rs:119
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 200  [0x10227adb4]  writer.rs:194
+                  + ! : | + 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 548  [0x1022dadf8]  sink.rs:127
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | +     1 DYLD-STUB$$memcpy  (in jpeg-profile) + 4  [0x1023f89bc]
+                  + ! : | 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 228  [0x10227add0]  writer.rs:194
+                  + ! : | + 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 548  [0x1022dadf8]  sink.rs:127
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | +     1 DYLD-STUB$$memcpy  (in jpeg-profile) + 4  [0x1023f89bc]
+                  + ! : | 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 392  [0x10227ae74]  writer.rs:194
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 36  [0x1022dabf8]  sink.rs:110
+                  + ! : | 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 56  [0x10227ad24]  writer.rs:199
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 4  [0x10227acf0]  writer.rs:186
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 328  [0x10227ae34]  writer.rs:194
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 456  [0x10227aeb4]  writer.rs:194
+                  + ! : |   1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 80  [0x1022b5ddc]  impls.rs:78
+                  + ! : 343 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 276,248,...  [0x10227b0dc,0x10227b0c0,...]  writer.rs:377
+                  + ! : 279 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 704,700,...  [0x10227afac,0x10227afa8,...]  writer.rs:202
+                  + ! : 201 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 120,296,...  [0x10227b040,0x10227b0f0,...]  writer.rs:365
+                  + ! : 93 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 308  [0x10227b0fc]  writer.rs:383
+                  + ! : 45 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 292  [0x10227b0ec]  result.rs:0
+                  + ! : 35 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 336  [0x10227b118]  writer.rs:384
+                  + ! : | 16 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 36  [0x10227ad10]  writer.rs:190
+                  + ! : | 9 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 672  [0x10227af8c]  writer.rs:194
+                  + ! : | + 4 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : | + 3 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 328  [0x1022dad1c]  sink.rs:119
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + ! : 1 _platform_memmove  (in libsystem_platform.dylib) + 436  [0x188e53514]
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 472  [0x1022dadac]  sink.rs:122
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 80  [0x1022b5ddc]  impls.rs:78
+                  + ! : | 5 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 92,112  [0x10227ad48,0x10227ad5c]  writer.rs:193
+                  + ! : | 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 356  [0x10227ae50]  writer.rs:194
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 132  [0x1022b5e10]  impls.rs:78
+                  + ! : | 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 420  [0x10227ae90]  writer.rs:194
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 36,132  [0x1022b5db0,0x1022b5e10]  impls.rs:78
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 608  [0x10227af4c]  writer.rs:194
+                  + ! : |   1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 144  [0x1022b5e1c]  impls.rs:78
+                  + ! : 14 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 160  [0x10227b068]  writer.rs:370
+                  + ! : | 3 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 92,112  [0x10227ad48,0x10227ad5c]  writer.rs:193
+                  + ! : | 3 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 672  [0x10227af8c]  writer.rs:194
+                  + ! : | + 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : | + ! 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + !   1 _platform_memmove  (in libsystem_platform.dylib) + 460  [0x188e5352c]
+                  + ! : | + 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 0  [0x10227acec]  writer.rs:186
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 36  [0x10227ad10]  writer.rs:190
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 228  [0x10227add0]  writer.rs:194
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 292  [0x10227ae10]  writer.rs:194
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | +     1 _platform_memmove  (in libsystem_platform.dylib) + 428  [0x188e5350c]
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 356  [0x10227ae50]  writer.rs:194
+                  + ! : | + 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | +   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 484  [0x1022dadb8]  sink.rs:122
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 608  [0x10227af4c]  writer.rs:194
+                  + ! : | + 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 656  [0x10227af7c]  writer.rs:194
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 52  [0x10227ad20]  writer.rs:198
+                  + ! : 7 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 216,188,...  [0x10227b0a0,0x10227b084,...]  writer.rs:374
+                  + ! : 5 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 24  [0x10227afe0]  writer.rs:356
+                  + ! : 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 140  [0x10227b054]  writer.rs:370
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 56  [0x10227b000]  uint_macros.rs:0
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 124  [0x10227b044]  writer.rs:366
+                  + ! 1655 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 2452  [0x10227de14]  encoder.rs:678
+                  + ! : 875 _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad  (in jpeg-profile) + 1224,1092,...  [0x10231f038,0x10231efb4,...]  jpeg_codec.rs:1080
+                  + ! : 437 _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad  (in jpeg-profile) + 1176,1184,...  [0x10231f008,0x10231f010,...]  jpeg_codec.rs:1079
+                  + ! : 272 _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad  (in jpeg-profile) + 1124,1168,...  [0x10231efd4,0x10231f000,...]  jpeg_codec.rs:1078
+                  + ! : 66 _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad  (in jpeg-profile) + 1104,1100  [0x10231efc0,0x10231efbc]  jpeg_codec.rs:1076
+                  + ! : 5 _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad  (in jpeg-profile) + 932  [0x10231ef14]  jpeg_codec.rs:1084
+                  + ! 527 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4256  [0x10227e520]  encoder.rs:750
+                  + ! : 110 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 996,1060,...  [0x10231c8ec,0x10231c92c,...]  fdct.rs:166
+                  + ! : 44 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 352,308,...  [0x10231c668,0x10231c63c,...]  fdct.rs:119
+                  + ! : 42 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 244,200,...  [0x10231c5fc,0x10231c5d0,...]  fdct.rs:117
+                  + ! : 40 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 516,540,...  [0x10231c70c,0x10231c724,...]  fdct.rs:121
+                  + ! : 29 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 144,152,...  [0x10231c598,0x10231c5a0,...]  fdct.rs:115
+                  + ! : 18 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1780,1776,...  [0x10231cbfc,0x10231cbf8,...]  fdct.rs:234
+                  + ! : 15 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 924,860,...  [0x10231c8a4,0x10231c864,...]  fdct.rs:164
+                  + ! : 14 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1412  [0x10231ca8c]  fdct.rs:215
+                  + ! : 14 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1504,1696,...  [0x10231cae8,0x10231cba8,...]  fdct.rs:229
+                  + ! : 13 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 936,652,...  [0x10231c8b0,0x10231c794,...]  fdct.rs:137
+                  + ! : 13 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1624  [0x10231cb60]  fdct.rs:190
+                  + ! : 12 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1600,1580,...  [0x10231cb48,0x10231cb34,...]  fdct.rs:110
+                  + ! : 10 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 684,696,...  [0x10231c7b4,0x10231c7c0,...]  fdct.rs:149
+                  + ! : 10 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 872  [0x10231c870]  fdct.rs:153
+                  + ! : 9 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1760,1644,...  [0x10231cbe8,0x10231cb74,...]  fdct.rs:193
+                  + ! : 9 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1332,1740,...  [0x10231ca3c,0x10231cbd4,...]  fdct.rs:197
+                  + ! : 7 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1652,1720  [0x10231cb7c,0x10231cbc0]  fdct.rs:194
+                  + ! : 7 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1544,1560,...  [0x10231cb10,0x10231cb20,...]  fdct.rs:230
+                  + ! : 6 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 588,592  [0x10231c754,0x10231c758]  fdct.rs:129
+                  + ! : 6 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 640  [0x10231c788]  fdct.rs:136
+                  + ! : 6 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 732,736  [0x10231c7e4,0x10231c7e8]  fdct.rs:157
+                  + ! : 6 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 800,804,...  [0x10231c828,0x10231c82c,...]  fdct.rs:163
+                  + ! : 6 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1260,1296  [0x10231c9f4,0x10231ca18]  fdct.rs:177
+                  + ! : 5 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 20  [0x10231c51c]  fdct.rs:105
+                  + ! : 5 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 712  [0x10231c7d0]  fdct.rs:151
+                  + ! : 5 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1360  [0x10231ca58]  fdct.rs:178
+                  + ! : 5 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1288,1320,...  [0x10231ca10,0x10231ca30,...]  fdct.rs:198
+                  + ! : 5 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1388  [0x10231ca74]  fdct.rs:202
+                  + ! : 5 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1440,1436,...  [0x10231caa8,0x10231caa4,...]  fdct.rs:226
+                  + ! : 4 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 616  [0x10231c770]  fdct.rs:133
+                  + ! : 4 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 972  [0x10231c8d4]  fdct.rs:138
+                  + ! : 4 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 664  [0x10231c7a0]  fdct.rs:145
+                  + ! : 4 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 676,680  [0x10231c7ac,0x10231c7b0]  fdct.rs:148
+                  + ! : 4 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 776  [0x10231c810]  fdct.rs:156
+                  + ! : 4 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1292  [0x10231ca14]  fdct.rs:175
+                  + ! : 3 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 844  [0x10231c854]  fdct.rs:152
+                  + ! : 3 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 760,764  [0x10231c800,0x10231c804]  fdct.rs:158
+                  + ! : 3 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1364  [0x10231ca5c]  fdct.rs:180
+                  + ! : 3 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1312  [0x10231ca28]  fdct.rs:191
+                  + ! : 2 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 892  [0x10231c884]  fdct.rs:154
+                  + ! : 2 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1268  [0x10231c9fc]  fdct.rs:181
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 388  [0x10231c68c]  fdct.rs:118
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 916  [0x10231c89c]  fdct.rs:134
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 668  [0x10231c7a4]  fdct.rs:147
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 772  [0x10231c80c]  fdct.rs:161
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1300  [0x10231ca1c]  fdct.rs:179
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1372  [0x10231ca64]  fdct.rs:182
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1272  [0x10231ca00]  fdct.rs:189
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1280  [0x10231ca08]  fdct.rs:196
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1680  [0x10231cb98]  fdct.rs:201
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1512  [0x10231caf0]  fdct.rs:212
+                  + ! : 1 jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile) + 1724  [0x10231cbc4]  fdct.rs:231
+                  + ! 354 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4148,4124,...  [0x10227e4b4,0x10227e49c,...]  encoder.rs:743
+                  + ! 80 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4416  [0x10227e5c0]  encoder.rs:766
+                  + ! 55 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4588  [0x10227e66c]  encoder.rs:764
+                  + ! : 21 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 92,112  [0x10227ad48,0x10227ad5c]  writer.rs:193
+                  + ! : 9 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 672  [0x10227af8c]  writer.rs:194
+                  + ! : | 5 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + 4 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | + ! 4 _platform_memmove  (in libsystem_platform.dylib) + 428,460  [0x188e5350c,0x188e5352c]
+                  + ! : | + 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 240  [0x1022dacc4]  sink.rs:117
+                  + ! : | +   1 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x188e533b8]
+                  + ! : | 4 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 552  [0x1022dadfc]  sink.rs:127
+                  + ! : 7 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 36  [0x10227ad10]  writer.rs:190
+                  + ! : 3 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 292  [0x10227ae10]  writer.rs:194
+                  + ! : | 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : | + 2 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : | +   2 _platform_memmove  (in libsystem_platform.dylib) + 452,460  [0x188e53524,0x188e5352c]
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 36  [0x1022b5db0]  impls.rs:78
+                  + ! : 3 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 148,244,...  [0x10227ad80,0x10227ade0,...]  writer.rs:194
+                  + ! : 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 168  [0x10227ad94]  writer.rs:194
+                  + ! : | 2 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 36  [0x1022dabf8]  sink.rs:110
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : |     1 _platform_memmove  (in libsystem_platform.dylib) + 0  [0x188e53360]
+                  + ! : 2 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 228  [0x10227add0]  writer.rs:194
+                  + ! : | 1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 548  [0x1022dadf8]  sink.rs:127
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : |     1 _platform_memmove  (in libsystem_platform.dylib) + 452  [0x188e53524]
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 200  [0x10227adb4]  writer.rs:194
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : |     1 DYLD-STUB$$memcpy  (in jpeg-profile) + 4  [0x1023f89bc]
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 264  [0x10227adf4]  writer.rs:194
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 328  [0x1022dad1c]  sink.rs:119
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 484  [0x10227aed0]  writer.rs:194
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 168  [0x1022dac7c]  sink.rs:0
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 548  [0x10227af10]  writer.rs:194
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : |     1 DYLD-STUB$$memcpy  (in jpeg-profile) + 4  [0x1023f89bc]
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 584  [0x10227af34]  writer.rs:194
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : |     1 _platform_memmove  (in libsystem_platform.dylib) + 12  [0x188e5336c]
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 608  [0x10227af4c]  writer.rs:194
+                  + ! : | 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |   1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 36  [0x1022dabf8]  sink.rs:110
+                  + ! : 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 688  [0x10227af9c]  writer.rs:202
+                  + ! : 1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 496  [0x1022b5f7c]  impls.rs:79
+                  + ! 47 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4564,4652,...  [0x10227e654,0x10227e6ac,...]  encoder.rs:764
+                  + ! 29 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4716,4732,...  [0x10227e6ec,0x10227e6fc,...]  range.rs:0
+                  + ! 26 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile) + 704,700  [0x10227afac,0x10227afa8]  writer.rs:202
+                  + ! 25 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3252  [0x10227e134]  encoder.rs:711
+                  + ! : 20 jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile) + 1424,1384,...  [0x10231e060,0x10231e038,...]  sampling.rs:35
+                  + ! : 4 jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile) + 96  [0x10231db30]  sampling.rs:30
+                  + ! : | 3 _platform_memset  (in libsystem_platform.dylib) + 140  [0x188e5311c]
+                  + ! : | 1 _malloc_zone_calloc  (in libsystem_malloc.dylib) + 64  [0x188c762a8]
+                  + ! : 1 jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile) + 380  [0x10231dc4c]  sampling.rs:32
+                  + ! 24 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3944,3880,...  [0x10227e3e8,0x10227e3a8,...]  encoder.rs:0
+                  + ! 24 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3104  [0x10227e0a0]  encoder.rs:711
+                  + ! : 21 jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile) + 1424,1384,...  [0x10231e060,0x10231e038,...]  sampling.rs:35
+                  + ! : 2 jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile) + 96  [0x10231db30]  sampling.rs:30
+                  + ! : | 2 _platform_memset  (in libsystem_platform.dylib) + 140  [0x188e5311c]
+                  + ! : 1 jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile) + 380  [0x10231dc4c]  sampling.rs:32
+                  + ! 19 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3904  [0x10227e3c0]  uint_macros.rs:0
+                  + ! 17 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4452  [0x10227e5e4]  encoder.rs:767
+                  + ! 14 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile) + 384,376  [0x10227b148,0x10227b140]  writer.rs:388
+                  + ! 11 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4772  [0x10227e724]  macros.rs:0
+                  + ! 10 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3712  [0x10227e300]  encoder.rs:731
+                  + ! 7 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3800,3848,...  [0x10227e358,0x10227e388,...]  encoder.rs:735
+                  + ! 6 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3924,3916,...  [0x10227e3d4,0x10227e3cc,...]  encoder.rs:740
+                  + ! 5 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4872  [0x10227e788]  encoder.rs:785
+                  + ! : 3 core::ptr::drop_in_place$LT$alloc..vec..Vec$LT$core..option..Option$LT$alloc..vec..Vec$LT$u8$GT$$GT$$GT$$GT$::hedc586a749a2a806  (in jpeg-profile) + 68  [0x1022c58d4]  mod.rs:805
+                  + ! : | 2 _xzm_xzone_free_freelist  (in libsystem_malloc.dylib) + 484,708  [0x188c6fcbc,0x188c6fd9c]
+                  + ! : | 1 _xzm_xzone_free_freelist  (in libsystem_malloc.dylib) + 760  [0x188c6fdd0]
+                  + ! : |   1 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x188e0610c]
+                  + ! : 2 _xzm_free  (in libsystem_malloc.dylib) + 1048  [0x188c67484]
+                  + ! :   2 mach_absolute_time  (in libsystem_kernel.dylib) + 108  [0x188e0610c]
+                  + ! 4 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4248  [0x10227e518]  encoder.rs:750
+                  + ! 4 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3968  [0x10227e400]  index.rs:0
+                  + ! 3 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4764  [0x10227e71c]  encoder.rs:730
+                  + ! 3 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4724,3900  [0x10227e6f4,0x10227e3bc]  encoder.rs:736
+                  + ! 3 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4708  [0x10227e6e4]  encoder.rs:737
+                  + ! 2 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 88  [0x10227d4d8]  encoder.rs:646
+                  + ! : 1 jpeg_encoder::encoder::Encoder$LT$W$GT$::write_frame_header::hd2fb78d29a8605a3  (in jpeg-profile) + 476  [0x10227c98c]  encoder.rs:587
+                  + ! : | 1 jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_quantization_segment::hc375c21bb2403107  (in jpeg-profile) + 200  [0x10227b5ac]  writer.rs:296
+                  + ! : |   1 std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+                  + ! : |     1 _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+                  + ! : |       1 _platform_memmove  (in libsystem_platform.dylib) + 0  [0x188e53360]
+                  + ! : 1 jpeg_encoder::encoder::Encoder$LT$W$GT$::write_frame_header::hd2fb78d29a8605a3  (in jpeg-profile) + 456  [0x10227c978]  encoder.rs:587
+                  + ! 2 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 3016,3224  [0x10227e048,0x10227e118]  encoder.rs:711
+                  + ! 2 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4864  [0x10227e780]  encoder.rs:785
+                  + ! : 1 _free  (in libsystem_malloc.dylib) + 44  [0x188c76c78]
+                  + ! : 1 _xzm_free  (in libsystem_malloc.dylib) + 716  [0x188c67338]
+                  + ! 1 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 2752  [0x10227df40]  encoder.rs:711
+                  + ! : 1 _xzm_xzone_malloc_tiny  (in libsystem_malloc.dylib) + 652  [0x188c6c160]
+                  + ! 1 jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile) + 4836  [0x10227e764]  encoder.rs:776
+                  + 1 core::ops::function::FnOnce::call_once::h658466625d423c92  (in jpeg-profile) + 2308  [0x1022bc8e8]  function.rs:250
+                  + ! 1 jpeg_encoder::huffman::create_lookup_table::h1616b87437bb8d4a  (in jpeg-profile) + 2360  [0x10231da70]  macros.rs:0
+                  + 1 core::ops::function::FnOnce::call_once::h658466625d423c92  (in jpeg-profile) + 2744  [0x1022bca9c]  function.rs:250
+                  + ! 1 jpeg_encoder::huffman::create_lookup_table::h1616b87437bb8d4a  (in jpeg-profile) + 2360  [0x10231da70]  macros.rs:0
+                  + 1 core::ops::function::FnOnce::call_once::h658466625d423c92  (in jpeg-profile) + 2980  [0x1022bcb88]  function.rs:250
+                  + ! 1 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x188e53414]
+                  + 1 core::ops::function::FnOnce::call_once::h658466625d423c92  (in jpeg-profile) + 4004  [0x1022bcf88]  function.rs:250
+                  1 pixelman_codecs::encode_through::h3d6c0f6b656c402b  (in jpeg-profile) + 236  [0x1023ea020]  lib.rs:365
+                    1 pixelman_metadata::Metadata::try_clone::hd99f9f3961b6374f  (in jpeg-profile) + 52  [0x10239bb08]  lib.rs:115
+                      1 _tlv_get_addr  (in libdyld.dylib) + 0  [0x188a54388]
+
+Total number in stack (recursive counted multiple, when >=5):
+        29       std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 96  [0x1022b5dec]  impls.rs:78
+        21       _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 500  [0x1022dadc8]  sink.rs:122
+        21       _platform_memmove  (in libsystem_platform.dylib) + 0  [0x188e53360]
+        15       std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile) + 0  [0x1022b5d8c]  impls.rs:78
+        12       _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 0  [0x1022dabd4]  sink.rs:127
+        8       _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 0  [0x1022dabd4]  sink.rs:0
+        6       DYLD-STUB$$memcpy  (in jpeg-profile) + 0  [0x1023f89b8]
+        6       _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 0  [0x1022dabd4]  sink.rs:119
+        5       _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile) + 0  [0x1022dabd4]  sink.rs:110
+
+Sort by top of stack, same collapsed (when >= 5):
+        jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b  (in jpeg-profile)        5944
+        jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57  (in jpeg-profile)        2148
+        _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad  (in jpeg-profile)        1655
+        jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8  (in jpeg-profile)        719
+        jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a  (in jpeg-profile)        527
+        _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b  (in jpeg-profile)        166
+        std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083  (in jpeg-profile)        55
+        _platform_memmove  (in libsystem_platform.dylib)        52
+        jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10  (in jpeg-profile)        43
+        DYLD-STUB$$memcpy  (in jpeg-profile)        10
+        _platform_memset  (in libsystem_platform.dylib)        5
+
+Binary Images:
+       0x10226c000 -        0x1025450a7 +jpeg-profile (0) <0766ACAE-83BB-395B-8524-8DE4730422D1> /Users/*/jpeg-profile
+       0x1889e4000 -        0x188a36b4b  libobjc.A.dylib (951.7) <FF1D8AE4-ABEF-35F1-A30A-1183B9CB414F> /usr/lib/libobjc.A.dylib
+       0x188a37000 -        0x188a6bd07  libdyld.dylib (1378) <B147D877-D0C2-388F-B38D-D3132E39905F> /usr/lib/system/libdyld.dylib
+       0x188a6c000 -        0x188b12217  dyld (1.0.0 - 1378) <A237EF81-B68B-37BA-A165-92C965529534> /usr/lib/dyld
+       0x188b13000 -        0x188b16228  libsystem_blocks.dylib (96) <CC947089-488D-316B-A9C7-46DEC0F73145> /usr/lib/system/libsystem_blocks.dylib
+       0x188b17000 -        0x188b6b55f  libxpc.dylib (3102.120.13) <C40FCAE8-7A17-3D82-87CB-3DA4802ADEF1> /usr/lib/system/libxpc.dylib
+       0x188b6c000 -        0x188b8c9ff  libsystem_trace.dylib (1861.120.4) <D0FABAB3-5AE7-3F10-8C62-60CBF5D70850> /usr/lib/system/libsystem_trace.dylib
+       0x188b8d000 -        0x188c3b5f7  libcorecrypto.dylib (1922.121.1) <A01A158D-6FE7-3B1C-A2C4-6BCB90D7314A> /usr/lib/system/libcorecrypto.dylib
+       0x188c3c000 -        0x188c8c1d7  libsystem_malloc.dylib (812.100.31) <5FAE4807-4D2B-3A95-A63A-DD96D3DA11B4> /usr/lib/system/libsystem_malloc.dylib
+       0x188c8d000 -        0x188cd423f  libdispatch.dylib (1542.100.32) <F071EFE4-299F-3089-ACC4-0025B8FFB52A> /usr/lib/system/libdispatch.dylib
+       0x188cd5000 -        0x188cd7ffb  libsystem_featureflags.dylib (103) <71FCFFBD-85F8-3365-AFE0-BECEA4369122> /usr/lib/system/libsystem_featureflags.dylib
+       0x188cd8000 -        0x188d58d9f  libsystem_c.dylib (1752.120.2) <694B7881-1BF3-3D0F-8F19-B50AE4E8EF8A> /usr/lib/system/libsystem_c.dylib
+       0x188d59000 -        0x188de9ae7  libc++.1.dylib (2100.43) <5013C0F8-84A9-3B56-9FEB-C353816A750F> /usr/lib/libc++.1.dylib
+       0x188dea000 -        0x188e0475f  libc++abi.dylib (2100.43) <E482D257-E5A0-3816-BD97-7B39342958DA> /usr/lib/libc++abi.dylib
+       0x188e05000 -        0x188e422af  libsystem_kernel.dylib (12377.121.6) <CC1CF985-BC65-3725-809F-4C1E36B8F4BA> /usr/lib/system/libsystem_kernel.dylib
+       0x188e43000 -        0x188e4fb3b  libsystem_pthread.dylib (539.100.4) <4F33683C-18C8-39A1-800B-2E3BD43BCC13> /usr/lib/system/libsystem_pthread.dylib
+       0x188e50000 -        0x188e58963  libsystem_platform.dylib (375.120.2) <160FD864-8D15-36FC-9E97-9725388CFAFE> /usr/lib/system/libsystem_platform.dylib
+       0x188e59000 -        0x188e886eb  libsystem_info.dylib (600) <3D62F2D9-F516-31BF-83C7-E203D872300B> /usr/lib/system/libsystem_info.dylib
+       0x18ce20000 -        0x18ce29e5f  libsystem_darwin.dylib (1752.120.2) <8858F025-745A-388E-9544-080781CC9A69> /usr/lib/system/libsystem_darwin.dylib
+       0x18d28b000 -        0x18d29d1b6  libsystem_notify.dylib (348.120.4) <64D76451-1E0C-369B-A631-54DA3140E083> /usr/lib/system/libsystem_notify.dylib
+       0x18f558000 -        0x18f572f7b  libsystem_networkextension.dylib (2226.120.19) <3A1DAD41-F14F-3595-B9BB-058A84308BE7> /usr/lib/system/libsystem_networkextension.dylib
+       0x18f5f5000 -        0x18f60cfdf  libsystem_asl.dylib (406) <F40838DF-2F15-3F62-970F-DEE25706BF1B> /usr/lib/system/libsystem_asl.dylib
+       0x1911b3000 -        0x1911bb387  libsystem_symptoms.dylib (2169.120.7) <F5029F5C-1BF3-31C7-892E-BC8606AC829E> /usr/lib/system/libsystem_symptoms.dylib
+       0x195457000 -        0x19548f257  libsystem_containermanager.dylib (725.120.2) <518BE44D-AA31-31E6-B44B-A37AD5E47040> /usr/lib/system/libsystem_containermanager.dylib
+       0x196868000 -        0x19686c5d7  libsystem_configuration.dylib (1405.120.5) <0F7BBC1C-3D50-3E59-A31F-E4672A80BCEB> /usr/lib/system/libsystem_configuration.dylib
+       0x19686d000 -        0x1968738cf  libsystem_sandbox.dylib (2680.120.12) <EC3A75EA-44C0-3A0B-9BF7-71C117B0A9C6> /usr/lib/system/libsystem_sandbox.dylib
+       0x197ec7000 -        0x197eca1fb  libquarantine.dylib (196.120.2) <5849009B-ACA3-3796-94C4-BBDF8D300EBA> /usr/lib/system/libquarantine.dylib
+       0x198666000 -        0x19866cd03  libsystem_coreservices.dylib (191.4.5) <9576143B-C303-35A3-BA63-1FD06EDA2BB1> /usr/lib/system/libsystem_coreservices.dylib
+       0x198bf1000 -        0x198c2ea77  libsystem_m.dylib (3312.100.1) <A7E0863C-101A-31A0-922B-ED9B02626151> /usr/lib/system/libsystem_m.dylib
+       0x198c30000 -        0x198c33527  libmacho.dylib (1378) <755441B4-C034-3E3A-8E3C-F424FBB28261> /usr/lib/system/libmacho.dylib
+       0x198c4d000 -        0x198c5a3a7  libcommonCrypto.dylib (600035) <CE357BB1-2D49-37CC-9FFE-D093936B1475> /usr/lib/system/libcommonCrypto.dylib
+       0x198c5b000 -        0x198c64ca3  libunwind.dylib (2100.2) <FC8F0C4E-6FB0-3E27-ABEF-B0FA720CD5E4> /usr/lib/system/libunwind.dylib
+       0x198c6d000 -        0x198c777ff  libcopyfile.dylib (240) <8ACFAC7A-88E9-3EF4-853F-A9140FF110E5> /usr/lib/system/libcopyfile.dylib
+       0x198c78000 -        0x198c7b987  libcompiler_rt.dylib (103.3) <AA79151F-C19D-3C7C-92F8-B10F04D82C1C> /usr/lib/system/libcompiler_rt.dylib
+       0x198c7c000 -        0x198c8078b  libsystem_collections.dylib (1752.120.2) <72DB5BE7-EF78-37D0-8AAD-53E37CFE4287> /usr/lib/system/libsystem_collections.dylib
+       0x198c81000 -        0x198c844cf  libsystem_secinit.dylib (168.100.7) <E525C566-CDA4-3D99-B12B-1615FD54A1F3> /usr/lib/system/libsystem_secinit.dylib
+       0x198c85000 -        0x198c87bf7  libremovefile.dylib (85.100.6) <635E661D-80A7-340D-A165-3F7D318FDFC9> /usr/lib/system/libremovefile.dylib
+       0x198c88000 -        0x198c88f27  libkeymgr.dylib (31) <8C08891A-DF1C-3DCC-AB64-4742FD6BE9BA> /usr/lib/system/libkeymgr.dylib
+       0x198c89000 -        0x198c91e37  libsystem_dnssd.dylib (2881.120.11) <6F45DF3F-233B-3BC3-BA8C-B43E7DA884BF> /usr/lib/system/libsystem_dnssd.dylib
+       0x198c92000 -        0x198c9709b  libcache.dylib (95) <189B576E-6176-3F82-8FA4-5914B0BEAEE7> /usr/lib/system/libcache.dylib
+       0x198c98000 -        0x198c99ce3  libSystem.B.dylib (1356) <D65E4112-C151-3FF8-BEB7-4841436012D6> /usr/lib/libSystem.B.dylib
+       0x28becf000 -        0x28bed6349  libRosetta.dylib (367.9) <8651ED4F-6506-3788-B56B-32EE414A85CA> /usr/lib/libRosetta.dylib
+       0x28daec000 -        0x28daefa4b  libsystem_darwindirectory.dylib (122) <CF277A2C-C818-3F16-8B3F-3C7B39FCD164> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x28daf0000 -        0x28daf95d3  libsystem_eligibility.dylib (319.121.1) <DDAC0531-0262-3DDC-8EC8-80EB9438847A> /usr/lib/system/libsystem_eligibility.dylib
+       0x28dafa000 -        0x28db0188b  libsystem_sanitizers.dylib (26.1) <44C4234F-8B2D-38D3-A774-B4B3C75AF3A7> /usr/lib/system/libsystem_sanitizers.dylib
+       0x28db02000 -        0x28db02bb7  libsystem_trial.dylib (474.2.18.2) <68C583BA-AFF5-3916-86AE-6E38BFEF98D6> /usr/lib/system/libsystem_trial.dylib

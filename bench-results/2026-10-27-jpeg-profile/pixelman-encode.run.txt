@@ -1,0 +1,1 @@
+/Users/benediktstebner/RiderProjects/jpeg-profile-work/fixtures/encode-source.bgra: 662 iterations, median 30.57 ms, min 28.79 ms

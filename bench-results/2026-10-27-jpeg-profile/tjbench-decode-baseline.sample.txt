@@ -1,0 +1,153 @@
+Analysis of sampling tjbench (pid 16461) every 1 millisecond
+Process:         tjbench [16461]
+Path:            /opt/homebrew/*/tjbench
+Load Address:    0x1006c0000
+Identifier:      tjbench
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  zsh [16460]
+Target Type:     live task
+
+Date/Time:       2026-10-27 18:32:52.405 +0100
+Launch Time:     2026-10-27 18:32:51.362 +0100
+OS Version:      macOS 26.5 (25F71)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         26.8M
+Physical footprint (peak):  26.8M
+Idle exit:                  untracked
+----
+
+Call graph:
+    11474 Thread_197154   DispatchQueue_1: com.apple.main-thread  (serial)
+      11474 start  (in dyld) + 6992  [0x188a8be00]
+        11474 main  (in tjbench) + 5536  [0x1006c2418]
+          11474 decompTest  (in tjbench) + 5824  [0x1006c4a8c]
+            11473 decomp  (in tjbench) + 3676  [0x1006c8008]
+            + 11463 tj3Decompress8  (in libturbojpeg.0.5.0.dylib) + 1552  [0x1008780a0]
+            + ! 11462 jpeg_read_scanlines  (in libturbojpeg.0.5.0.dylib) + 244  [0x10084a004]
+            + ! : 10353 process_data_context_main  (in libturbojpeg.0.5.0.dylib) + 76  [0x100859284]
+            + ! : | 7955 decompress_onepass  (in libturbojpeg.0.5.0.dylib) + 168  [0x10084c468]
+            + ! : | + 7954 decode_mcu  (in libturbojpeg.0.5.0.dylib) + 2748,2624,...  [0x100856ba8,0x100856b2c,...]
+            + ! : | + 1 decode_mcu  (in libturbojpeg.0.5.0.dylib) + 576  [0x10085632c]
+            + ! : | +   1 jpeg_huff_decode  (in libturbojpeg.0.5.0.dylib) + 184  [0x100855e10]
+            + ! : | 2005 decompress_onepass  (in libturbojpeg.0.5.0.dylib) + 460  [0x10084c58c]
+            + ! : | + 1984 jsimd_idct_islow_neon  (in libturbojpeg.0.5.0.dylib) + 644,944,...  [0x10089de14,0x10089df40,...]
+            + ! : | + 21 jsimd_idct_islow  (in libturbojpeg.0.5.0.dylib) + 8,20,...  [0x10089f2c8,0x10089f2d4,...]
+            + ! : | 317 decompress_onepass  (in libturbojpeg.0.5.0.dylib) + 128,364,...  [0x10084c440,0x10084c52c,...]
+            + ! : | 67 decompress_onepass  (in libturbojpeg.0.5.0.dylib) + 128  [0x10084c440]
+            + ! : | + 62 _platform_memset  (in libsystem_platform.dylib) + 140  [0x188e5311c]
+            + ! : | + 3 DYLD-STUB$$bzero  (in libturbojpeg.0.5.0.dylib) + 4  [0x1008af0f8]
+            + ! : | + 2 __bzero  (in libsystem_platform.dylib) + 24  [0x188e53048]
+            + ! : | 7 decode_mcu  (in libturbojpeg.0.5.0.dylib) + 1156,1148  [0x100856570,0x100856568]
+            + ! : | 1 decompress_onepass  (in libturbojpeg.0.5.0.dylib) + 644  [0x10084c644]
+            + ! : | + 1 start_iMCU_row  (in libturbojpeg.0.5.0.dylib) + 64  [0x10084c6d0]
+            + ! : | 1 jsimd_idct_islow_neon  (in libturbojpeg.0.5.0.dylib) + 1676  [0x10089e21c]
+            + ! : 980 process_data_context_main  (in libturbojpeg.0.5.0.dylib) + 444  [0x1008593f4]
+            + ! : | 668 sep_upsample  (in libturbojpeg.0.5.0.dylib) + 240  [0x10086340c]
+            + ! : | + 668 jsimd_ycc_extrgb_convert_neon  (in libturbojpeg.0.5.0.dylib) + 232,176,...  [0x10089909c,0x100899064,...]
+            + ! : | 308 sep_upsample  (in libturbojpeg.0.5.0.dylib) + 144  [0x1008633ac]
+            + ! : | + 304 jsimd_h2v2_fancy_upsample_neon  (in libturbojpeg.0.5.0.dylib) + 364,528,...  [0x10089cee8,0x10089cf8c,...]
+            + ! : | + 4 jsimd_h2v2_fancy_upsample  (in libturbojpeg.0.5.0.dylib) + 0  [0x10089efc8]
+            + ! : | 4 sep_upsample  (in libturbojpeg.0.5.0.dylib) + 56,104,...  [0x100863354,0x100863384,...]
+            + ! : 129 process_data_context_main  (in libturbojpeg.0.5.0.dylib) + 172  [0x1008592e4]
+            + ! :   93 sep_upsample  (in libturbojpeg.0.5.0.dylib) + 240  [0x10086340c]
+            + ! :   + 93 jsimd_ycc_extrgb_convert_neon  (in libturbojpeg.0.5.0.dylib) + 232,212,...  [0x10089909c,0x100899088,...]
+            + ! :   36 sep_upsample  (in libturbojpeg.0.5.0.dylib) + 144  [0x1008633ac]
+            + ! :     36 jsimd_h2v2_fancy_upsample_neon  (in libturbojpeg.0.5.0.dylib) + 364,444,...  [0x10089cee8,0x10089cf38,...]
+            + ! 1 jpeg_read_scanlines  (in libturbojpeg.0.5.0.dylib) + 224  [0x100849ff0]
+            + 3 tj3Decompress8  (in libturbojpeg.0.5.0.dylib) + 288  [0x100877bb0]
+            + ! 3 jpeg_read_header  (in libturbojpeg.0.5.0.dylib) + 76  [0x1008495c4]
+            + !   3 jpeg_consume_input  (in libturbojpeg.0.5.0.dylib) + 196  [0x1008496cc]
+            + !     3 consume_markers  (in libturbojpeg.0.5.0.dylib) + 80  [0x100857514]
+            + !       3 read_markers  (in libturbojpeg.0.5.0.dylib) + 680,1772,...  [0x10085a978,0x10085adbc,...]
+            + 3 tj3Decompress8  (in libturbojpeg.0.5.0.dylib) + 412  [0x100877c2c]
+            + ! 3 jpeg_start_decompress  (in libturbojpeg.0.5.0.dylib) + 52  [0x100849a20]
+            + !   1 jinit_master_decompress  (in libturbojpeg.0.5.0.dylib) + 1164  [0x10085cec8]
+            + !   : 1 jinit_color_deconverter  (in libturbojpeg.0.5.0.dylib) + 1144  [0x10084f280]
+            + !   1 jinit_master_decompress  (in libturbojpeg.0.5.0.dylib) + 1172  [0x10085ced0]
+            + !   : 1 jinit_upsampler  (in libturbojpeg.0.5.0.dylib) + 772  [0x1008632ac]
+            + !   :   1 alloc_sarray  (in libturbojpeg.0.5.0.dylib) + 316  [0x10086eb04]
+            + !   1 jinit_master_decompress  (in libturbojpeg.0.5.0.dylib) + 1784  [0x10085d134]
+            + !     1 start_input_pass  (in libturbojpeg.0.5.0.dylib) + 640  [0x100857b58]
+            + !       1 start_pass_huff_decoder  (in libturbojpeg.0.5.0.dylib) + 152  [0x100856008]
+            + !         1 jpeg_make_d_derived_tbl  (in libturbojpeg.0.5.0.dylib) + 552  [0x100855b10]
+            + !           1 _platform_memset_pattern16  (in libsystem_platform.dylib) + 228  [0x188e51204]
+            + 1 setjmp  (in libsystem_platform.dylib) + 28  [0x188e51810]
+            + ! 1 sigprocmask  (in libsystem_kernel.dylib) + 8  [0x188e093d8]
+            + 1 setjmp  (in libsystem_platform.dylib) + 44  [0x188e51820]
+            + ! 1 __sigaltstack  (in libsystem_kernel.dylib) + 8  [0x188e09404]
+            + 1 tj3Decompress8  (in libturbojpeg.0.5.0.dylib) + 1580  [0x1008780bc]
+            + ! 1 jpeg_finish_decompress  (in libturbojpeg.0.5.0.dylib) + 208  [0x1008499dc]
+            + !   1 jpeg_abort  (in libturbojpeg.0.5.0.dylib) + 36  [0x1008436e4]
+            + !     1 free_pool  (in libturbojpeg.0.5.0.dylib) + 224  [0x10086f5a0]
+            + !       1 xzm_segment_group_free_chunk  (in libsystem_malloc.dylib) + 636  [0x188c5038c]
+            + !         1 _xzm_segment_group_segment_span_free_coalesce  (in libsystem_malloc.dylib) + 256  [0x188c5099c]
+            + !           1 _xzm_segment_group_span_mark_used  (in libsystem_malloc.dylib) + 148  [0x188c52364]
+            + !             1 _xzm_reclaim_mark_used  (in libsystem_malloc.dylib) + 124  [0x188c4ef7c]
+            + !               1 _xzm_reclaim_mark_used_locked  (in libsystem_malloc.dylib) + 60  [0x188c51a50]
+            + !                 1 mach_vm_reclaim_try_cancel  (in libsystem_kernel.dylib) + 0  [0x188e191c4]
+            + 1 tj3Decompress8  (in libturbojpeg.0.5.0.dylib) + 0  [0x100877a90]
+            1 decomp  (in tjbench) + 3156  [0x1006c7e00]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        decode_mcu  (in libturbojpeg.0.5.0.dylib)        7961
+        jsimd_idct_islow_neon  (in libturbojpeg.0.5.0.dylib)        1985
+        jsimd_ycc_extrgb_convert_neon  (in libturbojpeg.0.5.0.dylib)        761
+        jsimd_h2v2_fancy_upsample_neon  (in libturbojpeg.0.5.0.dylib)        340
+        decompress_onepass  (in libturbojpeg.0.5.0.dylib)        317
+        _platform_memset  (in libsystem_platform.dylib)        62
+        jsimd_idct_islow  (in libturbojpeg.0.5.0.dylib)        21
+
+Binary Images:
+       0x1006c0000 -        0x1006cb0db +tjbench (0) <13FBF51C-C728-3FA5-9038-21601FF1FE8C> /opt/homebrew/*/tjbench
+       0x100828000 -        0x1008b876f +libturbojpeg.0.5.0.dylib (0) <0578598E-EDBC-371E-A1AA-60642FF1E6E0> /opt/homebrew/*/libturbojpeg.0.5.0.dylib
+       0x1889e4000 -        0x188a36b4b  libobjc.A.dylib (951.7) <FF1D8AE4-ABEF-35F1-A30A-1183B9CB414F> /usr/lib/libobjc.A.dylib
+       0x188a37000 -        0x188a6bd07  libdyld.dylib (1378) <B147D877-D0C2-388F-B38D-D3132E39905F> /usr/lib/system/libdyld.dylib
+       0x188a6c000 -        0x188b12217  dyld (1.0.0 - 1378) <A237EF81-B68B-37BA-A165-92C965529534> /usr/lib/dyld
+       0x188b13000 -        0x188b16228  libsystem_blocks.dylib (96) <CC947089-488D-316B-A9C7-46DEC0F73145> /usr/lib/system/libsystem_blocks.dylib
+       0x188b17000 -        0x188b6b55f  libxpc.dylib (3102.120.13) <C40FCAE8-7A17-3D82-87CB-3DA4802ADEF1> /usr/lib/system/libxpc.dylib
+       0x188b6c000 -        0x188b8c9ff  libsystem_trace.dylib (1861.120.4) <D0FABAB3-5AE7-3F10-8C62-60CBF5D70850> /usr/lib/system/libsystem_trace.dylib
+       0x188b8d000 -        0x188c3b5f7  libcorecrypto.dylib (1922.121.1) <A01A158D-6FE7-3B1C-A2C4-6BCB90D7314A> /usr/lib/system/libcorecrypto.dylib
+       0x188c3c000 -        0x188c8c1d7  libsystem_malloc.dylib (812.100.31) <5FAE4807-4D2B-3A95-A63A-DD96D3DA11B4> /usr/lib/system/libsystem_malloc.dylib
+       0x188c8d000 -        0x188cd423f  libdispatch.dylib (1542.100.32) <F071EFE4-299F-3089-ACC4-0025B8FFB52A> /usr/lib/system/libdispatch.dylib
+       0x188cd5000 -        0x188cd7ffb  libsystem_featureflags.dylib (103) <71FCFFBD-85F8-3365-AFE0-BECEA4369122> /usr/lib/system/libsystem_featureflags.dylib
+       0x188cd8000 -        0x188d58d9f  libsystem_c.dylib (1752.120.2) <694B7881-1BF3-3D0F-8F19-B50AE4E8EF8A> /usr/lib/system/libsystem_c.dylib
+       0x188d59000 -        0x188de9ae7  libc++.1.dylib (2100.43) <5013C0F8-84A9-3B56-9FEB-C353816A750F> /usr/lib/libc++.1.dylib
+       0x188dea000 -        0x188e0475f  libc++abi.dylib (2100.43) <E482D257-E5A0-3816-BD97-7B39342958DA> /usr/lib/libc++abi.dylib
+       0x188e05000 -        0x188e422af  libsystem_kernel.dylib (12377.121.6) <CC1CF985-BC65-3725-809F-4C1E36B8F4BA> /usr/lib/system/libsystem_kernel.dylib
+       0x188e43000 -        0x188e4fb3b  libsystem_pthread.dylib (539.100.4) <4F33683C-18C8-39A1-800B-2E3BD43BCC13> /usr/lib/system/libsystem_pthread.dylib
+       0x188e50000 -        0x188e58963  libsystem_platform.dylib (375.120.2) <160FD864-8D15-36FC-9E97-9725388CFAFE> /usr/lib/system/libsystem_platform.dylib
+       0x188e59000 -        0x188e886eb  libsystem_info.dylib (600) <3D62F2D9-F516-31BF-83C7-E203D872300B> /usr/lib/system/libsystem_info.dylib
+       0x18ce20000 -        0x18ce29e5f  libsystem_darwin.dylib (1752.120.2) <8858F025-745A-388E-9544-080781CC9A69> /usr/lib/system/libsystem_darwin.dylib
+       0x18d28b000 -        0x18d29d1b6  libsystem_notify.dylib (348.120.4) <64D76451-1E0C-369B-A631-54DA3140E083> /usr/lib/system/libsystem_notify.dylib
+       0x18f558000 -        0x18f572f7b  libsystem_networkextension.dylib (2226.120.19) <3A1DAD41-F14F-3595-B9BB-058A84308BE7> /usr/lib/system/libsystem_networkextension.dylib
+       0x18f5f5000 -        0x18f60cfdf  libsystem_asl.dylib (406) <F40838DF-2F15-3F62-970F-DEE25706BF1B> /usr/lib/system/libsystem_asl.dylib
+       0x1911b3000 -        0x1911bb387  libsystem_symptoms.dylib (2169.120.7) <F5029F5C-1BF3-31C7-892E-BC8606AC829E> /usr/lib/system/libsystem_symptoms.dylib
+       0x195457000 -        0x19548f257  libsystem_containermanager.dylib (725.120.2) <518BE44D-AA31-31E6-B44B-A37AD5E47040> /usr/lib/system/libsystem_containermanager.dylib
+       0x196868000 -        0x19686c5d7  libsystem_configuration.dylib (1405.120.5) <0F7BBC1C-3D50-3E59-A31F-E4672A80BCEB> /usr/lib/system/libsystem_configuration.dylib
+       0x19686d000 -        0x1968738cf  libsystem_sandbox.dylib (2680.120.12) <EC3A75EA-44C0-3A0B-9BF7-71C117B0A9C6> /usr/lib/system/libsystem_sandbox.dylib
+       0x197ec7000 -        0x197eca1fb  libquarantine.dylib (196.120.2) <5849009B-ACA3-3796-94C4-BBDF8D300EBA> /usr/lib/system/libquarantine.dylib
+       0x198666000 -        0x19866cd03  libsystem_coreservices.dylib (191.4.5) <9576143B-C303-35A3-BA63-1FD06EDA2BB1> /usr/lib/system/libsystem_coreservices.dylib
+       0x198bf1000 -        0x198c2ea77  libsystem_m.dylib (3312.100.1) <A7E0863C-101A-31A0-922B-ED9B02626151> /usr/lib/system/libsystem_m.dylib
+       0x198c30000 -        0x198c33527  libmacho.dylib (1378) <755441B4-C034-3E3A-8E3C-F424FBB28261> /usr/lib/system/libmacho.dylib
+       0x198c4d000 -        0x198c5a3a7  libcommonCrypto.dylib (600035) <CE357BB1-2D49-37CC-9FFE-D093936B1475> /usr/lib/system/libcommonCrypto.dylib
+       0x198c5b000 -        0x198c64ca3  libunwind.dylib (2100.2) <FC8F0C4E-6FB0-3E27-ABEF-B0FA720CD5E4> /usr/lib/system/libunwind.dylib
+       0x198c6d000 -        0x198c777ff  libcopyfile.dylib (240) <8ACFAC7A-88E9-3EF4-853F-A9140FF110E5> /usr/lib/system/libcopyfile.dylib
+       0x198c78000 -        0x198c7b987  libcompiler_rt.dylib (103.3) <AA79151F-C19D-3C7C-92F8-B10F04D82C1C> /usr/lib/system/libcompiler_rt.dylib
+       0x198c7c000 -        0x198c8078b  libsystem_collections.dylib (1752.120.2) <72DB5BE7-EF78-37D0-8AAD-53E37CFE4287> /usr/lib/system/libsystem_collections.dylib
+       0x198c81000 -        0x198c844cf  libsystem_secinit.dylib (168.100.7) <E525C566-CDA4-3D99-B12B-1615FD54A1F3> /usr/lib/system/libsystem_secinit.dylib
+       0x198c85000 -        0x198c87bf7  libremovefile.dylib (85.100.6) <635E661D-80A7-340D-A165-3F7D318FDFC9> /usr/lib/system/libremovefile.dylib
+       0x198c88000 -        0x198c88f27  libkeymgr.dylib (31) <8C08891A-DF1C-3DCC-AB64-4742FD6BE9BA> /usr/lib/system/libkeymgr.dylib
+       0x198c89000 -        0x198c91e37  libsystem_dnssd.dylib (2881.120.11) <6F45DF3F-233B-3BC3-BA8C-B43E7DA884BF> /usr/lib/system/libsystem_dnssd.dylib
+       0x198c92000 -        0x198c9709b  libcache.dylib (95) <189B576E-6176-3F82-8FA4-5914B0BEAEE7> /usr/lib/system/libcache.dylib
+       0x198c98000 -        0x198c99ce3  libSystem.B.dylib (1356) <D65E4112-C151-3FF8-BEB7-4841436012D6> /usr/lib/libSystem.B.dylib
+       0x28becf000 -        0x28bed6349  libRosetta.dylib (367.9) <8651ED4F-6506-3788-B56B-32EE414A85CA> /usr/lib/libRosetta.dylib
+       0x28daec000 -        0x28daefa4b  libsystem_darwindirectory.dylib (122) <CF277A2C-C818-3F16-8B3F-3C7B39FCD164> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x28daf0000 -        0x28daf95d3  libsystem_eligibility.dylib (319.121.1) <DDAC0531-0262-3DDC-8EC8-80EB9438847A> /usr/lib/system/libsystem_eligibility.dylib
+       0x28dafa000 -        0x28db0188b  libsystem_sanitizers.dylib (26.1) <44C4234F-8B2D-38D3-A774-B4B3C75AF3A7> /usr/lib/system/libsystem_sanitizers.dylib
+       0x28db02000 -        0x28db02bb7  libsystem_trial.dylib (474.2.18.2) <68C583BA-AFF5-3916-86AE-6E38BFEF98D6> /usr/lib/system/libsystem_trial.dylib

@@ -1,0 +1,7 @@
+
+>>>>>  8-bit JPEG (YCbCr 4:2:0) --> RGB (Top-down)  <<<<<
+
+Image size: 3840 x 2160
+Decompress    --> Frame rate:         37.291214 fps
+                  Throughput:         309.308249 Megapixels/sec
+

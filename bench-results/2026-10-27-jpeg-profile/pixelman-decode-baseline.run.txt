@@ -1,0 +1,1 @@
+/Users/benediktstebner/RiderProjects/jpeg-profile-work/fixtures/photo-jpeg.bin: 508 iterations, median 40.21 ms, min 36.17 ms

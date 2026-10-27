@@ -1,0 +1,34 @@
+pixelman-decode-progressive.sample.txt
+total samples 13176, on-CPU samples 12591 (95.6%)
+
+thread groups: threads, samples, on-CPU samples
+  main: 1 threads, 11216 samples, 10788 on-CPU
+  worker thread for component 0: 811 threads, 1865 samples, 1715 on-CPU
+  unnamed: 31 threads, 95 samples, 88 on-CPU
+
+top 25 by self samples: % of all samples | % of on-CPU samples
+     6907  52.4%  54.9%  jpeg_decoder::decoder::Decoder$LT$R$GT$::decode_internal::h336f6a908f9e2025 (jpeg-profile)
+     1702  12.9%  13.5%  jpeg_decoder::worker::immediate::ImmediateWorker::append_row_immediate::h06e5f3c998c71ada (jpeg-profile)
+      889   6.7%   7.1%  jpeg_decoder::huffman::HuffmanDecoder::decode::hbef5a35605001624 (jpeg-profile)
+      842   6.4%   6.7%  jpeg_decoder::decoder::color_convert_line_ycbcr::h140415bc4941e679 (jpeg-profile)
+      641   4.9%   5.1%  _$LT$jpeg_decoder..upsampler..H2V2Fancy$u20$as$u20$jpeg_decoder..upsampler..Upsample$GT$::upsample_row::hf9a4596c2a01b344 (jpeg-profile)
+      582   4.4%         semaphore_wait_trap (libsystem_kernel.dylib)
+      565   4.3%   4.5%  jpeg_decoder::huffman::HuffmanDecoder::read_bits::h30d0309ebc79d545 (jpeg-profile)
+      308   2.3%   2.4%  _platform_memmove (libsystem_platform.dylib)
+      270   2.0%   2.1%  __bzero (libsystem_platform.dylib)
+      209   1.6%   1.7%  _$LT$pixelman_codecs..jpeg_input..Reader$LT$R$GT$$u20$as$u20$std..io..Read$GT$::read::hd229d42a731fc4b3 (jpeg-profile)
+       41   0.3%   0.3%  mach_absolute_time (libsystem_kernel.dylib)
+       34   0.3%   0.3%  thread_start (libsystem_pthread.dylib)
+       22   0.2%   0.2%  _platform_memset (libsystem_platform.dylib)
+       16   0.1%   0.1%  _xzm_xzone_malloc_tiny (libsystem_malloc.dylib)
+       14   0.1%   0.1%  jpeg_decoder::decoder::compute_image::h3eafd73f25c1efaf (jpeg-profile)
+       13   0.1%   0.1%  _xzm_free (libsystem_malloc.dylib)
+       11   0.1%   0.1%  _$LT$pixelman_codecs..jpeg_input..Buffered$LT$R$GT$$u20$as$u20$std..io..BufRead$GT$::fill_buf::hc35367bbeb364f3d (jpeg-profile)
+        7   0.1%   0.1%  _free (libsystem_malloc.dylib)
+        7   0.1%   0.1%  semaphore_signal_trap (libsystem_kernel.dylib)
+        7   0.1%   0.1%  __proc_info (libsystem_kernel.dylib)
+        6   0.0%   0.0%  <deduplicated_symbol> (libsystem_malloc.dylib)
+        6   0.0%   0.0%  pixelman_codecs::jpeg_input::Layout::keep::hd75ebc3c3aed98da (jpeg-profile)
+        5   0.0%   0.0%  _$LT$T$u20$as$u20$alloc..vec..spec_from_elem..SpecFromElem$GT$::from_elem::h010bd92cf31ade08 (jpeg-profile)
+        5   0.0%   0.0%  __bsdthread_create (libsystem_kernel.dylib)
+        4   0.0%   0.0%  _malloc_zone_malloc (libsystem_malloc.dylib)

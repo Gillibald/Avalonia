@@ -1,0 +1,62 @@
+pixelman-decode-progressive.timeprofile.xml: 17112 ms of running samples, 489 distinct leaf addresses
+  stage | main | worker | total
+  IDCT | 0 | 2235 | 2235 (13.1%)
+  upsampling | 913 | 0 | 913 (5.3%)
+  colour conversion | 1134 | 0 | 1134 (6.6%)
+  entropy decoding | 11281 | 0 | 11281 (65.9%)
+  copying | 1015 | 177 | 1192 (7.0%)
+  everything else | 193 | 164 | 357 (2.1%)
+  [IDCT]
+        607  from_output<[i16; 8]> (in jpeg-profile) (try_trait.rs:454)
+        442  vaddq_s32 (in jpeg-profile) (generated.rs:1916)
+        193  vmlal_s16 (in jpeg-profile) (generated.rs:28038)
+        184  {closure#0} (in jpeg-profile) (islow_simd.rs:320)
+        133  vmull_s16 (in jpeg-profile) (generated.rs:32087)
+        101  vmaxvq_u16 (in jpeg-profile) (generated.rs:13773)
+         85  vqmovn_s32 (in jpeg-profile) (generated.rs:36083)
+         77  vshrq_n_s32<18> (in jpeg-profile) (generated.rs:61204)
+  [upsampling]
+        776  _$LT$jpeg_decoder..upsampler..H2V2Fancy$u20$as$u20$jpeg_decoder..upsampler..Upsample$GT$::upsample_row::hf9a4596c2a01b344 (in jpeg-profile) 
+        112  {closure#0} (in jpeg-profile) (upsampler.rs:275)
+         13  spec_next<usize> (in jpeg-profile) (range.rs:772)
+          2  from (in jpeg-profile) (num.rs:82)
+          2  next<jpeg_decoder::upsampler::UpsamplerComponent> (in jpeg-profile) (macros.rs:0)
+          2  upsample_and_interleave_row (in jpeg-profile) (upsampler.rs:0)
+          1  upsample_and_interleave_row (in jpeg-profile) (upsampler.rs:103)
+          1  core::ptr::drop_in_place$LT$alloc..vec..Vec$LT$jpeg_decoder..upsampler..UpsamplerComponent$GT$$GT$::ha581f29c0397aa6c (in jpeg-profile) (mod
+  [colour conversion]
+        297  vmlal_s16 (in jpeg-profile) (generated.rs:28038)
+        179  vaddq_s16 (in jpeg-profile) (generated.rs:1895)
+        173  index_mut<u8> (in jpeg-profile) (index.rs:580)
+        124  index<u8> (in jpeg-profile) (index.rs:568)
+         97  vst3q_s8 (in jpeg-profile) (generated.rs:67428)
+         88  spec_next (in jpeg-profile) (step_by.rs:446)
+         66  vqmovn_s32 (in jpeg-profile) (generated.rs:36083)
+         53  vqmovn_high_s32 (in jpeg-profile) (macros.rs:157)
+  [entropy decoding]
+       2164  decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>> (in jpeg-profile) (decoder.rs:1115)
+       1124  decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>> (in jpeg-profile) (huffman.rs:66)
+        825  decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>> (in jpeg-profile) (huffman.rs:69)
+        790  decode_scan<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>> (in jpeg-profile) (decoder.rs:0)
+        682  decode_block<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>> (in jpeg-profile) (decoder.rs:0)
+        477  decode_fast_ac<std::io::cursor::Cursor<alloc::vec::Vec<u8, alloc::alloc::Global>>> (in jpeg-profile) (huffman.rs:65)
+        427  consume_bits (in jpeg-profile) (huffman.rs:123)
+        326  peek_bits (in jpeg-profile) (huffman.rs:115)
+  [copying]
+        382  __bzero (in libsystem_platform.dylib)
+        370  _platform_memmove (in libsystem_platform.dylib)
+        245  position<u8, pixelman_codecs::jpeg_input::{impl#1}::read::{closure_env#0}<pixelman_codecs::limits::CancelReader<std::io::cursor::Cursor<&all
+         87  copy_nonoverlapping<u8> (in jpeg-profile) (mod.rs:547)
+         30  _platform_memset (in libsystem_platform.dylib)
+         13  _$LT$pixelman_codecs..jpeg_input..Reader$LT$R$GT$$u20$as$u20$std..io..Read$GT$::read::hd229d42a731fc4b3 (in jpeg-profile) (jpeg_input.rs:208
+         11  DYLD-STUB$$memcpy (in jpeg-profile) + 5
+          7  _$LT$pixelman_codecs..jpeg_input..Buffered$LT$R$GT$$u20$as$u20$std..io..BufRead$GT$::fill_buf::hc35367bbeb364f3d (in jpeg-profile) (jpeg_inp
+  [everything else]
+         63  mach_absolute_time (in libsystem_kernel.dylib)
+         31  as_mut_slice<u8, alloc::alloc::Global> (in jpeg-profile) (mod.rs:1851)
+         28  jpeg_decoder::worker::immediate::ImmediateWorker::append_row_immediate::h06e5f3c998c71ada (in jpeg-profile) (immediate.rs:0)
+         27  jpeg_decoder::worker::immediate::ImmediateWorker::append_row_immediate::h06e5f3c998c71ada (in jpeg-profile) (immediate.rs:58)
+         25  as_ref<alloc::sync::ArcInner<[u16; 64]>> (in jpeg-profile) (non_null.rs:444)
+         19  _xzm_xzone_malloc_tiny (in libsystem_malloc.dylib)
+         15  _xzm_free (in libsystem_malloc.dylib)
+         13  __bsdthread_create (in libsystem_kernel.dylib)

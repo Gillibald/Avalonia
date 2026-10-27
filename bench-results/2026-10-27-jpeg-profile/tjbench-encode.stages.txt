@@ -1,0 +1,8 @@
+tjbench-encode.sample.txt: 11457 samples
+  colour conversion | 1501 (13.1%)
+  downsampling | 162 (1.4%)
+  forward DCT | 2456 (21.4%)
+  quantization | 893 (7.8%)
+  Huffman encoding and bit writing | 6196 (54.1%)
+  everything else | 249 (2.2%)
+  else: 167 compress_data (libturbojpeg.0.5.0.dylib); 67 _platform_memmove (libsystem_platform.dylib); 2 jpeg_make_c_derived_tbl (libturbojpeg.0.5.0.dylib); 2 compute_reciprocal (libturbojpeg.0.5.0.dylib); 2 _xzm_xzone_free_freelist (libsystem_malloc.dylib); 1 jcopy_sample_rows (libturbojpeg.0.5.0.dylib)

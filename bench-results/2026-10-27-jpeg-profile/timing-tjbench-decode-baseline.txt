@@ -1,0 +1,8 @@
+## 2026-10-27T17:30:57Z tjbench decode baseline
+
+>>>>>  8-bit JPEG (YCbCr 4:2:0) --> RGB (Top-down)  <<<<<
+
+Image size: 3840 x 2160
+Decompress    --> Frame rate:         38.354184 fps
+                  Throughput:         318.124944 Megapixels/sec
+

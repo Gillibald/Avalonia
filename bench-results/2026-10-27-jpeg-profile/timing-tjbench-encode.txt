@@ -1,0 +1,11 @@
+## 2026-10-27T17:31:19Z tjbench encode q90 420
+
+>>>>>  RGB (Top-down) <--> 8-bit JPEG (4:2:0 Q90)  <<<<<
+
+Image size: 1920 x 1080
+Compress      --> Frame rate:         203.362337 fps
+                  Output image size:  489781 bytes
+                  Compression ratio:  12.701187:1
+                  Throughput:         421.692141 Megapixels/sec
+                  Output bit stream:  796.824069 Megabits/sec
+

@@ -1,0 +1,10 @@
+## 2026-10-27T17:31:08Z tjbench decode progressive
+
+JPEG image is progressive
+
+>>>>>  8-bit JPEG (YCbCr 4:2:0) --> RGB (Top-down)  <<<<<
+
+Image size: 3840 x 2160
+Decompress    --> Frame rate:         31.451502 fps
+                  Throughput:         260.871337 Megapixels/sec
+

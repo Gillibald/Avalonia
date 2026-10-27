@@ -1,0 +1,9 @@
+
+JPEG image is progressive
+
+>>>>>  8-bit JPEG (YCbCr 4:2:0) --> RGB (Top-down)  <<<<<
+
+Image size: 3840 x 2160
+Decompress    --> Frame rate:         30.285959 fps
+                  Throughput:         251.203861 Megapixels/sec
+

@@ -1,0 +1,1 @@
+/Users/benediktstebner/RiderProjects/jpeg-profile-work/fixtures/photo-jpeg-progressive.bin: 443 iterations, median 45.51 ms, min 41.98 ms

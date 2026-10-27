@@ -1,0 +1,10 @@
+
+>>>>>  RGB (Top-down) <--> 8-bit JPEG (4:2:0 Q90)  <<<<<
+
+Image size: 1920 x 1080
+Compress      --> Frame rate:         197.725555 fps
+                  Output image size:  489781 bytes
+                  Compression ratio:  12.701187:1
+                  Throughput:         410.003710 Megapixels/sec
+                  Output bit stream:  774.737760 Megabits/sec
+

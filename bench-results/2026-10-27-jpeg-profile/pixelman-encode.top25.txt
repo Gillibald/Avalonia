@@ -1,0 +1,28 @@
+pixelman-encode.sample.txt
+total samples 11338, on-CPU samples 11338 (100.0%)
+
+thread groups: threads, samples, on-CPU samples
+  main: 1 threads, 11338 samples, 11338 on-CPU
+
+top 25 by self samples: % of all samples | % of on-CPU samples
+     5944  52.4%  52.4%  jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b (jpeg-profile)
+     2148  18.9%  18.9%  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57 (jpeg-profile)
+     1655  14.6%  14.6%  _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad (jpeg-profile)
+      719   6.3%   6.3%  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8 (jpeg-profile)
+      527   4.6%   4.6%  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (jpeg-profile)
+      166   1.5%   1.5%  _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b (jpeg-profile)
+       55   0.5%   0.5%  std::io::impls::_$LT$impl$u20$std..io..Write$u20$for$u20$$RF$mut$u20$W$GT$::write_all::h61042838c6346083 (jpeg-profile)
+       52   0.5%   0.5%  _platform_memmove (libsystem_platform.dylib)
+       43   0.4%   0.4%  jpeg_encoder::sampling::downsample_plane::h55e0c07146f32d10 (jpeg-profile)
+       10   0.1%   0.1%  DYLD-STUB$$memcpy (jpeg-profile)
+        5   0.0%   0.0%  _platform_memset (libsystem_platform.dylib)
+        3   0.0%   0.0%  mach_absolute_time (libsystem_kernel.dylib)
+        2   0.0%   0.0%  _xzm_xzone_free_freelist (libsystem_malloc.dylib)
+        2   0.0%   0.0%  jpeg_encoder::huffman::create_lookup_table::h1616b87437bb8d4a (jpeg-profile)
+        1   0.0%   0.0%  _malloc_zone_calloc (libsystem_malloc.dylib)
+        1   0.0%   0.0%  jpeg_encoder::encoder::Encoder$LT$W$GT$::write_frame_header::hd2fb78d29a8605a3 (jpeg-profile)
+        1   0.0%   0.0%  _free (libsystem_malloc.dylib)
+        1   0.0%   0.0%  _xzm_free (libsystem_malloc.dylib)
+        1   0.0%   0.0%  _xzm_xzone_malloc_tiny (libsystem_malloc.dylib)
+        1   0.0%   0.0%  core::ops::function::FnOnce::call_once::h658466625d423c92 (jpeg-profile)
+        1   0.0%   0.0%  _tlv_get_addr (libdyld.dylib)

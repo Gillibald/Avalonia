@@ -1,0 +1,2 @@
+## 2026-10-27T17:30:46Z pixelman encode
+/Users/benediktstebner/RiderProjects/jpeg-profile-work/fixtures/encode-source.bgra: 341 iterations, median 29.11 ms, min 28.79 ms

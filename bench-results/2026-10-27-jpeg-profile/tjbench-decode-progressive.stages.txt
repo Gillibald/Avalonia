@@ -1,0 +1,8 @@
+tjbench-decode-progressive.sample.txt: 11390 samples
+  IDCT | 1692 (14.9%)
+  upsampling | 319 (2.8%)
+  colour conversion | 663 (5.8%)
+  entropy decoding | 7993 (70.2%)
+  copying | 100 (0.9%)
+  everything else | 623 (5.5%)
+  else: 566 consume_data (libturbojpeg.0.5.0.dylib); 35 decompress_data (libturbojpeg.0.5.0.dylib); 6 access_virt_barray (libturbojpeg.0.5.0.dylib); 2 sigprocmask (libsystem_kernel.dylib); 2 tj3Decompress8 (libturbojpeg.0.5.0.dylib); 1 jpeg_make_d_derived_tbl (libturbojpeg.0.5.0.dylib)

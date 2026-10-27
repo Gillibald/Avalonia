@@ -1,0 +1,8 @@
+tjbench-decode-baseline.sample.txt: 11474 samples
+  IDCT | 2006 (17.5%)
+  upsampling | 348 (3.0%)
+  colour conversion | 762 (6.6%)
+  entropy decoding | 7962 (69.4%)
+  copying | 68 (0.6%)
+  everything else | 328 (2.9%)
+  else: 317 decompress_onepass (libturbojpeg.0.5.0.dylib); 3 read_markers (libturbojpeg.0.5.0.dylib); 1 start_iMCU_row (libturbojpeg.0.5.0.dylib); 1 jpeg_read_scanlines (libturbojpeg.0.5.0.dylib); 1 alloc_sarray (libturbojpeg.0.5.0.dylib); 1 sigprocmask (libsystem_kernel.dylib)

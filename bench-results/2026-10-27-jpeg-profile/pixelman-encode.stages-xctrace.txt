@@ -1,0 +1,54 @@
+pixelman-encode.timeprofile.xml: 15130 ms of running samples, 393 distinct leaf addresses
+  stage | main | total
+  colour conversion | 2196 | 2196 (14.5%)
+  downsampling | 65 | 65 (0.4%)
+  forward DCT | 716 | 716 (4.7%)
+  quantization | 7160 | 7160 (47.3%)
+  Huffman encoding and bit writing | 3791 | 3791 (25.1%)
+  everything else | 1202 | 1202 (7.9%)
+  [colour conversion]
+       1232  capacity<alloc::alloc::Global> (in jpeg-profile) (mod.rs:617)
+        722  push_mut<u8, alloc::alloc::Global> (in jpeg-profile) (mod.rs:1034)
+        133  push_mut<u8, alloc::alloc::Global> (in jpeg-profile) (mod.rs:1028)
+         79  split_at_checked<u8> (in jpeg-profile) (mod.rs:2154)
+         27  write<u8> (in jpeg-profile) (mod.rs:1917)
+          3  _$LT$pixelman_codecs..jpeg_codec..SourceImage$u20$as$u20$jpeg_encoder..image_buffer..ImageBuffer$GT$::fill_buffers::h0c9698debbd89fad (in jp
+  [downsampling]
+         38  downsample_row (in jpeg-profile) (sampling.rs:67)
+         26  downsample_row (in jpeg-profile) (sampling.rs:66)
+          1  clamp (in jpeg-profile) (cmp.rs:2025)
+  [forward DCT]
+        124  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:166)
+         51  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:117)
+         50  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:121)
+         43  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:119)
+         42  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:115)
+         27  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:234)
+         27  jpeg_encoder::fdct::fdct::h2a5779c4ebdcd62a (in jpeg-profile) (fdct.rs:149)
+         20  descale (in jpeg-profile) (fdct.rs:95)
+  [quantization]
+       3104  wrapping_sub (in jpeg-profile) (int_macros.rs:2137)
+       2599  quantize (in jpeg-profile) (quantization.rs:301)
+       1419  quantize_block<jpeg_encoder::encoder::DefaultOperations> (in jpeg-profile) (encoder.rs:1274)
+         31  wrapping_abs (in jpeg-profile) (int_macros.rs:2398)
+          3  quantize_block<jpeg_encoder::encoder::DefaultOperations> (in jpeg-profile) (range.rs:0)
+          2  spec_next<usize> (in jpeg-profile) (range.rs:772)
+          2  quantize_block<jpeg_encoder::encoder::DefaultOperations> (in jpeg-profile) (encoder.rs:0)
+  [Huffman encoding and bit writing]
+        983  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57 (in jpeg-profile) (writer.rs:367)
+        972  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57 (in jpeg-profile) (writer.rs:369)
+        416  huffman_encode_value<&mut pixelman_codecs::jpeg_codec::JpegOut<&mut pixelman_codecs::sink::Sink<pixelman_codecs::sink::NoSeek<&mut alloc::ve
+        393  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8 (in jpeg-profile) (writer.rs:202)
+        282  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8 (in jpeg-profile) (writer.rs:193)
+        234  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57 (in jpeg-profile) (writer.rs:365)
+        172  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits::h1d228e1d42ccaff8 (in jpeg-profile) (writer.rs:190)
+        111  jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block::he2b5bd8199d55d57 (in jpeg-profile) (writer.rs:383)
+  [everything else]
+        437  get_block (in jpeg-profile) (encoder.rs:1204)
+        131  _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b (in jpeg-profile) (sink.rs:127)
+         93  jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b (in jpeg-profile) (encoder.rs:766)
+         61  _platform_memmove (in libsystem_platform.dylib)
+         33  jpeg_encoder::encoder::Encoder$LT$W$GT$::encode_image_interleaved::h2f86028613e1528b (in jpeg-profile) (range.rs:0)
+         32  get_block (in jpeg-profile) (encoder.rs:0)
+         32  DYLD-STUB$$memcpy (in jpeg-profile) + 5
+         26  _$LT$pixelman_codecs..sink..Sink$LT$W$GT$$u20$as$u20$std..io..Write$GT$::write::hdf4215acbf80963b (in jpeg-profile) (sink.rs:110)
