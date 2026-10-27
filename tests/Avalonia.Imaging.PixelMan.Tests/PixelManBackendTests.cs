@@ -94,7 +94,8 @@ namespace Avalonia.Imaging.PixelMan.Tests
             Assert.Throws<InvalidDataException>(() =>
             {
                 using var decoder = BitmapDecoder.Create(new MemoryStream(bytes));
-                using var frame = decoder.ReadNextFrame();
+                using var frame = decoder.ReadNextFrame()!;
+                using var pixels = frame.Lock();
             });
 
             using (var decoder = BitmapDecoder.Create(new MemoryStream(bytes),
@@ -553,11 +554,12 @@ namespace Avalonia.Imaging.PixelMan.Tests
             using var decoder = BitmapDecoder.Create(stream);
             using var frame = decoder.ReadNextFrame()!;
 
-            var decodedInto = Assert.Single(allocator.LiveAddresses);
+            // The frame decodes on the first Lock.
+            Assert.Empty(allocator.LiveAddresses);
 
             using (var pixels = frame.Lock())
             {
-                Assert.Equal(decodedInto, pixels.Address);
+                Assert.Equal(Assert.Single(allocator.LiveAddresses), pixels.Address);
                 Assert.Equal(rentsBeforeDecode + 1, allocator.RentCount);
                 Assert.Equal(Colors.Red.R, System.Runtime.InteropServices.Marshal.ReadByte(pixels.Address));
             }
@@ -673,6 +675,62 @@ namespace Avalonia.Imaging.PixelMan.Tests
             using var pixels = frame.Lock();
 
             Assert.Equal(new PixelSize(expectedWidth, expectedHeight), pixels.Size);
+        }
+
+        private static MemoryStream EncodedJpeg(uint width, uint height)
+        {
+            var stream = new MemoryStream();
+
+            using (var source = Avalonia.PixelMan.PmBitmapFrame.CreateFromCopy(Avalonia.PixelMan.PmPixelFormat.Bgr24,
+                       width, height, width * 3, new byte[width * height * 3]))
+                source.Encode(stream, Avalonia.PixelMan.PmCodecKind.Jpeg, cancellationToken: TestContext.Current.CancellationToken);
+
+            stream.Position = 0;
+            return stream;
+        }
+
+        [Fact]
+        public void A_Jpeg_Frame_Should_Be_Described_Before_Its_Pixels_Decode()
+        {
+            using var stream = EncodedJpeg(64, 48);
+            var allocator = new CountingAllocator();
+
+            using var decoder = new PixelManImagingBackend(allocator).CreateDecoder(stream, ownsStream: false);
+            using var frame = decoder.ReadNextFrame()!;
+
+            Assert.Equal(new PixelSize(64, 48), frame.PixelSize);
+            var format = frame.PixelFormat;
+            Assert.Equal(0L, allocator.FrameSizedRents(64 * 48 * 3));
+
+            using (var pixels = frame.Lock())
+                Assert.Equal((new PixelSize(64, 48), format), (pixels.Size, pixels.Format));
+
+            Assert.True(allocator.FrameSizedRents(64 * 48 * 3) > 0);
+        }
+
+        [Fact]
+        public void A_Deferred_Frame_Should_Decode_After_Its_Decoder_Is_Disposed()
+        {
+            using var stream = EncodedJpeg(64, 48);
+            var allocator = new CountingAllocator();
+            var backend = new PixelManImagingBackend(allocator);
+            IBitmapFrameSource locked, unlocked;
+
+            using (var decoder = backend.CreateDecoder(stream, ownsStream: false))
+                locked = decoder.ReadNextFrame()!;
+
+            stream.Position = 0;
+
+            using (var decoder = backend.CreateDecoder(stream, ownsStream: false))
+                unlocked = decoder.ReadNextFrame()!;
+
+            using (var pixels = locked.Lock())
+                Assert.Equal(new PixelSize(64, 48), pixels.Size);
+
+            locked.Dispose();
+            unlocked.Dispose();
+
+            allocator.AssertBalanced();
         }
 
         [Fact]

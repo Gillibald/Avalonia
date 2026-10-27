@@ -8,8 +8,12 @@ using Avalonia.Platform.Internal;
 namespace Avalonia.Imaging.PixelMan
 {
     /// <summary>
-    /// A decoder over PixelMan's frame decoder. Every frame is decoded by PixelMan when it
-    /// is read, and each frame source owns its decoded frame independently of the decoder.
+    /// A decoder over PixelMan's frame decoder. The image of a single-image codec (BMP, JPEG,
+    /// PNG) is described from its headers when it is read and decodes when its pixels or
+    /// metadata are first needed, as WIC defers; every other frame is decoded by PixelMan when
+    /// it is read. Each frame source owns its decoded frame independently of the decoder, and a
+    /// frame source still waiting to decode keeps PixelMan's decoder and the stream open after
+    /// this decoder is disposed.
     /// </summary>
     internal class PixelManBitmapDecoder : IBitmapDecoder, IMetadataStoreSource
     {
@@ -21,6 +25,8 @@ namespace Avalonia.Imaging.PixelMan
         private int _cursor;
         private int _decoderPosition;
         private bool _disposed;
+        // The decoder's own reference plus one per deferred frame source not yet decoded.
+        private int _references = 1;
 
         protected PixelManBitmapDecoder(PmFrameDecoder decoder, Stream stream, PixelManCodecInfo codec,
             BitmapImageInfo info, BitmapDecodeOptions? options, PixelManFrameAllocator allocator,
@@ -79,6 +85,15 @@ namespace Avalonia.Imaging.PixelMan
             {
                 ThrowIfDisposed();
 
+                if (FrameCount is { } count && _cursor >= count)
+                    return null;
+
+                if (TryDefer(_cursor) is { } deferred)
+                {
+                    _cursor++;
+                    return deferred;
+                }
+
                 // Random access moves PixelMan's decoder, so the cursor returns to its own
                 // position before reading on.
                 var frame = Decode(() =>
@@ -107,8 +122,7 @@ namespace Avalonia.Imaging.PixelMan
                     return;
 
                 _disposed = true;
-                _decoder.Dispose();
-                _stream.Dispose();
+                Release();
             }
         }
 
@@ -120,6 +134,9 @@ namespace Avalonia.Imaging.PixelMan
 
                 if (index < 0 || FrameCount is { } count && index >= count)
                     throw new ArgumentOutOfRangeException(nameof(index));
+
+                if (TryDefer(index) is { } deferred)
+                    return deferred;
 
                 var frame = Decode(() =>
                 {
@@ -134,6 +151,113 @@ namespace Avalonia.Imaging.PixelMan
         }
 
         private System.Threading.CancellationToken Token => _options?.CancellationToken ?? default;
+
+        /// <summary>
+        /// A frame source for frame <paramref name="index"/> described from the headers PixelMan
+        /// peeks, or null when the frame has to decode to be described: frames of multi-frame
+        /// codecs and indexed frames, whose palette is part of the description.
+        /// </summary>
+        private IBitmapFrameSource? TryDefer(int index)
+        {
+            if (Codec.Kind != PmCodecKind.Bmp && Codec.Kind != PmCodecKind.Jpeg && Codec.Kind != PmCodecKind.Png)
+                return null;
+
+            PmFrameHeader? header;
+
+            try
+            {
+                if (_decoderPosition != index)
+                {
+                    _decoder.SeekToFrame((uint)index, Token);
+                    _decoderPosition = index;
+                }
+
+                header = _decoder.PeekFrame();
+            }
+            catch (Exception exception) when (PixelManFormats.Translate(exception) is var translated && translated != exception)
+            {
+                throw translated;
+            }
+
+            if (header is not { } facts ||
+                PixelManFormats.TryMap(facts.Format, out var format, out _) && format.IsIndexed)
+                return null;
+
+            _references++;
+
+            try
+            {
+                return PixelManBitmapFrameSource.CreateDeferred(facts, new DeferredFrame(this, index), Codec, _options,
+                    _allocator, _reducedFrom);
+            }
+            catch
+            {
+                Release();
+                throw;
+            }
+        }
+
+        // Decodes a deferred frame source's frame. The source's reference keeps PixelMan's
+        // decoder open, so this runs after the decoder itself has been disposed too.
+        private PmBitmapFrame DecodeDeferred(int index)
+        {
+            lock (Sync)
+            {
+                var frame = Decode(() =>
+                {
+                    if (_decoderPosition != index)
+                        _decoder.SeekToFrame((uint)index, Token);
+
+                    return _decoder.Next(Token);
+                });
+
+                _decoderPosition = index + 1;
+
+                return frame ?? throw new InvalidDataException("The image has no frame to decode.");
+            }
+        }
+
+        private void Release()
+        {
+            lock (Sync)
+            {
+                if (--_references > 0)
+                    return;
+            }
+
+            _decoder.Dispose();
+            _stream.Dispose();
+        }
+
+        /// <summary>A frame of this decoder that decodes on first use, holding the decoder open until then.</summary>
+        internal sealed class DeferredFrame(PixelManBitmapDecoder decoder, int index)
+        {
+            private PixelManBitmapDecoder? _decoder = decoder;
+
+            /// <summary>Decodes the frame and lets go of the decoder.</summary>
+            public PmBitmapFrame Decode()
+            {
+                var owner = _decoder ?? throw new InvalidOperationException("The frame has already been decoded.");
+
+                try
+                {
+                    return owner.DecodeDeferred(index);
+                }
+                finally
+                {
+                    _decoder = null;
+                    owner.Release();
+                }
+            }
+
+            /// <summary>Lets go of the decoder without decoding.</summary>
+            public void Abandon()
+            {
+                var owner = _decoder;
+                _decoder = null;
+                owner?.Release();
+            }
+        }
 
         private IBitmapFrameSource? Wrap(PmBitmapFrame? frame)
         {

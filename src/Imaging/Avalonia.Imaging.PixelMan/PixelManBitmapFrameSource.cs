@@ -11,12 +11,18 @@ namespace Avalonia.Imaging.PixelMan
     /// A frame PixelMan has decoded, into a pool rental, in its stored layout. When that layout
     /// is already the plan's output the first Lock installs the rental as it is; otherwise the
     /// shared pixel pipeline crops, scales, orients or converts it into a second rental. EXIF
-    /// orientation is applied by the pipeline: PixelMan never rotates.
+    /// orientation is applied by the pipeline: PixelMan never rotates. A deferred source is
+    /// described from the headers PixelMan peeked and decodes its frame on the first Lock or the
+    /// first read of its metadata, ICC profile or thumbnail.
     /// </summary>
     internal class PixelManBitmapFrameSource : IBitmapFrameSource, IColorProfileSource, IMetadataStoreSource,
         ISupportsFusedDecode, IThumbnailSource
     {
-        private readonly PmBitmapFrame _frame;
+        private PmBitmapFrame? _frame;
+        private PixelManBitmapDecoder.DeferredFrame? _deferred;
+        private readonly PixelManCodecInfo? _codec;
+        private IBitmapMetadataStore? _metadata;
+        private ReadOnlyMemory<byte>? _iccProfile;
         private readonly BitmapDecodeOptions? _options;
         private readonly PixelManFrameAllocator _allocator;
         private readonly object _sync = new();
@@ -35,16 +41,36 @@ namespace Avalonia.Imaging.PixelMan
         protected PixelManBitmapFrameSource(PmBitmapFrame frame, PixelManMetadataStore metadata,
             BitmapDecodeOptions? options, PixelManFrameAllocator allocator, PixelOrientation orientation,
             PixelSize? reducedFrom = null)
+            : this(new PixelSize((int)frame.Width, (int)frame.Height), frame.Format, frame.Dpi, options, allocator,
+                orientation, reducedFrom)
         {
             _frame = frame;
+            _metadata = metadata;
+            _iccProfile = frame.IccProfile ?? Array.Empty<byte>();
+        }
+
+        private PixelManBitmapFrameSource(PmFrameHeader header, PixelManBitmapDecoder.DeferredFrame frame,
+            PixelManCodecInfo codec, BitmapDecodeOptions? options, PixelManFrameAllocator allocator,
+            PixelOrientation orientation, PixelSize? reducedFrom)
+            : this(new PixelSize((int)header.Width, (int)header.Height), header.Format, header.Dpi, options, allocator,
+                orientation, reducedFrom)
+        {
+            _deferred = frame;
+            _codec = codec;
+        }
+
+        private PixelManBitmapFrameSource(PixelSize rawSize, PmPixelFormat format, (double X, double Y)? dpi,
+            BitmapDecodeOptions? options, PixelManFrameAllocator allocator, PixelOrientation orientation,
+            PixelSize? reducedFrom)
+        {
             _options = options;
             _allocator = allocator;
-            _rawSize = new PixelSize((int)frame.Width, (int)frame.Height);
+            _rawSize = rawSize;
             _orientation = orientation;
-            _mapped = PixelManFormats.TryMap(frame.Format, out _decodeFormat, out _decodeAlpha);
+            _mapped = PixelManFormats.TryMap(format, out _decodeFormat, out _decodeAlpha);
 
             if (!_mapped)
-                PixelManFormats.TryMap(PixelManFormats.GetFallback(frame.Format), out _decodeFormat, out _decodeAlpha);
+                PixelManFormats.TryMap(PixelManFormats.GetFallback(format), out _decodeFormat, out _decodeAlpha);
 
             var orientedSize = FusedPixelPipeline.GetOrientedSize(_rawSize, orientation);
 
@@ -65,9 +91,7 @@ namespace Avalonia.Imaging.PixelMan
                 (PixelFormat.IsIndexed || PixelFormat == _decodeFormat ? _decodeAlpha
                     : PixelFormat.HasAlpha ? AlphaFormat.Unpremul : AlphaFormat.Opaque);
 
-            Dpi = frame.Dpi is { } dpi ? new Vector(dpi.Item1, dpi.Item2) : new Vector(96, 96);
-            Metadata = metadata;
-            IccProfile = frame.IccProfile ?? Array.Empty<byte>();
+            Dpi = dpi is { } value ? new Vector(value.X, value.Y) : new Vector(96, 96);
         }
 
         public PixelSize PixelSize { get; }
@@ -78,11 +102,49 @@ namespace Avalonia.Imaging.PixelMan
 
         public AlphaFormat AlphaFormat { get; }
 
-        public IBitmapMetadataStore Metadata { get; }
+        public IBitmapMetadataStore Metadata
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _metadata ??= new PixelManMetadataStore(Frame.GetMetadata(), _codec!.ContainerFormat,
+                        Frame.IccProfile, isReadOnly: true);
+                }
+            }
+        }
 
-        public ReadOnlyMemory<byte> IccProfile { get; }
+        public ReadOnlyMemory<byte> IccProfile
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _iccProfile ??= Frame.IccProfile ?? Array.Empty<byte>();
+                }
+            }
+        }
 
-        protected PmBitmapFrame Frame => _frame;
+        /// <summary>The decoded frame, decoding a deferred source's frame on first use.</summary>
+        protected PmBitmapFrame Frame
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    if (_frame is not null)
+                        return _frame;
+
+                    if (_disposed)
+                        throw new ObjectDisposedException(nameof(PixelManBitmapFrameSource));
+
+                    _frame = _deferred!.Decode();
+                    _deferred = null;
+
+                    return _frame;
+                }
+            }
+        }
 
         /// <summary>
         /// Decodes the EXIF thumbnail PixelMan keeps in a JPEG frame's metadata, into the pool
@@ -103,7 +165,7 @@ namespace Avalonia.Imaging.PixelMan
                     try
                     {
                         using var cmykProfile = PixelManImagingBackend.CreateCmykProfile();
-                        thumbnail = _frame.DecodeThumbnail(
+                        thumbnail = Frame.DecodeThumbnail(
                             new PmDecodeOptions(PixelManImagingBackend.GetDecodeMode(_options))
                             {
                                 FrameAllocator = _allocator,
@@ -137,6 +199,22 @@ namespace Avalonia.Imaging.PixelMan
         // PixelMan has already decoded the frame; its oriented size is the only one on offer.
         public PixelSize GetNearestDecodeSize(PixelSize target) =>
             FusedPixelPipeline.GetOrientedSize(_rawSize, _orientation);
+
+        /// <summary>
+        /// Creates a source for a non-indexed frame of a single-image codec from the headers
+        /// PixelMan peeked; <paramref name="frame"/> decodes it when the pixels are first needed.
+        /// </summary>
+        public static PixelManBitmapFrameSource CreateDeferred(PmFrameHeader header,
+            PixelManBitmapDecoder.DeferredFrame frame, PixelManCodecInfo codec, BitmapDecodeOptions? options,
+            PixelManFrameAllocator allocator, PixelSize? reducedFrom)
+        {
+            var orientation = PixelOrientation.Normal;
+
+            if ((options?.RespectExifOrientation ?? true) && header.Orientation is { } value and >= 1 and <= 8)
+                orientation = (PixelOrientation)value;
+
+            return new PixelManBitmapFrameSource(header, frame, codec, options, allocator, orientation, reducedFrom);
+        }
 
         /// <summary>
         /// Creates the frame source with the capabilities the frame's output has: a palette
@@ -197,7 +275,9 @@ namespace Avalonia.Imaging.PixelMan
                 _pixels = null;
             }
 
-            _frame.Dispose();
+            _frame?.Dispose();
+            _deferred?.Abandon();
+            _deferred = null;
         }
 
         private void Decode()
@@ -240,7 +320,7 @@ namespace Avalonia.Imaging.PixelMan
         // memory only when renting failed, so the pool has no room for the frame either.
         private void AdoptFrame()
         {
-            var pixels = _frame.Lock(PmLockMode.ReadWrite);
+            var pixels = Frame.Lock(PmLockMode.ReadWrite);
 
             if (!_allocator.TryClaim(pixels.Scan0, out var rental))
             {
@@ -274,7 +354,7 @@ namespace Avalonia.Imaging.PixelMan
             {
                 unsafe
                 {
-                    _frame.CopyPixels(target, 0, 0, 0, 0,
+                    Frame.CopyPixels(target, 0, 0, 0, 0,
                         new Span<byte>((void*)destination, checked(destRowBytes * PixelSize.Height)), (nuint)destRowBytes,
                         _options?.CancellationToken ?? default);
                 }
@@ -286,7 +366,7 @@ namespace Avalonia.Imaging.PixelMan
             // first; the pipeline then works on the converted copy.
             if (!_mapped || _decodeFormat.IsIndexed)
             {
-                var format = _mapped ? PmPixelFormat.Bgra32 : PixelManFormats.GetFallback(_frame.Format);
+                var format = _mapped ? PmPixelFormat.Bgra32 : PixelManFormats.GetFallback(Frame.Format);
 
                 PixelManFormats.TryMap(format, out var stagedFormat, out var stagedAlpha);
 
@@ -296,7 +376,7 @@ namespace Avalonia.Imaging.PixelMan
 
                 unsafe
                 {
-                    _frame.CopyPixels(format, 0, 0, 0, 0,
+                    Frame.CopyPixels(format, 0, 0, 0, 0,
                         new Span<byte>((void*)staging.Address, checked(rowBytes * _rawSize.Height)), (nuint)rowBytes,
                         _options?.CancellationToken ?? default);
                 }
@@ -306,7 +386,7 @@ namespace Avalonia.Imaging.PixelMan
                 return;
             }
 
-            using var locked = _frame.Lock(PmLockMode.Read);
+            using var locked = Frame.Lock(PmLockMode.Read);
 
             RunPipeline(new LockedFramebuffer(locked.Scan0, _rawSize, (int)locked.Stride, Dpi, _decodeFormat, _decodeAlpha, null),
                 plan, destination, destRowBytes);
