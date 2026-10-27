@@ -45,14 +45,22 @@ namespace Avalonia.Imaging.Benchmarks.Android
                 var host = "android-" + (System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription.Contains("Mono") ? "mono" : "coreclr");
                 var report = new BenchmarkRunner(options, line => Log.Info(Tag, line)).Run(host, fixtures, encodeSource);
 
-                File.WriteAllText(Path.Combine(folder, "report.json"), ReportWriter.ToJson(report));
-                File.WriteAllText(Path.Combine(folder, "report.md"), ReportWriter.ToMarkdown(report));
+                Write(Path.Combine(folder, "report.json"), ReportWriter.ToJson(report));
+                Write(Path.Combine(folder, "report.md"), ReportWriter.ToMarkdown(report));
                 Log.Info(Tag, "DONE");
             }
             catch (Exception e)
             {
                 Log.Error(Tag, "FAILED " + e);
             }
+        }
+
+        // The app's files are private to it by default, which leaves adb pull an empty file.
+        private static void Write(string path, string text)
+        {
+            File.WriteAllText(path, text);
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead |
+                UnixFileMode.OtherRead);
         }
     }
 }
