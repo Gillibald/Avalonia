@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Android host of the imaging benchmarks: an activity that runs the suite on fixtures pushed
+    with adb and writes the report next to them. CoreCLR is the default runtime here;
+    -p:UseMonoRuntime=true builds the Mono variant.
+  -->
+  <PropertyGroup>
+    <TargetFramework>$(AvsCurrentAndroidTargetFramework)</TargetFramework>
+    <SupportedOSPlatformVersion>$(AvsMinSupportedAndroidVersion)</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <ApplicationId>net.avaloniaui.imaging.benchmarks</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <RuntimeIdentifier>android-arm64</RuntimeIdentifier>
+    <UseMonoRuntime Condition="'$(UseMonoRuntime)' == ''">false</UseMonoRuntime>
+    <!-- The .NET 11 SDK's crossgen fails on net10.0-android; timed runs follow warm-ups, so the
+         tier-1 JIT code is what gets measured either way. -->
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <Import Project="..\..\build\NullableEnable.props" />
+  <ItemGroup>
+    <ProjectReference Include="..\Avalonia.Imaging.Benchmarks.Core\Avalonia.Imaging.Benchmarks.Core.csproj" />
+  </ItemGroup>
+</Project>
