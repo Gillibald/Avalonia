@@ -19,6 +19,12 @@
     target and, in the consuming app, the .NET 11 browser workload (Emscripten 6): the
     Emscripten of the .NET 10 workload is too old for the objects Rust emits.
 
+.PARAMETER Android
+    Also builds the shared library for android-arm64, so Android apps that reference the
+    package load it. Needs the aarch64-linux-android Rust target and an Android NDK, found
+    through ANDROID_NDK_ROOT or the newest one under the Android SDK (ANDROID_HOME, or the
+    default SDK folder).
+
 .PARAMETER PixelManPath
     The PixelMan checkout (its submodules initialized).
 
@@ -29,7 +35,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $PixelManPath,
 
-    [switch] $Browser
+    [switch] $Browser,
+
+    [switch] $Android
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,6 +98,33 @@ try {
             throw "cargo rustc for wasm32-unknown-emscripten failed with exit code $LASTEXITCODE. Install the target with 'rustup target add wasm32-unknown-emscripten' if it is missing."
         }
     }
+
+    if ($Android) {
+        $ndk = $env:ANDROID_NDK_ROOT
+        if (-not $ndk) {
+            $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } elseif ($IsMacOS) { Join-Path $HOME 'Library/Android/sdk' } elseif ($IsLinux) { Join-Path $HOME 'Android/Sdk' } else { Join-Path $env:LOCALAPPDATA 'Android/Sdk' }
+            $ndk = Get-ChildItem (Join-Path $sdk 'ndk') -Directory -ErrorAction SilentlyContinue | Sort-Object { [version]$_.Name } | Select-Object -Last 1 -ExpandProperty FullName
+        }
+        if (-not $ndk) { throw 'No Android NDK found; set ANDROID_NDK_ROOT.' }
+
+        $ndkHost = if ($IsWindows -or $env:OS -eq 'Windows_NT') { 'windows-x86_64' } elseif ($IsMacOS) { 'darwin-x86_64' } else { 'linux-x86_64' }
+        $bin = Join-Path $ndk "toolchains/llvm/prebuilt/$ndkHost/bin"
+        $clang = Get-ChildItem $bin -Filter 'clang*' | Where-Object { $_.BaseName -eq 'clang' } | Select-Object -First 1 -ExpandProperty FullName
+        $ar = Get-ChildItem $bin -Filter 'llvm-ar*' | Select-Object -First 1 -ExpandProperty FullName
+
+        # The NDK's per-API .cmd wrappers break on paths with spaces, so clang gets the target
+        # triple itself. Android 15 needs 16 KB page alignment.
+        $env:CC_aarch64_linux_android = $clang
+        $env:CFLAGS_aarch64_linux_android = '--target=aarch64-linux-android24'
+        $env:AR_aarch64_linux_android = $ar
+        $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER = $clang
+        $env:CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS = '-C link-arg=--target=aarch64-linux-android24 -C link-arg=-Wl,-z,max-page-size=16384'
+
+        & $cargoPath build --release -p pixelman-ffi --target aarch64-linux-android
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build for aarch64-linux-android failed with exit code $LASTEXITCODE. Install the target with 'rustup target add aarch64-linux-android' if it is missing."
+        }
+    }
 }
 finally {
     Pop-Location
@@ -113,6 +148,17 @@ elseif (Test-Path (Split-Path $browserRuntime)) {
     Remove-Item -Recurse -Force (Split-Path $browserRuntime)
 }
 
+$androidRuntime = Join-Path $project 'runtimes/android-arm64/native'
+
+if ($Android) {
+    New-Item -ItemType Directory -Force $androidRuntime | Out-Null
+    Copy-Item (Join-Path $pixelMan 'rust/target/aarch64-linux-android/release/libpixelman_ffi.so') $androidRuntime -Force
+}
+elseif (Test-Path (Split-Path $androidRuntime)) {
+    # A library from an earlier -Android run would be packed as if it matched this build.
+    Remove-Item -Recurse -Force (Split-Path $androidRuntime)
+}
+
 $version = '0.9.0-local.' + (Get-Date -Format 'yyyyMMddHHmmss')
 
 New-Item -ItemType Directory -Force $packages | Out-Null
@@ -129,5 +175,5 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet pack failed with exit code $LASTEXITCOD
 </Project>
 "@ | Set-Content (Join-Path $here 'PixelMan.local.props') -Encoding utf8
 
-$rids = if ($Browser) { "$rid, browser-wasm" } else { $rid }
+$rids = (@($rid) + @(if ($Browser) { 'browser-wasm' }) + @(if ($Android) { 'android-arm64' })) -join ', '
 Write-Host "Avalonia.PixelMan $version ($rids) is selected."
