@@ -46,6 +46,20 @@ namespace Avalonia.Media.Imaging
         public long AnimationCacheMaxBytes { get; set; } = 8 * 1024 * 1024;
 
         /// <summary>
+        /// Gets or sets the CMYK ICC profile CMYK pixels convert through into sRGB whenever they
+        /// become a format that is not CMYK: in pixel conversions, in decodes that convert, and in
+        /// encoders that convert a CMYK frame. Null, the default, converts analytically,
+        /// <c>(1 - c)(1 - k)</c> per channel.
+        /// </summary>
+        /// <remarks>
+        /// An image's embedded profile does not take part, as in WIC; <see cref="BitmapColorTransform"/>
+        /// applies one explicitly. Backends that do not manage CMYK colour keep the analytic
+        /// conversion; the PixelMan backend applies the profile. A profile that is not a CMYK ICC
+        /// profile makes those operations throw <see cref="ArgumentException"/>.
+        /// </remarks>
+        public byte[]? CmykProfile { get; set; }
+
+        /// <summary>
         /// Gets the bound options, or the defaults when the application bound none.
         /// </summary>
         internal static ImagingOptions Effective =>
