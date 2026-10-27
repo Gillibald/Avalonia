@@ -44,6 +44,38 @@ namespace Avalonia.Imaging.PixelMan
         internal IBitmapMemoryAllocator Allocator =>
             _allocator ?? Avalonia.Platform.Internal.BitmapMemoryAllocator.Current;
 
+        /// <summary>
+        /// The application's <see cref="ImagingOptions.CmykProfile"/> as a context for one PixelMan
+        /// operation, or null when none is bound. PixelMan shares the context it is handed, so the
+        /// caller disposes it once the operation has started.
+        /// </summary>
+        /// <exception cref="ArgumentException">The profile is not a usable CMYK ICC profile.</exception>
+        internal static PmColorContext? CreateCmykProfile()
+        {
+            if (ImagingOptions.Effective.CmykProfile is not { } profile)
+                return null;
+
+            PmColorContext context;
+
+            try
+            {
+                context = PmColorContext.FromMemory(profile);
+            }
+            catch (Exception exception) when (exception is PmException or ArgumentException)
+            {
+                throw new ArgumentException(
+                    $"ImagingOptions.CmykProfile is not a usable ICC profile: {exception.Message}", exception);
+            }
+
+            if (context.ColorSpace is var space && space != PmColorSpace.Cmyk)
+            {
+                context.Dispose();
+                throw new ArgumentException($"ImagingOptions.CmykProfile is a {space} profile, not CMYK.");
+            }
+
+            return context;
+        }
+
         /// <inheritdoc />
         public string Name => PixelManFormats.BackendName;
 
@@ -174,7 +206,12 @@ namespace Avalonia.Imaging.PixelMan
             source.Position = origin;
 
             PmFrameDecoder decoder;
-            var decodeOptions = new PmDecodeOptions(GetDecodeMode(options)) { MaxPixels = (ulong)Math.Max(0, maxPixels) };
+            using var cmykProfile = CreateCmykProfile();
+            var decodeOptions = new PmDecodeOptions(GetDecodeMode(options))
+            {
+                MaxPixels = (ulong)Math.Max(0, maxPixels),
+                CmykProfile = cmykProfile,
+            };
             var frames = new PixelManFrameAllocator(Allocator);
 
             decodeOptions.FrameAllocator = frames;

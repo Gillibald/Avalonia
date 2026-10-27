@@ -46,6 +46,9 @@ namespace Avalonia.Imaging.PixelMan
                 }
 
                 var options = CreateOptions(encoder);
+
+                if (PixelManImagingBackend.CreateCmykProfile() is { } cmykProfile)
+                    options.CmykProfile = Own(cmykProfile, owners);
                 var container = isGif && encoder.Metadata is { } metadata
                     ? PixelManMetadataStore.CopyOf(metadata.Store, _codec.ContainerFormat).Metadata
                     : null;

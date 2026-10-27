@@ -102,8 +102,13 @@ namespace Avalonia.Imaging.PixelMan
 
                     try
                     {
+                        using var cmykProfile = PixelManImagingBackend.CreateCmykProfile();
                         thumbnail = _frame.DecodeThumbnail(
-                            new PmDecodeOptions(PixelManImagingBackend.GetDecodeMode(_options)) { FrameAllocator = _allocator },
+                            new PmDecodeOptions(PixelManImagingBackend.GetDecodeMode(_options))
+                            {
+                                FrameAllocator = _allocator,
+                                CmykProfile = cmykProfile,
+                            },
                             _options?.CancellationToken ?? default);
                     }
                     catch (Exception exception) when (PixelManFormats.Translate(exception) is var translated && translated != exception)

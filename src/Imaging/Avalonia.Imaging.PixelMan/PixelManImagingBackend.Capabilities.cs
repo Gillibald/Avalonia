@@ -38,6 +38,7 @@ namespace Avalonia.Imaging.PixelMan
             if (dither && sourceRect != new PixelRect(source.Size))
                 return false;
 
+            using var cmykProfile = source.Format.IsCmyk && !format.IsCmyk ? CreateCmykProfile() : null;
             using var sourcePm = sourcePalette is not null ? PixelManFormats.ToPixelMan(sourcePalette) : null;
             using var frame = Wrap(source, sourceFormat, sourcePm);
 
@@ -46,14 +47,16 @@ namespace Avalonia.Imaging.PixelMan
                 var span = new Span<byte>((void*)destination, checked((int)destinationSize));
 
                 // PixelMan copies into an indexed format only from that same format, so a
-                // palette target is matched by a conversion first; so is a dithered one.
-                if ((targetFormat.IsIndexed && targetFormat != sourceFormat) || dither)
+                // palette target is matched by a conversion first; so is a dithered one, and
+                // CMYK going through the application's CMYK profile.
+                if ((targetFormat.IsIndexed && targetFormat != sourceFormat) || dither || cmykProfile is not null)
                 {
                     using var palette = targetFormat.IsIndexed ? PixelManFormats.ToPixelMan(options!.Palette!) : null;
                     using var converted = frame.ConvertTo(targetFormat, palette, new PmConversionOptions
                     {
                         AlphaThresholdPercent = options?.AlphaThresholdPercent ?? 0,
                         Dither = dither ? PmDither.ErrorDiffusion : PmDither.None,
+                        CmykProfile = cmykProfile,
                     });
 
                     converted.CopyPixels(targetFormat, (uint)sourceRect.X, (uint)sourceRect.Y, (uint)sourceRect.Width,
