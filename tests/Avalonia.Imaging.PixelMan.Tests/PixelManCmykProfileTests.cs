@@ -59,6 +59,19 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void The_Shipped_Swop_Profile_Should_Convert_Paper_Inks_And_Black()
+        {
+            using var scope = Bind(CmykProfiles.SwopCoated);
+
+            var cmyk = PixelBuffer.Create(new byte[] { 0, 0, 0, 0, 0, 0, 0, 255, 255, 0, 0, 0, 255, 255, 255, 255 },
+                new PixelSize(4, 1), 16, PixelFormats.Cmyk32, AlphaFormat.Opaque);
+            var bgra = cmyk.Convert(PixelFormats.Bgra8888, AlphaFormat.Unpremul).Pixels.ToArray();
+
+            // Paper white, 100% black (neutral), 100% cyan, and every ink at 100% (compensated to black).
+            Assert.Equal(new byte[] { 255, 255, 255, 255, 41, 41, 41, 255, 234, 170, 0, 255, 4, 5, 4, 255 }, bgra);
+        }
+
+        [Fact]
         public void A_Profile_That_Is_Not_Cmyk_Should_Throw()
         {
             var rgb = MidGrayProfile();
