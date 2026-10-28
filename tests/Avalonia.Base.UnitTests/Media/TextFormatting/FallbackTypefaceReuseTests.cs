@@ -22,7 +22,9 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
     /// The itemizer tries the face of an earlier fallback run before it asks the font manager. These
     /// tests pin which face each run gets when that face covers the next run's text but the font
     /// collection's writing-system rules would pick another face: the face only carries over within
-    /// the script and culture bucket it was chosen for.
+    /// the script and culture bucket it was chosen for. Emoji and text symbols share a script but
+    /// not a bucket, in the itemizer and in the font collection; CJK punctuation of the Common script
+    /// is bucketed and matched with the CJK writing system its Script_Extensions name.
     /// </summary>
     public class FallbackTypefaceReuseTests
     {
@@ -34,6 +36,7 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
         private const string PlatformKana = "Platform Kana Test";
         private const string Emoji = "Emoji Test";
         private const string Symbol = "Symbol Test";
+        private const string Traditional = "Traditional Test";
 
         private const string HanKana = "中字 あア";
 
@@ -109,8 +112,7 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
             Assert.Equal(Primary, FamilyOf(runs, 'a'));
         }
 
-        [Fact(Skip = "U+1F600 and U+2605 are both Script.Common, so the collection files them in one " +
-            "(Common, culture) bucket and replays the emoji face for the star even without the itemizer's reuse.")]
+        [Fact]
         public void A_Text_Symbol_After_An_Emoji_Span_Should_Not_Take_The_Emoji_Face()
         {
             var provider = new ReuseFontProvider();
@@ -121,6 +123,128 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
 
             Assert.Equal(Emoji, FamilyOf(runs, "\U0001F600"));
             Assert.Equal(Symbol, FamilyOf(runs, "★"));
+        }
+
+        [Fact]
+        public void An_Emoji_After_A_Text_Symbol_Span_Should_Take_The_Emoji_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // The symbol face maps U+1F600 in a text design, as Segoe UI Symbol does.
+            var runs = Format(Run("★", "en-US"), Run("\U0001F600", "en-US"));
+
+            Assert.Equal(Symbol, FamilyOf(runs, "★"));
+            Assert.Equal(Emoji, FamilyOf(runs, "\U0001F600"));
+        }
+
+        [Fact]
+        public void A_Text_Default_Emoji_With_An_Emoji_Variation_Selector_Should_Take_The_Emoji_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // U+2600 is an emoji that defaults to text; the platform places it alone in the symbol face.
+            var runs = Format(Run("☀️", "en-US"));
+
+            Assert.Equal(Emoji, FamilyOf(runs, "☀"));
+        }
+
+        [Fact]
+        public void A_Variation_Selector_After_A_Non_Emoji_Symbol_Should_Not_Ask_For_The_Emoji_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // U+2605 has neither the Emoji nor the Extended_Pictographic property, so U+FE0F after it
+            // is no emoji variation sequence.
+            var runs = Format(Run("★️", "en-US"));
+
+            Assert.Equal(Symbol, FamilyOf(runs, "★"));
+        }
+
+        [Fact]
+        public void An_Emoji_With_A_Text_Variation_Selector_Should_Take_The_Text_Face_Of_Its_Bucket()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // Separate lines, so only the font collection's buckets carry a face from one to the next.
+            Assert.Equal(Emoji, FamilyOf(Format(Run("\U0001F600", "en-US")), "\U0001F600"));
+            Assert.Equal(Symbol, FamilyOf(Format(Run("★", "en-US")), "★"));
+            Assert.Equal(Symbol, FamilyOf(Format(Run("\U0001F600︎", "en-US")), "\U0001F600"));
+        }
+
+        [Fact]
+        public void Consecutive_Emoji_Spans_Should_Ask_The_Platform_Once()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var runs = Format(Run("\U0001F600", "en-US"), Run("\U0001F603", "en-US"));
+
+            Assert.Equal(Emoji, FamilyOf(runs, "\U0001F600"));
+            Assert.Equal(Emoji, FamilyOf(runs, "\U0001F603"));
+            Assert.Equal(new[] { 0x1F600 }, provider.RequestedCodepoints);
+        }
+
+        [Fact]
+        public void Consecutive_Text_Symbol_Spans_Should_Ask_The_Platform_Once()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var runs = Format(Run("★", "en-US"), Run("☆", "en-US"));
+
+            Assert.Equal(Symbol, FamilyOf(runs, "★"));
+            Assert.Equal(Symbol, FamilyOf(runs, "☆"));
+            Assert.Equal(new[] { 0x2605 }, provider.RequestedCodepoints);
+        }
+
+        [Fact]
+        public void The_Collection_Should_Not_Replay_An_Emoji_Face_For_A_Text_Symbol()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var en = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.Equal(Emoji, MatchCharacter(0x1F600, en));
+            Assert.Equal(Symbol, MatchCharacter(0x2605, en));
+        }
+
+        [Fact]
+        public void The_Collection_Should_Not_Replay_A_Text_Symbol_Face_For_An_Emoji()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var en = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.Equal(Symbol, MatchCharacter(0x2605, en));
+            Assert.Equal(Emoji, MatchCharacter(0x1F600, en));
+        }
+
+        [Fact]
+        public void The_Collection_Should_Replay_The_Emoji_Face_For_The_Next_Emoji()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var en = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.Equal(Emoji, MatchCharacter(0x1F600, en));
+            Assert.Equal(Emoji, MatchCharacter(0x1F603, en));
+            Assert.Equal(new[] { 0x1F600 }, provider.RequestedCodepoints);
         }
 
         [Fact]
@@ -150,6 +274,95 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
             Assert.Equal(SimplifiedWide, FamilyOf(runs, '中'));
             Assert.Equal(SimplifiedWide, FamilyOf(runs, '字'));
             Assert.Equal(new[] { 0x4E2D }, provider.RequestedCodepoints);
+        }
+
+        [Theory]
+        [InlineData("ー", 'ー')]
+        [InlineData("aー", 'ー')]
+        [InlineData("、", '、')]
+        [InlineData("a、", '、')]
+        [InlineData("「", '「')]
+        public void Cjk_Punctuation_In_Japanese_Should_Not_Take_A_Loaded_Simplified_Chinese_Face(string text, char mark)
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // An earlier Chinese paragraph loaded the Simplified Chinese face, which maps the mark.
+            Assert.Equal(SimplifiedWide, MatchCharacter(0x4E2D, CultureInfo.GetCultureInfo("zh-CN")));
+
+            var runs = Format(Run(text, "ja-JP"));
+
+            Assert.Equal(Japanese, FamilyOf(runs, mark));
+        }
+
+        [Fact]
+        public void The_Collection_Should_Place_A_Prolonged_Sound_Mark_In_Japanese_With_The_Platform()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            Assert.Equal(SimplifiedWide, MatchCharacter(0x4E2D, CultureInfo.GetCultureInfo("zh-CN")));
+            Assert.Equal(Japanese, MatchCharacter(0x30FC, CultureInfo.GetCultureInfo("ja-JP")));
+        }
+
+        [Fact]
+        public void An_Ideographic_Comma_In_Traditional_Chinese_Should_Not_Take_A_Loaded_Simplified_Chinese_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            Assert.Equal(SimplifiedWide, MatchCharacter(0x4E2D, CultureInfo.GetCultureInfo("zh-CN")));
+
+            var runs = Format(Run("、", "zh-TW"));
+
+            Assert.Equal(Traditional, FamilyOf(runs, '、'));
+        }
+
+        [Fact]
+        public void An_Ideographic_Comma_In_A_Culture_Without_A_Cjk_Writing_System_Should_Be_Placed_By_The_Platform()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            Assert.Equal(SimplifiedWide, MatchCharacter(0x4E2D, CultureInfo.GetCultureInfo("zh-CN")));
+
+            // en-US names no Han writing system, so no loaded CJK design is preferred over another.
+            var runs = Format(Run("、", "en-US"));
+
+            Assert.Equal(Traditional, FamilyOf(runs, '、'));
+            Assert.Contains(0x3001, provider.RequestedCodepoints);
+        }
+
+        [Fact]
+        public void A_Katakana_Word_With_A_Prolonged_Sound_Mark_Should_Keep_One_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            Assert.Equal(SimplifiedWide, MatchCharacter(0x4E2D, CultureInfo.GetCultureInfo("zh-CN")));
+
+            var runs = Format(Run("テーブル", "ja-JP"));
+
+            Assert.Equal(PlatformKana, Assert.Single(runs).Family);
+        }
+
+        [Theory]
+        [InlineData(',')]
+        [InlineData('.')]
+        public void Latin_Punctuation_In_Japanese_Should_Still_Take_A_Loaded_Covering_Face(char punctuation)
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            Assert.Equal(SimplifiedWide, MatchCharacter(0x4E2D, CultureInfo.GetCultureInfo("zh-CN")));
+            Assert.Equal(SimplifiedWide, MatchCharacter(punctuation, CultureInfo.GetCultureInfo("ja-JP")));
+            Assert.DoesNotContain((int)punctuation, provider.RequestedCodepoints);
         }
 
         private static IDisposable Start(ReuseFontProvider provider)
@@ -219,8 +432,8 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
         }
 
         /// <summary>
-        /// A platform that places text by script and language: Han by the culture's writing system,
-        /// kana in a face of its own, emoji and text symbols in separate faces.
+        /// A platform that places text by script and language: Han and CJK punctuation by the
+        /// culture's writing system, kana in a face of its own, emoji and text symbols in separate faces.
         /// </summary>
         private sealed class ReuseFontProvider : ISystemFontProvider
         {
@@ -229,18 +442,24 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
             public ReuseFontProvider()
             {
                 const int han1 = 0x4E2D, han2 = 0x5B57, hira = 0x3042, kata = 0x30A2;
-                const int emoji = 0x1F600, star = 0x2605;
+                const int emoji = 0x1F600, emoji2 = 0x1F603, sun = 0x2600, star = 0x2605, whiteStar = 0x2606;
+                const int te = 0x30C6, bu = 0x30D6, ru = 0x30EB, prolonged = 0x30FC;
+                const int comma = 0x3001, stop = 0x3002, open = 0x300C, close = 0x300D;
 
                 _fonts = new Dictionary<string, byte[]>
                 {
                     [Primary] = CreateFont(Primary, null, null, ' ', 'a', 'b'),
                     // PingFang SC-like: a Simplified Chinese design that lists Japanese and maps kana.
                     [SimplifiedWide] = CreateFont(SimplifiedWide, "zh-Hans", "en,ja,zh,zh-Hans",
-                        ' ', han1, han2, hira, kata),
-                    [Japanese] = CreateFont(Japanese, "ja", "ja", ' ', han1, han2, hira, kata),
-                    [PlatformKana] = CreateFont(PlatformKana, "ja", "ja", ' ', hira, kata),
-                    [Emoji] = CreateFont(Emoji, null, null, ' ', emoji, star),
-                    [Symbol] = CreateFont(Symbol, null, null, ' ', star),
+                        ' ', ',', '.', han1, han2, hira, kata, te, bu, ru, prolonged, comma, stop, open, close),
+                    [Japanese] = CreateFont(Japanese, "ja", "ja", ' ', han1, han2, hira, kata, te, bu, ru,
+                        prolonged, comma, stop, open, close),
+                    [Traditional] = CreateFont(Traditional, "zh-Hant", "zh-Hant", ' ', han1, han2, prolonged,
+                        comma, stop, open, close),
+                    [PlatformKana] = CreateFont(PlatformKana, "ja", "ja", ' ', hira, kata, te, bu, ru, prolonged),
+                    [Emoji] = CreateFont(Emoji, null, null, ' ', emoji, emoji2, sun, star),
+                    // A text symbol face that also maps emoji codepoints in a text design.
+                    [Symbol] = CreateFont(Symbol, null, null, ' ', star, whiteStar, sun, emoji),
                 };
             }
 
@@ -274,13 +493,22 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
                     {
                         "zh-CN" => SimplifiedWide,
                         "ja-JP" => Japanese,
+                        "zh-TW" => Traditional,
                         _ => null,
                     },
                     Script.Hiragana or Script.Katakana => PlatformKana,
                     _ => codepoint switch
                     {
-                        0x1F600 => Emoji,
-                        0x2605 => Symbol,
+                        0x1F600 or 0x1F603 => Emoji,
+                        0x2600 or 0x2605 or 0x2606 => Symbol,
+                        // CJK punctuation by language; other languages get the Traditional Chinese
+                        // face, as CoreText's symbols fallback does.
+                        0x3001 or 0x3002 or 0x300C or 0x300D or 0x30FC => culture?.Name switch
+                        {
+                            "ja-JP" => Japanese,
+                            "zh-CN" => SimplifiedWide,
+                            _ => Traditional,
+                        },
                         _ => null,
                     },
                 };

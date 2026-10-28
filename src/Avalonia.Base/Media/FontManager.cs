@@ -343,6 +343,17 @@ namespace Avalonia.Media
         /// </summary>
         internal bool TryMatchCharacter(int codepoint, FontStyle fontStyle, FontWeight fontWeight,
             FontStretch fontStretch, FontFamily? fontFamily, CultureInfo? culture, Script shapingScript, out Typeface typeface)
+            => TryMatchCharacter(codepoint, fontStyle, fontWeight, fontStretch, fontFamily, culture, shapingScript,
+                FontFallbackScriptHints.HasEmojiPresentation(new Codepoint((uint)codepoint)), out typeface);
+
+        /// <summary>
+        /// Character-to-typeface match for a codepoint requested in emoji or text presentation, which
+        /// the text formatter decides from the codepoint's grapheme cluster (variation selectors,
+        /// keycaps). The other overloads use the codepoint's default presentation.
+        /// </summary>
+        internal bool TryMatchCharacter(int codepoint, FontStyle fontStyle, FontWeight fontWeight,
+            FontStretch fontStretch, FontFamily? fontFamily, CultureInfo? culture, Script shapingScript,
+            bool emojiPresentation, out Typeface typeface)
         {
             EnsureOptions();
 
@@ -383,7 +394,7 @@ namespace Avalonia.Media
                         if (TryGetFontCollection(source, out var fontCollection) &&
                             // With composite fonts we need to first check if the font collection contains the family if not we skip it
                             fontCollection.TryGetGlyphTypeface(familyName, fontStyle, fontWeight, fontStretch, out _) &&
-                            TryMatchCharacterInCollection(fontCollection, codepoint, fontStyle, fontWeight, fontStretch, familyName, culture, shapingScript, out typeface))
+                            TryMatchCharacterInCollection(fontCollection, codepoint, fontStyle, fontWeight, fontStretch, familyName, culture, shapingScript, emojiPresentation, out typeface))
                         {
                             if (typeface.FontFamily.Name == DefaultFontFamily.Name && i + 1 < compositeKey.Keys.Count)
                             {
@@ -400,7 +411,7 @@ namespace Avalonia.Media
                 if (fontUri.IsFontCollection())
                 {
                     if (TryGetFontCollection(fontUri, out var fontCollection) &&
-                            TryMatchCharacterInCollection(fontCollection, codepoint, fontStyle, fontWeight, fontStretch, fontFamily.Name, culture, shapingScript, out typeface))
+                            TryMatchCharacterInCollection(fontCollection, codepoint, fontStyle, fontWeight, fontStretch, fontFamily.Name, culture, shapingScript, emojiPresentation, out typeface))
                     {
                         return true;
                     }
@@ -409,19 +420,20 @@ namespace Avalonia.Media
 
             //Try to find a match with the system font collection
             return TryMatchCharacterInCollection(SystemFonts, codepoint, fontStyle, fontWeight, fontStretch,
-                fontFamily?.Name, culture, shapingScript, out typeface);
+                fontFamily?.Name, culture, shapingScript, emojiPresentation, out typeface);
         }
 
-        // Routes through the shaping-aware overload when the collection is a FontCollectionBase (all
-        // built-in collections are); a foreign IFontCollection gets the unconstrained match.
+        // Routes through the shaping- and presentation-aware overload when the collection is a
+        // FontCollectionBase (all built-in collections are); a foreign IFontCollection gets the
+        // unconstrained match.
         private static bool TryMatchCharacterInCollection(IFontCollection fontCollection, int codepoint,
             FontStyle fontStyle, FontWeight fontWeight, FontStretch fontStretch, string? familyName,
-            CultureInfo? culture, Script shapingScript, out Typeface typeface)
+            CultureInfo? culture, Script shapingScript, bool emojiPresentation, out Typeface typeface)
         {
             if (fontCollection is FontCollectionBase fontCollectionBase)
             {
                 return fontCollectionBase.TryMatchCharacter(codepoint, fontStyle, fontWeight, fontStretch,
-                    familyName, culture, shapingScript, out typeface);
+                    familyName, culture, shapingScript, emojiPresentation, out typeface);
             }
 
             return fontCollection.TryMatchCharacter(codepoint, fontStyle, fontWeight, fontStretch, familyName,
