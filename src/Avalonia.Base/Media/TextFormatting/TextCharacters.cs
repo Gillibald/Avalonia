@@ -139,29 +139,25 @@ namespace Avalonia.Media.TextFormatting
                 return new UnshapedTextRun(nullReplacement, defaultProperties, biDiLevel);
             }
 
-            // The first scalar's script drives both the locale-sensitivity check and the complex-script
-            // capability preference below.
+            // The first scalar's script drives the complex-script capability preference below.
             var firstScript = Codepoint.ReadAt(textSpan, 0, out _).Script;
 
-            // The previous fallback run's font is reused as a cheap anti-thrashing bias, but it bypasses the
-            // culture-aware fallback scorer. For locale-sensitive scripts (CJK Han unification) skip
-            // the reuse when the culture changed between runs so the culture-scored fallback runs
-            // instead - otherwise e.g. a zh run's font would pin ja text. Same-culture runs keep the
-            // reuse, so the common case pays only a culture comparison.
+            // The face of the previous fallback run is tried before the font manager, so consecutive
+            // runs that need a fallback stay on one face without a lookup each. It bypasses the font
+            // collection's rules, so it only applies within the (script, culture) bucket the face was
+            // chosen for - the bucket the collection itself replays a face for. A face never carries
+            // into another bucket, where those rules may pick another face: zh-CN kana are not
+            // Simplified Chinese Han, and a zh run's Han face must not pin ja Han.
             var allowPreviousTypeface = reuse.GlyphTypeface is not null;
-
-            if (allowPreviousTypeface &&
-                !Equals(reuse.Culture, defaultProperties.CultureInfo) &&
-                FontFallbackScriptHints.IsLocaleSensitive(firstScript))
-            {
-                allowPreviousTypeface = false;
-            }
 
             // The reused face in this run's own style, weight and stretch, resolved on first use: the
             // primary covers most runs, and those never need it.
             Typeface previousTypeface = default;
             GlyphTypeface? previousGlyphTypeface = null;
             var previousResolved = false;
+
+            // The scalar the fallback search and the reuse bucket are keyed on, resolved on first use.
+            Codepoint? fallbackCodepoint = null;
 
             // Capability preference (Strategy A): for a complex script, first try fonts that declare
             // the script in GSUB/GPOS (so they can actually shape it), then fall back to cmap-only
@@ -183,6 +179,7 @@ namespace Avalonia.Media.TextFormatting
                 // fallback is resolved once per capability tier because the search constraint differs.
                 Typeface fallbackTypeface = default;
                 GlyphTypeface? fallbackGlyphTypeface = null;
+                var fallbackScript = Script.Unknown;
                 var fallbackResolved = false;
 
                 // A primary that cannot shape this tier's script is not a valid "return target" for
@@ -209,8 +206,13 @@ namespace Avalonia.Media.TextFormatting
                     {
                         previousResolved = true;
 
-                        ResolveReusedTypeface(in reuse, defaultTypeface, fontManager, out previousTypeface,
-                            out previousGlyphTypeface);
+                        fallbackCodepoint ??= GetFallbackCodepoint(textSpan, defaultGlyphTypeface);
+
+                        if (reuse.IsBucketOf(fallbackCodepoint.Value, defaultProperties.CultureInfo))
+                        {
+                            ResolveReusedTypeface(in reuse, defaultTypeface, fontManager, out previousTypeface,
+                                out previousGlyphTypeface);
+                        }
                     }
 
                     if (previousGlyphTypeface is not null &&
@@ -219,7 +221,7 @@ namespace Avalonia.Media.TextFormatting
                             requireFullCluster, out count))
                     {
                         runFallback = new FallbackTypefaceReuse(previousTypeface, previousGlyphTypeface,
-                            defaultProperties.CultureInfo);
+                            reuse.Script, defaultProperties.CultureInfo);
 
                         return new UnshapedTextRun(text.Slice(0, count),
                             defaultProperties.WithTypeface(previousTypeface), biDiLevel);
@@ -233,9 +235,12 @@ namespace Avalonia.Media.TextFormatting
                     {
                         fallbackResolved = true;
 
-                        var fallbackCodepoint = GetFallbackCodepoint(textSpan, defaultGlyphTypeface);
+                        var codepoint = fallbackCodepoint ??= GetFallbackCodepoint(textSpan, defaultGlyphTypeface);
 
-                        if (fontManager.TryMatchCharacter(fallbackCodepoint, defaultTypeface.Style, defaultTypeface.Weight,
+                        fallbackScript = FontFallbackScriptHints.RefineWithCulture(codepoint,
+                            defaultProperties.CultureInfo);
+
+                        if (fontManager.TryMatchCharacter(codepoint, defaultTypeface.Style, defaultTypeface.Weight,
                                 defaultTypeface.Stretch, defaultTypeface.FontFamily, defaultProperties.CultureInfo,
                                 shapingConstraint, out fallbackTypeface)
                             && !fontManager.TryGetGlyphTypeface(fallbackTypeface, out fallbackGlyphTypeface))
@@ -244,7 +249,7 @@ namespace Avalonia.Media.TextFormatting
                             // be loaded; the cluster degrades to .notdef. Surface it for diagnosis.
                             Logger.TryGet(LogEventLevel.Warning, LogArea.Fonts)?.Log(null,
                                 "Matched fallback typeface {FamilyName} for codepoint U+{Codepoint} but could not load its glyph typeface.",
-                                fallbackTypeface.FontFamily.Name, ((uint)fallbackCodepoint).ToString("X4"));
+                                fallbackTypeface.FontFamily.Name, ((uint)codepoint).ToString("X4"));
                         }
                     }
 
@@ -253,7 +258,7 @@ namespace Avalonia.Media.TextFormatting
                             requireFullCluster, out count))
                     {
                         runFallback = new FallbackTypefaceReuse(fallbackTypeface, fallbackGlyphTypeface,
-                            defaultProperties.CultureInfo);
+                            fallbackScript, defaultProperties.CultureInfo);
 
                         return new UnshapedTextRun(text.Slice(0, count),
                             defaultProperties.WithTypeface(fallbackTypeface), biDiLevel);

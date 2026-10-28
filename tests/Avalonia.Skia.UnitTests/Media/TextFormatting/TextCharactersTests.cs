@@ -5,6 +5,7 @@ using System.Globalization;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Xunit;
@@ -312,7 +313,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 var text = char.ConvertFromUtf32(han).AsMemory();
                 var textCharacters = new TextCharacters(text, defaultProperties);
 
-                var reuse = new FallbackTypefaceReuse(scTypeface, scGlyphTypeface, zh);
+                var reuse = new FallbackTypefaceReuse(scTypeface, scGlyphTypeface, Script.Han, zh);
 
                 var results = FormattingObjectPool.Instance.TextRunLists.Rent();
 
@@ -487,7 +488,7 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    var reuse = new FallbackTypefaceReuse(scTypeface, scGlyphTypeface, null);
+                    var reuse = new FallbackTypefaceReuse(scTypeface, scGlyphTypeface, Script.Han, null);
 
                     textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
