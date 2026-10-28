@@ -39,6 +39,12 @@ namespace Avalonia.Skia.UnitTests.Media
 
             /// <summary>Apple Color Emoji (sbix), on macOS only.</summary>
             AppleColorEmoji,
+
+            /// <summary>
+            /// Inter with sbix strikes of 20, 40 and 80 ppem for 'H', the 40 ppem strike without a
+            /// record for it: at 32 px the selected strike lacks the glyph.
+            /// </summary>
+            IncompleteSbix,
         }
 
         public enum Target
@@ -234,6 +240,14 @@ namespace Avalonia.Skia.UnitTests.Media
 
         private static GlyphTypeface CreateTypeface(Font font, out ushort[] glyphs)
         {
+            if (font == Font.IncompleteSbix)
+            {
+                var typeface = BackendBitmapStrikeTests.CreateIncompleteSbixTypeface(out var glyph);
+
+                glyphs = new[] { glyph, glyph, glyph };
+                return typeface;
+            }
+
             if (font == Font.Cbdt)
             {
                 var typeface = BackendBitmapStrikeTests.CreateTwoStrikeTypeface(out var glyph);

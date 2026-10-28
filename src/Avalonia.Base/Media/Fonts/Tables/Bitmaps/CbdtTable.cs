@@ -281,6 +281,9 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             return false;
         }
 
+        public bool HasGlyphImage(in BitmapStrike strike, ushort glyphIndex)
+            => TryGetGlyphImage(strike, glyphIndex, out _);
+
         /// <summary>
         /// Decoded-pixel access through the table's <see cref="DecodedBitmapCache"/>, so compose
         /// misses do not re-decode (the F3 rule: pay the decode once per glyph and strike while the

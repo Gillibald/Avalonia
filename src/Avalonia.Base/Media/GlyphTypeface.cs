@@ -9,6 +9,7 @@ using System.Threading;
 using Avalonia.Logging;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables;
+using Avalonia.Media.Fonts.Tables.Bitmaps;
 using Avalonia.Media.Fonts.Tables.Cff;
 using Avalonia.Media.Fonts.Tables.Cmap;
 using Avalonia.Media.Fonts.Tables.Colr;
@@ -3226,10 +3227,11 @@ namespace Avalonia.Media
                 // Bitmap strikes: when the font carries an image for the glyph and a decoder is
                 // available, hand out a bitmap drawing (record-time path; the mask renderer
                 // composes strikes server-side without ever coming here). PixelSize selects the
-                // strike; without it the largest strike wins — best quality, callers downscale.
+                // strike; without it the largest strike wins — best quality, callers downscale —
+                // among the strikes that hold an image for the glyph.
                 if (BitmapSource is { } bitmapSource && BitmapGlyphDecoder is { } bitmapDecoder)
                 {
-                    var strike = bitmapSource.SelectStrike(options?.PixelSize ?? int.MaxValue);
+                    var strike = bitmapSource.SelectStrike(options?.PixelSize ?? int.MaxValue, glyphIndex);
 
                     if (bitmapSource.TryGetPlacement(strike, glyphIndex, bitmapDecoder, out var placement))
                     {
@@ -3373,7 +3375,7 @@ namespace Avalonia.Media
             }
 
             var pixelsPerEm = entry.Key.PixelsPerEmQ / Fonts.Rasterization.GlyphMaskKey.ScaleQuantum;
-            var strike = source.SelectStrike(pixelsPerEm);
+            var strike = source.SelectStrike(pixelsPerEm, entry.Glyph);
 
             if (!source.TryGetPlacement(strike, entry.Glyph, decoder, out var placement))
             {

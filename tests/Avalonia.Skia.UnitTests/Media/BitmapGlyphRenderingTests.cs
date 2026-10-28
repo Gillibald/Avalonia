@@ -184,6 +184,47 @@ namespace Avalonia.Skia.UnitTests.Media
         }
 
         [Fact]
+        public void A_Glyph_The_Selected_Strike_Lacks_Composes_From_The_Next_Strike_That_Holds_It()
+        {
+            using var scope = CreateEnvironment();
+
+            // At 30 px the 40 ppem strike is selected, and it has no record for the glyph; the
+            // 80 ppem strike's full-em image, scaled to 30 px, sits on the baseline at the pen.
+            var typeface = BackendBitmapStrikeTests.CreateIncompleteSbixTypeface(out var bitmapGlyph);
+            var run = CreateRun(typeface, new[] { bitmapGlyph }, emSize: 30);
+
+            var info = new SKImageInfo(72, 56, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using var bitmap = new SKBitmap(info);
+            using var canvas = new SKCanvas(bitmap);
+            using var context = (DrawingContextImpl)DrawingContextHelper.WrapSkiaCanvas(canvas, new Vector(96, 96));
+
+            canvas.Clear(SKColors.White);
+
+            Assert.True(MaskGlyphRunRenderer.TryDraw(context, (ManagedGlyphRunImpl)run, Brushes.Black, TextRenderingMode.Antialias));
+
+            var pixels = bitmap.GetPixelSpan();
+            var inked = 0;
+
+            for (var y = 10; y < 40; y++)
+            {
+                for (var x = 8; x < 38; x++)
+                {
+                    var i = (y * info.Width + x) * 4;
+
+                    // The strike's red channel is a constant 60; white background has 255.
+                    if (pixels[i + 2] < 100)
+                    {
+                        inked++;
+                    }
+                }
+            }
+
+            Assert.True(inked > 30 * 30 * 9 / 10, $"expected the strike image in the em box, found {inked} inked pixels");
+
+            run.Dispose();
+        }
+
+        [Fact]
         public void Jpeg_Sbix_Records_Decode_Through_The_Seam()
         {
             using var scope = CreateEnvironment();
