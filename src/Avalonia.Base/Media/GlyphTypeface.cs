@@ -1271,52 +1271,26 @@ namespace Avalonia.Media
         }
 
         /// <summary>
-        /// Whether one of the languages the font declares in its <c>meta</c> table (<c>dlng</c> or
-        /// <c>slng</c>) is written in the script <paramref name="scriptSubtag"/> (an ISO 15924 subtag
-        /// such as <c>"Jpan"</c> or <c>"Hant"</c>); a declared <c>"Hani"</c> covers every Han writing
-        /// system.
-        /// </summary>
-        /// <returns><c>null</c> when the font declares no languages.</returns>
-        internal bool? DeclaresWritingSystem(string scriptSubtag)
-        {
-            if (_designLanguages.Length == 0 && _supportedLanguages.Length == 0)
-            {
-                return null;
-            }
-
-            return Declares(_designLanguages, scriptSubtag) || Declares(_supportedLanguages, scriptSubtag);
-
-            static bool Declares(string[] tags, string scriptSubtag)
-            {
-                foreach (var tag in tags)
-                {
-                    var subtag = Fonts.Bcp47ScriptResolver.GetScriptSubtagOfTag(tag);
-
-                    if (subtag == scriptSubtag ||
-                        (subtag == "Hani" && scriptSubtag is "Hans" or "Hant" or "Jpan" or "Kore"))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-        }
-
-        /// <summary>
         /// Whether one of the font's design languages (the <c>dlng</c> list of its <c>meta</c> table)
-        /// is written in the script <paramref name="scriptSubtag"/>, given as a language tag
+        /// is written in one of the scripts <paramref name="scriptSubtags"/> (ISO 15924 subtags such
+        /// as <c>"Jpan"</c> or <c>"Hant"</c>). A design language counts as a language tag
         /// (<c>"ja"</c>, <c>"zh-Hant"</c>) or as the script subtag alone (<c>"Jpan"</c>). A bare
         /// <c>"zh"</c> is read as Simplified Chinese, its likely script. A design language of
-        /// <c>"Hani"</c> names no regional design, so it designs for none of the Han writing systems.
+        /// <c>"Hani"</c> names no regional design, so it designs for none of the Han writing systems,
+        /// and for neither kana nor Hangul.
         /// </summary>
-        internal bool DesignsForWritingSystem(string scriptSubtag)
+        internal bool DesignsForWritingSystem(params ReadOnlySpan<string> scriptSubtags)
         {
             foreach (var tag in _designLanguages)
             {
-                if (Fonts.Bcp47ScriptResolver.GetScriptSubtagOfTag(tag) == scriptSubtag)
+                var subtag = Fonts.Bcp47ScriptResolver.GetScriptSubtagOfTag(tag);
+
+                foreach (var scriptSubtag in scriptSubtags)
                 {
-                    return true;
+                    if (subtag == scriptSubtag)
+                    {
+                        return true;
+                    }
                 }
             }
 
