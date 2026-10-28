@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting.Unicode;
@@ -96,6 +97,25 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         {
             Assert.True(FontFallbackScriptHints.TryGetOS2Bit(script, out var bit));
             Assert.Equal(expected, bit);
+        }
+
+        [Theory]
+        [InlineData("\U0001F600", true)]
+        [InlineData("\U0001F600︎", false)]
+        [InlineData("☀", false)]
+        [InlineData("☀️", true)]
+        [InlineData("★️", false)]
+        [InlineData("1️⃣", true)]
+        [InlineData("1⃣", true)]
+        [InlineData("#", false)]
+        [InlineData("1️", true)]
+        [InlineData("\U0001F1E9\U0001F1EA", true)]
+        [InlineData("☝\U0001F3FB", true)]
+        [InlineData("❤️‍\U0001F525", true)]
+        [InlineData("a", false)]
+        public void HasEmojiPresentation_Follows_Variation_Selectors_And_Emoji_Sequences(string cluster, bool expected)
+        {
+            Assert.Equal(expected, FontFallbackScriptHints.HasEmojiPresentation(cluster.AsSpan()));
         }
 
         [Fact]

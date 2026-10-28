@@ -78,6 +78,73 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
+        /// A codepoint every emoji font maps and that defaults to emoji presentation, so a platform
+        /// asked for it answers with its emoji font.
+        /// </summary>
+        public const int EmojiProbeCodepoint = 0x1F600;
+
+        /// <summary>
+        /// The script of the fallback bucket a request for <paramref name="codepoint"/> in
+        /// <paramref name="culture"/> belongs to. Emoji presentation is one bucket whatever the
+        /// codepoint's script, so every emoji of a paragraph keeps one face; text is bucketed by
+        /// <see cref="RefineWithCulture"/>. The font collection keys its replayed fallback answers
+        /// and the itemizer its fallback reuse by this script, the presentation and the culture.
+        /// </summary>
+        public static Script GetBucketScript(Codepoint codepoint, bool emojiPresentation, CultureInfo? culture)
+            => emojiPresentation ? Script.Common : RefineWithCulture(codepoint, culture);
+
+        /// <summary>
+        /// The presentation a request for <paramref name="codepoint"/> alone asks for: emoji when
+        /// the codepoint defaults to it (<c>Emoji_Presentation</c>, regional indicators included).
+        /// </summary>
+        public static bool HasEmojiPresentation(Codepoint codepoint) => codepoint.HasEmojiPresentation;
+
+        /// <summary>
+        /// Determines whether the grapheme cluster <paramref name="cluster"/> asks for emoji
+        /// presentation. U+FE0E right after the base asks for text and U+FE0F right after a
+        /// pictographic or emoji base asks for emoji. A keycap (<c>0-9</c>, <c>#</c>, <c>*</c> with
+        /// U+20E3), an emoji modifier or a pictograph with default emoji presentation joined later
+        /// in the cluster ask for emoji. Otherwise the base's default presentation applies.
+        /// </summary>
+        public static bool HasEmojiPresentation(ReadOnlySpan<char> cluster)
+        {
+            var codepoints = new CodepointEnumerator(cluster);
+
+            if (!codepoints.MoveNext(out var first))
+            {
+                return false;
+            }
+
+            var pictographic = first.IsEmoji || first.GraphemeBreakClass == GraphemeBreakClass.ExtendedPictographic;
+            var keycapBase = first.Value is '#' or '*' or >= '0' and <= '9';
+            var followsBase = true;
+
+            while (codepoints.MoveNext(out var codepoint))
+            {
+                switch (codepoint.Value)
+                {
+                    case 0xFE0E when followsBase:
+                        return false;
+                    case 0xFE0F when followsBase && pictographic:
+                        return true;
+                    case 0x20E3 when keycapBase:
+                        return true;
+                    default:
+                        if (codepoint.HasEmojiPresentation)
+                        {
+                            return true;
+                        }
+
+                        break;
+                }
+
+                followsBase = false;
+            }
+
+            return first.HasEmojiPresentation;
+        }
+
+        /// <summary>
         /// Determines whether <paramref name="candidate"/> self-declares coverage for the supplied
         /// culture's writing system. Used as a positive signal in font fallback scoring.
         /// </summary>

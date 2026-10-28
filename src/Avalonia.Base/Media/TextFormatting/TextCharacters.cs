@@ -144,10 +144,11 @@ namespace Avalonia.Media.TextFormatting
 
             // The face of the previous fallback run is tried before the font manager, so consecutive
             // runs that need a fallback stay on one face without a lookup each. It bypasses the font
-            // collection's rules, so it only applies within the (script, culture) bucket the face was
-            // chosen for - the bucket the collection itself replays a face for. A face never carries
-            // into another bucket, where those rules may pick another face: zh-CN kana are not
-            // Simplified Chinese Han, and a zh run's Han face must not pin ja Han.
+            // collection's rules, so it only applies within the (script, presentation, culture) bucket
+            // the face was chosen for - the bucket the collection itself replays a face for. A face
+            // never carries into another bucket, where those rules may pick another face: zh-CN kana
+            // are not Simplified Chinese Han, a zh run's Han face must not pin ja Han, and an emoji
+            // face must not draw the text symbol after it.
             var allowPreviousTypeface = reuse.GlyphTypeface is not null;
 
             // The reused face in this run's own style, weight and stretch, resolved on first use: the
@@ -156,8 +157,10 @@ namespace Avalonia.Media.TextFormatting
             GlyphTypeface? previousGlyphTypeface = null;
             var previousResolved = false;
 
-            // The scalar the fallback search and the reuse bucket are keyed on, resolved on first use.
+            // The scalar the fallback search and the reuse bucket are keyed on, and the presentation the
+            // first cluster asks for, resolved on first use.
             Codepoint? fallbackCodepoint = null;
+            var fallbackEmoji = false;
 
             // Capability preference (Strategy A): for a complex script, first try fonts that declare
             // the script in GSUB/GPOS (so they can actually shape it), then fall back to cmap-only
@@ -206,9 +209,9 @@ namespace Avalonia.Media.TextFormatting
                     {
                         previousResolved = true;
 
-                        fallbackCodepoint ??= GetFallbackCodepoint(textSpan, defaultGlyphTypeface);
+                        fallbackCodepoint ??= GetFallbackCodepoint(textSpan, defaultGlyphTypeface, out fallbackEmoji);
 
-                        if (reuse.IsBucketOf(fallbackCodepoint.Value, defaultProperties.CultureInfo))
+                        if (reuse.IsBucketOf(fallbackCodepoint.Value, fallbackEmoji, defaultProperties.CultureInfo))
                         {
                             ResolveReusedTypeface(in reuse, defaultTypeface, fontManager, out previousTypeface,
                                 out previousGlyphTypeface);
@@ -221,7 +224,7 @@ namespace Avalonia.Media.TextFormatting
                             requireFullCluster, out count))
                     {
                         runFallback = new FallbackTypefaceReuse(previousTypeface, previousGlyphTypeface,
-                            reuse.Script, defaultProperties.CultureInfo);
+                            reuse.Script, defaultProperties.CultureInfo, reuse.EmojiPresentation);
 
                         return new UnshapedTextRun(text.Slice(0, count),
                             defaultProperties.WithTypeface(previousTypeface), biDiLevel);
@@ -235,14 +238,15 @@ namespace Avalonia.Media.TextFormatting
                     {
                         fallbackResolved = true;
 
-                        var codepoint = fallbackCodepoint ??= GetFallbackCodepoint(textSpan, defaultGlyphTypeface);
+                        var codepoint = fallbackCodepoint ??= GetFallbackCodepoint(textSpan, defaultGlyphTypeface,
+                            out fallbackEmoji);
 
-                        fallbackScript = FontFallbackScriptHints.RefineWithCulture(codepoint,
+                        fallbackScript = FontFallbackScriptHints.GetBucketScript(codepoint, fallbackEmoji,
                             defaultProperties.CultureInfo);
 
                         if (fontManager.TryMatchCharacter(codepoint, defaultTypeface.Style, defaultTypeface.Weight,
                                 defaultTypeface.Stretch, defaultTypeface.FontFamily, defaultProperties.CultureInfo,
-                                shapingConstraint, out fallbackTypeface)
+                                shapingConstraint, fallbackEmoji, out fallbackTypeface)
                             && !fontManager.TryGetGlyphTypeface(fallbackTypeface, out fallbackGlyphTypeface))
                         {
                             // The platform matched a fallback family but its glyph typeface could not
@@ -258,7 +262,7 @@ namespace Avalonia.Media.TextFormatting
                             requireFullCluster, out count))
                     {
                         runFallback = new FallbackTypefaceReuse(fallbackTypeface, fallbackGlyphTypeface,
-                            fallbackScript, defaultProperties.CultureInfo);
+                            fallbackScript, defaultProperties.CultureInfo, fallbackEmoji);
 
                         return new UnshapedTextRun(text.Slice(0, count),
                             defaultProperties.WithTypeface(fallbackTypeface), biDiLevel);
@@ -473,18 +477,26 @@ namespace Avalonia.Media.TextFormatting
         /// <paramref name="defaultGlyphTypeface"/> cannot render - the base for an unsupported script,
         /// or a combining mark for an otherwise-supported cluster. Keying the fallback search on this
         /// lets it find a font for the mark, not just the base. Falls back to the cluster's first
-        /// scalar when every scalar is already covered.
+        /// scalar when every scalar is already covered. <paramref name="emojiPresentation"/> is the
+        /// presentation the whole cluster asks for, whichever of its scalars is returned.
         /// </summary>
-        private static Codepoint GetFallbackCodepoint(ReadOnlySpan<char> text, GlyphTypeface defaultGlyphTypeface)
+        private static Codepoint GetFallbackCodepoint(ReadOnlySpan<char> text, GlyphTypeface defaultGlyphTypeface,
+            out bool emojiPresentation)
         {
             var graphemeEnumerator = new GraphemeEnumerator(text);
 
             if (!graphemeEnumerator.MoveNext(out var grapheme))
             {
+                emojiPresentation = false;
+
                 return Codepoint.ReplacementCodepoint;
             }
 
-            var codepoints = new CodepointEnumerator(text.Slice(grapheme.Offset, grapheme.Length));
+            var cluster = text.Slice(grapheme.Offset, grapheme.Length);
+
+            emojiPresentation = FontFallbackScriptHints.HasEmojiPresentation(cluster);
+
+            var codepoints = new CodepointEnumerator(cluster);
 
             while (codepoints.MoveNext(out var codepoint))
             {
