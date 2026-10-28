@@ -1,0 +1,14 @@
+cc-B.MetricTable.xml: 83.76 G cycles in metric intervals, 668 images
+scope	cycles per image (M)	useful	delivery	discarded	processing
+main	86.38	30.2%	6.1%	26.2%	37.5%
+IDCT workers	23.62	51.5%	3.8%	1.5%	43.2%
+band threads	15.38	53.3%	4.5%	0.6%	41.6%
+whole run	125.39	37.1%	5.5%	18.4%	39.0%
+
+samples matched to a metric interval: 29010 of 29271
+function	samples	share	useful	delivery	discarded	processing
+jpeg_decoder::huffman::HuffmanDecoder::decode_fast_ac	5585	19.3%	26.7%	4.9%	29.7%	38.7%
+jpeg_decoder::decoder::decode_block	3716	12.8%	26.7%	4.9%	29.7%	38.7%
+jpeg_decoder::huffman::HuffmanDecoder::decode	3693	12.7%	26.7%	4.9%	29.7%	38.7%
+_$LT$jpeg_decoder..upsampler..H2V2Fancy$u20$as$u20$jpeg_decoder..upsampler..Upsample$GT$::	1680	5.8%	52.8%	4.9%	0.8%	41.5%
+_$LT$core..ops..try_trait..NeverShortCircuit$LT$T$GT$$u20$as$u20$core..ops..try_trait..Try	1227	4.2%	51.6%	7.2%	1.2%	40.1%

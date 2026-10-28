@@ -1,0 +1,1 @@
+../fixtures/photo-jpeg.bin: 668 iterations, median 29.78 ms, min 29.12 ms

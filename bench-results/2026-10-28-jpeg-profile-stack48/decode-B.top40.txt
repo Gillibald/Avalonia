@@ -1,0 +1,54 @@
+# leaf inlined into decode_internal: 15381 of 19843 main-thread samples (77.5%)
+# samples	% of main	file:line	innermost function
+3525	17.76	huffman.rs:77	jpeg_decoder::huffman::HuffmanDecoder::decode_fast_ac
+3343	16.85	huffman.rs:35	jpeg_decoder::huffman::HuffmanDecoder::decode
+2728	13.75	decoder.rs:0	jpeg_decoder::decoder::decode_block
+1259	6.34	huffman.rs:76	jpeg_decoder::huffman::HuffmanDecoder::decode_fast_ac
+826	4.16	huffman.rs:80	jpeg_decoder::huffman::HuffmanDecoder::decode_fast_ac
+783	3.95	huffman.rs:126	jpeg_decoder::huffman::HuffmanDecoder::peek_bits
+505	2.54	decoder.rs:1112	jpeg_decoder::decoder::decode_block
+246	1.24	decoder.rs:936	jpeg_decoder::decoder::Decoder<R>::decode_scan
+245	1.23	huffman.rs:45	jpeg_decoder::huffman::HuffmanDecoder::decode
+202	1.02	decoder.rs:1133	jpeg_decoder::decoder::decode_block
+191	0.96	range.rs:0	jpeg_decoder::decoder::Decoder<R>::decode_scan
+156	0.79	huffman.rs:36	jpeg_decoder::huffman::HuffmanDecoder::decode
+129	0.65	decoder.rs:0	jpeg_decoder::decoder::Decoder<R>::decode_scan
+123	0.62	range.rs:772	_<core::ops::range::Range<T> as core::iter::range::RangeIteratorImpl>::spec_next
+119	0.60	huffman.rs:39	jpeg_decoder::huffman::HuffmanDecoder::decode
+112	0.56	index.rs:0	jpeg_decoder::decoder::Decoder<R>::decode_scan
+87	0.44	mod.rs:1851	alloc::vec::Vec<T$C$A>::as_mut_slice
+69	0.35	decoder.rs:1120	jpeg_decoder::decoder::decode_block
+59	0.30	option.rs:0	core::option::Option<T>::as_ref
+58	0.29	decoder.rs:1116	jpeg_decoder::decoder::decode_block
+53	0.27	mod.rs:1815	alloc::vec::Vec<T$C$A>::as_slice
+50	0.25	cmp.rs:1916	_RNvXsY_NtNtCsl8K0bEFm1U0_4core3cmp5implstNtB7_10PartialOrd2lt
+45	0.23	decoder.rs:1078	jpeg_decoder::decoder::decode_block
+44	0.22	huffman.rs:96	jpeg_decoder::huffman::HuffmanDecoder::get_bits
+43	0.22	huffman.rs:0	jpeg_decoder::decoder::Decoder<R>::decode_scan
+36	0.18	result.rs:2173	_<core::result::Result<T$C$E> as core::ops::try_trait::Try>::branch
+33	0.17	huffman.rs:82	jpeg_decoder::huffman::HuffmanDecoder::decode_fast_ac
+32	0.16	decoder.rs:1098	jpeg_decoder::decoder::decode_block
+29	0.15	decoder.rs:943	jpeg_decoder::decoder::Decoder<R>::decode_scan
+29	0.15	result.rs:0	jpeg_decoder::decoder::Decoder<R>::decode_scan
+27	0.14	decoder.rs:1108	jpeg_decoder::decoder::decode_block
+25	0.13	index.rs:101	core::slice::index::get_offset_len_mut_noubcheck
+23	0.12	decoder.rs:1092	jpeg_decoder::decoder::decode_block
+18	0.09	decoder.rs:935	jpeg_decoder::decoder::Decoder<R>::decode_scan
+14	0.07	macros.rs:0	jpeg_decoder::decoder::Decoder<R>::decode_scan
+13	0.07	decoder.rs:1093	jpeg_decoder::decoder::decode_block
+11	0.06	index.rs:272	_<usize as core::slice::index::SliceIndex<$u5b$T$u5d$>>::index
+10	0.05	decoder.rs:1104	jpeg_decoder::decoder::decode_block
+10	0.05	decoder.rs:957	jpeg_decoder::decoder::Decoder<R>::decode_scan
+7	0.04	index.rs:451	_<core::ops::range::Range<usize> as core::slice::index::SliceIndex<$u5b$T$u5d$>>::index_mut
+
+# inline depth of those samples (frames from atos -i, incl. decode_internal)
+1	3	0.02%
+3	1	0.01%
+4	833	5.42%
+5	3787	24.62%
+6	9652	62.75%
+7	1071	6.96%
+8	32	0.21%
+9	1	0.01%
+10	1	0.01%
+# resolving only to decode_internal: 3

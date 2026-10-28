@@ -1,0 +1,7 @@
+tp-B.xml: 29445 ms CPU sampled over 686 images
+group	threads	CPU ms	CPU ms per image	share
+main	1	19844	28.927	67.4%
+IDCT component 0	690	3646	5.315	12.4%
+unnamed (output band threads)	2067	3642	5.309	12.4%
+IDCT component 2	577	1238	1.805	4.2%
+IDCT component 1	550	1075	1.567	3.7%

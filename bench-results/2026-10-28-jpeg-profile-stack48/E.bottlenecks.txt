@@ -1,0 +1,12 @@
+cc-E.MetricTable.xml: 62.80 G cycles in metric intervals, 1821 images
+scope	cycles per image (M)	useful	delivery	discarded	processing
+main	34.48	66.3%	3.3%	13.5%	16.9%
+whole run	34.48	66.3%	3.3%	13.5%	16.9%
+
+samples matched to a metric interval: 20010 of 20020
+function	samples	share	useful	delivery	discarded	processing
+jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_bits	3670	18.3%	66.3%	3.2%	13.6%	16.9%
+jpeg_encoder::fdct::fdct	2527	12.6%	66.3%	3.2%	13.6%	16.9%
+jpeg_encoder::encoder::Operations::quantize_block	2047	10.2%	66.3%	3.2%	13.6%	16.9%
+jpeg_encoder::writer::JfifWriter$LT$W$GT$::huffman_encode_value	1278	6.4%	66.3%	3.2%	13.6%	16.9%
+jpeg_encoder::writer::JfifWriter$LT$W$GT$::write_ac_block	1202	6.0%	66.3%	3.2%	13.6%	16.9%

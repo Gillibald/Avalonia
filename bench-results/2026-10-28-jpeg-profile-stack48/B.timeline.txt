@@ -1,0 +1,51 @@
+cc-B.thread-state.xml: 668 images
+group	threads	threads per image	state	ms per image
+main	1	0.00	Running	29.419
+main	1	0.00	Interrupted	0.281
+main	1	0.00	Blocked	0.244
+main	1	0.00	Preempted	0.201
+main	1	0.00	Runnable	0.042
+IDCT component 2	673	1.01	Blocked	18.976
+IDCT component 2	673	1.01	Runnable	4.257
+IDCT component 2	673	1.01	Running	2.342
+IDCT component 2	673	1.01	Preempted	0.170
+IDCT component 2	673	1.01	Interrupted	0.039
+IDCT component 0	673	1.01	Blocked	17.129
+IDCT component 0	673	1.01	Running	5.648
+IDCT component 0	673	1.01	Runnable	2.879
+IDCT component 0	673	1.01	Preempted	0.065
+IDCT component 0	673	1.01	Interrupted	0.052
+IDCT component 1	673	1.01	Blocked	19.275
+IDCT component 1	673	1.01	Runnable	4.438
+IDCT component 1	673	1.01	Running	2.004
+IDCT component 1	673	1.01	Preempted	0.038
+IDCT component 1	673	1.01	Interrupted	0.010
+band threads (unnamed)	2019	3.02	Running	5.401
+band threads (unnamed)	2019	3.02	Preempted	0.057
+band threads (unnamed)	2019	3.02	Interrupted	0.030
+band threads (unnamed)	2019	3.02	Blocked	0.004
+band threads (unnamed)	2019	3.02	Runnable	0.001
+
+mean thread lifetime (first to last state interval)
+IDCT component 0	25.582 ms
+IDCT component 1	25.575 ms
+IDCT component 2	25.591 ms
+band threads (unnamed)	1.817 ms
+
+running time by core type (ms per image)
+main	P 29.178	E 0.241
+IDCT component 0	P 5.559	E 0.089
+IDCT component 1	P 1.837	E 0.167
+IDCT component 2	P 1.707	E 0.635
+band threads (unnamed)	P 4.975	E 0.426
+
+commonest notes on Blocked intervals (ms per image)
+main	0.243	Blocked  at priority  31
+main	0.001	Blocked  at priority  46
+IDCT component 2	18.976	Blocked  at priority  31
+IDCT component 1	19.275	Blocked  at priority  31
+IDCT component 0	17.129	Blocked  at priority  31
+band threads (unnamed)	0.004	Blocked  at priority  31
+band threads (unnamed)	0.000	Blocked  at priority  46
+
+main thread CPU inside thread creation (Time Profiler): 42 ms of 19844 ms = 0.061 ms per image

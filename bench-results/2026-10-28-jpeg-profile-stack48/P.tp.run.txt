@@ -1,0 +1,1 @@
+../fixtures/photo-jpeg-progressive.bin: 555 iterations, median 36.05 ms, min 34.97 ms

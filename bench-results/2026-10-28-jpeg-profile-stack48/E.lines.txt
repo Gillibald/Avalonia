@@ -1,0 +1,220 @@
+# samples(ms)	share	file:line	innermost function
+1975	9.88%	encoder.rs:1286	jpeg_encoder::encoder::Operations::quantize_block
+1403	7.02%	writer.rs:193	jpeg_encoder::writer::JfifWriter<W>::write_bits
+1314	6.57%	writer.rs:202	jpeg_encoder::writer::JfifWriter<W>::write_bits
+1044	5.22%	writer.rs:328	jpeg_encoder::writer::JfifWriter<W>::huffman_encode_value
+1032	5.16%	mod.rs:547	core::ptr::copy_nonoverlapping
+851	4.26%	sink.rs:127	_<pixelman_codecs::sink::Sink<W> as std::io::Write>::write
+736	3.68%	ycc_simd.rs:77	jpeg_encoder::ycc_simd::rgb_to_ycbcr_row::_$u7b$$u7b$closure$u7d$$u7d$
+711	3.56%	uint_macros.rs:0	jpeg_encoder::ycc_simd::rgb_to_ycbcr_row
+672	3.36%	macros.rs:157	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch10arm_shared4neon9generated12vcombine_s16
+657	3.29%	writer.rs:190	jpeg_encoder::writer::JfifWriter<W>::write_bits
+637	3.19%	writer.rs:467	jpeg_encoder::writer::nonzero_mask
+544	2.72%	fdct.rs:166	jpeg_encoder::fdct::fdct
+451	2.26%	try_trait.rs:454	_<core::ops::try_trait::NeverShortCircuit<T> as core::ops::try_trait::Try>::from_output
+404	2.02%	writer.rs:389	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+376	1.88%	writer.rs:0	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+323	1.62%	uint_macros.rs:0	core::array::try_from_fn
+302	1.51%	uint_macros.rs:178	_RNvMs7_NtCsl8K0bEFm1U0_4core3numy14trailing_zeros
+286	1.43%	writer.rs:198	jpeg_encoder::writer::JfifWriter<W>::write_bits
+261	1.31%	writer.rs:384	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+240	1.20%	uint_macros.rs:923	_RNvMs9_NtCsl8K0bEFm1U0_4core3numj11checked_sub
+218	1.09%	-:0	_platform_memmove [libsystem_platform.dylib]
+216	1.08%	fdct.rs:121	jpeg_encoder::fdct::fdct
+211	1.06%	fdct.rs:119	jpeg_encoder::fdct::fdct
+208	1.04%	result.rs:2173	_<core::result::Result<T$C$E> as core::ops::try_trait::Try>::branch
+189	0.95%	fdct.rs:117	jpeg_encoder::fdct::fdct
+180	0.90%	encoder.rs:0	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+137	0.69%	writer.rs:322	jpeg_encoder::writer::JfifWriter<W>::huffman_encode_value
+132	0.66%	encoder.rs:1204	jpeg_encoder::encoder::get_block
+130	0.65%	sampling.rs:67	jpeg_encoder::sampling::downsample_row
+130	0.65%	-:0	_platform_memset [libsystem_platform.dylib]
+118	0.59%	range.rs:0	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+113	0.57%	range.rs:772	_<core::ops::range::Range<T> as core::iter::range::RangeIteratorImpl>::spec_next
+96	0.48%	uint_macros.rs:0	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+92	0.46%	fdct.rs:115	jpeg_encoder::fdct::fdct
+92	0.46%	sink.rs:110	_<pixelman_codecs::sink::Sink<W> as std::io::Write>::write
+90	0.45%	fdct.rs:95	jpeg_encoder::fdct::descale
+89	0.45%	sampling.rs:66	jpeg_encoder::sampling::downsample_row
+85	0.43%	writer.rs:311	jpeg_encoder::writer::JfifWriter<W>::huffman_encode
+84	0.42%	generated.rs:36228	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch10arm_shared4neon9generated11vqmovun_s16
+84	0.42%	ycc_simd.rs:0	jpeg_encoder::ycc_simd::rgb_to_ycbcr_row
+82	0.41%	fdct.rs:234	jpeg_encoder::fdct::fdct
+80	0.40%	mod.rs:1877	std::io::Write::write_all
+80	0.40%	writer.rs:394	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+69	0.35%	macros.rs:180	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::next
+68	0.34%	impls.rs:77	std::io::impls::_<impl std::io::Write for $RF$mut W>::write_all
+65	0.33%	-:0	mach_absolute_time [libsystem_kernel.dylib]
+61	0.31%	fdct.rs:149	jpeg_encoder::fdct::fdct
+61	0.31%	impls.rs:58	std::io::impls::_<impl std::io::Write for $RF$mut W>::write
+60	0.30%	fdct.rs:215	jpeg_encoder::fdct::fdct
+60	0.30%	-:0	DYLD-STUB$$memcpy
+58	0.29%	fdct.rs:230	jpeg_encoder::fdct::fdct
+58	0.29%	fdct.rs:100	jpeg_encoder::fdct::into_el
+58	0.29%	fdct.rs:110	jpeg_encoder::fdct::fdct
+57	0.29%	writer.rs:0	jpeg_encoder::writer::JfifWriter<W>::write_bit_buffer
+55	0.28%	impls.rs:79	std::io::impls::_<impl std::io::Write for $RF$mut W>::write_all
+53	0.27%	fdct.rs:229	jpeg_encoder::fdct::fdct
+49	0.25%	writer.rs:199	jpeg_encoder::writer::JfifWriter<W>::write_bits
+49	0.25%	fdct.rs:198	jpeg_encoder::fdct::fdct
+47	0.24%	step_by.rs:0	_RNvXsi_NtNtNtCsl8K0bEFm1U0_4core4iter8adapters7step_byINtB5_6StepByINtNtNtBb_3ops5range5RangejEEINtB5_10StepB
+46	0.23%	encoder.rs:740	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+45	0.23%	writer.rs:339	jpeg_encoder::writer::JfifWriter<W>::write_block
+42	0.21%	fdct.rs:105	jpeg_encoder::fdct::fdct
+41	0.21%	fdct.rs:137	jpeg_encoder::fdct::fdct
+41	0.21%	fdct.rs:153	jpeg_encoder::fdct::fdct
+39	0.20%	fdct.rs:156	jpeg_encoder::fdct::fdct
+39	0.20%	index.rs:89	core::slice::index::get_offset_len_noubcheck
+38	0.19%	writer.rs:130	jpeg_encoder::writer::JfifWriter<W>::write_u8
+37	0.19%	writer.rs:366	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+37	0.19%	writer.rs:103	_<W as jpeg_encoder::writer::JfifWrite>::write_all
+36	0.18%	fdct.rs:158	jpeg_encoder::fdct::fdct
+35	0.18%	fdct.rs:136	jpeg_encoder::fdct::fdct
+35	0.18%	writer.rs:325	jpeg_encoder::writer::JfifWriter<W>::huffman_encode_value
+35	0.18%	fdct.rs:226	jpeg_encoder::fdct::fdct
+33	0.17%	encoder.rs:767	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+33	0.17%	sink.rs:119	_<pixelman_codecs::sink::Sink<W> as std::io::Write>::write
+31	0.16%	fdct.rs:138	jpeg_encoder::fdct::fdct
+30	0.15%	sink.rs:116	_<pixelman_codecs::sink::Sink<W> as std::io::Write>::write
+30	0.15%	fdct.rs:193	jpeg_encoder::fdct::fdct
+29	0.15%	macros.rs:0	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::next
+29	0.15%	const_ptr.rs:863	core::ptr::const_ptr::_<impl $BP$const T>::add
+29	0.15%	fdct.rs:197	jpeg_encoder::fdct::fdct
+28	0.14%	writer.rs:385	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+28	0.14%	encoder.rs:1199	jpeg_encoder::encoder::get_block
+28	0.14%	sink.rs:0	_<pixelman_codecs::sink::Sink<W> as std::io::Write>::write
+27	0.14%	encoder.rs:1215	jpeg_encoder::encoder::ceil_div
+26	0.13%	encoder.rs:1270	jpeg_encoder::encoder::Operations::fdct
+26	0.13%	fdct.rs:179	jpeg_encoder::fdct::fdct
+26	0.13%	fdct.rs:190	jpeg_encoder::fdct::fdct
+26	0.13%	mod.rs:0	jpeg_encoder::encoder::Operations::quantize_block
+25	0.13%	uint_macros.rs:2494	_RNvMs9_NtCsl8K0bEFm1U0_4core3numj12wrapping_sub
+25	0.13%	encoder.rs:1211	jpeg_encoder::encoder::get_block
+24	0.12%	fdct.rs:175	jpeg_encoder::fdct::fdct
+24	0.12%	fdct.rs:178	jpeg_encoder::fdct::fdct
+24	0.12%	fdct.rs:163	jpeg_encoder::fdct::fdct
+23	0.12%	writer.rs:356	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+23	0.12%	writer.rs:324	jpeg_encoder::writer::JfifWriter<W>::huffman_encode_value
+21	0.11%	fdct.rs:154	jpeg_encoder::fdct::fdct
+21	0.11%	writer.rs:466	jpeg_encoder::writer::nonzero_mask
+21	0.11%	encoder.rs:743	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+20	0.10%	mod.rs:612	alloc::raw_vec::RawVecInner<A>::non_null
+20	0.10%	fdct.rs:194	jpeg_encoder::fdct::fdct
+19	0.10%	fdct.rs:133	jpeg_encoder::fdct::fdct
+19	0.10%	encoder.rs:0	jpeg_encoder::encoder::ceil_div
+19	0.10%	fdct.rs:202	jpeg_encoder::fdct::fdct
+19	0.10%	encoder.rs:755	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+18	0.09%	index.rs:568	_<core::ops::range::RangeFrom<usize> as core::slice::index::SliceIndex<$u5b$T$u5d$>>::index
+17	0.09%	fdct.rs:145	jpeg_encoder::fdct::fdct
+17	0.09%	writer.rs:186	jpeg_encoder::writer::JfifWriter<W>::write_bits
+17	0.09%	encoder.rs:768	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+16	0.08%	jpeg_codec.rs:969	_<pixelman_codecs::jpeg_codec::JpegOut<W> as std::io::Write>::write
+16	0.08%	generated.rs:32171	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch10arm_shared4neon9generated9vmull_u16
+15	0.08%	fdct.rs:182	jpeg_encoder::fdct::fdct
+15	0.08%	fdct.rs:196	jpeg_encoder::fdct::fdct
+14	0.07%	fdct.rs:155	jpeg_encoder::fdct::fdct
+13	0.07%	encoder.rs:647	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+13	0.07%	fdct.rs:164	jpeg_encoder::fdct::fdct
+13	0.07%	option.rs:745	core::option::Option<T>::as_ref
+13	0.07%	result.rs:0	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+13	0.07%	fdct.rs:129	jpeg_encoder::fdct::fdct
+12	0.06%	fdct.rs:191	jpeg_encoder::fdct::fdct
+12	0.06%	fdct.rs:148	jpeg_encoder::fdct::fdct
+11	0.06%	fdct.rs:189	jpeg_encoder::fdct::fdct
+10	0.05%	ycc_simd.rs:71	jpeg_encoder::ycc_simd::rgb_to_ycbcr_row
+9	0.05%	fdct.rs:147	jpeg_encoder::fdct::fdct
+9	0.05%	fdct.rs:177	jpeg_encoder::fdct::fdct
+9	0.05%	uint_macros.rs:0	_RNvMs9_NtCsl8K0bEFm1U0_4core3numj13unchecked_add
+9	0.05%	generated.rs:61156	core::core_arch::arm_shared::neon::generated::vshrq_n_s16
+9	0.05%	index.rs:0	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+8	0.04%	writer.rs:162	jpeg_encoder::writer::JfifWriter<W>::flush_byte_from_bit_buffer
+8	0.04%	uint_macros.rs:154	_RNvMs5_NtCsl8K0bEFm1U0_4core3numt13leading_zeros
+8	0.04%	fdct.rs:201	jpeg_encoder::fdct::fdct
+8	0.04%	fdct.rs:146	jpeg_encoder::fdct::fdct
+7	0.04%	macros.rs:0	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+7	0.04%	fdct.rs:157	jpeg_encoder::fdct::fdct
+7	0.04%	result.rs:0	jpeg_encoder::writer::JfifWriter<W>::flush_byte_from_bit_buffer
+6	0.03%	step_by.rs:0	jpeg_encoder::ycc_simd::rgb_to_ycbcr_row
+6	0.03%	macros.rs:157	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch7aarch644neon9generated10vuzp2q_u16
+6	0.03%	encoder.rs:742	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+6	0.03%	encoder.rs:731	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+6	0.03%	-:0	_xzm_xzone_malloc_small_freelist [libsystem_malloc.dylib]
+6	0.03%	uint_macros.rs:560	_RNvMs9_NtCsl8K0bEFm1U0_4core3numj10swap_bytes
+6	0.03%	fdct.rs:212	jpeg_encoder::fdct::fdct
+6	0.03%	fdct.rs:152	jpeg_encoder::fdct::fdct
+6	0.03%	writer.rs:381	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+6	0.03%	-:0	DYLD-STUB$$bzero
+6	0.03%	encoder.rs:0	jpeg_encoder::encoder::expansion
+5	0.03%	writer.rs:326	jpeg_encoder::writer::JfifWriter<W>::huffman_encode_value
+5	0.03%	-:0	_xzm_xzone_malloc_tiny [libsystem_malloc.dylib]
+5	0.03%	mod.rs:1815	alloc::vec::Vec<T$C$A>::as_slice
+4	0.02%	writer.rs:158	jpeg_encoder::writer::JfifWriter<W>::flush_byte_from_bit_buffer
+4	0.02%	writer.rs:365	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+4	0.02%	image_buffer.rs:0	jpeg_encoder::image_buffer::rgb_to_ycbcr_row
+4	0.02%	writer.rs:192	jpeg_encoder::writer::JfifWriter<W>::write_bits
+4	0.02%	fdct.rs:130	jpeg_encoder::fdct::fdct
+4	0.02%	jpeg_codec.rs:1096	_<pixelman_codecs::jpeg_codec::SourceImage as jpeg_encoder::image_buffer::ImageBuffer>::fill_buffers
+3	0.02%	mod.rs:617	alloc::raw_vec::RawVecInner<A>::capacity
+3	0.02%	writer.rs:195	jpeg_encoder::writer::JfifWriter<W>::write_bits
+3	0.02%	macros.rs:315	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::all
+3	0.02%	fdct.rs:180	jpeg_encoder::fdct::fdct
+3	0.02%	jpeg_codec.rs:1106	_<pixelman_codecs::jpeg_codec::SourceImage as jpeg_encoder::image_buffer::ImageBuffer>::fill_buffers
+3	0.02%	generated.rs:12165	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch10arm_shared4neon9generated9veorq_u16
+3	0.02%	fdct.rs:181	jpeg_encoder::fdct::fdct
+3	0.02%	fdct.rs:134	jpeg_encoder::fdct::fdct
+3	0.02%	-:0	_xzm_malloc_zone_malloc_type_calloc_entry [libsystem_malloc.dylib]
+3	0.02%	-:0	__bzero [libsystem_platform.dylib]
+3	0.02%	fdct.rs:131	jpeg_encoder::fdct::fdct
+3	0.02%	fdct.rs:211	jpeg_encoder::fdct::fdct
+3	0.02%	-:0	_xzm_xzone_malloc [libsystem_malloc.dylib]
+2	0.01%	mod.rs:0	core::ptr::copy_nonoverlapping
+2	0.01%	-:0	_malloc_zone_malloc [libsystem_malloc.dylib]
+2	0.01%	writer.rs:378	jpeg_encoder::writer::JfifWriter<W>::write_ac_block
+2	0.01%	fdct.rs:151	jpeg_encoder::fdct::fdct
+2	0.01%	mod.rs:671	alloc::raw_vec::RawVecInner<A>::reserve
+2	0.01%	writer.rs:201	jpeg_encoder::writer::JfifWriter<W>::write_bits
+2	0.01%	macros.rs:0	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::all
+2	0.01%	pixel_format.rs:7	_<pixelman_core::pixel_format::PixelFormat as core::cmp::PartialEq>::eq
+2	0.01%	macros.rs:0	jpeg_encoder::huffman::create_lookup_table
+2	0.01%	encoder.rs:761	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+2	0.01%	-:0	_xzm_free [libsystem_malloc.dylib]
+1	0.01%	-:0	0x185b9a5b9 [dyld]
+1	0.01%	-:0	<deduplicated_symbol> [dyld]
+1	0.01%	decimal.rs:67	_RINvMNtNtNtCsl8K0bEFm1U0_4core3num7dec2flt7decimalNtB3_7Decimal13try_fast_pathdEB9_
+1	0.01%	-:0	read [libsystem_kernel.dylib]
+1	0.01%	image_buffer.rs:38	jpeg_encoder::image_buffer::rgb_to_ycbcr_row
+1	0.01%	non_null.rs:1720	_<core::ptr::non_null::NonNull<T> as core::cmp::PartialEq>::eq
+1	0.01%	generated.rs:70055	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch10arm_shared4neon9generated9vsubq_u16
+1	0.01%	sink.rs:109	_<pixelman_codecs::sink::Sink<W> as std::io::Write>::write
+1	0.01%	uint_macros.rs:154	_RNvMs6_NtCsl8K0bEFm1U0_4core3numm13leading_zeros
+1	0.01%	error.rs:578	std::io::error::Error::new
+1	0.01%	bitmap.rs:394	pixelman_core::bitmap::BitmapFrame::data
+1	0.01%	mod.rs:0	jpeg_encoder::encoder::Encoder<W>::encode_image_interleaved
+1	0.01%	-:0	_xzm_free_outlined [libsystem_malloc.dylib]
+1	0.01%	generated.rs:1979	_RNvNtNtNtNtCsl8K0bEFm1U0_4core9core_arch10arm_shared4neon9generated9vaddq_u16
+1	0.01%	fdct.rs:214	jpeg_encoder::fdct::fdct
+1	0.01%	sampling.rs:54	jpeg_encoder::sampling::downsample_row
+1	0.01%	-:0	_xzm_xzone_free_freelist [libsystem_malloc.dylib]
+1	0.01%	-:0	_xzm_reclaim_mark_used [libsystem_malloc.dylib]
+1	0.01%	mod.rs:632	alloc::raw_vec::RawVecInner<A>::current_memory
+1	0.01%	writer.rs:0	jpeg_encoder::writer::JfifWriter<W>::write_bits
+1	0.01%	lib.rs:370	pixelman_codecs::encode_through
+1	0.01%	-:0	xzm_reclaim_mark_free_locked [libsystem_malloc.dylib]
+1	0.01%	-:0	mfm_free [libsystem_malloc.dylib]
+1	0.01%	meta.rs:215	pixelman_codecs::meta::iptc_record_in
+1	0.01%	-:0	_xzm_segment_group_find_and_allocate_chunk [libsystem_malloc.dylib]
+1	0.01%	fdct.rs:128	jpeg_encoder::fdct::fdct
+1	0.01%	-:0	_xzm_reclaim_mark_free [libsystem_malloc.dylib]
+1	0.01%	-:0	xzm_malloc_zone_try_free_default [libsystem_malloc.dylib]
+1	0.01%	alloc.rs:0	pixelman_metadata::iptc::try_serialize_iptc_from
+1	0.01%	repr_bitpacked.rs:249	std::io::error::repr_bitpacked::decode_repr
+1	0.01%	index.rs:580	_<core::ops::range::RangeFrom<usize> as core::slice::index::SliceIndex<$u5b$T$u5d$>>::index_mut
+1	0.01%	jpeg_codec.rs:1062	_<pixelman_codecs::jpeg_codec::SourceImage as jpeg_encoder::image_buffer::ImageBuffer>::fill_buffers
+1	0.01%	mod.rs:0	alloc::vec::Vec<T$C$A>::resize
+1	0.01%	-:0	pthread_mutex_unlock [libsystem_pthread.dylib]
+1	0.01%	-:0	DYLD-STUB$$_platform_memset [libsystem_malloc.dylib]
+1	0.01%	encoder.rs:275	pixelman_codecs::encoder::prepare
+1	0.01%	macros.rs:284	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::fold
+1	0.01%	-:0	xzm_segment_group_free_chunk [libsystem_malloc.dylib]
+1	0.01%	fdct.rs:161	jpeg_encoder::fdct::fdct
+1	0.01%	macros.rs:279	_<core::slice::iter::Iter<T> as core::iter::traits::iterator::Iterator>::fold

@@ -1,0 +1,3 @@
+tp-E.xml: 19994 ms CPU sampled over 1810 images
+group	threads	CPU ms	CPU ms per image	share
+main	1	19994	11.046	100.0%

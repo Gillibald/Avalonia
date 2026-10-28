@@ -1,0 +1,1 @@
+../fixtures/encode-source.bgra: 1821 iterations, median 10.97 ms, min 10.71 ms
