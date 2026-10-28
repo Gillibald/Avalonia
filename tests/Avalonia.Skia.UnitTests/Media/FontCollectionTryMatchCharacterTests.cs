@@ -253,24 +253,26 @@ namespace Avalonia.Skia.UnitTests.Media
             // so only Tier D can supply it.
             var miSans = LoadStandaloneGlyphTypeface("Avalonia.Skia.UnitTests.Assets.MiSans-Normal.ttf");
             Assert.True(miSans.CharacterToGlyphMap.TryGetGlyph(hua, out _));
-            collection.PlatformFallbackResult = miSans;
 
             var zh = CultureInfo.GetCultureInfo("zh-CN");
 
-            // 中 resolves from the loaded cache (Tier C) and writes the (Han, zh-CN) bucket. The platform
-            // is not consulted for it.
+            // The SC subset declares no design language, so the platform places 中; its answer, the
+            // SC subset, writes the (Han, zh-CN) bucket.
+            collection.PlatformFallbackResult = scGt;
+
             Assert.True(collection.TryMatchCharacter(
                 zhong, FontStyle.Normal, weight, FontStretch.Normal, null, zh, out var zhongMatch));
             Assert.Equal("Noto Sans SC", FamilyOf(zhongMatch));
-            Assert.Equal(0, collection.PlatformCallCount);
+            Assert.Equal(1, collection.PlatformCallCount);
 
-            // 华 shares the bucket but the bucket font lacks it. Before the fix the positive entry made
-            // Tier D treat the bucket as "platform already attempted", so 华 returned no match. It must
-            // now reach the platform and resolve to a font that covers it.
+            // 华 shares the bucket but the bucket font lacks it, so it falls through to the platform,
+            // which places it in MiSans.
+            collection.PlatformFallbackResult = miSans;
+
             Assert.True(collection.TryMatchCharacter(
                 hua, FontStyle.Normal, weight, FontStretch.Normal, null, zh, out var huaMatch));
             Assert.Equal("MiSans Normal", FamilyOf(huaMatch));
-            Assert.Equal(1, collection.PlatformCallCount);
+            Assert.Equal(2, collection.PlatformCallCount);
         }
 
         [Fact]
