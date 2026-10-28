@@ -57,9 +57,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = null;
+                    var reuse = default(FallbackTypefaceReuse);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     Assert.Single(results);
                     Assert.True(fontManager.TryGetGlyphTypeface(results[0].Properties!.Typeface, out var runGlyphTypeface));

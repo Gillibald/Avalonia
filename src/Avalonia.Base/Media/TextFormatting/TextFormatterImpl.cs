@@ -580,7 +580,7 @@ namespace Avalonia.Media.TextFormatting
             var levelIndex = 0;
             var runLevel = levels[0];
 
-            TextRunProperties? previousProperties = null;
+            var fallbackReuse = default(FallbackTypefaceReuse);
             TextCharacters? currentRun = null;
             ReadOnlyMemory<char> runText = default;
 
@@ -618,7 +618,7 @@ namespace Avalonia.Media.TextFormatting
                     if (j == runTextSpan.Length)
                     {
                         currentRun.GetShapeableCharacters(runText.Slice(0, j), runLevel, fontManager,
-                            ref previousProperties, processedRuns);
+                            ref fallbackReuse, processedRuns);
 
                         runLevel = levels[levelIndex];
 
@@ -632,7 +632,7 @@ namespace Avalonia.Media.TextFormatting
 
                     // End of this run
                     currentRun.GetShapeableCharacters(runText.Slice(0, j), runLevel, fontManager,
-                        ref previousProperties, processedRuns);
+                        ref fallbackReuse, processedRuns);
 
                     runText = runText.Slice(j);
                     runTextSpan = runText.Span;
@@ -649,7 +649,7 @@ namespace Avalonia.Media.TextFormatting
                 return;
             }
 
-            currentRun.GetShapeableCharacters(runText, runLevel, fontManager, ref previousProperties, processedRuns);
+            currentRun.GetShapeableCharacters(runText, runLevel, fontManager, ref fallbackReuse, processedRuns);
         }
 
         /// <summary>
