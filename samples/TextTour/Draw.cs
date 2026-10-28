@@ -185,6 +185,18 @@ namespace TextTour
         public static Rect Badge(DrawingContext context, Palette palette, double x, double y, string text, double size,
             string? detail = null, double maxWidth = double.PositiveInfinity)
         {
+            // The badge shrinks to fit its width before it trims, so the direction stays readable
+            // with wider UI fonts.
+            using (var probe = Layout(text, size, palette.Foreground, UiBold))
+            {
+                var fit = (maxWidth - 0.9 * size) / Math.Max(1, probe.WidthIncludingTrailingWhitespace);
+
+                if (fit < 1)
+                {
+                    size *= Math.Max(0.7, fit);
+                }
+            }
+
             var pad = size * 0.45;
             var available = Math.Max(10, maxWidth - 2 * pad);
             using var main = Layout(text, size, palette.Foreground, UiBold, available);
