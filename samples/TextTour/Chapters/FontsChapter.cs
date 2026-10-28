@@ -44,6 +44,8 @@ namespace TextTour.Chapters
         private readonly StackPanel _panel;
         private readonly List<TextLayout> _layouts = new();
         private bool _syncing;
+        private bool _exporting;
+        private CultureInfo? _exportCulture;
         private Model? _model;
 
         public FontsChapter(TourState state) : base(state)
@@ -140,6 +142,13 @@ namespace TextTour.Chapters
 
         public override void PrepareExport(int step, int variant)
         {
+            // Variants without a culture of their own keep the culture the export started with.
+            if (!_exporting)
+            {
+                _exporting = true;
+                _exportCulture = State.Culture;
+            }
+
             var defaultFamily = TourState.DefaultFamilyList;
             var bold = SystemFamilies.FirstOf("Avenir Next", "Segoe UI", "Arial") ?? defaultFamily;
             var cjk = SystemFamilies.FirstOf("PingFang SC", "Microsoft YaHei", "Yu Gothic UI", "Hiragino Sans") ?? defaultFamily;
@@ -157,10 +166,14 @@ namespace TextTour.Chapters
             State.FamilyList = query.Family;
             State.Weight = query.Weight;
             State.Style = query.Style;
-            State.Culture = query.Culture is null ? null : CultureInfo.GetCultureInfo(query.Culture);
+            State.Culture = query.Culture is null ? _exportCulture : CultureInfo.GetCultureInfo(query.Culture);
         }
 
-        public override void EndExport() => PrepareExport(1, 0);
+        public override void EndExport()
+        {
+            PrepareExport(1, 0);
+            _exporting = false;
+        }
 
         protected override void OnStateChanged(TourChange change)
         {
