@@ -22,7 +22,8 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
     /// The itemizer tries the face of an earlier fallback run before it asks the font manager. These
     /// tests pin which face each run gets when that face covers the next run's text but the font
     /// collection's writing-system rules would pick another face: the face only carries over within
-    /// the script and culture bucket it was chosen for.
+    /// the script and culture bucket it was chosen for. Emoji and text symbols share a script but
+    /// not a bucket, in the itemizer and in the font collection.
     /// </summary>
     public class FallbackTypefaceReuseTests
     {
@@ -109,8 +110,7 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
             Assert.Equal(Primary, FamilyOf(runs, 'a'));
         }
 
-        [Fact(Skip = "U+1F600 and U+2605 are both Script.Common, so the collection files them in one " +
-            "(Common, culture) bucket and replays the emoji face for the star even without the itemizer's reuse.")]
+        [Fact]
         public void A_Text_Symbol_After_An_Emoji_Span_Should_Not_Take_The_Emoji_Face()
         {
             var provider = new ReuseFontProvider();
@@ -121,6 +121,128 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
 
             Assert.Equal(Emoji, FamilyOf(runs, "\U0001F600"));
             Assert.Equal(Symbol, FamilyOf(runs, "★"));
+        }
+
+        [Fact]
+        public void An_Emoji_After_A_Text_Symbol_Span_Should_Take_The_Emoji_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // The symbol face maps U+1F600 in a text design, as Segoe UI Symbol does.
+            var runs = Format(Run("★", "en-US"), Run("\U0001F600", "en-US"));
+
+            Assert.Equal(Symbol, FamilyOf(runs, "★"));
+            Assert.Equal(Emoji, FamilyOf(runs, "\U0001F600"));
+        }
+
+        [Fact]
+        public void A_Text_Default_Emoji_With_An_Emoji_Variation_Selector_Should_Take_The_Emoji_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // U+2600 is an emoji that defaults to text; the platform places it alone in the symbol face.
+            var runs = Format(Run("☀️", "en-US"));
+
+            Assert.Equal(Emoji, FamilyOf(runs, "☀"));
+        }
+
+        [Fact]
+        public void A_Variation_Selector_After_A_Non_Emoji_Symbol_Should_Not_Ask_For_The_Emoji_Face()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // U+2605 has neither the Emoji nor the Extended_Pictographic property, so U+FE0F after it
+            // is no emoji variation sequence.
+            var runs = Format(Run("★️", "en-US"));
+
+            Assert.Equal(Symbol, FamilyOf(runs, "★"));
+        }
+
+        [Fact]
+        public void An_Emoji_With_A_Text_Variation_Selector_Should_Take_The_Text_Face_Of_Its_Bucket()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            // Separate lines, so only the font collection's buckets carry a face from one to the next.
+            Assert.Equal(Emoji, FamilyOf(Format(Run("\U0001F600", "en-US")), "\U0001F600"));
+            Assert.Equal(Symbol, FamilyOf(Format(Run("★", "en-US")), "★"));
+            Assert.Equal(Symbol, FamilyOf(Format(Run("\U0001F600︎", "en-US")), "\U0001F600"));
+        }
+
+        [Fact]
+        public void Consecutive_Emoji_Spans_Should_Ask_The_Platform_Once()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var runs = Format(Run("\U0001F600", "en-US"), Run("\U0001F603", "en-US"));
+
+            Assert.Equal(Emoji, FamilyOf(runs, "\U0001F600"));
+            Assert.Equal(Emoji, FamilyOf(runs, "\U0001F603"));
+            Assert.Equal(new[] { 0x1F600 }, provider.RequestedCodepoints);
+        }
+
+        [Fact]
+        public void Consecutive_Text_Symbol_Spans_Should_Ask_The_Platform_Once()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var runs = Format(Run("★", "en-US"), Run("☆", "en-US"));
+
+            Assert.Equal(Symbol, FamilyOf(runs, "★"));
+            Assert.Equal(Symbol, FamilyOf(runs, "☆"));
+            Assert.Equal(new[] { 0x2605 }, provider.RequestedCodepoints);
+        }
+
+        [Fact]
+        public void The_Collection_Should_Not_Replay_An_Emoji_Face_For_A_Text_Symbol()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var en = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.Equal(Emoji, MatchCharacter(0x1F600, en));
+            Assert.Equal(Symbol, MatchCharacter(0x2605, en));
+        }
+
+        [Fact]
+        public void The_Collection_Should_Not_Replay_A_Text_Symbol_Face_For_An_Emoji()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var en = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.Equal(Symbol, MatchCharacter(0x2605, en));
+            Assert.Equal(Emoji, MatchCharacter(0x1F600, en));
+        }
+
+        [Fact]
+        public void The_Collection_Should_Replay_The_Emoji_Face_For_The_Next_Emoji()
+        {
+            var provider = new ReuseFontProvider();
+
+            using var app = Start(provider);
+
+            var en = CultureInfo.GetCultureInfo("en-US");
+
+            Assert.Equal(Emoji, MatchCharacter(0x1F600, en));
+            Assert.Equal(Emoji, MatchCharacter(0x1F603, en));
+            Assert.Equal(new[] { 0x1F600 }, provider.RequestedCodepoints);
         }
 
         [Fact]
@@ -229,7 +351,7 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
             public ReuseFontProvider()
             {
                 const int han1 = 0x4E2D, han2 = 0x5B57, hira = 0x3042, kata = 0x30A2;
-                const int emoji = 0x1F600, star = 0x2605;
+                const int emoji = 0x1F600, emoji2 = 0x1F603, sun = 0x2600, star = 0x2605, whiteStar = 0x2606;
 
                 _fonts = new Dictionary<string, byte[]>
                 {
@@ -239,8 +361,9 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
                         ' ', han1, han2, hira, kata),
                     [Japanese] = CreateFont(Japanese, "ja", "ja", ' ', han1, han2, hira, kata),
                     [PlatformKana] = CreateFont(PlatformKana, "ja", "ja", ' ', hira, kata),
-                    [Emoji] = CreateFont(Emoji, null, null, ' ', emoji, star),
-                    [Symbol] = CreateFont(Symbol, null, null, ' ', star),
+                    [Emoji] = CreateFont(Emoji, null, null, ' ', emoji, emoji2, sun, star),
+                    // A text symbol face that also maps emoji codepoints in a text design.
+                    [Symbol] = CreateFont(Symbol, null, null, ' ', star, whiteStar, sun, emoji),
                 };
             }
 
@@ -279,8 +402,8 @@ namespace Avalonia.Base.UnitTests.Media.TextFormatting
                     Script.Hiragana or Script.Katakana => PlatformKana,
                     _ => codepoint switch
                     {
-                        0x1F600 => Emoji,
-                        0x2605 => Symbol,
+                        0x1F600 or 0x1F603 => Emoji,
+                        0x2600 or 0x2605 or 0x2606 => Symbol,
                         _ => null,
                     },
                 };
