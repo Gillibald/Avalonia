@@ -157,6 +157,61 @@ namespace Avalonia.Skia.UnitTests.Media
             Assert.Equal(new[] { 16 }, decoder.DecodedWidths);
         }
 
+        [Fact]
+        public void A_Glyph_The_Device_Size_Strike_Lacks_Draws_From_The_Next_Strike_That_Holds_It()
+        {
+            using var scope = CreateEnvironment(out var decoder);
+            var typeface = CreateIncompleteSbixTypeface(out var glyph);
+            using var run = CreateRun(typeface, glyph);
+            using var recording = Record(run);
+
+            // 20 px em at 1.5x is 30 device px: the 40 ppem strike has no image for the glyph, so
+            // the 80 ppem strike draws it, scaled to 30 px.
+            var pixels = Replay(recording, 1.5);
+
+            AssertStrikeAt(pixels, IncompleteLargeStrike, 30, x: 12, y: 30);
+            Assert.Equal(new[] { IncompleteLargeStrike }, decoder.DecodedWidths);
+        }
+
+        [Fact]
+        public void A_Glyph_The_Device_Size_Strike_Holds_Still_Draws_From_That_Strike()
+        {
+            using var scope = CreateEnvironment(out var decoder);
+            var typeface = CreateIncompleteSbixTypeface(out var glyph);
+            using var run = CreateRun(typeface, glyph);
+            using var recording = Record(run);
+
+            var pixels = Replay(recording, 1.0);
+
+            AssertStrikeAt(pixels, SmallStrike, SmallStrike, x: 8, y: 20);
+            Assert.Equal(new[] { SmallStrike }, decoder.DecodedWidths);
+        }
+
+        [Fact]
+        public void A_Glyph_Drawing_At_A_Size_Whose_Strike_Lacks_The_Glyph_Uses_Another_Strike()
+        {
+            using var scope = CreateEnvironment(out _);
+            var typeface = CreateIncompleteSbixTypeface(out var glyph);
+
+            var drawing = typeface.GetGlyphDrawing(glyph, new GlyphDrawingOptions { PixelSize = 30 });
+
+            Assert.NotNull(drawing);
+            Assert.Equal(GlyphDrawingType.Bitmap, drawing!.Type);
+        }
+
+        [Fact]
+        public void A_Strike_Without_An_Image_For_The_Glyph_Leaves_Its_Ink_Box_Known()
+        {
+            using var scope = CreateEnvironment(out _);
+            var typeface = CreateIncompleteSbixTypeface(out var glyph);
+
+            Assert.NotNull(typeface.StrikeInkBoxes);
+            Assert.True(typeface.StrikeInkBoxes!.TryGet(glyph, out var box), "the ink box was reported unknown");
+
+            // Full-em images whose lower left corner sits on the pen.
+            Assert.True(box.Contains(new Rect(0, -1, 1, 1)), $"ink box {box} misses the em square");
+        }
+
         private static void AssertSolidAt(byte[] pixels, int x, int y, int size)
         {
             var ink = 0;
@@ -371,6 +426,69 @@ namespace Avalonia.Skia.UnitTests.Media
             var typeface = TestGlyphTypefaces.FromSKTypeface(skTypeface!);
             Assert.NotNull(typeface.BitmapTable);
             Assert.Equal(2, typeface.BitmapTable!.StrikeCount);
+            return typeface;
+        }
+
+        private const int IncompleteLargeStrike = 80;
+
+        /// <summary>
+        /// Inter with an sbix table of three strikes, 20, 40 and 80 ppem, where the glyph of 'H' has
+        /// a full-em PNG (lower left corner on the pen) in the 20 and 80 ppem strikes and no record
+        /// in the 40 ppem strike, as Apple Color Emoji leaves some glyphs out of some strikes.
+        /// </summary>
+        internal static GlyphTypeface CreateIncompleteSbixTypeface(out ushort glyph)
+        {
+            var font = SyntheticFont.FromBytes(LoadFontBytes("Inter-Regular.ttf"));
+            var probe = font.TryCreateGlyphTypeface();
+            Assert.NotNull(probe);
+
+            glyph = probe!.CharacterToGlyphMap['H'];
+
+            var glyphCount = probe.GlyphCount;
+            var strikes = new[] { (Ppem: SmallStrike, Png: EncodePng(SmallStrike)), (Ppem: LargeStrike, Png: (byte[]?)null),
+                (Ppem: IncompleteLargeStrike, Png: EncodePng(IncompleteLargeStrike)) };
+            var strikeHeaderSize = 4 + (glyphCount + 1) * 4;
+
+            var sbix = new BigEndianBuffer();
+            sbix.UInt16(1).UInt16(0).UInt32((uint)strikes.Length);
+
+            var strikeOffset = 8 + 4 * strikes.Length;
+
+            foreach (var (_, png) in strikes)
+            {
+                sbix.UInt32((uint)strikeOffset);
+                strikeOffset += strikeHeaderSize + (png is null ? 0 : 8 + png.Length);
+            }
+
+            foreach (var (ppem, png) in strikes)
+            {
+                sbix.UInt16((ushort)ppem).UInt16(72);
+
+                // Offsets from the strike start; equal neighbours mean no record for that glyph, so
+                // only the offsets after the glyph's own move past its record.
+                for (var g = 0; g <= glyphCount; g++)
+                {
+                    var pastRecord = png is not null && g > glyph;
+                    sbix.UInt32((uint)(pastRecord ? strikeHeaderSize + 8 + png!.Length : strikeHeaderSize));
+                }
+
+                if (png is not null)
+                {
+                    sbix.Int16(0).Int16(0);
+                    foreach (var c in "png ") sbix.UInt8((byte)c);
+                    foreach (var b in png) sbix.UInt8(b);
+                }
+            }
+
+            var grafted = font.Replace("sbix", sbix.ToArray()).ToBytes();
+
+            using var skData = SKData.CreateCopy(grafted);
+            var skTypeface = SKTypeface.FromData(skData);
+            Assert.NotNull(skTypeface);
+
+            var typeface = TestGlyphTypefaces.FromSKTypeface(skTypeface!);
+            Assert.NotNull(typeface.BitmapSource);
+            Assert.Equal(3, typeface.BitmapSource!.StrikeCount);
             return typeface;
         }
 

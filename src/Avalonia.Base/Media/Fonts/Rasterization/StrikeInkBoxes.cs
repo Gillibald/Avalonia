@@ -66,7 +66,9 @@ namespace Avalonia.Media.Fonts.Rasterization
             {
                 var strike = _bitmaps.GetStrike(s);
 
-                if (strike.PpemY == 0)
+                // A strike without an image for the glyph adds nothing: a font may leave a glyph
+                // out of some strikes (Apple Color Emoji does).
+                if (strike.PpemY == 0 || !_bitmaps.HasGlyphImage(strike, glyph))
                 {
                     continue;
                 }

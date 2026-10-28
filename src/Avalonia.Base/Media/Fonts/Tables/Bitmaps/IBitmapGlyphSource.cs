@@ -39,6 +39,13 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
         bool HasGlyphImage(ushort glyphIndex);
 
         /// <summary>
+        /// Whether <paramref name="strike"/> holds an image for <paramref name="glyphIndex"/>. A
+        /// font may leave a glyph out of some strikes (Apple Color Emoji does), so a strike that
+        /// holds images for other glyphs can still lack this one.
+        /// </summary>
+        bool HasGlyphImage(in BitmapStrike strike, ushort glyphIndex);
+
+        /// <summary>
         /// The pen-relative, y-down rectangle in strike pixels that the glyph's image covers in
         /// <paramref name="strike"/>, read from the strike's metrics or the image header without
         /// decoding; <c>false</c> when the strike has no image for the glyph or its size is only

@@ -339,7 +339,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return false;
             }
 
-            strike = bitmaps.SelectStrike(key.PixelsPerEm);
+            strike = bitmaps.SelectStrike(key.PixelsPerEm, key.Glyph);
 
             if (!bitmaps.TryGetImageBounds(strike, key.Glyph, out var image))
             {

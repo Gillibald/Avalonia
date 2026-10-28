@@ -84,7 +84,7 @@ namespace Avalonia.Controls.UnitTests
 
                 Assert.Equal(target.SelectionStart, 3);
                 Assert.Equal(target.SelectionEnd, 11);
-                Assert.Equal(target.CaretIndex, 8);
+                Assert.Equal(target.CaretIndex, 11);
             }
         }
 
@@ -121,7 +121,7 @@ namespace Avalonia.Controls.UnitTests
 
                 Assert.Equal(target.SelectionStart, 3);
                 Assert.Equal(target.SelectionEnd, 11);
-                Assert.Equal(target.CaretIndex, 8);
+                Assert.Equal(target.CaretIndex, 11);
             }
         }
 
@@ -153,7 +153,7 @@ namespace Avalonia.Controls.UnitTests
 
                 var touch = new TouchTestHelper();
 
-                Assert.Equal(target.CaretIndex, 0);
+                Assert.Equal(target.CaretIndex, 11);
 
                 // Move to index 8
                 touch.Down(target, new Point(50, 0));

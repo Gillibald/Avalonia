@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media.Fonts.Tables.Bitmaps;
 using Avalonia.Rendering.SceneGraph;
 
 namespace Avalonia.Media.Fonts.Rasterization
@@ -69,9 +70,9 @@ namespace Avalonia.Media.Fonts.Rasterization
                 return;
             }
 
-            // Above the largest strike the recording keeps that strike's own size, so enlarging
-            // the view costs no image memory beyond the strike's.
-            var largest = source.SelectStrike(float.MaxValue).PpemY;
+            // Above the largest strike that holds the glyph the recording keeps that strike's own
+            // size, so enlarging the view costs no image memory beyond the strike's.
+            var largest = source.SelectStrike(float.MaxValue, _glyph).PpemY;
             var copies = upright && pixelsPerEm <= largest;
             var pixelsPerEmQ = GlyphMaskKey.QuantizeScale((float)Math.Min(pixelsPerEm, largest));
 
@@ -133,7 +134,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
         // The union of the glyph's image rectangles over every strike, in DIPs at the origin, read
         // from the strike metrics. An image whose size is only known once decoded falls back to the
-        // largest strike's decoded placement.
+        // decoded placement of the largest strike that holds the glyph.
         private static Rect ComputeBounds(GlyphTypeface typeface, ushort glyph, double emSize)
         {
             if (typeface.BitmapSource is not { } source)
@@ -157,7 +158,7 @@ namespace Avalonia.Media.Fonts.Rasterization
 
             if (bounds is null &&
                 typeface.BitmapGlyphDecoder is { } decoder &&
-                source.SelectStrike(float.MaxValue) is var largest &&
+                source.SelectStrike(float.MaxValue, glyph) is var largest &&
                 source.TryGetPlacement(largest, glyph, decoder, out var placement))
             {
                 bounds = ToDips(new PixelRect(placement.Left, placement.Top, placement.Bitmap.Width,

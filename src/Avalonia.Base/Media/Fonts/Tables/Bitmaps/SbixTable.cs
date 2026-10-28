@@ -177,6 +177,9 @@ namespace Avalonia.Media.Fonts.Tables.Bitmaps
             return false;
         }
 
+        public bool HasGlyphImage(in BitmapStrike strike, ushort glyphIndex)
+            => (uint)strike.Index < (uint)_strikes.Length && TryGetRecord(strike.Index, glyphIndex, 0, out _, out _, out _);
+
         public bool TryGetPlacement(in BitmapStrike strike, ushort glyphIndex, IBitmapGlyphDecoder decoder,
             out BitmapGlyphPlacement placement)
         {

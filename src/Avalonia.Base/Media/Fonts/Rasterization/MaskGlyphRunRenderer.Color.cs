@@ -238,6 +238,7 @@ namespace Avalonia.Media.Fonts.Rasterization
             private readonly IBitmapGlyphDecoder? _decoder;
             private readonly BitmapStrike _strike;
             private readonly float _strikeScale;
+            private readonly float _pixelsPerEm;
             private readonly GlyphPathBuilder _scratch;
             private readonly TextRasterThreadState _raster;
 
@@ -266,6 +267,7 @@ namespace Avalonia.Media.Fonts.Rasterization
                     _decoder = decoder;
                     _strike = bitmaps.SelectStrike(pixelsPerEm);
                     _strikeScale = pixelsPerEm / _strike.PpemY;
+                    _pixelsPerEm = pixelsPerEm;
                 }
             }
 
@@ -500,15 +502,31 @@ namespace Avalonia.Media.Fonts.Rasterization
                 placement = default;
                 left = top = width = height = 0;
 
-                if (_bitmaps is null || !_bitmaps.TryGetPlacement(_strike, glyph, _decoder!, out placement))
+                if (_bitmaps is null)
                 {
                     return false;
                 }
 
-                width = Math.Max(1, (int)MathF.Round(placement.Bitmap.Width * _strikeScale));
-                height = Math.Max(1, (int)MathF.Round(placement.Bitmap.Height * _strikeScale));
-                left = (int)MathF.Round(placement.Left * _strikeScale);
-                top = (int)MathF.Round(placement.Top * _strikeScale);
+                var scale = _strikeScale;
+
+                if (!_bitmaps.TryGetPlacement(_strike, glyph, _decoder!, out placement))
+                {
+                    // A font may leave a glyph out of the run's strike (Apple Color Emoji does):
+                    // the glyph then draws from the nearest strike that holds it.
+                    var own = _bitmaps.SelectStrike(_pixelsPerEm, glyph);
+
+                    if (own.Index == _strike.Index || !_bitmaps.TryGetPlacement(own, glyph, _decoder!, out placement))
+                    {
+                        return false;
+                    }
+
+                    scale = _pixelsPerEm / own.PpemY;
+                }
+
+                width = Math.Max(1, (int)MathF.Round(placement.Bitmap.Width * scale));
+                height = Math.Max(1, (int)MathF.Round(placement.Bitmap.Height * scale));
+                left = (int)MathF.Round(placement.Left * scale);
+                top = (int)MathF.Round(placement.Top * scale);
 
                 return true;
             }
