@@ -153,6 +153,9 @@ namespace TextTour
         {
             base.OnSizeChanged(e);
             InvalidateModel();
+
+            // Captions can name sizes, such as the Layout chapter's wrap width.
+            RaiseCaptionChanged();
         }
 
         protected override void OnPointerPressed(PointerPressedEventArgs e)
