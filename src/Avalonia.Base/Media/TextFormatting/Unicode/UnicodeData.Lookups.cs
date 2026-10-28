@@ -170,11 +170,29 @@ namespace Avalonia.Media.TextFormatting.Unicode
                 return primary == script;
             }
 
+            return GetScriptExtensionSet(setIndex).Contains((byte)script);
+        }
+
+        /// <summary>
+        /// Gets the codepoint's explicit Script_Extensions set as <see cref="Script"/> values,
+        /// or an empty span when <c>ScriptExtensions.txt</c> lists none for it, in which case the set
+        /// is the codepoint's primary <see cref="Script"/>.
+        /// </summary>
+        /// <param name="codepoint">The codepoint in question.</param>
+        internal static ReadOnlySpan<byte> GetScriptExtensions(uint codepoint)
+        {
+            var packed = UnicodeDataTrie.Trie.Get(codepoint);
+
+            return GetScriptExtensionSet((int)((packed >> SCRIPTEXTENSIONS_SHIFT) & SCRIPTEXTENSIONS_MASK));
+        }
+
+        private static ReadOnlySpan<byte> GetScriptExtensionSet(int setIndex)
+        {
             var offsets = s_scriptExtensionSetOffsets;
 
-            if ((uint)(setIndex + 1) >= (uint)offsets.Length)
+            if (setIndex == 0 || (uint)(setIndex + 1) >= (uint)offsets.Length)
             {
-                return false;
+                return ReadOnlySpan<byte>.Empty;
             }
 
             var setStart = offsets[setIndex];
@@ -183,14 +201,10 @@ namespace Avalonia.Media.TextFormatting.Unicode
 
             if (setEnd > sets.Length || setStart > setEnd)
             {
-                return false;
+                return ReadOnlySpan<byte>.Empty;
             }
 
-            var target = (byte)script;
-
-            var set = sets.Slice(setStart, setEnd - setStart);
-
-            return set.Contains(target);
+            return sets.Slice(setStart, setEnd - setStart);
         }
     }
 }

@@ -42,13 +42,19 @@ namespace Avalonia.Media.Fonts
         /// and <c>"Hans"/"Hant"</c> leave the script as Han.
         /// </description></item>
         /// <item><description>
+        /// A <see cref="Script.Common"/> or <see cref="Script.Inherited"/> codepoint whose
+        /// <c>Script_Extensions</c> are all East Asian scripts (ideographic punctuation, corner
+        /// brackets, the prolonged sound mark) is refined as the script it is written in, see
+        /// <see cref="GetWritingScript"/>.
+        /// </description></item>
+        /// <item><description>
         /// Any other script is returned unchanged.
         /// </description></item>
         /// </list>
         /// </remarks>
         public static Script RefineWithCulture(Codepoint codepoint, CultureInfo? culture)
         {
-            var script = codepoint.Script;
+            var script = GetWritingScript(codepoint);
 
             if (script == Script.KatakanaOrHiragana)
             {
@@ -75,6 +81,75 @@ namespace Avalonia.Media.Fonts
                 "Kore" => Script.Hangul,
                 _ => script,
             };
+        }
+
+        /// <summary>
+        /// The script fallback treats <paramref name="codepoint"/> as written in. For a
+        /// <see cref="Script.Common"/> or <see cref="Script.Inherited"/> codepoint whose
+        /// <c>Script_Extensions</c> are all East Asian scripts (Han, Hiragana, Katakana, Hangul,
+        /// Bopomofo, Yi, Mongolian, Phags-pa) and name at least one of the first five, that is
+        /// <see cref="Script.Han"/> when the set contains Han, so U+3001 follows the culture's Han
+        /// writing system like the ideographs around it; otherwise Hiragana, Katakana, Hangul or
+        /// Bopomofo in that order, so U+30FC is kana in any culture. Such a mark has regional designs
+        /// like the ideographs, and matching it as <see cref="Script.Common"/> lets any face that maps
+        /// it answer. Every other codepoint keeps its <see cref="Codepoint.Script"/>; fullwidth forms
+        /// such as U+FF0C have no <c>Script_Extensions</c> and stay Common.
+        /// </summary>
+        public static Script GetWritingScript(Codepoint codepoint)
+        {
+            var script = codepoint.Script;
+
+            if (script is not (Script.Common or Script.Inherited))
+            {
+                return script;
+            }
+
+            var extensions = UnicodeData.GetScriptExtensions(codepoint.Value);
+
+            if (extensions.IsEmpty)
+            {
+                return script;
+            }
+
+            bool han = false, hiragana = false, katakana = false, hangul = false, bopomofo = false;
+
+            foreach (var value in extensions)
+            {
+                switch ((Script)value)
+                {
+                    case Script.Han:
+                        han = true;
+                        break;
+                    case Script.Hiragana:
+                        hiragana = true;
+                        break;
+                    case Script.Katakana:
+                        katakana = true;
+                        break;
+                    case Script.KatakanaOrHiragana:
+                        hiragana = katakana = true;
+                        break;
+                    case Script.Hangul:
+                        hangul = true;
+                        break;
+                    case Script.Bopomofo:
+                        bopomofo = true;
+                        break;
+                    case Script.Yi:
+                    case Script.Mongolian:
+                    case Script.PhagsPa:
+                        break;
+                    default:
+                        return script;
+                }
+            }
+
+            return han ? Script.Han
+                : hiragana ? Script.Hiragana
+                : katakana ? Script.Katakana
+                : hangul ? Script.Hangul
+                : bopomofo ? Script.Bopomofo
+                : script;
         }
 
         /// <summary>
@@ -213,11 +288,12 @@ namespace Avalonia.Media.Fonts
         /// does not match. Text in any other script asks for a face that supports the script. Han
         /// in a culture that names none of these writing systems is
         /// <see cref="WritingSystemMatch.Unspecified"/>: any regional design could answer it, so
-        /// the choice belongs to the platform.
+        /// the choice belongs to the platform. East Asian punctuation and marks of the Common script
+        /// are asked for in the script <see cref="GetWritingScript"/> gives them.
         /// </summary>
         public static WritingSystemMatch MatchWritingSystem(GlyphTypeface candidate, Codepoint codepoint, CultureInfo? culture)
         {
-            var script = codepoint.Script;
+            var script = GetWritingScript(codepoint);
 
             if (script == Script.Han)
             {
