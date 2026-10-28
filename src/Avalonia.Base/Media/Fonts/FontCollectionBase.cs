@@ -32,6 +32,11 @@ namespace Avalonia.Media.Fonts
         // *negative* entry that prevents repeated platform-fallback calls for the same script bucket.
         private readonly ConcurrentDictionary<ScriptFallbackKey, string?> _scriptFallbackCache = new();
 
+        // Families recorded for an emoji bucket. Emoji fonts and text symbol fonts map many of the
+        // same codepoints, so coverage cannot tell which presentation a loaded face draws; a family
+        // chosen for emoji answers emoji from the cache sweep and never text.
+        private readonly ConcurrentDictionary<string, byte> _emojiFamilies = new(StringComparer.OrdinalIgnoreCase);
+
         private readonly object _fontFamiliesLock = new();
         private volatile FontFamily[] _fontFamilies = Array.Empty<FontFamily>();
 
@@ -45,7 +50,9 @@ namespace Avalonia.Media.Fonts
         private readonly ConcurrentDictionary<string, InstanceFamily> _instanceFamilies =
             new(StringComparer.OrdinalIgnoreCase);
 
-        private readonly record struct ScriptFallbackKey(Script Script, string? CultureName);
+        // Emoji and text presentation are separate buckets: U+1F600 and U+2605 are both Script.Common,
+        // and a face recorded for one must not be replayed for the other.
+        private readonly record struct ScriptFallbackKey(Script Script, bool EmojiPresentation, string? CultureName);
 
         public abstract Uri Key { get; }
 
@@ -128,6 +135,16 @@ namespace Avalonia.Media.Fonts
         /// </summary>
         internal bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
             string? familyName, CultureInfo? culture, Script shapingScript, out Typeface match)
+            => TryMatchCharacter(codepoint, style, weight, stretch, familyName, culture, shapingScript,
+                FontFallbackScriptHints.HasEmojiPresentation(new Codepoint((uint)codepoint)), out match);
+
+        /// <summary>
+        /// Character-to-typeface match for a codepoint requested in emoji or text presentation, as
+        /// <see cref="FontFallbackScriptHints.HasEmojiPresentation(ReadOnlySpan{char})"/> decides it
+        /// for the codepoint's grapheme cluster. The other overloads use the codepoint's default.
+        /// </summary>
+        internal bool TryMatchCharacter(int codepoint, FontStyle style, FontWeight weight, FontStretch stretch,
+            string? familyName, CultureInfo? culture, Script shapingScript, bool emojiPresentation, out Typeface match)
         {
             EnsureFamilies();
 
@@ -137,7 +154,9 @@ namespace Avalonia.Media.Fonts
             var cp = new Codepoint((uint)codepoint);
             var script = cp.Script;
             var refinedScript = FontFallbackScriptHints.RefineWithCulture(cp, culture);
-            var scriptKey = new ScriptFallbackKey(refinedScript, culture?.Name);
+            var scriptKey = new ScriptFallbackKey(
+                FontFallbackScriptHints.GetBucketScript(cp, emojiPresentation, culture), emojiPresentation,
+                culture?.Name);
 
             // --- Tier A: requested family, coverage-checked, culture-compatible ---
             if (familyName != null &&
@@ -168,9 +187,11 @@ namespace Avalonia.Media.Fonts
             // the codepoint (a Korean face for Japanese Han) waits until the platform, which places
             // text by language, had its turn. Han in a culture that names no writing system never
             // answers here, so whichever CJK face happens to be loaded does not decide it; the
-            // platform's choice is recorded for the bucket and Tier B replays it.
-            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: false,
-                    writingSystemOnly: true, out var bestGt, out var bestFamilyName))
+            // platform's choice is recorded for the bucket and Tier B replays it. Emoji fonts and text
+            // symbol fonts map many of the same codepoints, so emoji are answered here only by a family
+            // chosen for an emoji bucket, and text never by one.
+            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, emojiPresentation,
+                    isLastResort: false, writingSystemOnly: true, out var bestGt, out var bestFamilyName))
             {
                 // The sweep returns the nearest cached key for the winning family. A codepoint the
                 // bucket family can't cover (e.g. the Simplified-only 华 when the bucket is a JP font)
@@ -180,7 +201,7 @@ namespace Avalonia.Media.Fonts
 
                 if (FontFallbackScriptHints.IsLocaleSensitive(refinedScript) || culture != null)
                 {
-                    _scriptFallbackCache.TryAdd(scriptKey, bestFamilyName);
+                    RecordBucketFamily(scriptKey, bestFamilyName);
                 }
 
                 match = BuildTypefaceWithSynthesis(bestGt, bestFamilyName, key);
@@ -202,12 +223,30 @@ namespace Avalonia.Media.Fonts
                 var hasCacheEntry = _scriptFallbackCache.TryGetValue(scriptKey, out var cachedFamily);
                 var platformAlreadyAttempted = hasCacheEntry && cachedFamily is null;
 
+                // The platform answers a single codepoint in its default presentation, so a text-default
+                // codepoint asked for as emoji (U+2600 with U+FE0F) would get a text face. Its emoji font
+                // is found through a codepoint that defaults to emoji instead; it becomes the bucket's
+                // family, and answers this request when it maps the codepoint.
+                if (!hasCacheEntry && emojiPresentation && !cp.HasEmojiPresentation &&
+                    TryMatchCharacterFromPlatform(FontFallbackScriptHints.EmojiProbeCodepoint, key, familyName,
+                        culture, out var emojiGt))
+                {
+                    RecordBucketFamily(scriptKey, emojiGt.FamilyName);
+                    hasCacheEntry = true;
+
+                    if (emojiGt.CharacterToGlyphMap.TryGetGlyph(codepoint, out _))
+                    {
+                        match = BuildTypefaceWithSynthesis(emojiGt, null, key);
+                        return true;
+                    }
+                }
+
                 if (!platformAlreadyAttempted &&
                     TryMatchCharacterFromPlatform(codepoint, key, familyName, culture, out var platformGt))
                 {
                     // Keep any existing positive hint (TryAdd won't overwrite); registering the match
                     // lets later lookups for this codepoint be served by Tier C without the platform.
-                    _scriptFallbackCache.TryAdd(scriptKey, platformGt.FamilyName);
+                    RecordBucketFamily(scriptKey, platformGt.FamilyName);
                     match = BuildTypefaceWithSynthesis(platformGt, null, key);
                     return true;
                 }
@@ -222,8 +261,8 @@ namespace Avalonia.Media.Fonts
 
             // --- Coverage sweep: a loaded face for another writing system still beats no glyph ---
             // Not recorded as the bucket's family, so a later request asks the platform again.
-            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: false,
-                    writingSystemOnly: false, out var coveringGt, out var coveringFamilyName))
+            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, emojiPresentation,
+                    isLastResort: false, writingSystemOnly: false, out var coveringGt, out var coveringFamilyName))
             {
                 coveringGt = PreferExactKey(coveringGt, key, codepoint, culture, shapingScript);
                 match = BuildTypefaceWithSynthesis(coveringGt, coveringFamilyName, key);
@@ -231,14 +270,26 @@ namespace Avalonia.Media.Fonts
             }
 
             // --- Tier E: last-resort cache sweep ---
-            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, isLastResort: true,
-                    writingSystemOnly: false, out var lrGt, out var lrFamilyName))
+            if (TryMatchInCache(cp, key, familyName, culture, script, refinedScript, shapingScript, emojiPresentation,
+                    isLastResort: true, writingSystemOnly: false, out var lrGt, out var lrFamilyName))
             {
                 match = BuildTypefaceWithSynthesis(lrGt, lrFamilyName, key);
                 return true;
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Records <paramref name="familyName"/> as the bucket's family unless the bucket already has
+        /// an entry, and marks it as an emoji family when the bucket is one.
+        /// </summary>
+        private void RecordBucketFamily(ScriptFallbackKey scriptKey, string familyName)
+        {
+            if (_scriptFallbackCache.TryAdd(scriptKey, familyName) && scriptKey.EmojiPresentation)
+            {
+                _emojiFamilies.TryAdd(familyName, 0);
+            }
         }
 
         private bool TryMatchInCache(
@@ -249,6 +300,7 @@ namespace Avalonia.Media.Fonts
             Script script,
             Script refinedScript,
             Script shapingScript,
+            bool emojiPresentation,
             bool isLastResort,
             bool writingSystemOnly,
             [NotNullWhen(true)] out GlyphTypeface? bestGlyphTypeface,
@@ -281,8 +333,10 @@ namespace Avalonia.Media.Fonts
                 }
 
                 if (writingSystemOnly &&
-                    FontFallbackScriptHints.MatchWritingSystem(candidate, codepoint, culture) is
-                        WritingSystemMatch.Mismatch or WritingSystemMatch.Unspecified)
+                    (emojiPresentation != _emojiFamilies.ContainsKey(familyName) ||
+                     !emojiPresentation &&
+                     FontFallbackScriptHints.MatchWritingSystem(candidate, codepoint, culture) is
+                         WritingSystemMatch.Mismatch or WritingSystemMatch.Unspecified))
                 {
                     continue;
                 }
