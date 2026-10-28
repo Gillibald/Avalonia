@@ -7,6 +7,7 @@ using System.IO;
 using System.Text;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
+using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Xunit;
@@ -23,6 +24,130 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         private const int Han = 0x4E2D;
 
         private const string NiscAsset = "resm:Avalonia.Base.UnitTests.Assets.NISC18030.ttf?assembly=Avalonia.Base.UnitTests";
+
+        // ulCodePageRange1 bits 17 (JIS/Japan) and 18 (Chinese Simplified).
+        private const uint JapaneseJisCodePage = 1u << 17;
+        private const uint ChineseSimplifiedCodePage = 1u << 18;
+
+        // A Simplified Chinese design that lists Japanese among its supported languages, as the
+        // PingFang SC face in macOS's PingFang.ttc does.
+        private const string SimplifiedWideDesign = "zh-Hans";
+        private const string SimplifiedWideSupport = "en,de,ru,uk,ja,zh,zh-Hans,yue";
+
+        [Fact]
+        public void Japanese_Han_Should_Not_Take_A_Loaded_Face_That_Only_Supports_Japanese()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.True(collection.TryGetGlyphTypeface("Simplified Wide Test", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.Equal("Japanese Test", Match(collection, "ja-JP"));
+        }
+
+        [Fact]
+        public void Japanese_Han_Should_Not_Take_A_Loaded_Face_That_Only_Claims_The_Jis_Code_Page()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.True(collection.TryGetGlyphTypeface("Jis Test", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.Equal("Japanese Test", Match(collection, "ja-JP"));
+        }
+
+        [Theory]
+        [InlineData("Japanese Test")]
+        [InlineData("Jpan Script Test")]
+        public void Japanese_Han_Should_Take_A_Loaded_Face_Designed_For_Japanese(string familyName)
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.True(collection.TryGetGlyphTypeface(familyName, FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.Equal(familyName, Match(collection, "ja-JP"));
+            Assert.Equal(0, provider.TryMatchCharacterCount);
+        }
+
+        [Fact]
+        public void Japanese_Han_Should_Not_Depend_On_An_Earlier_Simplified_Chinese_Lookup()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider { Languages = { ["zh-CN"] = "Simplified Wide Test" } };
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.Equal("Simplified Wide Test", Match(collection, "zh-CN"));
+            Assert.Equal("Japanese Test", Match(collection, "ja-JP"));
+        }
+
+        [Fact]
+        public void Korean_Han_Should_Not_Take_A_Loaded_Japanese_Face_That_Supports_Korean()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var provider = new LanguageFontProvider();
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.True(collection.TryGetGlyphTypeface("Japanese Wide Test", FontStyle.Normal, FontWeight.Normal,
+                FontStretch.Normal, out _));
+
+            Assert.Equal("Korean Test", Match(collection, "ko-KR"));
+        }
+
+        [Theory]
+        [InlineData("ja-JP", "Mismatch")]
+        [InlineData("zh-CN", "Match")]
+        [InlineData("zh-TW", "Mismatch")]
+        public void A_Face_Should_Match_Han_Only_In_Its_Design_Language(string culture, string expected)
+        {
+            using var app = UnitTestApplication.Start();
+
+            var face = CreateGlyphTypeface(CreateFont("Simplified Wide Test", SimplifiedWideDesign,
+                SimplifiedWideSupport, ChineseSimplifiedCodePage));
+
+            Assert.Equal(expected,
+                FontFallbackScriptHints.MatchWritingSystem(face, new Codepoint((uint)Han), CultureInfo.GetCultureInfo(culture)).ToString());
+        }
+
+        [Theory]
+        [InlineData("ja", "ja-JP", "Match")]
+        [InlineData("Jpan", "ja-JP", "Match")]
+        [InlineData("zh-Hant", "zh-TW", "Match")]
+        [InlineData("zh-HK", "zh-TW", "Match")]
+        [InlineData("zh-Hans", "zh-TW", "Mismatch")]
+        [InlineData("ko", "ja-JP", "Mismatch")]
+        public void A_Design_Language_Should_Name_Its_Han_Writing_System_In_Either_Tag_Form(string designLanguage,
+            string culture, string expected)
+        {
+            using var app = UnitTestApplication.Start();
+
+            var face = CreateGlyphTypeface(CreateFont("Design Test", designLanguage));
+
+            Assert.Equal(expected,
+                FontFallbackScriptHints.MatchWritingSystem(face, new Codepoint((uint)Han), CultureInfo.GetCultureInfo(culture)).ToString());
+        }
+
+        [Fact]
+        public void A_Face_With_Only_The_Jis_Code_Page_Should_Not_Match_Japanese_Han()
+        {
+            using var app = UnitTestApplication.Start();
+
+            var face = CreateGlyphTypeface(CreateFont("Jis Test", null, null, JapaneseJisCodePage));
+
+            Assert.Equal(WritingSystemMatch.Mismatch,
+                FontFallbackScriptHints.MatchWritingSystem(face, new Codepoint((uint)Han), CultureInfo.GetCultureInfo("ja-JP")));
+        }
 
         [Fact]
         public void Japanese_Han_Should_Not_Take_A_Loaded_Korean_Face()
@@ -59,17 +184,27 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
         }
 
         [Fact]
-        public void A_Loaded_Face_Declaring_No_Writing_System_Should_Still_Answer()
+        public void Japanese_Han_Should_Not_Take_A_Loaded_Face_Declaring_No_Writing_System()
         {
+            using var app = UnitTestApplication.Start();
+
             var provider = new LanguageFontProvider();
             var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
 
             Assert.Equal("Plain Test", Match(collection, "en-US"));
+            Assert.Equal("Japanese Test", Match(collection, "ja-JP"));
+        }
 
-            var calls = provider.TryMatchCharacterCount;
+        [Fact]
+        public void A_Loaded_Face_Declaring_No_Writing_System_Should_Answer_When_The_Platform_Has_None()
+        {
+            using var app = UnitTestApplication.Start();
 
+            var provider = new LanguageFontProvider { Languages = { ["ja-JP"] = null } };
+            var collection = new SystemFontCollection(FontManager.SystemFontsKey, provider);
+
+            Assert.Equal("Plain Test", Match(collection, "en-US"));
             Assert.Equal("Plain Test", Match(collection, "ja-JP"));
-            Assert.Equal(calls, provider.TryMatchCharacterCount);
         }
 
         [Fact]
@@ -134,19 +269,30 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
 
         /// <summary>
         /// A CJK font (the GB18030 test font) named <paramref name="familyName"/> that declares
-        /// <paramref name="designLanguages"/> in its meta table, or nothing at all when it is null.
+        /// <paramref name="designLanguages"/> (<c>dlng</c>) and <paramref name="supportedLanguages"/>
+        /// (<c>slng</c>) in its meta table, and <paramref name="codePages"/> as its OS/2
+        /// ulCodePageRange1. Without either language list the font has no meta table.
         /// </summary>
-        private static byte[] CreateFont(string familyName, string? designLanguages)
+        private static byte[] CreateFont(string familyName, string? designLanguages,
+            string? supportedLanguages = null, uint codePages = 0)
         {
             var font = SyntheticFont.FromAsset(NiscAsset)
                 .Replace("name", BuildNameTable(familyName))
-                // No code page claims: the meta table is the font's only declaration.
-                .PatchUInt32("OS/2", 78, 0)
+                .PatchUInt32("OS/2", 78, codePages)
                 .PatchUInt32("OS/2", 82, 0);
 
-            font = designLanguages is null ? font.Remove("meta") : font.Replace("meta", BuildMetaTable(designLanguages));
+            font = designLanguages is null && supportedLanguages is null
+                ? font.Remove("meta")
+                : font.Replace("meta", BuildMetaTable(designLanguages, supportedLanguages));
 
             return font.ToBytes();
+        }
+
+        private static GlyphTypeface CreateGlyphTypeface(byte[] font)
+        {
+            Assert.True(SfntFace.TryLoad(new MemoryStream(font), out var face));
+
+            return new GlyphTypeface(face);
         }
 
         private static byte[] BuildNameTable(string familyName)
@@ -178,17 +324,44 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             }
         }
 
-        private static byte[] BuildMetaTable(string designLanguages)
+        private static byte[] BuildMetaTable(string? designLanguages, string? supportedLanguages)
         {
-            var payload = Encoding.UTF8.GetBytes(designLanguages);
-            var bytes = new byte[16 + 12 + payload.Length];
+            var maps = new List<(string Tag, byte[] Payload)>();
+
+            if (designLanguages is not null)
+            {
+                maps.Add(("dlng", Encoding.UTF8.GetBytes(designLanguages)));
+            }
+
+            if (supportedLanguages is not null)
+            {
+                maps.Add(("slng", Encoding.UTF8.GetBytes(supportedLanguages)));
+            }
+
+            var dataOffset = 16 + 12 * maps.Count;
+            var length = dataOffset;
+
+            foreach (var map in maps)
+            {
+                length += map.Payload.Length;
+            }
+
+            var bytes = new byte[length];
 
             BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(0), 1);
-            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(12), 1);
-            Encoding.ASCII.GetBytes("dlng").CopyTo(bytes, 16);
-            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(20), 28);
-            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(24), (uint)payload.Length);
-            payload.CopyTo(bytes, 28);
+            BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(12), (uint)maps.Count);
+
+            for (var i = 0; i < maps.Count; i++)
+            {
+                var record = 16 + 12 * i;
+
+                Encoding.ASCII.GetBytes(maps[i].Tag).CopyTo(bytes, record);
+                BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(record + 4), (uint)dataOffset);
+                BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(record + 8), (uint)maps[i].Payload.Length);
+                maps[i].Payload.CopyTo(bytes, dataOffset);
+
+                dataOffset += maps[i].Payload.Length;
+            }
 
             return bytes;
         }
@@ -206,6 +379,11 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
                 ["Simplified Test"] = CreateFont("Simplified Test", "zh-Hans"),
                 ["Traditional Test"] = CreateFont("Traditional Test", "zh-Hant"),
                 ["Plain Test"] = CreateFont("Plain Test", null),
+                ["Simplified Wide Test"] = CreateFont("Simplified Wide Test", SimplifiedWideDesign,
+                    SimplifiedWideSupport, ChineseSimplifiedCodePage),
+                ["Jis Test"] = CreateFont("Jis Test", null, null, JapaneseJisCodePage),
+                ["Jpan Script Test"] = CreateFont("Jpan Script Test", "Jpan"),
+                ["Japanese Wide Test"] = CreateFont("Japanese Wide Test", "ja", "ja,ko"),
             };
 
             public Dictionary<string, string?> Languages { get; } = new()
@@ -214,6 +392,7 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
                 ["ja-JP"] = "Japanese Test",
                 ["zh-Hans"] = "Simplified Test",
                 ["zh-Hant"] = "Traditional Test",
+                ["zh-TW"] = "Traditional Test",
                 ["en-US"] = "Plain Test",
             };
 
