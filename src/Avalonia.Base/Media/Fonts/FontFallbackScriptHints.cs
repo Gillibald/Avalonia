@@ -129,26 +129,36 @@ namespace Avalonia.Media.Fonts
         /// How <paramref name="candidate"/> relates to the writing system a fallback request for
         /// <paramref name="codepoint"/> in <paramref name="culture"/> asks for. Han text is asked
         /// for in the culture's writing system (Japanese, Korean, Simplified or Traditional
-        /// Chinese), Hangul in Korean and kana in Japanese; a face matches when it declares that
-        /// writing system, in its <c>meta</c> table or, without one, through its OS/2 code pages.
-        /// Text in any other script asks for a face that supports the script. Han in a culture that
-        /// names none of these writing systems is <see cref="WritingSystemMatch.Unspecified"/>: any
-        /// regional design could answer it, so the choice belongs to the platform.
+        /// Chinese), Hangul in Korean and kana in Japanese. For Han a face matches only when that
+        /// writing system is one of its design languages (<c>dlng</c>): the same codepoints have
+        /// regional glyph forms, and supported languages (<c>slng</c>) and OS/2 code pages describe
+        /// coverage, which a Simplified Chinese design that lists Japanese has as well. For Hangul
+        /// and kana a face matches when it declares the writing system in its <c>meta</c> table
+        /// or, without one, through its OS/2 code pages. Text in any other script asks for a face
+        /// that supports the script. Han in a culture that names none of these writing systems is
+        /// <see cref="WritingSystemMatch.Unspecified"/>: any regional design could answer it, so
+        /// the choice belongs to the platform.
         /// </summary>
         public static WritingSystemMatch MatchWritingSystem(GlyphTypeface candidate, Codepoint codepoint, CultureInfo? culture)
         {
             var script = codepoint.Script;
 
-            if (script == Script.Han && GetHanWritingSystem(culture) is null)
+            if (script == Script.Han)
             {
-                return WritingSystemMatch.Unspecified;
+                if (GetHanWritingSystem(culture) is not { } writingSystem)
+                {
+                    return WritingSystemMatch.Unspecified;
+                }
+
+                return candidate.DesignsForWritingSystem(writingSystem)
+                    ? WritingSystemMatch.Match
+                    : WritingSystemMatch.Mismatch;
             }
 
             var subtag = script switch
             {
                 Script.Hangul => "Kore",
                 Script.Hiragana or Script.Katakana or Script.KatakanaOrHiragana => "Jpan",
-                Script.Han => GetHanWritingSystem(culture),
                 _ => null,
             };
 
@@ -177,13 +187,9 @@ namespace Avalonia.Media.Fonts
                 return WritingSystemMatch.Unknown;
             }
 
-            var requested = subtag switch
-            {
-                "Jpan" => FontCodePageCoverage.JapaneseJis,
-                "Kore" => FontCodePageCoverage.KoreanWansung | FontCodePageCoverage.KoreanJohab,
-                "Hans" => FontCodePageCoverage.ChineseSimplified,
-                _ => FontCodePageCoverage.ChineseTraditional,
-            };
+            var requested = subtag == "Jpan"
+                ? FontCodePageCoverage.JapaneseJis
+                : FontCodePageCoverage.KoreanWansung | FontCodePageCoverage.KoreanJohab;
 
             return (coverage & requested) != 0 ? WritingSystemMatch.Match : WritingSystemMatch.Mismatch;
         }
@@ -330,7 +336,10 @@ namespace Avalonia.Media.Fonts
         /// <summary>The face declares or supports the requested writing system.</summary>
         Match,
 
-        /// <summary>The face declares only other writing systems, or lacks the requested script.</summary>
+        /// <summary>
+        /// The face declares only other writing systems, lacks the requested script, or for Han does
+        /// not name the requested writing system among its design languages.
+        /// </summary>
         Mismatch,
 
         /// <summary>

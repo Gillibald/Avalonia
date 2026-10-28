@@ -1303,6 +1303,26 @@ namespace Avalonia.Media
             }
         }
 
+        /// <summary>
+        /// Whether one of the font's design languages (the <c>dlng</c> list of its <c>meta</c> table)
+        /// is written in the script <paramref name="scriptSubtag"/>, given as a language tag
+        /// (<c>"ja"</c>, <c>"zh-Hant"</c>) or as the script subtag alone (<c>"Jpan"</c>). A bare
+        /// <c>"zh"</c> is read as Simplified Chinese, its likely script. A design language of
+        /// <c>"Hani"</c> names no regional design, so it designs for none of the Han writing systems.
+        /// </summary>
+        internal bool DesignsForWritingSystem(string scriptSubtag)
+        {
+            foreach (var tag in _designLanguages)
+            {
+                if (Fonts.Bcp47ScriptResolver.GetScriptSubtagOfTag(tag) == scriptSubtag)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static bool IsBcp47PrefixMatch(string tag, string cultureName)
         {
             // Either side may be the narrower one — match if one is a subtag-prefix of the other.
