@@ -5,6 +5,7 @@ using System.Globalization;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
 using Avalonia.Media.TextFormatting;
+using Avalonia.Media.TextFormatting.Unicode;
 using Avalonia.Platform;
 using Avalonia.UnitTests;
 using Xunit;
@@ -79,9 +80,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = null;
+                    var reuse = default(FallbackTypefaceReuse);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     // Before the fix this was a SINGLE coalesced .notdef run spanning both codepoints
                     // with the primary typeface — the Hebrew cluster was rendered as tofu even though a
@@ -134,9 +135,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = null;
+                    var reuse = default(FallbackTypefaceReuse);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     // The base+mark cluster stays whole, on a font that covers the mark. Before the fix
                     // it was left on the primary (which has the base but not the mark), dropping the mark.
@@ -193,9 +194,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = null;
+                    var reuse = default(FallbackTypefaceReuse);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     Assert.NotEmpty(results);
 
@@ -258,9 +259,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = null;
+                    var reuse = default(FallbackTypefaceReuse);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     Assert.Single(results);
                     Assert.Equal(text.Length, results[0].Length);
@@ -312,13 +313,13 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
                 var text = char.ConvertFromUtf32(han).AsMemory();
                 var textCharacters = new TextCharacters(text, defaultProperties);
 
-                TextRunProperties? previousProperties = new GenericTextRunProperties(scTypeface, cultureInfo: zh);
+                var reuse = new FallbackTypefaceReuse(scTypeface, scGlyphTypeface, Script.Han, zh);
 
                 var results = FormattingObjectPool.Instance.TextRunLists.Rent();
 
                 try
                 {
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     Assert.Single(results);
                     Assert.True(fontManager.TryGetGlyphTypeface(results[0].Properties!.Typeface, out var runGlyphTypeface));
@@ -371,9 +372,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = null;
+                    var reuse = default(FallbackTypefaceReuse);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     Assert.Equal(2, results.Count);
 
@@ -487,9 +488,9 @@ namespace Avalonia.Skia.UnitTests.Media.TextFormatting
 
                 try
                 {
-                    TextRunProperties? previousProperties = new GenericTextRunProperties(scTypeface);
+                    var reuse = new FallbackTypefaceReuse(scTypeface, scGlyphTypeface, Script.Han, null);
 
-                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref previousProperties, results);
+                    textCharacters.GetShapeableCharacters(text, 0, fontManager, ref reuse, results);
 
                     Assert.Equal(2, results.Count);
 
