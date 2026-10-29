@@ -312,7 +312,8 @@ namespace TextLab
             var position = source.CreateNormalizedPosition(settings);
             var clone = source.WithVariation(position);
 
-            SetImage(_specimenImage, RenderRun(clone, sample, size));
+            // Runs render at the window's device pixels and show at their size in points.
+            SetImage(_specimenImage, RenderRun(clone, sample, size * PipelineFigures.ScaleOf(this)));
 
             // The property-pipeline block: identical axis values through the
             // TextElement.FontVariations dependency property. The assignment animates
@@ -339,6 +340,7 @@ namespace TextLab
             var axis = item.Axis;
             var t = FigureTheme.Current;
             var rowSize = (float)Math.Clamp(Math.Min(_size, 30), 12, 30);
+            var deviceScale = PipelineFigures.ScaleOf(this);
             var rows = new (string Label, SKBitmap Bitmap)[LadderSteps];
             var maxWidth = 0;
             var totalHeight = 0;
@@ -350,7 +352,7 @@ namespace TextLab
                 var value = axis.MinimumValue + (axis.MaximumValue - axis.MinimumValue) * i / (LadderSteps - 1);
                 var coords = new Dictionary<OpenTypeTag, float>(_userValues) { [axis.Tag] = value };
                 var stepClone = source.WithVariation(source.CreateNormalizedPosition(ToSettings(coords)));
-                var bitmap = RenderRun(stepClone, sample, rowSize);
+                var bitmap = RenderRun(stepClone, sample, rowSize * deviceScale);
 
                 rows[i] = (Fmt.N(value), bitmap);
                 maxWidth = Math.Max(maxWidth, bitmap.Width);
@@ -358,26 +360,31 @@ namespace TextLab
             }
 
             const int labelWidth = 64;
-            var composed = new SKBitmap(new SKImageInfo(labelWidth + maxWidth, totalHeight,
-                SKColorType.Bgra8888, SKAlphaType.Premul));
+            var composed = PipelineFigures.NewFigure(labelWidth + (int)Math.Ceiling(maxWidth / deviceScale),
+                (int)Math.Ceiling(totalHeight / deviceScale), deviceScale, out var composedCanvas);
 
-            using (var canvas = new SKCanvas(composed))
+            using (var canvas = composedCanvas)
             using (var font = new SKFont(SKTypeface.Default, 12))
             using (var label = new SKPaint { Color = t.Faint })
             {
                 canvas.Clear(t.Background);
 
-                var y = 0;
+                var y = 0f;
 
                 foreach (var (text, bitmap) in rows)
                 {
+                    // Rows are in device pixels; one row pixel per device pixel is 1/scale figure pixels.
+                    var rowWidth = bitmap.Width / deviceScale;
+                    var rowHeight = bitmap.Height / deviceScale;
+
                     using (var image = SKImage.FromBitmap(bitmap))
                     {
-                        canvas.DrawText(text, 6, y + bitmap.Height * 0.72f, SKTextAlign.Left, font, label);
-                        canvas.DrawImage(image, labelWidth, y);
+                        canvas.DrawText(text, 6, y + rowHeight * 0.72f, SKTextAlign.Left, font, label);
+                        canvas.DrawImage(image, SKRect.Create(labelWidth, y, rowWidth, rowHeight),
+                            new SKSamplingOptions(SKFilterMode.Nearest));
                     }
 
-                    y += bitmap.Height + 2;
+                    y += rowHeight + 2 / deviceScale;
                     bitmap.Dispose();
                 }
             }
@@ -397,9 +404,9 @@ namespace TextLab
             var baselineY = 14 + (float)(-source.Metrics.Ascent) * scale;
             var width = Math.Max((int)Math.Ceiling(metrics.AdvanceWidth * scale) + 56, 220);
             var height = (int)Math.Ceiling(baselineY + (float)source.Metrics.Descent * scale) + 18;
-            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var bitmap = PipelineFigures.NewFigure(width, height, PipelineFigures.ScaleOf(this), out var overlayCanvas);
 
-            using (var canvas = new SKCanvas(bitmap))
+            using (var canvas = overlayCanvas)
             {
                 canvas.Clear(t.Background);
 
@@ -606,19 +613,12 @@ namespace TextLab
             }
         }
 
-        private static void SetImage(Image target, SKBitmap bitmap)
+        private void SetImage(Image target, SKBitmap bitmap)
         {
-            var previous = target.Source as IDisposable;
-
             using (bitmap)
-            using (var image = SKImage.FromBitmap(bitmap))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
             {
-                target.Source = new Bitmap(stream);
+                PipelineFigures.Show(target, bitmap, PipelineFigures.ScaleOf(this));
             }
-
-            previous?.Dispose();
         }
     }
 }

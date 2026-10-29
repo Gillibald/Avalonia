@@ -9,10 +9,13 @@
         <TextBlock Text="Rendering" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
         <ComboBox x:Name="RenderingBox" Width="160" AutomationProperties.Name="Rendering mode" />
         <TextBlock Text="Zoom" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
-        <ComboBox x:Name="ZoomBox" Width="70" AutomationProperties.Name="Zoom" />
+        <ComboBox x:Name="ZoomBox" Width="80" AutomationProperties.Name="Zoom"
+                  ToolTip.Tip="Device pixels per rendered pixel. Fit picks the largest that fits the page." />
         <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
       </StackPanel>
     </Border>
-    <Image x:Name="MatrixImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10" />
+    <Panel x:Name="MatrixHost" Margin="10">
+      <Image x:Name="MatrixImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" />
+    </Panel>
   </DockPanel>
 </UserControl>

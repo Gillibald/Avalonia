@@ -20,7 +20,7 @@
     <Panel>
     <Grid ColumnDefinitions="Auto,260">
       <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto">
-        <Image x:Name="GridImage" Stretch="None" VerticalAlignment="Top" HorizontalAlignment="Left"
+        <Image x:Name="GridImage" Stretch="Uniform" VerticalAlignment="Top" HorizontalAlignment="Left"
                AutomationProperties.Name="Glyph grid" Margin="8" />
       </ScrollViewer>
       <Border Grid.Column="1" Padding="12" BorderBrush="#30808080" BorderThickness="1,0,0,0">

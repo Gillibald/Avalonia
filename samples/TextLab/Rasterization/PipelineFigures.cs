@@ -31,12 +31,86 @@ namespace TextLab
         private static FigureTheme Theme => ThemeOverride ?? FigureTheme.Current;
 
         /// <summary>
+        /// A figure <paramref name="width"/> by <paramref name="height"/> figure pixels, backed by
+        /// <paramref name="scale"/> device pixels per figure pixel, with a canvas that draws in figure
+        /// pixels. Shown at 96 x <paramref name="scale"/> DPI, each backing pixel lands on one device
+        /// pixel, so lines and labels stay sharp on a high-density screen.
+        /// </summary>
+        internal static SKBitmap NewFigure(int width, int height, float scale, out SKCanvas canvas)
+        {
+            var bitmap = new SKBitmap(new SKImageInfo(
+                Math.Max(1, (int)Math.Ceiling(width * scale)), Math.Max(1, (int)Math.Ceiling(height * scale)),
+                SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            canvas = new SKCanvas(bitmap);
+            canvas.Scale(scale);
+
+            return bitmap;
+        }
+
+        /// <summary>
+        /// The figure's pixels as an Avalonia bitmap at 96 DPI. The pixels are copied; the caller
+        /// keeps <paramref name="figure"/>.
+        /// </summary>
+        /// <remarks>
+        /// A figure drawn at device scale keeps 96 DPI and gets its size in points from
+        /// <see cref="Show"/>: an <see cref="Avalonia.Controls.Image"/> takes its source rectangle in
+        /// device-independent units while the Skia backend reads it in pixels, so a bitmap of another
+        /// DPI would draw its top-left part enlarged.
+        /// </remarks>
+        public static Avalonia.Media.Imaging.Bitmap ToBitmap(SKBitmap figure)
+        {
+            using (var bgra = figure.ColorType == SKColorType.Bgra8888 && figure.AlphaType == SKAlphaType.Premul
+                       ? null
+                       : ConvertToBgraPremul(figure))
+            {
+                var source = bgra ?? figure;
+
+                return new Avalonia.Media.Imaging.Bitmap(Avalonia.Platform.PixelFormat.Bgra8888,
+                    Avalonia.Platform.AlphaFormat.Premul, source.GetPixels(),
+                    new Avalonia.PixelSize(source.Width, source.Height),
+                    new Avalonia.Vector(96, 96), source.RowBytes);
+            }
+        }
+
+        /// <summary>
+        /// Shows <paramref name="figure"/>, drawn at <paramref name="scale"/> device pixels per point,
+        /// in <paramref name="target"/> at most at its size in points, where each figure pixel lands
+        /// on one device pixel; a smaller cell shrinks it. The target's previous bitmap is disposed;
+        /// the caller keeps <paramref name="figure"/>.
+        /// </summary>
+        public static void Show(Avalonia.Controls.Image target, SKBitmap figure, double scale)
+        {
+            var previous = target.Source as IDisposable;
+
+            target.Source = ToBitmap(figure);
+            target.MaxWidth = figure.Width / scale;
+            target.MaxHeight = figure.Height / scale;
+            previous?.Dispose();
+        }
+
+        private static SKBitmap ConvertToBgraPremul(SKBitmap figure)
+        {
+            var converted = new SKBitmap(new SKImageInfo(figure.Width, figure.Height, SKColorType.Bgra8888, SKAlphaType.Premul));
+
+            using var canvas = new SKCanvas(converted);
+
+            canvas.DrawBitmap(figure, 0, 0);
+
+            return converted;
+        }
+
+        /// <summary>The device pixels per point of the window hosting <paramref name="visual"/>.</summary>
+        public static float ScaleOf(Avalonia.Visual visual) =>
+            (float)(Avalonia.Controls.TopLevel.GetTopLevel(visual)?.RenderScaling ?? 1);
+
+        /// <summary>
         /// One glyph on the pixel grid: the rasterized mask, the outline before (red) and
         /// after (blue) the hinting warps, the zone rows (green, with their pre-snap source
         /// positions dashed) and the per-glyph stroke pairs (orange).
         /// </summary>
         public static SKBitmap HintingAnatomy(GlyphTypeface typeface, ushort glyph, string label, float size,
-            TextHintingMode hinting, out string legend, bool embedCaption = true)
+            TextHintingMode hinting, out string legend, bool embedCaption = true, float deviceScale = 1)
         {
             legend = "red unhinted, blue grid-fit, green zones (dashed = source), orange stroke pairs";
             var t = Theme;
@@ -78,9 +152,9 @@ namespace TextLab
             var width = marginLeft + mask.Width * zoom + 150;
             var height = marginTop + mask.Height * zoom + (embedCaption ? 76 : 20);
 
-            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var bitmap = NewFigure(width, height, deviceScale, out var figureCanvas);
 
-            using var canvas = new SKCanvas(bitmap);
+            using var canvas = figureCanvas;
 
             canvas.Clear(t.Background);
 
@@ -191,7 +265,7 @@ namespace TextLab
         /// </summary>
         public static SKBitmap BytecodeHintingAnatomy(GlyphTypeface typeface, ushort glyph, string label,
             float size, TextHintingMode hinting, TrueTypeHintingProbe probe, int step,
-            out string legend, bool embedCaption = true)
+            out string legend, bool embedCaption = true, float deviceScale = 1)
         {
             legend = "red unhinted, blue fitted by the font's program  |  connectors original->current" +
                 Environment.NewLine +
@@ -218,9 +292,9 @@ namespace TextLab
             const int marginTop = 28;
             var width = Math.Max(marginLeft + mask.Width * zoom + 40, 560);
             var height = marginTop + mask.Height * zoom + (embedCaption ? 96 : 16);
-            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var bitmap = NewFigure(width, height, deviceScale, out var figureCanvas);
 
-            using var canvas = new SKCanvas(bitmap);
+            using var canvas = figureCanvas;
 
             canvas.Clear(t.Background);
 
@@ -356,7 +430,7 @@ namespace TextLab
         /// fields, and a run composed from per-glyph masks shown at 1x and 4x.
         /// </summary>
         public static SKBitmap MaskAnatomy(GlyphTypeface typeface, ushort glyph, string label, string runText, float size,
-            out string keyInfo, bool embedInfo = true)
+            out string keyInfo, bool embedInfo = true, float deviceScale = 1)
         {
             // Compact enough for a quadrant; the run redraws at 3x instead of 4x.
             var t = Theme;
@@ -441,9 +515,9 @@ namespace TextLab
             var width = Math.Max(Math.Max(Math.Max(maskPanelWidth + (embedInfo ? 480 : 0), runWidth * 3 + 40), 600),
                 70 + variantColumnWidth * variantHintings.Length);
             var height = variantTop + 30 + variantRowHeight * variantModes.Length + 16;
-            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var bitmap = NewFigure(width, height, deviceScale, out var figureCanvas);
 
-            using var canvas = new SKCanvas(bitmap);
+            using var canvas = figureCanvas;
 
             canvas.Clear(t.Background);
 
@@ -503,7 +577,8 @@ namespace TextLab
             {
                 canvas.DrawText(Inv($"run mask composed from per-glyph masks at integer pens (\"{runText}\" {size:0.#}px), 1x and 4x:"),
                     10, runTop - 8, SKTextAlign.Left, font, text);
-                canvas.DrawImage(image, new SKRect(10, runTop, 10 + runWidth, runTop + runHeight));
+                canvas.DrawImage(image, new SKRect(10, runTop, 10 + runWidth, runTop + runHeight),
+                    new SKSamplingOptions(SKFilterMode.Nearest));
                 canvas.DrawImage(image,
                     new SKRect(10, runTop + runHeight + 8, 10 + runWidth * 3, runTop + runHeight + 8 + runHeight * 3),
                     new SKSamplingOptions(SKFilterMode.Nearest));
@@ -593,7 +668,7 @@ namespace TextLab
         /// gamma correction, optionally BGR stripe order).
         /// </summary>
         public static SKBitmap ClearTypePipeline(GlyphTypeface typeface, ushort glyph, string label, float size,
-            bool bgr, bool gamma, TextHintingMode hinting, out string legend, bool embedCaption = true)
+            bool bgr, bool gamma, TextHintingMode hinting, out string legend, bool embedCaption = true, float deviceScale = 1)
         {
             legend = "3x raster -> (1,2,3,2,1)/9 FIR per stripe -> interleaved RGB mask -> per-channel blend";
             var t = Theme;
@@ -656,9 +731,9 @@ namespace TextLab
             }
 
             var height = mask.Height * zoom + (embedCaption ? 74 : 40);
-            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var bitmap = NewFigure(width, height, deviceScale, out var figureCanvas);
 
-            using var canvas = new SKCanvas(bitmap);
+            using var canvas = figureCanvas;
 
             canvas.Clear(t.Background);
 
@@ -899,7 +974,7 @@ namespace TextLab
         /// </summary>
         public static SKBitmap FringeAnalysis(GlyphTypeface typeface, string text, float size,
             TextHintingMode hinting, int zoom,
-            out int fringed, out int warmEdges, out int coolEdges, out int wrongPolarity, out int inkPixels)
+            out int fringed, out int warmEdges, out int coolEdges, out int wrongPolarity, out int inkPixels, float deviceScale = 1)
         {
             var t = Theme;
             var inkBrush = new SolidColorBrush(Color.FromRgb(t.Ink.Red, t.Ink.Green, t.Ink.Blue));
@@ -1017,10 +1092,9 @@ namespace TextLab
                 }
             }
 
-            var composed = new SKBitmap(new SKImageInfo(width * zoom,
-                (height * zoom + 20) * 2, SKColorType.Bgra8888, SKAlphaType.Premul));
+            var composed = NewFigure(width * zoom, (height * zoom + 20) * 2, deviceScale, out var composedCanvas);
 
-            using (var canvas = new SKCanvas(composed))
+            using (var canvas = composedCanvas)
             using (var font = new SKFont(SKTypeface.Default, 12))
             using (var label = new SKPaint { Color = t.Label })
             {

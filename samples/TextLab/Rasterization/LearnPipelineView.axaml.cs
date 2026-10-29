@@ -21,7 +21,7 @@ namespace TextLab
     public partial class LearnPipelineView : UserControl
     {
         /// <summary>One page of the walkthrough.</summary>
-        private sealed record Stage(string Title, string Prose, Bitmap? Figure, string Legend);
+        private sealed record Stage(string Title, string Prose, Bitmap? Figure, Size FigureSize, string Legend);
 
         private readonly List<Stage> _stages = new();
         private readonly TextBlock _introText;
@@ -88,6 +88,8 @@ namespace TextLab
             _stageLegend.Text = stage.Legend;
             _stageLegend.IsVisible = stage.Legend.Length > 0;
             _stageFigure.Source = stage.Figure;
+            _stageFigure.MaxWidth = stage.FigureSize.Width;
+            _stageFigure.MaxHeight = stage.FigureSize.Height;
             _inspectButton.IsVisible = _page == _stages.Count - 1;
             _pageText.Text = $"Stage {_page + 1} of {_stages.Count}";
             _previousButton.IsEnabled = _page > 0;
@@ -139,7 +141,7 @@ namespace TextLab
                 "a stem can land at 1.37 px, which no pixel grid can draw faithfully. Beside: the scaled " +
                 "outline (red) over the pixels it would cover with no correction at all.",
                 PipelineFigures.HintingAnatomy(typeface, g, "'g'", 12, TextHintingMode.None, out var legend1,
-                    embedCaption: false), legend1);
+                    embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this)), legend1);
 
             SKBitmap hintFigure;
             string legend2;
@@ -149,12 +151,12 @@ namespace TextLab
                     out _) is { } probe)
             {
                 hintFigure = PipelineFigures.BytecodeHintingAnatomy(typeface, g, "'g'", 12,
-                    TextHintingMode.Light, probe, probe.StepCount, out legend2, embedCaption: false);
+                    TextHintingMode.Light, probe, probe.StepCount, out legend2, embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this));
             }
             else
             {
                 hintFigure = PipelineFigures.HintingAnatomy(typeface, g, "'g'", 12, TextHintingMode.Light,
-                    out legend2, embedCaption: false);
+                    out legend2, embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this));
             }
 
             AddStage("2. Hinting snaps the outline to the grid",
@@ -171,7 +173,7 @@ namespace TextLab
                 "subpixel phase and hinting flags. Whole runs then compose from cached masks at integer pen " +
                 "positions, which is why warm frames draw with zero allocations.",
                 PipelineFigures.MaskAnatomy(typeface, g, "'g'", "Hamburg", 13, out var legend3,
-                    embedInfo: false), legend3);
+                    embedInfo: false, deviceScale: PipelineFigures.ScaleOf(this)), legend3);
 
             AddStage("4. Subpixel rendering triples the horizontal grid",
                 "For LCD output the rasterizer runs at three times the horizontal resolution, filters each " +
@@ -180,7 +182,7 @@ namespace TextLab
                 "text carry the same apparent weight - flip the app theme and the Fringes view to see both " +
                 "polarities.",
                 PipelineFigures.ClearTypePipeline(typeface, e, "'e'", 13, bgr: false, gamma: true,
-                    TextHintingMode.Light, out var legend4, embedCaption: false), legend4);
+                    TextHintingMode.Light, out var legend4, embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this)), legend4);
 
             AddStage("5. Three tiers draw the run",
                 "Every glyph run dispatches through up to three tiers: pre-composed run masks for " +
@@ -194,17 +196,15 @@ namespace TextLab
             ShowPage(_page);
         }
 
-        private void AddStage(string title, string prose, SKBitmap? figure, string legend) =>
-            _stages.Add(new Stage(title, prose, figure is null ? null : ToBitmap(figure), legend));
-
-        private static Bitmap ToBitmap(SKBitmap figure)
+        private void AddStage(string title, string prose, SKBitmap? figure, string legend)
         {
             using (figure)
-            using (var image = SKImage.FromBitmap(figure))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
             {
-                return new Bitmap(stream);
+                // Figures are drawn at device scale and shown at their size in points.
+                var deviceScale = PipelineFigures.ScaleOf(this);
+
+                _stages.Add(new Stage(title, prose, figure is null ? null : PipelineFigures.ToBitmap(figure),
+                    figure is null ? default : new Size(figure.Width / deviceScale, figure.Height / deviceScale), legend));
             }
         }
     }
