@@ -17,32 +17,27 @@
     <Grid ColumnDefinitions="*,*" RowDefinitions="*,*" Margin="8">
       <DockPanel Grid.Column="0" Grid.Row="0" Margin="4">
         <TextBlock DockPanel.Dock="Top" Text="Drawing path (record-time split altitude)" FontWeight="SemiBold" FontSize="13" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="DrawingImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
-        </ScrollViewer>
+        <Image x:Name="DrawingImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
       </DockPanel>
       <DockPanel Grid.Column="1" Grid.Row="0" Margin="4">
         <TextBlock DockPanel.Dock="Top" Text="Production draw (splitter + DrawGlyphRun dispatch)" FontWeight="SemiBold" FontSize="13" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="ProductionImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
-        </ScrollViewer>
+        <Image x:Name="ProductionImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
       </DockPanel>
       <DockPanel Grid.Column="0" Grid.Row="1" Margin="4">
         <TextBlock x:Name="StructureHeader" DockPanel.Dock="Top" Text="Structure" FontWeight="SemiBold" FontSize="13" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <StackPanel Spacing="6" Margin="0,6,0,0">
-            <Image x:Name="StructureImage" Stretch="None" HorizontalAlignment="Left" />
-            <TextBlock x:Name="StructureText" FontFamily="Consolas,Courier New,monospace" FontSize="11"
-                       TextWrapping="NoWrap" />
-          </StackPanel>
-        </ScrollViewer>
+        <Grid RowDefinitions="*,*" Margin="0,6,0,0">
+          <Image x:Name="StructureImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality"
+                 HorizontalAlignment="Left" VerticalAlignment="Top" />
+          <!-- The dump of a paint graph is as long as the glyph's structure. -->
+          <ScrollViewer Grid.Row="1" Classes="data" HorizontalScrollBarVisibility="Auto" Margin="0,6,0,0">
+            <TextBlock x:Name="StructureText" FontFamily="Consolas,Courier New,monospace" FontSize="11" TextWrapping="NoWrap" />
+          </ScrollViewer>
+        </Grid>
       </DockPanel>
       <DockPanel Grid.Column="1" Grid.Row="1" Margin="4">
         <TextBlock DockPanel.Dock="Top" Text="Altitude diff (drawing vs production)" FontWeight="SemiBold" FontSize="13" />
         <TextBlock DockPanel.Dock="Top" x:Name="DiffText" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,2" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="DiffImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,4,0,0" />
-        </ScrollViewer>
+        <Image x:Name="DiffImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,4,0,0" />
       </DockPanel>
     </Grid>
   </DockPanel>

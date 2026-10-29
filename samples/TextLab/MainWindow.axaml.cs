@@ -48,6 +48,7 @@ namespace TextLab
             _themeToggle.IsCheckedChanged += (_, _) => OnThemeChanged();
 
             _nav.SelectionChanged += (_, _) => OnNavChanged();
+            AddHandler(KeyDownEvent, OnPagingKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
             _nav.SelectedItem = NavSpecimen;
             PushFontContext();
             // The Glyphs view alternates: the explorer owns the full page until a glyph
@@ -94,6 +95,13 @@ namespace TextLab
                     Avalonia.Threading.Dispatcher.UIThread.Post(Close,
                         Avalonia.Threading.DispatcherPriority.Background);
                 };
+            }
+
+            // Layout check: every view at the fit sizes in both themes, then close.
+            if (Environment.GetEnvironmentVariable("GLYPH_FIT_CHECK") is { Length: > 0 } fitDir)
+            {
+                Opened += (_, _) => Avalonia.Threading.Dispatcher.UIThread.Post(
+                    () => _ = RunFitCheckAsync(fitDir), Avalonia.Threading.DispatcherPriority.Background);
             }
 
             if (Environment.GetEnvironmentVariable("GLYPH_SIZE") is { Length: > 0 } presetSize)
@@ -294,6 +302,34 @@ namespace TextLab
             }
 
             base.OnKeyDown(e);
+        }
+
+        /// <summary>
+        /// Steps the Learn walkthrough: PageUp and PageDown always, Left and Right unless a text or
+        /// selection control has focus and needs the arrows itself.
+        /// </summary>
+        private void OnPagingKeyDown(object? sender, KeyEventArgs e)
+        {
+            if (!_learn.IsEffectivelyVisible || e.KeyModifiers != KeyModifiers.None)
+            {
+                return;
+            }
+
+            var arrowsTaken = FocusManager?.GetFocusedElement() is TextBox or AutoCompleteBox or ComboBox or Slider;
+            var delta = e.Key switch
+            {
+                Key.PageDown => 1,
+                Key.PageUp => -1,
+                Key.Right when !arrowsTaken => 1,
+                Key.Left when !arrowsTaken => -1,
+                _ => 0,
+            };
+
+            if (delta != 0)
+            {
+                _learn.Step(delta);
+                e.Handled = true;
+            }
         }
 
         private void OnShapeBufferChanged(object? sender, EventArgs e) => OnShapeBufferChanged();

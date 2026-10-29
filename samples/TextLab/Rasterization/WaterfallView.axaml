@@ -13,8 +13,6 @@
         <TextBlock x:Name="FontText" VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
       </StackPanel>
     </Border>
-    <ScrollViewer HorizontalScrollBarVisibility="Auto">
-      <Image x:Name="MatrixImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10" />
-    </ScrollViewer>
+    <Image x:Name="MatrixImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10" />
   </DockPanel>
 </UserControl>

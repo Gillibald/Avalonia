@@ -74,7 +74,10 @@ namespace TextLab
                 ? "the render backend's text stack"
                 : "Avalonia's managed glyph pipeline";
 
-            var root = new StackPanel { Spacing = 16, MaxWidth = 900 };
+            // Two columns, so the page fits a laptop screen without scrolling: the family on the
+            // left, the script gallery beside it.
+            var root = new StackPanel { Spacing = 16, MaxWidth = 640 };
+            var gallery = new StackPanel { Spacing = 16, Margin = new Thickness(48, 0, 0, 0) };
 
             root.Children.Add(new TextBlock
             {
@@ -131,7 +134,7 @@ namespace TextLab
                        "put under a loupe.",
                 FontFamily = family,
                 FontSize = 15,
-                MaxWidth = 680,
+                MaxWidth = 620,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -185,8 +188,8 @@ namespace TextLab
             ApplyFeatures();
             root.Children.Add(_playground);
 
-            root.Children.Add(SectionTitle("Script gallery"));
-            root.Children.Add(new TextBlock
+            gallery.Children.Add(SectionTitle("Script gallery"));
+            gallery.Children.Add(new TextBlock
             {
                 Text = "Rows the family does not cover fall back through the font manager - fallback is part of the demo.",
                 FontSize = 11,
@@ -202,7 +205,7 @@ namespace TextLab
                     Text = script,
                     FontSize = 11,
                     Opacity = 0.6,
-                    Width = 130,
+                    Width = 110,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 DockPanel.SetDock(label, Dock.Left);
@@ -215,12 +218,17 @@ namespace TextLab
                     FontSize = 20,
                     FlowDirection = rtl ? FlowDirection.RightToLeft : FlowDirection.LeftToRight,
                     HorizontalAlignment = HorizontalAlignment.Left,
+                    TextWrapping = TextWrapping.Wrap,
                 });
 
-                root.Children.Add(row);
+                gallery.Children.Add(row);
             }
 
-            _host.Content = root;
+            var columns = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+            Grid.SetColumn(gallery, 1);
+            columns.Children.Add(root);
+            columns.Children.Add(gallery);
+            _host.Content = columns;
         }
 
         private void ApplyFeatures()

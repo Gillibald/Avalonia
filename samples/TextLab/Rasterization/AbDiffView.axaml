@@ -18,13 +18,13 @@
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <TextBlock Text="A:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#D43322" />
           <ComboBox x:Name="ModeA" Width="110" AutomationProperties.Name="A rasterization mode" />
-          <ComboBox x:Name="HintingA" Width="110" AutomationProperties.Name="A hinting mode" />
+          <ComboBox x:Name="HintingA" Width="135" AutomationProperties.Name="A hinting mode" />
           <ComboBox x:Name="RenderingA" Width="150" AutomationProperties.Name="A rendering mode" />
           <TextBlock Text="B:" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#2244CC" Margin="18,0,0,0" />
           <ComboBox x:Name="ModeB" Width="110" AutomationProperties.Name="B rasterization mode" />
-          <ComboBox x:Name="HintingB" Width="110" AutomationProperties.Name="B hinting mode" />
+          <ComboBox x:Name="HintingB" Width="135" AutomationProperties.Name="B hinting mode" />
           <ComboBox x:Name="RenderingB" Width="150" AutomationProperties.Name="B rendering mode" />
-          <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11" TextWrapping="Wrap" MaxWidth="420"
+          <TextBlock VerticalAlignment="Center" Opacity="0.7" FontSize="11" TextWrapping="Wrap" MaxWidth="300"
                      Text="Renders true LCD (the target carries stripe geometry). Unspecified hinting resolves to Light on both stacks." />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">

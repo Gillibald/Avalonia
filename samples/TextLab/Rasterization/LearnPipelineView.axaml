@@ -1,7 +1,29 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="TextLab.LearnPipelineView">
-  <ScrollViewer>
-    <StackPanel x:Name="Host" Margin="24,16" Spacing="10" MaxWidth="980" HorizontalAlignment="Left" />
-  </ScrollViewer>
+  <!-- One stage per page: the prose beside its figure, stepped with Previous and Next. -->
+  <DockPanel Margin="24,16">
+    <StackPanel DockPanel.Dock="Top" Spacing="4">
+      <TextBlock Text="How a glyph reaches the screen" FontSize="24" FontWeight="SemiBold" />
+      <TextBlock x:Name="IntroText" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+    </StackPanel>
+    <DockPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+      <Button x:Name="PreviousButton" DockPanel.Dock="Left" Content="&lt; Previous"
+              ToolTip.Tip="Previous stage (PageUp, or Left when no text box has focus)" />
+      <Button x:Name="NextButton" DockPanel.Dock="Right" Content="Next &gt;"
+              ToolTip.Tip="Next stage (PageDown, or Right when no text box has focus)" />
+      <TextBlock x:Name="PageText" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7" />
+    </DockPanel>
+    <Grid ColumnDefinitions="420,*" Margin="0,18,0,0">
+      <StackPanel Spacing="10" Margin="0,0,28,0">
+        <TextBlock x:Name="StageTitle" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <TextBlock x:Name="StageProse" FontSize="15" TextWrapping="Wrap" LineHeight="22" />
+        <TextBlock x:Name="StageLegend" FontSize="12" Opacity="0.65" TextWrapping="Wrap" />
+        <Button x:Name="InspectButton" Content="Open the glyph inspector" FontSize="13" IsVisible="False" />
+      </StackPanel>
+      <Image Grid.Column="1" x:Name="StageFigure" Stretch="Uniform" StretchDirection="DownOnly"
+             RenderOptions.BitmapInterpolationMode="HighQuality"
+             HorizontalAlignment="Left" VerticalAlignment="Top" />
+    </Grid>
+  </DockPanel>
 </UserControl>

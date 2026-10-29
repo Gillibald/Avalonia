@@ -639,9 +639,22 @@ namespace TextLab
 
             const int zoom = 9;
             const int gap = 20;
-            var panelWidth = mask.Width * zoom;
-            var raw3Width = mask.Width * 3 * (zoom / 3);
+
+            using var font = new SKFont(SKTypeface.Default, 13);
+
+            // Every panel is at least as wide as its caption, so a small glyph keeps them whole.
+            var compositeLabel = $"composite ({(bgr ? "BGR" : "RGB")}, gamma {(gamma ? "on" : "off")})";
+            var caption = Inv($"{label} {size:0.#}px  |  {legend}");
+            var panelWidth = Math.Max(mask.Width * zoom,
+                (int)Math.Ceiling(Math.Max(font.MeasureText("B stripe (5-tap FIR)"), font.MeasureText(compositeLabel))));
+            var raw3Width = Math.Max(mask.Width * 3 * (zoom / 3), (int)Math.Ceiling(font.MeasureText("3x analytic raster")));
             var width = raw3Width + (panelWidth + gap) * 4 + gap + 20;
+
+            if (embedCaption)
+            {
+                width = Math.Max(width, (int)Math.Ceiling(font.MeasureText(caption)) + 20);
+            }
+
             var height = mask.Height * zoom + (embedCaption ? 74 : 40);
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
 
@@ -650,7 +663,6 @@ namespace TextLab
             canvas.Clear(t.Background);
 
             using var cell = new SKPaint();
-            using var font = new SKFont(SKTypeface.Default, 13);
             using var text = new SKPaint { Color = t.Label };
 
             // Panel 1: raw 3x coverage.
@@ -723,13 +735,11 @@ namespace TextLab
                 }
             }
 
-            canvas.DrawText($"composite ({(bgr ? "BGR" : "RGB")}, gamma {(gamma ? "on" : "off")})",
-                compositeX, 18, SKTextAlign.Left, font, text);
+            canvas.DrawText(compositeLabel, compositeX, 18, SKTextAlign.Left, font, text);
 
             if (embedCaption)
             {
-                canvas.DrawText(Inv($"{label} {size:0.#}px  |  {legend}"),
-                    10, height - 10, SKTextAlign.Left, font, text);
+                canvas.DrawText(caption, 10, height - 10, SKTextAlign.Left, font, text);
             }
 
             return bitmap;

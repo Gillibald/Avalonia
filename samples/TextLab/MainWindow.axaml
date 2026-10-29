@@ -121,14 +121,14 @@
                                           FontFeatures="{Binding Text, ElementName=_features}"
                                           FontSize="{Binding Text, ElementName=_size}"
                                           Background="BlanchedAlmond"
-                                          ExtentStroke="Black"
-                                          BaselineStroke="Blue"
+                                          ExtentStroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                          BaselineStroke="DodgerBlue"
                                           TextBoundsStroke="Goldenrod"
                                           RunBoundsStroke="Gold"
                                           NextHitStroke="Green"
-                                          PreviousHitStroke="Blue"
+                                          PreviousHitStroke="DodgerBlue"
                                           BackspaceHitStroke="Red"
-                                          DistanceStroke="Black"
+                                          DistanceStroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
 
                                           PointerMoved="OnPointerMoved"
               />
@@ -137,7 +137,7 @@
 
             <TabControl Name="_tabs" Grid.Row="2" Background="Transparent" BorderBrush="#30808080" BorderThickness="0,1,0,0">
               <TabItem Header="Shaped Buffer">
-                <ListBox Name="_buffer" Grid.IsSharedSizeScope="True" ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectionMode="Multiple" SelectionChanged="OnBufferSelectionChanged" Background="Transparent">
+                <ListBox Name="_buffer" Classes="data" Grid.IsSharedSizeScope="True" ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectionMode="Multiple" SelectionChanged="OnBufferSelectionChanged" Background="Transparent">
                   <ListBox.Styles>
                     <Style Selector="ListBoxItem">
                       <Setter Property="Padding" Value="0"/>
@@ -160,7 +160,7 @@
                 </ListBox>
               </TabItem>
               <TabItem Header="Character Hits">
-                <ListBox Name="_hits" Grid.IsSharedSizeScope="True" ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectionChanged="OnHitsSelectionChanged" Background="Transparent">
+                <ListBox Name="_hits" Classes="data" Grid.IsSharedSizeScope="True" ScrollViewer.HorizontalScrollBarVisibility="Auto" SelectionChanged="OnHitsSelectionChanged" Background="Transparent">
                   <ListBox.Styles>
                     <Style Selector="ListBoxItem">
                       <Setter Property="Padding" Value="0"/>
