@@ -17,7 +17,7 @@ namespace TextShowcase.Scenes
         {
             var root = Ui.Column(4);
 
-            root.Children.Add(Ui.Text("Typography gives language a body", 50, Ui.SegoeUI, FontWeight.SemiBold));
+            root.Children.Add(Ui.Text("Typography gives language a body", 50, Ui.Sans.Family, FontWeight.SemiBold));
 
             var weights = Ui.Row(18);
 
@@ -27,7 +27,7 @@ namespace TextShowcase.Scenes
                          ("Semibold", FontWeight.SemiBold), ("Bold", FontWeight.Bold), ("Black", FontWeight.Black),
                      })
             {
-                weights.Children.Add(Ui.Text("Aa " + label, 30, Ui.SegoeUI, weight));
+                weights.Children.Add(Ui.Text("Aa " + label, 30, Ui.Sans.Family, weight));
             }
 
             root.Children.Add(weights);
@@ -36,7 +36,7 @@ namespace TextShowcase.Scenes
 
             foreach (var size in new[] { 11, 13, 16, 20, 26, 34, 46, 64 })
             {
-                var text = Ui.Text("Ag", size, Ui.SegoeUI);
+                var text = Ui.Text("Ag", size, Ui.Sans.Family);
                 text.VerticalAlignment = VerticalAlignment.Bottom;
                 ramp.Children.Add(text);
             }
@@ -44,14 +44,14 @@ namespace TextShowcase.Scenes
             ramp.Margin = new Thickness(0, 6, 0, 6);
             root.Children.Add(ramp);
 
-            root.Children.Add(Ui.Label("Segoe UI 18 px"));
-            root.Children.Add(Paragraph(Ui.SegoeUI, 18));
+            root.Children.Add(Ui.Label(Ui.Sans.Name + " 18 px"));
+            root.Children.Add(Paragraph(Ui.Sans.Family, 18));
             root.Children.Add(Ui.Label("Inter 18 px (bundled with Avalonia)"));
             root.Children.Add(Paragraph(Ui.Inter, 18));
-            root.Children.Add(Ui.Label("Small UI text, Segoe UI 12 px"));
-            root.Children.Add(Ui.Text("File  Edit  View  Window  Help    Ctrl+Shift+P    42 items selected    1,234.56", 12, Ui.SegoeUI));
-            root.Children.Add(Ui.Label("CJK, Microsoft YaHei 24 px"));
-            root.Children.Add(Ui.Text("永字八法 跨平台的文本渲染 あいうえお 한국어 텍스트", 24, Ui.YaHei));
+            root.Children.Add(Ui.Label("Small UI text, " + Ui.Sans.Name + " 12 px"));
+            root.Children.Add(Ui.Text("File  Edit  View  Window  Help    Ctrl+Shift+P    42 items selected    1,234.56", 12, Ui.Sans.Family));
+            root.Children.Add(Ui.Label("CJK, " + Ui.Cjk.Name + " 24 px"));
+            root.Children.Add(Ui.Text("永字八法 跨平台的文本渲染 あいうえお 한국어 텍스트", 24, Ui.Cjk.Family));
 
             return root;
         }

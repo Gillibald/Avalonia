@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using TextShowcase.Diagnostics;
 using TextShowcase.Panes;
 
 namespace TextShowcase.Scenes
@@ -10,12 +12,35 @@ namespace TextShowcase.Scenes
     /// <summary>Variable font axes animated live; the instance changes every frame.</summary>
     internal sealed class VariableFontsScene : Scene
     {
-        private static readonly (string Label, FontFamily Family, double Size, string Axes)[] s_lines =
+        /// <summary>A family animated between two weights and, optionally, along a second axis.</summary>
+        private sealed record Line(string Name, FontFamily Family, double Size, double WeightFrom, double WeightTo,
+            string? Axis = null, double AxisFrom = 0, double AxisTo = 0)
         {
-            ("Bahnschrift  wght 300-700, wdth 75-100", Ui.Bahnschrift, 46, "wght wdth"),
-            ("Segoe UI Variable  wght 300-700, opsz 8-36", Ui.SegoeUIVariable, 40, "wght opsz"),
-            ("Inter Variable (bundled)  wght 100-900, opsz 14-32", Ui.InterVariable, 40, "wght opsz"),
-        };
+            public string Label => FormattableString.Invariant(
+                $"{Name}  wght {WeightFrom:0}-{WeightTo:0}{(Axis is null ? "" : $", {Axis} {Math.Min(AxisFrom, AxisTo):0}-{Math.Max(AxisFrom, AxisTo):0}")}");
+        }
+
+        /// <summary>The system's variable families this scene knows, then the bundled Inter.</summary>
+        private static Line[] Lines()
+        {
+            var lines = new List<Line>();
+
+            void System(string name, double size, double weightFrom, double weightTo,
+                string? axis = null, double axisFrom = 0, double axisTo = 0)
+            {
+                if (Ui.Installed(name) is { } font)
+                {
+                    lines.Add(new Line(font.Name, font.Family, size, weightFrom, weightTo, axis, axisFrom, axisTo));
+                }
+            }
+
+            System("Bahnschrift", 46, 300, 700, "wdth", 100, 75);
+            System("Segoe UI Variable", 40, 300, 700, "opsz", 8, 36);
+            System("STIX Two Text", 40, 400, 700);
+            lines.Add(new Line("Inter Variable (bundled)", Ui.InterVariable, 40, 100, 900, "opsz", 14, 32));
+
+            return lines.ToArray();
+        }
 
         public override string Title => "Variable fonts, animated";
 
@@ -32,11 +57,11 @@ namespace TextShowcase.Scenes
         {
             var root = Ui.Column(4);
 
-            foreach (var (label, family, size, axes) in s_lines)
+            foreach (var line in Lines())
             {
-                root.Children.Add(Ui.Label(label));
+                root.Children.Add(Ui.Label(line.Label));
 
-                var sample = Ui.Text("Handgloves 0123 Variable", size, family);
+                var sample = Ui.Text("Handgloves 0123 Variable", line.Size, line.Family);
                 var readout = Ui.Text("", 15, Ui.NotoMono, foreground: Ui.Muted);
                 var phaseOffset = root.Children.Count * 0.7;
 
@@ -45,12 +70,10 @@ namespace TextShowcase.Scenes
                     // One phase drives every axis, quantized, so the number of distinct instances stays small.
                     var phase = 0.5 - 0.5 * Math.Cos((time * 0.9) + phaseOffset);
                     var step = Math.Round(phase * 40) / 40;
-                    var wght = axes.Contains("wght") ? Lerp(family == Ui.InterVariable ? 100 : 300,
-                        family == Ui.InterVariable ? 900 : 700, step) : 400;
-                    var second = axes.Contains("wdth") ? Lerp(100, 75, step)
-                        : family == Ui.InterVariable ? Lerp(14, 32, step) : Lerp(8, 36, step);
-                    var tag = axes.Contains("wdth") ? "wdth" : "opsz";
-                    var settings = FormattableString.Invariant($"wght={wght:0}, {tag}={second:0.#}");
+                    var wght = Lerp(line.WeightFrom, line.WeightTo, step);
+                    var settings = line.Axis is null
+                        ? FormattableString.Invariant($"wght={wght:0}")
+                        : FormattableString.Invariant($"wght={wght:0}, {line.Axis}={Lerp(line.AxisFrom, line.AxisTo, step):0.#}");
 
                     if (sample.Tag as string != settings)
                     {
@@ -90,12 +113,13 @@ namespace TextShowcase.Scenes
         {
             var root = Ui.Column(4);
 
-            root.Children.Add(Ui.Label("Segoe UI Emoji (COLR), 24 / 40 / 64 / 96 px"));
+            var emoji = Ui.Emoji ?? Ui.Sans;
+            root.Children.Add(Ui.Label($"{emoji.Name} ({ColourFormat(emoji.Family)}), 24 / 40 / 64 / 96 px"));
             var ramp = Ui.Row(18);
 
             foreach (var size in new[] { 24.0, 40, 64, 96 })
             {
-                var text = Ui.Text("\U0001F98A\U0001F308", size, Ui.SegoeUIEmoji);
+                var text = Ui.Text("\U0001F98A\U0001F308", size, emoji.Family);
                 text.VerticalAlignment = VerticalAlignment.Bottom;
                 ramp.Children.Add(text);
             }
@@ -105,7 +129,7 @@ namespace TextShowcase.Scenes
             root.Children.Add(Ui.Label("Sequences: ZWJ, skin tone, flag, keycap"));
             root.Children.Add(Ui.Text(
                 "\U0001F469‍\U0001F4BB \U0001F468‍\U0001F469‍\U0001F467 \U0001F44B\U0001F3FD \U0001F3F3️‍\U0001F308 \U0001F1E9\U0001F1EA 1️⃣ #️⃣",
-                40, Ui.SegoeUIEmoji));
+                40, emoji.Family));
 
             root.Children.Add(Ui.Label("Emoji inside text, Inter with fallback"));
             root.Children.Add(Ui.Text("Ship it \U0001F680 tonight, review ✅ tomorrow, celebrate \U0001F389", 28, Ui.Inter));
@@ -130,6 +154,12 @@ namespace TextShowcase.Scenes
 
             return root;
         }
+
+        /// <summary>How the family stores its colour glyphs, as far as this scene tells them apart.</summary>
+        private static string ColourFormat(FontFamily family) =>
+            FontManager.Current.TryGetGlyphTypeface(new Typeface(family), out var typeface) && typeface.BitmapSource is not null
+                ? "bitmap strikes"
+                : "COLR";
 
         private static FontFamily? Find(string family, bool bitmap)
         {
@@ -165,15 +195,16 @@ namespace TextShowcase.Scenes
         public override string Title => "Hinting with the font's own programs";
 
         public override string Caption =>
-            "Managed runs each font's TrueType bytecode (fpgm, prep, glyph programs, gasp) for every hinting mode. The backend renders with the platform's default hinting whatever the mode; on Windows that is always DirectWrite's.";
+            "Managed runs each font's TrueType bytecode (fpgm, prep, glyph programs, gasp) for every hinting mode. The backend renders with the platform's default hinting whatever the mode; here that is " +
+            PlatformInfo.BackendScaler + "'s.";
 
         public override Control Build(SceneContext context)
         {
             var root = Ui.Column(2);
 
-            root.Children.Add(Waterfall(Ui.SegoeUI, "Segoe UI", new[] { 9, 10, 11, 12, 13, 14, 16, 18 }));
+            root.Children.Add(Waterfall(Ui.Sans.Family, Ui.Sans.Name, new[] { 9, 10, 11, 12, 13, 14, 16, 18 }));
             root.Children.Add(Ui.Rule());
-            root.Children.Add(Waterfall(Ui.Georgia, "Georgia", new[] { 10, 11, 12, 14, 16 }));
+            root.Children.Add(Waterfall(Ui.Serif.Family, Ui.Serif.Name, new[] { 10, 11, 12, 14, 16 }));
 
             return root;
         }
@@ -281,12 +312,12 @@ namespace TextShowcase.Scenes
             var root = Ui.Column(2);
 
             Add(root, "Arabic, Noto Sans Arabic (bundled)", "اللغة العربية جميلة ١٢٣٤ مرحبا بالعالم", Ui.NotoSansArabic, 30, rtl: true);
-            Add(root, "Arabic, Segoe UI", "اللغة العربية جميلة ١٢٣٤ مرحبا بالعالم", Ui.SegoeUI, 30, rtl: true);
+            Add(root, "Arabic, " + Ui.NameFor(Ui.ArabicSans, 0x0627), "اللغة العربية جميلة ١٢٣٤ مرحبا بالعالم", Ui.ArabicSans.Family, 30, rtl: true);
             Add(root, "Hebrew, Noto Sans Hebrew (bundled)", "שלום עולם, טקסט בעברית", Ui.NotoSansHebrew, 28, rtl: true);
-            Add(root, "Devanagari (fallback, Nirmala UI on Windows)", "हिन्दी देवनागरी लिपि में संयुक्ताक्षर क्ष त्र ज्ञ", Ui.Inter, 30);
-            Add(root, "Thai (fallback)", "ภาษาไทย การจัดวางสระและวรรณยุกต์", Ui.Inter, 28);
-            Add(root, "Chinese, Microsoft YaHei", "永字八法 中文排版 文字渲染", Ui.YaHei, 30);
-            Add(root, "Japanese and Korean (fallback)", "日本語のテキスト  한국어 텍스트", Ui.Inter, 28);
+            Add(root, "Devanagari, fallback to " + Ui.FallbackName(0x0939, Ui.Inter), "हिन्दी देवनागरी लिपि में संयुक्ताक्षर क्ष त्र ज्ञ", Ui.Inter, 30);
+            Add(root, "Thai, fallback to " + Ui.FallbackName(0x0E20, Ui.Inter), "ภาษาไทย การจัดวางสระและวรรณยุกต์", Ui.Inter, 28);
+            Add(root, "Chinese, " + Ui.Cjk.Name, "永字八法 中文排版 文字渲染", Ui.Cjk.Family, 30);
+            Add(root, "Japanese and Korean, fallback to " + Ui.FallbackName(0x65E5, Ui.Inter) + " and " + Ui.FallbackName(0xD55C, Ui.Inter), "日本語のテキスト  한국어 텍스트", Ui.Inter, 28);
             Add(root, "One line, Inter first, everything else by fallback",
                 "Inter | العربية | हिन्दी | ไทย | 中文 | 한국어 | \U0001F680", Ui.Inter, 26);
 
@@ -331,10 +362,10 @@ namespace TextShowcase.Scenes
             {
                 var block = Ui.Column(2);
                 block.Children.Add(Ui.Label(name));
-                block.Children.Add(Ui.Text("Segoe UI 13 px: The quick brown fox jumps over the lazy dog 0123456789", 13, Ui.SegoeUI));
-                block.Children.Add(Ui.Text("Segoe UI 16 px: The quick brown fox jumps over the lazy dog", 16, Ui.SegoeUI));
+                block.Children.Add(Ui.Text(Ui.Sans.Name + " 13 px: The quick brown fox jumps over the lazy dog 0123456789", 13, Ui.Sans.Family));
+                block.Children.Add(Ui.Text(Ui.Sans.Name + " 16 px: The quick brown fox jumps over the lazy dog", 16, Ui.Sans.Family));
                 block.Children.Add(Ui.Text("Inter 14 px: The quick brown fox jumps over the lazy dog 0123", 14, Ui.Inter));
-                block.Children.Add(Ui.Text("Georgia 15 px: The quick brown fox jumps over the lazy dog", 15, Ui.Georgia));
+                block.Children.Add(Ui.Text(Ui.Serif.Name + " 15 px: The quick brown fox jumps over the lazy dog", 15, Ui.Serif.Family));
                 TextOptions.SetTextRenderingMode(block, mode);
                 block.Margin = new Thickness(0, 0, 0, 14);
                 root.Children.Add(block);

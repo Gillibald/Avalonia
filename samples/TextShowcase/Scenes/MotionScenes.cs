@@ -68,7 +68,7 @@ namespace TextShowcase.Scenes
                 ItemsPanel = new FuncTemplate<Panel?>(() => new VirtualizingStackPanel()),
                 ItemTemplate = new FuncDataTemplate<string>((row, _) =>
                 {
-                    var text = Ui.Text(row, 15, Ui.SegoeUI);
+                    var text = Ui.Text(row, 15, Ui.Sans.Family);
                     text.Margin = new Thickness(8, 4);
                     return text;
                 }),
@@ -152,7 +152,7 @@ namespace TextShowcase.Scenes
             Canvas.SetLeft(rotating, 40);
             Canvas.SetTop(rotating, height / 2 - 24);
 
-            var zooming = Ui.Text("Zoom", 30, Ui.SegoeUI);
+            var zooming = Ui.Text("Zoom", 30, Ui.Sans.Family);
             var scale = new ScaleTransform();
             zooming.RenderTransform = scale;
             Canvas.SetLeft(zooming, 400);
