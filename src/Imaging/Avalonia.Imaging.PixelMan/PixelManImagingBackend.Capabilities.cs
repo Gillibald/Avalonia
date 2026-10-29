@@ -9,7 +9,7 @@ namespace Avalonia.Imaging.PixelMan
     // PixelMan's conversions, palette generation and colour management, so pixel operations
     // reproduce WIC instead of the core approximations.
     public sealed partial class PixelManImagingBackend : ISupportsPixelConversion, ISupportsPaletteGeneration,
-        IColorTransformProvider
+        ISupportsPixelScaling, IColorTransformProvider
     {
         /// <inheritdoc />
         bool ISupportsPixelConversion.TryCopyPixels(ILockedFramebuffer source, BitmapPalette? sourcePalette,
@@ -67,6 +67,39 @@ namespace Avalonia.Imaging.PixelMan
                     frame.CopyPixels(targetFormat, (uint)sourceRect.X, (uint)sourceRect.Y, (uint)sourceRect.Width,
                         (uint)sourceRect.Height, span, (nuint)destinationStride);
                 }
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Reproduces WIC's Fant scaler for whole reduction factors of 8-bit gray and 24- and
+        /// 32-bit RGB; nearest-neighbour requests and every other case go to the core filters.
+        /// </remarks>
+        bool ISupportsPixelScaling.TryScalePixels(ILockedFramebuffer source, PixelSize targetSize,
+            BitmapInterpolationMode interpolation, BitmapFormatProfile profile, IntPtr destination, long destinationSize,
+            int destinationStride)
+        {
+            if (profile != BitmapFormatProfile.Wic ||
+                interpolation is BitmapInterpolationMode.None or BitmapInterpolationMode.LowQuality ||
+                PixelManFormats.ToPixelMan(source.Format, source.AlphaFormat) is not { } format)
+            {
+                return false;
+            }
+
+            using var frame = Wrap(source, format, null);
+            using var scaled = frame.ScaleFant((uint)targetSize.Width, (uint)targetSize.Height);
+
+            if (scaled is null)
+                return false;
+
+            unsafe
+            {
+                var span = new Span<byte>((void*)destination, checked((int)destinationSize));
+
+                scaled.CopyPixels(format, 0, 0, (uint)targetSize.Width, (uint)targetSize.Height, span,
+                    (nuint)destinationStride);
             }
 
             return true;

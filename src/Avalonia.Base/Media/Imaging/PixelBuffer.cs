@@ -284,7 +284,22 @@ namespace Avalonia.Media.Imaging
         /// Indexed buffers resample in color and are matched back against their own palette.
         /// Formats with more than eight bits per channel are filtered at eight bits.
         /// </remarks>
-        public unsafe PixelBuffer Scale(PixelSize size, BitmapInterpolationMode interpolation = BitmapInterpolationMode.HighQuality)
+        public PixelBuffer Scale(PixelSize size, BitmapInterpolationMode interpolation = BitmapInterpolationMode.HighQuality)
+            => Scale(size, interpolation, BitmapFormatProfile.RenderBackend);
+
+        /// <summary>
+        /// Returns this buffer resampled to another size, in the same format and DPI, as the
+        /// reference a format profile names scales it where the imaging backend reproduces it.
+        /// </summary>
+        /// <param name="size">The target size in device pixels.</param>
+        /// <param name="interpolation">The filter, as for <see cref="Scale(PixelSize, BitmapInterpolationMode)"/>.</param>
+        /// <param name="profile">
+        /// <see cref="BitmapFormatProfile.Wic"/> scales as WIC's scaler does where the backend
+        /// supports it (<see cref="ISupportsPixelScaling"/>): the PixelMan backend reproduces its
+        /// Fant filter for whole reduction factors, which averages straight alpha through 8-bit
+        /// premultiplied pixels. Everything else uses the core filters.
+        /// </param>
+        public unsafe PixelBuffer Scale(PixelSize size, BitmapInterpolationMode interpolation, BitmapFormatProfile profile)
         {
             if (size.Width <= 0 || size.Height <= 0)
                 throw new ArgumentException("The size is empty.", nameof(size));
@@ -306,7 +321,15 @@ namespace Avalonia.Media.Imaging
             using (var framebuffer = Lock())
             {
                 fixed (byte* address = pixels)
-                    FusedPixelPipeline.Run(framebuffer, plan, (IntPtr)address, stride);
+                {
+                    if (profile != BitmapFormatProfile.Wic ||
+                        ImagingBackend.CurrentOrNull is not ISupportsPixelScaling scaler ||
+                        !scaler.TryScalePixels(framebuffer, size, interpolation, profile, (IntPtr)address,
+                            pixels.Length, stride))
+                    {
+                        FusedPixelPipeline.Run(framebuffer, plan, (IntPtr)address, stride);
+                    }
+                }
             }
 
             return new PixelBuffer(pixels, size, stride, Format, AlphaFormat, Dpi, null);

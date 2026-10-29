@@ -28,6 +28,43 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void Wic_Profile_Scale_Should_Average_Straight_Alpha_Through_8_Bit_Premultiplied_Pixels()
+        {
+            // Red at alpha 255 and blue at alpha 51 average, premultiplied and rounded, to red 128 and
+            // blue 26 over alpha 153, then unpremultiply as WIC does: c * ((255 << 16) / a) >> 16.
+            var source = PixelBuffer.Create(new byte[] { 0, 0, 255, 255, 255, 0, 0, 51 }, new PixelSize(2, 1), 8,
+                PixelFormats.Bgra8888, AlphaFormat.Unpremul);
+            static byte Unpremultiply(int c, int a) => (byte)Math.Min(255, c * ((255 << 16) / a) >> 16);
+
+            using var scope = Bind();
+
+            var scaled = source.Scale(new PixelSize(1, 1), BitmapInterpolationMode.HighQuality, BitmapFormatProfile.Wic);
+
+            Assert.Equal(new[] { Unpremultiply(26, 153), (byte)0, Unpremultiply(128, 153), (byte)153 },
+                scaled.Pixels.ToArray());
+        }
+
+        [Fact]
+        public void Scale_Should_Keep_The_Core_Filter_Outside_The_Wic_Profile_And_For_Fractional_Factors()
+        {
+            var bytes = new byte[12 * 6 * 4];
+
+            new Random(5).NextBytes(bytes);
+
+            var source = PixelBuffer.Create(bytes, new PixelSize(12, 6), 12 * 4, PixelFormats.Bgra8888, AlphaFormat.Unpremul);
+            var half = source.Scale(new PixelSize(6, 3)).Pixels.ToArray();
+            var fractional = source.Scale(new PixelSize(8, 4)).Pixels.ToArray();
+
+            using var scope = Bind();
+
+            Assert.Equal(half, source.Scale(new PixelSize(6, 3)).Pixels.ToArray());
+            Assert.Equal(fractional,
+                source.Scale(new PixelSize(8, 4), BitmapInterpolationMode.HighQuality, BitmapFormatProfile.Wic).Pixels.ToArray());
+            Assert.NotEqual(half,
+                source.Scale(new PixelSize(6, 3), BitmapInterpolationMode.HighQuality, BitmapFormatProfile.Wic).Pixels.ToArray());
+        }
+
+        [Fact]
         public void An_Indexed_Target_Should_Map_To_The_Palette()
         {
             var palette = new BitmapPalette(new[] { Colors.Black, Colors.White, Colors.Red, Colors.Blue });
