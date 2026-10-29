@@ -375,6 +375,13 @@ namespace TextLab
         {
             base.OnPropertyChanged(change);
 
+            // Labels are cached by text and drawn in their stroke's brush, so a new brush (a theme
+            // change, say) needs them formatted again.
+            if (change.Property.Name.EndsWith("Stroke", StringComparison.Ordinal))
+            {
+                _labelsCache.Clear();
+            }
+
             switch (change.Property.Name)
             {
                 case nameof(FontFamily):
@@ -402,6 +409,16 @@ namespace TextLab
 
                 case nameof(Text):
                     InvalidateTextLine();
+                    break;
+
+                case nameof(ExtentStroke):
+                    _extentPen = null;
+                    InvalidateVisual();
+                    break;
+
+                case nameof(DistanceStroke):
+                    _distancePen = null;
+                    InvalidateVisual();
                     break;
 
                 case nameof(BaselineStroke):

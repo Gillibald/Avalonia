@@ -121,14 +121,14 @@
                                           FontFeatures="{Binding Text, ElementName=_features}"
                                           FontSize="{Binding Text, ElementName=_size}"
                                           Background="BlanchedAlmond"
-                                          ExtentStroke="Black"
-                                          BaselineStroke="Blue"
+                                          ExtentStroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
+                                          BaselineStroke="DodgerBlue"
                                           TextBoundsStroke="Goldenrod"
                                           RunBoundsStroke="Gold"
                                           NextHitStroke="Green"
-                                          PreviousHitStroke="Blue"
+                                          PreviousHitStroke="DodgerBlue"
                                           BackspaceHitStroke="Red"
-                                          DistanceStroke="Black"
+                                          DistanceStroke="{DynamicResource SystemControlForegroundBaseHighBrush}"
 
                                           PointerMoved="OnPointerMoved"
               />
