@@ -14,6 +14,7 @@ namespace TextTour
             "  --theme light|dark     theme (default light)\n" +
             "  --preset <name>        preset name or its first word (default: Running example)\n" +
             "  --scale <percent>      content scale, 75 to 200 (default 100)\n" +
+            "  --family <list>        the family list the chapters show, as typed in the Fonts chapter\n" +
             "  --help                 show this text\n";
 
         public string? ExportDirectory { get; private set; }
@@ -29,6 +30,9 @@ namespace TextTour
         public double Scale { get; private set; } = 1;
 
         public CultureInfo? Culture { get; private set; }
+
+        /// <summary>The family list to start with; the platform default when not given.</summary>
+        public string? Family { get; private set; }
 
         public bool Help { get; private set; }
 
@@ -76,6 +80,9 @@ namespace TextTour
                         break;
                     case "--scale":
                         options.Scale = double.Parse(Next(), CultureInfo.InvariantCulture) / 100;
+                        break;
+                    case "--family":
+                        options.Family = Next();
                         break;
                     case "--culture":
                         options.Culture = CultureInfo.GetCultureInfo(Next());

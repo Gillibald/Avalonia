@@ -41,6 +41,7 @@ namespace TextTour
             var state = new TourState(_options.Preset)
             {
                 Culture = _options.Culture,
+                FamilyList = _options.Family ?? TourState.DefaultFamilyList,
                 Dark = _options.Dark,
                 ContentScale = _options.Scale,
                 Animate = false,

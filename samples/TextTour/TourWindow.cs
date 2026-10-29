@@ -16,6 +16,7 @@ namespace TextTour
                 Dark = options.Dark,
                 ContentScale = options.Scale,
                 Culture = options.Culture,
+                FamilyList = options.Family ?? TourState.DefaultFamilyList,
             };
             _view = new TourView(_state);
 
