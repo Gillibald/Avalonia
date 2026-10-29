@@ -362,8 +362,9 @@ namespace TextTour.Chapters
 
             foreach (var g in analysis.Graphemes)
             {
-                _graphemeLayouts.Add(new TextLayout(analysis.Text.Substring(g.Start, g.Length), State.Typeface,
-                    Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95), Palette.Foreground));
+                _graphemeLayouts.Add(analysis.CreateLayout(Math.Min(model.CharHeight * 0.66, model.Grid.CellWidth * 0.95),
+                    double.PositiveInfinity, TextWrapping.NoWrap, typeface: State.Typeface,
+                    text: analysis.Text.Substring(g.Start, g.Length), foreground: Palette.Foreground));
             }
 
             return _model = model!;

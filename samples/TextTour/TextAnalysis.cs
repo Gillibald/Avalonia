@@ -147,15 +147,16 @@ namespace TextTour
 
         /// <summary>
         /// Lays the same string out again with the same text source spans, for the chapters that
-        /// wrap, trim or switch the font. The caller owns the layout.
+        /// wrap, trim or switch the font, or for a part of it given as text. Either way the runs carry
+        /// the analysis culture, so fallback picks the same faces. The caller owns the layout.
         /// </summary>
         public TextLayout CreateLayout(double fontSize, double maxWidth, TextWrapping wrapping,
             TextTrimming? trimming = null, int maxLines = 0, FlowDirection flowDirection = FlowDirection.LeftToRight,
-            Typeface? typeface = null, string? text = null)
+            Typeface? typeface = null, string? text = null, IBrush? foreground = null)
         {
             var face = typeface ?? Typeface;
             var content = text ?? Text;
-            var defaultProperties = new GenericTextRunProperties(face, fontSize, foregroundBrush: _palette.Foreground,
+            var defaultProperties = new GenericTextRunProperties(face, fontSize, foregroundBrush: foreground ?? _palette.Foreground,
                 cultureInfo: Culture);
             var styledProperties = new GenericTextRunProperties(face, fontSize, foregroundBrush: _palette.Series(1),
                 cultureInfo: Culture);
