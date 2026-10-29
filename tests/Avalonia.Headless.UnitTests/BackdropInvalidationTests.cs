@@ -585,4 +585,148 @@ public class BackdropInvalidationTests
         AssertHelper.True(Distance(first, Sample(window, band)) > Threshold,
             "A change behind the panel did not refresh the filtered result.");
     }
+
+    private static int MaxPixelDifference(Window a, Window b, PixelRect area)
+    {
+        using var fa = a.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
+        using var fb = b.CaptureRenderedFrame() ?? throw new InvalidOperationException("nothing rendered");
+        using var la = fa.Lock();
+        using var lb = fb.Lock();
+
+        var bytesA = new byte[la.RowBytes * la.Size.Height];
+        var bytesB = new byte[lb.RowBytes * lb.Size.Height];
+        System.Runtime.InteropServices.Marshal.Copy(la.Address, bytesA, 0, bytesA.Length);
+        System.Runtime.InteropServices.Marshal.Copy(lb.Address, bytesB, 0, bytesB.Length);
+
+        var worst = 0;
+        for (var y = area.Y; y < area.Bottom; y++)
+        for (var x = area.X * 4; x < area.Right * 4; x++)
+        {
+            worst = Math.Max(worst, Math.Abs(bytesA[y * la.RowBytes + x] - bytesB[y * lb.RowBytes + x]));
+        }
+
+        return worst;
+    }
+
+#if NUNIT
+    [AvaloniaTest]
+#elif XUNIT
+    [AvaloniaFact]
+#endif
+    public void Backdrop_Matches_A_Fresh_Render_Across_Cache_Payload_Switches()
+    {
+        // Each phase drives the retained payload somewhere else: a caret-sized
+        // spot blinking behind a strongly blurred panel favours retaining the
+        // sampled input, the whole area behind changing every frame favours
+        // retaining nothing, and only content above changing favours retaining
+        // the filtered output. Whatever is retained, every frame must show
+        // what a fresh one-pass render of the same state shows.
+        var spotRect = new Rect(70, 92, 4, 12);
+        var overlayRect = new Rect(120, 90, 16, 16);
+
+        static (Window Window, Border Spot, Border Wide, Border Overlay) BuildScene(
+            IBrush spot, IBrush wide, IBrush overlay, Rect spotRect, Rect overlayRect)
+        {
+            var host = new Canvas { Width = Size, Height = Size, Background = Brushes.White };
+            for (var x = 0; x < Size; x += 14)
+            {
+                host.Children.Add(new Border
+                {
+                    Background = Brushes.Black, Width = 4, Height = Size,
+                    [Canvas.LeftProperty] = x, [Canvas.TopProperty] = 0
+                });
+            }
+
+            var wideBorder = new Border
+            {
+                Background = wide, Width = 150, Height = 90,
+                [Canvas.LeftProperty] = 25, [Canvas.TopProperty] = 55
+            };
+            host.Children.Add(wideBorder);
+
+            var spotBorder = new Border
+            {
+                Background = spot, Width = spotRect.Width, Height = spotRect.Height,
+                [Canvas.LeftProperty] = spotRect.X, [Canvas.TopProperty] = spotRect.Y
+            };
+            host.Children.Add(spotBorder);
+
+            host.Children.Add(new Border
+            {
+                Width = PanelRect.Width,
+                Height = PanelRect.Height,
+                Background = new ImmutableSolidColorBrush(Colors.White, 0.25),
+                BackdropEffect = new ImmutableBlurEffect(20),
+                [Canvas.LeftProperty] = PanelRect.X,
+                [Canvas.TopProperty] = PanelRect.Y
+            });
+
+            var overlayBorder = new Border
+            {
+                Background = overlay, Width = overlayRect.Width, Height = overlayRect.Height,
+                [Canvas.LeftProperty] = overlayRect.X, [Canvas.TopProperty] = overlayRect.Y
+            };
+            host.Children.Add(overlayBorder);
+
+            var window = new Window { Content = host, Width = Size, Height = Size };
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+            return (window, spotBorder, wideBorder, overlayBorder);
+        }
+
+        IBrush spotBrush = Brushes.Gold, wideBrush = Brushes.Crimson, overlayBrush = Brushes.Black;
+        var (window, spot, wide, overlay) = BuildScene(spotBrush, wideBrush, overlayBrush, spotRect, overlayRect);
+
+        // The panel plus the blur's reach of 21: everything a stale payload
+        // could disturb.
+        var area = new PixelRect(19, 49, 162, 102);
+        var worst = 0;
+        var worstFrame = "";
+
+        void Check(string frame)
+        {
+            var (reference, _, _, _) = BuildScene(spotBrush, wideBrush, overlayBrush, spotRect, overlayRect);
+            var difference = MaxPixelDifference(window, reference, area);
+            if (difference > worst)
+            {
+                worst = difference;
+                worstFrame = frame;
+            }
+        }
+
+        for (var i = 0; i < 10; i++)
+        {
+            spotBrush = i % 2 == 0 ? Brushes.MediumSeaGreen : Brushes.Gold;
+            spot.Background = spotBrush;
+            Dispatcher.UIThread.RunJobs();
+            Check($"spot {i}");
+        }
+
+        for (var i = 0; i < 8; i++)
+        {
+            wideBrush = i % 2 == 0 ? Brushes.DodgerBlue : Brushes.Crimson;
+            wide.Background = wideBrush;
+            Dispatcher.UIThread.RunJobs();
+            Check($"wide {i}");
+        }
+
+        for (var i = 0; i < 40; i++)
+        {
+            overlayBrush = i % 2 == 0 ? Brushes.White : Brushes.Black;
+            overlay.Background = overlayBrush;
+            Dispatcher.UIThread.RunJobs();
+            Check($"overlay {i}");
+        }
+
+        for (var i = 0; i < 4; i++)
+        {
+            spotBrush = i % 2 == 0 ? Brushes.MediumSeaGreen : Brushes.Gold;
+            spot.Background = spotBrush;
+            Dispatcher.UIThread.RunJobs();
+            Check($"spot again {i}");
+        }
+
+        AssertHelper.True(worst <= 2,
+            $"Frame '{worstFrame}' differed by {worst} from a fresh one-pass render.");
+    }
 }

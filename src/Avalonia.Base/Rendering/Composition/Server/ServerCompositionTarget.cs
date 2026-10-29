@@ -43,6 +43,7 @@ namespace Avalonia.Rendering.Composition.Server
         private readonly List<LtrbRect> _backdropDirtRects = new();
         private readonly List<LtrbRect> _partialDirtScratch = new();
         private readonly List<BackdropJournalEntry> _backdropJournal = new();
+        private long _backdropFrame;
 
         // A partial refresh past this many sub-rects degrades to a full one:
         // per-rect staging stops paying off and the bookkeeping stays tiny.
@@ -415,46 +416,20 @@ namespace Avalonia.Rendering.Composition.Server
         public void RemoveBackdropVisual(ServerCompositionVisual visual) => _backdropVisuals.Remove(visual);
 
         /// <summary>
-        /// Decides, per backdrop this frame touched, whether its retained result
-        /// is still usable and widens the dirty region when it is not. A backdrop
-        /// composites what is already on the surface, so when its filter has to
-        /// run, everything it reads - its whole area plus the filter's reach -
-        /// must be freshly painted first; anything left unpainted is last frame's
-        /// output, which already contains the backdrop, and filtering that again
-        /// smears it outward. Rects tagged as coming from the backdrop's own
-        /// subtree paint above the sample point and cannot change what the filter
-        /// reads, so a backdrop with a valid cache skips both the re-filter and
-        /// the repaint underneath - the point of the cache.
+        /// Collects this frame's dirt beneath a backdrop into the partial dirt
+        /// scratch list - the rects captured at the walk position plus expansion
+        /// output delivered from earlier-painted backdrops in the same host - and
+        /// reports whether it is small enough for a partial refresh. Anything
+        /// unclassifiable (the glass itself moved or changed, too many rects, or
+        /// changed output covering most of the box) counts as wide.
         /// </summary>
-        /// <remarks>
-        /// This works off the rects collected during the update rather than
-        /// <see cref="IDirtyRectTracker.Intersects"/>, because the tracker only
-        /// rebuilds what that queries in FinalizeFrame, which has not run yet and
-        /// would answer for the previous frame.
-        /// </remarks>
-        /// <summary>
-        /// Grants a partial refresh for a valid, cacheable backdrop touched by
-        /// classifiable dirt. Behind-dirt D changes the filter's output within
-        /// O = (D + reach) clamped to the box; re-filtering O reads input
-        /// O + reach, so the region expands by (O + reach) clamped to the
-        /// padded input area, and the granted rects are exactly O in the
-        /// visual's local space. Anything unclassifiable - unknown provenance,
-        /// too many rects, a rotated chain, a stale unconsumed grant - refuses,
-        /// and the caller falls back to full invalidation.
-        /// </summary>
-        private bool TryGrantPartialBackdropRefresh(in BackdropCapture capture, BackdropLayerCache cache,
-            IEffect effect, LtrbRect box, LtrbRect inputArea, IDirtyRectCollector hostCollector,
-            ref bool added, ref bool receivedDamage)
+        private bool CollectSmallBehindDirt(in BackdropCapture capture, IEffect effect, LtrbRect box,
+            LtrbRect inputArea, IDirtyRectCollector hostCollector)
         {
-            if (capture.SelfDirty || capture.DirtOverflow
-                || capture.StalePartialGrant
-                || capture.LocalToHost is not { } localToHost
-                || !localToHost.TryInvert(out var hostToLocal))
+            _partialDirtScratch.Clear();
+            if (capture.SelfDirty || capture.DirtOverflow)
                 return false;
 
-            // This frame's dirt: the rects collected at capture plus expansion
-            // output delivered from earlier-painted backdrops in this host.
-            _partialDirtScratch.Clear();
             for (var i = 0; i < capture.DirtCount; i++)
                 _partialDirtScratch.Add(_backdropDirtRects[capture.DirtStart + i]);
             foreach (var expansion in _backdropExpansions)
@@ -469,45 +444,84 @@ namespace Avalonia.Rendering.Composition.Server
                 }
             }
 
-            if (_partialDirtScratch.Count == 0
-                || cache.RefreshRects.Count + _partialDirtScratch.Count > MaxPartialRefreshRects)
+            if (_partialDirtScratch.Count == 0)
                 return false;
 
+            // Once the changed output approaches the whole box a full refresh
+            // is both cheaper and simpler, whatever is retained.
             var padding = effect.GetEffectOutputPadding();
             LtrbRect? union = null;
-            var outputCount = 0;
-            for (var i = 0; i < _partialDirtScratch.Count; i++)
+            foreach (var dirt in _partialDirtScratch)
             {
-                var output = _partialDirtScratch[i].Inflate(padding).IntersectOrEmpty(box);
-                _partialDirtScratch[i] = output;
-                if (output.IsZeroSize)
-                    continue;
-                outputCount++;
-                union = LtrbRect.FullUnion(union, output);
+                var output = dirt.Inflate(padding).IntersectOrEmpty(box);
+                if (!output.IsZeroSize)
+                    union = LtrbRect.FullUnion(union, output);
             }
 
-            if (outputCount == 0 || union is not { } unionRect)
+            return union is { } unionRect
+                   && unionRect.Width * unionRect.Height <= 0.5 * box.Width * box.Height;
+        }
+
+        /// <summary>
+        /// Grants a partial refresh to a valid, cacheable backdrop whose dirt
+        /// <see cref="CollectSmallBehindDirt"/> left in the scratch list. Behind-
+        /// dirt D changes the filter's output within O = (D + reach) clamped to
+        /// the box, so O is always repainted. A retained output re-filters O,
+        /// which reads input O + reach: that is repainted too and O becomes the
+        /// granted <see cref="BackdropLayerCache.RefreshRects"/>. A retained
+        /// input already holds everything around D, so D itself becomes the
+        /// granted <see cref="BackdropLayerCache.IngestRects"/> and nothing past O
+        /// is repainted. The rects go to the visual's local space; a chain the
+        /// local space cannot be recovered from exactly, or a stale unconsumed
+        /// grant, refuses, and the caller falls back to full invalidation.
+        /// </summary>
+        /// <remarks>
+        /// Later fixpoint passes revisit the glass with the dirt delivered so
+        /// far, so a revisit within the frame rebuilds the grant instead of
+        /// adding to it.
+        /// </remarks>
+        private bool TryGrantPartialBackdropRefresh(in BackdropCapture capture, BackdropLayerCache cache,
+            IEffect effect, LtrbRect box, LtrbRect inputArea, IDirtyRectCollector hostCollector,
+            ref bool added, ref bool receivedDamage)
+        {
+            if (capture.StalePartialGrant
+                || capture.LocalToHost is not { } localToHost
+                || !localToHost.TryInvert(out var hostToLocal))
                 return false;
 
-            // Once the neighborhoods approach the whole box a full refresh is
-            // both cheaper and simpler.
-            if (unionRect.Width * unionRect.Height > 0.5 * box.Width * box.Height)
-                return false;
-
-            foreach (var output in _partialDirtScratch)
+            if (cache.PartialGrantFrame == _backdropFrame)
             {
-                if (output.IsZeroSize)
-                    continue;
+                cache.RefreshRects.Clear();
+                cache.IngestRects.Clear();
+            }
+            else if (cache.RefreshRects.Count > 0 || cache.IngestRects.Count > 0)
+            {
+                return false;
+            }
 
-                cache.RefreshRects.Add(output.TransformToAABB(hostToLocal).ToRect());
+            var input = cache.Payload == BackdropCachePayload.Input;
+            var padding = effect.GetEffectOutputPadding();
+            foreach (var dirt in _partialDirtScratch)
+            {
+                var output = dirt.Inflate(padding).IntersectOrEmpty(box);
+                if (input)
+                {
+                    var ingest = dirt.IntersectOrEmpty(inputArea);
+                    if (!ingest.IsZeroSize)
+                        cache.IngestRects.Add(ingest.TransformToAABB(hostToLocal).ToRect());
+                }
+                else if (!output.IsZeroSize)
+                {
+                    cache.RefreshRects.Add(output.TransformToAABB(hostToLocal).ToRect());
+                }
 
-                var input = output.Inflate(padding).IntersectOrEmpty(inputArea);
-                if (input.IsZeroSize)
+                var repaint = input ? output : output.Inflate(padding).IntersectOrEmpty(inputArea);
+                if (repaint.IsZeroSize)
                     continue;
                 var covered = false;
                 foreach (var rect in _backdropWorkingSet)
                 {
-                    if (rect.Contains(input))
+                    if (rect.Contains(repaint))
                     {
                         covered = true;
                         break;
@@ -516,14 +530,15 @@ namespace Avalonia.Rendering.Composition.Server
 
                 if (!covered)
                 {
-                    hostCollector.AddRect(input);
-                    _backdropExpansions.Add((hostCollector, input,
+                    hostCollector.AddRect(repaint);
+                    _backdropExpansions.Add((hostCollector, repaint,
                         capture.DfsIndex == int.MaxValue ? int.MinValue : capture.DfsIndex));
                     added = true;
                     receivedDamage = true;
                 }
             }
 
+            cache.PartialGrantFrame = _backdropFrame;
             cache.RefreshRequested = true;
             return true;
         }
@@ -733,10 +748,38 @@ namespace Avalonia.Rendering.Composition.Server
 
             _backdropExpansions.Clear();
 
+            // A payload switch decided last frame lands before any grant is
+            // computed, so the invalidation it causes makes this frame's touch
+            // a full refresh of the new payload.
+            _backdropFrame++;
+            foreach (var visual in _backdropVisuals)
+                visual.BackdropCache?.ApplyPendingPayload();
+
             foreach (var host in _backdropHostOrder)
                 RunBackdropHostPass(host.Collector, host.Owner, collector, transform);
+
+            foreach (var visual in _backdropVisuals)
+                visual.BackdropCache?.EndFrame(_backdropFrame);
         }
 
+        /// <summary>
+        /// Decides, per backdrop this frame touched, whether its retained result
+        /// is still usable and widens the dirty region when it is not. A backdrop
+        /// composites what is already on the surface, so when its filter has to
+        /// run, everything it reads - its whole area plus the filter's reach -
+        /// must be freshly painted first; anything left unpainted is last frame's
+        /// output, which already contains the backdrop, and filtering that again
+        /// smears it outward. Rects tagged as coming from the backdrop's own
+        /// subtree paint above the sample point and cannot change what the filter
+        /// reads, so a backdrop with a valid cache skips both the re-filter and
+        /// the repaint underneath - the point of the cache.
+        /// </summary>
+        /// <remarks>
+        /// This works off the rects collected during the update rather than
+        /// <see cref="IDirtyRectTracker.Intersects"/>, because the tracker only
+        /// rebuilds what that queries in FinalizeFrame, which has not run yet and
+        /// would answer for the previous frame.
+        /// </remarks>
         private void RunBackdropHostPass(IDirtyRectCollector hostCollector, ServerCompositionVisual? hostOwner,
             IDirtyRectCollector rootCollector, Matrix transform)
         {
@@ -823,11 +866,18 @@ namespace Avalonia.Rendering.Composition.Server
                     }
 
                     var cache = visual.BackdropCache;
+                    if (cache is { Payload: BackdropCachePayload.None })
+                        cacheable = false;
 
-                    // A still-valid cache touched by classifiable dirt can be
-                    // refreshed partially: only the changed output neighborhood
-                    // re-filters, from input the grant's expansion covers.
-                    if (invalidated && cacheable && cache is { IsValid: true }
+                    var smallDirt = invalidated
+                        && CollectSmallBehindDirt(capture, effect, bounds, area, hostCollector);
+                    cache?.Observe(_backdropFrame, !invalidated ? BackdropTouch.Above
+                        : smallDirt ? BackdropTouch.SmallBehind : BackdropTouch.WideBehind);
+
+                    // A still-valid cache touched by small, classifiable dirt
+                    // can be refreshed partially; which part depends on what it
+                    // retains.
+                    if (smallDirt && cacheable && cache is { IsValid: true }
                         && TryGrantPartialBackdropRefresh(capture, cache, effect, bounds, area, hostCollector,
                             ref added, ref receivedDamage))
                         continue;
@@ -836,6 +886,7 @@ namespace Avalonia.Rendering.Composition.Server
                     {
                         cache.IsValid = false;
                         cache.RefreshRects.Clear();
+                        cache.IngestRects.Clear();
                     }
 
                     if (cacheable && cache is { IsValid: true })
@@ -843,9 +894,10 @@ namespace Avalonia.Rendering.Composition.Server
 
                     if (cacheable && cache != null)
                     {
-                        // An empty rect list makes the grant a full refresh.
+                        // An invalid cache makes the grant a full refresh.
                         cache.RefreshRequested = true;
                         cache.RefreshRects.Clear();
+                        cache.IngestRects.Clear();
                     }
 
                     if (contained)
