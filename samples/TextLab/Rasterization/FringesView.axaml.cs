@@ -26,6 +26,7 @@ namespace TextLab
         private GlyphTypeface? _typeface;
         private double _size = 13;
         private bool _initialized;
+        private int _fittedZoom;
 
         public FringesView()
         {
@@ -40,12 +41,20 @@ namespace TextLab
 
             _hintingBox.ItemsSource = new[] { TextHintingMode.Light, TextHintingMode.None, TextHintingMode.Strong };
             _hintingBox.SelectedIndex = 0;
-            _zoomBox.ItemsSource = new[] { "4x", "6x", "8x" };
-            _zoomBox.SelectedIndex = 1;
+            // Fit picks the largest whole zoom whose figure fits the page, so it is drawn near 1:1.
+            _zoomBox.ItemsSource = new[] { "Fit", "4x", "6x", "8x" };
+            _zoomBox.SelectedIndex = 0;
 
             _sampleBox.TextChanged += (_, _) => Rebuild();
             _hintingBox.SelectionChanged += (_, _) => Rebuild();
             _zoomBox.SelectionChanged += (_, _) => Rebuild();
+            ((Control)_resultImage.Parent!).SizeChanged += (_, _) =>
+            {
+                if (_zoomBox.SelectedIndex == 0 && FitZoom() != _fittedZoom)
+                {
+                    Rebuild();
+                }
+            };
             this.FindControl<Button>("CopyButton")!.Click += (_, _) => ClipboardHelper.Copy(this,
                 $"LCD fringe analysis: \"{_sampleBox.Text}\" - {_fontText.Text}, hinting {_hintingBox.SelectedItem}"
                 + Environment.NewLine + _statsText.Text);
@@ -63,6 +72,35 @@ namespace TextLab
             Rebuild();
         }
 
+        /// <summary>
+        /// The largest whole zoom, 1 to 8, at which the figure fits the space the image has, from
+        /// the figure's size at zoom 1.
+        /// </summary>
+        private int FitZoom()
+        {
+            if (_typeface is not { } typeface || _sampleBox.Text is not { Length: > 0 } sample)
+            {
+                return 1;
+            }
+
+            // The panel around the image, less the stats line above it.
+            var panel = ((Control)_resultImage.Parent!).Bounds.Size;
+            var available = new Avalonia.Size(panel.Width, panel.Height - _statsText.Bounds.Height - 8);
+            var hinting = _hintingBox.SelectedItem is TextHintingMode mode ? mode : TextHintingMode.Light;
+
+            using var unit = PipelineFigures.FringeAnalysis(typeface, sample, (float)Math.Clamp(_size, 6, 96), hinting, 1,
+                out _, out _, out _, out _, out _);
+
+            if (available.Width < 1 || available.Height < 1)
+            {
+                return 4;
+            }
+
+            var zoom = (int)Math.Min(available.Width / unit.Width, available.Height / unit.Height);
+
+            return Math.Clamp(zoom, 1, 8);
+        }
+
         private void Rebuild()
         {
             if (!_initialized || _typeface is not { } typeface ||
@@ -72,8 +110,10 @@ namespace TextLab
             }
 
             var hinting = _hintingBox.SelectedItem is TextHintingMode mode ? mode : TextHintingMode.Light;
-            var zoom = _zoomBox.SelectedIndex switch { 0 => 4, 1 => 6, _ => 8 };
             var size = (float)Math.Clamp(_size, 6, 96);
+            var zoom = _zoomBox.SelectedIndex switch { 0 => FitZoom(), 1 => 4, 2 => 6, _ => 8 };
+
+            _fittedZoom = zoom;
 
             var figure = PipelineFigures.FringeAnalysis(typeface, sample, size, hinting, zoom,
                 out var fringed, out var warmEdges, out var coolEdges, out var wrongPolarity, out var inkPixels);

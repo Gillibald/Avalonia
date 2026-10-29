@@ -16,13 +16,15 @@
     <Panel>
       <Grid ColumnDefinitions="330,*">
         <Border Grid.Column="0" BorderBrush="#30808080" BorderThickness="0,0,1,0">
-          <ScrollViewer>
+          <!-- A font declares as many axes as it likes, so the axis list may scroll. -->
+          <ScrollViewer Classes="data">
             <StackPanel Margin="12" Spacing="6">
               <TextBlock Text="Axes" FontWeight="SemiBold" FontSize="14" />
               <StackPanel x:Name="AxesPanel" Spacing="8" />
               <Button x:Name="ResetButton" Content="Reset to defaults" FontSize="12" Margin="0,4,0,0" />
-              <TextBlock Text="Named instances" FontWeight="SemiBold" FontSize="14" Margin="0,12,0,0" />
-              <WrapPanel x:Name="InstancePanel" />
+              <TextBlock Text="Named instance" FontWeight="SemiBold" FontSize="14" Margin="0,12,0,0" />
+              <ComboBox x:Name="InstanceBox" HorizontalAlignment="Stretch" PlaceholderText="none declared"
+                        AutomationProperties.Name="Named instance" />
               <TextBlock Text="Current coordinates" FontWeight="SemiBold" FontSize="14" Margin="0,12,0,0" />
               <TextBlock x:Name="CoordsText" FontFamily="Consolas,Courier New,monospace" FontSize="12"
                          TextWrapping="Wrap"
@@ -31,25 +33,31 @@
             </StackPanel>
           </ScrollViewer>
         </Border>
-        <ScrollViewer Grid.Column="1">
-          <StackPanel Margin="12" Spacing="6">
-            <TextBlock Text="Specimen" FontWeight="SemiBold" FontSize="14" />
-            <Image x:Name="SpecimenImage" Stretch="None" HorizontalAlignment="Left" />
-            <TextBlock Text="Property pipeline" FontWeight="SemiBold" FontSize="14" Margin="0,10,0,0" />
-            <TextBlock Text="The same axis values applied through TextElement.FontVariations: a live TextBlock rendered by the normal text pipeline, not a raster image. Slider changes animate through FontVariationSettingsTransition - matching axis sets interpolate per axis."
+        <Grid Grid.Column="1" ColumnDefinitions="*,*" Margin="12">
+          <DockPanel Grid.Column="0" Margin="0,0,12,0">
+            <TextBlock DockPanel.Dock="Top" Text="Specimen" FontWeight="SemiBold" FontSize="14" />
+            <Image DockPanel.Dock="Top" x:Name="SpecimenImage" Stretch="Uniform" StretchDirection="DownOnly"
+                   RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" Margin="0,6,0,0" />
+            <TextBlock DockPanel.Dock="Top" Text="Property pipeline" FontWeight="SemiBold" FontSize="14" Margin="0,10,0,0" />
+            <TextBlock DockPanel.Dock="Top" Text="The same axis values applied through TextElement.FontVariations: a live TextBlock rendered by the normal text pipeline, not a raster image. Slider changes animate through FontVariationSettingsTransition - matching axis sets interpolate per axis."
                        FontSize="11" Opacity="0.7" TextWrapping="Wrap" />
-            <TextBlock x:Name="PropertyBlock" HorizontalAlignment="Left" />
-            <TextBlock x:Name="LadderTitle" Text="Interpolation ladder" FontWeight="SemiBold" FontSize="14" Margin="0,10,0,0" />
-            <TextBlock Text="One axis swept min to max while the others hold their current values - kinks or stem collapses between rows are interpolation defects."
+            <TextBlock DockPanel.Dock="Top" x:Name="PropertyBlock" HorizontalAlignment="Left" TextWrapping="Wrap" />
+            <TextBlock DockPanel.Dock="Top" Text="Diagnostics" FontWeight="SemiBold" FontSize="14" Margin="0,10,0,0" />
+            <TextBlock DockPanel.Dock="Top" x:Name="EngineText" FontSize="12" Opacity="0.85" TextWrapping="Wrap" />
+            <TextBlock DockPanel.Dock="Top" x:Name="CacheText" FontSize="12" Opacity="0.85" TextWrapping="Wrap" />
+            <Panel />
+          </DockPanel>
+          <Grid Grid.Column="1" RowDefinitions="Auto,Auto,2*,Auto,*">
+            <TextBlock x:Name="LadderTitle" Text="Interpolation ladder" FontWeight="SemiBold" FontSize="14" />
+            <TextBlock Grid.Row="1" Text="One axis swept min to max while the others hold their current values - kinks or stem collapses between rows are interpolation defects."
                        FontSize="11" Opacity="0.7" TextWrapping="Wrap" />
-            <Image x:Name="LadderImage" Stretch="None" HorizontalAlignment="Left" />
-            <TextBlock Text="Diagnostics" FontWeight="SemiBold" FontSize="14" Margin="0,10,0,0" />
-            <TextBlock x:Name="EngineText" FontSize="12" Opacity="0.85" TextWrapping="Wrap" />
-            <TextBlock x:Name="CacheText" FontSize="12" Opacity="0.85" TextWrapping="Wrap" />
-            <TextBlock x:Name="OverlayTitle" Text="Outline overlay" FontWeight="SemiBold" FontSize="13" Margin="0,8,0,0" />
-            <Image x:Name="OverlayImage" Stretch="None" HorizontalAlignment="Left" />
-          </StackPanel>
-        </ScrollViewer>
+            <Image Grid.Row="2" x:Name="LadderImage" Stretch="Uniform" StretchDirection="DownOnly"
+                   RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
+            <TextBlock Grid.Row="3" x:Name="OverlayTitle" Text="Outline overlay" FontWeight="SemiBold" FontSize="13" Margin="0,8,0,0" />
+            <Image Grid.Row="4" x:Name="OverlayImage" Stretch="Uniform" StretchDirection="DownOnly"
+                   RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0,6,0,0" />
+          </Grid>
+        </Grid>
       </Grid>
       <Border x:Name="EmptyPanel" IsVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center"
               Padding="24,18" BorderBrush="#40808080" BorderThickness="1" CornerRadius="4" Background="#18808080">

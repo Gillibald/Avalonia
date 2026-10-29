@@ -32,25 +32,19 @@
         </DockPanel>
         <TextBlock DockPanel.Dock="Top" x:Name="HintLegendText" FontSize="11" Opacity="0.7"
                    TextWrapping="Wrap" Margin="0,0,8,4" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="HintingImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
-        </ScrollViewer>
+        <Image x:Name="HintingImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" />
       </DockPanel>
-      <DockPanel Grid.Row="0" Grid.Column="1" Margin="4,4,8,4">
+      <DockPanel Grid.Row="0" Grid.Column="1" Grid.RowSpan="2" Margin="4,4,8,8">
         <TextBlock DockPanel.Dock="Top" Text="Masks — the cached unit and the composed run" FontWeight="SemiBold" />
         <TextBlock DockPanel.Dock="Top" x:Name="MaskInfoText" FontSize="11" Opacity="0.7"
                    TextWrapping="Wrap" Margin="0,2,8,4" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="MaskImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
-        </ScrollViewer>
+        <Image x:Name="MaskImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" />
       </DockPanel>
-      <DockPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="8,4,8,8">
+      <DockPanel Grid.Row="1" Grid.Column="0" Margin="8,4,4,8">
         <TextBlock DockPanel.Dock="Top" Text="ClearType — 3x raster, stripe channels, composite" FontWeight="SemiBold" />
         <TextBlock DockPanel.Dock="Top" x:Name="LcdLegendText" FontSize="11" Opacity="0.7"
                    TextWrapping="Wrap" Margin="0,2,8,4" />
-        <ScrollViewer HorizontalScrollBarVisibility="Auto">
-          <Image x:Name="LcdImage" Stretch="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
-        </ScrollViewer>
+        <Image x:Name="LcdImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" />
       </DockPanel>
     </Grid>
   </DockPanel>

@@ -35,7 +35,7 @@ namespace TextLab
         private TextBlock _fontText = null!;
         private StackPanel _axesPanel = null!;
         private Button _resetButton = null!;
-        private WrapPanel _instancePanel = null!;
+        private ComboBox _instanceBox = null!;
         private TextBlock _coordsText = null!;
         private TextBlock _matchText = null!;
         private Image _specimenImage = null!;
@@ -79,7 +79,15 @@ namespace TextLab
             _fontText = this.FindControl<TextBlock>("FontText")!;
             _axesPanel = this.FindControl<StackPanel>("AxesPanel")!;
             _resetButton = this.FindControl<Button>("ResetButton")!;
-            _instancePanel = this.FindControl<WrapPanel>("InstancePanel")!;
+            _instanceBox = this.FindControl<ComboBox>("InstanceBox")!;
+            _instanceBox.SelectionChanged += (_, _) =>
+            {
+                if (!_updatingUi && _source is { } source && _instanceBox.SelectedIndex is var index and >= 0 &&
+                    index < source.NamedInstances.Count)
+                {
+                    ApplyValues(source.NamedInstances[index].Coordinates);
+                }
+            };
             _coordsText = this.FindControl<TextBlock>("CoordsText")!;
             _matchText = this.FindControl<TextBlock>("MatchText")!;
             _specimenImage = this.FindControl<Image>("SpecimenImage")!;
@@ -153,7 +161,6 @@ namespace TextLab
         private void BuildAxisUi()
         {
             _axesPanel.Children.Clear();
-            _instancePanel.Children.Clear();
             _axisRows.Clear();
             _userValues.Clear();
 
@@ -243,28 +250,19 @@ namespace TextLab
             _updatingUi = false;
 
             var instances = _source!.NamedInstances;
+            var names = new List<string>(instances.Count);
 
             for (var i = 0; i < instances.Count; i++)
             {
-                var instance = instances[i];
-                var chip = new Button
-                {
-                    Content = instance.Name is { Length: > 0 } name ? name : $"instance {i}",
-                    FontSize = 12,
-                    Margin = new Thickness(0, 0, 6, 6),
-                };
-
-                chip.Click += (_, _) => ApplyValues(instance.Coordinates);
-                _instancePanel.Children.Add(chip);
+                names.Add(instances[i].Name is { Length: > 0 } name ? name : $"instance {i}");
             }
 
-            if (instances.Count == 0)
-            {
-                _instancePanel.Children.Add(new TextBlock
-                {
-                    Text = "none declared", FontSize = 12, Opacity = 0.6,
-                });
-            }
+            _updatingUi = true;
+            _instanceBox.ItemsSource = names;
+            _instanceBox.SelectedIndex = -1;
+            _instanceBox.IsEnabled = instances.Count > 0;
+            _instanceBox.PlaceholderText = instances.Count > 0 ? $"{instances.Count} declared - pick one" : "none declared";
+            _updatingUi = false;
 
             var items = new List<AxisItem>();
 

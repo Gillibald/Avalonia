@@ -25,7 +25,7 @@ namespace TextLab
     public partial class GlyphExplorerView : UserControl
     {
         private const int Columns = 16;
-        private const int Rows = 16;
+        private const int Rows = 15;
         private const int Cell = 44;
         private const int PageSize = Columns * Rows;
         private const float CellRenderSize = 24f;

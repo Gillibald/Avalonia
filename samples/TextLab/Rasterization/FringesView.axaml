@@ -15,11 +15,9 @@
                 ToolTip.Tip="Copy the fringe counts and verdict as text." />
       </StackPanel>
     </Border>
-    <ScrollViewer HorizontalScrollBarVisibility="Auto">
-      <StackPanel Margin="10" Spacing="8">
-        <TextBlock x:Name="StatsText" FontWeight="SemiBold" />
-        <Image x:Name="ResultImage" Stretch="None" HorizontalAlignment="Left" />
-      </StackPanel>
-    </ScrollViewer>
+    <DockPanel Margin="10">
+      <TextBlock x:Name="StatsText" DockPanel.Dock="Top" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
+      <Image x:Name="ResultImage" Stretch="Uniform" StretchDirection="DownOnly" RenderOptions.BitmapInterpolationMode="HighQuality" HorizontalAlignment="Left" VerticalAlignment="Top" />
+    </DockPanel>
   </DockPanel>
 </UserControl>

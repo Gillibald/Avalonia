@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
@@ -14,13 +15,27 @@ namespace TextLab
     /// five stages with the same live figures the inspector shows - outline and scaling,
     /// hinting, mask coverage and caching, subpixel rendering with gamma, and the tier
     /// dispatch. Figures render from the repo's Inter asset so the story is deterministic;
-    /// the current font stands in when the asset is missing.
+    /// the current font stands in when the asset is missing. One stage shows at a time, stepped
+    /// with Previous and Next, so every stage fits the window without scrolling.
     /// </summary>
     public partial class LearnPipelineView : UserControl
     {
-        private StackPanel _host = null!;
+        /// <summary>One page of the walkthrough.</summary>
+        private sealed record Stage(string Title, string Prose, Bitmap? Figure, string Legend);
+
+        private readonly List<Stage> _stages = new();
+        private readonly TextBlock _introText;
+        private readonly TextBlock _pageText;
+        private readonly TextBlock _stageTitle;
+        private readonly TextBlock _stageProse;
+        private readonly TextBlock _stageLegend;
+        private readonly Image _stageFigure;
+        private readonly Button _previousButton;
+        private readonly Button _nextButton;
+        private readonly Button _inspectButton;
         private GlyphTypeface? _fallback;
         private bool _built;
+        private int _page;
 
         /// <summary>Raised by "Open the glyph inspector"; the host navigates there.</summary>
         public event Action? InspectRequested;
@@ -29,8 +44,58 @@ namespace TextLab
         {
             AvaloniaXamlLoader.Load(this);
 
-            _host = this.FindControl<StackPanel>("Host")!;
+            _introText = this.FindControl<TextBlock>("IntroText")!;
+            _pageText = this.FindControl<TextBlock>("PageText")!;
+            _stageTitle = this.FindControl<TextBlock>("StageTitle")!;
+            _stageProse = this.FindControl<TextBlock>("StageProse")!;
+            _stageLegend = this.FindControl<TextBlock>("StageLegend")!;
+            _stageFigure = this.FindControl<Image>("StageFigure")!;
+            _previousButton = this.FindControl<Button>("PreviousButton")!;
+            _nextButton = this.FindControl<Button>("NextButton")!;
+            _inspectButton = this.FindControl<Button>("InspectButton")!;
+
+            _previousButton.Click += (_, _) => ShowPage(_page - 1);
+            _nextButton.Click += (_, _) => ShowPage(_page + 1);
+            _inspectButton.Click += (_, _) => InspectRequested?.Invoke();
         }
+
+        /// <summary>The number of stages, once the figures are built.</summary>
+        public int PageCount
+        {
+            get
+            {
+                Build();
+                return Math.Max(1, _stages.Count);
+            }
+        }
+
+        /// <summary>Shows stage <paramref name="index"/>, clamped to the stages there are.</summary>
+        public void ShowPage(int index)
+        {
+            Build();
+
+            if (_stages.Count == 0)
+            {
+                return;
+            }
+
+            _page = Math.Clamp(index, 0, _stages.Count - 1);
+
+            var stage = _stages[_page];
+
+            _stageTitle.Text = stage.Title;
+            _stageProse.Text = stage.Prose;
+            _stageLegend.Text = stage.Legend;
+            _stageLegend.IsVisible = stage.Legend.Length > 0;
+            _stageFigure.Source = stage.Figure;
+            _inspectButton.IsVisible = _page == _stages.Count - 1;
+            _pageText.Text = $"Stage {_page + 1} of {_stages.Count}";
+            _previousButton.IsEnabled = _page > 0;
+            _nextButton.IsEnabled = _page < _stages.Count - 1;
+        }
+
+        /// <summary>Steps <paramref name="delta"/> stages; the host forwards paging keys here.</summary>
+        public void Step(int delta) => ShowPage(_page + delta);
 
         /// <summary>The app-global typeface, used only when the repo Inter asset is absent.</summary>
         public void SetContext(GlyphTypeface? typeface) => _fallback = typeface;
@@ -60,30 +125,18 @@ namespace TextLab
             }
 
             _built = true;
-            _host.Children.Clear();
+            _stages.Clear();
 
             var g = typeface.CharacterToGlyphMap['g'];
             var e = typeface.CharacterToGlyphMap.ContainsGlyph('e') ? typeface.CharacterToGlyphMap['e'] : g;
 
-            _host.Children.Add(new TextBlock
-            {
-                Text = "How a glyph reaches the screen",
-                FontSize = 24,
-                FontWeight = FontWeight.SemiBold,
-            });
-            _host.Children.Add(new TextBlock
-            {
-                Text = $"Five stages, one 'g', rendered live by the same code the app uses everywhere. " +
-                       $"Figures use {typeface.FamilyName} at documentation sizes; the full write-up lives in docs/glyph-rasterization.",
-                FontSize = 12,
-                Opacity = 0.7,
-                TextWrapping = TextWrapping.Wrap,
-            });
+            _introText.Text = $"Five stages, one 'g', rendered live by the same code the app uses everywhere. " +
+                              $"Figures use {typeface.FamilyName} at documentation sizes; the full write-up lives in docs/glyph-rasterization.";
 
             AddStage("1. Outlines arrive in em space",
                 "A glyph starts as bezier contours in font units, drawn in an em box typically 1000 or 2048 " +
                 "units tall. Scaling to a pixel size turns clean design coordinates into awkward fractions - " +
-                "a stem can land at 1.37 px, which no pixel grid can draw faithfully. Below: the scaled " +
+                "a stem can land at 1.37 px, which no pixel grid can draw faithfully. Beside: the scaled " +
                 "outline (red) over the pixels it would cover with no correction at all.",
                 PipelineFigures.HintingAnatomy(typeface, g, "'g'", 12, TextHintingMode.None, out var legend1,
                     embedCaption: false), legend1);
@@ -135,76 +188,23 @@ namespace TextLab
                 "rasterized under the device transform, and again every frame while that transform " +
                 "animates - and the backend's native blob as the final fallback. A declined draw falls " +
                 "through to the next tier, so text never silently fails to render.",
-                null, string.Empty);
+                null, "The interactive versions of these figures live in the glyph inspector - pick any glyph " +
+                      "in the Glyphs view and scrub its bytecode.");
 
-            var inspectButton = new Button
-            {
-                Content = "Open the glyph inspector",
-                FontSize = 13,
-                Margin = new Thickness(0, 8, 0, 12),
-            };
-
-            inspectButton.Click += (_, _) => InspectRequested?.Invoke();
-
-            _host.Children.Add(new TextBlock
-            {
-                Text = "The interactive versions of these figures live in the glyph inspector - pick any " +
-                       "glyph in the Glyphs view and scrub its bytecode.",
-                FontSize = 12,
-                Opacity = 0.7,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 10, 0, 0),
-            });
-            _host.Children.Add(inspectButton);
+            ShowPage(_page);
         }
 
-        private void AddStage(string title, string prose, SKBitmap? figure, string legend)
-        {
-            _host.Children.Add(new TextBlock
-            {
-                Text = title,
-                FontSize = 16,
-                FontWeight = FontWeight.SemiBold,
-                Margin = new Thickness(0, 14, 0, 0),
-            });
-            _host.Children.Add(new TextBlock
-            {
-                Text = prose,
-                FontSize = 13,
-                MaxWidth = 760,
-                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 2, 0, 4),
-            });
+        private void AddStage(string title, string prose, SKBitmap? figure, string legend) =>
+            _stages.Add(new Stage(title, prose, figure is null ? null : ToBitmap(figure), legend));
 
-            if (figure is not null)
-            {
-                var image = new Image { Stretch = Stretch.None, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left };
-
-                SetImage(image, figure);
-                _host.Children.Add(image);
-            }
-
-            if (legend.Length > 0)
-            {
-                _host.Children.Add(new TextBlock
-                {
-                    Text = legend,
-                    FontSize = 11,
-                    Opacity = 0.65,
-                    TextWrapping = TextWrapping.Wrap,
-                });
-            }
-        }
-
-        private static void SetImage(Image target, SKBitmap figure)
+        private static Bitmap ToBitmap(SKBitmap figure)
         {
             using (figure)
             using (var image = SKImage.FromBitmap(figure))
             using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
             using (var stream = new MemoryStream(data.ToArray()))
             {
-                target.Source = new Bitmap(stream);
+                return new Bitmap(stream);
             }
         }
     }
