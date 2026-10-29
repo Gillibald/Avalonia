@@ -235,9 +235,12 @@ namespace TextLab
 
         internal static GlyphTypeface? ResolveTypeface(string familyName)
         {
+            // The platform default may be a private name (.AppleSystemUIFont) whose face reports a
+            // display name (System Font); the font manager's answer for it is the face itself.
             if (FontManager.Current.TryGetGlyphTypeface(new Typeface(familyName), out var resolved) &&
                 resolved is GlyphTypeface managed &&
-                managed.FamilyName.Contains(familyName, StringComparison.OrdinalIgnoreCase))
+                (managed.FamilyName.Contains(familyName, StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(familyName, FontManager.Current.DefaultFontFamily.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 return managed;
             }
