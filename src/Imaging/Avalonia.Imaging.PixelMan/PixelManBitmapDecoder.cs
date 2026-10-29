@@ -154,15 +154,19 @@ namespace Avalonia.Imaging.PixelMan
 
         /// <summary>
         /// A frame source for frame <paramref name="index"/> described from the headers PixelMan
-        /// peeks, or null when the frame has to decode to be described: frames of multi-frame
-        /// codecs and indexed frames, whose palette is part of the description.
+        /// peeks, or null when the frame has to decode to be described: frames of TIFF, ICO and
+        /// WebP, and indexed BMP and PNG images, whose palette is part of the description. GIF
+        /// frames peek with their palette.
         /// </summary>
         private IBitmapFrameSource? TryDefer(int index)
         {
-            if (Codec.Kind != PmCodecKind.Bmp && Codec.Kind != PmCodecKind.Jpeg && Codec.Kind != PmCodecKind.Png)
+            var gif = Codec.Kind == PmCodecKind.Gif;
+
+            if (!gif && Codec.Kind != PmCodecKind.Bmp && Codec.Kind != PmCodecKind.Jpeg && Codec.Kind != PmCodecKind.Png)
                 return null;
 
             PmFrameHeader? header;
+            BitmapPalette? palette = null;
 
             try
             {
@@ -173,22 +177,38 @@ namespace Avalonia.Imaging.PixelMan
                 }
 
                 header = _decoder.PeekFrame();
+
+                if (header is { } peeked && PixelManFormats.TryMap(peeked.Format, out var format, out _) &&
+                    format.IsIndexed)
+                {
+                    if (!gif)
+                        return null;
+
+                    using var indices = _decoder.PeekPalette();
+
+                    if (indices is null)
+                        return null;
+
+                    palette = PixelManFormats.ToPalette(indices);
+                }
             }
             catch (Exception exception) when (PixelManFormats.Translate(exception) is var translated && translated != exception)
             {
                 throw translated;
             }
 
-            if (header is not { } facts ||
-                PixelManFormats.TryMap(facts.Format, out var format, out _) && format.IsIndexed)
+            if (header is not { } facts)
                 return null;
 
             _references++;
 
             try
             {
-                return PixelManBitmapFrameSource.CreateDeferred(facts, new DeferredFrame(this, index), Codec, _options,
-                    _allocator, _reducedFrom);
+                var frame = new DeferredFrame(this, index);
+
+                return gif
+                    ? PixelManBitmapFrameSource.CreateDeferredGif(facts, frame, Codec, _options, _allocator, palette)
+                    : PixelManBitmapFrameSource.CreateDeferred(facts, frame, Codec, _options, _allocator, _reducedFrom);
             }
             catch
             {

@@ -49,7 +49,7 @@ namespace Avalonia.Imaging.PixelMan
             _iccProfile = frame.IccProfile ?? Array.Empty<byte>();
         }
 
-        private PixelManBitmapFrameSource(PmFrameHeader header, PixelManBitmapDecoder.DeferredFrame frame,
+        protected PixelManBitmapFrameSource(PmFrameHeader header, PixelManBitmapDecoder.DeferredFrame frame,
             PixelManCodecInfo codec, BitmapDecodeOptions? options, PixelManFrameAllocator allocator,
             PixelOrientation orientation, PixelSize? reducedFrom)
             : this(new PixelSize((int)header.Width, (int)header.Height), header.Format, header.Dpi, options, allocator,
@@ -214,6 +214,27 @@ namespace Avalonia.Imaging.PixelMan
                 orientation = (PixelOrientation)value;
 
             return new PixelManBitmapFrameSource(header, frame, codec, options, allocator, orientation, reducedFrom);
+        }
+
+        /// <summary>
+        /// Creates a source for a GIF frame from the image descriptor PixelMan peeked, with the
+        /// palette it decodes with when that is indexed; <paramref name="frame"/> decodes it when
+        /// its pixels, metadata or animation data are first needed. As for a decoded frame, the
+        /// source is indexed only when the decode plan keeps the indices.
+        /// </summary>
+        public static PixelManBitmapFrameSource CreateDeferredGif(PmFrameHeader header,
+            PixelManBitmapDecoder.DeferredFrame frame, PixelManCodecInfo codec, BitmapDecodeOptions? options,
+            PixelManFrameAllocator allocator, BitmapPalette? palette)
+        {
+            if (palette is not null)
+            {
+                var indexed = new PixelManDeferredIndexedGifFrameSource(header, frame, codec, options, allocator, palette);
+
+                if (indexed.PixelFormat.IsIndexed)
+                    return indexed;
+            }
+
+            return new PixelManDeferredGifFrameSource(header, frame, codec, options, allocator);
         }
 
         /// <summary>
@@ -492,6 +513,48 @@ namespace Avalonia.Imaging.PixelMan
         public PixelPoint Origin => Animation.Origin;
 
         public FrameBlendMode Blend => FrameBlendMode.Over;
+    }
+
+    /// <summary>
+    /// A GIF frame described from its image descriptor; its pixels, metadata and animation data
+    /// come from the frame's decode on first use.
+    /// </summary>
+    internal class PixelManDeferredGifFrameSource : PixelManBitmapFrameSource, IAnimatedFrame
+    {
+        private GifAnimation? _animation;
+
+        public PixelManDeferredGifFrameSource(PmFrameHeader header, PixelManBitmapDecoder.DeferredFrame frame,
+            PixelManCodecInfo codec, BitmapDecodeOptions? options, PixelManFrameAllocator allocator)
+            : base(header, frame, codec, options, allocator, PixelOrientation.Normal, null)
+        {
+        }
+
+        public GifAnimation Animation => _animation ??= GifAnimation.Read(Frame, (PixelManMetadataStore)Metadata);
+
+        public TimeSpan Delay => Animation.Delay;
+
+        public FrameDisposalMethod Disposal => Animation.Disposal;
+
+        public PixelPoint Origin => Animation.Origin;
+
+        public FrameBlendMode Blend => FrameBlendMode.Over;
+    }
+
+    /// <summary>A deferred GIF frame that keeps its indices, with the palette PixelMan peeked.</summary>
+    internal sealed class PixelManDeferredIndexedGifFrameSource : PixelManDeferredGifFrameSource, IIndexedFrame
+    {
+        public PixelManDeferredIndexedGifFrameSource(PmFrameHeader header, PixelManBitmapDecoder.DeferredFrame frame,
+            PixelManCodecInfo codec, BitmapDecodeOptions? options, PixelManFrameAllocator allocator,
+            BitmapPalette palette)
+            : base(header, frame, codec, options, allocator)
+        {
+            Palette = palette;
+        }
+
+        public BitmapPalette Palette { get; }
+
+        // Indexed output is only produced for the identity plan, so the frame's pixels are the indices.
+        public ILockedFramebuffer LockIndexed() => Lock();
     }
 
     /// <summary>

@@ -746,6 +746,46 @@ namespace Avalonia.Imaging.PixelMan.Tests
         }
 
         [Fact]
+        public void A_Gif_Frame_Should_Be_Described_With_Its_Palette_Before_Its_Pixels_Decode()
+        {
+            byte[] gif;
+
+            using (Bind())
+            {
+                var encoder = new GifBitmapEncoder();
+                encoder.Frames.Add(new BitmapEncoderFrame { Pixels = Solid(32, 16, Colors.Red) });
+                encoder.Frames.Add(new BitmapEncoderFrame
+                {
+                    Pixels = Solid(32, 16, Colors.Lime), Delay = TimeSpan.FromMilliseconds(250),
+                });
+
+                using var encoded = new MemoryStream();
+                encoder.Save(encoded, TestContext.Current.CancellationToken);
+                gif = encoded.ToArray();
+            }
+
+            using var stream = new MemoryStream(gif);
+            var allocator = new CountingAllocator();
+            var options = new BitmapDecodeOptions { FormatProfile = BitmapFormatProfile.Wic, PreservePixelFormat = true };
+
+            using var decoder = new PixelManImagingBackend(allocator).CreateDecoder(stream, ownsStream: false, options);
+            using var first = decoder.ReadNextFrame()!;
+            using var second = decoder.ReadNextFrame()!;
+
+            Assert.Equal((new PixelSize(32, 16), PixelFormats.Indexed8), (second.PixelSize, second.PixelFormat));
+            var palette = Assert.IsAssignableFrom<IIndexedFrame>(second).Palette;
+            Assert.Contains(palette.Colors, c => c == Colors.Lime);
+            Assert.Equal(0L, allocator.FrameSizedRents(32 * 16));
+
+            // Animation data comes from the frame's own metadata, so reading it decodes the frame.
+            Assert.Equal(TimeSpan.FromMilliseconds(250), Assert.IsAssignableFrom<IAnimatedFrame>(second).Delay);
+            Assert.True(allocator.FrameSizedRents(32 * 16) > 0);
+
+            using (var pixels = first.Lock())
+                Assert.Equal(new PixelSize(32, 16), pixels.Size);
+        }
+
+        [Fact]
         public void A_Deferred_Frame_Should_Decode_After_Its_Decoder_Is_Disposed()
         {
             using var stream = EncodedJpeg(64, 48);
