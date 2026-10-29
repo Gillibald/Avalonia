@@ -49,6 +49,12 @@ namespace Avalonia.Rendering.Composition.Server
 
         partial void OnBackdropEffectChanged() => UpdateBackdropRegistration();
 
+        partial void OnBackdropCacheHintChanged()
+        {
+            if (BackdropCache != null)
+                BackdropCache.Hint = BackdropCacheHint;
+        }
+
         private bool _registeredAsBackdrop;
 
         // Number of registered backdrops in this node's subtree (excluding this
@@ -99,7 +105,7 @@ namespace Avalonia.Rendering.Composition.Server
             PropagateBackdropCountDelta(Parent, shouldRegister ? 1 : -1);
             if (shouldRegister)
             {
-                BackdropCache = new BackdropLayerCache();
+                BackdropCache = new BackdropLayerCache { Hint = BackdropCacheHint };
                 Root!.AddBackdropVisual(this);
             }
             else

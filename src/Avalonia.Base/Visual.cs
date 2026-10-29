@@ -95,6 +95,12 @@ namespace Avalonia
             AvaloniaProperty.Register<Visual, Geometry?>(nameof(BackdropClip));
 
         /// <summary>
+        /// Defines the <see cref="BackdropEffectCache"/> property.
+        /// </summary>
+        public static readonly StyledProperty<BackdropEffectCache?> BackdropEffectCacheProperty =
+            AvaloniaProperty.Register<Visual, BackdropEffectCache?>(nameof(BackdropEffectCache));
+
+        /// <summary>
         /// Defines the <see cref="HasMirrorTransform"/> property.
         /// </summary>
         public static readonly DirectProperty<Visual, bool> HasMirrorTransformProperty =
@@ -160,6 +166,7 @@ namespace Avalonia
                 EffectProperty,
                 BackdropEffectProperty,
                 BackdropClipProperty,
+                BackdropEffectCacheProperty,
                 HasMirrorTransformProperty);
             RenderTransformProperty.Changed.Subscribe(RenderTransformChanged);
             ZIndexProperty.Changed.Subscribe(ZIndexChanged);
@@ -351,6 +358,19 @@ namespace Avalonia
         /// a Border supplies its rounded rectangle.
         /// </summary>
         internal virtual Geometry? EffectiveBackdropClip => BackdropClip;
+
+        /// <summary>
+        /// Gets or sets how the content behind the <see cref="BackdropEffect"/>
+        /// is expected to change. <see cref="RetainedBackdropEffectCache"/>
+        /// keeps the backdrop between frames, <see cref="VolatileBackdropEffectCache"/>
+        /// samples it every time; null lets the compositor decide from what it
+        /// observes changing beneath the backdrop.
+        /// </summary>
+        public BackdropEffectCache? BackdropEffectCache
+        {
+            get => GetValue(BackdropEffectCacheProperty);
+            set => SetValue(BackdropEffectCacheProperty, value);
+        }
 
 
         /// <summary>

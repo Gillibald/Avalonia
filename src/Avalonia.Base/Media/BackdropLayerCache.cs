@@ -33,6 +33,22 @@ internal enum BackdropCachePayload
 }
 
 /// <summary>
+/// What the application said about the content behind a backdrop, through
+/// <see cref="Visual.BackdropEffectCache"/>.
+/// </summary>
+internal enum BackdropCacheHint
+{
+    /// <summary>Nothing; the policy decides from what it observes.</summary>
+    Auto,
+
+    /// <summary>Keep something between frames; the policy picks what.</summary>
+    Retained,
+
+    /// <summary>Keep nothing; sample every time.</summary>
+    Volatile
+}
+
+/// <summary>
 /// Handshake object between the compositor's update pass and a drawing context
 /// implementation for retaining a backdrop layer across frames. The update pass
 /// owns the policy: it picks the <see cref="Payload"/>, clears
@@ -76,6 +92,7 @@ internal sealed class BackdropLayerCache : IDisposable
     private int _wideBehindStreak;
     private long _lastBehindFrame;
     private BackdropCachePayload? _pendingPayload;
+    private BackdropCacheHint _hint;
 
     /// <summary>
     /// What the implementation retains. Written by the update pass; a change
@@ -90,6 +107,29 @@ internal sealed class BackdropLayerCache : IDisposable
     /// glass.
     /// </summary>
     public BackdropCachePayload? FixedPayload { get; set; }
+
+    /// <summary>
+    /// The application's hint. <see cref="BackdropCacheHint.Volatile"/> pins
+    /// <see cref="BackdropCachePayload.None"/>; <see cref="BackdropCacheHint.Retained"/>
+    /// keeps the policy from dropping to it. A change restarts the policy from
+    /// the retained output, the payload a backdrop starts with.
+    /// </summary>
+    public BackdropCacheHint Hint
+    {
+        get => _hint;
+        set
+        {
+            if (_hint == value)
+                return;
+            _hint = value;
+            _smallBehindStreak = 0;
+            _wideBehindStreak = 0;
+            _pendingPayload = BackdropCachePayload.Output;
+        }
+    }
+
+    private BackdropCachePayload? PinnedPayload =>
+        FixedPayload ?? (_hint == BackdropCacheHint.Volatile ? BackdropCachePayload.None : null);
 
     /// <summary>
     /// True while <see cref="PlatformState"/> holds a payload that matches the
@@ -191,14 +231,14 @@ internal sealed class BackdropLayerCache : IDisposable
                 break;
         }
 
-        if (FixedPayload is { } fixedPayload)
+        if (PinnedPayload is { } pinned)
         {
-            _pendingPayload = fixedPayload != Payload ? fixedPayload : null;
+            _pendingPayload = pinned != Payload ? pinned : null;
             return;
         }
 
         var next = Payload;
-        if (_wideBehindStreak >= SwitchToNoneAfterFrames)
+        if (_wideBehindStreak >= SwitchToNoneAfterFrames && _hint != BackdropCacheHint.Retained)
             next = BackdropCachePayload.None;
         else if (_smallBehindStreak >= SwitchToInputAfterFrames)
             next = BackdropCachePayload.Input;
@@ -211,14 +251,14 @@ internal sealed class BackdropLayerCache : IDisposable
 
     /// <summary>
     /// Applies a payload switch scheduled by an earlier frame, or one forced
-    /// through <see cref="FixedPayload"/>. Runs before the frame's grants are
+    /// through <see cref="FixedPayload"/> or <see cref="Hint"/>. Runs before the frame's grants are
     /// computed, so the invalidation turns the next touch into a full refresh.
     /// </summary>
     internal void ApplyPendingPayload()
     {
         var target = _pendingPayload;
-        if (FixedPayload is { } fixedPayload && fixedPayload != Payload)
-            target = fixedPayload;
+        if (PinnedPayload is { } pinned)
+            target = pinned;
         _pendingPayload = null;
 
         if (target is not { } payload || payload == Payload)

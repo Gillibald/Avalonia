@@ -155,6 +155,7 @@ public partial class Visual
             comp.BackdropEffect = BackdropEffect?.ToImmutable();
 
         comp.BackdropClip = EffectiveBackdropClip?.PlatformImpl;
+        comp.BackdropCacheHint = BackdropEffectCache?.Hint ?? BackdropCacheHint.Auto;
 
         comp.RenderOptions = RenderOptions;
         comp.TextOptions = TextOptions;

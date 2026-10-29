@@ -310,4 +310,122 @@ public class BackdropPayloadTests : CompositorTestsBase
         Assert.True(cache.RefreshRequested);
         Assert.Empty(cache.IngestRects);
     }
+
+    [Fact]
+    public void Volatile_Hint_Never_Retains_Anything()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = Square(60, 60, 4);
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 120, 80, blur: 20);
+        panel.BackdropEffectCache = new VolatileBackdropEffectCache();
+        s.Canvas.Children.Add(panel);
+        var cache = ServerCacheOf(s, panel);
+        s.RunJobs();
+
+        Assert.Equal(BackdropCachePayload.None, cache.Payload);
+
+        // Small changes behind would otherwise move the policy to the
+        // retained input; the hint says the content is expected to change
+        // anyway, so nothing is kept.
+        for (var i = 0; i < 8; i++)
+        {
+            ConsumeGrant(cache);
+            behind.Background = i % 2 == 0 ? Brushes.Blue : Brushes.Red;
+            s.RunJobs();
+        }
+
+        Assert.Equal(BackdropCachePayload.None, cache.Payload);
+    }
+
+    [Fact]
+    public void Retained_Hint_Keeps_A_Payload_When_Everything_Behind_Changes()
+    {
+        using var s = new CompositorCanvas();
+
+        var video = Square(40, 40, 60);
+        s.Canvas.Children.Add(video);
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.BackdropEffectCache = new RetainedBackdropEffectCache();
+        s.Canvas.Children.Add(panel);
+        var cache = ServerCacheOf(s, panel);
+
+        for (var i = 0; i < 8; i++)
+        {
+            ConsumeGrant(cache);
+            video.Background = i % 2 == 0 ? Brushes.Blue : Brushes.Red;
+            s.RunJobs();
+        }
+
+        Assert.NotEqual(BackdropCachePayload.None, cache.Payload);
+    }
+
+    [Fact]
+    public void Retained_Hint_Still_Lets_The_Policy_Pick_The_Input()
+    {
+        using var s = new CompositorCanvas();
+
+        var behind = Square(60, 60, 4);
+        s.Canvas.Children.Add(behind);
+        var panel = Frosted(50, 50, 120, 80, blur: 20);
+        panel.BackdropEffectCache = new RetainedBackdropEffectCache();
+        s.Canvas.Children.Add(panel);
+        var cache = ServerCacheOf(s, panel);
+
+        for (var i = 0; i < 8; i++)
+        {
+            ConsumeGrant(cache);
+            behind.Background = i % 2 == 0 ? Brushes.Blue : Brushes.Red;
+            s.RunJobs();
+        }
+
+        Assert.Equal(BackdropCachePayload.Input, cache.Payload);
+    }
+
+    [Fact]
+    public void Changing_The_Hint_Restarts_From_The_Retained_Output()
+    {
+        using var s = new CompositorCanvas();
+
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.BackdropEffectCache = new VolatileBackdropEffectCache();
+        s.Canvas.Children.Add(panel);
+        var cache = ServerCacheOf(s, panel);
+        s.RunJobs();
+        Assert.Equal(BackdropCachePayload.None, cache.Payload);
+
+        panel.BackdropEffectCache = null;
+        s.RunJobs();
+        s.RunJobs();
+
+        Assert.Equal(BackdropCachePayload.Output, cache.Payload);
+
+        panel.BackdropEffectCache = new VolatileBackdropEffectCache();
+        s.RunJobs();
+        s.RunJobs();
+
+        Assert.Equal(BackdropCachePayload.None, cache.Payload);
+    }
+
+    [Fact]
+    public void Hint_Set_Before_The_Effect_Applies_Once_The_Glass_Registers()
+    {
+        using var s = new CompositorCanvas();
+
+        var panel = new Border
+        {
+            Width = 40, Height = 40,
+            BackdropEffectCache = new VolatileBackdropEffectCache(),
+            [Canvas.LeftProperty] = 50, [Canvas.TopProperty] = 50
+        };
+        s.Canvas.Children.Add(panel);
+        s.RunJobs();
+
+        panel.BackdropEffect = new ImmutableBlurEffect(4);
+        var cache = ServerCacheOf(s, panel);
+        s.RunJobs();
+
+        Assert.Equal(BackdropCachePayload.None, cache.Payload);
+    }
 }
