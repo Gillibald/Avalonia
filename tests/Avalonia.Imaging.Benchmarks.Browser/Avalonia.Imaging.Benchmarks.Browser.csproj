@@ -1,11 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.WebAssembly">
   <!--
-    Browser host of the imaging benchmarks. Needs the .NET 11 browser workload: PixelMan's
-    archive links only with its Emscripten 6. SkiaSharp 3.119.4 has no archive that links
-    there, so this host lifts SkiaSharp to 4.153.1 and works around two of its build targets.
+    Browser host of the imaging benchmarks. Needs the .NET 10 browser workload (wasm-tools-net10
+    under SDK 11): the PixelMan package links its Emscripten 3.1.56 archive into net10.0 apps.
   -->
   <PropertyGroup>
-    <TargetFramework>net11.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -14,24 +13,7 @@
   <Import Project="..\..\build\NullableEnable.props" />
   <ItemGroup>
     <ProjectReference Include="..\Avalonia.Imaging.Benchmarks.Core\Avalonia.Imaging.Benchmarks.Core.csproj" />
-    <PackageReference Include="SkiaSharp" VersionOverride="4.153.1" />
-    <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" VersionOverride="4.153.1" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" />
   </ItemGroup>
-  <!--
-    SkiaSharp 4.153.1's targets still pick the Emscripten 3.1.56 archive for net9+ apps, which
-    does not link with .NET 11's Emscripten 6; its 5.0.6 archive does. They also put the
-    emdawnwebgpu paths into the link flags unquoted, which breaks under a path with a space.
-  -->
-  <Target Name="UseSkiaArchiveForEmscripten5" BeforeTargets="PrepareForBuild">
-    <ItemGroup>
-      <_OldSkiaArchive Include="@(NativeFileReference)" Condition="$([System.String]::Copy('%(FullPath)').Contains('libSkiaSharp.a'))" />
-      <NativeFileReference Remove="@(_OldSkiaArchive)" />
-      <NativeFileReference Include="$(SkiaSharpStaticLibraryPath)/5.0.6/$(_SkiaSharpNativeBinaryType)/*.a" />
-    </ItemGroup>
-    <PropertyGroup>
-      <_QuotedSkiaFlags>$(EmccExtraLDFlags.Replace('$(_SkiaSharpEmdawnwebgpuPkg)', 'PKGROOT'))</_QuotedSkiaFlags>
-      <_QuotedSkiaFlags>$([System.Text.RegularExpressions.Regex]::Replace('$(_QuotedSkiaFlags)', '(PKGROOT\S*)', '"$1"'))</_QuotedSkiaFlags>
-      <EmccExtraLDFlags>$(_QuotedSkiaFlags.Replace('PKGROOT', '$(_SkiaSharpEmdawnwebgpuPkg)'))</EmccExtraLDFlags>
-    </PropertyGroup>
-  </Target>
 </Project>

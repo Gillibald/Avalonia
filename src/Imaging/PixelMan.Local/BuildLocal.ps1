@@ -16,8 +16,9 @@
 .PARAMETER Browser
     Also builds the static library for browser-wasm, so browser apps that reference the
     package link PixelMan into dotnet.native.wasm. Needs the wasm32-unknown-emscripten Rust
-    target and, in the consuming app, the .NET 11 browser workload (Emscripten 6): the
-    Emscripten of the .NET 10 workload is too old for the objects Rust emits.
+    target, Python, and the .NET 10 browser workload (wasm-tools-net10), whose Emscripten
+    3.1.56 rewrites a second archive for net8.0 to net10.0 apps (Emscripten 3); net11.0 apps
+    link the archive Rust writes with the .NET 11 workload's Emscripten 6.
 
 .PARAMETER Android
     Also builds the shared library for android-arm64, so Android apps that reference the
@@ -141,7 +142,26 @@ $browserRuntime = Join-Path $project 'runtimes/browser-wasm/native'
 if ($Browser) {
     # The archive is named after the LibraryImport name, which the browser link requires.
     New-Item -ItemType Directory -Force $browserRuntime | Out-Null
-    Copy-Item (Join-Path $pixelMan 'rust/target/wasm32-unknown-emscripten/release/libpixelman_ffi.a') (Join-Path $browserRuntime 'pixelman_ffi.a') -Force
+    $archive = Join-Path $pixelMan 'rust/target/wasm32-unknown-emscripten/release/libpixelman_ffi.a'
+    Copy-Item $archive (Join-Path $browserRuntime 'pixelman_ffi.a') -Force
+
+    # .NET 8 to 10 apps link with Emscripten 3, which needs the archive rewritten; Emscripten
+    # 3.1.56's llvm-ar from the .NET 10 browser workload (wasm-tools-net10) writes its index.
+    $packs = Join-Path (Split-Path (Get-Command dotnet).Source) 'packs'
+    $ar = Get-ChildItem (Join-Path $packs 'Microsoft.NET.Runtime.Emscripten.3.1.56.Sdk.*') -Directory -ErrorAction SilentlyContinue |
+        Get-ChildItem -Directory | Sort-Object { [version]$_.Name } |
+        ForEach-Object { Get-ChildItem (Join-Path $_.FullName 'tools/bin') -Filter 'llvm-ar*' -ErrorAction SilentlyContinue } |
+        Select-Object -Last 1 -ExpandProperty FullName
+    $emscripten3 = Join-Path $browserRuntime 'emscripten3'
+    if ($ar) {
+        New-Item -ItemType Directory -Force $emscripten3 | Out-Null
+        & python (Join-Path $pixelMan 'scripts/emscripten3-archive.py') $archive (Join-Path $emscripten3 'pixelman_ffi.a') --ar $ar
+        if ($LASTEXITCODE -ne 0) { throw "emscripten3-archive.py failed with exit code $LASTEXITCODE." }
+    }
+    else {
+        Write-Warning 'No Emscripten 3.1.56 found (dotnet workload install wasm-tools-net10); the package will not link in net8.0 to net10.0 browser apps.'
+        if (Test-Path $emscripten3) { Remove-Item -Recurse -Force $emscripten3 }
+    }
 }
 elseif (Test-Path (Split-Path $browserRuntime)) {
     # An archive from an earlier -Browser run would be packed as if it matched this build.
