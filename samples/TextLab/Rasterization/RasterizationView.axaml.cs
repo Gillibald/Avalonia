@@ -192,11 +192,11 @@ namespace TextLab
 
             RenderHintingFigure();
             SetImage(_maskImage, PipelineFigures.MaskAnatomy(typeface, _glyph, label, "Hamburgefonstiv", size,
-                out var maskInfo, embedInfo: false));
+                out var maskInfo, embedInfo: false, deviceScale: PipelineFigures.ScaleOf(this)));
             _maskInfoText.Text = maskInfo;
             SetImage(_lcdImage, PipelineFigures.ClearTypePipeline(typeface, _glyph, label, size,
                 _bgrBox.IsChecked == true, _gammaBox.IsChecked == true, hinting,
-                out var lcdLegend, embedCaption: false));
+                out var lcdLegend, embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this)));
             _lcdLegendText.Text = lcdLegend;
         }
 
@@ -222,13 +222,13 @@ namespace TextLab
 
                 SetImage(_hintingImage,
                     PipelineFigures.BytecodeHintingAnatomy(typeface, _glyph, label, size, hinting, probe, step,
-                        out var legend, embedCaption: false));
+                        out var legend, embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this)));
                 _hintLegendText.Text = legend;
             }
             else
             {
                 SetImage(_hintingImage, PipelineFigures.HintingAnatomy(typeface, _glyph, label, size, hinting,
-                    out var legend, embedCaption: false));
+                    out var legend, embedCaption: false, deviceScale: PipelineFigures.ScaleOf(this)));
                 _hintLegendText.Text = legend;
             }
         }
@@ -264,19 +264,12 @@ namespace TextLab
                 : null;
         }
 
-        private static void SetImage(Image target, SKBitmap figure)
+        private void SetImage(Image target, SKBitmap figure)
         {
-            var previous = target.Source as IDisposable;
-
             using (figure)
-            using (var image = SKImage.FromBitmap(figure))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
             {
-                target.Source = new Bitmap(stream);
+                PipelineFigures.Show(target, figure, PipelineFigures.ScaleOf(this));
             }
-
-            previous?.Dispose();
         }
 
     }

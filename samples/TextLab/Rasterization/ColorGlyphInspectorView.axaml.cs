@@ -116,7 +116,9 @@ namespace TextLab
 
             _titleText.Text = $"glyph {glyph}{(_label is null ? "" : $" {_label}")} — {kind}";
 
-            var size = RenderSize;
+            // Both altitudes render at the window's device pixels, which is what the screen shows
+            // at this size.
+            var size = (int)Math.Round(RenderSize * PipelineFigures.ScaleOf(this));
             var options = new GlyphDrawingOptions
             {
                 PaletteIndex = PaletteIndex > 0 ? PaletteIndex : null,
@@ -219,7 +221,7 @@ namespace TextLab
         {
             var width = a.Width;
             var height = a.Height;
-            var diff = NewCanvasBitmap(width, height);
+            using var diff = NewCanvasBitmap(width, height);
             var differing = 0;
             var maxDelta = 0;
 
@@ -407,11 +409,11 @@ namespace TextLab
             }
 
             var cpal = typeface.ColorPaletteTable;
-            var bitmap = NewCanvasBitmap(steps * tile + 1, tile + 15);
+            using var bitmap = PipelineFigures.NewFigure(steps * tile + 1, tile + 15, PipelineFigures.ScaleOf(this), out var structureCanvas);
             var scratch = new GlyphPathBuilder();
             var scaleQ = GlyphMaskKey.QuantizeScale(layerRenderSize);
 
-            using (var canvas = new SKCanvas(bitmap))
+            using (var canvas = structureCanvas)
             using (var paint = new SKPaint())
             using (var grid = new SKPaint { Color = FigureTheme.Current.Grid, IsStroke = true })
             using (var label = new SKPaint { Color = new SKColor(0x90, 0x90, 0x90) })
@@ -489,18 +491,9 @@ namespace TextLab
             return bitmap;
         }
 
-        private static void SetImage(Image target, SKBitmap bitmap)
+        private void SetImage(Image target, SKBitmap bitmap)
         {
-            var previous = target.Source as IDisposable;
-
-            using (var image = SKImage.FromBitmap(bitmap))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
-            {
-                target.Source = new Bitmap(stream);
-            }
-
-            previous?.Dispose();
+            PipelineFigures.Show(target, bitmap, PipelineFigures.ScaleOf(this));
         }
     }
 }

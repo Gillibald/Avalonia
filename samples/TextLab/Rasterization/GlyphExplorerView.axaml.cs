@@ -333,10 +333,12 @@ namespace TextLab
             }
 
             var theme = FigureTheme.Current;
-            var bitmap = new SKBitmap(new SKImageInfo(Columns * Cell + 1, Rows * Cell + 1,
-                SKColorType.Bgra8888, SKAlphaType.Premul));
+            // The grid draws in points on a bitmap of the window's device pixels; mono cells are
+            // rasterized at device size so each mask pixel is one device pixel.
+            var deviceScale = PipelineFigures.ScaleOf(this);
+            var bitmap = PipelineFigures.NewFigure(Columns * Cell + 1, Rows * Cell + 1, deviceScale, out var gridCanvas);
 
-            using (var canvas = new SKCanvas(bitmap))
+            using (var canvas = gridCanvas)
             using (var grid = new SKPaint { Color = theme.Grid, IsStroke = true })
             using (var cellPaint = new SKPaint())
             using (var badge = new SKPaint())
@@ -347,7 +349,7 @@ namespace TextLab
                 canvas.Clear(theme.Background);
 
                 var scratch = new GlyphPathBuilder();
-                var scaleQ = GlyphMaskKey.QuantizeScale(CellRenderSize);
+                var scaleQ = GlyphMaskKey.QuantizeScale(CellRenderSize * deviceScale);
                 var first = _page * PageSize;
                 var drawingOptions = new GlyphDrawingOptions { PixelSize = (int)CellRenderSize };
                 var drawingScale = (double)CellRenderSize / typeface.Metrics.DesignEmHeight;
@@ -357,7 +359,7 @@ namespace TextLab
                 // the mono mask tier. The DrawingContext wrapper is disposed before the
                 // chrome pass so the raw canvas state is clean for labels and badges.
                 using (var contextImpl = Avalonia.Skia.Helpers.DrawingContextHelper.WrapSkiaCanvas(
-                           canvas, new Vector(96, 96)))
+                           canvas, new Vector(96 * deviceScale, 96 * deviceScale)))
                 using (var drawContext = new PlatformDrawingContext(contextImpl, ownsImpl: false))
                 {
                     for (var i = 0; i < PageSize && first + i < _glyphs.Count; i++)
@@ -399,8 +401,9 @@ namespace TextLab
                         if (!mask.IsEmpty)
                         {
                             // Center the ink in the cell's upper region; the label owns the bottom.
-                            var originX = cx + (Cell - mask.Width) / 2;
-                            var originY = cy + (Cell - 11 - mask.Height) / 2;
+                            var originX = MathF.Round((cx + (Cell - mask.Width / deviceScale) / 2) * deviceScale) / deviceScale;
+                            var originY = MathF.Round((cy + (Cell - 11 - mask.Height / deviceScale) / 2) * deviceScale) / deviceScale;
+                            var pixel = 1 / deviceScale;
 
                             for (var y = 0; y < mask.Height; y++)
                             {
@@ -411,7 +414,7 @@ namespace TextLab
                                     if (coverage > 0)
                                     {
                                         cellPaint.Color = theme.Ink.WithAlpha(coverage);
-                                        canvas.DrawRect(originX + x, originY + y, 1, 1, cellPaint);
+                                        canvas.DrawRect(originX + x * pixel, originY + y * pixel, pixel, pixel, cellPaint);
                                     }
                                 }
                             }
@@ -465,17 +468,10 @@ namespace TextLab
                 }
             }
 
-            var previous = _gridImage.Source as IDisposable;
-
             using (bitmap)
-            using (var image = SKImage.FromBitmap(bitmap))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
             {
-                _gridImage.Source = new Bitmap(stream);
+                PipelineFigures.Show(_gridImage, bitmap, deviceScale);
             }
-
-            previous?.Dispose();
         }
 
         private void OnGridPressed(object? sender, PointerPressedEventArgs e)

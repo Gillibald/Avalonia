@@ -116,7 +116,8 @@ namespace TextLab
             _fittedZoom = zoom;
 
             var figure = PipelineFigures.FringeAnalysis(typeface, sample, size, hinting, zoom,
-                out var fringed, out var warmEdges, out var coolEdges, out var wrongPolarity, out var inkPixels);
+                out var fringed, out var warmEdges, out var coolEdges, out var wrongPolarity, out var inkPixels,
+                PipelineFigures.ScaleOf(this));
 
             var percent = inkPixels == 0 ? 0 : 100.0 * fringed / inkPixels;
 
@@ -128,17 +129,10 @@ namespace TextLab
             _statsText.Text = FormattableString.Invariant(
                 $"{fringed} fringed pixels ({percent:0.0}% of {inkPixels} inked)  |  warm-{(dark ? "right" : "left")} {warmEdges}  |  cool-{(dark ? "left" : "right")} {coolEdges}  |  wrong polarity {wrongPolarity}{verdict}");
 
-            var previous = _resultImage.Source as IDisposable;
-
             using (figure)
-            using (var image = SKImage.FromBitmap(figure))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
             {
-                _resultImage.Source = new Bitmap(stream);
+                PipelineFigures.Show(_resultImage, figure, PipelineFigures.ScaleOf(this));
             }
-
-            previous?.Dispose();
         }
     }
 }

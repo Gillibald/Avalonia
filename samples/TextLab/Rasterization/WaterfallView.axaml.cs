@@ -20,6 +20,8 @@ namespace TextLab
         private ComboBox _zoomBox = null!;
         private TextBlock _fontText = null!;
         private Image _matrixImage = null!;
+        private Panel _matrixHost = null!;
+        private int _fittedZoom;
         private GlyphTypeface? _typeface;
         private bool _initialized;
 
@@ -32,15 +34,25 @@ namespace TextLab
             _zoomBox = this.FindControl<ComboBox>("ZoomBox")!;
             _fontText = this.FindControl<TextBlock>("FontText")!;
             _matrixImage = this.FindControl<Image>("MatrixImage")!;
+            _matrixHost = this.FindControl<Panel>("MatrixHost")!;
 
             _renderingBox.ItemsSource = RenderingChoice.Output();
             _renderingBox.SelectedIndex = 0;
-            _zoomBox.ItemsSource = new[] { "1x", "2x", "3x" };
+            // Zoom counts device pixels per rendered pixel, so every step is pixel exact; Fit picks
+            // the largest step that fits the page.
+            _zoomBox.ItemsSource = new[] { "Fit", "1x", "2x", "3x" };
             _zoomBox.SelectedIndex = 0;
 
             _sampleBox.TextChanged += (_, _) => Rebuild();
             _renderingBox.SelectionChanged += (_, _) => Rebuild();
             _zoomBox.SelectionChanged += (_, _) => Rebuild();
+            _matrixHost.SizeChanged += (_, _) =>
+            {
+                if (_zoomBox.SelectedIndex == 0 && _matrixImage.Source is not null && FitZoom(_lastMatrixWidth) != _fittedZoom)
+                {
+                    Rebuild();
+                }
+            };
 
             _initialized = true;
         }
@@ -50,6 +62,16 @@ namespace TextLab
             _typeface = typeface;
             _fontText.Text = typeface?.FamilyName;
             Rebuild();
+        }
+
+        private int _lastMatrixWidth;
+
+        /// <summary>The largest zoom, 1 to 3 device pixels per pixel, at which the matrix fits the page.</summary>
+        private int FitZoom(int matrixWidth)
+        {
+            var available = _matrixHost.Bounds.Width * PipelineFigures.ScaleOf(this);
+
+            return matrixWidth <= 0 || available < 1 ? 1 : Math.Clamp((int)(available / matrixWidth), 1, 3);
         }
 
         private void Rebuild()
@@ -63,9 +85,13 @@ namespace TextLab
             var rendering = _renderingBox.SelectedItem is RenderingChoice choice
                 ? choice.Mode
                 : TextRenderingMode.SubpixelAntialias;
-            var zoom = _zoomBox.SelectedIndex + 1;
-
             using var matrix = PipelineFigures.WaterfallMatrix(typeface, sample, rendering);
+
+            _lastMatrixWidth = matrix.Width;
+
+            var zoom = _zoomBox.SelectedIndex == 0 ? FitZoom(matrix.Width) : _zoomBox.SelectedIndex;
+
+            _fittedZoom = zoom;
 
             SKBitmap display;
 
@@ -85,17 +111,10 @@ namespace TextLab
                     new SKSamplingOptions(SKFilterMode.Nearest));
             }
 
-            var previous = _matrixImage.Source as IDisposable;
-
             using (display)
-            using (var image = SKImage.FromBitmap(display))
-            using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
-            using (var stream = new MemoryStream(data.ToArray()))
             {
-                _matrixImage.Source = new Bitmap(stream);
+                PipelineFigures.Show(_matrixImage, display, PipelineFigures.ScaleOf(this));
             }
-
-            previous?.Dispose();
         }
     }
 }

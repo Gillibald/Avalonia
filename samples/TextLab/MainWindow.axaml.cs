@@ -46,6 +46,9 @@ namespace TextLab
                 TextRasterizationMode.Backend ? 1 : 0;
             _rasterBox.SelectionChanged += (_, _) => OnRasterModeChanged();
             _themeToggle.IsCheckedChanged += (_, _) => OnThemeChanged();
+            // Figures are drawn at the window's device pixels; a screen with another scaling
+            // needs them drawn again.
+            ScalingChanged += (_, _) => RepaintFigures();
 
             _nav.SelectionChanged += (_, _) => OnNavChanged();
             AddHandler(KeyDownEvent, OnPagingKeyDown, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -200,6 +203,11 @@ namespace TextLab
             // Figures are bitmaps outside the styling system - rebuild them with the
             // matching palette. The A/B diff intentionally stays black-on-white so saved
             // reference PNGs remain comparable across themes.
+            RepaintFigures();
+        }
+
+        private void RepaintFigures()
+        {
             PushFontContext();
             _explorer.Repaint();
             _colorInspector.Repaint();

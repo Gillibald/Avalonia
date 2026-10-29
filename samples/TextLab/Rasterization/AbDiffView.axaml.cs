@@ -209,7 +209,7 @@ namespace TextLab
             ShowDiff(a, compareB, disposeB: _referenceB is null ? b : null);
         }
 
-        private static SKBitmap RenderSide(GlyphRasterizationOptions options, string text, string font,
+        private SKBitmap RenderSide(GlyphRasterizationOptions options, string text, string font,
             double size, string? mode, ComboBox hintingBox, ComboBox renderingBox)
         {
             options.TextRasterizationMode = mode == "Backend"
@@ -241,11 +241,13 @@ namespace TextLab
             host.Measure(Avalonia.Size.Infinity);
             host.Arrange(new Rect(host.DesiredSize));
 
+            // Rendered at the window's device pixels: the diff compares what this screen shows.
+            var deviceScale = PipelineFigures.ScaleOf(this);
             var pixelSize = new PixelSize(
-                Math.Max(1, (int)Math.Ceiling(host.DesiredSize.Width)),
-                Math.Max(1, (int)Math.Ceiling(host.DesiredSize.Height)));
+                Math.Max(1, (int)Math.Ceiling(host.DesiredSize.Width * deviceScale)),
+                Math.Max(1, (int)Math.Ceiling(host.DesiredSize.Height * deviceScale)));
 
-            using var target = new RenderTargetBitmap(pixelSize, new Vector(96, 96));
+            using var target = new RenderTargetBitmap(pixelSize, new Vector(96 * deviceScale, 96 * deviceScale));
 
             target.Render(host);
 
@@ -367,18 +369,24 @@ namespace TextLab
 
             if (_zoomBox.SelectedIndex <= 0)
             {
-                // Fit: bounded by the viewport, shrink-only, smooth resampling.
+                // Fit: at most the strip's size in points (one pixel per device pixel), shrinking
+                // smoothly to the viewport.
                 _resultImage.Width = double.NaN;
+                _resultImage.MaxWidth = bitmap.PixelSize.Width / PipelineFigures.ScaleOf(this);
+                _resultImage.MaxHeight = bitmap.PixelSize.Height / PipelineFigures.ScaleOf(this);
                 _resultImage.StretchDirection = StretchDirection.DownOnly;
                 _stripScroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
                 RenderOptions.SetBitmapInterpolationMode(_resultImage, BitmapInterpolationMode.HighQuality);
             }
             else
             {
-                // Explicit zoom: nearest-neighbor so device pixels stay inspectable.
+                // Explicit zoom: device pixels per rendered pixel, nearest-neighbor so they stay
+                // inspectable.
                 var zoom = _zoomBox.SelectedIndex;
 
-                _resultImage.Width = bitmap.PixelSize.Width * zoom;
+                _resultImage.Width = bitmap.PixelSize.Width * zoom / PipelineFigures.ScaleOf(this);
+                _resultImage.MaxWidth = double.PositiveInfinity;
+                _resultImage.MaxHeight = double.PositiveInfinity;
                 _resultImage.StretchDirection = StretchDirection.Both;
                 _stripScroller.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
                 RenderOptions.SetBitmapInterpolationMode(_resultImage, BitmapInterpolationMode.None);
@@ -402,14 +410,7 @@ namespace TextLab
                 _verdictText.Text));
         }
 
-        private static Bitmap ToBitmap(SKBitmap bitmap)
-        {
-            using var image = SKImage.FromBitmap(bitmap);
-            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-            using var stream = new MemoryStream(data.ToArray());
-
-            return new Bitmap(stream);
-        }
+        private static Bitmap ToBitmap(SKBitmap bitmap) => PipelineFigures.ToBitmap(bitmap);
 
         private async System.Threading.Tasks.Task SaveReferenceAsync()
         {
