@@ -289,7 +289,12 @@ namespace TextTour
         private static BidiAlgorithm RunBidi(string text, FlowDirection flowDirection)
         {
             var data = new BidiData { ParagraphEmbeddingLevel = (sbyte)flowDirection };
-            data.Append(text.AsSpan());
+
+            // The formatter never hands BidiData an empty paragraph; appending one fails in Debug builds.
+            if (text.Length > 0)
+            {
+                data.Append(text.AsSpan());
+            }
 
             var algorithm = new BidiAlgorithm();
             algorithm.Process(data);
