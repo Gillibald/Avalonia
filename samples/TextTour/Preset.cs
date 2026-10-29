@@ -49,6 +49,11 @@ namespace TextTour
                 "\u6F22\u5B57\u304B\u306A\u4EA4\u3058\u308A\u6587\u3001\u300C\u65E5\u672C\u8A9E\u300D\u3068\u4E2D\u6587\u3002",
                 new StyleSpan(9, 5),
                 "breaks between ideographs, never before a closing bracket"),
+            new Preset(
+                "Han by culture",
+                "直 骨 角 次 誤 刃",
+                null,
+                "the same code points, drawn in each culture's own form"),
         };
     }
 }
