@@ -19,6 +19,10 @@ namespace TextLab
     internal static class PipelineFigures
     {
         /// <summary>Figure labels render invariant — a de-DE machine must not draw "6,5".</summary>
+        /// <remarks>
+        /// Labels are drawn with SKTypeface.Default and no font fallback, so they stay ASCII: the
+        /// macOS default face has no arrow, for example.
+        /// </remarks>
         private static string Inv(FormattableString text) => FormattableString.Invariant(text);
 
         /// <summary>Ambient theme override; the doc export pins Light for determinism.</summary>
@@ -142,7 +146,7 @@ namespace TextLab
                     // Band-edge knots share their zone's row; label each landed row once.
                     if (i == 0 || zones.To[i] != zones.To[i - 1])
                     {
-                        canvas.DrawText(Inv($"{zones.From[i]:0.##}→{zones.To[i]:0}"), 4, destination + 4,
+                        canvas.DrawText(Inv($"{zones.From[i]:0.##}->{zones.To[i]:0}"), 4, destination + 4,
                             SKTextAlign.Left, font, text);
                     }
                 }
@@ -159,7 +163,7 @@ namespace TextLab
                 for (var i = 0; i < strokeKnots; i++)
                 {
                     canvas.DrawLine(right, DeviceY(strokeTo[i]), right + 26, DeviceY(strokeTo[i]), strokePaint);
-                    canvas.DrawText(Inv($"{strokeFrom[i]:0.##}→{strokeTo[i]:0}"), right + 30,
+                    canvas.DrawText(Inv($"{strokeFrom[i]:0.##}->{strokeTo[i]:0}"), right + 30,
                         DeviceY(strokeTo[i]) + 4, SKTextAlign.Left, font, text);
                 }
             }
@@ -189,7 +193,7 @@ namespace TextLab
             float size, TextHintingMode hinting, TrueTypeHintingProbe probe, int step,
             out string legend, bool embedCaption = true)
         {
-            legend = "red unhinted, blue fitted by the font's program  |  connectors original→current" +
+            legend = "red unhinted, blue fitted by the font's program  |  connectors original->current" +
                 Environment.NewLine +
                 "points: green y-touched, orange x-touched, purple both, gray untouched, crosses phantom";
             var t = Theme;
@@ -337,7 +341,7 @@ namespace TextLab
                     Inv($"{label} {size:0.#}px  hinting {hinting}  |  engine: TrueType bytecode, {engine}, {probe.InstructionsExecuted} ops"),
                     6, height - 46, SKTextAlign.Left, font, text);
                 canvas.DrawText(
-                    "red unhinted, blue fitted by the font's program  |  connectors original→current",
+                    "red unhinted, blue fitted by the font's program  |  connectors original->current",
                     6, height - 28, SKTextAlign.Left, font, text);
                 canvas.DrawText(
                     "points: green y-touched, orange x-touched, purple both, gray untouched, crosses phantom",
@@ -591,7 +595,7 @@ namespace TextLab
         public static SKBitmap ClearTypePipeline(GlyphTypeface typeface, ushort glyph, string label, float size,
             bool bgr, bool gamma, TextHintingMode hinting, out string legend, bool embedCaption = true)
         {
-            legend = "3x raster → (1,2,3,2,1)/9 FIR per stripe → interleaved RGB mask → per-channel blend";
+            legend = "3x raster -> (1,2,3,2,1)/9 FIR per stripe -> interleaved RGB mask -> per-channel blend";
             var t = Theme;
 
             var scaleQ = GlyphMaskKey.QuantizeScale(size);
