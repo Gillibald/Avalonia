@@ -2688,6 +2688,11 @@ namespace Avalonia.Media
                 else
                 {
                     _glyfTable.GetGlyphBounds(glyphIndices, bounds);
+
+                    for (int i = 0; i < glyphIndices.Length; i++)
+                    {
+                        bounds[i] = PlaceByLeftPhantom(glyphIndices[i], bounds[i]);
+                    }
                 }
             }
             else if (HasComputedGlyphBounds)
@@ -2811,12 +2816,33 @@ namespace Avalonia.Media
 
             if (_glyfTable!.TryGetGlyphBounds(glyph, out var xMin, out var yMin, out var xMax, out var yMax))
             {
-                box = new GlyphBounds(xMin, yMin, xMax, yMax);
+                box = PlaceByLeftPhantom(glyph, new GlyphBounds(xMin, yMin, xMax, yMax));
                 return true;
             }
 
             box = default;
             return false;
+        }
+
+        /// <summary>
+        /// Moves a <c>glyf</c> header box the way <see cref="GetGlyphOutline"/> moves the outline,
+        /// so its left phantom point lands on the origin. At a default instance that point is an
+        /// integer, so the move is exact.
+        /// </summary>
+        private GlyphBounds PlaceByLeftPhantom(ushort glyph, GlyphBounds box)
+        {
+            if (box == default || !TryGetLeftPhantomX(glyph, default, out var leftPhantomX) || leftPhantomX == 0)
+            {
+                return box;
+            }
+
+            var shift = (int)-leftPhantomX;
+
+            return new GlyphBounds(
+                (short)Math.Clamp(box.XMin + shift, short.MinValue, short.MaxValue),
+                box.YMin,
+                (short)Math.Clamp(box.XMax + shift, short.MinValue, short.MaxValue),
+                box.YMax);
         }
 
         /// <summary>
@@ -2828,7 +2854,13 @@ namespace Avalonia.Media
         /// </summary>
         private bool TryComputeGlyfGlyphBounds(ushort glyph, out GlyphBounds box)
         {
-            if (_glyfTable!.TryGetGlyphOutlineBounds(glyph, _gvarTable, _activeCoords, out box))
+            // Measure the outline where GetGlyphOutline places it, with its left phantom point on
+            // the origin.
+            var transform = TryGetLeftPhantomX(glyph, _activeCoords, out var leftPhantomX) && leftPhantomX != 0
+                ? Matrix.CreateTranslation(-leftPhantomX, 0)
+                : Matrix.Identity;
+
+            if (_glyfTable!.TryGetGlyphOutlineBounds(glyph, transform, _gvarTable, _activeCoords, out box))
             {
                 return true;
             }
