@@ -7,7 +7,6 @@ using Avalonia.Media;
 using Avalonia.Media.Svg;
 using Avalonia.Rendering.Composition;
 using Avalonia.Skia.RenderTests;
-using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
 
 namespace Avalonia.Svg.RenderTests;
@@ -111,8 +110,8 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
         var compositedPath = Path.Combine(
             OutputPath, nameof(Image_Source_Hosts_The_Composition_Channel) + ".composited.out.png");
 
-        using var expected = SixLabors.ImageSharp.Image.Load<Rgba32>(expectedPath);
-        using var composited = SixLabors.ImageSharp.Image.Load<Rgba32>(compositedPath);
+        using var expected = TestRenderHelper.LoadImage(expectedPath);
+        using var composited = TestRenderHelper.LoadImage(compositedPath);
         var error = TestRenderHelper.CompareImages(composited, expected);
         Assert.True(error <= 0.022, $"{compositedPath}: Error = {error}");
     }
@@ -300,8 +299,8 @@ public class CompositionChannelRenderTests : SvgRenderTestBase
 
         var immediatePath = Path.Combine(OutputPath, testName + ".immediate.out.png");
         var compositedPath = Path.Combine(OutputPath, testName + ".composited.out.png");
-        using var immediate = SixLabors.ImageSharp.Image.Load<Rgba32>(immediatePath);
-        using var composited = SixLabors.ImageSharp.Image.Load<Rgba32>(compositedPath);
+        using var immediate = TestRenderHelper.LoadImage(immediatePath);
+        using var composited = TestRenderHelper.LoadImage(compositedPath);
         var error = TestRenderHelper.CompareImages(composited, immediate);
         Assert.True(error <= 0.022, $"{compositedPath} vs immediate: Error = {error}");
 

@@ -7,10 +7,7 @@ using Avalonia.Media;
 using Avalonia.Media.Svg;
 using Avalonia.Media.Imaging;
 using Avalonia.Skia.RenderTests;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Xunit;
-using Image = SixLabors.ImageSharp.Image;
 
 namespace Avalonia.Svg.RenderTests;
 
@@ -86,12 +83,12 @@ public class SvgRenderTestBase : IDisposable
         var immediatePath = Path.Combine(OutputPath, testName + ".immediate.out.png");
         var compositedPath = Path.Combine(OutputPath, testName + ".composited.out.png");
 
-        using (var expected = Image.Load<Rgba32>(expectedPath))
-        using (var composited = Image.Load<Rgba32>(compositedPath))
+        using (var expected = TestRenderHelper.LoadImage(expectedPath))
+        using (var composited = TestRenderHelper.LoadImage(compositedPath))
         {
             if (!skipImmediate)
             {
-                using var immediate = Image.Load<Rgba32>(immediatePath);
+                using var immediate = TestRenderHelper.LoadImage(immediatePath);
                 var immediateError = TestRenderHelper.CompareImages(immediate, expected);
                 if (immediateError > AllowedError)
                     Assert.Fail(immediatePath + ": Error = " + immediateError);
