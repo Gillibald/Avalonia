@@ -49,20 +49,22 @@ namespace TextTour.Chapters
             _ => "string.Length, CodepointEnumerator, GraphemeEnumerator, ShapedBuffer.Length",
         };
 
+        public override bool ShowsCard => _hoverCodepoint >= 0;
+
         public override int ExportVariantCount(int step) => step == 2 ? 2 : 1;
 
         public override string ExportVariantName(int step, int variant) => variant == 1 ? "-card" : string.Empty;
 
         public override void PrepareExport(int step, int variant)
         {
-            _hoverCodepoint = variant == 1 ? DemoCodepoint() : -1;
+            SetHover(variant == 1 ? DemoCodepoint() : -1);
             InvalidateVisual();
         }
 
         protected override void InvalidateModel()
         {
             _model = null;
-            _hoverCodepoint = -1;
+            SetHover(-1);
             base.InvalidateModel();
         }
 
@@ -77,7 +79,7 @@ namespace TextTour.Chapters
 
             if (cp != _hoverCodepoint)
             {
-                _hoverCodepoint = cp;
+                SetHover(cp);
                 InvalidateVisual();
             }
         }
@@ -85,8 +87,19 @@ namespace TextTour.Chapters
         protected override void OnPointerExited(PointerEventArgs e)
         {
             base.OnPointerExited(e);
-            _hoverCodepoint = -1;
+            SetHover(-1);
             InvalidateVisual();
+        }
+
+        private void SetHover(int codepoint)
+        {
+            var wasShown = ShowsCard;
+            _hoverCodepoint = codepoint;
+
+            if (ShowsCard != wasShown)
+            {
+                RaiseCaptionChanged();
+            }
         }
 
         public override void Render(DrawingContext context)

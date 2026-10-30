@@ -70,6 +70,9 @@ namespace TextTour
         /// <summary>A short name of the current step for the caption bar.</summary>
         public virtual string StepName => string.Empty;
 
+        /// <summary>Whether a detail card is open; a card can belong to a slide of its own.</summary>
+        public virtual bool ShowsCard => false;
+
         protected Palette Palette => State.Palette;
 
         /// <summary>Content padding inside the chapter area.</summary>

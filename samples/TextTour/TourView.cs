@@ -33,6 +33,7 @@ namespace TextTour
         private readonly Border _captionBar;
         private readonly TextBlock _caption;
         private readonly TextBlock _stepText;
+        private readonly TextBlock _slideText;
         private readonly TextBlock _scaleText;
         private readonly LayoutTransformControl _scaler;
         private readonly ThemeVariantScope _themeScope;
@@ -147,10 +148,18 @@ namespace TextTour
                 MaxLines = 2,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
-            _stepText = new TextBlock { FontSize = 20, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0) };
+            // The slide of the talk above the step counter, right-aligned, so captures name their slide.
+            _slideText = new TextBlock { FontSize = 18, FontWeight = FontWeight.SemiBold, HorizontalAlignment = HorizontalAlignment.Right };
+            _stepText = new TextBlock { FontSize = 16, HorizontalAlignment = HorizontalAlignment.Right };
+            var stepPanel = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(24, 0, 0, 0),
+                Children = { _slideText, _stepText },
+            };
             var captionPanel = new DockPanel();
-            DockPanel.SetDock(_stepText, Dock.Right);
-            captionPanel.Children.Add(_stepText);
+            DockPanel.SetDock(stepPanel, Dock.Right);
+            captionPanel.Children.Add(stepPanel);
             captionPanel.Children.Add(_caption);
             _captionBar = new Border { Padding = new Thickness(20, 10), Child = captionPanel };
 
@@ -407,6 +416,7 @@ namespace TextTour
             _captionBar.BorderThickness = new Thickness(0, 1, 0, 0);
             _caption.Foreground = palette.Foreground;
             _stepText.Foreground = palette.Muted;
+            _slideText.Foreground = palette.Foreground;
             _scaleText.Foreground = palette.Foreground;
             UpdateRail();
         }
@@ -434,6 +444,9 @@ namespace TextTour
             var name = chapter.StepName;
             _stepText.Text = (string.IsNullOrEmpty(name) ? string.Empty : name + "   ") +
                              $"step {chapter.Step}/{chapter.StepCount}";
+            var slide = Slides.For(chapter.Title, chapter.Step, chapter.ShowsCard);
+            _slideText.Text = slide is null ? string.Empty : $"{slide.Number}  {slide.Title}";
+            _slideText.IsVisible = slide is not null;
         }
 
         private void ToggleRail() => _rail.IsVisible = !_rail.IsVisible;
