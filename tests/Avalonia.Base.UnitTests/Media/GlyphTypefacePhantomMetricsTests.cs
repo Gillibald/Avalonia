@@ -68,8 +68,7 @@ namespace Avalonia.Base.UnitTests.Media
             // component is narrower at this weight than the composite's own masters: HVAR
             // follows the masters, the phantom points follow the flag. The flagged values are
             // what FreeType and HarfBuzz report for the font without HVAR.
-            var withHvar = AtWeight(new GlyphTypeface(SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable)
-                .ToPlatformTypeface()), 900);
+            var withHvar = AtWeight(SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface(), 900);
             var withoutHvar = AtWeight(InterWithoutHvar(), 900);
 
             var glyphs = new ushort[withHvar.GlyphCount];
@@ -102,7 +101,7 @@ namespace Avalonia.Base.UnitTests.Media
                 .Remove("HVAR")
                 .Mutate("gvar", gvar => EmptyGvarEntry(gvar, InterAacute));
 
-            var varied = AtWeight(new GlyphTypeface(font.ToPlatformTypeface()), 900);
+            var varied = AtWeight(font.CreateGlyphTypeface(), 900);
 
             Assert.True(varied.TryGetHorizontalGlyphAdvance(InterA, out var baseAdvance));
             Assert.Equal(1628, baseAdvance);
@@ -132,7 +131,7 @@ namespace Avalonia.Base.UnitTests.Media
                     axisCount: 2, glyphCount: 2, glyph: 1, peak: new short[] { 0, 0x4000 },
                     x: new short[] { 0, 700, 0, 0 }, y: new short[] { 0, 0, 900, 0 }));
 
-            var typeface = new GlyphTypeface(font.ToPlatformTypeface());
+            var typeface = font.CreateGlyphTypeface();
             var varied = typeface.WithVariation(typeface.CreateNormalizedPosition(new FontVariationSettings(
                 new[] { new FontVariation(s_hght, 1000) })));
 
@@ -154,9 +153,8 @@ namespace Avalonia.Base.UnitTests.Media
         }
 
         private static GlyphTypeface InterWithoutHvar()
-            => new GlyphTypeface(SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable)
-                .Remove("HVAR")
-                .ToPlatformTypeface());
+            => SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable)
+                .Remove("HVAR").CreateGlyphTypeface();
 
         private static GlyphTypeface AtWeight(GlyphTypeface typeface, double weight)
             => typeface.WithVariation(typeface.CreateNormalizedPosition(new FontVariationSettings(
