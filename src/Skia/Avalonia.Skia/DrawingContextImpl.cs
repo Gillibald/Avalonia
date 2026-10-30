@@ -708,11 +708,16 @@ namespace Avalonia.Skia
             CheckLease();
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
             _intermediateLayerDepth++;
+            // This layer composites at full opacity and leaves the folded
+            // opacity to the draws inside; recorded so PopLayer stays symmetric.
+            _layerOpacityStack.Push(_currentOpacity);
         }
 
         public void PopLayer()
         {
             CheckLease();
+            if (_layerOpacityStack.Count > 0)
+                _currentOpacity = _layerOpacityStack.Pop();
             RestoreCanvas();
             _intermediateLayerDepth--;
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using SkiaSharp;
@@ -7,14 +8,24 @@ namespace Avalonia.Skia;
 
 partial class DrawingContextImpl
 {
+    // The folded opacity each pushed layer replaced, restored when it pops.
+    private readonly Stack<double> _layerOpacityStack = new();
+
     public void PushLayer(LayerOptions options)
     {
         CheckLease();
 
+        // A layer is composited as a whole, so it takes the folded opacity as
+        // part of its composite alpha and everything inside it - draws and
+        // effect filters - works at full opacity; applying it again inside
+        // would fade twice.
+        var opacity = options.EffectiveOpacity * _currentOpacity;
+        _layerOpacityStack.Push(_currentOpacity);
+        _currentOpacity = 1;
+
         var paint = SKPaintCache.Shared.Get();
         SKImageFilter? imageFilter = null;
 
-        var opacity = options.EffectiveOpacity;
         if (opacity < 1.0)
             paint.Color = new SKColor(255, 255, 255, (byte)Math.Round(opacity * 255));
 
