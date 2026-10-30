@@ -46,7 +46,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             int leftSideBearing,
             int advanceWidth,
             int verticalAdvance,
-            int scale16Dot16)
+            int scale16Dot16,
+            bool varyHorizontalPhantoms = false,
+            bool varyVerticalPhantoms = false)
         {
             Instructions = default;
 
@@ -93,19 +95,65 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _zone.ContourCount = contourCount;
             _zone.FirstPoint = 0;
 
+            Span<float> phantomDeltaX = stackalloc float[4];
+            Span<float> phantomDeltaY = stackalloc float[4];
+
+            GetPhantomDeltas(gvarTable, activeCoords, glyphIndex, pointCount,
+                varyHorizontalPhantoms, varyVerticalPhantoms, phantomDeltaX, phantomDeltaY);
+
             InitializePhantoms(
                 _zone, pointCount, xMin, yMax, leftSideBearing, advanceWidth, verticalAdvance,
-                scale16Dot16, round: true);
+                scale16Dot16, round: true, phantomDeltaX, phantomDeltaY);
 
             return true;
         }
 
         /// <summary>
+        /// Gets the gvar deltas of a glyph's own four phantom points, in font units, after
+        /// <paramref name="pointCount"/> outline points (the component count of a composite).
+        /// The reference drops the deltas of the horizontal pair when HVAR supplies the
+        /// horizontal metrics, and of the vertical pair when VVAR supplies the vertical ones,
+        /// so a varied advance is not applied twice; the flags select which pairs vary.
+        /// </summary>
+        public static void GetPhantomDeltas(
+            GvarTable? gvarTable,
+            ReadOnlySpan<float> activeCoords,
+            int glyphIndex,
+            int pointCount,
+            bool varyHorizontal,
+            bool varyVertical,
+            Span<float> deltaX,
+            Span<float> deltaY)
+        {
+            deltaX.Clear();
+            deltaY.Clear();
+
+            if (gvarTable is null || activeCoords.IsEmpty || (!varyHorizontal && !varyVertical))
+            {
+                return;
+            }
+
+            GlyphVariationReader.TryGetPhantomDeltas(gvarTable, glyphIndex, activeCoords, pointCount, deltaX, deltaY);
+
+            if (!varyHorizontal)
+            {
+                deltaX[0] = deltaY[0] = deltaX[1] = deltaY[1] = 0;
+            }
+
+            if (!varyVertical)
+            {
+                deltaX[2] = deltaY[2] = deltaX[3] = deltaY[3] = 0;
+            }
+        }
+
+        /// <summary>
         /// Writes the four phantom points at <paramref name="firstIndex"/>: origin and
         /// advance on the baseline, then the vertical pair synthesized from the ink top and
-        /// the vertical advance. When <paramref name="round"/> is set, the horizontal pair's
-        /// x and the vertical pair's y pre-round to the pixel grid the way the reference
-        /// rounds them before any instruction runs.
+        /// the vertical advance, each moved by its gvar delta in font units when
+        /// <paramref name="deltaX"/> / <paramref name="deltaY"/> are given. When
+        /// <paramref name="round"/> is set, the horizontal pair's x and the vertical pair's y
+        /// pre-round to the pixel grid the way the reference rounds them before any
+        /// instruction runs.
         /// </summary>
         public static void InitializePhantoms(
             TrueTypeZone zone,
@@ -116,12 +164,14 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             int advanceWidth,
             int verticalAdvance,
             int scale16Dot16,
-            bool round)
+            bool round,
+            ReadOnlySpan<float> deltaX = default,
+            ReadOnlySpan<float> deltaY = default)
         {
-            SetPhantom(zone, firstIndex + 0, xMin - leftSideBearing, 0, scale16Dot16);
-            SetPhantom(zone, firstIndex + 1, xMin - leftSideBearing + advanceWidth, 0, scale16Dot16);
-            SetPhantom(zone, firstIndex + 2, 0, yMax, scale16Dot16);
-            SetPhantom(zone, firstIndex + 3, 0, yMax - verticalAdvance, scale16Dot16);
+            SetPhantom(zone, firstIndex + 0, xMin - leftSideBearing, 0, scale16Dot16, deltaX, deltaY, 0);
+            SetPhantom(zone, firstIndex + 1, xMin - leftSideBearing + advanceWidth, 0, scale16Dot16, deltaX, deltaY, 1);
+            SetPhantom(zone, firstIndex + 2, 0, yMax, scale16Dot16, deltaX, deltaY, 2);
+            SetPhantom(zone, firstIndex + 3, 0, yMax - verticalAdvance, scale16Dot16, deltaX, deltaY, 3);
 
             if (round)
             {
@@ -270,15 +320,39 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             return true;
         }
 
-        private static void SetPhantom(TrueTypeZone zone, int index, int xUnits, int yUnits, int scale16Dot16)
+        private static void SetPhantom(
+            TrueTypeZone zone, int index, int xUnits, int yUnits, int scale16Dot16,
+            ReadOnlySpan<float> deltaX, ReadOnlySpan<float> deltaY, int phantom)
         {
-            zone.OrusX[index] = xUnits;
-            zone.OrusY[index] = yUnits;
-            zone.OrgX[index] = F26Dot6.MulFix(xUnits, scale16Dot16);
-            zone.OrgY[index] = F26Dot6.MulFix(yUnits, scale16Dot16);
+            var dx = deltaX.IsEmpty ? 0f : deltaX[phantom];
+            var dy = deltaY.IsEmpty ? 0f : deltaY[phantom];
+
+            ScalePhantom(xUnits, dx, scale16Dot16, out zone.OrusX[index], out zone.OrgX[index]);
+            ScalePhantom(yUnits, dy, scale16Dot16, out zone.OrusY[index], out zone.OrgY[index]);
+
             zone.CurX[index] = zone.OrgX[index];
             zone.CurY[index] = zone.OrgY[index];
             zone.Tags[index] = 0;
+        }
+
+        /// <summary>
+        /// Scales one phantom coordinate, moved by its gvar <paramref name="delta"/>, the way varied
+        /// outline points scale: the font-unit value rounds to whole units, while the scaled 26.6
+        /// position keeps the delta's fraction. An unvaried coordinate takes the exact path.
+        /// </summary>
+        public static void ScalePhantom(int units, float delta, int scale16Dot16, out int orus, out int org)
+        {
+            if (delta == 0f)
+            {
+                orus = units;
+                org = F26Dot6.MulFix(units, scale16Dot16);
+                return;
+            }
+
+            var precise = (units << 6) + (int)Math.Floor(delta * 64f + 0.5f);
+
+            orus = (precise + 32) >> 6;
+            org = (F26Dot6.MulFix(precise, scale16Dot16) + 32) >> 6;
         }
     }
 }

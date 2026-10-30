@@ -3260,19 +3260,43 @@ namespace Avalonia.Media
                 return null;
             }
 
+            // The phantom points start from hmtx, with HVAR's advance delta when the font has it;
+            // without HVAR the hinter applies gvar's phantom deltas itself, as the reference does.
             return new Fonts.Rasterization.TrueType.TrueTypeGlyphHinter(
                 state,
                 _glyfTable!,
                 _gvarTable,
                 _activeCoords,
-                (int glyphIndex, out int lsb, out int advance) =>
-                {
-                    TryGetGlyphMetrics((ushort)glyphIndex, out var metrics);
-                    lsb = metrics.XBearing;
-                    advance = metrics.AdvanceWidth;
-                    return true;
-                },
-                verticalAdvance: Metrics.DesignEmHeight);
+                TryGetHintingHorizontalMetrics,
+                verticalAdvance: Metrics.DesignEmHeight,
+                varyHorizontalPhantoms: _hvarTable is null,
+                varyVerticalPhantoms: _vvarTable is null);
+        }
+
+        /// <summary>
+        /// A glyph's hmtx left side bearing and advance width, the advance varied by HVAR when the
+        /// font has it: the inputs the TrueType hinter builds its phantom points from.
+        /// </summary>
+        private bool TryGetHintingHorizontalMetrics(int glyphIndex, out int leftSideBearing, out int advanceWidth)
+        {
+            leftSideBearing = 0;
+            advanceWidth = 0;
+
+            if (_hmTable is null || !_hmTable.TryGetMetrics((ushort)glyphIndex, out var metric))
+            {
+                return false;
+            }
+
+            leftSideBearing = metric.LeftSideBearing;
+            advanceWidth = metric.AdvanceWidth;
+
+            if (_hvarTable is not null && _hvarRegionScalers is not null &&
+                _hvarTable.TryGetAdvanceDeltaWithScalers(glyphIndex, _hvarRegionScalers, out var delta))
+            {
+                advanceWidth = ApplyAdvanceDelta(metric.AdvanceWidth, delta);
+            }
+
+            return true;
         }
 
         /// <summary>The TrueType outline table, when the font carries glyf outlines.</summary>

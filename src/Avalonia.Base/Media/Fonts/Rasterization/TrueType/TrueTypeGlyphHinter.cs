@@ -47,6 +47,11 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
         private readonly float[]? _activeCoords;
         private readonly TrueTypeGlyphMetricsProvider _metrics;
         private readonly int _verticalAdvance;
+
+        // Whether gvar moves the horizontal / vertical phantom pair: only when no HVAR / VVAR
+        // supplies those metrics.
+        private readonly bool _varyHorizontalPhantoms;
+        private readonly bool _varyVerticalPhantoms;
         private readonly TrueTypeGlyphLoader _loader = new();
         private readonly int[] _chain = new int[MaxDepth];
         private TrueTypeZone?[] _assemblies = new TrueTypeZone?[MaxDepth];
@@ -66,7 +71,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             GvarTable? gvarTable,
             float[]? activeCoords,
             TrueTypeGlyphMetricsProvider metrics,
-            int verticalAdvance)
+            int verticalAdvance,
+            bool varyHorizontalPhantoms = false,
+            bool varyVerticalPhantoms = false)
         {
             _state = state;
             _glyfTable = glyfTable;
@@ -74,6 +81,8 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _activeCoords = activeCoords;
             _metrics = metrics;
             _verticalAdvance = verticalAdvance;
+            _varyHorizontalPhantoms = varyHorizontalPhantoms;
+            _varyVerticalPhantoms = varyVerticalPhantoms;
             _interpreter = state.Interpreter!;
         }
 
@@ -85,6 +94,8 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             _activeCoords = primary._activeCoords;
             _metrics = primary._metrics;
             _verticalAdvance = primary._verticalAdvance;
+            _varyHorizontalPhantoms = primary._varyHorizontalPhantoms;
+            _varyVerticalPhantoms = primary._varyVerticalPhantoms;
             _interpreter = primary._state.IsValid ? primary._interpreter.CreateGlyphInterpreter() : primary._interpreter;
             _primary = primary;
         }
@@ -156,22 +167,18 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 return false;
             }
 
-            if (backwardCompatibility == 0)
-            {
-                // Under full interpretation the glyph's origin is its hinted left phantom
-                // point, which the program may move and which pre-rounds to a pixel when the
-                // left side bearing differs from xMin. The outline and its phantoms move so
-                // that point sits on the origin, the reference's final translation
-                // (TT_Load_Glyph). Natural-class results stay at the design origin, where
-                // the unhinted outline draws.
-                var origin = zone.CurX[zone.PointCount - 4];
+            // The glyph's origin is its hinted left phantom point, which pre-rounds to a pixel
+            // when it is not at zero and which a program may move under full interpretation
+            // (the natural class restores it). The outline and its phantoms move so that point
+            // sits on the origin, the reference's final translation (TT_Load_Glyph), as the
+            // unhinted outline does.
+            var origin = zone.CurX[zone.PointCount - 4];
 
-                if (origin != 0)
+            if (origin != 0)
+            {
+                for (var i = 0; i < zone.PointCount; i++)
                 {
-                    for (var i = 0; i < zone.PointCount; i++)
-                    {
-                        zone.CurX[i] = unchecked(zone.CurX[i] - origin);
-                    }
+                    zone.CurX[i] = unchecked(zone.CurX[i] - origin);
                 }
             }
 
@@ -199,8 +206,16 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 }
 
                 var zone = Zone!;
+                var outlinePoints = zone.PointCount - 4;
 
-                Array.Copy(zone.OrgX, zone.CurX, zone.PointCount - 4);
+                // The natural class places the outline by the pre-rounded left phantom point.
+                var naturalOrigin = F26Dot6.Round(zone.OrgX[outlinePoints]);
+
+                for (var i = 0; i < outlinePoints; i++)
+                {
+                    zone.CurX[i] = unchecked(zone.OrgX[i] - naturalOrigin);
+                }
+
                 return true;
             }
 
@@ -285,7 +300,8 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             // the parent's assembly before the next sibling loads.
             if (!_loader.TryLoadSimple(
                     _glyfTable, glyphIndex, _gvarTable, _activeCoords,
-                    leftSideBearing, advanceWidth, _verticalAdvance, _state.Scale))
+                    leftSideBearing, advanceWidth, _verticalAdvance, _state.Scale,
+                    _varyHorizontalPhantoms, _varyVerticalPhantoms))
             {
                 return false;
             }
@@ -313,12 +329,11 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             assembly.ContourCount = 0;
             assembly.FirstPoint = 0;
 
-            // The composite's own phantom points; a USE_MY_METRICS component replaces them
-            // with its already-hinted ones.
+            // The composite's own phantom points, moved by its own gvar entry (one point per
+            // component precedes them); a USE_MY_METRICS component replaces them with its
+            // already-hinted ones.
             Span<int> ppX = stackalloc int[4];
             Span<int> ppY = stackalloc int[4];
-
-            ComputeOwnPhantoms(ppX, ppY, xMin, yMax, leftSideBearing, advanceWidth);
 
             int instructionsOffset;
             int instructionsLength;
@@ -331,6 +346,9 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
                 {
                     instructionsOffset = composite.InstructionsOffset;
                     instructionsLength = composite.Instructions.Length;
+
+                    ComputeOwnPhantoms(ppX, ppY, glyphIndex, composite.Components.Length, xMin, yMax,
+                        leftSideBearing, advanceWidth);
 
                     foreach (var component in composite.Components)
                     {
@@ -546,16 +564,23 @@ namespace Avalonia.Media.Fonts.Rasterization.TrueType
             return true;
         }
 
-        private void ComputeOwnPhantoms(Span<int> ppX, Span<int> ppY, int xMin, int yMax, int leftSideBearing, int advanceWidth)
+        private void ComputeOwnPhantoms(Span<int> ppX, Span<int> ppY, int glyphIndex, int componentCount,
+            int xMin, int yMax, int leftSideBearing, int advanceWidth)
         {
-            ppX[0] = F26Dot6.MulFix(xMin - leftSideBearing, _state.Scale);
-            ppY[0] = 0;
-            ppX[1] = F26Dot6.MulFix(xMin - leftSideBearing + advanceWidth, _state.Scale);
-            ppY[1] = 0;
-            ppX[2] = 0;
-            ppY[2] = F26Dot6.MulFix(yMax, _state.Scale);
-            ppX[3] = 0;
-            ppY[3] = F26Dot6.MulFix(yMax - _verticalAdvance, _state.Scale);
+            Span<float> deltaX = stackalloc float[4];
+            Span<float> deltaY = stackalloc float[4];
+
+            TrueTypeGlyphLoader.GetPhantomDeltas(_gvarTable, _activeCoords, glyphIndex, componentCount,
+                _varyHorizontalPhantoms, _varyVerticalPhantoms, deltaX, deltaY);
+
+            Span<int> unitsX = stackalloc int[] { xMin - leftSideBearing, xMin - leftSideBearing + advanceWidth, 0, 0 };
+            Span<int> unitsY = stackalloc int[] { 0, 0, yMax, yMax - _verticalAdvance };
+
+            for (var i = 0; i < 4; i++)
+            {
+                TrueTypeGlyphLoader.ScalePhantom(unitsX[i], deltaX[i], _state.Scale, out _, out ppX[i]);
+                TrueTypeGlyphLoader.ScalePhantom(unitsY[i], deltaY[i], _state.Scale, out _, out ppY[i]);
+            }
         }
 
         private bool RunProgram(TrueTypeZone zone, ReadOnlyMemory<byte> instructions, bool isComposite)
