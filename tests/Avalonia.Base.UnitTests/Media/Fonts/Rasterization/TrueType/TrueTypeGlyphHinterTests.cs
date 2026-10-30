@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Media.Fonts.Tables;
 using Avalonia.Media.Fonts.Tables.Glyf;
 using Avalonia.Media.Fonts.Rasterization.TrueType;
@@ -126,6 +127,89 @@ namespace Avalonia.Base.UnitTests.Media.Fonts.Rasterization.TrueType
             Assert.Equal(-64, hinter.Zone!.CurX[0]);
             Assert.Equal(0, hinter.Zone.CurX[1]);
         }
+
+        [Fact]
+        public void Natural_Class_Places_The_Outline_At_The_Rounded_Left_Phantom()
+        {
+            // The natural class drops the program's x moves, but pp1 still pre-rounds and the
+            // outline still moves so it lands on the origin, as the unhinted outline does.
+            var hinter = CreateHinter(BuildGlyf(BuildSimpleSquare(128, instructions: null)),
+                leftSideBearings: new Dictionary<int, int> { [0] = -100 });
+
+            Assert.True(hinter.TryHint(0, backwardCompatibility: 4));
+            Assert.Equal(-64, hinter.Zone!.CurX[0]);
+            Assert.Equal(0, hinter.Zone.CurX[4]);
+        }
+
+        [Theory]
+        [InlineData(4)]
+        [InlineData(0)]
+        public void Varied_Outline_Moves_With_The_gvar_Delta_Of_The_Left_Phantom_Without_Hvar(int backwardCompatibility)
+        {
+            // At 2048 px/em one font unit is one pixel. A gvar tuple that only moves H's pp1 30
+            // units left at wght 900 moves the hinted outline 30 pixels right.
+            var font = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).Remove("HVAR");
+            var glyph = font.CreateGlyphTypeface().CharacterToGlyphMap['H'];
+
+            AssertHintedShift(30 * 64, font.WithLeftPhantomGvar(glyph, axis: 1, delta: -30), glyph, backwardCompatibility);
+        }
+
+        [Fact]
+        public void Left_Phantom_gvar_Delta_Is_Ignored_When_The_Font_Has_Hvar()
+        {
+            var font = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable);
+            var glyph = font.CreateGlyphTypeface().CharacterToGlyphMap['H'];
+
+            AssertHintedShift(0, font.WithLeftPhantomGvar(glyph, axis: 1, delta: -30), glyph, backwardCompatibility: 4);
+        }
+
+        [Fact]
+        public void Natural_Class_Keeps_A_Varied_Outline_Where_The_Unhinted_Outline_Draws()
+        {
+            // Inter's gvar varies H's contours at wght 900 and leaves its left phantom point at
+            // xMin - lsb = 0, so the natural class keeps every point at its scaled design x.
+            var typeface = SyntheticFont.FromAsset(SyntheticFont.Assets.InterVariable).CreateGlyphTypeface();
+            var varied = AtWeight900(typeface);
+            var hinter = varied.CreateTrueTypeHinter(16 * 8, TrueTypeRenderClass.Grayscale)!;
+
+            Assert.True(hinter.TryHint(varied.CharacterToGlyphMap['H'], backwardCompatibility: 4));
+
+            var zone = hinter.Zone!;
+
+            for (var i = 0; i < zone.PointCount - 4; i++)
+            {
+                Assert.Equal(zone.OrgX[i], zone.CurX[i]);
+            }
+        }
+
+        private static void AssertHintedShift(int expected, SyntheticFont font, ushort glyph, int backwardCompatibility)
+        {
+            var typeface = font.CreateGlyphTypeface();
+            var original = HintedX(typeface, glyph, backwardCompatibility);
+            var shifted = HintedX(AtWeight900(typeface), glyph, backwardCompatibility);
+
+            Assert.Equal(original.Length, shifted.Length);
+
+            for (var i = 0; i < original.Length; i++)
+            {
+                Assert.Equal(original[i] + expected, shifted[i]);
+            }
+        }
+
+        private static int[] HintedX(GlyphTypeface typeface, ushort glyph, int backwardCompatibility)
+        {
+            // 2048 px/em: the scale bucket is eighths of a pixel per em.
+            var hinter = typeface.CreateTrueTypeHinter(2048 * 8, TrueTypeRenderClass.Grayscale)!;
+
+            Assert.True(hinter.TryHint(glyph, backwardCompatibility));
+
+            var zone = hinter.Zone!;
+            return zone.CurX.AsSpan(0, zone.PointCount - 4).ToArray();
+        }
+
+        private static GlyphTypeface AtWeight900(GlyphTypeface typeface)
+            => typeface.WithVariation(typeface.CreateNormalizedPosition(new FontVariationSettings(
+                new[] { new FontVariation(OpenTypeTag.Parse("wght"), 900) })));
 
         [Theory]
         [InlineData(true, 0, 64, 64)]    // rounded on both axes

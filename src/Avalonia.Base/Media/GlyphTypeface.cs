@@ -2000,8 +2000,100 @@ namespace Avalonia.Media
                     advance = adjusted < 0 ? (ushort)0 : (ushort)Math.Min(adjusted, ushort.MaxValue);
                 }
             }
+            else if (HasPhantomMetrics
+                && TryGetPhantomAdvanceDeltas(glyphIndex, out var metricsGlyph, out var widthDelta, out _)
+                && _hmTable.TryGetAdvance(metricsGlyph, out var metricsAdvance))
+            {
+                advance = ApplyAdvanceDelta(metricsAdvance, widthDelta);
+            }
 
             return true;
+        }
+
+        /// <summary>
+        /// Gets whether this typeface varies glyph metrics through the gvar phantom points:
+        /// a varied TrueType instance. The phantom points are the metrics source for whichever
+        /// of HVAR / VVAR the font does not ship.
+        /// </summary>
+        private bool HasPhantomMetrics => _activeCoords is not null && _gvarTable is not null && _glyfTable is not null;
+
+        /// <summary>
+        /// Resolves a glyph's varied advance deltas from its gvar phantom points, for fonts
+        /// without HVAR / VVAR.
+        /// </summary>
+        /// <param name="glyphIndex">The glyph to resolve.</param>
+        /// <param name="metricsGlyphIndex">
+        /// The glyph whose hmtx / vmtx advance the deltas apply to. A composite glyph with a
+        /// USE_MY_METRICS component takes that component's metrics.
+        /// </param>
+        /// <param name="advanceWidthDelta">The advance width delta, in font units.</param>
+        /// <param name="advanceHeightDelta">The advance height delta, in font units.</param>
+        private bool TryGetPhantomAdvanceDeltas(
+            ushort glyphIndex,
+            out ushort metricsGlyphIndex,
+            out float advanceWidthDelta,
+            out float advanceHeightDelta)
+        {
+            metricsGlyphIndex = glyphIndex;
+            advanceWidthDelta = 0;
+            advanceHeightDelta = 0;
+
+            Span<float> x = stackalloc float[4];
+            Span<float> y = stackalloc float[4];
+
+            if (!_glyfTable!.TryGetPhantomDeltas(glyphIndex, _gvarTable!, _activeCoords, out var metricsGlyph, x, y))
+            {
+                return false;
+            }
+
+            metricsGlyphIndex = (ushort)metricsGlyph;
+
+            // Phantom points: 0 = left side bearing, 1 = advance width, 2 = top origin,
+            // 3 = advance height. An advance is the distance between its pair of points.
+            advanceWidthDelta = x[1] - x[0];
+            advanceHeightDelta = y[2] - y[3];
+
+            return true;
+        }
+
+        /// <summary>
+        /// Gets the x coordinate of a glyph's left phantom point: <c>xMin - lsb</c> from the glyf
+        /// header and hmtx, plus its gvar delta at this instance when the font has no HVAR. TrueType rasterizers translate
+        /// the outline so that this point lands on the origin, which is how an hmtx left side
+        /// bearing that differs from xMin, or a varied one, positions the glyph. A composite
+        /// with a USE_MY_METRICS component uses that component's left phantom point.
+        /// </summary>
+        private bool TryGetLeftPhantomX(ushort glyphIndex, ReadOnlySpan<float> activeCoords, out float leftPhantomX)
+        {
+            leftPhantomX = 0;
+
+            if (_hmTable is null)
+            {
+                return false;
+            }
+
+            Span<float> x = stackalloc float[4];
+            Span<float> y = stackalloc float[4];
+
+            if (!_glyfTable!.TryGetPhantomDeltas(glyphIndex, _gvarTable, activeCoords, out var metricsGlyph, x, y)
+                || !_glyfTable.TryGetGlyphBounds(metricsGlyph, out var xMin, out _, out _, out _)
+                || !_hmTable.TryGetMetrics((ushort)metricsGlyph, out var metric))
+            {
+                return false;
+            }
+
+            // With HVAR the horizontal metrics come from HVAR, and FreeType drops the gvar deltas of
+            // the horizontal phantom points so they are not applied twice.
+            leftPhantomX = xMin - metric.LeftSideBearing + (_hvarTable is null ? x[0] : 0);
+
+            return true;
+        }
+
+        private static ushort ApplyAdvanceDelta(ushort advance, float delta)
+        {
+            var adjusted = advance + (int)MathF.Round(delta);
+
+            return adjusted < 0 ? (ushort)0 : (ushort)Math.Min(adjusted, ushort.MaxValue);
         }
 
         /// <summary>
@@ -2021,16 +2113,27 @@ namespace Avalonia.Media
                 return false;
             }
 
-            // Fast path: no variation. Dispatch to the plain hmtx batch reader, which
-            // never touches HVAR.
-            if (_hvarTable is null || _hvarRegionScalers is null)
+            // HVAR is applied in the same pass as the hmtx read. Without HVAR or scalers
+            // (static fonts and default-instance typefaces) it reads plain hmtx, and a varied
+            // instance without HVAR then takes its advances from the gvar phantom points.
+            if (!_hmTable.TryGetAdvances(glyphIndices, advances, _hvarTable, _hvarRegionScalers))
             {
-                return _hmTable.TryGetAdvances(glyphIndices, advances);
+                return false;
             }
 
-            // Variation path: hand the cached region scalers + HVAR table to the fused
-            // single-pass loop inside HorizontalMetricsTable.TryGetAdvances.
-            return _hmTable.TryGetAdvances(glyphIndices, advances, _hvarTable, _hvarRegionScalers);
+            if (_hvarTable is null && HasPhantomMetrics)
+            {
+                for (var i = 0; i < glyphIndices.Length; i++)
+                {
+                    if (TryGetPhantomAdvanceDeltas(glyphIndices[i], out var metricsGlyph, out var widthDelta, out _)
+                        && _hmTable.TryGetAdvance(metricsGlyph, out var metricsAdvance))
+                    {
+                        advances[i] = ApplyAdvanceDelta(metricsAdvance, widthDelta);
+                    }
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -2070,6 +2173,12 @@ namespace Avalonia.Media
                     advance = adjusted < 0 ? (ushort)0 : (ushort)Math.Min(adjusted, ushort.MaxValue);
                 }
             }
+            else if (HasPhantomMetrics
+                && TryGetPhantomAdvanceDeltas(glyphIndex, out var metricsGlyph, out _, out var heightDelta)
+                && _vmTable.TryGetAdvance(metricsGlyph, out var metricsAdvance))
+            {
+                advance = ApplyAdvanceDelta(metricsAdvance, heightDelta);
+            }
 
             return true;
         }
@@ -2091,17 +2200,28 @@ namespace Avalonia.Media
                 return false;
             }
 
-            // Fast path: no variation. Dispatch to the plain vmtx batch reader, which never
-            // touches VVAR.
-            if (_vvarTable is null || _activeCoords is null)
+            // VVAR is applied in the same pass as the vmtx read, with the region scalers
+            // cached on the clone. Without VVAR or scalers (static fonts and
+            // default-instance typefaces) it reads plain vmtx, and a varied instance without
+            // VVAR then takes its advances from the gvar phantom points.
+            if (!_vmTable.TryGetAdvances(glyphIndices, advances, _vvarTable, _vvarRegionScalers))
             {
-                return _vmTable.TryGetAdvances(glyphIndices, advances);
+                return false;
             }
 
-            // Variation path: hand the cached active coords + VVAR table to the fused
-            // single-pass loop inside VerticalMetricsTable.TryGetAdvances (mirrors the
-            // horizontal path above).
-            return _vmTable.TryGetAdvances(glyphIndices, advances, _vvarTable, _activeCoords);
+            if (_vvarTable is null && HasPhantomMetrics)
+            {
+                for (var i = 0; i < glyphIndices.Length; i++)
+                {
+                    if (TryGetPhantomAdvanceDeltas(glyphIndices[i], out var metricsGlyph, out _, out var heightDelta)
+                        && _vmTable.TryGetAdvance(metricsGlyph, out var metricsAdvance))
+                    {
+                        advances[i] = ApplyAdvanceDelta(metricsAdvance, heightDelta);
+                    }
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -2181,6 +2301,24 @@ namespace Avalonia.Media
                 {
                     var adjusted = topSideBearing + (int)MathF.Round(tsbDelta);
                     topSideBearing = (short)Math.Clamp(adjusted, short.MinValue, short.MaxValue);
+                }
+            }
+
+            // Without HVAR / VVAR the gvar phantom points carry the varied advances.
+            var phantomHorizontal = hasHorizontal && _hvarTable is null;
+            var phantomVertical = hasVertical && _vvarTable is null;
+
+            if ((phantomHorizontal || phantomVertical) && HasPhantomMetrics
+                && TryGetPhantomAdvanceDeltas(glyph, out var metricsGlyph, out var widthDelta, out var heightDelta))
+            {
+                if (phantomHorizontal && _hmTable!.TryGetAdvance(metricsGlyph, out var metricsWidth))
+                {
+                    advanceWidth = ApplyAdvanceDelta(metricsWidth, widthDelta);
+                }
+
+                if (phantomVertical && _vmTable!.TryGetAdvance(metricsGlyph, out var metricsHeight))
+                {
+                    advanceHeight = ApplyAdvanceDelta(metricsHeight, heightDelta);
                 }
             }
 
@@ -2270,6 +2408,33 @@ namespace Avalonia.Media
             if (!hasHorizontal && !hasVertical)
             {
                 return false;
+            }
+
+            // Without HVAR / VVAR the gvar phantom points carry the varied advances.
+            var phantomHorizontal = hasHorizontal && _hvarTable is null;
+            var phantomVertical = hasVertical && _vvarTable is null;
+
+            if ((phantomHorizontal || phantomVertical) && HasPhantomMetrics)
+            {
+                for (var i = 0; i < glyphIndices.Length; i++)
+                {
+                    if (!TryGetPhantomAdvanceDeltas(glyphIndices[i], out var metricsGlyph, out var widthDelta, out var heightDelta))
+                    {
+                        continue;
+                    }
+
+                    if (phantomHorizontal && _hmTable!.TryGetAdvance(metricsGlyph, out var metricsWidth))
+                    {
+                        hMetrics[i] = new HorizontalGlyphMetric(
+                            ApplyAdvanceDelta(metricsWidth, widthDelta), hMetrics[i].LeftSideBearing);
+                    }
+
+                    if (phantomVertical && _vmTable!.TryGetAdvance(metricsGlyph, out var metricsHeight))
+                    {
+                        vMetrics[i] = new VerticalGlyphMetric(
+                            ApplyAdvanceDelta(metricsHeight, heightDelta), vMetrics[i].TopSideBearing);
+                    }
+                }
             }
 
             // Read every glyph's ink box from whichever outline table the font has (glyf header box /
@@ -2523,6 +2688,11 @@ namespace Avalonia.Media
                 else
                 {
                     _glyfTable.GetGlyphBounds(glyphIndices, bounds);
+
+                    for (int i = 0; i < glyphIndices.Length; i++)
+                    {
+                        bounds[i] = PlaceByLeftPhantom(glyphIndices[i], bounds[i]);
+                    }
                 }
             }
             else if (HasComputedGlyphBounds)
@@ -2646,12 +2816,33 @@ namespace Avalonia.Media
 
             if (_glyfTable!.TryGetGlyphBounds(glyph, out var xMin, out var yMin, out var xMax, out var yMax))
             {
-                box = new GlyphBounds(xMin, yMin, xMax, yMax);
+                box = PlaceByLeftPhantom(glyph, new GlyphBounds(xMin, yMin, xMax, yMax));
                 return true;
             }
 
             box = default;
             return false;
+        }
+
+        /// <summary>
+        /// Moves a <c>glyf</c> header box the way <see cref="GetGlyphOutline"/> moves the outline,
+        /// so its left phantom point lands on the origin. At a default instance that point is an
+        /// integer, so the move is exact.
+        /// </summary>
+        private GlyphBounds PlaceByLeftPhantom(ushort glyph, GlyphBounds box)
+        {
+            if (box == default || !TryGetLeftPhantomX(glyph, default, out var leftPhantomX) || leftPhantomX == 0)
+            {
+                return box;
+            }
+
+            var shift = (int)-leftPhantomX;
+
+            return new GlyphBounds(
+                (short)Math.Clamp(box.XMin + shift, short.MinValue, short.MaxValue),
+                box.YMin,
+                (short)Math.Clamp(box.XMax + shift, short.MinValue, short.MaxValue),
+                box.YMax);
         }
 
         /// <summary>
@@ -2663,7 +2854,13 @@ namespace Avalonia.Media
         /// </summary>
         private bool TryComputeGlyfGlyphBounds(ushort glyph, out GlyphBounds box)
         {
-            if (_glyfTable!.TryGetGlyphOutlineBounds(glyph, _gvarTable, _activeCoords, out box))
+            // Measure the outline where GetGlyphOutline places it, with its left phantom point on
+            // the origin.
+            var transform = TryGetLeftPhantomX(glyph, _activeCoords, out var leftPhantomX) && leftPhantomX != 0
+                ? Matrix.CreateTranslation(-leftPhantomX, 0)
+                : Matrix.Identity;
+
+            if (_glyfTable!.TryGetGlyphOutlineBounds(glyph, transform, _gvarTable, _activeCoords, out box))
             {
                 return true;
             }
@@ -3063,19 +3260,43 @@ namespace Avalonia.Media
                 return null;
             }
 
+            // The phantom points start from hmtx, with HVAR's advance delta when the font has it;
+            // without HVAR the hinter applies gvar's phantom deltas itself, as the reference does.
             return new Fonts.Rasterization.TrueType.TrueTypeGlyphHinter(
                 state,
                 _glyfTable!,
                 _gvarTable,
                 _activeCoords,
-                (int glyphIndex, out int lsb, out int advance) =>
-                {
-                    TryGetGlyphMetrics((ushort)glyphIndex, out var metrics);
-                    lsb = metrics.XBearing;
-                    advance = metrics.AdvanceWidth;
-                    return true;
-                },
-                verticalAdvance: Metrics.DesignEmHeight);
+                TryGetHintingHorizontalMetrics,
+                verticalAdvance: Metrics.DesignEmHeight,
+                varyHorizontalPhantoms: _hvarTable is null,
+                varyVerticalPhantoms: _vvarTable is null);
+        }
+
+        /// <summary>
+        /// A glyph's hmtx left side bearing and advance width, the advance varied by HVAR when the
+        /// font has it: the inputs the TrueType hinter builds its phantom points from.
+        /// </summary>
+        private bool TryGetHintingHorizontalMetrics(int glyphIndex, out int leftSideBearing, out int advanceWidth)
+        {
+            leftSideBearing = 0;
+            advanceWidth = 0;
+
+            if (_hmTable is null || !_hmTable.TryGetMetrics((ushort)glyphIndex, out var metric))
+            {
+                return false;
+            }
+
+            leftSideBearing = metric.LeftSideBearing;
+            advanceWidth = metric.AdvanceWidth;
+
+            if (_hvarTable is not null && _hvarRegionScalers is not null &&
+                _hvarTable.TryGetAdvanceDeltaWithScalers(glyphIndex, _hvarRegionScalers, out var delta))
+            {
+                advanceWidth = ApplyAdvanceDelta(metric.AdvanceWidth, delta);
+            }
+
+            return true;
         }
 
         /// <summary>The TrueType outline table, when the font carries glyf outlines.</summary>
@@ -3886,6 +4107,12 @@ namespace Avalonia.Media
                 ReadOnlySpan<float> glyfCoords = _gvarTable is not null && _activeCoords is not null
                     ? _activeCoords
                     : default;
+
+                // Rasterizers place a TrueType outline so its left phantom point lands on the origin.
+                if (TryGetLeftPhantomX(glyphIndex, glyfCoords, out var leftPhantomX) && leftPhantomX != 0)
+                {
+                    transform = Matrix.CreateTranslation(-leftPhantomX, 0) * transform;
+                }
 
                 return _glyfTable.TryBuildGlyphGeometry(glyphIndex, transform, sink, _gvarTable, glyfCoords,
                     emboldenStrength);

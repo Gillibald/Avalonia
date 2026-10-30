@@ -274,6 +274,146 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         }
 
         /// <summary>
+        /// Resolves the gvar deltas of the phantom points that carry a glyph's varied metrics.
+        /// </summary>
+        /// <remarks>
+        /// A composite glyph with a USE_MY_METRICS component takes that component's phantom
+        /// points instead of its own, recursively, so its metrics come from the component's
+        /// hmtx / vmtx entry and the component's own deltas. When several components carry the
+        /// flag the last one wins, as in FreeType and HarfBuzz.
+        /// </remarks>
+        /// <param name="glyphIndex">The glyph to resolve.</param>
+        /// <param name="gvarTable">
+        /// The font's gvar table. <c>null</c>, or an empty <paramref name="activeCoords"/>, only
+        /// resolves <paramref name="metricsGlyphIndex"/> and leaves the deltas at zero.
+        /// </param>
+        /// <param name="activeCoords">Normalized variation coordinates in fvar axis order.</param>
+        /// <param name="metricsGlyphIndex">
+        /// The glyph whose hmtx / vmtx entry the deltas apply to: <paramref name="glyphIndex"/>
+        /// itself unless a USE_MY_METRICS component supplies the metrics.
+        /// </param>
+        /// <param name="xDeltas">
+        /// Output: x deltas of the four phantom points (left side bearing, advance width, top
+        /// origin, advance height). Must be zero-initialized; only added to.
+        /// </param>
+        /// <param name="yDeltas">Output: y deltas of the four phantom points, as <paramref name="xDeltas"/>.</param>
+        /// <returns>
+        /// <c>false</c> when the glyph is out of range, malformed, or its USE_MY_METRICS chain
+        /// does not end within <see cref="GlyphDecycler.MaxTraversalDepth"/> steps.
+        /// </returns>
+        public bool TryGetPhantomDeltas(
+            int glyphIndex,
+            GvarTable? gvarTable,
+            ReadOnlySpan<float> activeCoords,
+            out int metricsGlyphIndex,
+            Span<float> xDeltas,
+            Span<float> yDeltas)
+        {
+            metricsGlyphIndex = glyphIndex;
+
+            for (var depth = 0; depth < GlyphDecycler.MaxTraversalDepth; depth++)
+            {
+                if (!TryGetPhantomPointOwner(metricsGlyphIndex, out var pointCount, out var metricsComponent))
+                {
+                    return false;
+                }
+
+                if (metricsComponent < 0)
+                {
+                    if (gvarTable is not null && !activeCoords.IsEmpty)
+                    {
+                        GlyphVariationReader.TryGetPhantomDeltas(
+                            gvarTable, metricsGlyphIndex, activeCoords, pointCount, xDeltas, yDeltas);
+                    }
+
+                    return true;
+                }
+
+                metricsGlyphIndex = metricsComponent;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Reads the number of points that precede a glyph's phantom points in gvar, and the
+        /// USE_MY_METRICS component of a composite glyph (-1 when there is none).
+        /// </summary>
+        private bool TryGetPhantomPointOwner(int glyphIndex, out int pointCount, out int metricsComponent)
+        {
+            pointCount = 0;
+            metricsComponent = -1;
+
+            if (!TryGetGlyphData(glyphIndex, out var data))
+            {
+                return false;
+            }
+
+            if (data.IsEmpty)
+            {
+                // An empty glyph (e.g. whitespace) has only its phantom points.
+                return true;
+            }
+
+            var span = data.Span;
+
+            if (span.Length < 10)
+            {
+                return false;
+            }
+
+            var numberOfContours = BinaryPrimitives.ReadInt16BigEndian(span);
+
+            if (numberOfContours >= 0)
+            {
+                if (numberOfContours > 0)
+                {
+                    // The last contour end point is the highest point index.
+                    var lastEndPointOffset = 10 + (numberOfContours - 1) * 2;
+
+                    if (lastEndPointOffset + 2 > span.Length)
+                    {
+                        return false;
+                    }
+
+                    pointCount = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(lastEndPointOffset)) + 1;
+                }
+
+                return true;
+            }
+
+            try
+            {
+                var compositeGlyph = CompositeGlyph.Create(span.Slice(10));
+
+                try
+                {
+                    var components = compositeGlyph.Components;
+                    pointCount = components.Length;
+
+                    foreach (var component in components)
+                    {
+                        if ((component.Flags & CompositeFlags.UseMyMetrics) != 0)
+                        {
+                            metricsComponent = component.GlyphIndex;
+                        }
+                    }
+                }
+                finally
+                {
+                    compositeGlyph.Dispose();
+                }
+
+                return true;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // A component record runs past the end of the glyph data.
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Computes a glyph's control-point bounding box by interpreting its outline into a
         /// bounds-accumulating sink (<see cref="BoundsGeometryContext"/>) — the equivalent of the
         /// CFF / CFF2 bounds pass. Unlike <see cref="TryGetGlyphBounds"/> (which reads the static
@@ -282,11 +422,13 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
         /// for an out-of-range, empty, or malformed glyph.
         /// </summary>
         /// <param name="glyphIndex">The zero-based glyph index.</param>
+        /// <param name="transform">Transform applied to every outline point before it is measured.</param>
         /// <param name="gvarTable">Optional gvar table for variation deformation. <c>null</c> skips deformation.</param>
         /// <param name="activeCoords">Normalized variation coordinates in fvar axis order. Empty means no variation.</param>
         /// <param name="bounds">The computed control-point box; the zero box when this returns <see langword="false"/>.</param>
         public bool TryGetGlyphOutlineBounds(
             int glyphIndex,
+            Matrix transform,
             GvarTable? gvarTable,
             ReadOnlySpan<float> activeCoords,
             out GlyphBounds bounds)
@@ -295,7 +437,7 @@ namespace Avalonia.Media.Fonts.Tables.Glyf
 
             var context = new BoundsGeometryContext();
 
-            if (!TryBuildGlyphGeometry(glyphIndex, Matrix.Identity, context, gvarTable, activeCoords))
+            if (!TryBuildGlyphGeometry(glyphIndex, transform, context, gvarTable, activeCoords))
             {
                 return false;
             }
