@@ -445,19 +445,17 @@ namespace Avalonia.Media
             protected override void PushLayerCore(LayerOptions options)
             {
                 // DrawingGroup doesn't preserve layer semantics (blend mode,
-                // effect, layer-opacity) in its graph representation. Degrade
-                // to per-primitive opacity so children at least fade if that's
-                // what the caller wanted; other aspects are dropped.
+                // effect, backdrop, layer-opacity) in its graph representation.
+                // Degrade to a child group with per-primitive opacity and the
+                // mask, which the group maps onto its own bounds and reads as
+                // alpha, so children at least fade and mask the way the caller
+                // wanted; other aspects are dropped. The group is pushed either
+                // way so Pop balances.
+                var drawingGroup = PushNewDrawingGroup();
                 if (options.EffectiveOpacity < 1.0)
-                {
-                    var drawingGroup = PushNewDrawingGroup();
                     drawingGroup.Opacity = options.EffectiveOpacity;
-                }
-                else
-                {
-                    // Still need a matching Push so Pop balances.
-                    PushNewDrawingGroup();
-                }
+                if (options.OpacityMask != null)
+                    drawingGroup.OpacityMask = options.OpacityMask;
             }
 
             protected override void PopLayerCore() => Pop();

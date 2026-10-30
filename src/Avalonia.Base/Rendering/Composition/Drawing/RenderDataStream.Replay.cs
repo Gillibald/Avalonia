@@ -19,6 +19,7 @@ internal partial class RenderDataStream
         public Matrix SavedTransform;
         public bool FallbackOpacity;
         public bool FallbackEffect;
+        public bool FallbackMask;
     }
 
     internal struct ReplayVisitor : IRenderDataVisitor<ReplayScope>
@@ -196,6 +197,14 @@ internal partial class RenderDataStream
             // honored here.
             var scope = new ReplayScope { Kind = RenderDataOpcode.PushLayer };
 
+            // The mask covers everything the layer composites, so it goes outermost.
+            if (options.OpacityMask is { } mask && options.Bounds is { } maskBounds)
+            {
+                OnPushOpacityMask(mask, maskBounds, options.OpacityMaskType);
+                scope.FallbackMask = true;
+                scope.Active = true;
+            }
+
             if (options.Effect is { } effect && _context is IDrawingContextImplWithEffects effectImpl)
             {
                 effectImpl.PushEffect(options.Bounds, effect);
@@ -245,13 +254,16 @@ internal partial class RenderDataStream
                     ((IDrawingContextImplWithEffects)_context).PopEffect();
                     break;
                 case RenderDataOpcode.PushLayer:
-                    if (scope.FallbackOpacity || scope.FallbackEffect)
+                    if (scope.FallbackOpacity || scope.FallbackEffect || scope.FallbackMask)
                     {
-                        // Pop in reverse push order: opacity (innermost) first, then effect.
+                        // Pop in reverse push order: opacity (innermost) first, then
+                        // effect, then the mask.
                         if (scope.FallbackOpacity)
                             _context.PopOpacity();
                         if (scope.FallbackEffect)
                             ((IDrawingContextImplWithEffects)_context).PopEffect();
+                        if (scope.FallbackMask)
+                            _context.PopOpacityMask();
                     }
                     else
                         _context.PopLayer();

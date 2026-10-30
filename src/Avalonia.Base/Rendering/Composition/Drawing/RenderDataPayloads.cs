@@ -152,9 +152,14 @@ internal struct PushLayerPayload : IRenderDataPayload<PushLayerPayload>
 
     public int Effect;
     public int BackdropEffect;
+    public int BackdropClip;
+    public int OpacityMask;
     public Rect Bounds;
+    public Rect BackdropBounds;
     public double Opacity;
     public BitmapBlendingMode BlendMode;
+    public MaskType OpacityMaskType;
     public bool HasBounds;
+    public bool HasBackdropBounds;
     public bool Isolate;
 }

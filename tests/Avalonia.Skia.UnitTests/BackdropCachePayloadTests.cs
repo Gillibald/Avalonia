@@ -60,10 +60,8 @@ public class BackdropCachePayloadTests
         var saved = ctx.Transform;
         if (transform is { } t)
             ctx.Transform = t * saved;
-        ctx.PushClip(Box);
         ctx.PushLayer(new LayerOptions { Bounds = Box, BackdropEffect = Blur, BackdropCache = cache });
         ctx.PopLayer();
-        ctx.PopClip();
         ctx.DrawRectangle(Wash, null, Box);
         ctx.Transform = saved;
 

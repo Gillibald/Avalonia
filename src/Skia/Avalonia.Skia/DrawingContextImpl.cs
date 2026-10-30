@@ -50,7 +50,6 @@ namespace Avalonia.Skia
         // layer content). PushLayer records per push whether it opened a real
         // layer, since the cached-backdrop path only does a plain save.
         private int _saveLayerDepth;
-        private readonly Stack<bool> _pushedLayerIsSaveLayer = new();
 
         /// <summary>
         /// Context create info.
@@ -710,19 +709,22 @@ namespace Avalonia.Skia
             CheckLease();
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
             _saveLayerDepth++;
-            _pushedLayerIsSaveLayer.Push(true);
             // This layer composites at full opacity and leaves the folded
-            // opacity to the draws inside; recorded so PopLayer stays symmetric.
-            _layerOpacityStack.Push(_currentOpacity);
+            // opacity to the draws inside.
+            _layerStack.Push(new LayerState { IsSaveLayer = true, OuterOpacity = _currentOpacity });
         }
 
         public void PopLayer()
         {
             CheckLease();
-            if (_pushedLayerIsSaveLayer.Count > 0 && _pushedLayerIsSaveLayer.Pop())
-                _saveLayerDepth--;
-            if (_layerOpacityStack.Count > 0)
-                _currentOpacity = _layerOpacityStack.Pop();
+            if (_layerStack.Count > 0)
+            {
+                var state = _layerStack.Pop();
+                if (state.IsSaveLayer)
+                    _saveLayerDepth--;
+                _currentOpacity = state.OuterOpacity;
+            }
+
             RestoreCanvas();
         }
 
@@ -861,21 +863,11 @@ namespace Avalonia.Skia
             CheckLease();
 
             var paint = SKPaintCache.Shared.Get();
-
             Canvas.SaveLayer(bounds.ToSKRect(), paint);
+            SKPaintCache.Shared.ReturnReset(paint);
             _saveLayerDepth++;
-            var paintWrapper = CreatePaint(paint, mask, bounds);
 
-            if (maskType == MaskType.Luminance)
-            {
-                // SVG luminance mode: convert the mask brush's RGB to alpha
-                // (weighted by luminance) before the DstIn blend in PopOpacityMask.
-                var lumaFilter = SKColorFilter.CreateLumaColor();
-                paintWrapper.Paint.ColorFilter = lumaFilter;
-                paintWrapper.AddDisposable(lumaFilter);
-            }
-
-            _maskStack.Push((Canvas.TotalMatrix, paintWrapper));
+            _maskStack.Push((Canvas.TotalMatrix, CreateOpacityMaskPaint(mask, bounds, maskType)));
         }
 
         /// <inheritdoc />
@@ -883,13 +875,47 @@ namespace Avalonia.Skia
         {
             CheckLease();
 
+            var (transform, paintWrapper) = _maskStack.Pop();
+            ApplyOpacityMask(transform, paintWrapper);
+
+            _saveLayerDepth--;
+            RestoreCanvas();
+        }
+
+        /// <summary>
+        /// The paint that masks a layer: the brush mapped onto
+        /// <paramref name="bounds"/>, with luminance converted to alpha for
+        /// <see cref="MaskType.Luminance"/>.
+        /// </summary>
+        private PaintWrapper CreateOpacityMaskPaint(IBrush mask, Rect bounds, MaskType maskType)
+        {
+            var paintWrapper = CreatePaint(SKPaintCache.Shared.Get(), mask, bounds);
+
+            if (maskType == MaskType.Luminance)
+            {
+                // SVG luminance mode: convert the mask brush's RGB to alpha
+                // (weighted by luminance) before the DstIn blend.
+                var lumaFilter = SKColorFilter.CreateLumaColor();
+                paintWrapper.Paint.ColorFilter = lumaFilter;
+                paintWrapper.AddDisposable(lumaFilter);
+            }
+
+            return paintWrapper;
+        }
+
+        /// <summary>
+        /// Multiplies the current layer by the mask's coverage (DstIn), with the
+        /// mask painted under the matrix it was created with, and releases the
+        /// mask paint.
+        /// </summary>
+        private void ApplyOpacityMask(SKMatrix transform, PaintWrapper paintWrapper)
+        {
             var paint = SKPaintCache.Shared.Get();
             paint.BlendMode = SKBlendMode.DstIn;
-            
+
             Canvas.SaveLayer(paint);
             SKPaintCache.Shared.ReturnReset(paint);
-            
-            var (transform, paintWrapper) = _maskStack.Pop();
+
             Canvas.SetMatrix(transform);
             using (paintWrapper)
             {
@@ -898,9 +924,6 @@ namespace Avalonia.Skia
             // Return the paint wrapper's paint less the reset since the paint is already reset in the Dispose method above.
             SKPaintCache.Shared.Return(paintWrapper.Paint);
 
-            RestoreCanvas();
-
-            _saveLayerDepth--;
             RestoreCanvas();
         }
 

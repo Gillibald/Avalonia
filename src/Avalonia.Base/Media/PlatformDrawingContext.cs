@@ -104,6 +104,7 @@ internal sealed class PlatformDrawingContext : DrawingContext
         public bool Native;
         public bool FallbackOpacity;
         public bool FallbackEffect;
+        public bool FallbackMask;
     }
 
     protected override void PushLayerCore(LayerOptions options)
@@ -118,12 +119,22 @@ internal sealed class PlatformDrawingContext : DrawingContext
 
         if (_impl is IDrawingContextImplWithLayers native)
         {
-            native.PushLayer(options);
+            native.PushLayer(options with
+            {
+                BackdropClipImpl = options.BackdropClip?.PlatformImpl ?? options.BackdropClipImpl
+            });
             _layerFrames.Push(new LayerFrame { Native = true });
             return;
         }
 
         var frame = default(LayerFrame);
+
+        // The mask covers everything the layer composites, so it goes outermost.
+        if (options.OpacityMask is { } mask && options.Bounds is { } maskBounds)
+        {
+            PushOpacityMaskCore(mask, maskBounds, options.OpacityMaskType);
+            frame.FallbackMask = true;
+        }
 
         if (options.Effect is { } effect
             && _impl is IDrawingContextImplWithEffects effects)
@@ -163,12 +174,16 @@ internal sealed class PlatformDrawingContext : DrawingContext
             return;
         }
 
-        // Pop in reverse push order: opacity (innermost) first, then effect.
+        // Pop in reverse push order: opacity (innermost) first, then effect,
+        // then the mask.
         if (frame.FallbackOpacity)
             _impl.PopOpacity();
 
         if (frame.FallbackEffect)
             ((IDrawingContextImplWithEffects)_impl).PopEffect();
+
+        if (frame.FallbackMask)
+            PopOpacityMaskCore();
     }
 
     protected override void PushOpacityMaskCore(IBrush mask, Rect bounds) =>

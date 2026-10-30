@@ -490,9 +490,17 @@ internal class RenderDataDrawingContext : DrawingContext
         var effect = SnapshotLayerEffect(options.Effect);
         var backdropEffect = SnapshotLayerEffect(options.BackdropEffect);
 
+        IRenderDataGeometry? backdropClip = null;
+        if (options.BackdropClip is { } clip)
+        {
+            AddResource(clip);
+            backdropClip = clip.GetServer(_compositor);
+        }
+
         var before = Stream.OpcodeLength;
         Stream.PushLayer(options.Bounds, options.EffectiveOpacity, options.EffectiveBlendMode,
-            options.Isolate, effect, backdropEffect);
+            options.Isolate, effect, backdropEffect, options.BackdropBounds, backdropClip,
+            CaptureBrush(options.OpacityMask), options.OpacityMaskType);
         // A layer with an effect produces output even over empty content: a
         // source-generating filter fills the layer, and a backdrop effect
         // composites the filtered destination. Such scopes must survive

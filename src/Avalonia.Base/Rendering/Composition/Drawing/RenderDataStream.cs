@@ -234,16 +234,22 @@ internal partial class RenderDataStream : IDisposable
     }
 
     public void PushLayer(Rect? bounds, double opacity, BitmapBlendingMode blendMode, bool isolate,
-        IImmutableEffect? effect, IImmutableEffect? backdropEffect)
+        IImmutableEffect? effect, IImmutableEffect? backdropEffect, Rect? backdropBounds,
+        IRenderDataGeometry? backdropClip, IBrush? opacityMask, MaskType opacityMaskType)
     {
         _writer.WritePayload(new PushLayerPayload
         {
             Effect = _resources.Intern(effect),
             BackdropEffect = _resources.Intern(backdropEffect),
+            BackdropClip = _resources.Intern(backdropClip),
+            OpacityMask = _resources.Intern(opacityMask),
             HasBounds = bounds.HasValue,
             Bounds = bounds ?? default,
+            HasBackdropBounds = backdropBounds.HasValue,
+            BackdropBounds = backdropBounds ?? default,
             Opacity = opacity,
             BlendMode = blendMode,
+            OpacityMaskType = opacityMaskType,
             Isolate = isolate
         });
         EnterScope();

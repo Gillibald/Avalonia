@@ -44,10 +44,8 @@ public class LayerOpacityTests
 
     private static void DrawBackdrop(DrawingContextImpl ctx, double opacity, BackdropLayerCache? cache)
     {
-        ctx.PushClip(Box);
         ctx.PushLayer(new LayerOptions { Bounds = Box, BackdropEffect = Blur, BackdropCache = cache, Opacity = opacity });
         ctx.PopLayer();
-        ctx.PopClip();
     }
 
     private static SKBitmap Pixels(SKSurface surface)

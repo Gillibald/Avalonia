@@ -1,4 +1,5 @@
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 
 namespace Avalonia.Media;
 
@@ -61,10 +62,55 @@ public readonly record struct LayerOptions
     /// Unlike <see cref="Effect"/>, a backdrop cannot be expressed by the
     /// composite-time paint, so it needs a backend that implements
     /// <c>IDrawingContextImplWithLayers</c>. Backends without one ignore it and
-    /// emit a one-shot warning. The filtered region is the layer's
-    /// <see cref="Bounds"/>, or the current clip when no bounds are given.
+    /// emit a one-shot warning. The filtered region is
+    /// <see cref="BackdropBounds"/> shaped by <see cref="BackdropClip"/>; the
+    /// rest of the layer starts out transparent. Like everything else in the
+    /// layer, the backdrop is subject to <see cref="Effect"/>,
+    /// <see cref="OpacityMask"/> and <see cref="Opacity"/> when the layer
+    /// composites.
     /// </remarks>
     public IEffect? BackdropEffect { get; init; }
+
+    /// <summary>
+    /// The rectangle the <see cref="BackdropEffect"/> fills, in local
+    /// coordinates. When <c>null</c>, the backdrop fills <see cref="Bounds"/>,
+    /// or the current clip when no bounds are given either. Set it to keep a
+    /// backdrop to its own area in a layer that is larger than that area, such
+    /// as a panel whose content overflows it.
+    /// </summary>
+    public Rect? BackdropBounds { get; init; }
+
+    /// <summary>
+    /// Optional geometry that shapes the <see cref="BackdropEffect"/> inside
+    /// <see cref="BackdropBounds"/>, in local coordinates - a rounded rectangle
+    /// for a rounded panel, say. Unlike a clip pushed around the layer, it
+    /// does not clip anything drawn into the layer.
+    /// </summary>
+    public Geometry? BackdropClip { get; init; }
+
+    /// <summary>
+    /// The resolved form of <see cref="BackdropClip"/> that implementations
+    /// read. Drawing contexts resolve it from <see cref="BackdropClip"/>, and
+    /// render-thread callers that hold only a platform geometry set it
+    /// directly.
+    /// </summary>
+    internal IGeometryImpl? BackdropClipImpl { get; init; }
+
+    /// <summary>
+    /// Optional brush that masks the layer as a whole when it composites: its
+    /// coverage, read according to <see cref="OpacityMaskType"/>, scales the
+    /// layer's content and its backdrop alike. The brush is mapped onto
+    /// <see cref="Bounds"/>, which must be set when a mask is, the same way
+    /// <see cref="DrawingContext.PushOpacityMask(IBrush, Rect)"/> maps its brush
+    /// onto its bounds.
+    /// </summary>
+    public IBrush? OpacityMask { get; init; }
+
+    /// <summary>
+    /// How <see cref="OpacityMask"/> turns into coverage: the brush's alpha
+    /// (the default) or its luminance.
+    /// </summary>
+    public MaskType OpacityMaskType { get; init; }
 
     /// <summary>
     /// Optional cache slot for the filtered backdrop, stamped by the
@@ -96,5 +142,6 @@ public readonly record struct LayerOptions
         && EffectiveOpacity == 1.0
         && EffectiveBlendMode == BitmapBlendingMode.SourceOver
         && Effect == null
-        && BackdropEffect == null;
+        && BackdropEffect == null
+        && OpacityMask == null;
 }

@@ -611,8 +611,17 @@ namespace Avalonia.Media
         /// available, emitting a one-shot warning.
         /// </remarks>
         /// <returns>A disposable used to pop the layer.</returns>
+        /// <exception cref="ArgumentException">
+        /// <see cref="LayerOptions.OpacityMask"/> is set without
+        /// <see cref="LayerOptions.Bounds"/> to map it onto.
+        /// </exception>
         public PushedState PushLayer(LayerOptions options)
         {
+            if (options.OpacityMask != null && options.Bounds == null)
+                throw new ArgumentException(
+                    "A layer opacity mask is mapped onto the layer's Bounds, so Bounds must be set.",
+                    nameof(options));
+
             PushLayerCore(options);
             _states ??= StateStackPool.Get();
             _states.Push(new RestoreState(this, RestoreState.PushedStateType.Layer));

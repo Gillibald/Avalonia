@@ -142,12 +142,16 @@ internal partial class RenderDataStream
             // LayerOptions.Bounds is a backend hint for the offscreen buffer
             // extent and does not by itself produce visible pixels - unless an
             // effect is attached, which can paint beyond (or without) any
-            // content: source-generating filters fill their layer.
+            // content: source-generating filters fill their layer, and a
+            // backdrop fills its own region.
             var scope = EnterChildScope(effectPadding: options.Effect.GetEffectOutputPadding());
-            if (options.Effect != null)
+            var painted = options.BackdropEffect != null
+                ? options.BackdropBounds ?? options.Bounds
+                : options.Effect != null ? options.Bounds : null;
+            if (options.Effect != null || options.BackdropEffect != null)
             {
                 scope.HasLayerEffect = true;
-                if (options.Bounds is { } layerBounds)
+                if (painted is { } layerBounds)
                 {
                     scope.HasLayerBounds = true;
                     scope.LayerBounds = layerBounds;

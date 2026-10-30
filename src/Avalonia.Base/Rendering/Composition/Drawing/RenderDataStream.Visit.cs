@@ -164,7 +164,11 @@ internal partial class RenderDataStream
                             BlendMode = p.BlendMode,
                             Isolate = p.Isolate,
                             Effect = (IEffect?)_resources[p.Effect],
-                            BackdropEffect = (IEffect?)_resources[p.BackdropEffect]
+                            BackdropEffect = (IEffect?)_resources[p.BackdropEffect],
+                            BackdropBounds = p.HasBackdropBounds ? p.BackdropBounds : null,
+                            BackdropClipImpl = GetGeometryImpl(_resources[p.BackdropClip]),
+                            OpacityMask = (IBrush?)_resources[p.OpacityMask],
+                            OpacityMaskType = p.OpacityMaskType
                         });
                         break;
                     }
