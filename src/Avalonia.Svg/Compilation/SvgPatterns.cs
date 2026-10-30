@@ -25,7 +25,6 @@ internal static class SvgPatterns
         // Context patterns lay their tiles out in the context element's
         // space: the geometry basis is the context bounds and the brush
         // counters the consumer's transforms.
-        var shapeBounds = bounds;
         if (contextBounds is { } contextRect)
             bounds = contextRect;
 
@@ -137,23 +136,12 @@ internal static class SvgPatterns
 
         if (!userMatrix.IsIdentity)
         {
-            // The brush shader composes the transform about the target bounds
-            // position and then translates by the resolved destination
-            // position, so conjugating by the sum of the two yields the
-            // user-space behavior for both units modes.
-            var destinationPosition = boxUnits
-                ? new Point(bounds.X + x * bounds.Width, bounds.Y + y * bounds.Height)
-                : new Point(x, y);
-            var anchorX = shapeBounds.X + destinationPosition.X;
-            var anchorY = shapeBounds.Y + destinationPosition.Y;
-            if (anchorX != 0 || anchorY != 0)
-            {
-                userMatrix = Matrix.CreateTranslation(anchorX, anchorY)
-                             * userMatrix
-                             * Matrix.CreateTranslation(-anchorX, -anchorY);
-            }
-
+            // The brush transform acts on the tile once it is placed in the
+            // target's space, about the transform origin; pinned to the
+            // user-space origin it is exactly the user-space patternTransform,
+            // for both units modes.
             brush.Transform = new ImmutableTransform(userMatrix);
+            brush.TransformOrigin = new RelativePoint(0, 0, RelativeUnit.Absolute);
         }
 
         // Snapshot to an immutable content brush: the live DrawingRecordingBrush
