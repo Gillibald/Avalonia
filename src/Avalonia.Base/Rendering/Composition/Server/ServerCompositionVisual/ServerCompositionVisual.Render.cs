@@ -169,41 +169,41 @@ partial class ServerCompositionVisual
             if (visual.TextOptions != default)
                 _canvas.PushTextOptions(visual.TextOptions);
 
-            if (visual.OpacityMaskBrush != null)
+            var masksBackdrop = MasksBackdrop(visual);
+            if (visual.OpacityMaskBrush != null && !masksBackdrop)
                 _canvas.PushOpacityMask(visual.OpacityMaskBrush, visual._subTreeBounds!.Value.ToRect());
-            
+
             // A backdrop filters the surface below rather than this visual's own
-            // content, so it happens before anything is drawn - and the layer
-            // closes again immediately: the filtered destination is its whole
-            // contribution, and content drawn afterwards (an Effect layer's drop
-            // shadow, an overflowing child) must not be confined by the
-            // backdrop's clip. The region is the control's own box - the active
-            // ClipToBounds/geometry clips refine it - and because LayerOptions
-            // .Bounds only hints the offscreen size, the clip is what actually
-            // confines the filter.
+            // content, so it happens before anything is drawn. It fills the
+            // control's own box shaped by its backdrop clip, confined by the
+            // layer itself rather than a clip around it, so content drawn
+            // afterwards (an Effect layer's drop shadow, an overflowing child)
+            // is not confined with it. Usually the layer closes again at once:
+            // the filtered destination is its whole contribution. With its own
+            // opacity mask the visual's content and backdrop are masked as one,
+            // so the layer stays open over the content, carries the mask and the
+            // visual's opacity, and closes where the mask would have.
             var defersOpacity = !bitmapCacheRoot && DefersOwnOpacity(visual);
-            if (visual.BackdropEffect != null && visual.Size.X > 0 && visual.Size.Y > 0
-                && _canvas is IDrawingContextImplWithLayers backdropLayers)
+            if (DrawsBackdrop(visual))
             {
-                var backdropBounds = new Rect(0, 0, visual.Size.X, visual.Size.Y);
-                _canvas.PushClip(backdropBounds);
-                var backdropClip = visual.BackdropClip;
-                if (backdropClip != null)
-                    _canvas.PushGeometryClip(backdropClip);
-                backdropLayers.PushLayer(new Avalonia.Media.LayerOptions
+                var box = new Rect(0, 0, visual.Size.X, visual.Size.Y);
+                ((IDrawingContextImplWithLayers)_canvas).PushLayer(new Avalonia.Media.LayerOptions
                 {
-                    Bounds = backdropBounds,
+                    Bounds = masksBackdrop ? visual._subTreeBounds!.Value.ToRect() : box,
                     BackdropEffect = visual.BackdropEffect,
-                    BackdropCache = visual.BackdropCache,
+                    BackdropBounds = box,
+                    BackdropClipImpl = visual.BackdropClip,
+                    // A masked layer composites through its own buffer, which a
+                    // retained backdrop cannot replace.
+                    BackdropCache = masksBackdrop ? null : visual.BackdropCache,
+                    OpacityMask = masksBackdrop ? visual.OpacityMaskBrush : null,
                     Opacity = defersOpacity ? visual.Opacity : null
                 });
-                backdropLayers.PopLayer();
-                if (backdropClip != null)
-                    _canvas.PopGeometryClip();
-                _canvas.PopClip();
+                if (!masksBackdrop)
+                    ((IDrawingContextImplWithLayers)_canvas).PopLayer();
             }
 
-            if (defersOpacity)
+            if (defersOpacity && !masksBackdrop)
                 _canvas.PushOpacity(visual.Opacity, visual._subTreeBounds!.Value.ToRect());
 
             if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
@@ -245,10 +245,13 @@ partial class ServerCompositionVisual
                     _effectInputDepth--;
                 }
 
-                if (!bitmapCacheRoot && DefersOwnOpacity(visual))
+                var masksBackdrop = MasksBackdrop(visual);
+                if (!bitmapCacheRoot && DefersOwnOpacity(visual) && !masksBackdrop)
                     _canvas.PopOpacity();
 
-                if (visual.OpacityMaskBrush != null)
+                if (masksBackdrop)
+                    ((IDrawingContextImplWithLayers)_canvas).PopLayer();
+                else if (visual.OpacityMaskBrush != null)
                     _canvas.PopOpacityMask();
 
                 if (visual.TextOptions != default)
@@ -304,6 +307,18 @@ partial class ServerCompositionVisual
         /// </summary>
         private static bool DefersOwnOpacity(ServerCompositionVisual visual) =>
             visual.Opacity != 1 && visual.BackdropEffect != null && visual.Cache == null;
+
+        private bool DrawsBackdrop(ServerCompositionVisual visual) =>
+            visual.BackdropEffect != null && visual.Size.X > 0 && visual.Size.Y > 0
+            && _canvas is IDrawingContextImplWithLayers;
+
+        /// <summary>
+        /// The visual's own opacity mask covers its backdrop too, so the two
+        /// share one layer: opened holding the filtered backdrop, drawn into,
+        /// then masked as a whole.
+        /// </summary>
+        private bool MasksBackdrop(ServerCompositionVisual visual) =>
+            visual.OpacityMaskBrush != null && DrawsBackdrop(visual);
 
         public void Dispose()
         {

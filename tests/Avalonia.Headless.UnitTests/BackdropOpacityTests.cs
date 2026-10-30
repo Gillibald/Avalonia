@@ -7,9 +7,10 @@ using Avalonia.Threading;
 namespace Avalonia.Headless.UnitTests;
 
 /// <summary>
-/// A backdrop belongs to the visual it is set on, so that visual's opacity fades
-/// the filtered backdrop like the rest of its content - in both ways opacity is
-/// applied, folded into each draw or through an offscreen layer.
+/// A backdrop belongs to the visual it is set on, so that visual's opacity and
+/// opacity mask fade the filtered backdrop like the rest of its content - in
+/// both ways opacity is applied, folded into each draw or through an offscreen
+/// layer.
 /// </summary>
 public class BackdropOpacityTests
 {
@@ -17,7 +18,14 @@ public class BackdropOpacityTests
     private const int Height = 160;
     private static readonly PixelRect Glass = new(40, 40, 120, 80);
 
-    private static (Window Window, Border Glass) BuildScene(bool fullOpacityHandling, double opacity, bool backdrop)
+    // Opaque at the glass's left edge, transparent at its right edge.
+    private static readonly IBrush FadeRight = new ImmutableLinearGradientBrush(
+        new[] { new ImmutableGradientStop(0, Colors.White), new ImmutableGradientStop(1, Colors.Transparent) },
+        1, null, null, GradientSpreadMethod.Pad,
+        new RelativePoint(0, 0.5, RelativeUnit.Relative), new RelativePoint(1, 0.5, RelativeUnit.Relative));
+
+    private static (Window Window, Border Glass) BuildScene(bool fullOpacityHandling, double opacity, bool backdrop,
+        CornerRadius cornerRadius = default, IBrush? mask = null)
     {
         var host = new Canvas { Width = Width, Height = Height, Background = Brushes.White };
         RenderOptions.SetRequiresFullOpacityHandling(host, fullOpacityHandling);
@@ -42,6 +50,7 @@ public class BackdropOpacityTests
             // the glass carries an invisible fill.
             Background = Brushes.Transparent,
             Width = Glass.Width, Height = Glass.Height, Opacity = opacity,
+            CornerRadius = cornerRadius, OpacityMask = mask,
             BackdropEffect = backdrop ? new ImmutableBlurEffect(10) : null,
             [Canvas.LeftProperty] = Glass.X, [Canvas.TopProperty] = Glass.Y
         };
@@ -64,13 +73,15 @@ public class BackdropOpacityTests
     }
 
     /// <summary>
-    /// The largest channel difference inside the glass from the full-strength
-    /// glass composited at <paramref name="opacity"/> over the plain scene.
+    /// The largest channel difference inside the glass from the unmasked,
+    /// full-strength glass composited over the plain scene at the per-column
+    /// <paramref name="coverage"/>.
     /// </summary>
-    private static int DifferenceFromComposite(byte[] frame, int stride, bool fullOpacityHandling, double opacity)
+    private static int DifferenceFromComposite(byte[] frame, int stride, bool fullOpacityHandling,
+        Func<int, double> coverage, CornerRadius cornerRadius = default)
     {
-        var full = Capture(BuildScene(fullOpacityHandling, 1, backdrop: true).Window, out var fullStride);
-        var plain = Capture(BuildScene(fullOpacityHandling, 1, backdrop: false).Window, out var plainStride);
+        var full = Capture(BuildScene(fullOpacityHandling, 1, backdrop: true, cornerRadius).Window, out var fullStride);
+        var plain = Capture(BuildScene(fullOpacityHandling, 1, backdrop: false, cornerRadius).Window, out var plainStride);
 
         var worst = 0;
         var contrast = 0;
@@ -79,8 +90,9 @@ public class BackdropOpacityTests
         {
             if (x % 4 == 3)
                 continue; // alpha is opaque everywhere
+            var m = coverage(x / 4);
             contrast = Math.Max(contrast, Math.Abs(full[y * fullStride + x] - plain[y * plainStride + x]));
-            var expected = (int)Math.Round(opacity * full[y * fullStride + x] + (1 - opacity) * plain[y * plainStride + x]);
+            var expected = (int)Math.Round(m * full[y * fullStride + x] + (1 - m) * plain[y * plainStride + x]);
             worst = Math.Max(worst, Math.Abs(frame[y * stride + x] - expected));
         }
 
@@ -104,7 +116,7 @@ public class BackdropOpacityTests
             glass.Opacity = opacity;
             Dispatcher.UIThread.RunJobs();
             var frame = Capture(window, out var stride);
-            var difference = DifferenceFromComposite(frame, stride, fullOpacityHandling, opacity);
+            var difference = DifferenceFromComposite(frame, stride, fullOpacityHandling, _ => opacity);
             if (difference > worst)
             {
                 worst = difference;
@@ -113,5 +125,24 @@ public class BackdropOpacityTests
         }
 
         AssertHelper.True(worst <= 2, $"At opacity {worstAt} the glass differed by {worst} from its faded composite.");
+    }
+
+#if NUNIT
+    [AvaloniaTest, TestCase(false, 1.0), TestCase(true, 1.0), TestCase(false, 0.5), TestCase(true, 0.5)]
+#elif XUNIT
+    [AvaloniaTheory, InlineData(false, 1.0), InlineData(true, 1.0), InlineData(false, 0.5), InlineData(true, 0.5)]
+#endif
+    public void Glass_Opacity_Mask_Masks_The_Backdrop(bool fullOpacityHandling, double opacity)
+    {
+        // A rounded glass with its own fading mask: the mask has to reach the
+        // filtered backdrop, and the backdrop keeps its rounded shape.
+        var cornerRadius = new CornerRadius(16);
+        var (window, _) = BuildScene(fullOpacityHandling, opacity, backdrop: true, cornerRadius, FadeRight);
+
+        var frame = Capture(window, out var stride);
+        var difference = DifferenceFromComposite(frame, stride, fullOpacityHandling,
+            x => opacity * Math.Clamp(1 - (x + 0.5 - Glass.X) / Glass.Width, 0, 1), cornerRadius);
+
+        AssertHelper.True(difference <= 3, $"The masked glass differed by {difference} from its masked composite.");
     }
 }
