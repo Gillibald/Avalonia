@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Avalonia.Skia.RenderTests;
 using Xunit;
 
 namespace Avalonia.Svg.RenderTests;
@@ -185,16 +186,16 @@ public class TextAndMarkerRenderTests : SvgRenderTestBase
         await RenderToFile(plain, "Smcp_Plain");
         await RenderToFile(smallCaps, "Smcp_SmallCaps");
 
-        using var plainImage = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(
+        using var plainImage = TestRenderHelper.LoadImage(
             System.IO.Path.Combine(OutputPath, "Smcp_Plain.composited.out.png"));
-        using var capsImage = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(
+        using var capsImage = TestRenderHelper.LoadImage(
             System.IO.Path.Combine(OutputPath, "Smcp_SmallCaps.composited.out.png"));
 
         var different = 0;
         for (var y = 0; y < 80; y++)
         for (var x = 0; x < 200; x++)
         {
-            if (plainImage[x, y].R != capsImage[x, y].R)
+            if (plainImage.GetPixel(x, y).Red != capsImage.GetPixel(x, y).Red)
                 different++;
         }
 
