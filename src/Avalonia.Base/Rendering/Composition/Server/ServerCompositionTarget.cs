@@ -44,6 +44,7 @@ namespace Avalonia.Rendering.Composition.Server
         private readonly List<LtrbRect> _partialDirtScratch = new();
         private readonly List<BackdropJournalEntry> _backdropJournal = new();
         private long _backdropFrame;
+        private readonly List<BackdropLayerCache> _fullRedrawGrants = new();
 
         // A partial refresh past this many sub-rects degrades to a full one:
         // per-rect staging stops paying off and the bookkeeping stays tiny.
@@ -153,6 +154,7 @@ namespace Avalonia.Rendering.Composition.Server
                 List<BackdropHostRecord>? backdropHosts = null;
                 List<LtrbRect>? backdropDirtRects = null;
                 List<BackdropJournalEntry>? backdropJournal = null;
+                WithdrawFullRedrawGrants();
                 if (_backdropVisuals.Count > 0)
                 {
                     _backdropCaptures.Clear();
@@ -301,6 +303,7 @@ namespace Avalonia.Rendering.Composition.Server
                 {
                     DirtyRects.Initialize(renderBounds);
                     DirtyRects.AddRect(renderBounds);
+                    GrantFullRedrawCaptures();
                 }
 
                 if (!DirtyRects.IsEmpty)
@@ -963,6 +966,54 @@ namespace Avalonia.Rendering.Composition.Server
         }
 
         public void RequestFullRedraw() => _redrawRequested = true;
+
+        /// <summary>
+        /// A full redraw is decided after the update pass computed its grants from
+        /// the frame's damage, so a backdrop that damage never touched got none.
+        /// The whole surface is painted before any backdrop samples it, which makes
+        /// the frame safe to capture from for every backdrop sampling the target:
+        /// grant a full refresh to each one that retains nothing yet. A valid
+        /// payload still matches what is beneath it and is left alone. Backdrops in
+        /// a bitmap-cache host sample that host's surface, which a target redraw
+        /// does not repaint.
+        /// </summary>
+        private void GrantFullRedrawCaptures()
+        {
+            if (_backdropVisuals.Count == 0 || (Compositor.Options.UseSaveLayerRootClip ?? false))
+                return;
+
+            foreach (var visual in _backdropVisuals)
+            {
+                if (visual.BackdropCache is not { IsValid: false } cache
+                    || cache.Payload == BackdropCachePayload.None
+                    || NearestCacheHostOwner(visual) != null
+                    || visual.TryGetWorldBounds(Matrix.Identity, out var cacheable) == null
+                    || !cacheable)
+                    continue;
+
+                cache.RefreshRequested = true;
+                cache.RefreshRects.Clear();
+                cache.IngestRects.Clear();
+                _fullRedrawGrants.Add(cache);
+            }
+        }
+
+        /// <summary>
+        /// A full-redraw grant certifies only the frame it was issued for. One the
+        /// render pass did not consume (the backdrop was culled, or drawn where the
+        /// backend could not capture) must not fire on a later frame that repaints
+        /// only part of the surface.
+        /// </summary>
+        private void WithdrawFullRedrawGrants()
+        {
+            foreach (var cache in _fullRedrawGrants)
+            {
+                if (!cache.IsValid)
+                    cache.RefreshRequested = false;
+            }
+
+            _fullRedrawGrants.Clear();
+        }
     }
 
     /// <summary>

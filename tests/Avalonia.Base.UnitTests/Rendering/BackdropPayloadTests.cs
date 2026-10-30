@@ -312,6 +312,55 @@ public class BackdropPayloadTests : CompositorTestsBase
     }
 
     [Fact]
+    public void Full_Redraw_Grants_A_Capture_To_A_Glass_Its_Damage_Never_Touched()
+    {
+        using var s = new CompositorCanvas();
+
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        var cache = ServerCacheOf(s, panel);
+
+        // The backend could not capture on the glass's first frames, so nothing
+        // is retained.
+        cache.IsValid = false;
+        cache.RefreshRequested = false;
+
+        // Turning on an overlay redraws the whole surface without any damage
+        // near the glass. Everything is painted fresh before the glass samples,
+        // so the frame is safe to capture from.
+        s.TopLevel.RendererDiagnostics.DebugOverlays = Avalonia.Rendering.RendererDebugOverlays.Fps;
+        s.RunJobs();
+
+        Assert.True(cache.RefreshRequested);
+        Assert.False(cache.IsValid);
+
+        // Unconsumed, the grant expires with its frame: a later partial frame
+        // must not capture from a surface it did not repaint.
+        s.Canvas.Children.Add(Square(300, 300, 10));
+        s.RunJobs();
+
+        Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
+    public void Full_Redraw_Leaves_A_Valid_Retained_Payload_Alone()
+    {
+        using var s = new CompositorCanvas();
+
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        s.Canvas.Children.Add(panel);
+        var cache = PinnedValidCache(s, panel, BackdropCachePayload.Output);
+
+        // Nothing beneath the glass changed, so its retained payload still
+        // matches and the full redraw draws it without a recapture.
+        s.TopLevel.RendererDiagnostics.DebugOverlays = Avalonia.Rendering.RendererDebugOverlays.Fps;
+        s.RunJobs();
+
+        Assert.True(cache.IsValid);
+        Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
     public void Volatile_Hint_Never_Retains_Anything()
     {
         using var s = new CompositorCanvas();
