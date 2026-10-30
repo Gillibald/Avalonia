@@ -116,7 +116,7 @@ namespace TextShowcase
             };
             var keys = new TextBlock
             {
-                Text = "<- ->  scenes    D diff    H HUD    S swap    P pause    C capture    F11 full screen",
+                Text = "<- ->  scenes    D/Tab diff    H HUD    S swap    P pause    C capture    F11 full screen",
                 FontSize = 14,
                 Foreground = Ui.Muted,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -308,6 +308,7 @@ namespace TextShowcase
                     ShowScene(10);
                     break;
                 case Key.D:
+                case Key.Tab:
                     ToggleDiff();
                     break;
                 case Key.H:
