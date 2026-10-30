@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Rendering.Composition;
@@ -358,6 +359,58 @@ public class BackdropPayloadTests : CompositorTestsBase
 
         Assert.True(cache.IsValid);
         Assert.False(cache.RefreshRequested);
+    }
+
+    [Fact]
+    public void Glass_With_Its_Own_Opacity_Keeps_Its_Cache_For_A_Change_Above()
+    {
+        using var s = new CompositorCanvas();
+
+        var child = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Opacity = 0.5;
+        panel.Child = child;
+        s.Canvas.Children.Add(panel);
+        var cache = PinnedValidCache(s, panel, BackdropCachePayload.Output);
+
+        // The glass's own opacity is applied when the retained payload is
+        // composited, so it does not stop the payload from being reused.
+        child.Background = Brushes.Blue;
+
+        AssertDoesNotCover(s, new Rect(45, 45, 25, 50));
+        Assert.True(cache.IsValid);
+    }
+
+    [Fact]
+    public void Glass_Under_An_Ancestor_Opacity_Repaints_Its_Whole_Area()
+    {
+        using var s = new CompositorCanvas();
+
+        var child = new Border
+        {
+            Background = Brushes.Red, Width = 10, Height = 10,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom
+        };
+        var panel = Frosted(50, 50, 40, 40, blur: 4);
+        panel.Child = child;
+        var group = new Canvas { Width = 200, Height = 200, Opacity = 0.5 };
+        group.Children.Add(panel);
+        s.Canvas.Children.Add(group);
+        PinnedValidCache(s, panel, BackdropCachePayload.Output);
+
+        // An ancestor's opacity may be applied as a save-layer the backdrop
+        // samples instead of the surface, which only a full repaint of the area
+        // keeps fresh, so the glass stays on the uncached path.
+        child.Background = Brushes.Blue;
+
+        var union = DirtyUnion(s);
+        Assert.True(union is { } u && u.Contains(new Rect(45, 45, 50, 50)), $"Invalidated {union}");
     }
 
     [Fact]

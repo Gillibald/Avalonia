@@ -137,10 +137,11 @@ namespace Avalonia.Rendering.Composition.Server
         /// <param name="rootTransform">The target's root transform.</param>
         /// <param name="cacheable">
         /// Whether a backdrop on this visual samples the base surface directly.
-        /// The visual's own opacity or mask, or any ancestor opacity, mask,
-        /// effect or backdrop, wraps it in a save-layer; the live sample then
-        /// reads that layer while a snapshot reads the base surface, so such a
-        /// backdrop cannot use the cached path.
+        /// The visual's own mask, or any ancestor opacity, mask, effect or
+        /// backdrop, wraps it in a save-layer; the live sample then reads that
+        /// layer while a snapshot reads the base surface, so such a backdrop
+        /// cannot use the cached path. The visual's own opacity does not: it is
+        /// opened after the backdrop and applied when the backdrop composites.
         /// </param>
         internal LtrbRect? TryGetWorldBounds(Matrix rootTransform, out bool cacheable)
             => TryGetHostBounds(rootTransform, stopAtHostOwner: null, out cacheable, out _);
@@ -166,7 +167,7 @@ namespace Avalonia.Rendering.Composition.Server
         internal LtrbRect? TryGetHostBounds(Matrix rootTransform, ServerCompositionVisual? stopAtHostOwner,
             out bool cacheable, out Matrix? localToHost)
         {
-            cacheable = Opacity == 1 && OpacityMaskBrush == null;
+            cacheable = OpacityMaskBrush == null;
             localToHost = null;
             var transform = Matrix.Identity;
             var axisAligned = true;

@@ -108,7 +108,8 @@ partial class ServerCompositionVisual
             {
                 _opacityStack.Push(_opacity);
                 _opacity = effectiveOpacity;
-                _canvas.PushOpacity(visual.Opacity, visual._transformedSubTreeBounds.Value.ToRect());
+                if (!DefersOwnOpacity(visual))
+                    _canvas.PushOpacity(visual.Opacity, visual._transformedSubTreeBounds.Value.ToRect());
             }
 
             // Switch coordinate space to this visual's space
@@ -180,6 +181,7 @@ partial class ServerCompositionVisual
             // ClipToBounds/geometry clips refine it - and because LayerOptions
             // .Bounds only hints the offscreen size, the clip is what actually
             // confines the filter.
+            var defersOpacity = !bitmapCacheRoot && DefersOwnOpacity(visual);
             if (visual.BackdropEffect != null && visual.Size.X > 0 && visual.Size.Y > 0
                 && _canvas is IDrawingContextImplWithLayers backdropLayers)
             {
@@ -192,13 +194,17 @@ partial class ServerCompositionVisual
                 {
                     Bounds = backdropBounds,
                     BackdropEffect = visual.BackdropEffect,
-                    BackdropCache = visual.BackdropCache
+                    BackdropCache = visual.BackdropCache,
+                    Opacity = defersOpacity ? visual.Opacity : null
                 });
                 backdropLayers.PopLayer();
                 if (backdropClip != null)
                     _canvas.PopGeometryClip();
                 _canvas.PopClip();
             }
+
+            if (defersOpacity)
+                _canvas.PushOpacity(visual.Opacity, visual._subTreeBounds!.Value.ToRect());
 
             if (visual.Effect != null && _canvas is IDrawingContextImplWithEffects effects)
             {
@@ -239,6 +245,9 @@ partial class ServerCompositionVisual
                     _effectInputDepth--;
                 }
 
+                if (!bitmapCacheRoot && DefersOwnOpacity(visual))
+                    _canvas.PopOpacity();
+
                 if (visual.OpacityMaskBrush != null)
                     _canvas.PopOpacityMask();
 
@@ -277,11 +286,24 @@ partial class ServerCompositionVisual
 
                 if (visual.Opacity != 1)
                 {
-                    _canvas.PopOpacity();
+                    if (!DefersOwnOpacity(visual))
+                        _canvas.PopOpacity();
                     _opacity = _opacityStack.Pop();
                 }
             }
         }
+
+        /// <summary>
+        /// A backdrop samples what is beneath its visual and is faded by the
+        /// visual's opacity like the rest of it. Opened first, the visual's own
+        /// opacity would hand the backdrop an empty offscreen layer to sample
+        /// whenever it is applied as one, so for a backdrop visual the opacity is
+        /// opened right after the backdrop, inside the visual's transform and
+        /// clips, and the backdrop is composited at that opacity itself. A
+        /// cached visual draws from its bitmap instead and keeps the usual order.
+        /// </summary>
+        private static bool DefersOwnOpacity(ServerCompositionVisual visual) =>
+            visual.Opacity != 1 && visual.BackdropEffect != null && visual.Cache == null;
 
         public void Dispose()
         {
