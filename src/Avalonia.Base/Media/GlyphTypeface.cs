@@ -2056,6 +2056,39 @@ namespace Avalonia.Media
             return true;
         }
 
+        /// <summary>
+        /// Gets the x coordinate of a glyph's left phantom point: <c>xMin - lsb</c> from the glyf
+        /// header and hmtx, plus its gvar delta at this instance when the font has no HVAR. TrueType rasterizers translate
+        /// the outline so that this point lands on the origin, which is how an hmtx left side
+        /// bearing that differs from xMin, or a varied one, positions the glyph. A composite
+        /// with a USE_MY_METRICS component uses that component's left phantom point.
+        /// </summary>
+        private bool TryGetLeftPhantomX(ushort glyphIndex, ReadOnlySpan<float> activeCoords, out float leftPhantomX)
+        {
+            leftPhantomX = 0;
+
+            if (_hmTable is null)
+            {
+                return false;
+            }
+
+            Span<float> x = stackalloc float[4];
+            Span<float> y = stackalloc float[4];
+
+            if (!_glyfTable!.TryGetPhantomDeltas(glyphIndex, _gvarTable, activeCoords, out var metricsGlyph, x, y)
+                || !_glyfTable.TryGetGlyphBounds(metricsGlyph, out var xMin, out _, out _, out _)
+                || !_hmTable.TryGetMetrics((ushort)metricsGlyph, out var metric))
+            {
+                return false;
+            }
+
+            // With HVAR the horizontal metrics come from HVAR, and FreeType drops the gvar deltas of
+            // the horizontal phantom points so they are not applied twice.
+            leftPhantomX = xMin - metric.LeftSideBearing + (_hvarTable is null ? x[0] : 0);
+
+            return true;
+        }
+
         private static ushort ApplyAdvanceDelta(ushort advance, float delta)
         {
             var adjusted = advance + (int)MathF.Round(delta);
@@ -4018,6 +4051,12 @@ namespace Avalonia.Media
                 ReadOnlySpan<float> glyfCoords = _gvarTable is not null && _activeCoords is not null
                     ? _activeCoords
                     : default;
+
+                // Rasterizers place a TrueType outline so its left phantom point lands on the origin.
+                if (TryGetLeftPhantomX(glyphIndex, glyfCoords, out var leftPhantomX) && leftPhantomX != 0)
+                {
+                    transform = Matrix.CreateTranslation(-leftPhantomX, 0) * transform;
+                }
 
                 return _glyfTable.TryBuildGlyphGeometry(glyphIndex, transform, sink, _gvarTable, glyfCoords,
                     emboldenStrength);
