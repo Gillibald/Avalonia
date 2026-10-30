@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using SkiaSharp;
@@ -7,31 +8,43 @@ namespace Avalonia.Skia;
 
 partial class DrawingContextImpl
 {
+    // The folded opacity each pushed layer replaced, restored when it pops.
+    private readonly Stack<double> _layerOpacityStack = new();
+
     public void PushLayer(LayerOptions options)
     {
         CheckLease();
 
+        // A layer is composited as a whole, so it takes the folded opacity as
+        // part of its composite alpha and everything inside it - draws, effect
+        // filters, the backdrop - works at full opacity; applying it again
+        // inside would fade twice.
+        var opacity = options.EffectiveOpacity * _currentOpacity;
+        var outerOpacity = _currentOpacity;
+        _layerOpacityStack.Push(outerOpacity);
+        _currentOpacity = 1;
+
         // A retained backdrop replaces the save-layer sample: draw the cached
-        // filtered image (refreshing it when the compositor granted a capture)
-        // and let the subtree paint straight over it. Only sound while nothing
-        // else about the layer would change compositing.
+        // result (refreshing it when the compositor granted a capture) and let
+        // the subtree paint straight over it. Only sound while nothing else
+        // about the layer would change compositing.
         if (options.BackdropEffect is { } backdrop
             && options.BackdropCache is { } cache
             && options.Effect is null
-            && options.EffectiveOpacity >= 1.0
             && options.EffectiveBlendMode == BitmapBlendingMode.SourceOver
-            && TryPushCachedBackdropLayer(backdrop, cache, options.Bounds))
+            && TryPushCachedBackdropLayer(backdrop, cache, options.Bounds, opacity))
         {
-            // A plain save keeps PopLayer symmetric without opening a layer.
+            // A plain save keeps PopLayer symmetric without opening a layer;
+            // with no layer to composite, draws inside fold the opacity again.
             Canvas.Save();
             _pushedLayerIsSaveLayer.Push(false);
+            _currentOpacity = outerOpacity;
             return;
         }
 
         var paint = SKPaintCache.Shared.Get();
         SKImageFilter? imageFilter = null;
 
-        var opacity = options.EffectiveOpacity;
         if (opacity < 1.0)
             paint.Color = new SKColor(255, 255, 255, (byte)Math.Round(opacity * 255));
 
@@ -121,7 +134,8 @@ partial class DrawingContextImpl
         cache.IsValid = false;
     }
 
-    private bool TryPushCachedBackdropLayer(IEffect effect, BackdropLayerCache cache, Rect? bounds)
+    private bool TryPushCachedBackdropLayer(IEffect effect, BackdropLayerCache cache, Rect? bounds,
+        double opacity)
     {
         // Consume the grant either way: it certifies this frame's dirty region
         // and must not fire later on a frame whose region no longer covers the
@@ -178,7 +192,7 @@ partial class DrawingContextImpl
         {
             if (state is { Snapshot: not null })
             {
-                DrawBackdropCache(state, effect, localBounds);
+                DrawBackdropCache(state, effect, localBounds, opacity);
                 return true;
             }
 
@@ -276,7 +290,7 @@ partial class DrawingContextImpl
         state.Snapshot ??= state.Surface.Snapshot();
         cache.IsValid = true;
 
-        DrawBackdropCache(state, effect, localBounds);
+        DrawBackdropCache(state, effect, localBounds, opacity);
         return true;
     }
 
@@ -422,7 +436,13 @@ partial class DrawingContextImpl
         return sub.Width > 0 && sub.Height > 0 ? sub : null;
     }
 
-    private void DrawBackdropCache(SkiaBackdropCacheState state, IEffect effect, Rect localBounds)
+    /// <summary>
+    /// Composites the retained payload at <paramref name="opacity"/>. The payload
+    /// itself is always captured at full opacity, so it stays valid when only
+    /// the opacity changes.
+    /// </summary>
+    private void DrawBackdropCache(SkiaBackdropCacheState state, IEffect effect, Rect localBounds,
+        double opacity)
     {
         if (state.Snapshot is not { } image)
             return;
@@ -432,10 +452,14 @@ partial class DrawingContextImpl
         // shaping the backdrop - still applies.
         if (state.Payload == BackdropCachePayload.Output)
         {
+            var imagePaint = SKPaintCache.Shared.Get();
+            if (opacity < 1.0)
+                imagePaint.Color = new SKColor(255, 255, 255, (byte)Math.Round(opacity * 255));
             Canvas.Save();
             Canvas.ResetMatrix();
-            Canvas.DrawImage(image, state.DeviceRect.Left, state.DeviceRect.Top);
+            Canvas.DrawImage(image, state.DeviceRect.Left, state.DeviceRect.Top, imagePaint);
             Canvas.Restore();
+            SKPaintCache.Shared.ReturnReset(imagePaint);
             return;
         }
 
@@ -447,6 +471,8 @@ partial class DrawingContextImpl
         using var filter = CreateEffect(effect, localBounds);
         var paint = SKPaintCache.Shared.Get();
         paint.ImageFilter = filter;
+        if (opacity < 1.0)
+            paint.Color = new SKColor(255, 255, 255, (byte)Math.Round(opacity * 255));
         Canvas.SaveLayer(paint);
         Canvas.Save();
         Canvas.ResetMatrix();

@@ -711,6 +711,9 @@ namespace Avalonia.Skia
             Canvas.SaveLayer(bounds.ToSKRect(), null!);
             _saveLayerDepth++;
             _pushedLayerIsSaveLayer.Push(true);
+            // This layer composites at full opacity and leaves the folded
+            // opacity to the draws inside; recorded so PopLayer stays symmetric.
+            _layerOpacityStack.Push(_currentOpacity);
         }
 
         public void PopLayer()
@@ -718,6 +721,8 @@ namespace Avalonia.Skia
             CheckLease();
             if (_pushedLayerIsSaveLayer.Count > 0 && _pushedLayerIsSaveLayer.Pop())
                 _saveLayerDepth--;
+            if (_layerOpacityStack.Count > 0)
+                _currentOpacity = _layerOpacityStack.Pop();
             RestoreCanvas();
         }
 
