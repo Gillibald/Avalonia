@@ -485,30 +485,21 @@ namespace Avalonia.Media.Fonts
         /// </summary>
         private GlyphTypeface ResolveFromFace(GlyphTypeface glyphTypeface, FontCollectionKey key)
         {
-            var nearest = glyphTypeface;
-
-            if (glyphTypeface.VariationAxes.Count > 0 && glyphTypeface.FontSimulations == FontSimulations.None)
+            // A one-face family: the face is registered under its style alone, the way a request
+            // is keyed.
+            var faces = new Dictionary<FontCollectionKey, GlyphTypeface?>
             {
-                var variableFaces = new List<VariableFace>(1)
-                {
-                    _variableFaces.GetValue(glyphTypeface, static gt => new VariableFace(gt))
-                };
+                [glyphTypeface.ToFontCollectionKey() with { Variation = default }] = glyphTypeface
+            };
 
-                if (TryGetVariedMatch(variableFaces, key, out var varied))
-                {
-                    return varied;
-                }
+            if (!TryGetMatch(faces, key, allowNearestMatch: true, out var nearest, out var matchKind))
+            {
+                return glyphTypeface;
+            }
 
-                var faces = new Dictionary<FontCollectionKey, GlyphTypeface?>
-                {
-                    [new FontCollectionKey(glyphTypeface.Style, glyphTypeface.Weight, glyphTypeface.Stretch)] =
-                        glyphTypeface
-                };
-
-                if (TryGetNearestMatch(CreateVariedCandidates(faces, variableFaces, key), key, out var candidate))
-                {
-                    nearest = candidate;
-                }
+            if (matchKind == MatchKind.VariedFace)
+            {
+                return nearest;
             }
 
             if (!nearest.ToFontCollectionKey().StyleEquals(key) &&
@@ -846,7 +837,7 @@ namespace Avalonia.Media.Fonts
             //Add the TypographicFamilyName to the cache
             if (!string.IsNullOrEmpty(glyphTypeface.TypographicFamilyName))
             {
-                if (TryAddGlyphTypeface(glyphTypeface.TypographicFamilyName, key, glyphTypeface))
+                if (TryAddOwnFamilyName(glyphTypeface.TypographicFamilyName, key, glyphTypeface))
                 {
                     result = true;
                 }
@@ -854,14 +845,14 @@ namespace Avalonia.Media.Fonts
 
             // FamilyNames holds only the Windows-platform names, so a font that names its family on
             // another platform alone would otherwise not be found under its own family name.
-            if (TryAddGlyphTypeface(glyphTypeface.FamilyName, key, glyphTypeface))
+            if (TryAddOwnFamilyName(glyphTypeface.FamilyName, key, glyphTypeface))
             {
                 result = true;
             }
 
             foreach (var kvp in glyphTypeface.FamilyNames)
             {
-                if (TryAddGlyphTypeface(kvp.Value, key, glyphTypeface))
+                if (TryAddOwnFamilyName(kvp.Value, key, glyphTypeface))
                 {
                     result = true;
                 }
@@ -876,6 +867,22 @@ namespace Avalonia.Media.Fonts
         }
 
         /// <summary>
+        /// Adds <paramref name="glyphTypeface"/> under one of the family names it declares. A font
+        /// declaring a family name owns that family, so an instance family STAT composed under the
+        /// same name for another font is dropped with the faces it created, instead of mixing
+        /// faces of two fonts in one family.
+        /// </summary>
+        private bool TryAddOwnFamilyName(string familyName, FontCollectionKey key, GlyphTypeface glyphTypeface)
+        {
+            if (!string.IsNullOrEmpty(familyName) && _instanceFamilies.TryRemove(familyName, out var family))
+            {
+                family.Remove(this);
+            }
+
+            return TryAddGlyphTypeface(familyName, key, glyphTypeface);
+        }
+
+        /// <summary>
         /// Whether registering a variable face also makes the families of its instances
         /// addressable. A collection whose platform enumerates those families itself opts out.
         /// </summary>
@@ -884,7 +891,8 @@ namespace Avalonia.Media.Fonts
         /// <summary>
         /// Registers the instance families of an unsimulated default-instance variable face
         /// without creating their faces; <see cref="MaterializeInstanceFamily"/> does that on the
-        /// first lookup of a family.
+        /// first lookup of a family. A family name another font of the collection already
+        /// declares stays that font's.
         /// </summary>
         private void AddInstanceFamilies(GlyphTypeface glyphTypeface)
         {
@@ -897,6 +905,12 @@ namespace Avalonia.Media.Fonts
 
             foreach (var candidate in GetInstanceFamilies(glyphTypeface))
             {
+                if (!_instanceFamilies.ContainsKey(candidate.FamilyName) &&
+                    _glyphTypefaceCache.ContainsKey(candidate.FamilyName))
+                {
+                    continue;
+                }
+
                 var family = _instanceFamilies.GetOrAdd(candidate.FamilyName, static name => new InstanceFamily(name));
 
                 if (family.TryAdd(glyphTypeface, candidate.Position))
@@ -921,6 +935,7 @@ namespace Avalonia.Media.Fonts
         {
             var result = new List<(string FamilyName, NormalizedVariationPosition Position)>();
             var ranks = new List<int>();
+            var indices = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var names = new List<string>(1);
             var instances = root.NamedInstances;
 
@@ -962,11 +977,9 @@ namespace Avalonia.Media.Fonts
                         continue;
                     }
 
-                    var index = result.FindIndex(x =>
-                        string.Equals(x.FamilyName, name, StringComparison.OrdinalIgnoreCase));
-
-                    if (index < 0)
+                    if (!indices.TryGetValue(name, out var index))
                     {
+                        indices.Add(name, result.Count);
                         result.Add((name, position));
                         ranks.Add(rank);
                     }
@@ -1018,8 +1031,9 @@ namespace Avalonia.Media.Fonts
 
         private void MaterializeInstanceFamily(string familyName)
         {
-            if (!_instanceFamilies.IsEmpty &&
-                _instanceFamilies.TryGetValue(familyName, out var family) &&
+            // TryGetValue takes no lock; IsEmpty takes all of them when the dictionary is empty,
+            // which it is for every lookup in a collection without instance families.
+            if (_instanceFamilies.TryGetValue(familyName, out var family) &&
                 family.HasPending)
             {
                 family.Materialize(this);
@@ -1042,6 +1056,8 @@ namespace Avalonia.Media.Fonts
         {
             private readonly List<(GlyphTypeface Root, NormalizedVariationPosition Position)> _members = new(1);
             private readonly List<GlyphTypeface> _faces = new(1);
+            private int _materializedCount;
+            private bool _isRemoved;
             private volatile bool _hasPending;
 
             public InstanceFamily(string name) => Name = name;
@@ -1054,6 +1070,11 @@ namespace Avalonia.Media.Fonts
             {
                 lock (_members)
                 {
+                    if (_isRemoved)
+                    {
+                        return false;
+                    }
+
                     foreach (var member in _members)
                     {
                         if (ReferenceEquals(member.Root, root))
@@ -1072,24 +1093,72 @@ namespace Avalonia.Media.Fonts
             /// <summary>
             /// Creates the faces of members added since the last call and registers them under
             /// the family. The lock is held until they are registered, so a lookup that finds
-            /// nothing pending also finds them in the family's cache.
+            /// nothing pending also finds them in the family's cache. Returns every face the
+            /// family has created.
             /// </summary>
             public IReadOnlyList<GlyphTypeface> Materialize(FontCollectionBase collection)
             {
                 lock (_members)
                 {
-                    for (var i = _faces.Count; i < _members.Count; i++)
+                    if (_isRemoved)
                     {
-                        var (root, position) = _members[i];
-                        var face = root.WithVariation(position);
+                        return Array.Empty<GlyphTypeface>();
+                    }
 
-                        _faces.Add(face);
+                    for (; _materializedCount < _members.Count; _materializedCount++)
+                    {
+                        var (root, position) = _members[_materializedCount];
+                        GlyphTypeface face;
+
+                        try
+                        {
+                            face = root.WithVariation(position);
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // A variable face disposed by its owner has released the resources
+                            // a clone would share; the family gets no face from it.
+                            continue;
+                        }
+
                         collection.TryAddGlyphTypeface(Name, face.ToFontCollectionKey(), face);
+                        _faces.Add(face);
                     }
 
                     _hasPending = false;
 
                     return _faces.ToArray();
+                }
+            }
+
+            /// <summary>
+            /// Stops the family from creating faces and removes those registered under its name.
+            /// That cache entry holds only faces of the members (created here, or found for them
+            /// by font matching), because a family name another font declares never becomes an
+            /// instance family. The faces stay owned by their variable faces, which dispose them.
+            /// </summary>
+            public void Remove(FontCollectionBase collection)
+            {
+                lock (_members)
+                {
+                    Close();
+
+                    if (collection._glyphTypefaceCache.TryGetValue(Name, out var glyphTypefaces))
+                    {
+                        glyphTypefaces.Clear();
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Stops the family from creating faces, leaving those it registered in place.
+            /// </summary>
+            public void Close()
+            {
+                lock (_members)
+                {
+                    _isRemoved = true;
+                    _hasPending = false;
                 }
             }
         }
@@ -1370,8 +1439,13 @@ namespace Avalonia.Media.Fonts
                 {
                     // Exact match found in snapshot. Use the exact family name for lookup
                     if (TryGetFamilyFaces(snapshot[mid].Name, out var exactGlyphTypefaces) &&
-                        TryGetMatch(exactGlyphTypefaces, key, allowNearestMatch, out glyphTypeface, out _))
+                        TryGetMatch(exactGlyphTypefaces, key, allowNearestMatch, out glyphTypeface, out var exactMatchKind))
                     {
+                        if (exactMatchKind == MatchKind.VariedFace)
+                        {
+                            TryAddGlyphTypeface(snapshot[mid].Name, key, glyphTypeface);
+                        }
+
                         return true;
                     }
 
@@ -1408,8 +1482,15 @@ namespace Avalonia.Media.Fonts
                     }
 
                     if (TryGetFamilyFaces(fontFamily.Name, out glyphTypefaces) &&
-                        TryGetMatch(glyphTypefaces, key, allowNearestMatch, out glyphTypeface, out _))
+                        TryGetMatch(glyphTypefaces, key, allowNearestMatch, out glyphTypeface, out var prefixMatchKind))
                     {
+                        // Registered like the direct lookup does, so the next request through this
+                        // name is an exact hit instead of another pass over the variation space.
+                        if (prefixMatchKind == MatchKind.VariedFace)
+                        {
+                            TryAddGlyphTypeface(fontFamily.Name, key, glyphTypeface);
+                        }
+
                         return true;
                     }
                 }
@@ -1622,11 +1703,15 @@ namespace Avalonia.Media.Fonts
             FontCollectionKey key)
         {
             var candidates = new Dictionary<FontCollectionKey, GlyphTypeface?>(glyphTypefaces);
+            var closestFaces = new List<GlyphTypeface>(variableFaces.Count);
 
             foreach (var face in variableFaces)
             {
                 face.TryCreateAxisPosition(key, out var closest);
-                AddCandidate(face.Typeface.WithVariation(closest));
+
+                var closestFace = face.Typeface.WithVariation(closest);
+                closestFaces.Add(closestFace);
+                AddCandidate(closestFace);
 
                 foreach (var instance in face.Instances)
                 {
@@ -1637,7 +1722,37 @@ namespace Avalonia.Media.Fonts
                 }
             }
 
+            // The weight fallback probes the requested weight in steps of 50, so it misses an axis
+            // end off that grid (wght 900 for a request of 975) and ends on an arbitrary face. When
+            // no candidate is further towards the request than the clamped position, that position
+            // is the nearest weight, so it is also keyed at the requested weight.
+            foreach (var closestFace in closestFaces)
+            {
+                if (closestFace.Weight != key.Weight && !HasWeightBeyond(closestFace.Weight))
+                {
+                    var aliasKey = new FontCollectionKey(closestFace.Style, key.Weight, closestFace.Stretch);
+
+                    if (!candidates.ContainsKey(aliasKey))
+                    {
+                        candidates.Add(aliasKey, closestFace);
+                    }
+                }
+            }
+
             return candidates;
+
+            bool HasWeightBeyond(FontWeight weight)
+            {
+                foreach (var candidateKey in candidates.Keys)
+                {
+                    if (key.Weight > weight ? candidateKey.Weight > weight : candidateKey.Weight < weight)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
 
             void AddCandidate(GlyphTypeface candidate)
             {
@@ -1786,17 +1901,32 @@ namespace Avalonia.Media.Fonts
             {
                 if (style == FontStyle.Normal)
                 {
+                    if (_italic is null && _slant is null)
+                    {
+                        return Typeface.Style == FontStyle.Normal;
+                    }
+
+                    // An axis range may exclude upright, so exactness follows the clamped values
+                    // with the thresholds the projected Style uses.
+                    var isUpright = true;
+
                     if (_italic is { } uprightItalic)
                     {
-                        settings.Add(new FontVariation(uprightItalic.Tag, Clamp(0f, uprightItalic)));
+                        var ital = Clamp(0f, uprightItalic);
+
+                        settings.Add(new FontVariation(uprightItalic.Tag, ital));
+                        isUpright &= ital < 0.5f;
                     }
 
                     if (_slant is { } uprightSlant)
                     {
-                        settings.Add(new FontVariation(uprightSlant.Tag, Clamp(0f, uprightSlant)));
+                        var slnt = Clamp(0f, uprightSlant);
+
+                        settings.Add(new FontVariation(uprightSlant.Tag, slnt));
+                        isUpright &= slnt >= 0f;
                     }
 
-                    return Typeface.Style == FontStyle.Normal || _italic is not null || _slant is not null;
+                    return isUpright;
                 }
 
                 if (Typeface.Style == style)
@@ -2177,6 +2307,15 @@ namespace Avalonia.Media.Fonts
         /// <param name="disposing">Always <see langword="true"/>; collections have no finalizer.</param>
         protected virtual void Dispose(bool disposing)
         {
+            // Creating a face of an instance family needs its variable face, which is disposed
+            // below.
+            foreach (var family in _instanceFamilies.Values)
+            {
+                family.Close();
+            }
+
+            _instanceFamilies.Clear();
+
             foreach (var glyphTypefaces in _glyphTypefaceCache.Values)
             {
                 // Variation clones and simulated variants are registered next to their faces but

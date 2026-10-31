@@ -57,6 +57,12 @@ namespace Avalonia.Skia.RenderTests
         private const string Cff2Asset =
             "resm:Avalonia.Skia.RenderTests.Assets.AdobeVFPrototype-Subset.otf?assembly=Avalonia.Skia.RenderTests";
 
+        // Synthetic non-CID CFF font with operator-level fixtures. Its 'C' is one cubic,
+        // (100,0) (200,200) (300,200) (400,0), whose control points reach y = 200 while the curve
+        // itself peaks at y = 150, so the control box and the tight box differ.
+        private const string CffOpsAsset =
+            "resm:Avalonia.Skia.RenderTests.Assets.CffOpsTest.otf?assembly=Avalonia.Skia.RenderTests";
+
         public GlyphOutlineRenderTests()
             : base(@"Media\GlyphOutline")
         {
@@ -97,7 +103,7 @@ namespace Avalonia.Skia.RenderTests
             // 'O' from a CFF (PostScript / Type 2) font: a donut whose hole exercises non-zero
             // winding, built from cubic curves decoded by the Type 2 charstring interpreter. This is
             // the PostScript counterpart to the glyf render tests, proving GetGlyphOutline returns
-            // real geometry for OTF/CFF fonts (previously null) through the full Skia pipeline.
+            // real geometry for OTF/CFF fonts through the full Skia pipeline.
             await RenderToFile(BuildTarget(LoadGlyphTypeface(CffAsset), 'O'));
             CompareImages();
         }
@@ -193,6 +199,41 @@ namespace Avalonia.Skia.RenderTests
         }
 
         [Fact]
+        public void Cff_Ink_Box_Is_The_Control_Box_When_The_Outline_Is_Built_First()
+        {
+            var gt = LoadGlyphTypeface(CffOpsAsset);
+            var glyph = gt.CharacterToGlyphMap['C'];
+
+            Assert.NotNull(gt.GetGlyphOutline(glyph));
+
+            AssertCurveGlyphControlBox(gt, glyph);
+        }
+
+        [Fact]
+        public void Cff_Ink_Box_Is_The_Control_Box_When_The_Metrics_Are_Read_First()
+        {
+            var gt = LoadGlyphTypeface(CffOpsAsset);
+            var glyph = gt.CharacterToGlyphMap['C'];
+
+            AssertCurveGlyphControlBox(gt, glyph);
+
+            Assert.NotNull(gt.GetGlyphOutline(glyph));
+
+            AssertCurveGlyphControlBox(gt, glyph);
+        }
+
+        // The metrics ink box is the control-point box regardless of which path filled the cache
+        // entry: 100 0 rmoveto 100 200 100 0 100 -200 rrcurveto spans x 100..400 and y 0..200.
+        private static void AssertCurveGlyphControlBox(GlyphTypeface gt, ushort glyph)
+        {
+            Assert.True(gt.TryGetGlyphMetrics(glyph, out var metrics));
+            Assert.Equal(100, metrics.XBearing);
+            Assert.Equal(200, metrics.YBearing);
+            Assert.Equal(300, metrics.Width);
+            Assert.Equal(200, metrics.Height);
+        }
+
+        [Fact]
         public void OutlineType_Reports_The_Font_Outline_Technology()
         {
             // The outline technology is reported up front, so a caller (e.g. an outline-driven glyph
@@ -276,10 +317,9 @@ namespace Avalonia.Skia.RenderTests
         [Fact]
         public async Task Should_Render_InterVariable_Composite_At_wght_900()
         {
-            // gvar applies to each component of a composite glyph independently.
-            // 'Á' = base 'A' + acute accent; at wght=900 both components are visibly
-            // thicker. Composite-level offset deformation is deferred (the accent's
-            // position relative to the base stays at the designer's default).
+            // 'Á' = base 'A' + acute accent. At wght=900 each component's own gvar entry
+            // thickens it, and the composite's entry moves the accent's offset (+47 units
+            // in x), so the accent sits where FreeType places it at this weight.
             var gt = LoadGlyphTypeface(InterVariableAsset);
             var black = gt.WithVariation(WghtPosition(gt, 900));
 
@@ -394,6 +434,33 @@ namespace Avalonia.Skia.RenderTests
             var typeface = font.WithLeftPhantomGvar(glyph, axis: 1, delta: -30).CreateGlyphTypeface();
 
             AssertShiftedBy(0, typeface, typeface.WithVariation(WghtPosition(typeface, 900)), glyph);
+        }
+
+        [Fact]
+        public void Glyph_Metrics_Describe_The_Outline_When_The_Left_Side_Bearing_Differs_From_xMin()
+        {
+            // The glyf header box and the outline are control-point boxes of the same points, so
+            // once both are placed by the left phantom point they coincide. Á follows A's lsb
+            // through USE_MY_METRICS.
+            var font = SyntheticFont.FromAsset(InterRegularAsset);
+            var map = font.CreateGlyphTypeface().CharacterToGlyphMap;
+
+            var typeface = font.AddToLeftSideBearing(map['H'], 40).AddToLeftSideBearing(map['A'], 40)
+                .CreateGlyphTypeface();
+
+            foreach (var character in "HAÁ")
+            {
+                var glyph = map[character];
+                var bounds = typeface.GetGlyphOutline(glyph)!.Bounds;
+
+                Assert.True(typeface.TryGetGlyphMetrics(glyph, out var metrics));
+                Assert.Equal(metrics.XBearing, bounds.X, 3);
+                Assert.Equal(metrics.XBearing + metrics.Width, bounds.Right, 3);
+
+                var batchMetrics = new GlyphMetrics[1];
+                Assert.True(typeface.TryGetGlyphMetrics(new[] { glyph }, batchMetrics));
+                Assert.Equal(metrics, batchMetrics[0]);
+            }
         }
 
         private static void AssertShiftedBy(double expected, GlyphTypeface original, GlyphTypeface shifted, ushort glyph)

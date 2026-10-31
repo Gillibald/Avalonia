@@ -14,13 +14,16 @@ namespace Avalonia.Media.Fonts.Tables.Cff
     {
         private const int MaxDepth = 10;
 
+        // Type 2 implementation limit for the transient array that put / get address.
+        private const int TransientArraySize = 32;
+
         // Total-operation budget across the whole charstring (shared through the recursive
         // Execute calls). MaxDepth bounds call *nesting*, but each level can fan out to
-        // thousands of callsubr/callgsubr ops, so depth alone allows ~fanout^MaxDepth executions
-        // — an effectively unbounded CPU loop on a hostile font that throws no exception. This is
+        // thousands of callsubr/callgsubr ops, so depth alone allows ~fanout^MaxDepth executions:
+        // an effectively unbounded CPU loop on a hostile font that throws no exception. This is
         // a DoS backstop, not a spec limit: it sits far above any legitimate glyph (the most
         // detailed real glyphs interpret well under a million ops) and a charstring that exceeds
-        // it throws, caught by the per-glyph try/catch → blank glyph.
+        // it throws, caught by the per-glyph try/catch, which yields a blank glyph.
         private const int MaxOperations = 10_000_000;
 
         private readonly IGeometryContext _context;
@@ -29,6 +32,10 @@ namespace Avalonia.Media.Fonts.Tables.Cff
         private readonly CffIndex _localSubrs;
         private readonly int _globalBias;
         private readonly int _localBias;
+
+        // Resolves seac components (CFF1, non-CID only); null disables seac, which is also how a
+        // seac component is kept from composing again.
+        private readonly CffTable? _seacSource;
 
         private readonly Span<double> _stack;
         private int _sp;
@@ -41,6 +48,11 @@ namespace Avalonia.Media.Fonts.Tables.Cff
         private bool _done;
         private int _depth;
         private int _ops;
+
+        // CFF1 arithmetic / storage state. CFF2 removes those operators, so it never touches either.
+        private readonly bool _isCff2;
+        private double[]? _transient;
+        private uint _randomState;
 
         // CFF2 variation state. _vstore + _activeCoords drive blend's region scalers (cached per
         // vsindex into _blendScalers); null / empty for CFF1, where blend / vsindex never appear.
@@ -56,9 +68,11 @@ namespace Avalonia.Media.Fonts.Tables.Cff
             Matrix transform,
             CffIndex globalSubrs,
             CffIndex localSubrs,
-            Span<double> stack)
+            Span<double> stack,
+            CffTable? seacSource = null)
         {
             _context = context;
+            _seacSource = seacSource;
             _transform = transform;
             _globalSubrs = globalSubrs;
             _localSubrs = localSubrs;
@@ -74,6 +88,9 @@ namespace Avalonia.Media.Fonts.Tables.Cff
             _done = false;
             _depth = 0;
             _ops = 0;
+            _isCff2 = false;
+            _transient = null;
+            _randomState = 0x9E3779B9;
             _vstore = null;
             _activeCoords = default;
             _blendScalers = default;
@@ -82,7 +99,11 @@ namespace Avalonia.Media.Fonts.Tables.Cff
             _blendScalersValid = false;
         }
 
-        /// <summary>Creates an interpreter for a CFF2 charstring, enabling the blend / vsindex operators.</summary>
+        /// <summary>
+        /// Creates an interpreter for a CFF2 charstring, enabling the blend / vsindex operators.
+        /// <paramref name="defaultVsIndex"/> is the glyph's Font DICT Private <c>vsindex</c>, which
+        /// blends use until the charstring selects another with the <c>vsindex</c> operator.
+        /// </summary>
         public Type2CharStringInterpreter(
             IGeometryContext context,
             Matrix transform,
@@ -90,11 +111,14 @@ namespace Avalonia.Media.Fonts.Tables.Cff
             CffIndex localSubrs,
             Span<double> stack,
             ItemVariationStore? vstore,
+            int defaultVsIndex,
             ReadOnlySpan<float> activeCoords,
             Span<float> blendScalers)
             : this(context, transform, globalSubrs, localSubrs, stack)
         {
+            _isCff2 = true;
             _vstore = vstore;
+            _vsindex = defaultVsIndex;
             _activeCoords = activeCoords;
             _blendScalers = blendScalers;
             _widthParsed = true; // CFF2 charstrings carry no leading width
@@ -240,7 +264,7 @@ namespace Avalonia.Media.Fonts.Tables.Cff
                         _depth--;
                         return;
 
-                    case 15: // vsindex (CFF2) — select the active ItemVariationData for blends
+                    case 15: // vsindex (CFF2): select the active ItemVariationData for blends
                         _vsindex = (int)_stack[--_sp];
                         _blendScalersValid = false;
                         break;
@@ -249,7 +273,7 @@ namespace Avalonia.Media.Fonts.Tables.Cff
                         Blend();
                         break;
 
-                    case 12: // escape — two-byte operator
+                    case 12: // escape: two-byte operator
                     {
                         byte b1 = code[i];
                         i++;
@@ -259,7 +283,13 @@ namespace Avalonia.Media.Fonts.Tables.Cff
                             case 35: Flex(); break;
                             case 36: HFlex1(); break;
                             case 37: Flex1(); break;
-                            default: _sp = 0; break; // unknown/arith op — drop operands
+                            default:
+                                if (_isCff2 || !TryArithmetic(b1))
+                                {
+                                    _sp = 0; // reserved operator: drop the operands
+                                }
+
+                                break;
                         }
                         break;
                     }
@@ -271,6 +301,153 @@ namespace Avalonia.Media.Fonts.Tables.Cff
             }
 
             _depth--;
+        }
+
+        // The CFF1 arithmetic, storage and conditional operators (Type 2 spec, sections 4.4 to 4.6).
+        // Each pops its arguments and pushes its result in place. An operator with too few operands
+        // clears the stack, as a reserved operator does. Returns false for an operator not in this set.
+        private bool TryArithmetic(byte op)
+        {
+            int arity = op switch
+            {
+                5 or 9 or 14 or 18 or 21 or 26 or 27 or 29 => 1, // not abs neg drop get sqrt dup index
+                3 or 4 or 10 or 11 or 12 or 15 or 20 or 24 or 28 or 30 => 2, // and or add sub div eq put mul exch roll
+                22 => 4, // ifelse
+                23 => 0, // random
+                _ => -1
+            };
+
+            if (arity < 0)
+            {
+                return false;
+            }
+
+            if (_sp < arity)
+            {
+                _sp = 0;
+                return true;
+            }
+
+            switch (op)
+            {
+                case 3: Replace2(_stack[_sp - 2] != 0 && _stack[_sp - 1] != 0 ? 1 : 0); break; // and
+                case 4: Replace2(_stack[_sp - 2] != 0 || _stack[_sp - 1] != 0 ? 1 : 0); break; // or
+                case 5: _stack[_sp - 1] = _stack[_sp - 1] == 0 ? 1 : 0; break; // not
+                case 9: _stack[_sp - 1] = Math.Abs(_stack[_sp - 1]); break; // abs
+                case 10: Replace2(_stack[_sp - 2] + _stack[_sp - 1]); break; // add
+                case 11: Replace2(_stack[_sp - 2] - _stack[_sp - 1]); break; // sub
+                case 12: // div
+                    Replace2(_stack[_sp - 1] != 0 ? _stack[_sp - 2] / _stack[_sp - 1] : 0);
+                    break;
+                case 14: _stack[_sp - 1] = -_stack[_sp - 1]; break; // neg
+                case 15: Replace2(_stack[_sp - 2] == _stack[_sp - 1] ? 1 : 0); break; // eq
+                case 18: _sp--; break; // drop
+                case 20: // put: val i put
+                {
+                    int index = (int)_stack[_sp - 1];
+                    if ((uint)index < TransientArraySize)
+                    {
+                        (_transient ??= new double[TransientArraySize])[index] = _stack[_sp - 2];
+                    }
+
+                    _sp -= 2;
+                    break;
+                }
+                case 21: // get: i get
+                {
+                    int index = (int)_stack[_sp - 1];
+                    _stack[_sp - 1] = (uint)index < TransientArraySize && _transient is not null
+                        ? _transient[index]
+                        : 0;
+                    break;
+                }
+                case 22: // ifelse: s1 s2 v1 v2 ifelse -> s1 when v1 <= v2, else s2
+                {
+                    double result = _stack[_sp - 2] <= _stack[_sp - 1] ? _stack[_sp - 4] : _stack[_sp - 3];
+                    _sp -= 3;
+                    _stack[_sp - 1] = result;
+                    break;
+                }
+                case 23: Push(NextRandom()); break; // random
+                case 24: Replace2(_stack[_sp - 2] * _stack[_sp - 1]); break; // mul
+                case 26: _stack[_sp - 1] = _stack[_sp - 1] > 0 ? Math.Sqrt(_stack[_sp - 1]) : 0; break; // sqrt
+                case 27: Push(_stack[_sp - 1]); break; // dup
+                case 28: (_stack[_sp - 2], _stack[_sp - 1]) = (_stack[_sp - 1], _stack[_sp - 2]); break; // exch
+                case 29: Index(); break;
+                case 30: Roll(); break;
+            }
+
+            return true;
+        }
+
+        private void Replace2(double result)
+        {
+            _sp--;
+            _stack[_sp - 1] = result;
+        }
+
+        private void Push(double value)
+        {
+            if (_sp >= _stack.Length)
+            {
+                throw new InvalidOperationException("CFF charstring operand stack overflow.");
+            }
+
+            _stack[_sp++] = value;
+        }
+
+        // num(n-1) ... num0 i index: replaces i with a copy of num_i, counting from the top. A
+        // negative i copies num0.
+        private void Index()
+        {
+            int i = (int)_stack[--_sp];
+
+            if (i < 0)
+            {
+                i = 0;
+            }
+
+            if (i >= _sp)
+            {
+                _sp = 0;
+                return;
+            }
+
+            Push(_stack[_sp - 1 - i]);
+        }
+
+        // num(n-1) ... num0 n j roll: rotates the top n operands by j, positive j moving them toward
+        // the top of the stack.
+        private void Roll()
+        {
+            int j = (int)_stack[--_sp];
+            int n = (int)_stack[--_sp];
+
+            if (n <= 0 || n > _sp)
+            {
+                _sp = 0;
+                return;
+            }
+
+            var window = _stack.Slice(_sp - n, n);
+            int shift = ((j % n) + n) % n;
+
+            // Rotating right by `shift` is the three-reversal rotation.
+            window.Reverse();
+            window.Slice(0, shift).Reverse();
+            window.Slice(shift).Reverse();
+        }
+
+        // random: a value in (0, 1]. A fixed-seed xorshift keeps outlines reproducible across runs.
+        private double NextRandom()
+        {
+            uint x = _randomState;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            _randomState = x;
+
+            return (x + 1.0) / (uint.MaxValue + 1.0);
         }
 
         private int ConsumeWidth(WidthRule rule)
@@ -627,20 +804,49 @@ namespace Avalonia.Media.Fonts.Tables.Cff
 
         private void EndChar()
         {
-            ConsumeWidth(WidthRule.EndChar);
+            int s = ConsumeWidth(WidthRule.EndChar);
 
-            // seac (4-arg accent composition) is legacy and rare; left unrendered in this PR.
             if (_open)
             {
                 _context.EndFigure(true);
                 _open = false;
             }
 
+            // endchar with four arguments is the seac accent composition: adx ady bchar achar. The
+            // base glyph is drawn at the origin and the accent offset by (adx, ady), both addressed
+            // by Standard Encoding code.
+            if (_sp - s == 4 && _seacSource is not null)
+            {
+                double adx = _stack[s];
+                double ady = _stack[s + 1];
+                int baseCode = (int)_stack[s + 2];
+                int accentCode = (int)_stack[s + 3];
+
+                if (_seacSource.TryGetSeacComponent(baseCode, out var baseCharString) &&
+                    _seacSource.TryGetSeacComponent(accentCode, out var accentCharString))
+                {
+                    RunSeacComponent(baseCharString, _transform);
+                    RunSeacComponent(accentCharString, Matrix.CreateTranslation(adx, ady) * _transform);
+                }
+            }
+
+            _sp = 0;
             _done = true;
         }
 
+        // Interprets a seac component as a glyph of its own: fresh operand stack, origin, width and
+        // hint state, sharing this charstring's subroutines and operation budget.
+        private void RunSeacComponent(ReadOnlyMemory<byte> charString, Matrix transform)
+        {
+            Span<double> stack = stackalloc double[48];
+            var component = new Type2CharStringInterpreter(_context, transform, _globalSubrs, _localSubrs, stack);
+            component._ops = _ops;
+            component.Run(charString);
+            _ops = component._ops;
+        }
+
         // CFF2 blend: the stack holds n default values, then n*k deltas (k = the region count for the
-        // current vsindex; value-major — all k deltas for value 0, then value 1, ...), then the count n
+        // current vsindex; value-major: all k deltas for value 0, then value 1, ...), then the count n
         // on top. Each default is replaced in place by default + sum_j(delta_j * scaler_j); the deltas
         // and the count are dropped, leaving the n blended values for the following operator.
         private void Blend()

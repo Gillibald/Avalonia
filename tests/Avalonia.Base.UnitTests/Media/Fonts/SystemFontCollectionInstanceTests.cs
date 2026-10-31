@@ -143,7 +143,15 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
                 Assert.Equal(FontSimulations.None, result.FontSimulations);
                 Assert.True(result.TryGetUserAxisValue(result.VariationPosition, s_opsz, out var opsz));
                 Assert.Equal(32, opsz, 0.01);
-                Assert.True(result.TryGetInstanceNames(result.VariationPosition, out var names));
+                var coordinates = new Dictionary<OpenTypeTag, float>();
+
+                foreach (var axis in result.VariationAxes)
+                {
+                    Assert.True(result.TryGetUserAxisValue(result.VariationPosition, axis.Tag, out var value));
+                    coordinates[axis.Tag] = value;
+                }
+
+                Assert.True(result.TryGetInstanceNames(coordinates, out var names));
                 Assert.Equal("Inter Variable Display", names.FamilyName);
             }
         }
@@ -184,8 +192,9 @@ namespace Avalonia.Base.UnitTests.Media.Fonts
             var display = Get(collection, "Inter Variable Display", FontStyle.Normal, FontWeight.Normal);
             var text = Get(collection, "Inter Variable Text", FontStyle.Normal, FontWeight.Normal);
 
-            Assert.True(collection.TryGetInstanceFamilyFaces("Inter Variable Display", out var displayFaces));
-            Assert.Same(display, Assert.Single(displayFaces));
+            // The provider registers the family under its name first, so the STAT-derived name stays
+            // with that registration instead of becoming an instance family of its own.
+            Assert.False(collection.TryGetInstanceFamilyFaces("Inter Variable Display", out _));
 
             Assert.Same(display.WithVariation(default), text.WithVariation(default));
             Assert.Equal(1, provider.OpenCount);

@@ -7,7 +7,7 @@ using Avalonia.Platform;
 namespace Avalonia.Media.Fonts.Tables.Cff
 {
     /// <summary>
-    /// Reader for the <c>CFF2</c> table — the variation-aware evolution of CFF. Unlike CFF it has no
+    /// Reader for the <c>CFF2</c> table, the variation-aware evolution of CFF. Unlike CFF it has no
     /// Name / String / Encoding / charset structures and its Top DICT is a single fixed-length DICT
     /// (not an INDEX); its INDEXes use 32-bit counts. Charstrings are Type 2 without
     /// <c>endchar</c> / width / <c>seac</c>, and add the <c>vsindex</c> / <c>blend</c> operators that
@@ -26,6 +26,7 @@ namespace Avalonia.Media.Fonts.Tables.Cff
 
         private const int OpCharStrings = 17;
         private const int OpVStore = 24;
+        private const int OpPrivateVsIndex = 22;
         private const int OpFdArray = CffDict.TwoByteOperatorBase + 36;
         private const int OpFdSelect = CffDict.TwoByteOperatorBase + 37;
 
@@ -35,15 +36,20 @@ namespace Avalonia.Media.Fonts.Tables.Cff
         private readonly CffIndex _charStrings;
         private readonly CffIndex _globalSubrs;
         private readonly CffIndex[] _fdLocalSubrs;
+
+        // Per Font DICT: the Private DICT vsindex, the ItemVariationData a charstring of that FD
+        // blends with until it executes a vsindex operator of its own.
+        private readonly int[] _fdVsIndex;
         private readonly FdSelect? _fdSelect;
         private readonly ItemVariationStore? _vStore;
 
-        private Cff2Table(CffIndex charStrings, CffIndex globalSubrs, CffIndex[] fdLocalSubrs,
+        private Cff2Table(CffIndex charStrings, CffIndex globalSubrs, CffIndex[] fdLocalSubrs, int[] fdVsIndex,
             FdSelect? fdSelect, ItemVariationStore? vStore)
         {
             _charStrings = charStrings;
             _globalSubrs = globalSubrs;
             _fdLocalSubrs = fdLocalSubrs;
+            _fdVsIndex = fdVsIndex;
             _fdSelect = fdSelect;
             _vStore = vStore;
         }
@@ -95,17 +101,34 @@ namespace Avalonia.Media.Fonts.Tables.Cff
 
                 var fdArray = CffIndex.Read(data, fdArrayOffset, wideCount: true);
                 var fdLocalSubrs = new CffIndex[fdArray.Count];
+                var fdVsIndex = new int[fdArray.Count];
                 for (int i = 0; i < fdArray.Count; i++)
                 {
-                    fdLocalSubrs[i] = CffTable.ParseLocalSubrs(data, CffDict.Parse(fdArray[i].Span), wideCount: true);
+                    if (CffTable.TryParsePrivateDict(data, CffDict.Parse(fdArray[i].Span), out var privateDict,
+                            out var privateOffset))
+                    {
+                        fdLocalSubrs[i] = CffTable.ReadLocalSubrs(data, privateDict, privateOffset, wideCount: true);
+                        fdVsIndex[i] = privateDict.GetInt(OpPrivateVsIndex, 0);
+                    }
                 }
 
-                // FDSelect is optional — absent means every glyph uses Font DICT 0.
+                // FDSelect is optional: absent means every glyph uses Font DICT 0. One that is present
+                // but does not parse fails the load, since falling back to Font DICT 0 would draw
+                // glyphs with another Font DICT's subroutines.
                 FdSelect? fdSelect = null;
-                int fdSelectOffset = topDict.GetInt(OpFdSelect, 0);
-                if (fdSelectOffset > 0 && fdSelectOffset < data.Length)
+                if (topDict.Contains(OpFdSelect))
                 {
+                    int fdSelectOffset = topDict.GetInt(OpFdSelect, 0);
+                    if (fdSelectOffset <= 0 || fdSelectOffset >= data.Length)
+                    {
+                        return false;
+                    }
+
                     fdSelect = FdSelect.Parse(data, fdSelectOffset, charStrings.Count);
+                    if (fdSelect is null)
+                    {
+                        return false;
+                    }
                 }
 
                 // The vstore is an ItemVariationStore preceded by a uint16 length.
@@ -122,7 +145,7 @@ namespace Avalonia.Media.Fonts.Tables.Cff
                     }
                 }
 
-                cff2Table = new Cff2Table(charStrings, globalSubrs, fdLocalSubrs, fdSelect, vStore);
+                cff2Table = new Cff2Table(charStrings, globalSubrs, fdLocalSubrs, fdVsIndex, fdSelect, vStore);
                 return true;
             }
             catch (Exception ex)
@@ -168,8 +191,8 @@ namespace Avalonia.Media.Fonts.Tables.Cff
                 int regionCount = _vStore?.RegionCount ?? 0;
                 Span<float> blendScalers = stackalloc float[regionCount];
 
-                var interpreter = new Type2CharStringInterpreter(
-                    context, transform, _globalSubrs, _fdLocalSubrs[fd], stack, _vStore, activeCoords, blendScalers);
+                var interpreter = new Type2CharStringInterpreter(context, transform, _globalSubrs, _fdLocalSubrs[fd],
+                    stack, _vStore, _fdVsIndex[fd], activeCoords, blendScalers);
                 interpreter.Run(_charStrings[glyphIndex]);
                 return true;
             }

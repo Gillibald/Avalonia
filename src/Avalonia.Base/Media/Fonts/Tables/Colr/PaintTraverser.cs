@@ -5,7 +5,7 @@
     /// </summary>
     internal static class PaintTraverser
     {
-        public static void Traverse(Paint paint, IColorPainter painter, Matrix currentMatrix)
+        public static void Traverse(Paint paint, IColorPainter painter)
         {
             switch (paint)
             {
@@ -15,7 +15,7 @@
 
                 case ResolvedClipBox clip:
                     painter.PushClip(clip.Box);
-                    Traverse(clip.Inner, painter, currentMatrix);
+                    Traverse(clip.Inner, painter);
                     painter.PopClip();
                     break;
 
@@ -48,18 +48,21 @@
 
                 case ResolvedTransform t:
                     painter.PushTransform(t.Matrix);
-                    Traverse(t.Inner, painter, t.Matrix * currentMatrix);
+                    Traverse(t.Inner, painter);
                     painter.PopTransform();
                     break;
 
                 case ColrLayers layers:
                     foreach (var child in layers.Layers)
-                        Traverse(child, painter, currentMatrix);
+                        Traverse(child, painter);
                     break;
 
                 case Glyph glyph:
-                    painter.Glyph(glyph.GlyphIndex);
-                    Traverse(glyph.Paint, painter, currentMatrix);
+                    // PaintGlyph clips its child paint to the glyph outline in the current transform;
+                    // fills inside paint the clip region, whatever transforms or layers sit between.
+                    painter.PushGlyphClip(glyph.GlyphIndex);
+                    Traverse(glyph.Paint, painter);
+                    painter.PopClip();
                     break;
 
                 case Composite comp:
@@ -67,9 +70,9 @@
                     // the source blends onto the backdrop with the composite mode, and the finished
                     // group composites onto whatever lies outside as a single unit.
                     painter.PushLayer(CompositeMode.SrcOver);
-                    Traverse(comp.Backdrop, painter, currentMatrix);
+                    Traverse(comp.Backdrop, painter);
                     painter.PushLayer(comp.Mode);
-                    Traverse(comp.Source, painter, currentMatrix);
+                    Traverse(comp.Source, painter);
                     painter.PopLayer();
                     painter.PopLayer();
                     break;

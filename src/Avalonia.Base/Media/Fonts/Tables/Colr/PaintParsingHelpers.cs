@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Avalonia.Media.Fonts.Tables.Colr
 {
@@ -28,48 +29,32 @@ namespace Avalonia.Media.Fonts.Tables.Colr
         }
 
         /// <summary>
-        /// Specifies the numeric format used to represent delta values in font tables.
+        /// Reads the Affine2x3 (format 12) or VarAffine2x3 (format 13) a PaintTransform points to.
+        /// <paramref name="span"/> starts at the paint: uint8 format, Offset24 paint, Offset24
+        /// transform. A VarAffine2x3 is the six Fixed fields followed by its uint32 VarIndexBase.
         /// </summary>
-        /// <remarks>Use this enumeration to indicate how a delta value should be interpreted or converted
-        /// when processing font data. Each member corresponds to a specific numeric representation commonly found in
-        /// OpenType and TrueType font tables.</remarks>
-        public enum DeltaTargetType
+        /// <returns><c>false</c> when the transform table does not fit in the data.</returns>
+        public static bool TryParseAffine2x3(ReadOnlySpan<byte> span, bool isVariable, out Matrix matrix,
+            out uint varIndexBase)
         {
-            /// <summary>FWORD - design units (int16) - no conversion needed</summary>
-            FWORD,
-            /// <summary>F2DOT14 - fixed-point with 2.14 format (divide by 16384)</summary>
-            F2Dot14,
-            /// <summary>Fixed - fixed-point with 16.16 format (divide by 65536)</summary>
-            Fixed
-        }
+            matrix = Matrix.Identity;
+            varIndexBase = 0xFFFFFFFF;
 
-        public static double ConvertDelta(int deltaValue, DeltaTargetType targetType)
-        {
-            return targetType switch
-            {
-                DeltaTargetType.FWORD => deltaValue,
-                DeltaTargetType.F2Dot14 => F2Dot14ToDouble((short)deltaValue),
-                DeltaTargetType.Fixed => FixedToDouble(deltaValue),
-                _ => deltaValue
-            };
-        }
+            var size = isVariable ? 28 : 24;
 
-        public static Matrix ParseAffine2x3(ReadOnlySpan<byte> span)
-        {
-            // Format 12 layout: [format][paintOffset][transformOffset]
             if (span.Length < 7)
             {
-                return Matrix.Identity;
+                return false;
             }
 
-            var transformOffset = PaintParsingHelpers.ReadOffset24(span.Slice(4));
+            var transformOffset = ReadOffset24(span.Slice(4));
 
-            if (transformOffset > (uint)span.Length || span.Length - (int)transformOffset < 24)
+            if ((long)transformOffset + size > span.Length)
             {
-                return Matrix.Identity;
+                return false;
             }
 
-            var transformSpan = span.Slice((int)transformOffset, 24);
+            var transformSpan = span.Slice((int)transformOffset, size);
 
             var xx = FixedToDouble(BinaryPrimitives.ReadInt32BigEndian(transformSpan));
             var yx = FixedToDouble(BinaryPrimitives.ReadInt32BigEndian(transformSpan.Slice(4)));
@@ -78,7 +63,13 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             var dx = FixedToDouble(BinaryPrimitives.ReadInt32BigEndian(transformSpan.Slice(16)));
             var dy = FixedToDouble(BinaryPrimitives.ReadInt32BigEndian(transformSpan.Slice(20)));
 
-            return new Matrix(xx, yx, xy, yy, dx, dy);
+            if (isVariable)
+            {
+                varIndexBase = BinaryPrimitives.ReadUInt32BigEndian(transformSpan.Slice(24));
+            }
+
+            matrix = new Matrix(xx, yx, xy, yy, dx, dy);
+            return true;
         }
 
         public static bool TryParseColorLine(
@@ -86,10 +77,10 @@ namespace Avalonia.Media.Fonts.Tables.Colr
             uint offset,
             in ColrContext context,
             bool isVarColorLine,
-            out Immutable.ImmutableGradientStop[] stops,
+            out GradientStop[] stops,
             out GradientSpreadMethod extend)
         {
-            stops = Array.Empty<Immutable.ImmutableGradientStop>();
+            stops = Array.Empty<GradientStop>();
             extend = GradientSpreadMethod.Pad;
 
             if (offset >= data.Length)
@@ -120,6 +111,8 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
+            // Stops are kept as the COLR GradientStop record, not ImmutableGradientStop, because the
+            // latter clamps offsets to [0, 1].
             // ColorStop is 6 bytes, VarColorStop is 10 bytes (each has varIndexBase)
             int stopSize = isVarColorLine ? 10 : 6;
 
@@ -130,7 +123,7 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 return false;
             }
 
-            var tempStops = new Immutable.ImmutableGradientStop[numStops];
+            var tempStops = new GradientStop[numStops];
 
             int stopOffset = 3;
             for (int i = 0; i < numStops; i++)
@@ -149,8 +142,9 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                     alpha += context.GetF2Dot14Delta(varIndexBase, 1);
                 }
 
-                // Clamp to the valid [0, 1] range (the spec requires it; font data may not honour it).
-                stopPos = Math.Clamp(stopPos, 0.0, 1.0);
+                // Stop offsets keep their raw value: the color line extends past [0, 1], and the
+                // resolver maps the stops onto [0, 1] by moving the gradient geometry. Alpha is a
+                // coverage multiplier and is clamped.
                 alpha = Math.Clamp(alpha, 0.0, 1.0);
 
                 Color color;
@@ -171,17 +165,18 @@ namespace Avalonia.Media.Fonts.Tables.Colr
                 }
 
                 color = Color.FromArgb((byte)(color.A * alpha), color.R, color.G, color.B);
-                tempStops[i] = new Immutable.ImmutableGradientStop(stopPos, color);
+                tempStops[i] = new GradientStop(stopPos, color);
 
                 stopOffset += stopSize;
             }
 
-            // Sort stops by offset (required for proper gradient rendering)
-            Array.Sort(tempStops, (a, b) => a.Offset.CompareTo(b.Offset));
+            // Sort stops by offset (required for proper gradient rendering). The sort is stable: stops
+            // sharing an offset form a hard color transition and keep their font order.
+            tempStops = tempStops.OrderBy(s => s.Offset).ToArray();
 
             // Remove consecutive duplicate stops (same offset AND color)
             // NOTE: We preserve stops with the same offset but different colors (hard color transitions)
-            var deduplicatedList = new List<Immutable.ImmutableGradientStop>(numStops);
+            var deduplicatedList = new List<GradientStop>(numStops);
             const double epsilon = 1e-6;
 
             for (int i = 0; i < tempStops.Length; i++)

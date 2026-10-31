@@ -178,7 +178,7 @@ namespace Avalonia.Skia.UnitTests.Media
         {
             Assert.NotNull(geometry);
 
-            var path = Assert.IsAssignableFrom<GeometryImpl>(((ImmutableGeometryImpl)geometry!).Inner).FillPath!;
+            var path = Assert.IsAssignableFrom<GeometryImpl>(geometry).FillPath!;
             var points = new SKPoint[4];
             var result = new List<Point>();
 

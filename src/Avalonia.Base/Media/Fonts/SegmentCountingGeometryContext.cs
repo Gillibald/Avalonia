@@ -13,8 +13,9 @@ namespace Avalonia.Media.Fonts
     /// <remarks>
     /// The box is accumulated through the same <see cref="BoundsGeometryContext"/> the CFF / CFF2
     /// bounds-only interpret pass uses, so both producers of <see cref="GlyphCacheEntry.Bounds"/>
-    /// write bit-identical values — the benign-race contract of
-    /// <see cref="GlyphCacheEntry.SetBoundsOnce"/> — independent of any backend's notion of bounds.
+    /// write identical values whichever runs first. A backend's geometry bounds are not a substitute:
+    /// Skia reports the tight box (curve extrema), which is smaller than the control box whenever a
+    /// control point lies outside its curve.
     /// </remarks>
     internal sealed class SegmentCountingGeometryContext : IGeometryContext
     {

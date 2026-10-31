@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 
 namespace Avalonia.Media.Fonts
@@ -38,13 +39,13 @@ namespace Avalonia.Media.Fonts
     /// <remarks>
     /// <para>
     /// Bounds reads and built-geometry hits are lock-free; the geometry build / eviction take a lock.
-    /// Composite components are kept at least as recent as their composites via recency propagation;
-    /// referencing payloads (color drawings) additionally pin their dependencies.
+    /// A hit on a composite also marks its cached direct components referenced; referencing payloads
+    /// (color drawings) additionally pin their dependencies.
     /// </para>
     /// <para>
     /// Payloads must be immutable managed objects: hits are handed out lock-free and escape with
     /// unbounded lifetime (public callers, retained compositor render data), so eviction only
-    /// unlinks — the GC reclaims a payload once the last outside reference drops. The one exception
+    /// unlinks; the GC reclaims a payload once the last outside reference drops. The one exception
     /// is <see cref="ColorGlyphRecording"/>, whose resources are released explicitly: it guards its
     /// own use with leases, and the cache retires it wherever it gives it up (eviction,
     /// <see cref="Release"/>, a build that lost a race).
@@ -52,7 +53,11 @@ namespace Avalonia.Media.Fonts
     /// </remarks>
     internal sealed class GlyphCache : Rasterization.IGlyphCachePool
     {
-        /// <summary>Default per-typeface geometry budget. Calibrated against the churn benchmark.</summary>
+        /// <summary>
+        /// Default per-typeface geometry budget, in estimated bytes. At the outline cost estimate a
+        /// glyph of about 30 segments costs about 1 KB, so this keeps a few thousand outlines per
+        /// typeface.
+        /// </summary>
         public const int DefaultBudgetBytes = 4 * 1024 * 1024;
 
         private static readonly Func<GlyphCacheKey, bool, GlyphCacheEntry> s_createEntry =
@@ -65,16 +70,17 @@ namespace Avalonia.Media.Fonts
 
         private readonly IGlyphEvictionPolicy _policy;
         private readonly int _budget;
-        private readonly bool _retainOutlineBounds;
+        private readonly bool _retainBounds;
         private readonly object _lock = new();
         private readonly Rasterization.GlyphCacheBudget _clock;
         private readonly Rasterization.GlyphCachePoolHandle _handle;
         private int _totalCost;
 
-        /// <param name="retainOutlineBounds">
-        /// Whether outline entries survive geometry eviction for the sake of their cached bounds — a
-        /// per-typeface constant: <c>true</c> for CFF / CFF2 (whose bounds are expensive to
-        /// recompute), <c>false</c> for glyf (whose bounds are a cheap header read).
+        /// <param name="retainBounds">
+        /// Whether outline entries survive geometry eviction for the sake of their cached bounds;
+        /// colour-drawing entries never do. This is a per-typeface constant: <c>true</c> where bounds
+        /// are expensive to recompute (CFF / CFF2), <c>false</c> where they are a cheap header read
+        /// (glyf).
         /// </param>
         /// <param name="budgetBytes">
         /// The geometry byte budget eviction keeps the cache under, besides the glyph cache budget.
@@ -84,10 +90,10 @@ namespace Avalonia.Media.Fonts
         /// The budget the cache charges its geometry to; the current application's (<see cref="GlyphRasterizationContext.Budget"/>)
         /// when omitted.
         /// </param>
-        public GlyphCache(bool retainOutlineBounds = false, int budgetBytes = DefaultBudgetBytes,
+        public GlyphCache(bool retainBounds = false, int budgetBytes = DefaultBudgetBytes,
             IGlyphEvictionPolicy? policy = null, Rasterization.GlyphCacheBudget? budget = null)
         {
-            _retainOutlineBounds = retainOutlineBounds;
+            _retainBounds = retainBounds;
             _budget = budgetBytes < 1 ? 1 : budgetBytes;
             _policy = policy ?? new ClockEvictionPolicy();
             _clock = budget ?? GlyphRasterizationContext.Required.Budget;
@@ -103,10 +109,10 @@ namespace Avalonia.Media.Fonts
         /// <summary>
         /// Gets (creating if absent) the outline entry for <paramref name="glyph"/>. Whether the entry
         /// survives geometry eviction for its cached bounds is the cache-level
-        /// <c>retainOutlineBounds</c> constant (CFF / CFF2). Lock-free.
+        /// <c>retainBounds</c> setting (CFF / CFF2). Lock-free.
         /// </summary>
         public GlyphCacheEntry GetEntry(ushort glyph)
-            => _entries.GetOrAdd(GlyphCacheKey.Outline(glyph), s_createEntry, _retainOutlineBounds);
+            => _entries.GetOrAdd(GlyphCacheKey.Outline(glyph), s_createEntry, _retainBounds);
 
         /// <summary>
         /// Gets (creating if absent) the colour-drawing entry for <paramref name="glyph"/> resolved
@@ -154,7 +160,7 @@ namespace Avalonia.Media.Fonts
                 // The built flag is published after the geometry and cleared before it, so a re-read
                 // under a set flag is exact: non-null means the null read above raced a concurrent
                 // build; null with the flag still set means the glyph is genuinely malformed; null
-                // with the flag now clear means the entry was evicted between the reads — fall
+                // with the flag now clear means the entry was evicted between the reads, so fall
                 // through and rebuild under the lock.
                 geometry = Volatile.Read(ref entry.Geometry);
 
@@ -274,9 +280,11 @@ namespace Avalonia.Media.Fonts
             entry.LastUse = _clock.Frame;
         }
 
-        // Keep a composite's cached components at least as recently used as the composite, so a
-        // component's geometry is never evicted before a composite that depends on it. Dependencies
-        // are always layer / component outlines, so they are looked up under outline keys.
+        // Mark a composite's cached direct components referenced on every hit of the composite, so
+        // CLOCK gives them the same second chance. This approximates keeping a component at least as
+        // recent as its composites; it does not guarantee eviction order, and components of
+        // components are not reached. Dependencies are always layer / component outlines, so they
+        // are looked up under outline keys.
         private void PropagateRecency(GlyphCacheEntry entry)
         {
             var deps = entry.Dependencies;
@@ -305,7 +313,7 @@ namespace Avalonia.Media.Fonts
                 // eviction of this payload must never release a pin owned by another. A pin on an
                 // unbuilt entry is inert (it joins the eviction ring only once its outline is built),
                 // and the outline then arrives pre-pinned, as intended.
-                _entries.GetOrAdd(GlyphCacheKey.Outline(deps[i]), s_createEntry, _retainOutlineBounds).PinCount++;
+                _entries.GetOrAdd(GlyphCacheKey.Outline(deps[i]), s_createEntry, _retainBounds).PinCount++;
             }
         }
 
@@ -397,7 +405,7 @@ namespace Avalonia.Media.Fonts
 
                 if (victim is null)
                 {
-                    break;   // everything pinned — stay over budget until a dependent frees
+                    break;   // everything pinned: stay over budget until a dependent frees
                 }
 
                 Evict(victim);
@@ -415,19 +423,19 @@ namespace Avalonia.Media.Fonts
             victim.ClearGeometry();
             (payload as ColorGlyphRecording)?.Retire();
 
-            // Keep the entry alive for its retained bounds (CFF / CFF2); otherwise drop it whole,
-            // by the identity it was inserted under (colour drawings never retain bounds, so they
-            // are always dropped whole).
+            // Keep the entry alive for its retained bounds (CFF / CFF2); otherwise drop it whole
+            // (colour drawings never retain bounds, so they are always dropped whole). Remove only
+            // this entry: an orphan (already dropped from the map, then rebuilt by a caller that
+            // still held it) must not take a fresh entry for the same key with it.
             if (!victim.RetainBounds)
             {
-                _entries.TryRemove(victim.Key, out _);
+                _entries.TryRemove(new KeyValuePair<GlyphCacheKey, GlyphCacheEntry>(victim.Key, victim));
             }
 
-            // Deliberately no Dispose here: the payload may still be referenced by anyone the
-            // lock-free hit path handed it to (or by retained compositor render data), so
-            // deterministic teardown would be a use-after-dispose. Unlink only; the GC reclaims
-            // the payload once the last outside reference drops. A retired colour recording is
-            // disposed by its last lease instead.
+            // No Dispose here: the payload may still be referenced by anyone the lock-free hit
+            // path handed it to, or by retained compositor render data, so deterministic teardown
+            // would be a use-after-dispose. The GC reclaims it once the last reference drops. A
+            // retired colour recording is disposed by its last lease instead.
         }
     }
 }

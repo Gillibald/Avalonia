@@ -309,6 +309,22 @@ namespace Avalonia.Controls.Presenters
             set => SetValue(CaretIndexProperty, value);
         }
 
+        /// <summary>
+        /// Gets the caret rectangle relative to this presenter.
+        /// </summary>
+        /// <remarks>
+        /// The rectangle has zero width. Its X/Y position and height describe the caret location
+        /// within the presenter's text layout coordinates.
+        /// </remarks>
+        public Rect CursorRectangle
+        {
+            get
+            {
+                EnsureCaretBounds();
+                return _caretBounds;
+            }
+        }
+
         public char PasswordChar
         {
             get => GetValue(PasswordCharProperty);
@@ -757,6 +773,11 @@ namespace Avalonia.Controls.Presenters
 
                 _textLayout?.Dispose();
                 _textLayout = null;
+
+                // Recreate the layout using the arranged width and update the caret
+                // against exactly the same layout that will be rendered.
+                _ = TextLayout;
+                EnsureCaretBounds();
             }
 
             return finalSize;
@@ -1053,12 +1074,6 @@ namespace Avalonia.Controls.Presenters
             }
         }
 
-        internal Rect GetCursorRectangle()
-        {
-            EnsureCaretBounds();
-
-            return _caretBounds;
-        }
 
         protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
         {
